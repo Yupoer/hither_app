@@ -47,6 +47,7 @@ const {
   consumePendingLocationPermission,
   consumePendingLocationRefresh,
   recoverPendingLocationRefreshes,
+  recoverPendingLocationRefreshFromSample,
   rememberPendingLocationPermission,
 } = require('../state/backgroundLocationRefresh') as typeof import('../state/backgroundLocationRefresh');
 const { BACKGROUND_LOCATION_REFRESH_TASK } = require('../state/backgroundLocationRefresh') as typeof import('../state/backgroundLocationRefresh');
@@ -141,6 +142,41 @@ describe('durable location refresh recovery', () => {
     mockAck.mockResolvedValueOnce(false);
     await recoverPendingLocationRefreshes();
     expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'refresh_request_completed' }));
+  });
+
+  it('does not upload a foreground refresh when sharing is revoked during GPS acquisition', async () => {
+    mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
+    mockLocation.getCurrentLocation.mockImplementationOnce(async () => {
+      setLocationSharingConsent(false);
+      return fix;
+    });
+    await recoverPendingLocationRefreshes();
+    expect(mockIngest).not.toHaveBeenCalled();
+    expect(mockAck).not.toHaveBeenCalled();
+  });
+
+  it('retains a pending refresh if sharing is revoked during its upload', async () => {
+    mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
+    mockIngest.mockImplementationOnce(async (events: Array<{ id: string }>) => {
+      setLocationSharingConsent(false);
+      return { acceptedIds: events.map(event => event.id), rejected: [] };
+    });
+    await recoverPendingLocationRefreshes();
+    expect(mockAck).not.toHaveBeenCalled();
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'refresh_request_completed' }));
+  });
+
+  it('finishes a timed-out locked-screen refresh on the next real sample without acquiring a second fix', async () => {
+    mockAppState.currentState = 'background';
+    mockLocation.getCurrentLocation.mockResolvedValueOnce(null);
+    mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
+    await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
+    expect(mockStore.has('@hither/pending-location-refresh')).toBe(true);
+    await recoverPendingLocationRefreshFromSample('group-1', { ...fix, timestamp: Date.now() + 1 });
+    expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
+    expect(mockAck).toHaveBeenCalledWith('group-1', '2026-08-13T00:00:00Z');
+    expect(mockIngest).toHaveBeenCalledWith([expect.objectContaining({ source: 'refresh_request' })]);
+    expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
   });
 
   it('handles headless matching rows, compatibility pushes, and legacy markers', async () => {

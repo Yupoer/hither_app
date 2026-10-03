@@ -241,6 +241,10 @@ export interface MemberLocation {
   capturedAt?: string | null;
   /** ISO-8601 timestamp when the server accepted the position. */
   uploadedAt?: string | null;
+  /** Metadata of the server-accepted sample; never inferred from viewer state. */
+  locationTrackingMode?: string | null;
+  locationSource?: string | null;
+  locationNavigationSessionId?: string | null;
   /** Whether the position can currently be used for a map/arrival decision. */
   locationAvailability?: 'available' | 'stale' | 'unavailable' | null;
   sharingEnabled?: boolean;

@@ -127,22 +127,45 @@ export function projectOperationDestinations(
 }
 
 /** Reapply pending trip/stay edits after authoritative refresh or receipt. */
-export function projectOperationGroupState(state: GroupState, operations: CoreOperation[]): GroupState {
+export function projectOperationGroupState(state: GroupState, operations: CoreOperation[],
+  protectedDestinationIds: readonly (string | null | undefined)[] = [],
+): GroupState {
   let group = { ...state.group };
+  let members = [...(state.members ?? [])];
   let dailyAccommodations = [...(state.dailyAccommodations ?? [])];
   let destinations = [...state.destinations];
   for (const operation of operations.filter(op => ['pending', 'failed', 'inflight'].includes(op.status))
     .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt - b.createdAt)) {
     destinations = projectOperationDestinations(destinations, [operation]);
     const payload = operation.payload;
-    if (operation.operationType === 'set_trip_details') {
+    if (operation.operationType === 'set_solo') {
+      members = members.map(member => member.userId === operation.actorId
+        && member.userId === payload.userId ? { ...member, solo: payload.solo === true } : member);
+    } else if (operation.operationType === 'set_trip_details') {
       group = { ...group, tripDays: Number(payload.tripDays), departureDate: String(payload.departureDate) };
     } else if (operation.operationType === 'set_daily_accommodation' || operation.operationType === 'clear_daily_accommodation') {
       const stayDate = String(payload.stayDate);
       const previous = dailyAccommodations.find(daily => daily.stayDate === stayDate);
       dailyAccommodations = dailyAccommodations.filter(daily => daily.stayDate !== stayDate);
       if (operation.operationType === 'set_daily_accommodation') {
-        dailyAccommodations.push(payload.daily as unknown as NonNullable<GroupState['dailyAccommodations']>[number]);
+        const nextStay = payload.daily as unknown as NonNullable<GroupState['dailyAccommodations']>[number];
+        if (previous) {
+          // Replace only open copies of the old daily stay. Independent hotels,
+          // other dates/scopes and completed history retain their identity/data.
+          const day = typeof payload.day === 'number' ? payload.day
+            : group.departureDate ? Math.round((Date.parse(stayDate) - Date.parse(group.departureDate.slice(0, 10))) / 86_400_000) + 1 : 1;
+          destinations = destinations.map(destination => !destination.closedAt && !destination.subgroupId
+            && destination.id !== group.activeDestinationId
+            && !protectedDestinationIds.includes(destination.id)
+            && destination.kind === 'accommodation' && destination.day === day
+            && destination.title === previous.title
+            && Math.abs(destination.coordinates.latitude - previous.coordinates.latitude) < 0.000001
+            && Math.abs(destination.coordinates.longitude - previous.coordinates.longitude) < 0.000001
+              ? { ...destination, title: nextStay.title, address: nextStay.address,
+                coordinates: nextStay.coordinates, providerPlaceId: undefined, stayAnchor: false }
+              : destination);
+        }
+        dailyAccommodations.push(nextStay);
         group = { ...group, accommodationAutoAdd: false };
       }
       if (previous || operation.operationType === 'clear_daily_accommodation') {
@@ -151,5 +174,5 @@ export function projectOperationGroupState(state: GroupState, operations: CoreOp
       }
     }
   }
-  return { ...state, group, destinations, dailyAccommodations: dailyAccommodations.sort((a, b) => a.stayDate.localeCompare(b.stayDate)) };
+  return { ...state, group, members, destinations, dailyAccommodations: dailyAccommodations.sort((a, b) => a.stayDate.localeCompare(b.stayDate)) };
 }

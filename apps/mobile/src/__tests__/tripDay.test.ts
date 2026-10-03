@@ -1,5 +1,8 @@
 import {
   currentTripDayNumber,
+  parseDateOnlyLocal,
+  normalizeTripDepartureDate,
+  localDayKey,
   filterActiveDestinations,
   openDestinationsForReorder,
   nextOrderedDestination,
@@ -57,6 +60,15 @@ describe('resolveAddDay / resolveVisibleStartDay', () => {
 });
 
 describe('filterActiveDestinations', () => {
+  it('keeps an unfinished active target across midnight and after the trip ends', () => {
+    const yesterday = dest('active', 1, 0);
+    const today = dest('today', 2, 1);
+    const closed = dest('closed', 1, 2, '2026-10-03T12:00:00Z');
+    expect(filterActiveDestinations([yesterday, today, closed], '2026-10-03', 2,
+      new Date(2026, 9, 4, 0, 1), ['active', 'closed']).map(d => d.id)).toEqual(['active', 'today']);
+    expect(filterActiveDestinations([yesterday, today], '2026-10-03', 2,
+      new Date(2026, 9, 5), ['active']).map(d => d.id)).toEqual(['active']);
+  });
   const list = [
     dest('d1a', 1, 0),
     dest('d1b', 1, 1),
@@ -186,5 +198,40 @@ describe('promoteDestinationWithinDay', () => {
     );
     expect(result.filter((r) => r.day === 1).map((r) => r.id)).toEqual(['d1a', 'd1b']);
     expect(result.filter((r) => r.day === 2).map((r) => r.id)).toEqual(['d2b', 'd2a']);
+  });
+});
+
+
+describe('calendar dates across timezone offsets and daylight saving', () => {
+  it.each([
+    ['2026-03-07', new Date(2026, 2, 8, 0), 2],
+    ['2026-03-07', new Date(2026, 2, 9, 0), 3],
+    ['2026-10-31', new Date(2026, 10, 1, 0), 2],
+    ['2026-10-31', new Date(2026, 10, 2, 0), 3],
+  ])('advances by calendar date across DST from %s', (departure, now, day) => {
+    expect(currentTripDayNumber(departure, 4, now)).toBe(day);
+    expect(resolveAddDay(departure, 4, now)).toBe(day);
+    expect(resolveVisibleStartDay(departure, 4, now)).toBe(day);
+    expect(filterActiveDestinations([dest('day1', 1, 0), dest('day2', 2, 1), dest('day3', 3, 2)], departure, 4, now)
+      .map(item => item.day)).toEqual([1, 2, 3].filter(value => value >= day));
+  });
+
+  it('keeps the saved local calendar date when reopening and saving the date picker', () => {
+    const savedDate = '2026-10-03';
+    const reopened = parseDateOnlyLocal(savedDate)!;
+    expect(reopened.getFullYear()).toBe(2026);
+    expect(reopened.getMonth()).toBe(9);
+    expect(reopened.getDate()).toBe(3);
+    expect(normalizeTripDepartureDate(reopened.toISOString())).toBe(savedDate);
+    expect(normalizeTripDepartureDate(new Date(2026, 9, 3, 0).toISOString())).toBe(savedDate);
+    expect(localDayKey(reopened)).toBe(savedDate);
+  });
+
+  it('rejects invalid calendar dates instead of rolling them to another trip day', () => {
+    for (const value of ['2026-02-30', '2026-13-01', '2026-02-30T12:00:00Z', 'not-a-date']) {
+      expect(normalizeTripDepartureDate(value)).toBeNull();
+    }
+    expect(parseDateOnlyLocal('2026-02-30')).toBeNull();
+    expect(normalizeTripDepartureDate('2028-02-29')).toBe('2028-02-29');
   });
 });

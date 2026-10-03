@@ -101,10 +101,10 @@ describe('locationPolicy', () => {
     });
   });
 
-  it('allows the OS to pause passive background GPS', () => {
+  it('prevents indefinite passive presence stalls in the Expo fallback', () => {
     expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
       accuracy: 2,
-      pausesUpdatesAutomatically: true,
+      pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
     });
   });

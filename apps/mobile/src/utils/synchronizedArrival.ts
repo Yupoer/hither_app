@@ -7,7 +7,7 @@ export function canEvaluateSynchronizedArrival(input: {
 }): boolean {
   const { sampledAt, now, accuracyM, radiusM } = input;
   return sampledAt != null && Number.isFinite(sampledAt)
-    && sampledAt <= now && now - sampledAt <= 15_000
+    && sampledAt <= now + 2_000 && now - sampledAt <= 15_000
     && accuracyM != null && Number.isFinite(accuracyM)
     && accuracyM >= 0 && Number.isFinite(radiusM) && radiusM > 0
     && accuracyM <= Math.min(radiusM, 80);

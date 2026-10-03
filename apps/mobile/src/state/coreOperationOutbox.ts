@@ -1098,6 +1098,17 @@ export function createCoreOperationOutbox(
     current: number,
     rowsBefore: CoreOperation[],
   ): Promise<void> => {
+    if (operation.operationType === 'set_solo') {
+      const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+      if (snapshot) {
+        const entity = result.entity as { userId?: string; solo?: boolean } | undefined;
+        const members = (snapshot.members ?? []).map(member => member.userId === operation.actorId
+          ? { ...member, solo: entity?.userId === operation.actorId ? entity.solo === true : operation.payload.solo === true } : member);
+        const projected = projectOperationGroupState({ group: snapshot.group, destinations: snapshot.destinations,
+          subgroups: snapshot.subgroups ?? [], members }, rowsBefore.filter(row => row.id !== operation.id && row.actorId === operation.actorId), [snapshot.activeGathering.activeDestinationId]);
+        await coreDb.writeSnapshot(exec, { ...snapshot, members: projected.members, updatedAt: current });
+      }
+    }
     const effects = result.effects
       ?? (result.entity && typeof result.entity === 'object'
         ? (result.entity as { effects?: Record<string, unknown> }).effects
@@ -1145,7 +1156,7 @@ export function createCoreOperationOutbox(
         destinations: serverDestinations ?? snapshot.destinations,
         dailyAccommodations: entity?.dailyAccommodations ?? snapshot.dailyAccommodations,
         members: snapshot.members ?? [], subgroups: snapshot.subgroups ?? [],
-      }, rowsBefore.filter(row => row.id !== operation.id && row.actorId === operation.actorId));
+      }, rowsBefore.filter(row => row.id !== operation.id && row.actorId === operation.actorId), [snapshot.activeGathering.activeDestinationId]);
       let destinations = projected.destinations;
       if (aliasMap.size > 0) {
         const seen = new Set<string>();
@@ -1335,6 +1346,22 @@ export function createCoreOperationOutbox(
               message: 'prerequisite operation expired' }, nextAttemptAt: Number.MAX_SAFE_INTEGER, updatedAt: current });
         }
       }
+      if (operation.operationType === 'set_solo') {
+        const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+        if (snapshot) {
+          let members = snapshot.members ?? [];
+          const rejected = conflictRows.filter(row => invalidated.has(row.id) && row.actorId === operation.actorId)
+            .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
+          for (const row of rejected) {
+            if (row.operationType !== 'set_solo') continue;
+            members = members.map(member => member.userId === row.actorId && !!member.solo === row.payload.solo
+              ? { ...member, solo: row.payload._localBeforeSolo === true } : member);
+          }
+          const projected = projectOperationGroupState({ group: snapshot.group, destinations: snapshot.destinations,
+            subgroups: snapshot.subgroups ?? [], members }, conflictRows.filter(row => !invalidated.has(row.id) && row.actorId === operation.actorId), [snapshot.activeGathering.activeDestinationId]);
+          await coreDb.writeSnapshot(exec, { ...snapshot, members: projected.members, updatedAt: current });
+        }
+      }
       if (isItineraryMutation(operation)) {
         const currentSnapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
         if (currentSnapshot) {
@@ -1397,7 +1424,7 @@ export function createCoreOperationOutbox(
               group: { ...snapshot.group, ...serverState.group }, destinations: serverDestinations,
               members: snapshot.members ?? [], subgroups: snapshot.subgroups ?? [],
               dailyAccommodations: serverState.dailyAccommodations ?? snapshot.dailyAccommodations,
-            }, conflictRows.filter(row => !invalidated.has(row.id) && row.actorId === operation.actorId));
+            }, conflictRows.filter(row => !invalidated.has(row.id) && row.actorId === operation.actorId), [snapshot.activeGathering.activeDestinationId]);
             await coreDb.writeSnapshot(exec, {
               ...snapshot,
               group: projected.group, dailyAccommodations: projected.dailyAccommodations,

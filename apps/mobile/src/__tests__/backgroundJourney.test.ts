@@ -199,8 +199,8 @@ describe('background journey controller', () => {
       pausesUpdatesAutomatically: boolean;
     };
     expect(opts.accuracy).toBe(2);
-    expect(opts.deferredUpdatesInterval).toBe(180_000);
-    expect(opts.pausesUpdatesAutomatically).toBe(true);
+    expect(opts.deferredUpdatesInterval).toBe(150_000);
+    expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
   it('restarts native updates when highAccuracy profile changes', async () => {

@@ -5,10 +5,12 @@ import { measureTargetWithRetry } from '../featureTour/measureTarget';
 
 const mockWindow = { width: 390, height: 844, fontScale: 1 };
 const mockLayout = { textScale: 1, boldText: false };
+const mockLiquidGlassAvailable = jest.fn(() => true);
 const keyboardListeners = new Map<string, (event: any) => void>();
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => mockLayout }));
+jest.mock('../state/foregroundUi', () => ({ useForegroundUi: () => true }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-jest.mock('../native', () => ({ liquidGlass: { isLiquidGlassAvailable: () => true } }));
+jest.mock('../native', () => ({ liquidGlass: { isLiquidGlassAvailable: () => mockLiquidGlassAvailable() } }));
 jest.mock('@expo/ui/swift-ui', () => ({ Host: 'Host', Button: 'Button', Text: 'SwiftText', VStack: 'VStack', HStack: 'HStack', Spacer: 'Spacer' }));
 jest.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries(['accessibilityLabel', 'background', 'buttonStyle', 'buttonBorderShape', 'cornerRadius', 'disabled', 'dynamicTypeSize', 'font', 'foregroundColor', 'frame', 'glassEffect', 'padding', 'lineLimit', 'minimumScaleFactor'].map((name) => [name, (value: unknown) => ({ name, value })])));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }) }));
@@ -27,7 +29,7 @@ const { GroupFeatureTourOverlay } = require('../featureTour/GroupFeatureTourOver
 const flatten = (value: any): any => Array.isArray(value) ? Object.assign({}, ...value.map(flatten)) : value ?? {};
 const props = { title: 'Complete title', body: 'Long complete copy '.repeat(100), ctaLabel: 'Next', prevLabel: 'Previous', canGoPrev: true, ctaDisabled: false, onPrev: jest.fn(), onNext: jest.fn(), accessibilityLabel: 'Complete copy', maxHeight: 220 };
 
-afterEach(() => { jest.useRealTimers(); mockWindow.width = 390; mockWindow.height = 844; mockLayout.textScale = 1; });
+afterEach(() => { jest.useRealTimers(); mockWindow.width = 390; mockWindow.height = 844; mockLayout.textScale = 1; mockLiquidGlassAvailable.mockReturnValue(true); });
 
 it.each([['RN', TourCard], ['native SwiftUI', NativeTourCard]])('keeps %s 55pt controls outside the bounded long-copy scroll', async (_platform, Component) => {
   let tree!: ReturnType<typeof create>;
@@ -78,6 +80,56 @@ it('bounds measured placement by viewport and keyboard, invalidating stale heigh
   expect(card.props.maxHeight).toBe(300 - 47 - 34 - 24);
   const placement = placeTourCard({ hole: null, windowWidth: 320, windowHeight: 300, insets: { top: 47, bottom: 34 }, cardHeight: 500 });
   expect(placement.cardTop + placement.maxCardHeight).toBeLessThanOrEqual(300 - 34 - 12);
+  await act(async () => tree.unmount());
+});
+
+it('keeps older iOS tour copy and exit controls in native RN views across avatar, settings and final steps', async () => {
+  mockLiquidGlassAvailable.mockReturnValue(false);
+  const onNext = jest.fn();
+  const onPrev = jest.fn();
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(NativeTourCard, { ...props, onNext, onPrev })); });
+  for (const [title, ctaLabel] of [['Avatar', 'Next'], ['Settings', 'Next'], ['', 'Get started']]) {
+    await act(async () => { tree.update(React.createElement(NativeTourCard, { ...props,
+      title, body: 'Complete tour copy.', ctaLabel, onNext, onPrev })); });
+    expect(tree.root.findAll((node) => String(node.type) === 'Host')).toHaveLength(0);
+    const next = tree.root.findByProps({ testID: 'tour-next' });
+    const prev = tree.root.findByProps({ testID: 'tour-prev' });
+    expect(flatten(next.props.style({ pressed: false })).height).toBe(55);
+    expect(next.props.accessibilityLabel).toBe(ctaLabel);
+    expect(tree.root.findAll((node) => String(node.type) === 'Text' && node.props.children === 'Complete tour copy.')).toHaveLength(1);
+    await act(async () => { next.props.onPress(); prev.props.onPress(); });
+  }
+  expect(onNext).toHaveBeenCalledTimes(3); expect(onPrev).toHaveBeenCalledTimes(3);
+  await act(async () => { tree.update(React.createElement(NativeTourCard, { ...props,
+    title: 'Settings', ctaDisabled: true, onNext, onPrev })); });
+  expect(tree.root.findByProps({ testID: 'tour-next' }).props.disabled).toBe(true);
+  expect(tree.root.findByProps({ testID: 'tour-prev' }).props.disabled).toBe(true);
+  await act(async () => {
+    tree.root.findByProps({ testID: 'tour-next' }).props.onPress?.();
+    tree.root.findByProps({ testID: 'tour-prev' }).props.onPress?.();
+  });
+  expect(onNext).toHaveBeenCalledTimes(3); expect(onPrev).toHaveBeenCalledTimes(3);
+  await act(async () => tree.unmount());
+});
+
+it('recreates tour content hosts for a new step while keeping the current step mounted on remeasurement', async () => {
+  let tree!: ReturnType<typeof create>;
+  const overlayProps = { visible: true, title: 'Avatar', body: 'Edit your profile.',
+    ctaLabel: 'Next', targetRect: { x: 300, y: 420, width: 46, height: 46 },
+    onNext: jest.fn(), canGoPrev: true, reduceMotion: true };
+  await act(async () => { tree = create(React.createElement(GroupFeatureTourOverlay, overlayProps)); });
+  const avatarCard = tree.root.findByType(TourCard);
+  const settingsProps = { ...overlayProps, title: 'Settings', body: 'Language and location controls.',
+    targetRect: { x: 250, y: 420, width: 46, height: 46 } };
+  await act(async () => { tree.update(React.createElement(GroupFeatureTourOverlay, settingsProps)); });
+  const settingsCard = tree.root.findByType(TourCard);
+  expect(settingsCard).not.toBe(avatarCard);
+  expect(settingsCard.props.title).toBe('Settings');
+  expect(settingsCard.findByProps({ testID: 'tour-next' }).props.onPress).toBe(overlayProps.onNext);
+  await act(async () => { tree.update(React.createElement(GroupFeatureTourOverlay,
+    { ...settingsProps, targetRect: { ...settingsProps.targetRect, y: 425 } })); });
+  expect(tree.root.findByType(TourCard)).toBe(settingsCard);
   await act(async () => tree.unmount());
 });
 

@@ -60,7 +60,7 @@ export interface BackgroundJourneyConfig {
    */
   highAccuracy?: boolean;
   /**
-   * `allDay` — 8h≈20% budget group presence.
+   * `allDay` — low-frequency group presence.
    * `journey` — denser nav tracking while going to a point.
    */
   powerMode?: 'allDay' | 'journey';
@@ -75,9 +75,11 @@ export interface BackgroundJourneyConfig {
   permissionsPrepared?: boolean;
 }
 
+/** Keep scope and the user precision preference for the next journey.
+ * Presence resolution ignores precision, so retaining intent does not promote GPS. */
 export function backgroundPresenceConfig(config: BackgroundJourneyConfig): BackgroundJourneyConfig {
   return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, destinationId: 'group-presence',
-    scopeSubgroupId: undefined, target: undefined, powerMode: 'allDay', teamNavigationActive: false, highAccuracy: false,
+    target: undefined, powerMode: 'allDay', teamNavigationActive: false,
     arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
     navigationMemberIds: undefined, arrivedMemberIds: undefined, leaderId: undefined,
     lastProcessedLocationAt: undefined,
@@ -164,7 +166,7 @@ export function backgroundLocationOptions(
           : 3;
 
   const deferredInterval = powerMode === 'journey' ? 0 : mode === 'passiveBackground'
-    ? 180_000
+    ? 150_000
     : mode === 'navigationMax'
       ? 15_000
       : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
@@ -191,9 +193,9 @@ export function backgroundLocationOptions(
     deferredUpdatesDistance: deferredDistance,
     deferredUpdatesInterval: deferredInterval,
     // Passive presence has only a declared heartbeat; do not let Core Location
-    // pause it indefinitely after a stationary interval. Journey modes may use
-    // the OS pause policy to conserve power while still actively navigating.
-    pausesUpdatesAutomatically: powerMode === 'allDay',
+    // pause it indefinitely after a stationary interval. Distance, accuracy and
+    // deferred delivery retain the passive budget without disabling updates.
+    pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle:

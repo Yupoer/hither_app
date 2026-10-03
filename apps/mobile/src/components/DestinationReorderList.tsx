@@ -24,7 +24,7 @@ import { accentOver, glass, shade } from '../glass';
 import { readOnboardingState } from '../onboarding/sync';
 import { usePreferences } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { dateForTripDay, localDayKey } from '../utils/tripDay';
+import { dateForTripDay, localDayKey, parseDateOnlyLocal } from '../utils/tripDay';
 import { clampDateNotBeforeToday, startOfTodayLocal } from '../utils/meetTime';
 import {
   accommodationBoundaryLocks,
@@ -319,7 +319,7 @@ export default function DestinationReorderList({
   const [showSettings, setShowSettings] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [editDays, setEditDays] = useState(tripDays ?? 1);
-  const [editDate, setEditDate] = useState(departureDate ? new Date(departureDate) : new Date());
+  const [editDate, setEditDate] = useState(parseDateOnlyLocal(departureDate) ?? new Date());
   /** Day number currently in "set stop as accommodation" radio mode. */
   const [setStayModeDay, setSetStayModeDay] = useState<number | null>(null);
   /**
@@ -388,7 +388,7 @@ export default function DestinationReorderList({
   const saveTripSettings = useCallback(() => {
     setShowSettings(false);
     const min = startOfTodayLocal();
-    const existing = departureDate ? new Date(departureDate) : null;
+    const existing = parseDateOnlyLocal(departureDate);
     const unchangedPast =
       existing
       && !Number.isNaN(existing.getTime())
@@ -454,10 +454,8 @@ export default function DestinationReorderList({
   const dayDateLabel = useCallback(
     (day: number): string => {
       if (!departureDate) return '';
-      const dateObj = /^\d{4}-\d{2}-\d{2}$/.test(departureDate.trim())
-        ? new Date(`${departureDate.trim()}T12:00:00`)
-        : new Date(departureDate);
-      if (Number.isNaN(dateObj.getTime())) return '';
+      const dateObj = parseDateOnlyLocal(departureDate);
+      if (!dateObj) return '';
       dateObj.setDate(dateObj.getDate() + (day - 1));
       return t('map.tripDayDate', {
         month: dateObj.getMonth() + 1,
@@ -488,7 +486,7 @@ export default function DestinationReorderList({
            const dDate = state.answers.departureDate ?? new Date().toISOString();
            onUpdateTripDetails?.(dDays, dDate);
            setEditDays(dDays);
-           setEditDate(new Date(dDate));
+           setEditDate(parseDateOnlyLocal(dDate) ?? new Date());
         }
       }).catch(() => {});
     }
@@ -826,7 +824,7 @@ export default function DestinationReorderList({
             onPress={() => {
             lightTap();
             setEditDays(tripDays ?? 1);
-            setEditDate(departureDate ? new Date(departureDate) : new Date());
+            setEditDate(parseDateOnlyLocal(departureDate) ?? new Date());
             setShowSettings(true);
           }}>
             <Ionicons name="calendar-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />

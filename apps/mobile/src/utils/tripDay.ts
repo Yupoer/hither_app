@@ -12,7 +12,7 @@ export function parseDateOnlyLocal(value: string | null | undefined): Date | nul
   const d = /^\d{4}-\d{2}-\d{2}$/.test(raw)
     ? new Date(`${raw}T12:00:00`)
     : new Date(raw);
-  if (Number.isNaN(d.getTime())) return null;
+  if (Number.isNaN(d.getTime()) || (/^\d{4}-\d{2}-\d{2}$/.test(raw) && localDayKey(d) !== raw)) return null;
   return d;
 }
 
@@ -23,8 +23,22 @@ export function localDayKey(date: Date): string {
   ).padStart(2, '0')}`;
 }
 
-function startOfLocalDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+/** Persist the date picker ISO instant as the same local trip calendar day. */
+export function normalizeTripDepartureDate(value: string): string | null {
+  const raw = value.trim();
+  const calendar = raw.match(/^\d{4}-\d{2}-\d{2}(?=T|$)/)?.[0];
+  if (!calendar) return null;
+  const calendarDate = parseDateOnlyLocal(calendar);
+  if (!calendarDate || localDayKey(calendarDate) !== calendar) return null;
+  const parsed = parseDateOnlyLocal(raw);
+  return parsed ? localDayKey(parsed) : null;
+}
+
+/** Compare calendar dates, independent of a 23/25-hour daylight-saving day. */
+function calendarDayOrdinal(date: Date): number {
+  const utc = new Date(0);
+  utc.setUTCFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+  return utc.getTime() / 86_400_000;
 }
 
 /**
@@ -44,16 +58,10 @@ export function currentTripDayNumber(
   const start = parseDateOnlyLocal(departureDate ?? null);
   if (!days || !start) return null;
 
-  const tripStart = startOfLocalDay(start);
-  const tripEnd = new Date(tripStart);
-  tripEnd.setDate(tripEnd.getDate() + days - 1);
-  const today = startOfLocalDay(now);
-
-  if (today < tripStart) return 0;
-  if (today > tripEnd) return days + 1;
-
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.floor((today.getTime() - tripStart.getTime()) / msPerDay) + 1;
+  const elapsedDays = calendarDayOrdinal(now) - calendarDayOrdinal(start);
+  if (elapsedDays < 0) return 0;
+  if (elapsedDays >= days) return days + 1;
+  return elapsedDays + 1;
 }
 
 /** Day number to assign when adding a stop (1 when gate off / before start). */
@@ -145,8 +153,10 @@ export function filterActiveDestinations(
   departureDate: string | null | undefined,
   tripDays: number | null | undefined,
   now: Date = new Date(),
+  activeDestinationIds: readonly string[] = [],
 ): Destination[] {
   const open = destinations.filter((dest) => !dest.closedAt && dest.day != null);
+  const activeIds = new Set(activeDestinationIds);
   const current = currentTripDayNumber(departureDate, tripDays, now);
 
   // Gate off or trip not started ??all open stops.
@@ -156,10 +166,10 @@ export function filterActiveDestinations(
 
   const days = typeof tripDays === 'number' && tripDays > 0 ? Math.floor(tripDays) : 1;
   // Trip fully over ??nothing active.
-  if (current > days) return [];
+  if (current > days) return sortDestinationsByDayOrder(open.filter(dest => activeIds.has(dest.id)));
 
   return sortDestinationsByDayOrder(
-    open.filter((dest) => (dest.day || 1) >= current),
+    open.filter((dest) => activeIds.has(dest.id) || (dest.day || 1) >= current),
   );
 }
 

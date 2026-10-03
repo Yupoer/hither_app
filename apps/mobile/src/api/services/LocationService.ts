@@ -175,3 +175,15 @@ export async function ackMyLocationRefresh(
   orThrow(error);
   return data === true;
 }
+
+/** Only explicit recipient ACKs for this request version count as responses. */
+export async function getGroupLocationRefreshAcknowledgements(
+  groupId: string, requestedAt: string,
+): Promise<string[]> {
+  await requireUserId();
+  const { data, error } = await supabase.rpc('get_group_location_refresh_acknowledgements', {
+    p_group_id: groupId, p_requested_at: requestedAt,
+  });
+  orThrow(error);
+  return normalizeLocationRefreshRecipientIds(data);
+}

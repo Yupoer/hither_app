@@ -167,3 +167,12 @@ export async function setAccommodationAutoAdd(
   });
   orThrow(error);
 }
+
+
+export function resolveDailyAccommodationSourceId(
+  sourceId: string | null | undefined,
+  deletedIds: readonly string[],
+): string | undefined {
+  return sourceId && !sourceId.startsWith('draft-') && !deletedIds.includes(sourceId)
+    ? sourceId : undefined;
+}

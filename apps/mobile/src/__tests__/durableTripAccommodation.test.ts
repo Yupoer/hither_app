@@ -46,6 +46,44 @@ const state: GroupState = {
 };
 const daily = { id: 'stay', groupId: 'g', stayDate: '2026-10-01', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } };
 
+it('replaces open rows copied from the previous daily stay while preserving unrelated and completed stays', async () => {
+  const oldStay = { ...daily, sourceDestinationId: 'd' };
+  await getCoreDataStore().saveRemoteGroupState({ ...state, group: { ...state.group, activeDestinationId: 'other-stop' }, dailyAccommodations: [oldStay], destinations: [
+    ...state.destinations,
+    { ...state.destinations[0], id: 'independent', title: 'Other hotel', order: 1 },
+    { ...state.destinations[0], id: 'closed', closedAt: '2026-10-01T10:00:00Z', order: 2 },
+    { ...state.destinations[0], id: 'tomorrow', day: 2, order: 3 },
+  ] });
+  await setDailyAccommodation('g', daily.stayDate, { title: 'New hotel',
+    address: 'New address', coordinates: { latitude: 25.1, longitude: 121.1 }, day: 1 });
+  const saved = (await getCoreDataStore().readSnapshot('g'))!;
+  expect(saved.destinations[0]).toMatchObject({ id: 'd', title: 'New hotel', address: 'New address',
+    coordinates: { latitude: 25.1, longitude: 121.1 }, stayAnchor: false });
+  expect(saved.destinations.slice(1).map(d => d.title)).toEqual(['Other hotel', 'Hotel', 'Hotel']);
+});
+
+it('preserves the immutable active hotel target when replacing the daily stay', async () => {
+  await getCoreDataStore().saveRemoteGroupState({ ...state, dailyAccommodations: [daily] });
+  await setDailyAccommodation('g', daily.stayDate, { title: 'New hotel',
+    coordinates: { latitude: 25.1, longitude: 121.1 }, day: 1 });
+  const saved = (await getCoreDataStore().readSnapshot('g'))!;
+  expect(saved.destinations[0]).toMatchObject({ id: 'd', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } });
+  expect(saved.group.activeDestinationId).toBe('d');
+  expect(saved.dailyAccommodations![0].title).toBe('New hotel');
+});
+
+it('protects an authoritative active gathering target when its legacy group pointer differs', async () => {
+  await getCoreDataStore().saveRemoteGroupState({ ...state, dailyAccommodations: [daily] });
+  const before = (await getCoreDataStore().readSnapshot('g'))!;
+  await mockHarness.coreDb.putSnapshot({ ...before, group: { ...before.group, activeDestinationId: 'other-stop' } });
+  await setDailyAccommodation('g', daily.stayDate, { title: 'New hotel',
+    coordinates: { latitude: 25.1, longitude: 121.1 }, day: 1 });
+  const saved = (await getCoreDataStore().readSnapshot('g'))!;
+  expect(saved.activeGathering.activeDestinationId).toBe('d');
+  expect(saved.destinations[0]).toMatchObject({ id: 'd', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } });
+  expect(saved.dailyAccommodations![0].title).toBe('New hotel');
+});
+
 beforeEach(async () => {
   await new Promise(resolve => setTimeout(resolve, 0));
   mockHarness.coreDb.snapshots.clear(); mockHarness.coreDb.gatherings.clear();
@@ -220,4 +258,12 @@ it('rolls back rejected trip and stay edits without losing later changes', () =>
   expect(rollbackTripAndStays(current, { before: [], after: [] })).toEqual(current);
   expect(rollbackTripAndStays({ group: state.group, dailyAccommodations: [] }, { before: [], after: [],
     beforeDailyAccommodations: [daily], afterDailyAccommodations: [] }).dailyAccommodations).toEqual([daily]);
+});
+
+it('persists a local date picker ISO as a calendar date before queuing offline trip details', async () => {
+  await updateGroupTripDetails('g', 2, new Date(2026, 9, 3, 0).toISOString());
+  expect((await getCoreDataStore().readSnapshot('g'))?.group.departureDate).toBe('2026-10-03');
+  const operations = await getCoreOperationOutbox().listOpenByGroup('g');
+  expect(operations[0]).toMatchObject({ operationType: 'set_trip_details', payload: { tripDays: 2, departureDate: '2026-10-03' } });
+  expect(supabase.rpc).not.toHaveBeenCalled();
 });

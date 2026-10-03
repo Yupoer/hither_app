@@ -1,5 +1,6 @@
 import { getVisibleGroupSeed } from './visibleGroupSeed';
 import { insertFirstStop } from '../utils/firstStopInsertion';
+import { normalizeTripDepartureDate } from '../utils/tripDay';
 /**
  * Production wiring for OTA-04 core operation outbox + snapshot helpers.
  * Single shared store + outbox (one serial path for mutations / remote save).
@@ -441,6 +442,32 @@ export async function enqueueDestinationComplete(input: {
   return operation;
 }
 
+/** Persist the personal status and intent in one transaction, including offline. */
+export async function enqueueSolo(input: {
+  groupId: string; solo: boolean; actorId?: string;
+}): Promise<CoreOperation> {
+  const actorId = input.actorId ?? await requireLocalActorId();
+  const snapshot = await ensureCoreSnapshot(input.groupId);
+  if (!snapshot) throw localSnapshotError();
+  const member = snapshot.members?.find(value => value.userId === actorId);
+  if (!member) throw Object.assign(new Error('group_membership_required'), { code: '42501' });
+  const operation = await outbox.enqueueMutation({
+    groupId: input.groupId, entityType: 'itinerary', entityId: actorId,
+    entityVersion: 0, operationType: 'set_solo', actorId,
+    payload: { userId: actorId, solo: input.solo, _localBeforeSolo: !!member.solo },
+    applyLocal: async (exec, op) => {
+      const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
+      op.payload._localBeforeSolo = !!current.members?.find(value => value.userId === actorId)?.solo;
+      await sharedCoreDb.writeSnapshot(exec, { ...current,
+        members: (current.members ?? []).map(value => value.userId === actorId ? { ...value, solo: input.solo } : value),
+        ownerActorId: op.actorId, updatedAt: Date.now(), source: 'local_optimistic',
+      });
+    },
+  });
+  kickCoreTransport();
+  return operation;
+}
+
 export async function enqueueGatherPointRequest(input: {
   groupId: string;
   subgroupId?: string;
@@ -488,17 +515,18 @@ export function projectPendingDestinations(state: GroupState, operations: CoreOp
 export async function enqueueTripDetails(input: {
   groupId: string; tripDays: number; departureDate: string; actorId?: string;
 }): Promise<CoreOperation> {
-  if (!Number.isInteger(input.tripDays) || input.tripDays < 1 || !validStayDate(input.departureDate)) throw new Error('invalid_trip_details');
+  const departureDate = normalizeTripDepartureDate(input.departureDate);
+  if (!Number.isInteger(input.tripDays) || input.tripDays < 1 || !departureDate) throw new Error('invalid_trip_details');
   const snapshot = await ensureCoreSnapshot(input.groupId);
   if (!snapshot) throw localSnapshotError();
   const operation = await outbox.enqueueMutation({
     groupId: input.groupId, entityType: 'itinerary', entityId: input.groupId,
     entityVersion: snapshot.itineraryVersion ?? 0, operationType: 'set_trip_details', actorId: input.actorId,
-    payload: { tripDays: input.tripDays, departureDate: input.departureDate },
+    payload: { tripDays: input.tripDays, departureDate },
     applyLocal: async (exec, op) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
       await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current,
-        group: { ...current.group, tripDays: input.tripDays, departureDate: input.departureDate } }, current.destinations, Date.now(), op.actorId));
+        group: { ...current.group, tripDays: input.tripDays, departureDate } }, current.destinations, Date.now(), op.actorId));
     },
   });
   kickCoreTransport();
@@ -527,7 +555,7 @@ export async function enqueueDailyAccommodation(input: {
     applyLocal: async (exec, op) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
       const projected = projectOperationGroupState({ group: current.group, destinations: current.destinations,
-        dailyAccommodations: current.dailyAccommodations, members: [], subgroups: [] }, [op]);
+        dailyAccommodations: current.dailyAccommodations, members: [], subgroups: [] }, [op], [current.activeGathering.activeDestinationId]);
       await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current, group: projected.group,
         dailyAccommodations: projected.dailyAccommodations }, projected.destinations, Date.now(), op.actorId));
     },

@@ -6,9 +6,17 @@ import { accessibilityLabel, background, buttonStyle, buttonBorderShape, cornerR
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
 import type { TourCardProps } from './TourCard';
+import ReactNativeTourCard from './ReactNativeTourCard';
+
+/** Older iOS keeps tour copy and exit controls in the RN view hierarchy. */
+export default function TourCard(props: TourCardProps) {
+  return liquidGlass.isLiquidGlassAvailable()
+    ? <SwiftUITourCard {...props} />
+    : <ReactNativeTourCard {...props} />;
+}
 
 /** Native SwiftUI material, copy and buttons; only copy scrolls within the RN viewport. */
-export default function TourCard({ title, body, ctaLabel, prevLabel, canGoPrev, ctaDisabled,
+function SwiftUITourCard({ title, body, ctaLabel, prevLabel, canGoPrev, ctaDisabled,
   onPrev, onNext, accessibilityLabel: a11yLabel, maxHeight, textScale = 1, fontScale = 1 }: TourCardProps) {
   const glassAvailable = liquidGlass.isLiquidGlassAvailable();
   const surfaceModifiers = glassAvailable

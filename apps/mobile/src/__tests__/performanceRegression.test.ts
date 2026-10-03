@@ -113,13 +113,14 @@ describe('measured performance regressions', () => {
     expect(app).not.toMatch(/if \(initializing \|\| !user\) return;[\s\S]*drainPayloads/);
   });
 
-  it('animates member markers between real coordinate endpoints only', () => {
-    expect(groupMap).toContain('animateMarkerToCoordinate');
-    expect(groupMap).toContain('memberMotionDuration');
+  it('gives native commands exclusive ownership of member coordinates after mount', () => {
+    const motionHook = readFileSync(join(__dirname, '../components/useMemberMarkerMotion.ts'), 'utf8');
+    expect(groupMap).toContain('useMemberMarkerMotion(markerRef');
+    expect(groupMap).toContain('coordinate={coordinate}');
+    expect(motionHook).toContain('animateMarkerToCoordinate(next.coordinates, duration)');
+    expect(motionHook).toContain('memberMotionDuration');
     expect(groupMap).not.toContain('AnimatedRegion');
-    // Only animate to the latest real lat/lng — never invent a predicted point.
-    expect(groupMap).toContain('next.coordinates');
-    expect(groupMap).not.toMatch(/predictedCoords|velocityPredict|deadReckon/);
+    expect(motionHook).not.toMatch(/predictedCoords|velocityPredict|deadReckon/);
   });
 
   it('keeps workflow channels unique and energy monitoring stable across session updates', () => {

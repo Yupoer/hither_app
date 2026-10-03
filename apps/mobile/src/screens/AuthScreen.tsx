@@ -104,6 +104,10 @@ export default function AuthScreen({ navigation, route }: Props) {
       );
       return;
     }
+    if (code === 'invalid_invite_code') {
+      Alert.alert(t('group.joinFailedTitle'), t('group.invalidInviteCode'));
+      return;
+    }
     const msg = getOperationErrorMessage(e, language);
     Alert.alert(
       isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),

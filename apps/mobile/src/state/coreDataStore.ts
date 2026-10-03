@@ -899,7 +899,7 @@ export function createCoreDataStore(
             && ['set_trip_details', 'set_daily_accommodation', 'clear_daily_accommodation'].includes(op.operationType)) : [];
           if (metadataOperations.length > 0) {
             const projected = projectOperationGroupState({ ...state, group: snapshot.group,
-              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, metadataOperations);
+              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, metadataOperations, [snapshot.activeGathering.activeDestinationId]);
             snapshot.group = projected.group;
             snapshot.dailyAccommodations = projected.dailyAccommodations;
             snapshot.destinations = projected.destinations;

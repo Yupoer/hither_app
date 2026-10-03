@@ -302,7 +302,7 @@ describe('joinGroup', () => {
       error: { code: 'P0002', message: 'group not found for code ZZZ999' },
     });
 
-    await expect(joinGroup('zzz999')).rejects.toThrow('找不到這個群組');
+    await expect(joinGroup('zzz999')).rejects.toThrow('invalid_invite_code');
   });
 
   it('upper-cases the code and joins via the join_group RPC', async () => {

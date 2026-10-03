@@ -18,6 +18,18 @@ import {
 
 export type SheetHeaderActionKind = 'close' | 'commit';
 
+/** Visual-only native material for an RN-owned action. It exposes no Button. */
+export function SheetHeaderActionVisual({ action }: { action: SheetHeaderActionKind }) {
+  return <Image
+    systemName={action === 'commit' ? 'checkmark' : 'xmark'}
+    modifiers={[
+      frame({ width: MAP_SHEET_ACTION_ICON_SIZE, height: MAP_SHEET_ACTION_ICON_SIZE }),
+      frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
+      glassEffect({ glass: { variant: 'regular', interactive: false }, shape: 'circle' }),
+    ]}
+  />;
+}
+
 /** Native SwiftUI header action shared by RN and native settings sheets. */
 export default function SheetHeaderActionContent({
   action,

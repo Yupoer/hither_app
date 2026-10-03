@@ -10,6 +10,7 @@ describe('Plus Code place lookup', () => {
     expect(source).toContain('proxySearchPlaces(plusCode');
     expect(source).toContain('coordinates: plusCodeCoordinates');
     expect(searchSource).toContain('extractPlusCode(value) ?? value');
-    expect(searchSource).toContain('onChangeText={(value) => setQuery(normalizeSearchInput(value))}');
+    expect(searchSource).toContain('const next = normalizeSearchInput(value)');
+    expect(searchSource).toContain('setQuery(next)');
   });
 });

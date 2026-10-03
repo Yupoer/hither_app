@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Coordinates } from '../../../types';
+import { cachedRouteRequest, type RouteCacheEntry } from '../../../utils/routeRequestCache';
 import {
   getDirections,
   type DirectionsResult,
@@ -18,6 +19,7 @@ interface RouteMember {
 }
 
 interface RouteTarget {
+  id?: string;
   coordinates: Coordinates;
 }
 
@@ -120,23 +122,35 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     travelMode,
     highAccuracy = false,
   } = inputs;
-  const [state, setState] = useState<MapKitRoutesState>({
+  // Target identity is exact; origin jitter remains governed by the route gate.
+  // Hide old-target geometry during render, before the directions effect runs.
+  const targetKey = gathering
+    ? [gathering.id ?? '', gathering.coordinates.latitude,
+        gathering.coordinates.longitude, travelMode].join('|')
+    : '-';
+  const [state, setState] = useState<MapKitRoutesState & { targetKey: string }>({
+    targetKey,
     selfRoute: null,
     memberRoutes: {},
     selfRouteGeneration: 0,
   });
-  // ponytail: cache lives for one MapScreen mount; cap/TTL only if large groups
-  // make measured memory or stale-route behavior a problem.
-  const cacheRef = useRef(new Map<string, Promise<DirectionsResult | null>>());
+  // Keep bounded recent geometry and in-flight dedupe for this map session.
+  const cacheRef = useRef(new Map<string, RouteCacheEntry>());
   const selfRouteGateRef = useRef<LocationGateState>({
     lastCoords: null,
     lastAtMs: 0,
   });
   const routedSelfRef = useRef<Coordinates | undefined>(undefined);
   const lastEffectKeyRef = useRef<string>('');
-  // Track last travel mode so sticky selfRoute does not keep a different mode's path.
-  const lastTravelModeRef = useRef(travelMode);
+  const requestGenerationRef = useRef(0);
   const selfRouteGenerationRef = useRef(0);
+
+  useEffect(() => () => {
+    requestGenerationRef.current += 1;
+    // StrictMode replays setup after cleanup. Let it re-attach to a cached
+    // pending request rather than leaving that request permanently invalid.
+    lastEffectKeyRef.current = '';
+  }, []);
 
   useEffect(() => {
     const policy = locationPolicy(highAccuracy);
@@ -176,15 +190,12 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
 
     // Member positions no longer trigger MapKit (haversine flock ETA) — omit
     // from the effect key so peer GPS pings do not re-hit directions.
-    const gatheringKey = gathering
-      ? quantizeCoordinates(gathering.coordinates, decimals)
-      : '-';
     const selfKey = routedSelf
       ? quantizeCoordinates(routedSelf, decimals)
       : '-';
     const effectKey = [
       selfKey,
-      gatheringKey,
+      targetKey,
       travelMode,
       highAccuracy ? 'h' : 'n',
     ].join('#');
@@ -195,53 +206,26 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     }
     lastEffectKeyRef.current = effectKey;
 
-    let active = true;
+    // Only a meaningful request change invalidates the previous completion.
+    // Raw GPS/target object rerenders with the same key keep it eligible.
+    const requestGeneration = ++requestGenerationRef.current;
     const cachedGetRoute: RouteGetter = (from, to, mode) => {
-      const key = routeCacheKey(from, to, mode, decimals);
-      const cached = cacheRef.current.get(key);
-      if (cached) return cached;
-      // Keep successful geometry and in-flight dedupe, but do not permanently
-      // cache a null/error produced while offline or while the proxy circuit
-      // is open. A later gated coordinate can then be the single half-open
-      // recovery probe instead of replaying a stale failure forever.
-      const request = (async () => {
-        try {
-          const route = await getDirections(from, to, mode);
-          if (!route) cacheRef.current.delete(key);
-          return route;
-        } catch {
-          cacheRef.current.delete(key);
-          return null;
-        }
-      })();
-      cacheRef.current.set(key, request);
-      return request;
+      // Origin quantization avoids jitter requests; a changed destination must
+      // not reuse another stop's geometry even within the same GPS bucket.
+      const key = [routeCacheKey(from, to, mode, decimals), to.latitude, to.longitude].join('|');
+      return cachedRouteRequest(cacheRef.current, key, () => getDirections(from, to, mode));
     };
 
     // No target → clear polylines (nav stopped / arrived / next stop not set).
     if (!gathering) {
       selfRouteGenerationRef.current += 1;
       setState({
+        targetKey,
         selfRoute: null,
         memberRoutes: {},
         selfRouteGeneration: selfRouteGenerationRef.current,
       });
-      lastTravelModeRef.current = travelMode;
-      return () => {
-        active = false;
-      };
-    }
-
-    const modeChanged = lastTravelModeRef.current !== travelMode;
-    lastTravelModeRef.current = travelMode;
-    // Drop previous mode's geometry immediately so only the selected mode shows.
-    if (modeChanged) {
-      selfRouteGenerationRef.current += 1;
-      setState((prev) => ({
-        ...prev,
-        selfRoute: null,
-        selfRouteGeneration: selfRouteGenerationRef.current,
-      }));
+      return;
     }
 
     void loadMapKitRoutes(
@@ -254,27 +238,33 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       },
       cachedGetRoute,
     ).then((next) => {
-      if (!active) return;
+      if (requestGeneration !== requestGenerationRef.current) return;
       // Fail-closed: empty/failed directions clear the previous polyline so
       // UI falls back to haversine distance + local 估算 ETA (never a stale path).
-      // Out-of-order responses are ignored via `active` when effect re-runs.
+      // Out-of-order responses are ignored when the request generation changes.
       // Always bump generation so equal-distance results still re-anchor (#145).
       selfRouteGenerationRef.current += 1;
       setState({
+        targetKey,
         selfRoute: next.selfRoute,
         memberRoutes: next.memberRoutes,
         selfRouteGeneration: selfRouteGenerationRef.current,
       });
     });
-    return () => {
-      active = false;
-    };
   }, [
     selfCoordinates,
     gathering,
     travelMode,
     highAccuracy,
+    targetKey,
   ]);
 
+  if (state.targetKey !== targetKey) {
+    return {
+      selfRoute: null,
+      memberRoutes: {},
+      selfRouteGeneration: state.selfRouteGeneration,
+    };
+  }
   return state;
 }

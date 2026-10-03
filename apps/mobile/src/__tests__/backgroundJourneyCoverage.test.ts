@@ -18,6 +18,7 @@ const mockCaptureAccess = jest.fn();
 const mockIsAccessCurrent = jest.fn();
 const mockSubscribeAccess = jest.fn(() => jest.fn());
 const mockPrepareNative = jest.fn(async () => true);
+let mockNativeAvailable = false;
 const mockObserveNative = jest.fn();
 const mockTaskManager = {
   isTaskDefined: jest.fn((_name?: string) => false),
@@ -49,6 +50,7 @@ const mockNavigationContext = jest.fn(async (..._args: unknown[]): Promise<any> 
 const mockDiagnostics = { write: jest.fn(async () => undefined) };
 const mockSetConsent = jest.fn();
 const mockTaskCallback: { current?: (payload: unknown) => Promise<void> } = {};
+const mockRecoverRefreshSample = jest.fn(async (..._args: unknown[]) => undefined);
 
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
@@ -71,7 +73,7 @@ jest.mock('expo-task-manager', () => ({
 }));
 jest.mock('../native/backgroundLocation', () => ({
   backgroundLocationAdapter: mockLocationAdapter,
-  nativeBackgroundAvailable: false,
+  get nativeBackgroundAvailable() { return mockNativeAvailable; },
   observeNativeBackgroundLocation: forward(mockObserveNative),
   prepareNativeBackgroundLocation: forward(mockPrepareNative),
 }));
@@ -106,6 +108,9 @@ jest.mock('../state/locationOutbox', () => ({
   enqueueLocationOutbox: forward(mockEnqueueLocation),
   flushLocationOutbox: forward(mockFlushLocation),
   purgeLocationOutbox: forward(mockPurgeLocation),
+}));
+jest.mock('../state/backgroundLocationRefresh', () => ({
+  recoverPendingLocationRefreshFromSample: forward(mockRecoverRefreshSample),
 }));
 
 const {
@@ -171,6 +176,7 @@ describe('background journey lifecycle and callback gate', () => {
     store.clear();
     jest.clearAllMocks();
     mockAppState.currentState = 'background';
+    mockNativeAvailable = false;
     mockCaptureAccess.mockResolvedValue({ generation: 1, groupId: 'group-1', signal: new AbortController().signal });
     mockIsAccessCurrent.mockReturnValue(true);
     mockLocationAdapter.hasStartedLocationUpdatesAsync.mockResolvedValue(false);
@@ -193,6 +199,99 @@ describe('background journey lifecycle and callback gate', () => {
     jest.useRealTimers();
   });
 
+  it('uploads locked-screen presence without a navigation session and retains its cadence', async () => {
+    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null,
+      powerMode: 'allDay', appState: 'background' })).resolves.toBe('started');
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledWith(
+      expect.any(String), expect.objectContaining({ accuracy: 2, pausesUpdatesAutomatically: false }));
+    const now = Date.now();
+    await handleBackgroundLocations({ data: { locations: [location(now)] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledWith(expect.objectContaining({
+      navigationSessionId: null, source: 'background_task', trackingMode: 'passiveBackground',
+    }));
+    expect(mockArrival).not.toHaveBeenCalled();
+    expect(mockComplete).not.toHaveBeenCalled();
+    expect(mockNotifyApproach).not.toHaveBeenCalled();
+    expect(mockLiveActivity.updateAllGroupActivities).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(60_000);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.0001)] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(61_000);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.0002)] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(2);
+    expect((await loadBackgroundJourney())?.powerMode).toBe('allDay');
+  });
+
+  it('refuses presence without foreground-prepared permission or membership', async () => {
+    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null,
+      appState: 'background', permissionsPrepared: false })).resolves.toBe('permission_denied');
+    expect(mockExpoLocation.requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
+    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null,
+      hasMembership: false })).resolves.toBe('hidden');
+    expect(await loadBackgroundJourney()).toBeNull();
+  });
+
+  it('revoking access stops presence and purges pending location uploads', async () => {
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, powerMode: 'allDay' });
+    mockCaptureAccess.mockResolvedValue(null);
+    await handleBackgroundLocations({ data: { locations: [location()] } });
+    expect(await loadBackgroundJourney()).toBeNull();
+    expect(mockPurgeLocation).toHaveBeenCalled();
+    expect(mockEnqueueLocation).not.toHaveBeenCalled();
+  });
+
+  it.each(['foreground', 'new-session', 'revoked-access'] as const)(
+    'does not resurrect the old presence owner after delayed navigation teardown: %s', async change => {
+      await startBackgroundJourney(baseConfig);
+      let release!: () => void;
+      let entered!: () => void;
+      const waiting = new Promise<void>(resolve => { entered = resolve; });
+      mockLiveActivity.endAllGroupActivities.mockImplementationOnce(() => {
+        entered();
+        return new Promise<undefined>(resolve => { release = () => resolve(undefined); });
+      });
+      const reconciliation = reconcileBackgroundNavigation('group-1');
+      await waiting;
+      if (change === 'foreground') {
+        mockAppState.currentState = 'active';
+        await stopBackgroundJourney();
+      } else if (change === 'new-session') {
+        await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'new-session' });
+      } else {
+        mockIsAccessCurrent.mockReturnValue(false);
+      }
+      mockLocationAdapter.startLocationUpdatesAsync.mockClear();
+      release();
+      await reconciliation;
+      expect(mockLocationAdapter.startLocationUpdatesAsync).not.toHaveBeenCalled();
+      const config = await loadBackgroundJourney();
+      if (change === 'foreground') expect(config).toBeNull();
+      else expect(config?.navigationSessionId).toBe(change === 'new-session' ? 'new-session' : 'session-1');
+    },
+  );
+
+  it('retains the current presence scope when membership moves to a subgroup', async () => {
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, scopeSubgroupId: null });
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, scopeSubgroupId: 'subgroup-2' });
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+      powerMode: 'allDay', navigationSessionId: null, scopeSubgroupId: 'subgroup-2',
+    }));
+    await reconcileBackgroundNavigation('group-1');
+    expect(mockNavigationContext).toHaveBeenCalledWith('group-1', 'subgroup-2');
+  });
+
+  it('ending navigation downgrades to presence and keeps uploading after the transition', async () => {
+    await startBackgroundJourney(baseConfig);
+    await reconcileBackgroundNavigation('group-1');
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+      powerMode: 'allDay', navigationSessionId: null,
+    }));
+    jest.clearAllMocks();
+    await handleBackgroundLocations({ data: { locations: [location()] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledWith(expect.objectContaining({ navigationSessionId: null }));
+    expect(mockArrival).not.toHaveBeenCalled();
+  });
+
   it('prepares only in the foreground, handles hidden starts, and releases native ownership', async () => {
     mockAppState.currentState = 'background';
     await expect(prepareBackgroundJourneyPermissions()).resolves.toBe('permission_denied');
@@ -203,6 +302,112 @@ describe('background journey lifecycle and callback gate', () => {
     await expect(startBackgroundJourney({ ...baseConfig, sharingEnabled: false })).resolves.toBe('hidden');
     await stopBackgroundJourney(true);
     expect(mockPrepareNative).toHaveBeenLastCalledWith(false);
+  });
+
+  it.each([false, true])('finishes granted permission reads after locking with prepared ownership (native=%s)', async (nativeAvailable) => {
+    mockAppState.currentState = 'active';
+    mockNativeAvailable = nativeAvailable;
+    let finishRead!: (value: { status: string }) => void;
+    mockExpoLocation.getBackgroundPermissionsAsync.mockReturnValueOnce(
+      new Promise(resolve => { finishRead = resolve; }),
+    );
+    const preparation = prepareBackgroundJourneyPermissions(false);
+    await settle(); await settle();
+    expect(mockExpoLocation.getBackgroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(mockPrepareNative.mock.invocationCallOrder[0]).toBeLessThan(
+      mockExpoLocation.getForegroundPermissionsAsync.mock.invocationCallOrder[0],
+    );
+    mockAppState.currentState = 'background';
+    finishRead({ status: 'granted' });
+    await expect(preparation).resolves.toBe('ready');
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
+    expect(mockExpoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockExpoLocation.requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
+    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null,
+      powerMode: 'allDay', appState: 'background', permissionsPrepared: true,
+    })).resolves.toBe('started');
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+      powerMode: 'allDay', permissionsPrepared: true,
+    }));
+  });
+
+  it('does not call native preparation again from background if the early preparation failed', async () => {
+    mockAppState.currentState = 'active';
+    mockPrepareNative.mockResolvedValueOnce(false);
+    let finishRead!: (value: { status: string }) => void;
+    mockExpoLocation.getBackgroundPermissionsAsync.mockReturnValueOnce(
+      new Promise(resolve => { finishRead = resolve; }),
+    );
+    const preparation = prepareBackgroundJourneyPermissions(false);
+    await settle(); await settle();
+    mockAppState.currentState = 'background';
+    finishRead({ status: 'granted' });
+    await expect(preparation).resolves.toBe('permission_denied');
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
+    expect(mockLocationAdapter.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  });
+
+  it('rejects the prepared owner if actor/group/privacy access changes during permission reads', async () => {
+    mockAppState.currentState = 'active';
+    let finishRead!: (value: { status: string }) => void;
+    mockExpoLocation.getBackgroundPermissionsAsync.mockReturnValueOnce(
+      new Promise(resolve => { finishRead = resolve; }),
+    );
+    const preparation = prepareBackgroundJourneyPermissions(false);
+    await settle(); await settle();
+    mockIsAccessCurrent.mockReturnValue(false);
+    mockAppState.currentState = 'background';
+    finishRead({ status: 'granted' });
+    await expect(preparation).resolves.toBe('permission_denied');
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
+    expect(mockLocationAdapter.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  });
+
+  it('never opens a missing permission prompt after the app backgrounds during a read', async () => {
+    mockAppState.currentState = 'active';
+    mockPrepareNative.mockResolvedValueOnce(false);
+    let finishRead!: (value: { status: string }) => void;
+    mockExpoLocation.getForegroundPermissionsAsync.mockReturnValueOnce(
+      new Promise(resolve => { finishRead = resolve; }),
+    );
+    const preparation = prepareBackgroundJourneyPermissions(true);
+    await settle(); await settle();
+    mockAppState.currentState = 'background';
+    finishRead({ status: 'denied' });
+    await expect(preparation).resolves.toBe('permission_denied');
+    expect(mockExpoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockExpoLocation.requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not request background permission if the foreground permission prompt returns after locking', async () => {
+    mockAppState.currentState = 'active';
+    mockPrepareNative.mockResolvedValueOnce(false);
+    mockExpoLocation.getForegroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+    mockExpoLocation.getBackgroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+    let finishPrompt!: (value: { status: string }) => void;
+    mockExpoLocation.requestForegroundPermissionsAsync.mockReturnValueOnce(
+      new Promise(resolve => { finishPrompt = resolve; }),
+    );
+    const preparation = prepareBackgroundJourneyPermissions(true);
+    await settle(); await settle(); await settle();
+    expect(mockExpoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    mockAppState.currentState = 'background';
+    finishPrompt({ status: 'granted' });
+    await expect(preparation).resolves.toBe('permission_denied');
+    expect(mockExpoLocation.requestBackgroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries native preparation in foreground after a first-time permission grant', async () => {
+    mockAppState.currentState = 'active';
+    mockPrepareNative.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockExpoLocation.getForegroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+    mockExpoLocation.getBackgroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+    await expect(prepareBackgroundJourneyPermissions(true)).resolves.toBe('ready');
+    expect(mockPrepareNative).toHaveBeenCalledTimes(2);
+    expect(mockExpoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(mockExpoLocation.requestBackgroundPermissionsAsync).toHaveBeenCalledTimes(1);
   });
 
   it('ignores malformed, active, invalid, and duplicate native samples', async () => {
@@ -216,8 +421,12 @@ describe('background journey lifecycle and callback gate', () => {
 
     mockAppState.currentState = 'background';
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 95)] } });
-    await handleBackgroundLocations({ data: { locations: [location(Date.now())] } });
     expect(mockEnqueueLocation).not.toHaveBeenCalled();
+    const valid = location(Date.now(), 25.02);
+    await handleBackgroundLocations({ data: { locations: [valid] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
+    await handleBackgroundLocations({ data: { locations: [valid] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
   });
 
   it('persists arrival progress, gates uploads by cadence, and reports retry/discard results', async () => {
@@ -337,6 +546,47 @@ describe('background journey lifecycle and callback gate', () => {
     jest.clearAllMocks();
   }
 
+  it('recovers a changed locked-screen target within the journey control budget without losing precision', async () => {
+    await startCurrent({ ...baseConfig, highAccuracy: true } as typeof baseConfig);
+    const target = { ...baseConfig.target, id: 'destination-2', coordinates: { latitude: 25.003, longitude: 121 } };
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target });
+    jest.advanceTimersByTime(14_999);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.002)] } });
+    expect(mockNavigationContext).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.002)] } });
+    expect(mockNavigationContext).toHaveBeenCalledTimes(1);
+    expect(await loadBackgroundJourney()).toMatchObject({ navigationSessionId: 'session-2',
+      destinationId: target.id, highAccuracy: true });
+    expect(mockArrival).not.toHaveBeenCalled();
+  });
+
+  it('presence keeps the precision preference for a later journey while retaining the low-frequency profile', async () => {
+    await startBackgroundJourney({ ...baseConfig, powerMode: 'allDay', highAccuracy: true,
+      navigationSessionId: null });
+    expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'allDay' });
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
+      expect.objectContaining({ accuracy: 2, timeInterval: 150_000 }));
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target: baseConfig.target });
+    await reconcileBackgroundNavigation(baseConfig.groupId);
+    expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'journey' });
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
+      expect.objectContaining({ accuracy: 5, timeInterval: 5_000 }));
+  });
+
+  it('passes a real presence fix to a pending refresh without starting another GPS owner', async () => {
+    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, powerMode: 'allDay' });
+    store.set('@hither/pending-location-refresh', JSON.stringify({ groupId: baseConfig.groupId, requestedAt: Date.now() - 1 }));
+    const sample = location();
+    await handleBackgroundLocations({ data: { locations: [sample] } });
+    expect(mockRecoverRefreshSample).toHaveBeenCalledWith(baseConfig.groupId, expect.objectContaining({
+      timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 },
+    }));
+    expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
+  });
+
   it('processes an out-of-order enter/exit batch without losing the arrival or waiting for ACK', async () => {
     await startCurrent();
     const now = Date.now();
@@ -364,7 +614,7 @@ describe('background journey lifecycle and callback gate', () => {
     await handleBackgroundLocations({ data: { locations: [
       location(now - 20_000), location(now - 3, 25, 150),
       { ...location(now - 2), coords: { ...location().coords, accuracy: null } },
-      location(now + 1_000),
+      location(now + 2_001),
     ] } });
     expect(mockArrival).not.toHaveBeenCalled();
     expect((await loadBackgroundJourney())?.arrivedMemberIds).toEqual([]);
@@ -395,7 +645,7 @@ describe('background journey lifecycle and callback gate', () => {
       reason: 'all_arrived' }));
     expect(mockArrival.mock.invocationCallOrder[0]).toBeLessThan(mockComplete.mock.invocationCallOrder[0]);
     expect(mockLiveActivity.endAllGroupActivities).toHaveBeenCalled();
-    expect(await loadBackgroundJourney()).toBeNull();
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({ powerMode: 'allDay', navigationSessionId: null }));
   });
 
   it('nonleader arrival and incomplete leader counts keep the journey open', async () => {
@@ -444,7 +694,7 @@ describe('background journey lifecycle and callback gate', () => {
       navigationMemberIds: ['actor-1', 'teammate'], arrivedMemberIds: ['actor-1', 'teammate'] });
     await reconcileBackgroundNavigation('group-1');
     expect(mockComplete).toHaveBeenCalledTimes(1);
-    expect(await loadBackgroundJourney()).toBeNull();
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({ powerMode: 'allDay', navigationSessionId: null }));
   });
 
   it('persisted native timestamp rejects replay after the same journey is restarted', async () => {

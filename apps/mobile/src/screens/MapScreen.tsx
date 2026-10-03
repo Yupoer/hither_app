@@ -1,6 +1,6 @@
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
-import { showOperationFailure, claimAppNotice } from '../state/appNotice';
+import { showOperationFailure, claimAppNotice, showAppNotice } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
@@ -270,6 +270,7 @@ import {
 } from '../utils/openReorderSlots';
 import {
   locationFreshness,
+  isLocationSampleFresh,
 } from '../utils/locationFreshness';
 import {
   groupHistoryByDay,
@@ -299,6 +300,7 @@ import {
   type PendingDestinationMutation,
 } from '../utils/destinationMutationOverlay';
 import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
+import { resolveDailyAccommodationSourceId } from '../api/services/DailyAccommodationService';
 import {
   addDestination,
   addDestinationsBatch,
@@ -321,6 +323,7 @@ import {
   leaveGroups,
   kickGroupMember,
   requestGroupLocationRefresh,
+  getGroupLocationRefreshAcknowledgements,
   resolveGatherPointRequestResilient,
   sendCommand,
   isNetworkRequestError,
@@ -694,6 +697,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
   const kickedHandledRef = useRef(false);
+  const voluntaryLeaveRef = useRef(false);
   useEffect(() => {
     if (!user?.id || !groupId || isDemoGroup(groupId)) return;
     if (membership?.group.id !== groupId) return;
@@ -708,7 +712,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (kickedHandledRef.current) return;
     kickedHandledRef.current = true;
     leaveGroup();
-    Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));
+    if (!voluntaryLeaveRef.current) Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));
     navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
   }, [
     user?.id,
@@ -962,6 +966,10 @@ export default function MapScreen({ route, navigation }: Props) {
         allScopedDestinations,
         optimisticDepartureDate ?? group?.departureDate,
         optimisticTripDays ?? group?.tripDays,
+        new Date(),
+        [state?.group.journeyStatus === 'going' ? state.group.activeDestinationId : null,
+          navigationSessionState.session?.status === 'active' ? navigationSessionState.session.destinationId : null]
+          .filter((id): id is string => Boolean(id)),
       ),
     [
       allScopedDestinations,
@@ -969,6 +977,10 @@ export default function MapScreen({ route, navigation }: Props) {
       optimisticTripDays,
       group?.departureDate,
       group?.tripDays,
+      state?.group.activeDestinationId,
+      state?.group.journeyStatus,
+      navigationSessionState.session?.destinationId,
+      navigationSessionState.session?.status,
     ],
   );
   const destinations = useMemo(
@@ -2944,8 +2956,11 @@ export default function MapScreen({ route, navigation }: Props) {
     navigationSessionState.session?.id,
   ]);
 
-  const backgroundJourneyWantedRef = useRef(false);
-  backgroundJourneyWantedRef.current = Boolean(journeyActive && navTarget && sharingEnabled);
+  const backgroundJourneyWantedRef = useRef<string | null>(null);
+  const backgroundSharingScope = preferencesReady && sharingEnabled && groupId && user?.id
+    && members.some(member => member.userId === user.id) ? `${user.id}:${groupId}` : null;
+  backgroundJourneyWantedRef.current = backgroundSharingScope;
+
 
   /**
    * Single foreground/background GPS owner:
@@ -2954,7 +2969,7 @@ export default function MapScreen({ route, navigation }: Props) {
    * Avoid overlapping GPS consumers; device measurements determine actual energy savings.
    */
   useEffect(() => {
-    if (!groupId || !journeyActive || !navTarget || !sharingEnabled || !preferencesReady || !members.some(m => m.userId === user?.id)) {
+    if (!backgroundSharingScope || !groupId) {
       backgroundStartedKeyRef.current = null;
       backgroundPermissionAttemptedRef.current = null;
       setBackgroundPermissionsPreparedFor(null);
@@ -2978,8 +2993,8 @@ export default function MapScreen({ route, navigation }: Props) {
             const accepted = await new Promise<boolean>(resolve => Alert.alert(
               language === 'en' ? 'Share location in the background' : '背景位置分享',
               language === 'en'
-                ? 'During an active journey, Hither shares your location with this team in the background. Background navigation stops when the journey ends or you stop sharing.'
-                : '行程進行中，Hither 會在背景向團隊分享位置。行程結束或停止分享後，背景導航定位會停止。',
+                ? 'While location sharing is on, Hither shares your location with this team in the background, including when your screen is locked. Turn off location sharing to stop.'
+                : '開啟位置分享時，Hither 會在背景向團隊分享位置，鎖定畫面後也會繼續。關閉位置分享即可停止。',
               [{ text: language === 'en' ? 'Not now' : '暫時不要', style: 'cancel', onPress: () => resolve(false) },
                { text: language === 'en' ? 'Continue' : '繼續', onPress: () => resolve(true) }],
             ));
@@ -2990,15 +3005,18 @@ export default function MapScreen({ route, navigation }: Props) {
           return prepareBackgroundJourneyPermissions(true);
         })()
           .then((result) => {
-            if (!backgroundJourneyWantedRef.current) { void stopBackgroundJourney(true); return; }
+            if (backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
             if (result === 'ready') {
+              backgroundPermissionDeniedRef.current = null;
               setBackgroundPermissionsPreparedFor(groupId);
             } else {
               setBackgroundPermissionsPreparedFor(null);
               void rememberPendingLocationPermission();
             }
           })
-          .catch(() => setBackgroundPermissionsPreparedFor(null))
+          .catch(() => {
+            if (backgroundJourneyWantedRef.current === backgroundSharingScope) setBackgroundPermissionsPreparedFor(null);
+          })
           .finally(() => {
             if (backgroundPermissionPrepareInFlightRef.current === groupId) {
               backgroundPermissionPrepareInFlightRef.current = null;
@@ -3013,6 +3031,8 @@ export default function MapScreen({ route, navigation }: Props) {
 
     backgroundPermissionAttemptedRef.current = null;
     const powerMode = journeyActive && navTarget ? 'journey' : 'allDay';
+    const backgroundScopeSubgroupId = powerMode === 'journey'
+      ? navTarget?.subgroupId ?? null : myScopeId ?? null;
     const dest =
       navTarget?.coordinates ??
       deviceCoords ??
@@ -3021,7 +3041,11 @@ export default function MapScreen({ route, navigation }: Props) {
       ? resolveCurrentNavigationSessionId(navTarget)
       : null;
     const sessionKey = backgroundNavigationSessionId ?? 'none';
-    const key = `${groupId}:${powerMode}:${navTarget?.id ?? 'presence'}:${sessionKey}`;
+    const key = JSON.stringify([backgroundSharingScope, backgroundScopeSubgroupId, powerMode,
+      navTarget?.id ?? 'presence', sessionKey, highAccuracy, travelMode, localArrivalRadiusM,
+      navTarget?.coordinates.latitude, navTarget?.coordinates.longitude, canEditItinerary,
+      members.map(member => `${member.userId}:${member.subgroupId ?? ''}`).sort(),
+      sessionEligibleMembers.filter(member => !member.solo).map(member => member.userId).sort()]);
     if (backgroundPermissionDeniedRef.current === key || backgroundStartedKeyRef.current === key) return;
     backgroundStartedKeyRef.current = key;
 
@@ -3033,7 +3057,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       actorId: user?.id,
-      scopeSubgroupId: navTarget?.subgroupId ?? myScopeId ?? null,
+      scopeSubgroupId: backgroundScopeSubgroupId,
       memberIds: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.userId),
       navigationMemberIds: sessionEligibleMembers.filter(m => !m.solo && (m.subgroupId ?? null)
         === (navTarget?.subgroupId ?? null)).map(m => m.userId),
@@ -3087,6 +3111,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [
     appState,
     mapFocused,
+    backgroundSharingScope,
     backgroundPermissionsPreparedFor,
     preferencesReady,
     language,
@@ -3610,21 +3635,25 @@ export default function MapScreen({ route, navigation }: Props) {
         pull: () => refresh('poll_manual_refresh'),
         uploadSelf: () => refreshDeviceLocation({ requireUpload: true }),
         requestPeers: () => requestGroupLocationRefresh(groupId),
+        getAcknowledgedRecipientIds: requestedAt => getGroupLocationRefreshAcknowledgements(groupId, requestedAt),
         getMembers: () => membersRef.current,
+        serverTimeOffsetMs,
         cooling: refreshCooldownUntil > Date.now() || isDemoGroup(groupId),
       });
-      if (result.request) setRefreshCooldownUntil(Date.now() + result.request.retryAfterSeconds * 1000);
+      if (result.cooldownUntil != null) setRefreshCooldownUntil(result.cooldownUntil);
       Alert.alert(t('map.refreshLocationsResultTitle'), [
         t(result.pulled ? 'map.refreshReadSuccess' : 'map.refreshReadFailed'),
         t(result.selfUploaded ? 'map.refreshSelfSuccess' : 'map.refreshSelfFailed'),
         result.request?.accepted
-          ? t('map.refreshLocationsResultPartial', { responded: result.respondedUserIds.length, expected: result.expectedUserIds.length })
-          : t('map.refreshPeersCooling'),
+          ? result.acknowledgementsAvailable
+            ? t('map.refreshLocationsResultPartial', { responded: result.respondedUserIds.length, expected: result.expectedUserIds.length })
+            : t('map.refreshReceiptsUnavailable')
+          : t(result.requestUnavailable ? 'map.refreshPeersRequestFailed' : 'map.refreshPeersCooling'),
       ].join('\n'));
     } finally {
       setRefreshingLocations(false);
     }
-  }, [groupId, refreshingLocations, refresh, refreshDeviceLocation, refreshCooldownUntil, t]);
+  }, [groupId, refreshingLocations, refresh, refreshDeviceLocation, refreshCooldownUntil, serverTimeOffsetMs, t]);
 
   const fitAllMembers = useCallback(() => {
     void runUiAction(
@@ -3680,7 +3709,7 @@ export default function MapScreen({ route, navigation }: Props) {
             const queued = (await getCoreOperationOutbox().listByGroup(groupId)).find(op =>
               op.operationType === 'submit_gather_point_request' && op.entityId === requestId);
             if (queued && queued.status !== 'acked') {
-              Alert.alert(t('coreData.pendingSync'), t('coreData.requestSaved'));
+              showAppNotice({ id: `suggestion-saved:${requestId}`, title: t('gatherRequest.savedTitle'), message: t('coreData.requestSaved') });
             } else {
               Alert.alert(t('gatherRequest.sentTitle'), t('gatherRequest.sentBody'));
             }
@@ -4309,20 +4338,9 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
 
-    // Celebrate-only path (write still in flight): plain arrive alert for members only.
-    if (!alreadyShown && !canEditItinerary) {
-      const fallback =
-        language === 'en'
-          ? `You have arrived at "${destination.title}"`
-          : `你已經抵達集合點「${destination.title}」`;
-      const raw = t('map.arriveBody', { title: destination.title });
-      const body = !raw || raw === 'map.arriveBody' || raw.includes('map.arriveBody')
-        ? fallback
-        : raw;
-      armCelebrateClearTimer(celebrateClearTimersRef.current, `arrival-notice:${destination.id}`, 1_600, () => {
-        if (mapMountedRef.current && arrivalContextRef.current === feedbackContext) Alert.alert(t('map.arriveTitle'), body);
-      });
-    }
+    // The immediate check/haptic confirms the durable local arrival. The
+    // committed event owns the shared app notice; an additional Alert here
+    // would overlap that same arrival's Realtime/push presentation.
   };
 
   // Remote final arrival (Realtime / workflow reload): leader auto-completes when
@@ -5020,11 +5038,11 @@ export default function MapScreen({ route, navigation }: Props) {
               }
               for (const [stayDate, draftRow] of draftByDate) {
                 const serverRow = serverByDate.get(stayDate);
-                if (
-                  serverRow
-                  && serverRow.title === draftRow.title
-                  && serverRow.sourceDestinationId === draftRow.sourceDestinationId
-                ) {
+                if (serverRow && serverRow.title === draftRow.title
+                  && serverRow.address === draftRow.address
+                  && serverRow.coordinates.latitude === draftRow.coordinates.latitude
+                  && serverRow.coordinates.longitude === draftRow.coordinates.longitude
+                  && serverRow.sourceDestinationId === draftRow.sourceDestinationId) {
                   continue;
                 }
                 const day = (() => {
@@ -5041,10 +5059,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 })();
                 // Never pass draft-* as FK-ish source id after materialize map.
                 const sourceId = draftRow.sourceDestinationId;
-                const resolvedSource =
-                  sourceId && sourceId.startsWith('draft-')
-                    ? undefined
-                    : sourceId ?? undefined;
+                const resolvedSource = resolveDailyAccommodationSourceId(sourceId, dirty.deletedIds);
                 await setDailyAccommodation(groupId, stayDate, {
                   title: draftRow.title,
                   address: draftRow.address,
@@ -5269,7 +5284,9 @@ export default function MapScreen({ route, navigation }: Props) {
         void runUiAction(
           'map.leave_group',
           async (token) => {
+            voluntaryLeaveRef.current = true;
             logEvent('group_leave', { groupId, isLeader });
+            try {
             if (groupId) {
               await leaveGroups([groupId]);
               if (!token.isCurrent()) return;
@@ -5280,6 +5297,10 @@ export default function MapScreen({ route, navigation }: Props) {
             if (!token.isCurrent()) return;
             leaveGroup();
             navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
+            } catch (error) {
+              voluntaryLeaveRef.current = false;
+              throw error;
+            }
           },
           { screen: 'Map' },
         );
@@ -5465,6 +5486,9 @@ export default function MapScreen({ route, navigation }: Props) {
           // not leave「尚無位置更新」when blue-dot already has a valid fix.
           lastUpdated: m.capturedAt ?? m.lastUpdated,
           sharingEnabled: m.sharingEnabled,
+          locationTrackingMode: m.locationTrackingMode,
+          locationSource: m.locationSource,
+          locationNavigationSessionId: m.locationNavigationSessionId,
           // Color grade: secondary by default; green only arrived; warn only solo/straggler-like.
           statusColor: solo
             ? glass.warn
@@ -5713,6 +5737,9 @@ export default function MapScreen({ route, navigation }: Props) {
         arrived={f.arrived}
         lastUpdated={f.lastUpdated ?? undefined}
         sharingEnabled={f.sharingEnabled}
+        locationTrackingMode={f.locationTrackingMode}
+        locationSource={f.locationSource}
+        locationNavigationSessionId={f.locationNavigationSessionId}
         serverTimeOffsetMs={serverTimeOffsetMs}
         syncFailed={Boolean(groupStateError)}
         isMe={isMe}
@@ -9556,6 +9583,9 @@ const FlockRow = React.memo(function FlockRow({
   arrived,
   lastUpdated,
   sharingEnabled,
+  locationTrackingMode,
+  locationSource,
+  locationNavigationSessionId,
   serverTimeOffsetMs,
   syncFailed,
   isMe,
@@ -9579,6 +9609,9 @@ const FlockRow = React.memo(function FlockRow({
   arrived: boolean;
   lastUpdated?: string;
   sharingEnabled?: boolean;
+  locationTrackingMode?: string | null;
+  locationSource?: string | null;
+  locationNavigationSessionId?: string | null;
   serverTimeOffsetMs: number;
   syncFailed: boolean;
   isMe: boolean;
@@ -9594,8 +9627,9 @@ const FlockRow = React.memo(function FlockRow({
 }) {
   const nowMs = useForegroundClock(30_000);
 
-  const movingRecently =
-    !!lastUpdated && nowMs + serverTimeOffsetMs - new Date(lastUpdated).getTime() < 2 * 60_000;
+  const movingRecently = isLocationSampleFresh(lastUpdated, {
+    locationTrackingMode, locationSource, locationNavigationSessionId,
+  }, nowMs + serverTimeOffsetMs);
   const statusText = solo
     ? t('solo.badge')
     : isLeader

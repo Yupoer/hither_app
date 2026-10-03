@@ -5,6 +5,31 @@ export type LocationFreshness =
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
+/** Metadata of the actual stored sample, rather than the viewer's mode. */
+export interface LocationSampleMetadata {
+  locationTrackingMode?: string | null;
+  locationSource?: string | null;
+  locationNavigationSessionId?: string | null;
+}
+
+export function locationFreshnessLimitMs(metadata: LocationSampleMetadata = {}): number {
+  // A background task with no navigation session is the 150s presence owner.
+  // Missing metadata and explicit refreshes retain the conservative 120s limit.
+  return metadata.locationTrackingMode === 'passiveBackground'
+    && metadata.locationSource === 'background_task'
+    && metadata.locationNavigationSessionId === null ? 180_000 : 120_000;
+}
+
+export function isLocationSampleFresh(
+  capturedAt: string | null | undefined,
+  metadata: LocationSampleMetadata = {},
+  nowMs = Date.now(),
+): boolean {
+  if (!capturedAt) return false;
+  const ageMs = nowMs - Date.parse(capturedAt);
+  return Number.isFinite(ageMs) && ageMs >= -120_000 && ageMs < locationFreshnessLimitMs(metadata);
+}
+
 export function locationFreshness(
   lastUpdated: string | undefined,
   nowMs: number,
