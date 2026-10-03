@@ -338,7 +338,7 @@ describe('background journey native wiring', () => {
     expect(callback).not.toContain('diagnostics.flush()');
   });
 
-  it('starts from MapScreen and stops on pause, leave, or sign-out', () => {
+  it('starts sharing from MapScreen and stops on leave or sign-out', () => {
     const mapScreen = readFileSync(
       join(__dirname, '../screens/MapScreen.tsx'),
       'utf8',

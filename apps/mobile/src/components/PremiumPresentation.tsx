@@ -1,3 +1,4 @@
+import WaveLoading from './WaveLoading';
 /**
  * Shared Premium subscription presentation for Paywall (settings) and Store (inline).
  * Purchase/restore authority stays in premiumPurchaseFlow; this only owns UI + CTA state.
@@ -5,7 +6,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Linking,
   Modal,
@@ -517,7 +517,7 @@ export default React.memo(function PremiumPresentation({
           ]}
         >
           {busy === 'purchase' ? (
-            <ActivityIndicator color="#fff" />
+            <WaveLoading color="#fff" />
           ) : (
             <Text style={styles.ctaText}>
               {hasPremium
@@ -540,7 +540,7 @@ export default React.memo(function PremiumPresentation({
             testID={`${testID}-restore`}
           >
             {busy === 'restore' ? (
-              <ActivityIndicator color={accent} />
+              <WaveLoading color={accent} />
             ) : (
               <Text style={[styles.restoreText, { color: accent }]}>{t('paywall.restore')}</Text>
             )}
@@ -586,7 +586,7 @@ export default React.memo(function PremiumPresentation({
                   testID="paywall-redeem-submit"
                 >
                   {busy === 'redeem' ? (
-                    <ActivityIndicator color={accent} size="small" />
+                    <WaveLoading color={accent} size="small" />
                   ) : (
                     <Text style={[styles.restoreText, { color: accent }]}>{t('account.redeemCta')}</Text>
                   )}

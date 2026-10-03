@@ -1,0 +1,211 @@
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptRuntime.swift
+@@ -185,12 +185,12 @@
+       resultPtr: UnsafeMutablePointer<facebook.jsi.Value>
+     ) -> Bool {
+       let propertyName = String(cString: propertyName)
+-      nonisolated(unsafe) let resultPtr = resultPtr
++      let resultSlot = NonisolatedUnsafeVar(resultPtr)
+ 
+       return withGuaranteedContext(context) { (context: HostObjectContext, runtime) in
+         return JavaScriptActor.assumeIsolated {
+           return forwardingSwiftErrorsToJS(runtime: runtime) {
+-            try context.get(propertyName).writeJSIValue(to: resultPtr)
++            try context.get(propertyName).writeJSIValue(to: resultSlot.value)
+           }
+         }
+       }
+@@ -771,22 +771,19 @@
+     // heap-allocated `JavaScriptRef` (Swift 6.2 rejects capturing/consuming a `~Copyable` value in the
+     // escaping closure that `withoutActuallyEscaping` synthesizes), the closure constructs the buffer
+     // locally from the raw pointer + count. Those are read-only call-scoped inputs that never outlive the
+-    // synchronous call, so the `nonisolated(unsafe)` capture is sound. This removes a per-call class
+-    // allocation + retain/release + dealloc that profiling showed dominating the no-op `@JS` host-call
+-    // floor.
+-    nonisolated(unsafe) let thisPtr = thisPtr
+-    nonisolated(unsafe) let argumentsPtr = argumentsPtr
+-    nonisolated(unsafe) let resultPtr = resultPtr
++    // synchronous call. One `NonisolatedUnsafeVar` wrapper works around Swift 6.2.3
++    // diagnosing these pointer captures despite their synchronous lifetime.
++    let pointers = NonisolatedUnsafeVar((this: thisPtr, arguments: argumentsPtr, result: resultPtr))
+ 
+     // See `withGuaranteedContext` for why neither the context nor the runtime is retained here, and
+     // why the result is written to the caller's slot instead of being returned.
+     return withGuaranteedContext(context) { (context: HostFunctionContext, runtime) in
+       return JavaScriptActor.assumeIsolated {
+         return forwardingSwiftErrorsToJS(runtime: runtime) {
+-          let this = UnsafeMutablePointer(mutating: thisPtr).move()
+-          let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtr, count: argumentsCount)
++          let this = UnsafeMutablePointer(mutating: pointers.value.this).move()
++          let arguments = JavaScriptValuesBuffer(runtime, start: pointers.value.arguments, count: argumentsCount)
+           let thisValue = JavaScriptValue(runtime, this)
+-          try context.call(thisValue, consume arguments).writeJSIValue(to: resultPtr)
++          try context.call(thisValue, consume arguments).writeJSIValue(to: pointers.value.result)
+         }
+       }
+     }
+@@ -817,18 +814,16 @@
+     // handed in as a borrowed `JavaScriptUnownedValue` pointing straight at the C++-owned `this` slot:
+     // it is not moved out and no owning `JavaScriptValue` is allocated, so the closure avoids the
+     // per-call `weak`-runtime form/destroy and heap object that the owning `this` pays.
+-    nonisolated(unsafe) let thisPtr = thisPtr
+-    nonisolated(unsafe) let argumentsPtr = argumentsPtr
+-    nonisolated(unsafe) let resultPtr = resultPtr
++    let pointers = NonisolatedUnsafeVar((this: thisPtr, arguments: argumentsPtr, result: resultPtr))
+ 
+     // See `withGuaranteedContext` for why neither the context nor the runtime is retained here, and
+     // why the result is written to the caller's slot instead of being returned.
+     return withGuaranteedContext(context) { (context: UnownedThisHostFunctionContext, runtime) in
+       return JavaScriptActor.assumeIsolated {
+         return forwardingSwiftErrorsToJS(runtime: runtime) {
+-          let arguments = JavaScriptValuesBuffer(runtime, start: argumentsPtr, count: argumentsCount)
+-          let thisValue = JavaScriptUnownedValue(runtime.pointee, thisPtr)
+-          try context.call(thisValue, consume arguments).writeJSIValue(to: resultPtr)
++          let arguments = JavaScriptValuesBuffer(runtime, start: pointers.value.arguments, count: argumentsCount)
++          let thisValue = JavaScriptUnownedValue(runtime.pointee, pointers.value.this)
++          try context.call(thisValue, consume arguments).writeJSIValue(to: pointers.value.result)
+         }
+       }
+     }
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI-Cxx/include/RuntimeScheduler.h
+@@ -50,7 +50,7 @@
+    `scheduleTask` dispatches through `fn`, which the host implements against
+    the real react::RuntimeScheduler.
+    */
+-  SWIFT_RETURNS_RETAINED RuntimeScheduler(void *scheduler, ScheduleFn fn) noexcept
++  RuntimeScheduler(void *scheduler, ScheduleFn fn) noexcept
+       : nativeScheduler(scheduler), scheduleFn(fn) {}
+ 
+   /**
+@@ -58,7 +58,7 @@
+    caller's thread — intended for standalone runtimes (e.g. tests) that have
+    no React scheduler.
+    */
+-  SWIFT_RETURNS_RETAINED RuntimeScheduler() {}
++  RuntimeScheduler() {}
+ 
+   RuntimeScheduler(const RuntimeScheduler &) = delete;
+ 
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
+@@ -31,0 +32,6 @@
++
++    if #available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *) {
++      // These runtimes support SerialExecutor.checkIsolated.
++    } else if #available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *) {
++      return runWithLegacyExecutor(operation)
++    }
+@@ -68,0 +75,40 @@
++  // iOS 17 cannot ask a custom executor to check an externally-owned JS thread.
++  // A real Swift job establishes the executor context without moving the JS work.
++  @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
++  @usableFromInline
++  internal static func runWithLegacyExecutor<T: ~Copyable>(_ operation: @JavaScriptActor () -> T) -> T {
++    let thread = Thread.current
++    let key = "ExpoModulesJSI.JavaScriptActor.legacyContext"
++    if thread.threadDictionary[key] as? Bool == true {
++      typealias IsolatedRunner = @JavaScriptActor (@JavaScriptActor () -> T) -> T
++      typealias NonisolatedRunner = (@JavaScriptActor () -> T) -> T
++      return unsafeBitCast(runIsolated as IsolatedRunner, to: NonisolatedRunner.self)(operation)
++    }
++    return withoutActuallyEscaping(operation) { body in
++      let capture = JavaScriptJobCapture()
++      let executor = JavaScriptExecutor(capture: capture, owner: thread)
++      let bridge = JavaScriptSynchronousActor(executor: executor)
++      let scope = JavaScriptSynchronousOperation(body)
++      // The worker only transfers a job to `capture`. It never reads/calls the JS closure.
++      // The task captures `scope`, whose operation is cleared by the caller-thread job
++      // before withoutActuallyEscaping exits (the task continuation may still be alive).
++      let task = Task {
++        await bridge.run { scope.run() }
++      }
++      capture.ready.wait()
++      guard let job = capture.job else { preconditionFailure("Missing JavaScript executor job") }
++      capture.job = nil
++      thread.threadDictionary[key] = true
++      job.runSynchronously(on: executor.asUnownedSerialExecutor())
++      thread.threadDictionary.removeObject(forKey: key)
++      withExtendedLifetime(task) {}
++      return scope.takeResult()
++    }
++  }
++
++  @usableFromInline
++  internal static var isJavaScriptContext: Bool {
++    Thread.current.name == "com.facebook.react.runtime.JavaScript" || !Thread.isMultiThreaded()
++      || ProcessInfo.processInfo.processName == "xctest"
++  }
++
+@@ -78,0 +125,8 @@
++  private let capture: JavaScriptJobCapture?
++  private let owner: Thread?
++
++  fileprivate init(capture: JavaScriptJobCapture? = nil, owner: Thread? = nil) {
++    self.capture = capture
++    self.owner = owner
++  }
++
+@@ -80 +134,15 @@
+-    job.runSynchronously(on: self.asUnownedSerialExecutor())
++    if let capture {
++      capture.job = job
++      capture.ready.signal()
++    } else {
++      job.runSynchronously(on: self.asUnownedSerialExecutor())
++    }
++  }
++
++  func isSameExclusiveExecutionContext(other: JavaScriptExecutor) -> Bool {
++    if self === other { return true }
++    // Only base-class bridge/global executors may share a synchronous JS context.
++    // Runtime-specific subclasses must retain their distinct scheduler identity.
++    guard type(of: self) == JavaScriptExecutor.self,
++      type(of: other) == JavaScriptExecutor.self else { return false }
++    return (owner === Thread.current || other.owner === Thread.current) && JavaScriptActor.isJavaScriptContext
+@@ -84,0 +153,3 @@
++    if #available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *) {
++      return UnownedSerialExecutor(complexEquality: self)
++    }
+@@ -93,0 +165,5 @@
++
++  @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
++  func isIsolatingCurrentContext() -> Bool? {
++    JavaScriptActor.isJavaScriptContext
++  }
+@@ -128,0 +205,32 @@
++
++// Only `enqueue` writes the captured job; semaphore release/acquire publishes it
++// to the waiting JS thread. No JS values are inspected on the producer thread.
++private final class JavaScriptJobCapture: @unchecked Sendable {
++  var job: UnownedJob?
++  let ready = DispatchSemaphore(value: 0)
++}
++
++private actor JavaScriptSynchronousActor {
++  nonisolated let executor: JavaScriptExecutor
++  init(executor: JavaScriptExecutor) { self.executor = executor }
++  nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
++  func run(_ operation: @Sendable () -> Void) { operation() }
++}
++
++private final class JavaScriptSynchronousOperation<T: ~Copyable>: @unchecked Sendable {
++  private var operation: (@JavaScriptActor () -> T)?
++  private var result: T?
++
++  init(_ operation: @escaping @JavaScriptActor () -> T) { self.operation = operation }
++
++  func run() {
++    // Taking clears the only escaping storage before invoking the nonescaping body.
++    let body = operation.take()!
++    typealias IsolatedRunner = @JavaScriptActor (@JavaScriptActor () -> T) -> T
++    typealias NonisolatedRunner = (@JavaScriptActor () -> T) -> T
++    let runner = unsafeBitCast(JavaScriptActor.runIsolated as IsolatedRunner, to: NonisolatedRunner.self)
++    result = runner(body)
++  }
++
++  func takeResult() -> T { result.take()! }
++}

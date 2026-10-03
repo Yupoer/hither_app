@@ -11,6 +11,7 @@
  * Parent #155 non-goal: green Jest is not device purchase evidence.
  */
 import React from 'react';
+jest.mock('../components/WaveLoading', () => 'WaveLoading');
 
 jest.mock('expo-linear-gradient', () => {
   const RN = require('react-native');

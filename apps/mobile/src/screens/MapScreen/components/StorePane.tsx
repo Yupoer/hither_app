@@ -1,3 +1,4 @@
+import WaveLoading from '../../../components/WaveLoading';
 /**
  * Store pane shell + wired balance / ad CTA / catalog redeem.
  * Extracted from MapScreen so the sheet host stays thin.
@@ -5,7 +6,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   Alert,
   AppState,
   findNodeHandle,
@@ -1033,7 +1033,7 @@ export const StorePane = React.memo(function StorePane({
 
       {loading && !snapshot ? (
         <View style={styles.shellCard} testID="store-loading">
-          <ActivityIndicator color={accent} />
+          <WaveLoading color={accent} />
           <Text style={styles.shellHint}>{t('store.loading')}</Text>
         </View>
       ) : null}
@@ -1245,7 +1245,7 @@ function ProductCard({
         accessibilityLabel={t('store.redeem')}
       >
         {redeeming ? (
-          <ActivityIndicator color="#111" />
+          <WaveLoading color="#111" />
         ) : (
           <Text style={[styles.redeemText, (!canAfford || disabled) && styles.ctaTextMuted]}>
             {t('store.redeem')}

@@ -14,10 +14,12 @@ export function subscribeForegroundUi(listener: () => void): () => void {
   if (!subscription) {
     foreground = AppState?.currentState === 'active';
     let focused = true;
+    let lastAppState = AppState?.currentState;
     const update = () => {
       const next = AppState?.currentState === 'active' && focused;
-      if (foreground === next) return;
+      if (foreground === next && lastAppState === AppState?.currentState) return;
       foreground = next;
+      lastAppState = AppState?.currentState;
       for (const notify of listeners) notify();
     };
     const change = AppState?.addEventListener?.('change', update);
@@ -49,4 +51,10 @@ export function useForegroundClock(intervalMs: number, enabled = true): number {
     return () => clearInterval(timer);
   }, [active, enabled, intervalMs]);
   return now;
+}
+
+const readAppState = () => AppState?.currentState;
+/** Reuse the shared native subscription; auth may remain visible while inactive. */
+export function useAppState() {
+  return useSyncExternalStore(subscribeForegroundUi, readAppState, readAppState);
 }

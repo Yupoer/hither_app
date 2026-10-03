@@ -1,6 +1,6 @@
+import WaveLoading from './WaveLoading';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -375,7 +375,7 @@ export function AccountSheetContent({
                   accessibilityRole="button"
                 >
                   {upgradeBusy ? (
-                    <ActivityIndicator color={accent} />
+                    <WaveLoading color={accent} />
                   ) : (
                     <Text style={[styles.redeemText, { color: accent }]}>{t('account.submit')}</Text>
                   )}
@@ -426,7 +426,7 @@ export function AccountSheetContent({
                   testID="account-add-password"
                 >
                   {upgradeBusy ? (
-                    <ActivityIndicator color={accent} />
+                    <WaveLoading color={accent} />
                   ) : (
                     <Text style={[styles.redeemText, { color: accent }]}>{t('account.addPasswordAction')}</Text>
                   )}
@@ -502,7 +502,7 @@ export function AccountSheetContent({
       onRequestClose={() => undefined}
     >
       <View style={styles.deleteLoadingScrim} testID="account-delete-loading" accessibilityRole="progressbar">
-        <ActivityIndicator size="large" color={accent} />
+        <WaveLoading size="large" color={accent} />
       </View>
     </Modal>
     </>

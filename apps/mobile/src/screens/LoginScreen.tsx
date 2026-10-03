@@ -1,7 +1,7 @@
+import WaveLoading from '../components/WaveLoading';
 import { useForegroundClock } from '../state/foregroundUi';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -546,7 +546,7 @@ export default function LoginScreen({ navigation }: Props) {
           ]}
         >
           {busy && !blockingBusy ? (
-            <ActivityIndicator color="#060b14" />
+            <WaveLoading color="#060b14" />
           ) : (
             <Text style={styles.ctaText}>
               {panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
@@ -615,7 +615,7 @@ export default function LoginScreen({ navigation }: Props) {
           ]}
         >
           {busyAction === 'password_reset' ? (
-            <ActivityIndicator color="#060b14" />
+            <WaveLoading color="#060b14" />
           ) : (
             <Text style={[styles.ctaText, { color: '#060b14', fontWeight: '800', fontSize: 16 }]} numberOfLines={1}>
               {resetSent ? t('login.resetResend') : '發送重設連結'}
@@ -649,7 +649,7 @@ export default function LoginScreen({ navigation }: Props) {
           style={[styles.cta, (busy || resendCooldown > 0) && styles.ctaDisabled]}
         >
           {busyAction === 'resend_confirmation' ? (
-            <ActivityIndicator color="#fff" />
+            <WaveLoading color="#fff" />
           ) : (
             <Text style={styles.ctaText}>
               {resendCooldown > 0 ? `${t('login.resendConfirmation')} (${resendCooldown})` : t('login.resendConfirmation')}
@@ -679,7 +679,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <View style={styles.fill}>
-      <MetalforgeBackground active={isFocused} />
+      <MetalforgeBackground active={isFocused} allowInactive={busyAction === 'apple' || busyAction === 'google'} />
       {!resetMode ? (
         <View
           style={[styles.langChrome, { top: insets.top + 8 }]}

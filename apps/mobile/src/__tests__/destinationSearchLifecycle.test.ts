@@ -75,7 +75,7 @@ it('finishes a stalled request with an error rather than leaving a spinner', asy
   input('timeout');
   await act(async () => { jest.advanceTimersByTime(450); });
   await act(async () => { jest.advanceTimersByTime(20_000); });
-  expect(view.root.findAllByType('Spinner' as never)).toHaveLength(0);
+  expect(view.root.findAllByType('WaveLoading' as never)).toHaveLength(0);
   expect(JSON.stringify(view.toJSON())).toContain('search.failed');
 });
 
@@ -151,3 +151,4 @@ it('does not let an old pick close or unlock a reopened search with the same que
   await act(async () => { finishNew(); });
   expect(props.onClose).toHaveBeenCalledTimes(1);
 });
+jest.mock('../components/WaveLoading', () => 'WaveLoading');

@@ -1,5 +1,6 @@
+import WaveLoading from './WaveLoading';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -250,7 +251,7 @@ export default React.memo(function KmlImportSheet({
                 ]}
               />
             </View>
-            <ActivityIndicator color={accent} />
+            <WaveLoading color={accent} />
           </>
         )}
 

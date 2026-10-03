@@ -84,7 +84,7 @@ struct HitherLiveActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: HitherGroupAttributes.self) { context in
       LockScreenView(context: context)
-        .activityBackgroundTint(Brand.card)
+        .modifier(LockScreenBackground())
         .activitySystemActionForegroundColor(context.state.accentColor)
     } dynamicIsland: { context in
       let accent = context.state.accentColor
@@ -171,6 +171,24 @@ private struct DestinationTitle: View {
       .fixedSize(horizontal: false, vertical: true)
       .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
       .accessibilityLabel(text)
+  }
+}
+
+/// Clear the ActivityKit tint so the native glass surface can read the wallpaper.
+/// Earlier systems retain the established dark lock-screen presentation.
+private struct LockScreenBackground: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content
+        .background {
+          Color.clear
+            .glassEffect(.regular, in: .rect(cornerRadius: 24))
+            .environment(\.colorScheme, .dark)
+        }
+        .activityBackgroundTint(.clear)
+    } else {
+      content.activityBackgroundTint(Brand.card)
+    }
   }
 }
 

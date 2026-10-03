@@ -102,6 +102,15 @@ export interface SetDailyAccommodationResult {
   lastCardId?: string | null;
 }
 
+/** A discarded source stop becomes a value snapshot, not a live reference. */
+export function resolveDailyAccommodationSourceId(
+  sourceId: string | null | undefined,
+  deletedIds: readonly string[],
+): string | undefined {
+  return sourceId && !sourceId.startsWith('draft-') && !deletedIds.includes(sourceId)
+    ? sourceId : undefined;
+}
+
 /**
  * Save locally with its durable operation. The backend atomically disables
  * boundary auto-add while applying the stay; local completion never waits on it.
@@ -166,13 +175,4 @@ export async function setAccommodationAutoAdd(
     p_enabled: enabled,
   });
   orThrow(error);
-}
-
-
-export function resolveDailyAccommodationSourceId(
-  sourceId: string | null | undefined,
-  deletedIds: readonly string[],
-): string | undefined {
-  return sourceId && !sourceId.startsWith('draft-') && !deletedIds.includes(sourceId)
-    ? sourceId : undefined;
 }

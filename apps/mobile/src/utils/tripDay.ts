@@ -28,6 +28,7 @@ export function normalizeTripDepartureDate(value: string): string | null {
   const raw = value.trim();
   const calendar = raw.match(/^\d{4}-\d{2}-\d{2}(?=T|$)/)?.[0];
   if (!calendar) return null;
+  // Date() rolls invalid days into the next month; reject before normalizing.
   const calendarDate = parseDateOnlyLocal(calendar);
   if (!calendarDate || localDayKey(calendarDate) !== calendar) return null;
   const parsed = parseDateOnlyLocal(raw);

@@ -26,8 +26,12 @@
 
 進行中的導航目標維持不可變座標；更換每日住宿不暗中把現有 session 移到另一間旅館。SQL 同時排除 group active target 與所有 active session 引用，JS 可辨識的 group／authoritative activeGathering target 亦排除。snapshot 尚不包含獨立 server session 清單，因此不能把離線 projection 測試當作所有 session 組合證明。
 
-模擬器長時 Debug footprint、主機 swap／三台錄影壓力不足以證明 App 洩漏，也不足以宣稱修復後真機散熱通過。新的 native log 仍需確認不再有 Record.swift 大量 actor warnings。原報告第 43 項外部 Apple 尋找／Google Maps對照、APNs／真機 background／整晚／熱量／原生 FPS 需保持未驗狀態。
+模擬器長時 Debug footprint、主機 swap／三台錄影壓力不足以證明 App 洩漏，也不足以宣稱修復後真機散熱通過。新 iOS 17.0.1 binary 的隔離原生 Record／SQLite 回呼測試 1,000 輪 PASS，對應 log 的 actor warning／error 均為 0；詳見 `tokyo-qa-executor-validation.md`。原報告第 43 項外部 Apple 尋找／Google Maps對照、APNs／真機 background／整晚／熱量／原生 FPS 需保持未驗狀態。
 
 ## 驗證狀態
 
-iOS 17 simulator native build＋install＋launch通過（XcodeBuildMCP，54.6秒incremental retry）；UI載入前須使用本地正確env/bundle。SQL113 migrations及兩份新fixture通過，既有daily accommodation／outbox SQL回歸亦通過。完整 Jest：319 suites／2,579 tests PASS；changed-function coverage 89.14%（門檻85%）；typecheck、lint、META_PARENT=287 meta、runtime alignment、Expo dependencies check PASS。獨立 review 發現並修正住宿 immutable trigger 衝突；新 SQL 必須部署、native module 必須重建 binary 才會生效。本次未修改正式 DB、未發布 OTA 或 TestFlight。
+iOS 17 simulator native build＋install＋launch通過（XcodeBuildMCP，54.6秒incremental retry）；UI載入前須使用本地正確env/bundle。SQL113 migrations及兩份新fixture通過，既有daily accommodation／outbox SQL回歸亦通過。整合遠端 `68db353` 後完整 Jest：319 suites／2,599 tests PASS；本地 function coverage 89.26%（整合前 HEAD 的變更集合；最終 PR 的變更集合以 CI gate 為準，門檻85%）；typecheck、lint、META_PARENT=287 meta、runtime alignment、Expo dependencies check PASS。獨立 review 發現並修正住宿 immutable trigger 衝突；新 SQL 必須部署、native module 必須重建 binary 才會生效。本次未修改正式 DB、未發布 OTA 或 TestFlight。
+
+## iOS 17 元件操作證據
+
+隔離入口使用產品的 TourCard／SheetHeaderAction／BottomSheet，未登入或修改群組。教學步驟 1→2、單一完成 touch/AX target、上拖展開及全展開內容已操作確認；Home 後以不終止程序的 simctl launch 返回同一 PID，階段與回呼計數保留，完成鈕仍可操作。入口已移除、原 index.ts 復原。截圖、操作紀錄及重現 harness 位於 `/Users/dillion/Desktop/Hither/qa-runs/2026-10-04-tokyo-qa-fix-implementation`。此證據不等於三台完整群組驗收或 iOS 26 玻璃介面驗收。

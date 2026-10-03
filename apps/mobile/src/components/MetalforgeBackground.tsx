@@ -10,7 +10,8 @@ import {
 } from 'react-native-reanimated';
 
 import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
-import { useForegroundUi } from '../state/foregroundUi';
+import { useAppState, useForegroundUi } from '../state/foregroundUi';
+import { authLoadingMotionAllowed } from '../utils/loadingDots';
 import { energyObservability } from '../state/energyObservability';
 
 // ─── MetalForge Grain SkSL Source ─────────────────────────────────────────────
@@ -131,6 +132,8 @@ const globalElapsedTime = makeMutable(0);
 export type MetalforgeBackgroundProps = {
   /** False when the screen is not focused; animation freezes at its last frame. */
   active?: boolean;
+  /** Only during visible Apple/Google authentication, never actual background. */
+  allowInactive?: boolean;
 };
 
 /**
@@ -138,14 +141,18 @@ export type MetalforgeBackgroundProps = {
  * Uses Hermite-interpolated 3×3 colour grid + procedural film grain
  * capped at 20 FPS, with static fallback under thermal/power pressure.
  */
-export default function MetalforgeBackground({ active = true }: MetalforgeBackgroundProps) {
+export default function MetalforgeBackground({ active = true, allowInactive = false }: MetalforgeBackgroundProps) {
   const reducedMotion = useReducedMotion();
   const appActive = useForegroundUi();
+  const appState = useAppState();
   const { width, height } = useWindowDimensions();
   const frozen = useSharedValue(globalElapsedTime.value);
   const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
-  const visible = active && appActive;
-  const isActive = visible && !reducedMotion && optionalVisualsAllowed(power);
+  const visible = active && (appActive || (allowInactive && appState === 'inactive'));
+  const motionAllowed = allowInactive
+    ? authLoadingMotionAllowed(appState, power.thermalState, power.lowPowerMode)
+    : optionalVisualsAllowed(power);
+  const isActive = visible && !reducedMotion && motionAllowed;
   const lastFrameAt = useSharedValue(-1);
   const lastTimestamp = useSharedValue(-1);
   useEffect(() => {

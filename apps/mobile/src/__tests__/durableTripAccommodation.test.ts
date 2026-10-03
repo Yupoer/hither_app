@@ -28,7 +28,8 @@ jest.mock('../api/demo', () => ({ isDemoGroup: (id: string) => id === 'demo' }))
 
 import { supabase } from '../api/supabase';
 import { setDailyAccommodation, clearDailyAccommodation, listDailyAccommodations,
-  getDailyAccommodationForDate, setAccommodationAutoAdd, mapDailyAccommodation } from '../api/services/DailyAccommodationService';
+  getDailyAccommodationForDate, setAccommodationAutoAdd, mapDailyAccommodation,
+  resolveDailyAccommodationSourceId } from '../api/services/DailyAccommodationService';
 import { updateGroupTripDetails } from '../api/services/GroupService';
 import { createCoreDataStore, groupStateFromCoreSnapshot, snapshotPayloadOf } from '../state/coreDataStore';
 import { enqueueTripDetails, enqueueDailyAccommodation, enqueueDestinationAdd, enqueueDestinationDelete, enqueueDestinationComplete,
@@ -92,6 +93,57 @@ beforeEach(async () => {
   mockTransport.mockRejectedValue(new Error('offline'));
   await getCoreDataStore().saveRemoteGroupState(state);
   jest.clearAllMocks();
+});
+
+it('saves the route editor ISO departure and a day-2 stay without losing the selected calendar date', async () => {
+  const selectedDeparture = new Date(2026, 9, 3, 0, 0, 0);
+  // DestinationReorderList.saveTripSettings passes Date.toISOString().
+  await updateGroupTripDetails('g', 2, selectedDeparture.toISOString());
+  await enqueueDestinationDelete({ groupId: 'g', destinationId: 'd' });
+  await setDailyAccommodation('g', '2026-10-04', {
+    title: 'Tokyo Station', coordinates: { latitude: 35.681072, longitude: 139.7674266 },
+    sourceDestinationId: resolveDailyAccommodationSourceId('d', ['d']), day: 2,
+  });
+  const saved = (await getCoreDataStore().readSnapshot('g'))!;
+  expect(saved.group).toMatchObject({ tripDays: 2, departureDate: '2026-10-03' });
+  expect(saved.destinations).toEqual([]);
+  expect(saved.dailyAccommodations).toEqual([expect.objectContaining({
+    stayDate: '2026-10-04', sourceDestinationId: null, title: 'Tokyo Station',
+  })]);
+  const operations = await getCoreOperationOutbox().listOpenByGroup('g');
+  expect(operations.map(op => op.operationType))
+    .toEqual(['set_trip_details', 'delete_destination', 'set_daily_accommodation']);
+  expect(operations[0].payload).toMatchObject({ departureDate: '2026-10-03', tripDays: 2 });
+  expect(operations[2].payload).toMatchObject({ stayDate: '2026-10-04', day: 2,
+    daily: { sourceDestinationId: null, title: 'Tokyo Station' } });
+  expect(supabase.rpc).not.toHaveBeenCalled();
+});
+
+it.each(['2026-02-30T00:00:00.000Z', '2026-10-03T99:00:00Z', 'invalid', '10/03/2026'])(
+  'rejects invalid/non-ISO departure %s before any local write', async departureDate => {
+    const before = await getCoreDataStore().readSnapshot('g');
+    await expect(updateGroupTripDetails('g', 2, departureDate)).rejects.toThrow('invalid_trip_details');
+    expect(await getCoreDataStore().readSnapshot('g')).toEqual(before);
+    expect(await getCoreOperationOutbox().listOpenByGroup('g')).toEqual([]);
+  },
+);
+
+it('retains an existing source reference when the stop has not been discarded', async () => {
+  const result = await setDailyAccommodation('g', daily.stayDate, {
+    ...daily, sourceDestinationId: 'd', day: 1,
+  });
+  expect(result.daily.sourceDestinationId).toBe('d');
+  expect((await getCoreDataStore().readSnapshot('g'))!.dailyAccommodations?.[0].sourceDestinationId).toBe('d');
+  expect((await getCoreOperationOutbox().listOpenByGroup('g'))[0].payload)
+    .toMatchObject({ daily: { sourceDestinationId: 'd' } });
+});
+
+it('detaches only known deleted/draft sources and leaves unknown references for backend validation', () => {
+  expect(resolveDailyAccommodationSourceId('d', ['d'])).toBeUndefined();
+  expect(resolveDailyAccommodationSourceId('draft-new', [])).toBeUndefined();
+  expect(resolveDailyAccommodationSourceId(null, [])).toBeUndefined();
+  expect(resolveDailyAccommodationSourceId('existing', ['other'])).toBe('existing');
+  expect(resolveDailyAccommodationSourceId('unknown-or-foreign', [])).toBe('unknown-or-foreign');
 });
 
 it('durably saves trip and stay edits offline without an RPC prerequisite and restores snapshot fields', async () => {

@@ -1,5 +1,6 @@
+import WaveLoading from '../components/WaveLoading';
 import React, { useCallback, useRef, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, Alert, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, Alert, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -183,7 +184,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
         {groupsError ? <GroupLoadError error={groupsError} loading={isLoading} retry={retry} color={accent} /> : null}
         {isLoading && joinedGroups.length === 0 ? (
           <View style={{ paddingTop: 60, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={accent} />
+            <WaveLoading size="large" color={accent} />
           </View>
         ) : null}
         {!isLoading && !groupsError && joinedGroups.length === 0 ? (

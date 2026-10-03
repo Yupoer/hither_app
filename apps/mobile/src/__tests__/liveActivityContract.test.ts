@@ -182,7 +182,7 @@ describe('ActivityKit remote push contract', () => {
     expect(widget).toContain('ProgressRow(value: context.state.clampedProgress');
   });
 
-  it('matches the approved black capsule information hierarchy', () => {
+  it('keeps the existing information hierarchy with native lock-screen glass', () => {
     expect(widget).toContain('static let card = Color.black');
     expect(widget).toContain('正在前往');
     expect(widget).not.toContain('前往集合點');
@@ -205,6 +205,18 @@ describe('ActivityKit remote push contract', () => {
     expect(appAttributes).toContain('public var language: String?');
     expect(jsBridge).toContain('language?:');
     expect(mapScreen).toContain('language,');
+  });
+
+  it('uses an iOS 26 glass background with a clear ActivityKit tint and an older-system fallback', () => {
+    const lockBackground = widget.slice(widget.indexOf('private struct LockScreenBackground'), widget.indexOf('// MARK: - Lock screen'));
+    expect(lockBackground).toContain('#available(iOS 26.0, *)');
+    expect(lockBackground).toContain('.glassEffect(.regular, in: .rect(cornerRadius: 24))');
+    expect(lockBackground).toMatch(/\.background\s*\{\s*Color\.clear/);
+    expect(lockBackground).not.toMatch(/content\s*\.glassEffect/);
+    expect(lockBackground).toContain('.activityBackgroundTint(.clear)');
+    expect(lockBackground).toContain('content.activityBackgroundTint(Brand.card)');
+    const dynamicIsland = widget.slice(widget.indexOf('} dynamicIsland:'), widget.indexOf('private struct DestinationTitle'));
+    expect(dynamicIsland).not.toContain('glassEffect');
   });
 
   it('uses travel-mode leading identity and gathering-title precedence', () => {

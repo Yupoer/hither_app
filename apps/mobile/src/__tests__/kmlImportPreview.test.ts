@@ -43,3 +43,4 @@ it('previews and submits only 100 Premium points with a batch notice and no upgr
   jest.clearAllTimers();
   jest.useRealTimers();
 });
+jest.mock('../components/WaveLoading', () => 'WaveLoading');

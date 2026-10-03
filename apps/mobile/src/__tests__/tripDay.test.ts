@@ -1,7 +1,7 @@
 import {
+  normalizeTripDepartureDate,
   currentTripDayNumber,
   parseDateOnlyLocal,
-  normalizeTripDepartureDate,
   localDayKey,
   filterActiveDestinations,
   openDestinationsForReorder,
@@ -12,6 +12,22 @@ import {
   resolveVisibleStartDay,
 } from '../utils/tripDay';
 import type { Destination } from '../types';
+
+describe('normalizeTripDepartureDate', () => {
+  it('preserves date-only values and local dates serialized by the date picker', () => {
+    expect(normalizeTripDepartureDate('2026-10-03')).toBe('2026-10-03');
+    // In Asia/Taipei this ISO instant is 2026-10-02T16:00:00Z.
+    expect(normalizeTripDepartureDate(new Date(2026, 9, 3, 0).toISOString())).toBe('2026-10-03');
+    expect(normalizeTripDepartureDate(new Date(2026, 9, 3, 23, 59).toISOString())).toBe('2026-10-03');
+    expect(normalizeTripDepartureDate('2028-02-29')).toBe('2028-02-29');
+  });
+
+  it.each(['2026-02-30', '2026-02-30T00:00:00Z', '2026-10-03T99:00:00Z', 'not a date', '10/03/2026', ''])(
+    'rejects invalid calendar/date input %s', value => {
+      expect(normalizeTripDepartureDate(value)).toBeNull();
+    },
+  );
+});
 
 function dest(
   id: string,

@@ -285,6 +285,7 @@ export default function DestinationReorderList({
   const pendingAutoScrollRef = useRef(0);
   const pan = useRef(new Animated.Value(0)).current;
   const previewPan = useRef(new Animated.Value(0)).current;
+  const dragGenerationRef = useRef(0);
   const rowViewsRef = useRef(new Map<string, View>());
   const previewRowsRef = useRef(new Map<string, React.ReactElement>());
   /** Insertion line under finger aim (null when not dragging). */
@@ -347,6 +348,7 @@ export default function DestinationReorderList({
 
   const endDragSession = useCallback(() => {
     draggingRef.current = false;
+    dragGenerationRef.current += 1;
     legalIndicesRef.current = [];
     scrollAccumRef.current = 0;
     pendingAutoScrollRef.current = 0;
@@ -558,6 +560,7 @@ export default function DestinationReorderList({
       const entry = orderRef.current[startIdx];
       // Day1 header is fixed; Day2…last may drag.
       if (entry.type === 'header' && entry.day <= 1) return;
+      const generation = ++dragGenerationRef.current;
       startIndexRef.current = startIdx;
       draggingRef.current = true;
       onDragActiveChange?.(true);
@@ -566,12 +569,12 @@ export default function DestinationReorderList({
       previewPan.setValue(0);
       if (view && preview && onDragPreviewChange) {
         view.measureInWindow((x, y, width, height) => {
-          if (!draggingRef.current || orderRef.current[startIndexRef.current]?.id !== id) return;
+          if (!draggingRef.current || generation !== dragGenerationRef.current || orderRef.current[startIndexRef.current]?.id !== id) return;
           setActiveId(id);
           onDragPreviewChange(
             <Animated.View pointerEvents="none" accessibilityElementsHidden testID="route-drag-preview"
-              style={{ position: 'absolute', left: x, top: y, width, height, zIndex: 1000,
-                elevation: 1000, transform: [{ translateY: previewPan }] }}>
+              style={[styles.dragPreview, { position: 'absolute', left: x, top: y, width, height, zIndex: 1000,
+                elevation: 1000, transform: [{ translateY: previewPan }] }]}>
               {preview}
             </Animated.View>,
           );
@@ -596,7 +599,7 @@ export default function DestinationReorderList({
       pan.setValue(0);
       selectionTick();
     },
-    [pan, previewPan, onDragActiveChange, onDragPreviewChange, toReorderEntries, getMeasuredGeometry],
+    [pan, previewPan, styles, onDragActiveChange, onDragPreviewChange, toReorderEntries, getMeasuredGeometry],
   );
 
   const handleMove = useCallback(
@@ -1026,8 +1029,8 @@ export default function DestinationReorderList({
                 />
               );
               previewRowsRef.current.set(item.id, React.cloneElement(row, {
-                active: false, canDrag: false, canSwipeDelete: false,
-                onViewRef: undefined, tourTargetRef: undefined,
+                active: false, floating: true, canDrag: false, canSwipeDelete: false,
+                onViewRef: undefined, tourTargetRef: undefined, onLayoutHeight: undefined,
               }));
               return row;
             };
@@ -1110,7 +1113,7 @@ export default function DestinationReorderList({
                     return null;
                   })();
               const header = (
-<HeaderRow
+                  <HeaderRow
                     item={item}
                     styles={styles}
                     bgColor={bgColor}
@@ -1163,7 +1166,6 @@ export default function DestinationReorderList({
                       showDragAffordance ? () => endDragSession() : undefined
                     }
                     headerActive={activeId === item.id}
-                    onViewRef={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
                     headerPan={pan}
                     setStayLabel={
                       canReorder
@@ -1236,15 +1238,21 @@ export default function DestinationReorderList({
                     }
                   />
               );
-              previewRowsRef.current.set(item.id, React.cloneElement(header, {
+              const floatingHeader = React.cloneElement(header, {
                 headerActive: false, onViewRef: undefined, tourTargetRef: undefined,
-                accommodationTargetRef: undefined,
-              }));
+                accommodationTargetRef: undefined, onLayoutHeight: undefined,
+              });
+              const floatingRows = collapsed ? [] : block.dests.map((entry) => previewRowsRef.current.get(entry.id));
+              previewRowsRef.current.set(item.id,
+                <View style={styles.floatingDay}>
+                  {floatingHeader}
+                  {floatingRows}
+                </View>,
+              );
               return (
-                <View
-                  key={item.id}
-                  testID={`day-block-${item.day}`}
-                >
+                <View key={item.id} testID={`day-block-${item.day}`}
+                  ref={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
+                  style={activeId === item.id ? { opacity: 0 } : undefined}>
                   {dropBeforeHeader ? (
                     <View
                       key={`drop-before-header-${item.day}`}
@@ -1869,6 +1877,7 @@ const HeaderRow = memo(function HeaderRow({
 const Row = memo(function Row({
   item,
   active,
+  floating = false,
   canDrag,
   canSwipeDelete,
   pan,
@@ -1900,6 +1909,7 @@ const Row = memo(function Row({
 }: {
   item: Destination;
   active: boolean;
+  floating?: boolean;
   /** Vertical drag handle (interactionMode === 'drag'). */
   canDrag: boolean;
   /** Horizontal swipe-to-delete (independent of drag mode). */
@@ -2018,31 +2028,13 @@ const Row = memo(function Row({
     [item.id, item.title, onDelete, styles, t],
   );
 
-  return (
-    <View
-      ref={(node) => { tourTargetRef?.(node as View | null); onViewRef?.(node as View | null); }}
-      style={active && { opacity: 0 }}
-      onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
-    >
-      <ReanimatedSwipeable
-        ref={swipeableRef}
-        enabled={canSwipe && !active}
-        friction={1}
-        rightThreshold={38}
-        dragOffsetFromRightEdge={10}
-        overshootRight={false}
-        enableTrackpadTwoFingerGesture
-        renderRightActions={renderRightActions}
-        onSwipeableOpen={handleSwipeableOpen}
-        onSwipeableClose={handleSwipeableClose}
-        containerStyle={styles.swipeableContainer}
-        childrenContainerStyle={styles.swipeableChildren}
-      >
+  const rowContent = (
         <Animated.View
           style={[
             styles.row,
             !isAccommodation && stayDuplicate && styles.rowStayDuplicate,
-            active && styles.rowActive,
+            (active || floating) && styles.rowActive,
+            floating && styles.rowFloating,
             { transform: [{ translateY: active ? pan : 0 }] },
           ]}
           {...(canDrag ? responder.panHandlers : {})}
@@ -2131,7 +2123,7 @@ const Row = memo(function Row({
           >
             <Ionicons name="trash-outline" size={20} color="#FF5A5F" />
           </Pressable>
-        ) : canDrag ? (
+        ) : canDrag || floating ? (
           <View style={styles.handleSlot}>
             <Text style={styles.handle}>≡</Text>
           </View>
@@ -2139,7 +2131,31 @@ const Row = memo(function Row({
           <View style={styles.handleSlot} />
         ) : null}
         </Animated.View>
-      </ReanimatedSwipeable>
+  );
+
+  return (
+    <View
+      ref={(node) => { tourTargetRef?.(node as View | null); onViewRef?.(node as View | null); }}
+      style={active && { opacity: 0 }}
+      onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
+    >
+      {floating ? rowContent : <ReanimatedSwipeable
+        ref={swipeableRef}
+        enabled={canSwipe && !active}
+        friction={1}
+        rightThreshold={38}
+        dragOffsetFromRightEdge={10}
+        overshootRight={false}
+        enableTrackpadTwoFingerGesture
+        renderRightActions={renderRightActions}
+        onSwipeableOpen={handleSwipeableOpen}
+        onSwipeableClose={handleSwipeableClose}
+        containerStyle={styles.swipeableContainer}
+        childrenContainerStyle={styles.swipeableChildren}
+      >
+
+        {rowContent}
+      </ReanimatedSwipeable>}
     </View>
   );
 });
@@ -2346,6 +2362,12 @@ const makeStyles = (colors: Palette) =>
       fontSize: 12,
       fontWeight: '600',
     },
+    dragPreview: {
+      backgroundColor: '#343B48', borderRadius: 16,
+      shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
+    },
+    floatingDay: { backgroundColor: '#343B48', borderRadius: 16, overflow: 'hidden' },
+    rowFloating: { backgroundColor: '#343B48', borderBottomWidth: 0 },
     rowActive: {
       borderRadius: radius.md,
       borderWidth: 1,

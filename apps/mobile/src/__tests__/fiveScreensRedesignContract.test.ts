@@ -30,7 +30,7 @@ describe('five-screen Liquid Glass redesign contract', () => {
     expect(login).toContain("busyAction === 'apple'");
     expect(login).toContain('<BlockingAuthOverlay');
     expect(overlay).toContain('pointerEvents="auto"');
-    expect(overlay).toContain('<BouncingDots');
+    expect(overlay).toContain('<WaveLoading');
   });
 
   it('keeps iOS buttons native and removes the redesigned Home delete action', () => {

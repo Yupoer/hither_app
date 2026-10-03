@@ -1,6 +1,6 @@
+import WaveLoading from '../../../components/WaveLoading';
 import React, { useCallback, useMemo } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -236,7 +236,7 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
       <View style={styles.card}>
         {model.contentStatus === 'loading' ? (
           <View style={styles.centerBlock}>
-            <ActivityIndicator color={accent} />
+            <WaveLoading color={accent} />
             <HitherText typeRole="body" style={styles.secondary}>{t('passive.loading')}</HitherText>
           </View>
         ) : null}
