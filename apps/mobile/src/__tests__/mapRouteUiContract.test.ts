@@ -75,7 +75,7 @@ describe('MapKit route UI contract', () => {
       'utf8',
     );
     expect(routesHook).toContain('selfRoute: next.selfRoute');
-    expect(routesHook).toContain('if (!active) return');
+    expect(routesHook).toContain('if (requestGeneration !== requestGenerationRef.current) return;');
   });
 
   it('opens external navigation via the shared boundary', () => {

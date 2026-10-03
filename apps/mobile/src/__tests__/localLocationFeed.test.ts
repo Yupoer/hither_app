@@ -24,6 +24,10 @@ it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, 
   }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe, { focused: true })); });
+  // A silent MapKit startup still gets one initial fix for distance/ETA,
+  // without starting a second continuous GPS watcher.
+  expect(location.getCurrentLocation).toHaveBeenCalledWith(false, 'foreground');
+  expect(location.watchLocation).not.toHaveBeenCalled();
   const sample = (latitude: number, timestamp: number) => ({ coordinates: { latitude, longitude: 121 }, accuracy: 5, timestamp });
   await act(async () => { feed.consumeForegroundSample(sample(25, 1000)); });
   // Normal journey/foreground projection is capped at 1 Hz and still filters
@@ -41,6 +45,11 @@ it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, 
   await act(async () => { renderer.update(React.createElement(Probe, { focused: false })); });
   await act(async () => { feed.consumeForegroundSample(sample(26, 1002)); });
   expect(feed.deviceCoords?.latitude).toBe(25.0001);
+  // Reopening a map with no MapKit sample must restore the estimate origin.
+  (location.getCurrentLocation as jest.Mock).mockResolvedValueOnce(sample(26, Date.now()));
+  await act(async () => { renderer.update(React.createElement(Probe, { focused: true })); });
+  expect(feed.deviceCoords?.latitude).toBe(26);
+  expect(location.watchLocation).not.toHaveBeenCalled();
   await act(async () => renderer.unmount());
   jest.useRealTimers();
 });

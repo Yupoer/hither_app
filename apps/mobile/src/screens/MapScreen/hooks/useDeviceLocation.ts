@@ -316,9 +316,12 @@ export function useDeviceLocation({
     motionRef.current = createMotionState(Date.now());
   }, [highAccuracy, teamNavigationActive, groupId]);
 
-  // Foreground force-sync: open app / return from background → upload now.
+  // Bootstrap an estimate when MapKit has not delivered its first fix yet.
+  // MapKit remains the continuous owner; this is one bounded foreground read.
   useEffect(() => {
-    if (nativeMapLocationEnabled || !groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
+    if (!groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
+    if (nativeMapLocationEnabled && latestSampleRef.current
+      && Date.now() - latestSampleRef.current.timestamp < 60_000) return;
     if (forceSyncInFlightRef.current) return;
     forceSyncInFlightRef.current = true;
     void refreshDeviceLocation()

@@ -5,6 +5,7 @@ const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8')
 
 describe('Amicro native animation contracts', () => {
   const button = read('components/AmicroButton.tsx');
+  const wave = read('components/WaveLoading.tsx');
   const map = read('screens/MapScreen.tsx');
   const passive = read('screens/MapScreen/components/PassiveCompanionPanel.tsx');
   const app = read('../App.tsx');
@@ -81,11 +82,11 @@ describe('Amicro native animation contracts', () => {
   it('renders centered Bouncing Dots without moving the logo', () => {
     expect(app).toContain('testID="splash-bouncing-dots"');
     expect(app).toContain('bottom: \'33%\'');
-    expect(app).toContain('<BouncingDots color={colors.accent} />');
-    expect(button).toContain('loadingDotOffset(phase.value, 0)');
-    expect(button).toContain('loadingDotOffset(phase.value, 1)');
-    expect(button).toContain('loadingDotOffset(phase.value, 2)');
-    expect(button).toContain('withRepeat');
-    expect(button).toContain('Easing.linear');
+    expect(app).toContain('<WaveLoading size="large" color={colors.accent} />');
+    expect(wave).toContain('loadingDotOffset(phase.value, 0)');
+    expect(wave).toContain('loadingDotOffset(phase.value, 1)');
+    expect(wave).toContain('loadingDotOffset(phase.value, 2)');
+    expect(wave).toContain('withRepeat');
+    expect(wave).toContain('Easing.linear');
   });
 });

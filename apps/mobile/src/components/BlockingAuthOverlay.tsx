@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { BouncingDots } from './AmicroButton';
+import WaveLoading from './WaveLoading';
 
 export default function BlockingAuthOverlay({
   visible,
@@ -20,7 +20,7 @@ export default function BlockingAuthOverlay({
       importantForAccessibility="yes"
       testID="auth-blocking-overlay"
     >
-      <BouncingDots color={color} allowInactive />
+      <WaveLoading size="large" color={color} allowInactive />
     </View>
   );
 }

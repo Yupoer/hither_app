@@ -200,7 +200,7 @@ describe('background journey controller', () => {
     };
     expect(opts.accuracy).toBe(2);
     expect(opts.deferredUpdatesInterval).toBe(180_000);
-    expect(opts.pausesUpdatesAutomatically).toBe(true);
+    expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
   it('restarts native updates when highAccuracy profile changes', async () => {
@@ -338,7 +338,7 @@ describe('background journey native wiring', () => {
     expect(callback).not.toContain('diagnostics.flush()');
   });
 
-  it('starts from MapScreen and stops on pause, leave, or sign-out', () => {
+  it('starts sharing from MapScreen and stops on leave or sign-out', () => {
     const mapScreen = readFileSync(
       join(__dirname, '../screens/MapScreen.tsx'),
       'utf8',

@@ -143,7 +143,7 @@ describe('background journey native task wiring', () => {
 
     await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, sharingEnabled: false, permissionsPrepared: true });
     // A hidden sharing profile intentionally has no persisted tracking task.
-    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null, permissionsPrepared: true })).resolves.toBe('hidden');
+    await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null, sharingEnabled: false, permissionsPrepared: true })).resolves.toBe('hidden');
     await expect(loadBackgroundJourney()).resolves.toBeNull();
     await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
     const loaded = await loadBackgroundJourney();

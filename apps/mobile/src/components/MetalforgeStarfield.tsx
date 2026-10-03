@@ -1,16 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { Canvas, Path, Skia } from '@shopify/react-native-skia';
-import { useDerivedValue, useFrameCallback, useReducedMotion, useSharedValue } from 'react-native-reanimated';
+import { Canvas, Path, Skia, type SkPath } from '@shopify/react-native-skia';
+import { type DerivedValue, useDerivedValue, useFrameCallback, useReducedMotion, useSharedValue } from 'react-native-reanimated';
 import { optionalVisualsAllowed } from '../state/runtimePowerState';
 import { useForegroundUi } from '../state/foregroundUi';
 import { energyObservability } from '../state/energyObservability';
-import { createStarfieldParticles, STARFIELD_BASELINE } from '../utils/starfieldParticles';
-import { advanceStarfieldPhase, advanceStarfieldPosition, STARFIELD_PERIOD_SECONDS } from '../utils/starfieldPhase';
+import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, type ChargeEmission } from '../utils/starfieldParticles';
 
-export const METALFORGE_STARFIELD_RUNTIME_FACTORS = {
-  speed: 0.5, twinkleFrequency: 1 / 9, density: 0.5, radius: 4.5, maxFps: 20, lowPowerFps: 10,
-} as const;
+export const METALFORGE_STARFIELD_RUNTIME_FACTORS = { maxFps: 20 } as const;
 export interface StarfieldAnimationPolicyInput {
   active: boolean; appActive: boolean; reducedMotion: boolean; lowPowerMode?: boolean | null; thermalState?: string | null;
 }
@@ -23,60 +20,74 @@ export function getMetalforgeStarfieldAnimationPolicy(input: StarfieldAnimationP
   };
 }
 export type MetalforgeStarfieldProps = {
-  active?: boolean; collapsed?: boolean; lowPowerMode?: boolean | null; thermalState?: string | null; style?: StyleProp<ViewStyle>;
+  emitting?: boolean; active?: boolean; lowPowerMode?: boolean | null; thermalState?: string | null; color?: string; style?: StyleProp<ViewStyle>;
 };
-export default function MetalforgeStarfield({ active = true, collapsed = false, lowPowerMode, thermalState, style }: MetalforgeStarfieldProps) {
+/** Balls enter from the left. The same field lives through expansion and exit. */
+export default function MetalforgeStarfield({ emitting = false, active = true, lowPowerMode, thermalState, color = '#FFFFFF', style }: MetalforgeStarfieldProps) {
   const reducedMotion = useReducedMotion();
-  const [{ width, height }, setSize] = useState({ width: 0, height: 0 });
-  const appActive = useForegroundUi();
-  const phase = useSharedValue(0);
-  const positions = useSharedValue<number[]>([]);
+  const [width, setWidth] = useState(0);
+  const [windows, setWindows] = useState<ChargeEmission[]>([]);
+  const emissions = useSharedValue<ChargeEmission[]>([]);
+  const now = useSharedValue(Date.now());
   const lastFrameAt = useSharedValue(-1);
-  const accumulated = useSharedValue(0);
-  const policy = getMetalforgeStarfieldAnimationPolicy({ active, appActive, reducedMotion, lowPowerMode, thermalState });
-  const visible = active && appActive;
-  useEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: policy.shouldAnimate ? 1 : 0 }), [visible, policy.shouldAnimate]);
-  const particles = useMemo(() => createStarfieldParticles(width, height, collapsed), [width, height, collapsed]);
-  useEffect(() => { positions.value = particles.map(star => star.x + star.radius * 3); }, [particles, positions]);
-  const frame = useFrameCallback(({ timestamp, timeSincePreviousFrame }) => {
-    if (!policy.shouldAnimate) return;
-    const delta = lastFrameAt.value < 0 ? 0 : Math.min(timestamp - lastFrameAt.value, 100);
+  const appActive = useForegroundUi();
+  const visible = active && appActive && windows.length > 0;
+  const policy = getMetalforgeStarfieldAnimationPolicy({ active: active && windows.length > 0, appActive, reducedMotion, lowPowerMode, thermalState });
+  useEffect(() => {
+    const at = Date.now();
+    now.value = at;
+    setWindows(current => changeChargeEmission(current, emitting, at));
+  }, [emitting, now]);
+  useEffect(() => { emissions.value = windows; }, [windows, emissions]);
+  useEffect(() => {
+    const stopped = windows.filter(window => window.stoppedAt != null);
+    if (!stopped.length) return;
+    const deadline = Math.min(...stopped.map(window => window.stoppedAt! + CHARGE_BALL_MAX_TRAVEL_MS));
+    const timer = setTimeout(() => {
+      setWindows(current => current.filter(window => window.stoppedAt == null || Date.now() < window.stoppedAt + CHARGE_BALL_MAX_TRAVEL_MS));
+    }, Math.max(0, deadline - Date.now()));
+    return () => clearTimeout(timer);
+  }, [windows]);
+  const frame = useFrameCallback(({ timestamp }) => {
+    if (!policy.shouldAnimate || (lastFrameAt.value >= 0 && timestamp - lastFrameAt.value < 1000 / policy.fps)) return;
     lastFrameAt.value = timestamp;
-    accumulated.value += delta || Math.min(timeSincePreviousFrame ?? 0, 100);
-    if (accumulated.value < 1000 / policy.fps) return;
-    phase.value = advanceStarfieldPhase(phase.value, accumulated.value,
-      STARFIELD_PERIOD_SECONDS * STARFIELD_BASELINE.twinkleFrequency / (Math.PI * 2));
-    positions.value = particles.map((star, index) => advanceStarfieldPosition(
-      positions.value[index] ?? star.x + star.radius * 3, accumulated.value, star.velocity, width + star.radius * 6));
-    accumulated.value = 0;
+    now.value = Date.now();
   }, false);
   useEffect(() => {
     lastFrameAt.value = -1;
-    accumulated.value = 0;
+    now.value = Date.now();
     frame.setActive(policy.shouldAnimate);
     return () => frame.setActive(false);
-  }, [policy.shouldAnimate, frame, lastFrameAt, accumulated]);
+  }, [policy.shouldAnimate, frame, lastFrameAt, now]);
+  useEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: policy.shouldAnimate ? 1 : 0 }), [visible, policy.shouldAnimate]);
   const paths = useDerivedValue(() => {
-    const core = Skia.Path.Make();
-    const halo = Skia.Path.Make();
-    for (const [index, star] of particles.entries()) {
-      const margin = star.radius * 3;
-      const x = (positions.value[index] ?? star.x + margin) - margin;
-      const twinkle = 1 + Math.sin(phase.value * Math.PI * 2 + star.phase) * 0.15;
-      core.addCircle(x, star.y, star.radius * twinkle);
-      halo.addCircle(x, star.y, star.radius * twinkle * 2);
+    const layers = Array.from({ length: 3 }, () => ({ body: Skia.Path.Make(), rim: Skia.Path.Make(), highlight: Skia.Path.Make() }));
+    for (const ball of chargeBallsAt(now.value, width, emissions.value)) {
+      const layer = layers[ball.shade];
+      layer.rim.addCircle(ball.x, ball.y, ball.radius);
+      layer.body.addCircle(ball.x, ball.y, ball.radius * 0.88);
+      layer.highlight.addCircle(ball.x - ball.radius * 0.28, ball.y - ball.radius * 0.3, ball.radius * 0.29);
     }
-    return { core, halo };
-  }, [particles, width]);
-  const corePath = useDerivedValue(() => paths.value.core);
-  const haloPath = useDerivedValue(() => paths.value.halo);
-  if (!visible) return null;
-  return <View onLayout={({ nativeEvent }) => setSize(current => current.width === nativeEvent.layout.width && current.height === nativeEvent.layout.height ? current : nativeEvent.layout)}
+    return layers;
+  }, [width]);
+  const shades = useMemo(() => [0.20, 0.32, 0.45], []);
+  return <View onLayout={({ nativeEvent }) => setWidth(current => current === nativeEvent.layout.width ? current : nativeEvent.layout.width)}
     pointerEvents="none" accessibilityElementsHidden style={[StyleSheet.absoluteFill, styles.container, style]}>
-    <Canvas style={StyleSheet.absoluteFill}>
-      <Path path={haloPath} color="rgba(255,255,255,0.10)" />
-      <Path path={corePath} color="rgba(255,255,255,0.80)" />
-    </Canvas>
+    {visible && <Canvas style={StyleSheet.absoluteFill}>
+      {shades.map((opacity, index) => <ChargeBallLayer key={index} paths={paths} index={index} opacity={opacity} color={color} />)}
+    </Canvas>}
   </View>;
 }
 const styles = StyleSheet.create({ container: { overflow: 'hidden', zIndex: 0 } });
+function ChargeBallLayer({ paths, index, opacity, color }: {
+  paths: DerivedValue<{ body: SkPath; rim: SkPath; highlight: SkPath }[]>; index: number; opacity: number; color: string;
+}) {
+  const body = useDerivedValue(() => paths.value[index].body);
+  const rim = useDerivedValue(() => paths.value[index].rim);
+  const highlight = useDerivedValue(() => paths.value[index].highlight);
+  return <>
+    <Path path={rim} color={color} opacity={opacity * 0.5} />
+    <Path path={body} color={color} opacity={opacity} />
+    <Path path={highlight} color="white" opacity={opacity * 0.6} />
+  </>;
+}

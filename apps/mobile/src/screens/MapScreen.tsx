@@ -1,3 +1,4 @@
+import WaveLoading from '../components/WaveLoading';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
 import { showOperationFailure, claimAppNotice } from '../state/appNotice';
@@ -13,7 +14,6 @@ import React, {
 } from 'react';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   Alert,
   AppState,
   Keyboard,
@@ -361,6 +361,7 @@ import {
 } from '../utils/presenceMacros';
 import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferences } from '../types';
 import { logEvent, logError } from '../utils/activityLog';
+import { resolveDailyAccommodationSourceId } from '../api/services/DailyAccommodationService';
 import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
 import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
 import type {
@@ -2944,8 +2945,11 @@ export default function MapScreen({ route, navigation }: Props) {
     navigationSessionState.session?.id,
   ]);
 
-  const backgroundJourneyWantedRef = useRef(false);
-  backgroundJourneyWantedRef.current = Boolean(journeyActive && navTarget && sharingEnabled);
+  const backgroundJourneyWantedRef = useRef<string | null>(null);
+  const backgroundSharingScope = preferencesReady && sharingEnabled && groupId && user?.id
+    && members.some(member => member.userId === user.id) ? `${user.id}:${groupId}` : null;
+  backgroundJourneyWantedRef.current = backgroundSharingScope;
+
 
   /**
    * Single foreground/background GPS owner:
@@ -2954,7 +2958,7 @@ export default function MapScreen({ route, navigation }: Props) {
    * Avoid overlapping GPS consumers; device measurements determine actual energy savings.
    */
   useEffect(() => {
-    if (!groupId || !journeyActive || !navTarget || !sharingEnabled || !preferencesReady || !members.some(m => m.userId === user?.id)) {
+    if (!backgroundSharingScope || !groupId) {
       backgroundStartedKeyRef.current = null;
       backgroundPermissionAttemptedRef.current = null;
       setBackgroundPermissionsPreparedFor(null);
@@ -2978,8 +2982,8 @@ export default function MapScreen({ route, navigation }: Props) {
             const accepted = await new Promise<boolean>(resolve => Alert.alert(
               language === 'en' ? 'Share location in the background' : '背景位置分享',
               language === 'en'
-                ? 'During an active journey, Hither shares your location with this team in the background. Background navigation stops when the journey ends or you stop sharing.'
-                : '行程進行中，Hither 會在背景向團隊分享位置。行程結束或停止分享後，背景導航定位會停止。',
+                ? 'While location sharing is on, Hither shares your location with this team in the background, including when your screen is locked. Turn off location sharing to stop.'
+                : '開啟位置分享時，Hither 會在背景向團隊分享位置，鎖定畫面後也會繼續。關閉位置分享即可停止。',
               [{ text: language === 'en' ? 'Not now' : '暫時不要', style: 'cancel', onPress: () => resolve(false) },
                { text: language === 'en' ? 'Continue' : '繼續', onPress: () => resolve(true) }],
             ));
@@ -2990,15 +2994,18 @@ export default function MapScreen({ route, navigation }: Props) {
           return prepareBackgroundJourneyPermissions(true);
         })()
           .then((result) => {
-            if (!backgroundJourneyWantedRef.current) { void stopBackgroundJourney(true); return; }
+            if (backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
             if (result === 'ready') {
+              backgroundPermissionDeniedRef.current = null;
               setBackgroundPermissionsPreparedFor(groupId);
             } else {
               setBackgroundPermissionsPreparedFor(null);
               void rememberPendingLocationPermission();
             }
           })
-          .catch(() => setBackgroundPermissionsPreparedFor(null))
+          .catch(() => {
+            if (backgroundJourneyWantedRef.current === backgroundSharingScope) setBackgroundPermissionsPreparedFor(null);
+          })
           .finally(() => {
             if (backgroundPermissionPrepareInFlightRef.current === groupId) {
               backgroundPermissionPrepareInFlightRef.current = null;
@@ -3013,6 +3020,8 @@ export default function MapScreen({ route, navigation }: Props) {
 
     backgroundPermissionAttemptedRef.current = null;
     const powerMode = journeyActive && navTarget ? 'journey' : 'allDay';
+    const backgroundScopeSubgroupId = powerMode === 'journey'
+      ? navTarget?.subgroupId ?? null : myScopeId ?? null;
     const dest =
       navTarget?.coordinates ??
       deviceCoords ??
@@ -3021,7 +3030,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ? resolveCurrentNavigationSessionId(navTarget)
       : null;
     const sessionKey = backgroundNavigationSessionId ?? 'none';
-    const key = `${groupId}:${powerMode}:${navTarget?.id ?? 'presence'}:${sessionKey}`;
+    const key = `${backgroundSharingScope}:${backgroundScopeSubgroupId ?? 'main'}:${powerMode}:${navTarget?.id ?? 'presence'}:${sessionKey}`;
     if (backgroundPermissionDeniedRef.current === key || backgroundStartedKeyRef.current === key) return;
     backgroundStartedKeyRef.current = key;
 
@@ -3033,7 +3042,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
     void startBackgroundJourney({
       actorId: user?.id,
-      scopeSubgroupId: navTarget?.subgroupId ?? myScopeId ?? null,
+      scopeSubgroupId: backgroundScopeSubgroupId,
       memberIds: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.userId),
       navigationMemberIds: sessionEligibleMembers.filter(m => !m.solo && (m.subgroupId ?? null)
         === (navTarget?.subgroupId ?? null)).map(m => m.userId),
@@ -3087,6 +3096,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [
     appState,
     mapFocused,
+    backgroundSharingScope,
     backgroundPermissionsPreparedFor,
     preferencesReady,
     language,
@@ -5039,12 +5049,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   });
                   return match?.day ?? undefined;
                 })();
-                // Never pass draft-* as FK-ish source id after materialize map.
+                // A discarded stop is already deleted by step 2; save its value snapshot.
                 const sourceId = draftRow.sourceDestinationId;
-                const resolvedSource =
-                  sourceId && sourceId.startsWith('draft-')
-                    ? undefined
-                    : sourceId ?? undefined;
+                const resolvedSource = resolveDailyAccommodationSourceId(sourceId, dirty.deletedIds);
                 await setDailyAccommodation(groupId, stayDate, {
                   title: draftRow.title,
                   address: draftRow.address,
@@ -6252,7 +6259,7 @@ export default function MapScreen({ route, navigation }: Props) {
             }}
             >
             {sharingApplying ? (
-              <ActivityIndicator size="small" color={sharingEnabled ? accent : glass.danger} />
+              <WaveLoading size="small" color={sharingEnabled ? accent : glass.danger} />
             ) : (
               <Ionicons
                 name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}
@@ -6963,7 +6970,7 @@ export default function MapScreen({ route, navigation }: Props) {
       return (
         <View style={styles.flex}>
           <View style={styles.loading}>
-            <ActivityIndicator color={accent} size="large" />
+            <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
           </View>
           <PassiveCompanionPanel
@@ -6981,7 +6988,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color={accent} size="large" />
+        <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
     );
@@ -6995,7 +7002,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={styles.flex}>
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
-            {refreshing ? <ActivityIndicator color={accent} /> : null}
+            {refreshing ? <WaveLoading color={accent} /> : null}
             <Pressable
               disabled={refreshing}
               accessibilityState={{ disabled: refreshing, busy: refreshing }}
@@ -7025,7 +7032,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return (
       <View style={styles.loading}>
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
-        {refreshing ? <ActivityIndicator color={accent} /> : null}
+        {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
           disabled={refreshing}
           accessibilityState={{ disabled: refreshing, busy: refreshing }}
@@ -7194,7 +7201,7 @@ export default function MapScreen({ route, navigation }: Props) {
               tintColor={Platform.OS === 'android' ? glass.cardActive : undefined}
               style={styles.confirmCardInner}
             >
-              <View style={styles.confirmTopRow}>
+              <View style={styles.confirmTitleRow}>
                 <View style={styles.confirmTextCol}>
                   {/* Inline rename — single draft; no separate Modal. */}
                   <TextInput
@@ -7214,18 +7221,26 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Text style={styles.confirmNameHint} numberOfLines={1}>
                     {t('map.droppedPinHint')}
                   </Text>
-                  <View style={styles.confirmEtaRow}>
-                    {pMin ? (
-                      <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
-                        {pMin}
-                      </Text>
-                    ) : null}
-                    {pDist != null ? (
-                      <Text style={styles.confirmDist} numberOfLines={1}>
-                        · {formatDistance(pDist)}
-                      </Text>
-                    ) : null}
+                </View>
+                <Pressable style={styles.confirmCloseTarget} disabled={confirmPlaceBusy}
+                  accessibilityRole="button" accessibilityLabel={t('common.cancel')}
+                  testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }}>
+                  <View pointerEvents="none" accessible={false}>
+                    <NativeGlassButton systemImage="xmark" shape="circle" size={36.3}
+                      imageSize={14.85} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')} />
                   </View>
+                </Pressable>
+              </View>
+              <View style={styles.confirmTopRow}>
+                <View style={styles.confirmEtaRow}>
+                  <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
+                    {pMin ?? '—'}
+                  </Text>
+                  {pDist != null ? (
+                    <Text style={styles.confirmDist} numberOfLines={1}>
+                      · {formatDistance(pDist)}
+                    </Text>
+                  ) : null}
                 </View>
                 <View style={styles.confirmControlRow}>
                   <View
@@ -7257,11 +7272,11 @@ export default function MapScreen({ route, navigation }: Props) {
                       }}
                     >
                       {favoriteBusy ? (
-                        <ActivityIndicator size="small" color={accent} />
+                        <WaveLoading size="small" color={accent} />
                       ) : (
                         <Ionicons
                           name={pendingIsFavorite ? 'star' : 'star-outline'}
-                          size={28}
+                          size={31.5}
                           color={accent}
                         />
                       )}
@@ -7288,24 +7303,30 @@ export default function MapScreen({ route, navigation }: Props) {
                       accessibilityRole="button"
                       accessibilityLabel={t('stay.centerPlaceA11y')}
                     >
-                      <Ionicons name="navigate" size={28} color={accent} />
+                      <Ionicons name="navigate" size={31.5} color={accent} />
                     </Pressable>
                   </View>
-                  <NativeGlassButton systemImage="xmark" shape="circle" size={44}
-                    imageSize={18} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')}
-                    testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }} />
                 </View>
               </View>
               <View style={styles.confirmBtnRow}>
-                <NativeGlassButton label={t('confirmGather.addPool')} layout="fill" height={60}
-                  style={{ flex: 1 }} fontSize={16} disabled={confirmPlaceBusy}
-                  accessibilityLabel={t('confirmGather.addPool')} testID="confirm-place-pool"
-                  onPress={() => { void confirmAddPlace().catch(() => undefined); }} />
-                <NativeGlassButton label={t('confirmGather.quickAdd')} layout="fill" height={60}
-                  style={{ flex: 1 }} fontSize={16} variant="glassProminent" tintColor="#0A84FF"
-                  disabled={confirmPlaceBusy} accessibilityLabel={t('confirmGather.quickAdd')}
-                  testID="confirm-place-quick-add"
-                  onPress={() => { void confirmAddPlace('firstStop').catch(() => undefined); }} />
+                <View style={styles.confirmBtnSlot}>
+                  <Pressable style={({ pressed }) => [styles.confirmPool, pressed && styles.confirmControlPressed]}
+                    disabled={confirmPlaceBusy} accessibilityRole="button"
+                    accessibilityState={{ disabled: confirmPlaceBusy, busy: confirmPlaceBusy }}
+                    accessibilityLabel={t('confirmGather.addPool')} testID="confirm-place-pool"
+                    onPress={() => { void confirmAddPlace().catch(() => undefined); }}>
+                    <Text style={styles.confirmPoolText}>{t('confirmGather.addPool')}</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.confirmBtnSlot}>
+                  <Pressable style={({ pressed }) => [styles.confirmAdd, pressed && styles.confirmControlPressed]}
+                    disabled={confirmPlaceBusy} accessibilityRole="button"
+                    accessibilityState={{ disabled: confirmPlaceBusy, busy: confirmPlaceBusy }}
+                    accessibilityLabel={t('confirmGather.quickAdd')} testID="confirm-place-quick-add"
+                    onPress={() => { void confirmAddPlace('firstStop').catch(() => undefined); }}>
+                    <Text style={styles.confirmAddText}>{t('confirmGather.quickAdd')}</Text>
+                  </Pressable>
+                </View>
               </View>
             </liquidGlass.GlassView>
           </Animated.View>
@@ -7537,13 +7558,11 @@ export default function MapScreen({ route, navigation }: Props) {
                         Must NOT key off personallyArrived or dim stays forever.
                         Siblings of padded content so absolute fill covers padding
                         + expanded command row (expanded and collapsed). */}
-                    {journeyActive && navTarget?.id === dest.id && mapFocused && appState === 'active' ? (
-                      <Animated.View pointerEvents="none" entering={FadeIn.duration(300)} exiting={FadeOut.duration(300)}
-                        style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden', zIndex: 0 }]}>
-                        <MetalforgeStarfield collapsed={!cardExpanded} active={active} lowPowerMode={powerState.lowPowerMode}
-                          thermalState={powerState.thermalState} />
-                      </Animated.View>
-                    ) : null}
+                    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden', zIndex: 0 }]}>
+                      <MetalforgeStarfield emitting={journeyActive && navTarget?.id === dest.id}
+                        active={active && mapFocused && appState === 'active'} color="#FFFFFF"
+                        lowPowerMode={powerState.lowPowerMode} thermalState={powerState.thermalState} />
+                    </View>
                     {arrivalCelebrateDestId === dest.id ? (
                       <View pointerEvents="none" style={styles.arrivalDimOverlay} />
                     ) : null}
@@ -8993,7 +9012,7 @@ export default function MapScreen({ route, navigation }: Props) {
           pointerEvents="auto"
           testID="purchase-unlock-loading"
         >
-          <ActivityIndicator color={accent} size="large" />
+          <WaveLoading color={accent} size="large" />
           <Text style={styles.loadingText}>{t('map.loading')}</Text>
         </View>
       ) : null}
@@ -9520,7 +9539,7 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
   if (refreshing) {
     return (
       <View style={styles.refreshLocationsButton} accessibilityLabel={t('map.refreshLocationsA11y')}>
-        <ActivityIndicator size="small" color={accent} />
+        <WaveLoading size="small" color={accent} />
       </View>
     );
   }
@@ -10384,7 +10403,8 @@ const makeStyles = (
     // ancestor of its Liquid Glass surface.
     sheetHidden: { display: 'none' },
     sheetBodyHidden: { display: 'none' },
-    confirmTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    confirmTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    confirmTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 },
     confirmTextCol: { flex: 1, gap: 2 },
     confirmTitleInput: {
@@ -10402,18 +10422,18 @@ const makeStyles = (
       marginLeft: 2,
       marginBottom: 2,
     },
-    confirmEtaRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+    confirmEtaRow: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 8, minHeight: 49.5 },
     confirmArrow: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: 49.5,
+      height: 49.5,
+      borderRadius: 24.75,
       alignItems: 'center',
       justifyContent: 'center',
     },
     confirmControl: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: 49.5,
+      height: 49.5,
+      borderRadius: 24.75,
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
@@ -10432,8 +10452,22 @@ const makeStyles = (
       alignSelf: 'stretch',
       flexDirection: 'row',
       gap: 12,
+      justifyContent: 'space-around',
       marginTop: 6,
     },
+    confirmCloseTarget: { width: 44, height: 44, alignSelf: 'flex-start', alignItems: 'center', justifyContent: 'center' },
+    confirmBtnSlot: { flex: 1, alignItems: 'center' },
+    confirmPool: {
+      width: '90%', height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: glass.fillStrong, paddingHorizontal: 7.2,
+      borderWidth: StyleSheet.hairlineWidth, borderColor: glass.hairline,
+    },
+    confirmPoolText: { fontSize: 14.4, fontWeight: '700', color: '#fff', textAlign: 'center' },
+    confirmAdd: {
+      width: '90%', height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
+      paddingHorizontal: 7.2, backgroundColor: Platform.OS === 'ios' ? '#0A84FF' : accent,
+    },
+    confirmAddText: { fontSize: 14.4, fontWeight: '700', color: '#fff', textAlign: 'center' },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },

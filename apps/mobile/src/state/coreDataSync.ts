@@ -1,5 +1,6 @@
 import { getVisibleGroupSeed } from './visibleGroupSeed';
 import { insertFirstStop } from '../utils/firstStopInsertion';
+import { normalizeTripDepartureDate } from '../utils/tripDay';
 /**
  * Production wiring for OTA-04 core operation outbox + snapshot helpers.
  * Single shared store + outbox (one serial path for mutations / remote save).
@@ -488,17 +489,18 @@ export function projectPendingDestinations(state: GroupState, operations: CoreOp
 export async function enqueueTripDetails(input: {
   groupId: string; tripDays: number; departureDate: string; actorId?: string;
 }): Promise<CoreOperation> {
-  if (!Number.isInteger(input.tripDays) || input.tripDays < 1 || !validStayDate(input.departureDate)) throw new Error('invalid_trip_details');
+  const departureDate = normalizeTripDepartureDate(input.departureDate);
+  if (!Number.isInteger(input.tripDays) || input.tripDays < 1 || !departureDate) throw new Error('invalid_trip_details');
   const snapshot = await ensureCoreSnapshot(input.groupId);
   if (!snapshot) throw localSnapshotError();
   const operation = await outbox.enqueueMutation({
     groupId: input.groupId, entityType: 'itinerary', entityId: input.groupId,
     entityVersion: snapshot.itineraryVersion ?? 0, operationType: 'set_trip_details', actorId: input.actorId,
-    payload: { tripDays: input.tripDays, departureDate: input.departureDate },
+    payload: { tripDays: input.tripDays, departureDate },
     applyLocal: async (exec, op) => {
       const current = await sharedCoreDb.readSnapshotInTransaction(exec, input.groupId) ?? snapshot;
       await sharedCoreDb.writeSnapshot(exec, optimisticSnapshot({ ...current,
-        group: { ...current.group, tripDays: input.tripDays, departureDate: input.departureDate } }, current.destinations, Date.now(), op.actorId));
+        group: { ...current.group, tripDays: input.tripDays, departureDate } }, current.destinations, Date.now(), op.actorId));
     },
   });
   kickCoreTransport();

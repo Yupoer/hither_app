@@ -32,7 +32,7 @@ import {
 } from './src/onboarding/gate';
 import AppErrorBoundary from './src/components/AppErrorBoundary';
 import CrookIcon from './src/components/CrookIcon';
-import { BouncingDots } from './src/components/AmicroButton';
+import WaveLoading from './src/components/WaveLoading';
 import { installGlobalErrorLogger } from './src/utils/activityLog';
 import { SessionProvider, useSession } from './src/state/SessionContext';
 import { usePushRegistration } from './src/state/usePushRegistration';
@@ -304,7 +304,7 @@ function ThemedNavigation() {
             alignItems: 'center',
           }}
         >
-          <BouncingDots color={colors.accent} />
+          <WaveLoading size="large" color={colors.accent} />
         </View>
       </View>
     );

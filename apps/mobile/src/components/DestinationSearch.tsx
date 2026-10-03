@@ -1,7 +1,7 @@
+import WaveLoading from './WaveLoading';
 import { useForegroundUi } from '../state/foregroundUi';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -166,7 +166,7 @@ export default React.memo(function DestinationSearch({
 
         {searching ? (
           <View style={styles.statusRow}>
-            <ActivityIndicator color={colors.accent} />
+            <WaveLoading color={colors.accent} />
             <Text style={styles.statusText}>{t('search.searching')}</Text>
           </View>
         ) : query.trim() && results.length === 0 ? (
@@ -202,7 +202,7 @@ export default React.memo(function DestinationSearch({
                 ) : null}
               </View>
               {submittingId === item.id ? (
-                <ActivityIndicator color={colors.accent} />
+                <WaveLoading color={colors.accent} />
               ) : null}
             </Pressable>
           )}

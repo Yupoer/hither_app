@@ -1,5 +1,6 @@
+import WaveLoading from '../../../components/WaveLoading';
 import React, { useState, useEffect, useCallback } from 'react';
-import { ScrollView, View, Text, TextInput, Pressable, Alert, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, TextInput, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { HitherText } from '../../../components/HitherText';
@@ -124,7 +125,7 @@ export function ProfileOverlay({
             )}
           </View>
           {saving ? (
-            <ActivityIndicator style={{ marginTop: 8 }} color={accent} />
+            <WaveLoading style={{ marginTop: 8 }} color={accent} />
           ) : null}
         </View>
 

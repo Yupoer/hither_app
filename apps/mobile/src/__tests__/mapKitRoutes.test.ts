@@ -370,3 +370,151 @@ it('resets both displayed progress surfaces before the new journey baseline hydr
   expect(surface?.gatheringCard.progress).toBe(0);
   expect(surface?.liveActivityPayload.progress).toBe(0);
 });
+
+describe('destination changes while directions are pending', () => {
+  const nextStop = { coordinates: { latitude: 25.06, longitude: 121.54 } };
+  type Route = NonNullable<ReturnType<typeof useMapKitRoutes>['selfRoute']>;
+  function deferredRoute() {
+    let resolve!: (route: Route | null) => void;
+    const promise = new Promise<Route | null>((done) => { resolve = done; });
+    return { promise, resolve };
+  }
+  const routeTo = (target: typeof gathering): Route => ({
+    distanceMeters: target === gathering ? 5200 : 1400,
+    expectedTravelTimeSeconds: target === gathering ? 3600 : 1020,
+    points: [me, target.coordinates],
+  });
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    mockGetDirections.mockReset();
+  });
+
+  it('hides the previous destination route in every render until the replacement arrives', async () => {
+    const replacement = deferredRoute();
+    mockGetDirections.mockResolvedValueOnce(routeTo(gathering)).mockReturnValueOnce(replacement.promise);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    const renderedRoutes: Array<ReturnType<typeof useMapKitRoutes>['selfRoute']> = [];
+    function Harness({ target }: { target: typeof gathering }) {
+      routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
+      renderedRoutes.push(routes.selfRoute);
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
+    expect(routes!.selfRoute?.distanceMeters).toBe(5200);
+    renderedRoutes.length = 0;
+    await act(async () => { tree.update(React.createElement(Harness, { target: nextStop })); });
+    // A new destination title must never inherit the previous stop's path/ETA.
+    expect(renderedRoutes.every((route) => route === null)).toBe(true);
+    await act(async () => { replacement.resolve(routeTo(nextStop)); });
+    expect(routes!.selfRoute?.points.at(-1)).toEqual(nextStop.coordinates);
+    expect(routes!.selfRoute?.distanceMeters).toBe(1400);
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('accepts the in-flight request after gated GPS and equal-target rerenders', async () => {
+    const pending = deferredRoute();
+    mockGetDirections.mockReturnValue(pending.promise);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ self }: { self: typeof me }) {
+      routes = useMapKitRoutes({ selfCoordinates: self, members: [],
+        gathering: { coordinates: { ...gathering.coordinates } }, travelMode: 'walk' });
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { self: me })); });
+    await act(async () => { tree.update(React.createElement(Harness,
+      { self: { latitude: me.latitude + 0.000001, longitude: me.longitude } })); });
+    await act(async () => { pending.resolve(routeTo(gathering)); });
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    expect(routes!.selfRoute?.distanceMeters).toBe(5200);
+    expect(routes!.selfRouteGeneration).toBe(1);
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('rejects late old-target results and clears on target removal', async () => {
+    const old = deferredRoute();
+    const replacement = deferredRoute();
+    mockGetDirections.mockReturnValueOnce(old.promise).mockReturnValueOnce(replacement.promise);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ target }: { target: typeof gathering | null }) {
+      routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
+    await act(async () => { tree.update(React.createElement(Harness, { target: nextStop })); });
+    await act(async () => { replacement.resolve(routeTo(nextStop)); });
+    await act(async () => { old.resolve(routeTo(gathering)); });
+    expect(routes!.selfRoute?.points.at(-1)).toEqual(nextStop.coordinates);
+    await act(async () => { tree.update(React.createElement(Harness, { target: null })); });
+    expect(routes!.selfRoute).toBeNull();
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('routes a destination change inside the same quantized bucket', async () => {
+    const nearbyStop = { coordinates: { ...gathering.coordinates,
+      latitude: gathering.coordinates.latitude + 0.000001 } };
+    const replacement = deferredRoute();
+    mockGetDirections.mockResolvedValueOnce(routeTo(gathering)).mockReturnValueOnce(replacement.promise);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ target }: { target: typeof gathering }) {
+      routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
+    await act(async () => { tree.update(React.createElement(Harness, { target: nearbyStop })); });
+    expect(routes!.selfRoute).toBeNull();
+    expect(mockGetDirections).toHaveBeenCalledTimes(2);
+    await act(async () => { replacement.resolve(routeTo(nearbyStop)); });
+    expect(routes!.selfRoute?.points.at(-1)).toEqual(nearbyStop.coordinates);
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('reattaches to the original cached request on A to B to A without accepting B', async () => {
+    const old = deferredRoute();
+    const replacement = deferredRoute();
+    mockGetDirections.mockReturnValueOnce(old.promise).mockReturnValueOnce(replacement.promise);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ target }: { target: typeof gathering }) {
+      routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
+    await act(async () => { tree.update(React.createElement(Harness, { target: nextStop })); });
+    await act(async () => { tree.update(React.createElement(Harness, { target: gathering })); });
+    await act(async () => { replacement.resolve(routeTo(nextStop)); });
+    expect(routes!.selfRoute).toBeNull();
+    await act(async () => { old.resolve(routeTo(gathering)); });
+    expect(routes!.selfRoute?.points.at(-1)).toEqual(gathering.coordinates);
+    expect(mockGetDirections).toHaveBeenCalledTimes(2);
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('accepts a pending cached result after StrictMode effect replay and ignores unmount completion', async () => {
+    const pending = deferredRoute();
+    const afterUnmount = deferredRoute();
+    mockGetDirections.mockReturnValueOnce(pending.promise).mockReturnValueOnce(afterUnmount.promise);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    let renders = 0;
+    function Harness({ target }: { target: typeof gathering }) {
+      routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
+      renders += 1;
+      return null;
+    }
+    const element = (target: typeof gathering) => React.createElement(React.StrictMode, null,
+      React.createElement(Harness, { target }));
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(element(gathering)); });
+    await act(async () => { pending.resolve(routeTo(gathering)); });
+    expect(routes!.selfRoute?.distanceMeters).toBe(5200);
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    await act(async () => { tree.update(element(nextStop)); });
+    await act(async () => { tree.unmount(); });
+    const unmountedRenders = renders;
+    await act(async () => { afterUnmount.resolve(routeTo(nextStop)); });
+    expect(renders).toBe(unmountedRenders);
+  });
+});

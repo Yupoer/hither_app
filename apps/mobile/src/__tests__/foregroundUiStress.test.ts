@@ -90,8 +90,8 @@ it('keeps unknown/inactive states stopped, supports disabled clocks and removes 
   expect(isForegroundUi()).toBe(false);
   const notify = jest.fn();
   const unsubscribe = subscribeForegroundUi(notify);
-  transition('background'); expect(notify).not.toHaveBeenCalled();
-  transition('active'); transition('active'); expect(notify).toHaveBeenCalledTimes(1);
+  transition('background'); expect(notify).toHaveBeenCalledTimes(1);
+  transition('active'); transition('active'); expect(notify).toHaveBeenCalledTimes(2);
   function DisabledClock() { return React.createElement('clock', { now: useForegroundClock(1000, false) }); }
   await act(async () => { root = create(React.createElement(DisabledClock)); });
   expect(jest.getTimerCount()).toBe(0);
@@ -134,4 +134,24 @@ it('pauses Android UI on blur while AppState stays active and resumes focus once
   expect(isForegroundUi()).toBe(true);
   expect(notify).toHaveBeenCalledTimes(2);
   unsubscribe(); expect(mockListeners.size).toBe(0);
+});
+
+it('keeps only the visible auth background alive under a system sheet and stops both in background', async () => {
+  let root: any;
+  await act(async () => { root = create(React.createElement(React.Fragment, null,
+    React.createElement(MetalforgeBackground),
+    React.createElement(MetalforgeBackground, { allowInactive: true }),
+  )); });
+  expect(mockListeners.size).toBe(1);
+  await act(async () => { transition('inactive'); });
+  expect(root.root.findAllByType('Canvas')).toHaveLength(1);
+  expect(mockFrames[0].setActive).toHaveBeenLastCalledWith(false);
+  expect(mockFrames[1].setActive).toHaveBeenLastCalledWith(true);
+  await act(async () => { transition('background'); });
+  expect(root.root.findAllByType('Canvas')).toHaveLength(0);
+  expect(mockFrames[1].setActive).toHaveBeenLastCalledWith(false);
+  await act(async () => { transition('active'); updateRuntimePowerState({ lowPowerMode: true, thermalState: 'nominal' }); });
+  expect(mockFrames[1].setActive).toHaveBeenLastCalledWith(false);
+  await act(async () => { root.unmount(); });
+  expect(mockListeners.size).toBe(0);
 });

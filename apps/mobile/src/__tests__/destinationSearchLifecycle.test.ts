@@ -81,3 +81,4 @@ it('cancels a background debounce and resumes the retained query once without re
   await act(async () => { jest.advanceTimersByTime(450); });
   expect(mockSearch).toHaveBeenCalledTimes(1);
 });
+jest.mock('../components/WaveLoading', () => 'WaveLoading');

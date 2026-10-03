@@ -101,10 +101,10 @@ describe('locationPolicy', () => {
     });
   });
 
-  it('allows the OS to pause passive background GPS', () => {
+  it('keeps passive background GPS available after stationary intervals', () => {
     expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
       accuracy: 2,
-      pausesUpdatesAutomatically: true,
+      pausesUpdatesAutomatically: false,
       showsBackgroundLocationIndicator: true,
     });
   });

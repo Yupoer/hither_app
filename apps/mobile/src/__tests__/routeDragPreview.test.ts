@@ -40,15 +40,49 @@ it('keeps a floating drag clone, one empty-day insertion line, auto-scroll and c
   const preview = onPreview.mock.calls.at(-1)![0];
   expect(preview.props.testID).toBe('route-drag-preview');
   expect(preview.props.pointerEvents).toBe('none');
-  expect(preview.props.style).toMatchObject({ left: 20, top: 500, width: 350, zIndex: 1000 });
+  expect(flatten(preview.props.style).backgroundColor).toBe('#343B48');
+  expect(preview.props.children.props.floating).toBe(true);
+  let floatingTree!: ReturnType<typeof create>;
+  await act(async () => { floatingTree = create(preview); });
+  expect(floatingTree.root.findAllByType('Swipeable' as any)).toHaveLength(0);
+  expect(floatingTree.root.findByType('Title' as any).props.text).toBe('Pool stop');
+  expect(floatingTree.root.findAllByType('Text' as any).some(node => node.props.children === '≡')).toBe(true);
+  await act(async () => { floatingTree.unmount(); });
+  expect(flatten(preview.props.style)).toMatchObject({ left: 20, top: 500, width: 350, zIndex: 1000 });
   expect(flatten(row.parent!.parent!.props.style).opacity).toBe(0);
   await act(async () => row.props.onPanResponderMove({}, { dy: 300, moveY: 830 }));
-  expect(preview.props.style.transform[0].translateY.value).toBe(300);
+  expect(flatten(preview.props.style).transform[0].translateY.value).toBe(300);
   expect(onAutoScroll).toHaveBeenCalledWith(expect.any(Number));
   const lines = tree.root.findAll((n) => String(n.type) === 'View' && flatten(n.props.style).backgroundColor === '#ffcc00' && flatten(n.props.style).height === 3);
   expect(lines).toHaveLength(1);
   await act(async () => row.props.onPanResponderTerminate());
   expect(onPreview).toHaveBeenLastCalledWith(null);
   expect(onReorder).not.toHaveBeenCalled();
+  await act(async () => tree.unmount());
+});
+
+it('lifts an entire day with its complete rows while leaving source geometry in place', async () => {
+  const onPreview = jest.fn();
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(DestinationReorderList, {
+    destinations: [
+      { id: 'a', title: 'Museum', address: 'Full address', day: 2, order: 0, kind: 'stop', coordinates: { latitude: 25, longitude: 121 } },
+      { id: 'b', title: 'Hotel', day: 2, order: 1, kind: 'accommodation', coordinates: { latitude: 25, longitude: 121 } },
+    ], canReorder: true, tripDays: 2, colors: themes.night, emptyLabel: 'empty',
+    onDragPreviewChange: onPreview,
+  }), { createNodeMock: () => ({ measureInWindow: (cb: Function) => cb(20, 400, 350, 160) }) }); });
+  const findHeader = () => tree.root.findAll((node) => node.props.item?.id === 'header-2' && typeof node.props.onSwipeToggleAffordance === 'function')[0];
+  await act(async () => { findHeader().props.onSwipeToggleAffordance(); });
+  const header = findHeader();
+  await act(async () => { header.props.onHeaderGrant(); });
+  const preview = onPreview.mock.calls.at(-1)![0];
+  const [previewHeader, previewRows] = preview.props.children.props.children;
+  expect(previewHeader.props.item.id).toBe('header-2');
+  expect(previewRows.map((row: any) => row.props.item.id)).toEqual(['a', 'b']);
+  expect(previewRows.every((row: any) => row.props.floating)).toBe(true);
+  const source = tree.root.findByProps({ testID: 'day-block-2' });
+  expect(flatten(source.props.style).opacity).toBe(0);
+  await act(async () => { header.props.onHeaderCancel(); });
+  expect(onPreview).toHaveBeenLastCalledWith(null);
   await act(async () => tree.unmount());
 });

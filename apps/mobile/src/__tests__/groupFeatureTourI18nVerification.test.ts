@@ -18,7 +18,7 @@ const overlaySrc = readFileSync(
   'utf8',
 );
 const tourCardSrc = readFileSync(
-  join(__dirname, '../featureTour/TourCard.tsx'),
+  join(__dirname, '../featureTour/ReactNativeTourCard.tsx'),
   'utf8',
 );
 

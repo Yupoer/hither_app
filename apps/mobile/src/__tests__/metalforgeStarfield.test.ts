@@ -74,17 +74,66 @@ describe('MetalforgeStarfield performance contract', () => {
   });
 });
 
-import { createStarfieldParticles } from '../utils/starfieldParticles';
-it('reduces collapsed density to one third and doubles matched particle speed and radius', () => {
-  const expanded = createStarfieldParticles(360, 100, false);
-  const collapsed = createStarfieldParticles(360, 100, true);
-  expect(Math.abs(collapsed.length - expanded.length / 3)).toBeLessThanOrEqual(3);
-  for (const star of collapsed) {
-    const original = expanded.find(other => other.x === star.x && other.y === star.y)!;
-    expect(star.radius).toBeCloseTo(original.radius * 2);
-    expect(star.velocity).toBeCloseTo(original.velocity * 2);
+import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, CHARGE_BALL_INTERVAL_MS } from '../utils/starfieldParticles';
+
+it('starts outside the left edge and every new ball enters from there', () => {
+  expect(CHARGE_BALL_INTERVAL_MS).toBe(280 / 1.5);
+  const windows = [{ startedAt: 0 }];
+  const birth = chargeBallsAt(0, 360, windows)[0];
+  expect(birth.x + birth.radius).toBe(0);
+  let previous = chargeBallsAt(0, 360, windows);
+  for (let now = 100; now < 15000; now += 100) {
+    const current = chargeBallsAt(now, 360, windows);
+    for (const ball of current) {
+      const earlier = previous.find(item => item.id === ball.id);
+      if (earlier) expect(ball.x).toBeGreaterThan(earlier.x);
+      else {
+        const bornAt = Number(ball.id.split(':')[1]) * CHARGE_BALL_INTERVAL_MS;
+        const atBirth = chargeBallsAt(bornAt, 360, windows).find(item => item.id === ball.id)!;
+        expect(atBirth.x + atBirth.radius).toBeCloseTo(0);
+        expect(ball.x).toBeLessThan(360 * 100 / 5000);
+      }
+    }
+    expect(current.length).toBeLessThanOrEqual(37);
+    expect(current.every(ball => ball.radius >= 5 && ball.radius <= 8)).toBe(true);
+    previous = current;
   }
-  expect(createStarfieldParticles(0, 0, true)).toEqual([]);
+  expect(chargeBallsAt(1000, 0, windows)).toEqual([]);
+});
+
+it('keeps one full field across collapse; hidden lower balls keep moving', () => {
+  const windows = [{ startedAt: 0 }];
+  const expanded = chargeBallsAt(5000, 360, windows);
+  const collapsed = expanded.filter(ball => ball.y - ball.radius < 70);
+  const lower = expanded.find(ball => ball.y - ball.radius > 70 && ball.x < 240)!;
+  expect(collapsed.length).toBeLessThan(expanded.length);
+  expect(lower).toBeDefined();
+  const later = chargeBallsAt(5300, 360, windows);
+  expect(later.find(ball => ball.id === lower.id)!.x).toBeGreaterThan(lower.x);
+  for (const ball of collapsed) expect(expanded.find(item => item.id === ball.id)).toEqual(ball);
+  expect(source).not.toContain('collapsed');
+});
+
+it('closes only the inlet, preserves in-flight balls and drains naturally to the right', () => {
+  const running = changeChargeEmission([], true, 0);
+  const stopped = changeChargeEmission(running, false, 1500);
+  const atStop = chargeBallsAt(1500, 360, stopped);
+  expect(atStop).toEqual(chargeBallsAt(1500, 360, running));
+  const afterStop = chargeBallsAt(2300, 360, stopped);
+  expect(afterStop.map(ball => ball.id)).toEqual(atStop.map(ball => ball.id));
+  expect(afterStop.every(ball => ball.x > atStop.find(item => item.id === ball.id)!.x)).toBe(true);
+  expect(chargeBallsAt(1500 + CHARGE_BALL_MAX_TRAVEL_MS, 360, stopped)).toEqual([]);
+  expect(changeChargeEmission(stopped, false, 1500 + CHARGE_BALL_MAX_TRAVEL_MS)).toEqual([]);
+});
+
+it('can resume the inlet while the previous batch is still draining', () => {
+  const stopped = changeChargeEmission([{ startedAt: 0 }], false, 1500);
+  const resumed = changeChargeEmission(stopped, true, 1600);
+  const old = chargeBallsAt(1700, 360, stopped);
+  const combined = chargeBallsAt(1700, 360, resumed);
+  for (const ball of old) expect(combined.find(item => item.id === ball.id)).toEqual(ball);
+  const newBall = chargeBallsAt(1600, 360, resumed).find(ball => ball.id === '1600:0')!;
+  expect(newBall.x + newBall.radius).toBe(0);
 });
 
 import { advanceStarfieldPhase, advanceStarfieldPosition } from '../utils/starfieldPhase';

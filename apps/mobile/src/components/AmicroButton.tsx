@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useRef, useSyncExternalStore, type ComponentProps } from 'react';
+import React, { useCallback, useEffect, useRef, type ComponentProps } from 'react';
 import {
   Pressable,
-  AppState,
   StyleSheet,
   Text,
   View,
@@ -11,18 +10,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   cancelAnimation,
-  Easing,
   interpolate,
   runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 import { useOptionalVisuals, isForegroundUi } from '../state/foregroundUi';
-import { loadingDotOffset, authLoadingMotionAllowed } from '../utils/loadingDots';
-import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
 
 // Adapted from https://github.com/Subhan-code/Amicro--Micro-transitions-
 // MIT licensed by Syed Subhan. This native version uses the app's existing
@@ -223,45 +218,7 @@ export function AmicroButton({
   );
 }
 
-const subscribeAppState = (listener: () => void) => {
-  const subscription = AppState.addEventListener('change', listener);
-  return () => subscription.remove();
-};
-const getAppState = () => AppState.currentState;
-
-export function BouncingDots({ color, allowInactive = false }: { color: string; allowInactive?: boolean }) {
-  const visuals = useOptionalVisuals();
-  const appState = useSyncExternalStore(subscribeAppState, getAppState, getAppState);
-  const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
-  const animate = allowInactive ? authLoadingMotionAllowed(appState, power.thermalState, power.lowPowerMode) : visuals;
-  const reducedMotion = useReducedMotion() || !animate;
-  const phase = useSharedValue(0);
-
-  useEffect(() => {
-    phase.value = reducedMotion ? 0 : withRepeat(withTiming(1, {
-      duration: 800, easing: Easing.linear,
-    }), -1, false);
-    return () => cancelAnimation(phase);
-  }, [phase, reducedMotion]);
-
-  const firstStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: reducedMotion ? 0 : loadingDotOffset(phase.value, 0) }, { scaleY: reducedMotion ? 1 : interpolate(loadingDotOffset(phase.value, 0), [-20, 0], [1.1, 0.8]) }],
-  }));
-  const secondStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: reducedMotion ? 0 : loadingDotOffset(phase.value, 1) }, { scaleY: reducedMotion ? 1 : interpolate(loadingDotOffset(phase.value, 1), [-20, 0], [1.1, 0.8]) }],
-  }));
-  const thirdStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: reducedMotion ? 0 : loadingDotOffset(phase.value, 2) }, { scaleY: reducedMotion ? 1 : interpolate(loadingDotOffset(phase.value, 2), [-20, 0], [1.1, 0.8]) }],
-  }));
-
-  return (
-    <View style={styles.dots} accessibilityLabel="Loading">
-      <Animated.View style={[styles.dot, { left: 8, backgroundColor: color }, firstStyle]} />
-      <Animated.View style={[styles.dot, { left: 26, backgroundColor: color }, secondStyle]} />
-      <Animated.View style={[styles.dot, { left: 44, backgroundColor: color }, thirdStyle]} />
-    </View>
-  );
-}
+export { default as BouncingDots } from './WaveLoading';
 
 const styles = StyleSheet.create({
   pressable: {
@@ -314,17 +271,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  dots: {
-    width: 64,
-    height: 48,
-    position: 'relative',
-  },
-  dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    position: 'absolute',
-    bottom: 8,
   },
 });

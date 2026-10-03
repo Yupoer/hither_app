@@ -1,6 +1,6 @@
+import WaveLoading from '../components/WaveLoading';
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -360,7 +360,7 @@ export default function AuthScreen({ navigation, route }: Props) {
               ]}
             >
               {busy ? (
-                <ActivityIndicator color="#fff" />
+                <WaveLoading color="#fff" />
               ) : (
                 <>
                   <Text style={styles.ctaText}>

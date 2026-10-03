@@ -1,5 +1,6 @@
+import WaveLoading from '../components/WaveLoading';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import AuthField from '../components/AuthField';
 import SafePressable from '../components/SafePressable';
 import CrookIcon from '../components/CrookIcon';
@@ -112,7 +113,7 @@ export default function PasswordRecoveryScreen() {
         testID="recovery-submit"
         style={[styles.cta, !canSubmit && styles.disabled]}
       >
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.ctaText}>{t('login.completeRecovery')}</Text>}
+        {busy ? <WaveLoading color="#fff" /> : <Text style={styles.ctaText}>{t('login.completeRecovery')}</Text>}
       </SafePressable>
     </View>
   );

@@ -325,6 +325,9 @@ export function GroupFeatureTourOverlay({
         accessibilityLabel={a11yLabel}
       >
         <TourCard
+          // Each committed step gets fresh SwiftUI content hosts and intrinsic
+          // size state; remeasuring the same step keeps its scroll position.
+          key={shown.key}
           title={shown.title}
           body={shown.body}
           ctaLabel={shown.ctaLabel || t('tour.next')}
