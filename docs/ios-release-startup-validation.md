@@ -26,6 +26,11 @@ xcrun simctl spawn <simulator-udid> /private/tmp/hither-ui-probe wrong
 另外使用 `SIMCTL_CHILD_LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` 重跑 `ui many`，
 確認同步 executor bridge 不死鎖及不產生 isolation warning。
 
+CI 的 `jsi-ui-runtime` job 在 macOS 上從乾淨 lockfile 安裝依賴，執行上述
+Release-optimized actor probe（`--host --release`），同時驗證 UI/JS 成功及
+錯誤背景執行緒必須被拒絕。它是 executor 回歸檢查；以下完整 iOS Release
+冷啟動仍須在發布前另行執行。
+
 ## 完整 Release 冷啟動
 
 發布前使用完整 Release simulator build，包含正式入口、原生依賴、Hermes
@@ -45,7 +50,7 @@ npm run verify:ios-release-launch -- \
 檢查器不移除現有 App 資料，會驗證兩次冷啟動各存活 45 秒、當次 timestamp
 及 build 的啟動階段已到達 session/navigation ready，保存原生日誌、截圖及
 `launch-result.json`。拒絕 Debug dylib、錯誤 build 及裝置 IPA。必須再人工
-檢視兩张截圖，確認顯示實際 App 畫面。收到特定 iOS 版本的崩潰回報時，
+檢視兩張截圖，確認顯示實際 App 畫面。收到特定 iOS 版本的崩潰回報時，
 必須在該版本重測；其他版本的通過不能替代它。
 
 封裝 metadata、簽章、Jest、typecheck 或 archive 成功均不能取代冷啟動驗證。

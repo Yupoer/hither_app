@@ -31,6 +31,8 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      product: ${{ steps.scope.outputs.product }}
     defaults:
       run:
         working-directory: apps/mobile
@@ -204,9 +206,35 @@ jobs:
           supabase test db --local supabase/tests/installation_capabilities.test.sql
           node supabase/tests/promo_redemption_concurrency.mjs
 
+  jsi-ui-runtime:
+    needs: verify
+    if: always() && needs.verify.outputs.product == 'true'
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Install clean patched native dependency
+        run: npm ci
+      - name: Exercise optimized UI and JavaScript actor contexts
+        run: |
+          python3 scripts/build-jsi-executor-probe.py "$RUNNER_TEMP/hither-jsi-probe" --host --release
+          "$RUNNER_TEMP/hither-jsi-probe" ui many
+          if "$RUNNER_TEMP/hither-jsi-probe" wrong > "$RUNNER_TEMP/hither-jsi-wrong.log" 2>&1; then
+            echo "Unexpected acceptance of an arbitrary background thread"
+            exit 1
+          fi
+          rg 'data race detected|JavaScriptActor operations must be run' "$RUNNER_TEMP/hither-jsi-wrong.log"
+
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
-    needs: verify
+    needs: [verify, jsi-ui-runtime]
     if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:

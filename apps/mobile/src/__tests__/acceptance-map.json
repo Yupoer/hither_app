@@ -1866,6 +1866,13 @@
       "acceptance": "The ExpoModulesJSI bridge state and initializer remain inside JavaScriptExecutor on a clean install.",
       "testFile": "expoModulesJsiPatchContract.test.ts",
       "testNamePattern": "places the synchronous bridge state inside JavaScriptExecutor"
+    },
+    {
+      "parent": 291,
+      "child": 291,
+      "acceptance": "The optimized native executor accepts a multithreaded main-thread UI runtime with nested calls and typed errors, while rejecting arbitrary background threads; the CI jsi-ui-runtime job executes this probe.",
+      "testFile": "scripts/test-jsi-executor.swift",
+      "testNamePattern": "UI runtime main-thread/nested/typed-throw=PASS"
     }
   ]
 }
