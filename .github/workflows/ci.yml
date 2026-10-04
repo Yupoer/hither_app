@@ -209,7 +209,8 @@ jobs:
   jsi-ui-runtime:
     needs: verify
     if: always() && needs.verify.outputs.product == 'true'
-    runs-on: macos-15
+    # Swift's isIsolatingCurrentContext runtime hook requires macOS 26.
+    runs-on: macos-26
     defaults:
       run:
         working-directory: apps/mobile
