@@ -7,6 +7,7 @@ import subprocess
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=Path)
 parser.add_argument("--host", action="store_true")
+parser.add_argument("--release", action="store_true", help="Use the same Swift optimization as the shipping framework")
 args = parser.parse_args()
 mobile = Path(__file__).resolve().parents[1]
 source = (mobile / "node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift").read_text()
@@ -19,6 +20,8 @@ args.output.parent.mkdir(parents=True, exist_ok=True)
 source_path = args.output.with_suffix(".swift")
 source_path.write_text(probe)
 command = ["xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-module-cache-path", str(args.output.parent / "module-cache"), "-Xfrontend", "-enable-actor-data-race-checks"]
+if args.release:
+    command += ["-O", "-whole-module-optimization"]
 if not args.host:
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], text=True).strip()
     command += ["-sdk", sdk, "-target", "arm64-apple-ios17.0-simulator"]
