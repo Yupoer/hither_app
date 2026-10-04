@@ -13,6 +13,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--simulator', required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--standalone', action='store_true', help='Run only the native actor probe without simulator OS services')
+    parser.add_argument('--runtime-build', help='Require the actual Foundation runtime build in the successful probe output')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     mobile = Path(__file__).resolve().parents[1]
@@ -36,13 +38,18 @@ def main():
         ('fixed-ui-js', fixed, ['ui', 'many'], True),
         ('fixed-wrong-thread', fixed, ['wrong'], False),
     ]:
-        result = subprocess.run(['xcrun', 'simctl', 'spawn', args.simulator, str(binary), *modes],
+        spawn = ['xcrun', 'simctl', 'spawn']
+        if args.standalone:
+            spawn.append('--standalone')
+        result = subprocess.run([*spawn, args.simulator, str(binary), *modes],
                                 capture_output=True, text=True, timeout=60)
         log = result.stdout + result.stderr
         (args.output / (name + '.log')).write_text(log)
         if expected_success:
             if result.returncode or 'UI runtime main-thread/nested/typed-throw=PASS' not in log:
                 raise RuntimeError(name + ' failed:\n' + log)
+            if args.runtime_build and ('Build ' + args.runtime_build) not in log:
+                raise RuntimeError('Unexpected Foundation runtime:\n' + log)
             print(result.stdout, end='', flush=True)
         elif result.returncode == 0 or 'data race detected' not in log:
             raise RuntimeError(name + ' did not reject isolation:\n' + log)

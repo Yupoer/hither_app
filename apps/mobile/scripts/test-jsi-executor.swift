@@ -18,6 +18,7 @@ enum ProbeError: Error { case expected }
 func threadID() -> UInt64 { var value:UInt64=0;pthread_threadid_np(nil,&value);return value }
 @main struct Main {
  static func main() {
+  print("Foundation runtime: \(ProcessInfo.processInfo.operatingSystemVersionString)")
   if CommandLine.arguments.contains("ui") {
    // Expo AppContext.prepareUIRuntime runs synchronously on MainActor while
    // the regular JS runtime lives on another thread. Keep multithreading active

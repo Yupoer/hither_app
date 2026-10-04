@@ -35,6 +35,9 @@ Release-optimized actor probe（`--host --release`），同時驗證 UI/JS 成�
 已安裝 actor：只移除 UI predicate 的基線必須 abort，修正版 `ui many`
 必須通過，錯誤背景執行緒仍必須被拒絕。此項是 iOS 27 原生 runtime
 回歸，仍不代表完整 App 或實機 TestFlight 驗收。
+CI 使用 `simctl spawn --standalone` 執行 Foundation/Swift actor probe，不連接
+其他 OS services，並輸出 Foundation runtime 的實際版本。完整 App 檢查
+仍須開機、安裝及正常 launch，不能使用此模式替代。
 
 ## 完整 Release 冷啟動
 

@@ -250,7 +250,7 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
       - name: Install clean patched native dependency
         run: npm ci
-      - name: Boot iPhone 12 Pro on iOS 27
+      - name: Select iPhone 12 Pro on iOS 27 for the native probe
         run: |
           python3 - <<'PY'
           import json, os, subprocess
@@ -258,13 +258,14 @@ jobs:
           runtime = next(r for r in runtimes if r.get('isAvailable') and r['version'].split('.')[0] == '27' and r['identifier'].endswith('iOS-27-0'))
           print('Testing', runtime['name'], runtime['version'], runtime['buildversion'], flush=True)
           device = subprocess.check_output(['xcrun', 'simctl', 'create', 'Hither-JSI-iOS27', 'com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro', runtime['identifier']], text=True).strip()
-          subprocess.run(['xcrun', 'simctl', 'boot', device], check=True, timeout=60)
-          subprocess.run(['xcrun', 'simctl', 'bootstatus', device, '-b'], check=True, timeout=300)
+          # This Foundation/Swift actor probe does not use OS services. Standalone
+          # execution keeps first-boot system migration out of this native gate.
           with open(os.environ['GITHUB_ENV'], 'a') as handle:
               handle.write('JSI_SIMULATOR=' + device + '\n')
+              handle.write('JSI_RUNTIME_BUILD=' + runtime['buildversion'] + '\n')
           PY
       - name: Verify iOS 27 UI regression and background-thread rejection
-        run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27"
+        run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27" --standalone --runtime-build "$JSI_RUNTIME_BUILD"
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
