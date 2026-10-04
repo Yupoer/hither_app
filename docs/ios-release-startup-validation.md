@@ -31,6 +31,11 @@ Release-optimized actor probe（`--host --release`），同時驗證 UI/JS 成�
 錯誤背景執行緒必須被拒絕。它是 executor 回歸檢查；以下完整 iOS Release
 冷啟動仍須在發布前另行執行。
 
+`jsi-ios27-runtime` 另在 Xcode 27／iPhone 12 Pro／iOS 27.0 比較同一個
+已安裝 actor：只移除 UI predicate 的基線必須 abort，修正版 `ui many`
+必須通過，錯誤背景執行緒仍必須被拒絕。此項是 iOS 27 原生 runtime
+回歸，仍不代表完整 App 或實機 TestFlight 驗收。
+
 ## 完整 Release 冷啟動
 
 發布前使用完整 Release simulator build，包含正式入口、原生依賴、Hermes

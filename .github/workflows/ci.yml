@@ -233,9 +233,42 @@ jobs:
           fi
           grep -E 'data race detected|JavaScriptActor operations must be run' "$RUNNER_TEMP/hither-jsi-wrong.log"
 
+  jsi-ios27-runtime:
+    needs: verify
+    if: always() && needs.verify.outputs.product == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Install clean patched native dependency
+        run: npm ci
+      - name: Boot iPhone 12 Pro on iOS 27
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          runtimes = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'runtimes', '--json']))['runtimes']
+          runtime = next(r for r in runtimes if r.get('isAvailable') and r['version'].split('.')[0] == '27' and r['identifier'].endswith('iOS-27-0'))
+          print('Testing', runtime['name'], runtime['version'], runtime['buildversion'], flush=True)
+          device = subprocess.check_output(['xcrun', 'simctl', 'create', 'Hither-JSI-iOS27', 'com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro', runtime['identifier']], text=True).strip()
+          subprocess.run(['xcrun', 'simctl', 'boot', device], check=True, timeout=60)
+          subprocess.run(['xcrun', 'simctl', 'bootstatus', device, '-b'], check=True, timeout=300)
+          with open(os.environ['GITHUB_ENV'], 'a') as handle:
+              handle.write('JSI_SIMULATOR=' + device + '\n')
+          PY
+      - name: Verify iOS 27 UI regression and background-thread rejection
+        run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27"
+
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
-    needs: [verify, jsi-ui-runtime]
+    needs: [verify, jsi-ui-runtime, jsi-ios27-runtime]
     if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
