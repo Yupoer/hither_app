@@ -231,7 +231,7 @@ jobs:
             echo "Unexpected acceptance of an arbitrary background thread"
             exit 1
           fi
-          rg 'data race detected|JavaScriptActor operations must be run' "$RUNNER_TEMP/hither-jsi-wrong.log"
+          grep -E 'data race detected|JavaScriptActor operations must be run' "$RUNNER_TEMP/hither-jsi-wrong.log"
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
