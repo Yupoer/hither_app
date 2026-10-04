@@ -27,6 +27,7 @@
     "postinstall": "patch-package",
     "verify:lock": "npm ci --include=dev --ignore-scripts",
     "verify:runtime": "node scripts/verify-runtime-alignment.mjs",
+    "verify:ios-release-launch": "python3 scripts/verify-ios-release-launch.py",
     "update:preview": "eas update --channel preview",
     "update:production": "eas update --channel production"
   },

@@ -18,6 +18,32 @@ enum ProbeError: Error { case expected }
 func threadID() -> UInt64 { var value:UInt64=0;pthread_threadid_np(nil,&value);return value }
 @main struct Main {
  static func main() {
+  if CommandLine.arguments.contains("ui") {
+   // Expo AppContext.prepareUIRuntime runs synchronously on MainActor while
+   // the regular JS runtime lives on another thread. Keep multithreading active
+   // so the single-threaded fallback cannot hide a rejected UI runtime.
+   let started = DispatchSemaphore(value: 0)
+   let release = DispatchSemaphore(value: 0)
+   let worker = Thread { started.signal(); release.wait() }
+   worker.start()
+   started.wait()
+   precondition(Thread.isMainThread && Thread.isMultiThreaded())
+   let original = threadID()
+   let answer = JavaScriptActor.assumeIsolated {
+    precondition(threadID() == original)
+    return JavaScriptActor.assumeIsolated { moduleDefinition(41) }
+   }
+   precondition(answer == 42)
+   do {
+    let _: Int = try JavaScriptActor.assumeIsolated { () throws(ProbeError) -> Int in
+     precondition(threadID() == original)
+     throw .expected
+    }
+    preconditionFailure("Expected UI typed throw")
+   } catch ProbeError.expected {} catch { preconditionFailure("Wrong UI typed error") }
+   release.signal()
+   print("UI runtime main-thread/nested/typed-throw=PASS")
+  }
   let count = CommandLine.arguments.contains("many") ? 10000 : 1
   let done = DispatchSemaphore(value: 0)
   for runtime in 0..<2 {
