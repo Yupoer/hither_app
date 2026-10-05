@@ -16,3 +16,13 @@ export function shouldApplyRouteOpenSyncResult(
 ): boolean {
   return startedGeneration === currentGeneration;
 }
+
+/** Route open paints local state first; remote work runs silently behind it. */
+export async function reconcileRouteOnOpen(
+  refreshLocal: () => Promise<unknown>,
+  refreshRemote: () => Promise<unknown>,
+): Promise<void> {
+  await refreshLocal().catch(() => undefined);
+  // This seam has no draft setters: reconciliation cannot discard unsaved edits.
+  void refreshRemote().catch(() => undefined);
+}

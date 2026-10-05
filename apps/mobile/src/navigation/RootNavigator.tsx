@@ -34,6 +34,7 @@ export default function RootNavigator() {
     // RoleSelect. `initialRouteName` is only read once, after the App-level
     // `initializing` splash has resolved the persisted session.
     <Stack.Navigator
+      key={user?.id ?? 'signed-out'}
       initialRouteName={user ? 'RoleSelect' : 'Login'}
       screenOptions={{
         headerShown: false,
@@ -45,15 +46,15 @@ export default function RootNavigator() {
       <Stack.Screen name="Auth" component={AuthScreen} />
       {/* Map is a full team workspace: disable interactive / full-screen pop so
           list swipe-to-delete and peak horizontal pans never return to RoleSelect. */}
-      <Stack.Screen
+      {user && <Stack.Screen
         name="Map"
         component={MapScreen}
         options={{
           gestureEnabled: false,
           fullScreenGestureEnabled: false,
         }}
-      />
-      <Stack.Screen name="MyTeams" component={MyTeamsScreen} />
+      />}
+      {user && <Stack.Screen name="MyTeams" component={MyTeamsScreen} />}
     </Stack.Navigator>
   );
 }

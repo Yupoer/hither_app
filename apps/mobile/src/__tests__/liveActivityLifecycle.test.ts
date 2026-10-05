@@ -205,12 +205,12 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
       deleteSession: jest.fn(async () => undefined),
       deleteAllSessions: jest.fn(async () => undefined),
       listGroupActivities: jest.fn(async () => [
-        { activityId: 'pts-primary', pushToken: 'tok-pts' },
-        { activityId: 'pts-orphan', pushToken: 'tok-orphan' },
+        { activityId: 'pts-primary', pushToken: 'tok-pts', destinationId: 'd1', navigationSessionId: 'nav-1' },
+        { activityId: 'pts-orphan', pushToken: 'tok-orphan', destinationId: 'd1', navigationSessionId: 'nav-1' },
       ]),
     };
     const reconciler = new LiveActivityLifecycleReconciler(api);
-    await reconciler.request({ kind: 'start', destinationId: 'd1' });
+    await reconciler.request({ kind: 'start', destinationId: 'd1', navigationSessionId: 'nav-1' });
     expect(reconciler.currentHandle).toBe('pts-primary');
     expect(reconciler.currentPushToken).toBe('tok-pts');
     expect(api.startGroupActivity).not.toHaveBeenCalled();
@@ -275,5 +275,70 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
     await reconciler.request({ kind: 'start', destinationId: 'd1' });
     expect(api.startGroupActivity).not.toHaveBeenCalled();
     expect(reconciler.currentHandle).toBeNull();
+  });
+});
+
+describe('Live Activity session and destination ownership', () => {
+  const makeApi = (existing: { activityId: string; navigationSessionId?: string; destinationId?: string }[] = []) => ({
+    endGroupActivity: jest.fn(async (_id: string) => undefined),
+    endAllGroupActivities: jest.fn(async () => undefined),
+    startGroupActivity: jest.fn(async (_intent: unknown) => ({ activityId: 'new-current' })),
+    listGroupActivities: jest.fn(async () => existing),
+    deleteSession: jest.fn(async (_id: string) => undefined),
+    deleteAllSessions: jest.fn(async () => undefined),
+  });
+  it('replaces the owner for A to B at the same destination without an intermediate stop', async () => {
+    const api = makeApi();
+    api.startGroupActivity.mockResolvedValueOnce({ activityId: 'session-A' }).mockResolvedValueOnce({ activityId: 'session-B' });
+    const owner = new LiveActivityLifecycleReconciler(api);
+    await owner.request({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'A' });
+    await owner.request({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'B' });
+    expect(api.endGroupActivity).toHaveBeenCalledWith('session-A');
+    expect(api.deleteSession).toHaveBeenCalledWith('session-A');
+    expect(api.startGroupActivity).toHaveBeenLastCalledWith({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'B' });
+    expect(api.endGroupActivity.mock.invocationCallOrder[0]).toBeLessThan(api.startGroupActivity.mock.invocationCallOrder[1]);
+    expect(owner.currentHandle).toBe('session-B');
+    expect(owner.currentNavigationSessionId).toBe('B');
+  });
+  it('a failed old native start cannot clear a newer observed PTS owner', async () => {
+    const pending = deferred<{ activityId: string }>();
+    const api = makeApi();
+    api.startGroupActivity.mockReturnValueOnce(pending.promise);
+    const owner = new LiveActivityLifecycleReconciler(api);
+    const old = owner.request({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'A' });
+    for (let tick = 0; tick < 12; tick += 1) await Promise.resolve();
+    expect(api.startGroupActivity).toHaveBeenCalledTimes(1);
+    const next = owner.request({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'B' });
+    expect(owner.adoptObservedActivity({ activityId: 'pts-B', destinationId: 'same-stop', navigationSessionId: 'B' })).toBe(true);
+    pending.reject(new Error('late A failure'));
+    await Promise.all([old, next]);
+    expect(owner.currentHandle).toBe('pts-B');
+    expect(api.startGroupActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { activityId: 'foreign-session', navigationSessionId: 'old', destinationId: 'same-stop' },
+    { activityId: 'foreign-stop', navigationSessionId: 'current', destinationId: 'other-stop' },
+    { activityId: 'unknown', destinationId: 'same-stop' },
+    { activityId: 'missing-stop', navigationSessionId: 'current' },
+  ])('never cold-adopts a mismatching or missing scope: %j', async row => {
+    const api = makeApi([row]);
+    const owner = new LiveActivityLifecycleReconciler(api);
+    await owner.request({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'current' });
+    expect(api.endGroupActivity).toHaveBeenCalledWith(row.activityId);
+    expect(api.deleteSession).toHaveBeenCalledWith(row.activityId);
+    expect(owner.currentHandle).toBe('new-current');
+    expect(api.startGroupActivity).toHaveBeenCalledTimes(1);
+  });
+  it('adopts a valid PTS scope among foreign siblings without a second local start', async () => {
+    const api = makeApi([{ activityId: 'foreign', destinationId: 'other', navigationSessionId: 'current' },
+      { activityId: 'valid-pts', destinationId: 'same-stop', navigationSessionId: 'current' }]);
+    const owner = new LiveActivityLifecycleReconciler(api);
+    await owner.request({ kind: 'start', destinationId: 'same-stop', navigationSessionId: 'current' });
+    expect(owner.currentHandle).toBe('valid-pts');
+    expect(api.startGroupActivity).not.toHaveBeenCalled();
+    expect(api.endAllGroupActivities).not.toHaveBeenCalled();
+    expect(api.endGroupActivity).toHaveBeenCalledWith('foreign');
+    expect(owner.adoptObservedActivity({ activityId: 'valid-pts', destinationId: 'same-stop', navigationSessionId: 'old' })).toBe(false);
   });
 });

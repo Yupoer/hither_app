@@ -23,6 +23,7 @@ public class HitherLiveActivityModule: Module {
   private var pushToStartTask: Task<Void, Never>?
   private var activityTokenTasks: [String: Task<Void, Never>] = [:]
   private var latestPushToStartToken: String?
+  private let snapshotUpdates = HitherLiveActivityUpdateQueue()
 
   @available(iOS 17.2, *)
   private func observePushToStartTokens() {
@@ -46,9 +47,23 @@ public class HitherLiveActivityModule: Module {
           "activityId": activity.id,
           "pushToken": token.hexString,
           "navigationSessionId": activity.content.state.navigationSessionId as Any,
+          "destinationId": activity.content.state.destinationId as Any,
         ])
       }
     }
+  }
+
+  @available(iOS 16.2, *)
+  private func update(_ activity: Activity<HitherGroupAttributes>, incoming: [String: Any]) async {
+    guard let data = try? JSONEncoder().encode(activity.content.state),
+          let current = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+    guard HitherLiveActivitySnapshot.matchesScope(incoming: incoming, current: current) else { return }
+    let merged = HitherLiveActivitySnapshot.merge(incoming: incoming, current: current)
+    let content = ActivityContent(
+      state: HitherGroupAttributes.ContentState(from: merged),
+      staleDate: Date().addingTimeInterval(Self.staleInterval)
+    )
+    await activity.update(content)
   }
 
   public func definition() -> ModuleDefinition {
@@ -95,6 +110,8 @@ public class HitherLiveActivityModule: Module {
       guard #available(iOS 16.2, *) else { return [] }
       return Activity<HitherGroupAttributes>.activities.map { activity in
         var row = ["activityId": activity.id]
+        if let sessionId = activity.content.state.navigationSessionId { row["navigationSessionId"] = sessionId }
+        if let destinationId = activity.content.state.destinationId { row["destinationId"] = destinationId }
         if let token = activity.pushToken {
           row["pushToken"] = token.hexString
         }
@@ -115,12 +132,22 @@ public class HitherLiveActivityModule: Module {
         return nil
       }
       if let existing = Activity<HitherGroupAttributes>.activities.first {
-        self.observePushToken(for: existing)
-        var adopted = ["activityId": existing.id]
-        if let pushToken = existing.pushToken {
-          adopted["pushToken"] = pushToken.hexString
+        let current = [
+          "navigationSessionId": existing.content.state.navigationSessionId as Any,
+          "destinationId": existing.content.state.destinationId as Any,
+        ]
+        if HitherLiveActivitySnapshot.matchesScope(incoming: state, current: current) {
+          self.observePushToken(for: existing)
+          var adopted = ["activityId": existing.id]
+          if let pushToken = existing.pushToken {
+            adopted["pushToken"] = pushToken.hexString
+          }
+          return adopted
         }
-        return adopted
+        // A cold-start adoption at another point must create a new owner.
+        await self.snapshotUpdates.perform {
+          await existing.end(nil, dismissalPolicy: .immediate)
+        }
       }
       let attributes = HitherGroupAttributes(
         groupName: state["groupName"] as? String ?? ""
@@ -148,13 +175,11 @@ public class HitherLiveActivityModule: Module {
 
     AsyncFunction("updateGroupActivity") { (handle: String, state: [String: Any]) in
       guard #available(iOS 16.2, *) else { return }
-      let content = ActivityContent(
-        state: HitherGroupAttributes.ContentState(from: state),
-        staleDate: Date().addingTimeInterval(Self.staleInterval)
-      )
-      for activity in Activity<HitherGroupAttributes>.activities
-      where activity.id == handle {
-        await activity.update(content)
+      await self.snapshotUpdates.perform {
+        for activity in Activity<HitherGroupAttributes>.activities
+        where activity.id == handle {
+          await self.update(activity, incoming: state)
+        }
       }
     }
 
@@ -162,20 +187,20 @@ public class HitherLiveActivityModule: Module {
     // handle. ActivityKit can safely enumerate this app's own activities.
     AsyncFunction("updateAllGroupActivities") { (state: [String: Any]) in
       guard #available(iOS 16.2, *) else { return }
-      let content = ActivityContent(
-        state: HitherGroupAttributes.ContentState(from: state),
-        staleDate: Date().addingTimeInterval(Self.staleInterval)
-      )
-      for activity in Activity<HitherGroupAttributes>.activities {
-        await activity.update(content)
+      await self.snapshotUpdates.perform {
+        for activity in Activity<HitherGroupAttributes>.activities {
+          await self.update(activity, incoming: state)
+        }
       }
     }
 
     AsyncFunction("endGroupActivity") { (handle: String) in
       guard #available(iOS 16.2, *) else { return }
-      for activity in Activity<HitherGroupAttributes>.activities
-      where activity.id == handle {
-        await activity.end(nil, dismissalPolicy: .immediate)
+      await self.snapshotUpdates.perform {
+        for activity in Activity<HitherGroupAttributes>.activities
+        where activity.id == handle {
+          await activity.end(nil, dismissalPolicy: .immediate)
+        }
       }
     }
 
@@ -184,8 +209,10 @@ public class HitherLiveActivityModule: Module {
     // after the in-memory activity id is lost.
     AsyncFunction("endAllGroupActivities") {
       guard #available(iOS 16.2, *) else { return }
-      for activity in Activity<HitherGroupAttributes>.activities {
-        await activity.end(nil, dismissalPolicy: .immediate)
+      await self.snapshotUpdates.perform {
+        for activity in Activity<HitherGroupAttributes>.activities {
+          await activity.end(nil, dismissalPolicy: .immediate)
+        }
       }
     }
   }

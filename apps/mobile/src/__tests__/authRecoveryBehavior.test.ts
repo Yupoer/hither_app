@@ -127,7 +127,7 @@ describe('auth recovery controller behavior', () => {
       () => ({ data: { session: makeSession('old') }, error: null }),
       () => {
         refreshCalls += 1;
-        return { data: { session: makeSession('new') }, error: null };
+        return { data: { session: { ...makeSession('old'), access_token: 'access-new' } }, error: null };
       },
     ));
     const authFailure = Object.assign(new Error('expired'), { code: 'PGRST301', status: 401 });
@@ -135,7 +135,7 @@ describe('auth recovery controller behavior', () => {
       attempts += 1;
       if (attempts === 1) throw authFailure;
       return current.user?.id;
-    })).resolves.toBe('new');
+    })).resolves.toBe('old');
     expect(attempts).toBe(2);
     expect(refreshCalls).toBe(1);
 
@@ -148,7 +148,7 @@ describe('auth recovery controller behavior', () => {
   it('returns non-auth operation errors as results and retries auth-shaped result errors once', async () => {
     const controller = createAuthRecovery(adapterFor(
       () => ({ data: { session: makeSession('old') }, error: null }),
-      () => ({ data: { session: makeSession('new') }, error: null }),
+      () => ({ data: { session: { ...makeSession('old'), access_token: 'access-new' } }, error: null }),
     ));
     const result = await controller.withAuthenticatedOperation(() => ({
       data: null,
@@ -176,4 +176,70 @@ describe('default auth recovery registration', () => {
     __resetDefaultAuthRecoveryForTests();
     expect(() => getDefaultAuthRecovery()).toThrow('not been configured');
   });
+});
+
+
+describe('foreground and terminal session policy', () => {
+  it('coalesces forced foreground updates without first triggering SDK implicit refresh', async () => {
+    const old = makeSession('same', 9999999999); const fresh = { ...old, access_token: 'rotated' };
+    let release!: () => void;
+    const refresh = jest.fn(async () => { await new Promise<void>(resolve => { release = resolve; }); return { data: { session: fresh } }; });
+    const get = jest.fn(() => ({ data: { session: old } }));
+    const controller = createAuthRecovery({ getSession: get, getLocalSession: get, refreshSession: refresh });
+    const first = controller.getSession({ forceRefresh: true });
+    const second = controller.getSession({ forceRefresh: true });
+    for (let tick = 0; tick < 12; tick += 1) await Promise.resolve();
+    release(); await expect(Promise.all([first, second])).resolves.toEqual([fresh, fresh]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+  it.each(['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found', 'session_expired'])('only confirmed %s rejection invalidates and notifies the foreground', async code => {
+    const invalidate = jest.fn(); const listener = jest.fn(); const session = makeSession('same');
+    const controller = createAuthRecovery({ getSession: () => ({ data: { session } }),
+      getLocalSession: () => ({ data: { session } }),
+      refreshSession: () => ({ error: { code, status: 400 }, data: { session: null } }), invalidateSession: invalidate });
+    controller.subscribeTerminal(listener);
+    await expect(controller.refreshSessionOnce()).rejects.toMatchObject({ code });
+    expect(invalidate).toHaveBeenCalledTimes(1); expect(listener).toHaveBeenCalledTimes(1);
+  });
+  it.each([0, 429, 503])('preserves identity and credentials through a temporary %s failure', async status => {
+    const invalidate = jest.fn(); const listener = jest.fn(); const session = makeSession('same');
+    const controller = createAuthRecovery({ getSession: () => ({ data: { session } }),
+      getLocalSession: () => ({ data: { session } }), refreshSession: () => ({ error: { status, message: 'temporary outage' } }), invalidateSession: invalidate });
+    controller.subscribeTerminal(listener);
+    await expect(controller.refreshSessionOnce()).rejects.toMatchObject({ status });
+    await expect(controller.getLocalSession()).resolves.toEqual(session);
+    expect(invalidate).not.toHaveBeenCalled(); expect(listener).not.toHaveBeenCalled();
+  });
+  it('ignores a stale refresh rejection after a newer account took over', async () => {
+    let local = makeSession('old'); let reject!: (error: unknown) => void;
+    const invalidate = jest.fn();
+    const controller = createAuthRecovery({ getSession: () => ({ data: { session: local } }),
+      getLocalSession: () => ({ data: { session: local } }), refreshSession: () => new Promise((_resolve, fail) => { reject = fail; }), invalidateSession: invalidate });
+    const pending = controller.refreshSessionOnce();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    local = makeSession('new'); reject({ code: 'refresh_token_not_found', status: 400 });
+    await expect(pending).resolves.toEqual(local); expect(invalidate).not.toHaveBeenCalled();
+  });
+  it('does not refresh twice when the once-only recovery itself fails', async () => {
+    const refresh = jest.fn(() => ({ data: { session: null }, error: null }));
+    const controller = createAuthRecovery(adapterFor(() => ({ data: { session: makeSession() } }), refresh));
+    await expect(controller.withAuthenticatedOperation(() => ({ error: { status: 401 } }))).rejects.toMatchObject({ code: 'session_missing_or_expired' });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+it('preserves a newly signed-in identity when refresh began with no stored session', async () => {
+  let local: AuthSessionLike | null = null;
+  let reject!: (error: unknown) => void;
+  const invalidate = jest.fn(); const terminal = jest.fn();
+  const controller = createAuthRecovery({ getSession: () => ({ data: { session: local } }), getLocalSession: () => ({ data: { session: local } }),
+    refreshSession: () => new Promise((_resolve, fail) => { reject = fail; }), invalidateSession: invalidate });
+  controller.subscribeTerminal(terminal);
+  const pending = controller.refreshSessionOnce();
+  for (let tick = 0; tick < 12; tick += 1) await Promise.resolve();
+  local = makeSession('new-account');
+  reject(Object.assign(new Error('session missing'), { name: 'AuthSessionMissingError' }));
+  await expect(pending).resolves.toEqual(local);
+  expect(invalidate).not.toHaveBeenCalled(); expect(terminal).not.toHaveBeenCalled();
 });

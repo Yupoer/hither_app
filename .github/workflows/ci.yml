@@ -126,7 +126,7 @@ jobs:
         if: steps.scope.outputs.product == 'true'
         run: npm run test:coverage:changed
         env:
-          COVERAGE_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'origin/master' }}
+          COVERAGE_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
 
       - name: Lint (eslint — full tree; featureTour at error severity)
@@ -167,7 +167,7 @@ jobs:
           deno test --no-check --allow-env --allow-net --allow-read --allow-import \
             supabase/functions/_shared/storekit_test.ts \
             supabase/functions/_shared/storekit_certificate_test.ts \
-            supabase/functions/send-push/auth_test.ts \
+            supabase/functions/send-push/ \
             supabase/functions/verify-and-apply-purchase/index_test.ts \
             supabase/functions/apple-server-notifications/index_test.ts \
             supabase/functions/sync-app-store-subscription/index_test.ts \
@@ -223,6 +223,10 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
       - name: Install clean patched native dependency
         run: npm ci
+      - name: Exercise native foreground and headless snapshot races
+        run: |
+          swiftc -swift-version 5 modules/hither-live-activity/ios/HitherLiveActivitySnapshot.swift src/__tests__/native/HitherLiveActivitySnapshotTests.swift -o "$RUNNER_TEMP/hither-live-activity-snapshot-tests"
+          "$RUNNER_TEMP/hither-live-activity-snapshot-tests"
       - name: Exercise optimized UI and JavaScript actor contexts
         run: |
           python3 scripts/build-jsi-executor-probe.py "$RUNNER_TEMP/hither-jsi-probe" --host --release

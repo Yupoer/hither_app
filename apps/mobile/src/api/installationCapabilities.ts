@@ -29,7 +29,17 @@ export function changeAuthSession<T>(operation: () => Promise<T>, revoke = true,
 
 export function getInstallationId(): Promise<string> {
   if (!deviceIdPromise) deviceIdPromise = (async () => {
-    const stored = await supabaseAuthStorage.getItem('hither.live-activity-device-id');
+    let stored: string | null = null;
+    try { stored = await supabaseAuthStorage.getItem('hither.live-activity-device-id'); }
+    catch (error) {
+      const failure = error as { code?: unknown; message?: unknown } | null;
+      const keychainUnavailable = failure?.code === 'ERR_KEY_CHAIN'
+        || typeof failure?.message === 'string' && /keychain|entitlement/i.test(failure.message);
+      // Installation IDs are nonsecret. An unsigned/local artifact may create
+      // a process-local ID so revocation/logout still works. Auth session reads
+      // retain their stricter error-and-retry behavior in the shared storage.
+      if (!keychainUnavailable) throw error;
+    }
     if (stored) return stored;
     const created = Crypto.randomUUID();
     await supabaseAuthStorage.setItem('hither.live-activity-device-id', created);

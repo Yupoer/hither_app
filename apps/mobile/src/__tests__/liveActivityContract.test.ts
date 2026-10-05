@@ -69,6 +69,16 @@ describe('ActivityKit remote push contract', () => {
     expect(contentStateShape(appAttributes)).toContain('memberArrived: [Bool]?');
     expect(contentStateShape(appAttributes)).toContain('destinationEmoji: String?');
     expect(contentStateShape(appAttributes)).toContain('language: String?');
+    expect(contentStateShape(appAttributes)).toContain('destinationId: String?');
+    expect(contentStateShape(appAttributes)).toContain('personalArrivalAtMs: Double?');
+  });
+
+  it('serializes native foreground/headless updates through the same snapshot merge', () => {
+    expect(nativeModule).toContain('HitherLiveActivitySnapshot.merge(incoming: incoming, current: current)');
+    expect(nativeModule.match(/await self\.snapshotUpdates\.perform/g)).toHaveLength(5);
+    expect(nativeModule.match(/await self\.update\(activity, incoming: state\)/g)).toHaveLength(2);
+    expect(liveHook).toContain('state.personalArrivalAtMs,');
+    expect(jsBridge).toContain('personalArrived?: boolean;');
   });
 
   it('decodes and renders destinationEmoji on native Live Activity', () => {
@@ -104,6 +114,10 @@ describe('ActivityKit remote push contract', () => {
     expect(liveHook).toContain('reconcilerRef.current?.currentPushToken');
     // Adoption success required before persist (no foreign id + stale token).
     expect(liveHook).toContain('if (!adopted) return');
+    expect(liveHook).toContain('destinationId: event.destinationId');
+    expect(liveHook).toContain('navigationSessionId: event.navigationSessionId');
+    expect(nativeModule).toContain('row["navigationSessionId"] = sessionId');
+    expect(nativeModule).toContain('row["destinationId"] = destinationId');
   });
 
   it('uses generation-aware lifecycle reconciler for start/stop races (#146)', () => {
@@ -207,14 +221,15 @@ describe('ActivityKit remote push contract', () => {
     expect(mapScreen).toContain('language,');
   });
 
-  it('uses an iOS 26 glass background with a clear ActivityKit tint and an older-system fallback', () => {
+  it('uses an opaque adaptive surface so wallpaper cannot obscure navigation text', () => {
     const lockBackground = widget.slice(widget.indexOf('private struct LockScreenBackground'), widget.indexOf('// MARK: - Lock screen'));
-    expect(lockBackground).toContain('#available(iOS 26.0, *)');
-    expect(lockBackground).toContain('.glassEffect(.regular, in: .rect(cornerRadius: 24))');
-    expect(lockBackground).toMatch(/\.background\s*\{\s*Color\.clear/);
-    expect(lockBackground).not.toMatch(/content\s*\.glassEffect/);
-    expect(lockBackground).toContain('.activityBackgroundTint(.clear)');
-    expect(lockBackground).toContain('content.activityBackgroundTint(Brand.card)');
+    expect(lockBackground).toContain('colorScheme == .dark ? .black : .white');
+    expect(lockBackground).not.toContain('glassEffect');
+    expect(lockBackground).not.toContain('activityBackgroundTint(.clear)');
+    expect(widget).toContain('contrast >= 4.5');
+    expect(widget).toContain('Text(timerInterval: interval, countsDown: true');
+    expect(appAttributes).toContain('etaTargetAtMs: Double?');
+    expect(widgetAttributes).toContain('etaTargetAtMs: Double?');
     const dynamicIsland = widget.slice(widget.indexOf('} dynamicIsland:'), widget.indexOf('private struct DestinationTitle'));
     expect(dynamicIsland).not.toContain('glassEffect');
   });
@@ -232,11 +247,11 @@ describe('ActivityKit remote push contract', () => {
     expect(liveHook).toContain('state.distanceMeters,');
   });
 
-  it('dims each member from its own arrived boolean', () => {
+  it('marks arrival with a check instead of making unarrived avatars unreadable', () => {
     expect(widget).toContain('let arrived: [Bool]');
     expect(widget).toContain('isArrived = arrived.indices.contains(i) && arrived[i]');
-    expect(widget).toContain('.opacity(isArrived ? 1 : 0.35)');
-    expect(widget).toContain('.saturation(isArrived ? 1 : 0.25)');
+    expect(widget).toContain('checkmark.circle.fill');
+    expect(widget).not.toContain('.opacity(isArrived ? 1 : 0.35)');
     expect(widget).not.toContain('let gathered: Int');
   });
 });

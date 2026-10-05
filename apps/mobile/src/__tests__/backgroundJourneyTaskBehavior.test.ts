@@ -174,6 +174,28 @@ describe('background journey native task wiring', () => {
     }));
   });
 
+  it('keeps a terminal personal receipt local without duplicating it and fences the next account', async () => {
+    await stopBackgroundJourney();
+    mockArrivalRows.mockResolvedValue([{
+      id: 'receipt', actorId: 'self', sequence: 1, createdAt: 1,
+      operationType: 'record_arrival', entityId: 'stop-1', status: 'conflict',
+      payload: { actorId: 'self', userId: 'self', navigationSessionId: 'session-1',
+        arrivedAt: new Date().toISOString() },
+    }]);
+    await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
+    await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() }] } });
+    expect(require('../state/arrivalSync').enqueueArrival).not.toHaveBeenCalled();
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      progress: 1, destinationId: 'stop-1', personalArrived: true,
+      personalArrivalAtMs: 1, personalArrivalSequence: 1,
+    }));
+    await stopBackgroundJourney();
+    jest.clearAllMocks();
+    await startBackgroundJourney({ ...baseConfig, actorId: 'another-user', permissionsPrepared: true });
+    await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() + 1 }] } });
+    expect(require('../state/arrivalSync').enqueueArrival).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'another-user' }));
+  });
+
   it('does not reuse an acknowledged arrival belonging to an earlier navigation session', async () => {
     await stopBackgroundJourney();
     mockArrivalRows.mockResolvedValue([{
@@ -198,7 +220,7 @@ it('background route progress matches foreground; duplicate samples do not repro
   await startBackgroundJourney({ ...config, permissionsPrepared: true });
   await task({ data: { locations: [{ ...locationSample, coords: { ...locationSample.coords, ...start } }] } });
   expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
-    progress: 0, distanceMeters: 740, etaSeconds: 780, accentHex: '#F5B142',
+    progress: 0, distanceMeters: 740, etaSeconds: 780 * 690 / 740, accentHex: '#F5B142',
   }));
   const { derivePersonalProgress } = require('../utils/personalProgress');
   const walking = { ...start, latitude: start.latitude - 0.0005 };
@@ -218,6 +240,8 @@ it('background route progress matches foreground; duplicate samples do not repro
   expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(count);
   expect((await loadBackgroundJourney())?.navigationSessionId).toBe('session-1');
 });
-jest.mock('../state/arrivalSync', () => ({ enqueueArrival: jest.fn(async () => ({ status: 'pending' })) }));
+jest.mock('../state/arrivalSync', () => ({ enqueueArrival: jest.fn(async (input) => ({
+  status: 'pending', payload: input, createdAt: Date.parse(input.occurredAt),
+})) }));
 jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
 jest.mock('../state/coreDataSync', () => ({ getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));

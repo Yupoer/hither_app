@@ -5,21 +5,29 @@
  * older close cannot end-all a newer journey's activity.
  */
 
+export type ObservedLiveActivity = {
+  activityId: string;
+  pushToken?: string;
+  navigationSessionId?: string;
+  destinationId?: string;
+};
+
 export type LiveActivityLifecycleApi = {
   endGroupActivity: (activityId: string) => Promise<void>;
   endAllGroupActivities: () => Promise<void>;
-  startGroupActivity: () => Promise<{ activityId: string; pushToken?: string } | null>;
+  startGroupActivity: (intent: LiveActivityStartIntent) => Promise<{ activityId: string; pushToken?: string } | null>;
   deleteSession: (activityId: string) => Promise<void>;
   deleteAllSessions: () => Promise<void>;
   /** Optional Android permission gate; return false to abort start. */
   ensureStartPermission?: () => Promise<boolean>;
   /** Observed / PTS activities already on device. Adopt before local start. */
-  listGroupActivities?: () => Promise<{ activityId: string; pushToken?: string }[]>;
+  listGroupActivities?: () => Promise<ObservedLiveActivity[]>;
 };
 
 export type LiveActivityStartIntent = {
   kind: 'start';
   destinationId: string;
+  navigationSessionId?: string;
 };
 
 export type LiveActivityStopIntent = {
@@ -43,6 +51,8 @@ export class LiveActivityLifecycleReconciler {
   private queue: Promise<void> = Promise.resolve();
   private handle: string | null = null;
   private destinationId: string | null = null;
+  private navigationSessionId: string | null = null;
+  private desiredIntent: LiveActivityIntent | null = null;
   private pushToken: string | undefined;
 
   constructor(private readonly api: LiveActivityLifecycleApi) {}
@@ -55,22 +65,28 @@ export class LiveActivityLifecycleReconciler {
     return this.destinationId;
   }
 
+  get currentNavigationSessionId(): string | null {
+    return this.navigationSessionId;
+  }
+
+  ownsScope(destinationId: string, navigationSessionId?: string): boolean {
+    return this.destinationId === destinationId
+      && this.navigationSessionId === (navigationSessionId ?? null);
+  }
+
   get currentPushToken(): string | undefined {
     return this.pushToken;
   }
 
   /**
    * ActivityKit token rotation for the active activity.
-   * Updates push token (and adopts handle when missing) without bumping
+   * Updates the bound handle push token without bumping
    * generation or starting a new activity. Ignores tokens for a different
    * live handle so a stale event cannot clobber a newer journey.
    */
   adoptPushToken(activityId: string, pushToken: string | undefined): boolean {
     if (!activityId || !pushToken) return false;
-    if (this.handle && this.handle !== activityId) return false;
-    if (!this.handle) {
-      this.handle = activityId;
-    }
+    if (!this.handle || this.handle !== activityId) return false;
     this.pushToken = pushToken;
     return true;
   }
@@ -83,12 +99,17 @@ export class LiveActivityLifecycleReconciler {
     activityId: string;
     pushToken?: string;
     destinationId?: string | null;
+    navigationSessionId?: string | null;
   }): boolean {
-    if (!opts.activityId) return false;
+    if (!opts.activityId || !opts.destinationId) return false;
+    if (this.desiredIntent?.kind === 'stop') return false;
+    if (this.desiredIntent?.kind === 'start' && (opts.destinationId !== this.desiredIntent.destinationId
+      || (opts.navigationSessionId ?? null) !== (this.desiredIntent.navigationSessionId ?? null))) return false;
     if (this.handle && this.handle !== opts.activityId) return false;
     this.handle = opts.activityId;
     if (opts.pushToken) this.pushToken = opts.pushToken;
-    if (opts.destinationId) this.destinationId = opts.destinationId;
+    this.destinationId = opts.destinationId;
+    this.navigationSessionId = opts.navigationSessionId ?? null;
     return true;
   }
 
@@ -102,7 +123,7 @@ export class LiveActivityLifecycleReconciler {
     return generation === this.generation;
   }
 
-  private async listExisting(): Promise<{ activityId: string; pushToken?: string }[]> {
+  private async listExisting(): Promise<ObservedLiveActivity[]> {
     try {
       return (await this.api.listGroupActivities?.()) ?? [];
     } catch {
@@ -115,6 +136,7 @@ export class LiveActivityLifecycleReconciler {
    * may mutate handle / call end-all after awaits.
    */
   request(intent: LiveActivityIntent): Promise<void> {
+    this.desiredIntent = intent;
     const generation = this.nextGeneration();
     const run = settle(this.queue).then(() => this.execute(generation, intent));
     this.queue = settle(run);
@@ -132,46 +154,41 @@ export class LiveActivityLifecycleReconciler {
       return;
     }
 
-    // Already running for this destination — self-heal only if handle missing.
-    if (
-      this.handle
-      && this.destinationId === intent.destinationId
-    ) {
-      return;
-    }
+    // A new session at the same destination requires a new native owner.
+    if (this.handle && this.ownsScope(intent.destinationId, intent.navigationSessionId)) return;
 
     if (this.api.ensureStartPermission) {
       const ok = await this.api.ensureStartPermission();
-      if (!this.isCurrent(generation)) return;
-      if (!ok) return;
+      if (!this.isCurrent(generation) || !ok) return;
     }
 
-    const existing = this.api.listGroupActivities
-      ? await this.listExisting()
-      : [];
+    const existing = await this.listExisting();
     if (!this.isCurrent(generation)) return;
-    if (existing.length > 0 && !this.handle) {
-      const [primary, ...orphans] = existing;
-      this.handle = primary.activityId;
-      this.pushToken = primary.pushToken;
-      this.destinationId = intent.destinationId;
-      for (const orphan of orphans) {
-        await settle(this.api.endGroupActivity(orphan.activityId));
-        await settle(this.api.deleteSession(orphan.activityId));
-      }
-      return;
-    }
-
-    // Tear down previous destination / stale handle before start.
-    const previousId = this.handle;
-    this.handle = null;
-    this.pushToken = undefined;
-    this.destinationId = intent.destinationId;
-
-    if (previousId) {
-      await settle(this.api.endGroupActivity(previousId));
-      await settle(this.api.deleteSession(previousId));
+    const primary = existing.find(row => !!intent.navigationSessionId && row.destinationId === intent.destinationId
+      && (row.navigationSessionId ?? null) === (intent.navigationSessionId ?? null))
+      ?? (this.handle && this.ownsScope(intent.destinationId, intent.navigationSessionId)
+        ? { activityId: this.handle, destinationId: this.destinationId ?? undefined,
+            navigationSessionId: this.navigationSessionId ?? undefined, pushToken: this.pushToken }
+        : undefined);
+    // Unknown scope cannot be assigned the current intent by guesswork. End it
+    // alongside known mismatches so an older native snapshot cannot be adopted.
+    const orphanIds = new Set(existing.filter(row => row.activityId !== primary?.activityId).map(row => row.activityId));
+    if (this.handle && this.handle !== primary?.activityId) orphanIds.add(this.handle);
+    // Reserve the matching handle during orphan cleanup so a concurrent token
+    // event for a sibling cannot replace the selected owner.
+    this.handle = primary?.activityId ?? null;
+    this.pushToken = primary?.pushToken;
+    this.destinationId = primary?.destinationId ?? null;
+    this.navigationSessionId = primary?.navigationSessionId ?? null;
+    for (const id of orphanIds) {
       if (!this.isCurrent(generation)) return;
+      await settle(this.api.endGroupActivity(id));
+      await settle(this.api.deleteSession(id));
+    }
+    if (!this.isCurrent(generation)) return;
+    if (primary) {
+      this.adoptObservedActivity(primary);
+      return;
     }
 
     await settle(this.api.endAllGroupActivities());
@@ -179,11 +196,13 @@ export class LiveActivityLifecycleReconciler {
 
     let result: { activityId: string; pushToken?: string } | null = null;
     try {
-      result = await this.api.startGroupActivity();
+      result = await this.api.startGroupActivity(intent);
     } catch {
+      if (!this.isCurrent(generation)) return;
       // Stale destination/handle refs must not block a later start.
       this.handle = null;
       this.destinationId = null;
+      this.navigationSessionId = null;
       this.pushToken = undefined;
       return;
     }
@@ -199,17 +218,20 @@ export class LiveActivityLifecycleReconciler {
       // Allow retry on next request even if destination matches.
       this.handle = null;
       this.destinationId = null;
+      this.navigationSessionId = null;
       return;
     }
     this.handle = result.activityId;
     this.pushToken = result.pushToken;
     this.destinationId = intent.destinationId;
+    this.navigationSessionId = intent.navigationSessionId ?? null;
   }
 
   private async stop(generation: number, clearSessions: boolean): Promise<void> {
     const activityId = this.handle;
     this.handle = null;
     this.destinationId = null;
+    this.navigationSessionId = null;
     this.pushToken = undefined;
 
     if (activityId) {
@@ -228,6 +250,7 @@ export class LiveActivityLifecycleReconciler {
 
   /** Unmount / hard clear without generation gating for the final flush. */
   async dispose(): Promise<void> {
+    this.desiredIntent = { kind: 'stop', clearSessions: false };
     const generation = this.nextGeneration();
     await this.stop(generation, false);
   }

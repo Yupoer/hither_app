@@ -106,11 +106,8 @@ interface Props {
     id: string,
     next: { emoji: string | null; markerColor?: string | null },
   ) => void | Promise<void>;
-  onSync?: () => Promise<void>;
   /** Open KML/KMZ import sheet (replaces header sync CTA). */
   onImport?: () => void;
-  /** When true, show retry sync affordance after silent open-sync failure. */
-  syncFailed?: boolean;
   colors: Palette;
   emptyLabel: string;
   dragHint?: string;
@@ -185,9 +182,7 @@ export default function DestinationReorderList({
   onReorder,
   onDelete,
   onUpdateEmojiColor,
-  onSync,
   onImport,
-  syncFailed = false,
   colors,
   emptyLabel,
   dragHint,
@@ -318,7 +313,6 @@ export default function DestinationReorderList({
   }, []);
 
   const [showSettings, setShowSettings] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [editDays, setEditDays] = useState(tripDays ?? 1);
   const [editDate, setEditDate] = useState(parseDateOnlyLocal(departureDate) ?? new Date());
   /** Day number currently in "set stop as accommodation" radio mode. */
@@ -466,18 +460,6 @@ export default function DestinationReorderList({
     },
     [departureDate, t],
   );
-
-  const handleSync = useCallback(async () => {
-    if (!onSync || syncing) return;
-    // onSync is MapScreen.syncFromDatabaseAndUploadLogs (runUiAction swallows
-    // errors and surfaces recovery via the global banner). Local busy only.
-    setSyncing(true);
-    try {
-      await onSync();
-    } finally {
-      setSyncing(false);
-    }
-  }, [onSync, syncing]);
 
   // Wait for onboarding
   useEffect(() => {
@@ -819,7 +801,7 @@ export default function DestinationReorderList({
 
   return (
     <View>
-      {(canReorder || onImport || (syncFailed && onSync)) && (
+      {(canReorder || onImport) && (
         <View style={styles.topActions}>
           {canReorder && showTripDetails && <Pressable
             ref={(node) => onTourTargetRef?.('routeTripDetails', node)}
@@ -861,18 +843,7 @@ export default function DestinationReorderList({
             <Ionicons name="cloud-upload-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText} numberOfLines={1}>{t('kml.entry')}</Text>
           </Pressable>}
-          {syncFailed && onSync && <Pressable
-            style={[styles.setDaysBtn, syncing && { opacity: 0.5 }]}
-            onPress={() => void handleSync()}
-            disabled={syncing}
-            accessibilityRole="button"
-            accessibilityLabel={t('map.syncDbA11y')}
-          >
-            <Ionicons name="refresh-outline" size={16} color={colors.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.setDaysText} numberOfLines={1}>
-              {syncing ? t('map.syncDbSyncing') : t('map.syncDbRetry')}
-            </Text>
-          </Pressable>}
+
         </View>
       )}
 

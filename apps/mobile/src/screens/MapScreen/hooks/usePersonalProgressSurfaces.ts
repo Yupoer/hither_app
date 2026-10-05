@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { resolveEtaSnapshot, type EtaSnapshot } from '../../../utils/liveActivityEta';
 import {
   derivePersonalProgress,
   nextRouteAnchorFromResult,
@@ -11,6 +12,8 @@ export interface PersonalProgressSurfaceValues {
   distanceMeters: number | null;
   etaSeconds: number | null;
   progress: number | null;
+  etaTargetAtMs?: number;
+  etaSampledAtMs?: number;
 }
 
 export type PersonalProgressSurfaces = {
@@ -35,6 +38,7 @@ export type PersonalProgressSurfaceInput = Omit<
   resetKey?: string | null;
   /** Accepted route result identity; equal metres can still be a new result. */
   routeResultGeneration?: number | null;
+  sampledAtMs?: number;
   /** Fallbacks used when the shared model has no current value. */
   fallbackDistanceM?: number | null;
   fallbackEtaSeconds?: number | null;
@@ -54,10 +58,12 @@ export function usePersonalProgressSurfaces(
 ): PersonalProgressSurfaces {
   const anchorRef = useRef<RouteAnchorState | null>(null);
   const resetKeyRef = useRef(input.resetKey);
+  const etaSnapshotRef = useRef<EtaSnapshot | null>(null);
   const resetChanged = resetKeyRef.current !== input.resetKey;
   if (resetChanged) {
     resetKeyRef.current = input.resetKey;
     anchorRef.current = null;
+    etaSnapshotRef.current = null;
   }
 
   const routeGeneration = input.routeResultGeneration ?? 0;
@@ -82,14 +88,15 @@ export function usePersonalProgressSurfaces(
   const anchor = anchorRef.current;
   const personalProgress = derivePersonalProgress({
     ...input,
+    previousProgressMax: resetChanged ? null : input.previousProgressMax,
+    lastValidDistanceM: resetChanged ? null : input.lastValidDistanceM,
+    lastValidEtaSeconds: resetChanged ? null : input.lastValidEtaSeconds,
+    lastValidProgress: resetChanged ? null : input.lastValidProgress,
     routeAnchorGps: anchor?.gps,
     routeAnchorRemainingM: anchor?.remainingM,
     routeResultGeneration: routeGeneration,
     routeAnchorGeneration: anchor?.generation,
   });
-  // React state still contains the previous journey's baseline on this render.
-  // Never feed its sticky percentage back into the new journey's effects.
-  if (resetChanged && !personalProgress.arrived) personalProgress.progress = 0;
   const sharedValues: PersonalProgressSurfaceValues = {
     distanceMeters:
       personalProgress.distanceMeters ?? input.fallbackDistanceM ?? null,
@@ -97,6 +104,15 @@ export function usePersonalProgressSurfaces(
       personalProgress.etaSeconds ?? input.fallbackEtaSeconds ?? null,
     progress: personalProgress.progress ?? input.fallbackProgress ?? null,
   };
+  etaSnapshotRef.current = resolveEtaSnapshot(etaSnapshotRef.current, {
+    key: JSON.stringify([input.resetKey, routeGeneration, sharedValues.distanceMeters, sharedValues.etaSeconds, input.arrivalRadiusM]),
+    etaSeconds: sharedValues.etaSeconds,
+    sampledAtMs: isNewRouteResult ? undefined : input.sampledAtMs,
+    nowMs: Date.now(),
+    fresh: personalProgress.arrived || personalProgress.freshness === 'live',
+  });
+  sharedValues.etaTargetAtMs = etaSnapshotRef.current?.etaTargetAtMs;
+  sharedValues.etaSampledAtMs = etaSnapshotRef.current?.sampledAtMs;
 
   return {
     personalProgress,

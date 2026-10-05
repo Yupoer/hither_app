@@ -77,22 +77,22 @@ export function shouldAnchorInitial(opts: {
 }
 
 /**
- * Progress stays 0 until the user has left the start radius (or already
- * departed earlier — sticky). After that, classic remaining-distance ratio.
+ * Track departure separately while displaying the current distance ratio.
  */
 export function gatedJourneyProgress(opts: {
   initialM: number;
   currentM: number;
   movedFromStartM: number;
   hasDepartedStart?: boolean;
+  arrivalRadiusM?: number;
 }): { progress: number; departed: boolean } {
   const departed =
     Boolean(opts.hasDepartedStart) ||
     hasDepartedProgressStart(opts.movedFromStartM, opts.initialM);
-  if (!departed) return { progress: 0, departed: false };
+  // Distance presentation is independent of the departed/arrival bookkeeping.
   return {
-    progress: journeyProgress(opts.initialM, opts.currentM),
-    departed: true,
+    progress: journeyProgress(opts.initialM, opts.currentM, opts.arrivalRadiusM),
+    departed,
   };
 }
 
@@ -120,20 +120,23 @@ export function initialJourneyDistance(
   return undefined;
 }
 
-export function journeyProgress(initialM: number, currentM: number): number {
-  if (!Number.isFinite(initialM) || initialM <= 0) return 0;
-  return Math.min(1, Math.max(0, 1 - currentM / initialM));
+export function journeyProgress(initialM: number, currentM: number, radiusM = 0): number {
+  if (!Number.isFinite(initialM) || initialM < 0 || !Number.isFinite(currentM)) return 0;
+  const radius = Number.isFinite(radiusM) ? Math.max(0, radiusM) : 0;
+  if (initialM <= radius) return currentM <= radius ? 1 : 0;
+  return clampDisplayProgress(1 - Math.max(currentM - radius, 0) / (initialM - radius));
 }
 
-/**
- * Pre-arrival display cap: progress never shows 100% until confirmed arrival.
- * Spec #145: unidirectional milestones, max 95% before arrival, 100% after.
- */
-export const PRE_ARRIVAL_PROGRESS_CAP = 0.95;
+/** Distance completion is independent of the accuracy-aware arrival receipt. */
+export function clampDisplayProgress(progress: number): number {
+  return Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0;
+}
 
-export function capPreArrivalProgress(progress: number): number {
-  if (!Number.isFinite(progress)) return 0;
-  return Math.min(PRE_ARRIVAL_PROGRESS_CAP, Math.max(0, progress));
+/** Remove the final radius segment using the ETA's own remaining-distance metric. */
+export function etaToRadiusBoundary(etaToPinSeconds: number, remainingM: number, radiusM = ARRIVAL_RADIUS_M): number {
+  if (!Number.isFinite(etaToPinSeconds) || !Number.isFinite(remainingM)) return 0;
+  const radius = Number.isFinite(radiusM) ? Math.max(0, radiusM) : ARRIVAL_RADIUS_M;
+  return remainingM <= 0 ? 0 : Math.max(0, etaToPinSeconds) * Math.max(remainingM - radius, 0) / remainingM;
 }
 
 /**
@@ -158,33 +161,19 @@ export interface PersonalDisplayProgressInput {
   hasDepartedStart?: boolean;
   previousMax?: number | null;
   arrived?: boolean;
-  /** When destination id changes, sticky max is ignored. */
+  arrivalRadiusM?: number;
+  /** Compatibility metadata for callers that also track arrival milestones. */
   destinationId?: string | null;
   previousDestinationId?: string | null;
 }
 
 /**
  * One personal remaining bar for Live Activity, session bucket, and
- * background updates. Never ungated `1 - current/initial`.
+ * background updates, measured to the configured radius endpoint.
  */
 export function personalDisplayProgress(input: PersonalDisplayProgressInput): number {
   if (input.arrived) return 1;
-  const destChanged =
-    input.destinationId != null
-    && input.previousDestinationId != null
-    && input.destinationId !== input.previousDestinationId;
-  const stickyMax = destChanged ? 0 : input.previousMax;
-  const movedFromStartM = input.movedFromStartM;
-  const gated = movedFromStartM != null || input.hasDepartedStart
-    ? gatedJourneyProgress({
-        initialM: input.initialM,
-        currentM: input.currentM,
-        movedFromStartM: movedFromStartM ?? 0,
-        hasDepartedStart: input.hasDepartedStart,
-      }).progress
-    : 0;
-  const capped = capPreArrivalProgress(gated);
-  return capPreArrivalProgress(monotonicProgress(capped, stickyMax) ?? capped);
+  return journeyProgress(input.initialM, input.currentM, input.arrivalRadiusM ?? ARRIVAL_RADIUS_M);
 }
 
 /** Persist Live Activity buckets from the same personal-progress model. */

@@ -13,10 +13,16 @@ import Foundation
 public struct HitherGroupAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     public var navigationSessionId: String?
+    public var destinationId: String?
+    public var personalArrived: Bool?
+    public var personalArrivalAtMs: Double?
+    public var personalArrivalSequence: Double?
     public var status: String?
     public var gatheringTitle: String?
     public var distanceMeters: Double?
     public var etaSeconds: Double?
+    public var sampledAtMs: Double?
+    public var etaTargetAtMs: Double?
     /// Flock progress toward the point, 0...1 (drives the progress bar).
     public var progress: Double?
     /// How many members have reached the point.
@@ -42,10 +48,16 @@ public struct HitherGroupAttributes: ActivityAttributes {
 
     public init(
       navigationSessionId: String? = nil,
+      destinationId: String? = nil,
+      personalArrived: Bool? = nil,
+      personalArrivalAtMs: Double? = nil,
+      personalArrivalSequence: Double? = nil,
       status: String? = nil,
       gatheringTitle: String? = nil,
       distanceMeters: Double? = nil,
       etaSeconds: Double? = nil,
+      sampledAtMs: Double? = nil,
+      etaTargetAtMs: Double? = nil,
       progress: Double? = nil,
       gatheredCount: Int? = nil,
       memberCount: Int? = nil,
@@ -57,10 +69,16 @@ public struct HitherGroupAttributes: ActivityAttributes {
       language: String? = nil
     ) {
       self.navigationSessionId = navigationSessionId
+      self.destinationId = destinationId
+      self.personalArrived = personalArrived
+      self.personalArrivalAtMs = personalArrivalAtMs
+      self.personalArrivalSequence = personalArrivalSequence
       self.status = status
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
       self.etaSeconds = etaSeconds
+      self.sampledAtMs = sampledAtMs
+      self.etaTargetAtMs = etaTargetAtMs
       self.progress = progress
       self.gatheredCount = gatheredCount
       self.memberCount = memberCount
@@ -74,10 +92,16 @@ public struct HitherGroupAttributes: ActivityAttributes {
 
     public init(from state: [String: Any]) {
       self.navigationSessionId = state["navigationSessionId"] as? String
+      self.destinationId = state["destinationId"] as? String
+      self.personalArrived = state["personalArrived"] as? Bool
+      self.personalArrivalAtMs = (state["personalArrivalAtMs"] as? NSNumber)?.doubleValue
+      self.personalArrivalSequence = (state["personalArrivalSequence"] as? NSNumber)?.doubleValue
       self.status = state["status"] as? String
       self.gatheringTitle = state["gatheringTitle"] as? String
       self.distanceMeters = (state["distanceMeters"] as? NSNumber)?.doubleValue
       self.etaSeconds = (state["etaSeconds"] as? NSNumber)?.doubleValue
+      self.sampledAtMs = (state["sampledAtMs"] as? NSNumber)?.doubleValue
+      self.etaTargetAtMs = (state["etaTargetAtMs"] as? NSNumber)?.doubleValue
       self.progress = (state["progress"] as? NSNumber)?.doubleValue
       self.gatheredCount = (state["gatheredCount"] as? NSNumber)?.intValue
       self.memberCount = (state["memberCount"] as? NSNumber)?.intValue

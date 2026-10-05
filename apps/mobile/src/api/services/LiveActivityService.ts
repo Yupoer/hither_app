@@ -154,6 +154,7 @@ async function writeDeviceActivityToken(
 
 export interface LiveActivitySessionInput {
   sampledAtMs?: number;
+  etaTargetAtMs?: number;
   groupId: string;
   destinationId: string;
   activityId: string;
@@ -204,7 +205,10 @@ async function writeLiveActivitySession(
       eta_seconds: input.etaSeconds == null ? null : Math.max(0, Math.round(input.etaSeconds)),
       travel_mode: input.travelMode,
       last_progress_bucket: progressBucket20(progress),
-      updated_at: new Date(input.sampledAtMs ?? Date.now()).toISOString(),
+      // Store ETA and its origin as one snapshot, even when resuming later.
+      updated_at: new Date(input.etaTargetAtMs != null && input.etaSeconds != null
+        ? input.etaTargetAtMs - Math.max(0, Math.round(input.etaSeconds)) * 1000
+        : input.sampledAtMs ?? Date.now()).toISOString(),
     },
     { onConflict: 'user_id,group_id' },
   );
@@ -256,7 +260,7 @@ export async function updateDeviceActivityAccent(deviceId: string, accentHex: st
 }
 
 export async function updateLiveActivityProgress(groupId: string, destinationId: string, state: {
-  distanceMeters: number | null; etaSeconds: number | null; progress: number | null;
+  distanceMeters: number | null; etaSeconds: number | null; progress: number | null; etaTargetAtMs?: number;
 }, accentHex?: string, sampledAtMs = Date.now()): Promise<void> {
   const uid = await requireUserId();
   const progress = state.progress;
@@ -267,7 +271,8 @@ export async function updateLiveActivityProgress(groupId: string, destinationId:
     eta_seconds: state.etaSeconds == null ? null : Math.round(state.etaSeconds),
       last_progress_bucket: progressBucket20(progress),
     ...(accentHex ? { accent_hex: accentHex } : {}),
-    updated_at: new Date(sampledAtMs).toISOString(),
+    updated_at: new Date(state.etaTargetAtMs != null && state.etaSeconds != null
+      ? state.etaTargetAtMs - Math.max(0, Math.round(state.etaSeconds)) * 1000 : sampledAtMs).toISOString(),
     }).eq('user_id', uid).eq('device_id', deviceId).eq('group_id', groupId).eq('destination_id', destinationId);
     orThrow(error);
   });

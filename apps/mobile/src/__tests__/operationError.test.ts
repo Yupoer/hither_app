@@ -12,7 +12,7 @@ const session = (id: string, expiresAt = Math.floor(Date.now() / 1000) + 3_600):
   access_token: `access-${id}`,
   refresh_token: `refresh-${id}`,
   expires_at: expiresAt,
-  user: { id },
+  user: { id: 'same-account' },
 });
 
 describe('classifyOperationError', () => {
@@ -87,7 +87,7 @@ describe('auth recovery single-flight and guarded transport', () => {
 
     const first = controller.getSession();
     const second = controller.getSession();
-    await Promise.resolve();
+    for (let tick = 0; tick < 12; tick += 1) await Promise.resolve();
     expect(refreshCalls).toBe(1);
     release(session('new'));
     await expect(Promise.all([first, second])).resolves.toEqual([session('new'), session('new')]);

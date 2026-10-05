@@ -25,6 +25,22 @@ const mockTaskManager = {
   defineTask: jest.fn((_name?: string, _handler?: (payload: unknown) => Promise<void>) => undefined),
 };
 const mockArrival = jest.fn();
+function savedArrival(
+  input: Parameters<typeof import('../state/arrivalSync').enqueueArrival>[0],
+  status: import('../types/coreData').CoreOperationStatus = 'pending',
+): import('../types/coreData').CoreOperation {
+  const occurredAt = input.occurredAt ?? new Date().toISOString();
+  const createdAt = Date.parse(occurredAt);
+  return {
+    id: 'saved-arrival', actorId: input.actorId, groupId: input.groupId,
+    entityType: 'itinerary', entityId: input.destination.id, entityVersion: 1,
+    operationType: 'record_arrival', status, sequence: 1,
+    createdAt, updatedAt: createdAt, nextAttemptAt: createdAt, attempts: 0, conflictResult: null,
+    payload: { actorId: input.actorId, userId: input.userId, destination: input.destination,
+      navigationSessionId: input.navigationSessionId ?? null, occurredAt,
+      arrivedAt: input.arrivedAt, completeSolo: input.completeSolo },
+  };
+}
 const mockListByGroup = jest.fn(async (): Promise<any[]> => []);
 const mockFlushCore = jest.fn(async () => undefined);
 const mockComplete = jest.fn(async (...args: any[]): Promise<any> =>
@@ -185,7 +201,7 @@ describe('background journey lifecycle and callback gate', () => {
     mockExpoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     mockExpoLocation.requestBackgroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     mockFlushLocation.mockResolvedValue({ retryScheduled: 0, discarded: 0, remaining: 0 });
-    mockArrival.mockResolvedValue({ status: 'pending' });
+    mockArrival.mockImplementation(async input => savedArrival(input));
     mockComplete.mockImplementation(async input => input.isCurrent() ? { status: 'pending', id: 'complete-1' } : null);
     mockListByGroup.mockResolvedValue([]);
     mockNavigationContext.mockResolvedValue({
@@ -506,7 +522,7 @@ describe('background journey lifecycle and callback gate', () => {
   it('confirms an accurate arrival without ending the leader-controlled journey', async () => {
     await startBackgroundJourney({ ...baseConfig, completeSolo: true });
     const task = mockTaskCallback.current!;
-    mockArrival.mockResolvedValueOnce({ status: 'acked' });
+    mockArrival.mockImplementationOnce(async input => savedArrival(input, 'acked'));
     await task({ data: { locations: [location()] } });
     expect(mockLiveActivity.endAllGroupActivities).not.toHaveBeenCalled();
   });
@@ -636,6 +652,46 @@ describe('background journey lifecycle and callback gate', () => {
     expect((await loadBackgroundJourney())?.manualUndoSuppressed).toBe(false);
   });
 
+  it('a freshly saved terminal personal receipt cannot immediately enqueue team completion', async () => {
+    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'teammate'],
+      memberIds: ['actor-1', 'teammate'], memberArrived: [false, true],
+      arrivedMemberIds: ['teammate'] } as typeof baseConfig);
+    mockArrival.mockImplementationOnce(async input => savedArrival(input, 'conflict'));
+    await handleBackgroundLocations({ data: { locations: [location()] } });
+    expect(mockArrival).toHaveBeenCalledTimes(1);
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      progress: 1, memberArrived: [false, true], gatheredCount: 1,
+    }));
+    expect(mockComplete).not.toHaveBeenCalled();
+    expect(mockLiveActivity.endAllGroupActivities).not.toHaveBeenCalled();
+  });
+
+  it.each(['conflict', 'acked'] as const)('keeps personal receipt %s separate from all-arrived leader completion', async status => {
+    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'teammate'],
+      memberIds: ['actor-1', 'teammate'], memberArrived: [true, true],
+      arrivedMemberIds: ['actor-1', 'teammate'] } as typeof baseConfig);
+    mockListByGroup.mockResolvedValue([{
+      id: 'receipt', actorId: 'actor-1', operationType: 'record_arrival', status,
+      entityId: 'destination-1', sequence: 1, createdAt: 1,
+      payload: { actorId: 'actor-1', userId: 'actor-1', navigationSessionId: 'session-1', arrived: true },
+    }]);
+    await handleBackgroundLocations({ data: { locations: [location()] } });
+    expect(mockArrival).not.toHaveBeenCalled();
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      progress: 1, memberArrived: [status !== 'conflict', true], gatheredCount: status === 'conflict' ? 1 : 2,
+    }));
+    if (status === 'conflict') {
+      expect(mockComplete).not.toHaveBeenCalled();
+      expect(mockLiveActivity.endAllGroupActivities).not.toHaveBeenCalled();
+      expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+        powerMode: 'journey', navigationSessionId: 'session-1', arrivedMemberIds: ['teammate'],
+      }));
+    } else {
+      expect(mockComplete).toHaveBeenCalledWith(expect.objectContaining({ reason: 'all_arrived' }));
+      expect(mockLiveActivity.endAllGroupActivities).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it.each([{ navigationMemberIds: ['actor-1'] }, { navigationMemberIds: ['actor-1', 'teammate'] }])('leader durably completes all scoped members including a solo team: %j', async ({ navigationMemberIds }) => {
     await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds,
       arrivedMemberIds: navigationMemberIds.filter(id => id !== 'actor-1') } as typeof baseConfig);
@@ -676,9 +732,9 @@ describe('background journey lifecycle and callback gate', () => {
 
   it('never applies a queued old arrival/completion to a newer session', async () => {
     await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] } as typeof baseConfig);
-    mockArrival.mockImplementationOnce(async () => {
+    mockArrival.mockImplementationOnce(async input => {
       await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'new-session' });
-      return { status: 'pending' };
+      return savedArrival(input);
     });
     await handleBackgroundLocations({ data: { locations: [location(Date.now() - 1), location()] } });
     expect(mockComplete).not.toHaveBeenCalled();

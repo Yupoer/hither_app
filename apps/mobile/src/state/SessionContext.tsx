@@ -53,7 +53,7 @@ import {
 } from '../services/premiumProjectionCache';
 import { ensurePersonalPremiumAccess } from '../services/premiumPurchaseFlow';
 import { installAuthLifecycle } from '../api/authLifecycle';
-import { getDefaultAuthRecovery } from '../api/authRecovery';
+import { getDefaultAuthRecovery, isTerminalRefreshError } from '../api/authRecovery';
 import { classifyOperationError } from '../utils/operationError';
 import {
   AuthFlowError,
@@ -206,6 +206,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [premiumProjection, setPremiumProjection] = useState<PremiumProjection>(
     EMPTY_PREMIUM_PROJECTION,
   );
+  // Identity ownership must advance even when profile enrichment is offline.
+  const identityActorIdRef = useRef<string | null>(null);
   const premiumUserIdRef = useRef<string | null>(null);
   // Premium UI access is derived only from the server projection. Legacy
   // profile Pro and trip-pass snapshots remain display/compatibility data and
@@ -217,36 +219,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  // Supabase Auth's refresh timer must follow the native foreground state.
-  // `onForeground` is deferred by installAuthLifecycle, so no awaited Auth
-  // call can run while an AppState callback or auth event lock is held.
-  useEffect(() => {
-    let recovery: ReturnType<typeof getDefaultAuthRecovery> | null = null;
-    try {
-      recovery = getDefaultAuthRecovery();
-    } catch {
-      // Test doubles may provide an auth client without the production setup.
-    }
-    return installAuthLifecycle({
-      auth: supabase.auth,
-      appState: AppState,
-      onForeground: () => {
-        if (!recovery) return;
-        void recovery.refreshIfExpiring().catch((error) => {
-          // Keep logs allow-listed; never print session/token contents.
-          if (__DEV__) {
-            const classified = classifyOperationError(error);
-            console.warn('[auth] foreground refresh skipped', {
-              kind: classified.kind,
-              code: classified.code,
-              status: classified.status,
-            });
-          }
-        });
-      },
-    });
-  }, []);
-
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
   // relaunch shows the same identity.
@@ -254,6 +226,60 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let active = true;
     const deferredHydrations = new Set<ReturnType<typeof setTimeout>>();
     let authEpoch = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let autoRefreshRestartTimer: ReturnType<typeof setTimeout> | null = null;
+    let restoreFlight: Promise<void> | null = null;
+    let retryAttempt = 0;
+    let terminal = false;
+    let recovery: ReturnType<typeof getDefaultAuthRecovery> | null = null;
+    try { recovery = getDefaultAuthRecovery(); } catch { /* Isolated test client. */ }
+
+    const clearIdentity = () => {
+      if (terminal) return;
+      terminal = true;
+      authEpoch += 1;
+      cancelDeferredHydrations();
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      if (autoRefreshRestartTimer) clearTimeout(autoRefreshRestartTimer);
+      autoRefreshRestartTimer = null;
+      setLocationAccessContext(null, false);
+      // Sensitive location queues follow their existing privacy policy. Account
+      // drafts and the durable core operation outbox are deliberately retained.
+      void stopBackgroundJourney(true).catch(() => undefined);
+      void clearLiveActivities({ localOnly: true }).catch(() => undefined);
+      const previousId = identityActorIdRef.current ?? premiumUserIdRef.current;
+      identityActorIdRef.current = null;
+      premiumUserIdRef.current = null;
+      if (previousId) void clearPremiumProjectionCache(previousId);
+      if (active) {
+        setUser(null);
+        setMembershipState(null);
+        setIsAnonymous(false);
+        setIsPasswordRecovery(false);
+        setPasswordRecoverySuccess(false);
+        setTripEntitlement(null);
+        setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+        setInitializing(false);
+      }
+    };
+
+    const adoptActor = (actorId: string) => {
+      const previousId = identityActorIdRef.current;
+      identityActorIdRef.current = actorId;
+      if (!previousId || previousId === actorId) return;
+      premiumUserIdRef.current = null;
+      setMembershipState(null);
+      setTripEntitlement(null);
+      setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+      setIsPasswordRecovery(false);
+      setPasswordRecoverySuccess(false);
+      setLocationAccessContext(null, false);
+      void purgeLocationOutbox().catch(() => undefined);
+      void stopBackgroundJourney(true).catch(() => undefined);
+      void clearLiveActivities({ localOnly: true }).catch(() => undefined);
+      void clearPremiumProjectionCache(previousId);
+    };
 
     const cancelDeferredHydrations = () => {
       for (const timer of deferredHydrations) clearTimeout(timer);
@@ -300,13 +326,24 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
+      adoptActor(authUser.id);
+      // Restore local identity before profile/network enrichment. This is a UI
+      // identity only; every server operation still passes the authenticated gate.
+      const localNickname = typeof authUser.user_metadata?.nickname === 'string'
+        ? authUser.user_metadata.nickname : '';
+      setUser((previous) => previous?.id === authUser.id ? previous : {
+        id: authUser.id, name: localNickname, email: authUser.email ?? '',
+        provider: authUser.app_metadata?.provider ?? (authUser.is_anonymous ? 'anonymous' : 'email'),
+      });
+      setIsAnonymous(!!authUser.is_anonymous);
+      finishInitialization();
       // select('*') so the optional avatar/pro columns are tolerated either way.
-      const { data } = await supabase
+      const { data, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', authUser.id)
         .maybeSingle();
-      if (!active || epoch !== authEpoch) return;
+      if (!active || epoch !== authEpoch || profileError) return;
       const row = data as
         | {
             nickname?: string;
@@ -337,6 +374,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         }
         premiumUserIdRef.current = authUser.id;
         const cached = await readPremiumProjectionCache(authUser.id);
+        if (!active || epoch !== authEpoch) return;
         setPremiumProjection(cached ? cacheBlobToProjection(cached) : EMPTY_PREMIUM_PROJECTION);
         setTripEntitlement(null);
         setUser({
@@ -364,38 +402,28 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY' && active) {
-        setIsPasswordRecovery(true);
-        setPasswordRecoverySuccess(false);
-      }
-      if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
+      if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY'
+        || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+        const resumeRefresh = terminal;
+        terminal = false;
         resumeInstallationCapabilities();
         // Auth-js invokes this callback while holding an internal lock. Defer
         // all Supabase/profile reads until the callback has returned.
-        if (premiumUserIdRef.current && premiumUserIdRef.current !== session.user.id) {
-          setLocationAccessContext(null, false);
-          void purgeLocationOutbox().catch(() => undefined);
+        adoptActor(session.user.id);
+        if (event === 'PASSWORD_RECOVERY' && active) {
+          setIsPasswordRecovery(true);
+          setPasswordRecoverySuccess(false);
         }
         cancelDeferredHydrations();
         deferHydration(session.user);
-      }
-      if (!session) {
-        setLocationAccessContext(null, false);
-        void purgeLocationOutbox().catch(() => undefined);
-        authEpoch += 1;
-        cancelDeferredHydrations();
-        const previousId = premiumUserIdRef.current;
-        premiumUserIdRef.current = null;
-        if (previousId) void clearPremiumProjectionCache(previousId);
-        if (active) {
-          setUser(null);
-          setIsAnonymous(false);
-          setIsPasswordRecovery(false);
-          setPasswordRecoverySuccess(false);
-          setTripEntitlement(null);
-          setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
+        if (resumeRefresh && AppState.currentState === 'active' && !autoRefreshRestartTimer) {
+          autoRefreshRestartTimer = setTimeout(() => {
+            autoRefreshRestartTimer = null;
+            if (active && !terminal) void supabase.auth.startAutoRefresh?.();
+          }, 0);
         }
       }
+      if (event === 'SIGNED_OUT') clearIdentity();
     });
 
     const handleAuthUrl = async (url: string) => {
@@ -424,35 +452,67 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (url) void handleAuthUrl(url);
     });
 
-    const restoreEpoch = authEpoch;
-    supabase.auth
-      .getSession()
-      .then(({ data }) => hydrate(data.session?.user, restoreEpoch))
-      .catch((error) => {
-        // A missing/temporarily unavailable Keychain must not hold the whole
-        // app on its splash screen. Treat restore failure as signed-out; the
-        // next explicit sign-in can still establish a fresh session.
-        const classified = classifyOperationError(error);
-        if (__DEV__) {
-          console.warn('[auth] session restore skipped; continuing signed out', {
-            kind: classified.kind,
-            code: classified.code,
-            status: classified.status,
-          });
+    const restoreSession = (): Promise<void> => {
+      if (restoreFlight) return restoreFlight;
+      if (!active || terminal) return Promise.resolve();
+      const epoch = authEpoch;
+      const flight = Promise.resolve().then(async () => {
+        try {
+          const local = recovery
+            ? await recovery.getLocalSession()
+            : await supabase.auth.getSession().then(({ data, error }) => {
+              if (error) throw error;
+              return data.session;
+            });
+          if (!active || terminal || epoch !== authEpoch) return;
+          if (!local?.user?.id) { finishInitialization(); return; }
+          // hydrate seeds identity synchronously, then enriches independently.
+          void hydrate(local.user as Parameters<typeof hydrate>[0], epoch).catch(() => undefined);
+          const refreshed = recovery ? await recovery.getSession({ forceRefresh: true }) : local;
+          if (!active || terminal || epoch !== authEpoch) return;
+          retryAttempt = 0;
+          if (refreshed.user?.id) deferHydration(refreshed.user as Parameters<typeof hydrate>[0]);
+        } catch (error) {
+          if (!active || terminal || isTerminalRefreshError(error)) return;
+          // Offline/Auth outage/profile/storage problems do not revoke identity.
+          // A cold Keychain read failure keeps the restore screen instead of
+          // asking for credentials whose persisted session may still be valid.
+          if (AppState.currentState === 'active' && !retryTimer) {
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              void restoreSession();
+            }, Math.min(30_000, 2_000 * 2 ** Math.min(retryAttempt++, 4)));
+          }
         }
-        if (active) {
-          setUser(null);
-          setIsAnonymous(false);
-          setIsPro(false);
-          setTripEntitlement(null);
-        }
-      })
-      .finally(finishInitialization);
+      });
+      restoreFlight = flight;
+      void flight.finally(() => { if (restoreFlight === flight) restoreFlight = null; });
+      return flight;
+    };
+    const unsubscribeTerminal = recovery?.subscribeTerminal(clearIdentity);
+    // Startup already owns the first foreground refresh. The lifecycle's
+    // deferred initial callback must not rotate a second time after it finishes.
+    let skipInitialForeground = AppState.currentState === 'active';
+    const stopLifecycle = installAuthLifecycle({
+      auth: supabase.auth,
+      appState: AppState,
+      onForeground: () => {
+        if (skipInitialForeground) { skipInitialForeground = false; return; }
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = null;
+        void restoreSession();
+      },
+    });
+    void restoreSession();
 
     return () => {
       active = false;
       authEpoch += 1;
       cancelDeferredHydrations();
+      if (retryTimer) clearTimeout(retryTimer);
+      if (autoRefreshRestartTimer) clearTimeout(autoRefreshRestartTimer);
+      stopLifecycle();
+      unsubscribeTerminal?.();
       sub.subscription.unsubscribe();
       urlSub.remove();
     };
@@ -664,6 +724,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   const setMembership = useCallback(
     (next: Membership) => {
+      const actorId = identityActorIdRef.current;
       setMembershipState(next);
       // Clear prior trip premium until server responds for the new group.
       setTripEntitlement(null);
@@ -673,16 +734,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }));
       void getTripEntitlement(next.group.id)
         .then((trip) => {
+          if (identityActorIdRef.current !== actorId) return;
           setTripEntitlement(trip);
           return getPremiumProjection(next.group.id)
             .then(async (projection) => {
+              if (identityActorIdRef.current !== actorId) return;
               const uid = premiumUserIdRef.current;
               if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
                 if (uid) await clearPremiumProjectionCache(uid);
               } else if (uid) {
                 await writePremiumProjectionCache(uid, projection);
               }
-              setPremiumProjection(projection);
+              if (identityActorIdRef.current === actorId) setPremiumProjection(projection);
             })
             .catch(() => {
               // Do not use the legacy trip snapshot as a Premium fallback.

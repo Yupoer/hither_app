@@ -23,6 +23,7 @@ interface PushTokenEvent {
   activityId: string;
   pushToken: string;
   navigationSessionId?: string;
+  destinationId?: string;
 }
 
 interface PushToStartTokenEvent {
@@ -41,7 +42,7 @@ type HitherLiveActivityModule = {
   ) => EventSubscription;
   startPushToStartTokenObservation?: () => Promise<void>;
   observeExistingActivities?: () => Promise<void>;
-  listGroupActivities?: () => Promise<{ activityId: string; pushToken?: string }[]>;
+  listGroupActivities?: () => Promise<{ activityId: string; pushToken?: string; navigationSessionId?: string; destinationId?: string }[]>;
   startGroupActivity?: (state: GroupActivityState) => Promise<ActivityStartResult | null>;
   updateGroupActivity?: (
     handle: ActivityHandle,
@@ -59,8 +60,15 @@ const NOOP_SUBSCRIPTION: EventSubscription = { remove() {} };
 
 export interface GroupActivityState {
   sampledAtMs?: number;
+  /** Absolute deadline belonging to this ETA snapshot, never reset on resume. */
+  etaTargetAtMs?: number;
   groupName: string;
   navigationSessionId?: string;
+  destinationId?: string;
+  /** Durable personal arrival/undo intent; independent of radius progress. */
+  personalArrived?: boolean;
+  personalArrivalAtMs?: number;
+  personalArrivalSequence?: number;
   status?: string;
   gatheringTitle?: string;
   /** Distance from the user to the gathering point, in metres. */
@@ -139,7 +147,7 @@ export async function observeExistingActivities(): Promise<void> {
 }
 
 export async function listGroupActivities(): Promise<
-  { activityId: string; pushToken?: string }[]
+  { activityId: string; pushToken?: string; navigationSessionId?: string; destinationId?: string }[]
 > {
   return (await HitherLiveActivity?.listGroupActivities?.()) ?? [];
 }

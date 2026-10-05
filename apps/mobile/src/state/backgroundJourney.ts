@@ -1,4 +1,5 @@
 import { notifyJourneyApproach } from './journeyNotifications';
+import { resolveEtaSnapshot } from '../utils/liveActivityEta';
 import { AppState } from 'react-native';
 import type { LocationAccess } from './locationPrivacy';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
@@ -265,9 +266,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             .filter(op => op.operationType === 'record_arrival'
               && op.entityId === config.destinationId
               && op.payload.actorId === config.actorId
+              && (op.actorId == null || op.actorId === config.actorId)
               && op.payload.userId === config.actorId
-              && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null)
-              && op.status !== 'conflict')
+              && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null))
             .sort((a, b) => (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt))
             .at(-1);
           if (latestArrival?.payload.arrived === false
@@ -304,21 +305,29 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           ) : previousArrival;
         const latestPersonalArrival = arrivalRows.filter(op => op.operationType === 'record_arrival'
           && op.entityId === config.destinationId && op.payload.actorId === config.actorId
-          && op.payload.userId === config.actorId && op.status !== 'conflict'
+          && op.payload.userId === config.actorId && (op.actorId == null || op.actorId === config.actorId)
           && op.payload.navigationSessionId === config.navigationSessionId)
           .sort((a, b) => (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt)).at(-1);
         const undoTime = Date.parse(manualUndoOccurredAt ?? '');
-        let arrivalConfirmed = !manualUndoSuppressed && (latestPersonalArrival
+        let personalArrivalConfirmed = !manualUndoSuppressed && (latestPersonalArrival
           ? latestPersonalArrival.payload.arrived !== false && (!Number.isFinite(undoTime)
             || (typeof latestPersonalArrival.payload.occurredAt === 'string'
               && Date.parse(latestPersonalArrival.payload.occurredAt) > undoTime))
           : config.arrivedMemberIds?.includes(config.actorId ?? '') === true);
-        if (!arrivalConfirmed && !manualUndoSuppressed && freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
+        let personalArrivalAtMs = latestPersonalArrival
+          ? typeof latestPersonalArrival.payload.occurredAt === 'string'
+            ? Date.parse(latestPersonalArrival.payload.occurredAt) : latestPersonalArrival.createdAt
+          : config.personalArrivalAtMs;
+        let personalArrivalSequence = latestPersonalArrival?.sequence ?? config.personalArrivalSequence;
+        if (manualUndoSuppressed && Number.isFinite(undoTime)) personalArrivalAtMs = undoTime;
+        // Personal receipts survive terminal rejection; team counts never do.
+        let teamArrivalConfirmed = personalArrivalConfirmed && latestPersonalArrival?.status !== 'conflict';
+        if (!personalArrivalConfirmed && !manualUndoSuppressed && freshArrivalFix && arrival.status === 'arrived' && config.actorId && config.target && config.powerMode === 'journey') {
           const undoTime = manualUndoOccurredAt ? Date.parse(manualUndoOccurredAt) : Number.NaN;
           const operation = arrivalRows.find(op => op.operationType === 'record_arrival'
             && op.entityId === config.destinationId && op.payload.actorId === config.actorId && op.payload.userId === config.actorId
             && (op.payload.navigationSessionId ?? null) === (config.navigationSessionId ?? null)
-            && op.payload.arrived !== false && op.status !== 'conflict'
+            && op.payload.arrived !== false && (op.actorId == null || op.actorId === config.actorId)
             && (!Number.isFinite(undoTime)
               || (typeof op.payload.occurredAt === 'string'
                 && Date.parse(op.payload.occurredAt) > undoTime)))
@@ -326,7 +335,12 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
               navigationSessionId: config.navigationSessionId,
               destination: config.target, arrivedAt: new Date(latest.timestamp).toISOString(),
               occurredAt: new Date(latest.timestamp).toISOString(), completeSolo: config.completeSolo === true });
-          arrivalConfirmed = operation.status !== 'conflict';
+          // A saved personal event remains local success after transport is settled.
+          personalArrivalConfirmed = true;
+          personalArrivalAtMs = typeof operation.payload.occurredAt === 'string'
+            ? Date.parse(operation.payload.occurredAt) : operation.createdAt;
+          personalArrivalSequence = operation.sequence;
+          teamArrivalConfirmed = operation.status !== 'conflict';
         }
         const sequence = config.sequence + 1;
         // Local Live Activity always updates from device GPS — works offline and
@@ -342,18 +356,34 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           travelMode: config.travelMode,
           routeAnchorGps: config.routeAnchorGps,
           routeAnchorRemainingM: config.routeAnchorRemainingM,
-          routeEtaSeconds: config.etaSeconds,
-          arrived: arrivalConfirmed,
+          routeEtaSeconds: config.etaToPinSeconds ?? config.etaSeconds,
+          arrivalRadiusM: config.arrivalRadiusMeters,
+          arrived: personalArrivalConfirmed,
+        });
+        const previousEta = config.etaTargetAtMs != null && config.etaSeconds != null
+          ? { key: JSON.stringify([config.lastEtaDistanceM ?? config.routeAnchorRemainingM, config.etaSeconds, config.arrivalRadiusMeters]),
+            etaSeconds: config.etaSeconds, sampledAtMs: config.etaSampledAtMs ?? config.etaTargetAtMs - config.etaSeconds * 1000,
+            etaTargetAtMs: config.etaTargetAtMs } : null;
+        const etaSnapshot = resolveEtaSnapshot(previousEta, {
+          key: JSON.stringify([progress.distanceMeters, progress.etaSeconds, config.arrivalRadiusMeters]),
+          etaSeconds: progress.etaSeconds, sampledAtMs: latest.timestamp, nowMs: now,
         });
         const displayProgress = progress.progress ?? 0;
         const memberArrived = config.memberIds?.map((id, index) => id === config.actorId
-          ? arrivalConfirmed : config.memberArrived?.[index] ?? false) ?? config.memberArrived;
+          ? teamArrivalConfirmed : config.memberArrived?.[index] ?? false) ?? config.memberArrived;
         const arrivedMemberIds = (config.arrivedMemberIds ?? []).filter(id => id !== config.actorId);
-        if (arrivalConfirmed && config.actorId) arrivedMemberIds.push(config.actorId);
+        if (teamArrivalConfirmed && config.actorId) arrivedMemberIds.push(config.actorId);
         const stored = await timeBackgroundStage(stages, 'async_storage_write', () =>
           controller.update(config, {
             ...config, sequence, arrivalState: arrival, previousProgressMax: displayProgress, memberArrived,
             arrivedMemberIds, lastProcessedLocationAt: latest.timestamp,
+            etaToPinSeconds: config.etaToPinSeconds ?? config.etaSeconds,
+            etaSeconds: progress.etaSeconds ?? undefined,
+            etaTargetAtMs: etaSnapshot?.etaTargetAtMs,
+            etaSampledAtMs: etaSnapshot?.sampledAtMs,
+            lastEtaDistanceM: progress.distanceMeters ?? undefined,
+            personalArrivalAtMs: Number.isFinite(personalArrivalAtMs) ? personalArrivalAtMs : undefined,
+            personalArrivalSequence,
             manualUndoOperationId,
             manualUndoOccurredAt,
             manualUndoSuppressed,
@@ -370,9 +400,15 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             groupName: config.groupName ?? '',
             gatheringTitle: config.gatheringTitle ?? config.groupName,
             navigationSessionId: config.navigationSessionId ?? undefined,
+            destinationId: config.destinationId,
+            personalArrived: personalArrivalConfirmed,
+            personalArrivalAtMs: Number.isFinite(personalArrivalAtMs) ? personalArrivalAtMs : undefined,
+            personalArrivalSequence,
             status: 'active',
             distanceMeters: progress.distanceMeters ?? undefined,
             etaSeconds: progress.etaSeconds ?? undefined,
+            sampledAtMs: etaSnapshot?.sampledAtMs,
+            etaTargetAtMs: etaSnapshot?.etaTargetAtMs,
             accentHex: config.accentHex,
             progress: displayProgress,
             travelMode: config.travelMode,
@@ -403,10 +439,10 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (freshArrivalFix && config.powerMode === 'journey') {
           await notifyJourneyApproach(config.navigationSessionId, config.destinationId, config.gatheringTitle ?? '', {
             remainingM: progress.distanceMeters ?? distanceM, totalM: config.initialDistanceM,
-            arrivalRadiusM: config.arrivalRadiusMeters, arrived: arrivalConfirmed, alreadyFired: false,
+            arrivalRadiusM: config.arrivalRadiusMeters, arrived: personalArrivalConfirmed, alreadyFired: false,
           }).catch(() => undefined);
         }
-        if (arrivalConfirmed) {
+        if (personalArrivalConfirmed) {
           // Durable local arrival first; uploads must never hold up the local surface.
           void flushCoreOperationOutbox().catch(() => undefined);
         }
@@ -527,7 +563,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (config.powerMode === 'journey' && controller.isCurrent(config) && isLocationAccessCurrent(access)
           && (arrival.status !== previousArrival.status || now - lastCloudProgressAt >= 30_000)) {
           lastCloudProgressAt = now;
-          await updateLiveActivityProgress(config.groupId, config.destinationId, progress, config.accentHex, latest.timestamp).catch(() => undefined);
+          await updateLiveActivityProgress(config.groupId, config.destinationId,
+            { ...progress, etaTargetAtMs: etaSnapshot?.etaTargetAtMs }, config.accentHex,
+            etaSnapshot?.sampledAtMs ?? latest.timestamp).catch(() => undefined);
         }
         if (
           config.navigationSessionId &&

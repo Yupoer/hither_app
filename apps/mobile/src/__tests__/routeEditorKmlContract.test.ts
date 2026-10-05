@@ -108,8 +108,15 @@ describe('route editor + KML contracts (#151)', () => {
   });
 
   it('open-route sync preserves dirty draft instead of wiping', () => {
-    expect(mapScreen).toContain('Never wipe an in-progress / failed-retry draft');
-    expect(mapScreen).toContain('hasDirty');
+    const start = mapScreen.indexOf('const syncFromDatabase = useCallback');
+    const block = mapScreen.slice(start, mapScreen.indexOf('const tRef', start));
+    expect(block).toContain('reconcileRouteOnOpen(refreshLocalSnapshot, refresh)');
+    expect(block).not.toContain('setOptimistic');
+    expect(block).not.toContain('setDraftDailyAccommodations');
+    expect(block).not.toContain('routeDraftDirtyRef.current =');
+    expect(mapScreen).toContain('if (!optimisticDestinations || routeDraftDirtyRef.current.destinations) return');
+    expect(mapScreen).toContain('if (hasDirtyDraft && routeEditorScopeIdRef.current !== scopeId) return');
+    expect(mapScreen).toContain('if (!hasDirtyDraft) setOptimisticDestinations(scopeDestinations)');
   });
 
   it('favorites CTA stays visible with empty list; multi-mode + bulk delete wired', () => {
@@ -156,7 +163,7 @@ describe('route editor + KML contracts (#151)', () => {
   it('open-sync completion is gated by generation after close/reopen', () => {
     expect(mapScreen).toContain('routeOpenSyncGenerationRef');
     expect(mapScreen).toContain(
-      'if (generation !== routeOpenSyncGenerationRef.current) return',
+      "if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done'",
     );
     expect(mapScreen).toContain('routeOpenSyncGenerationRef.current += 1');
   });

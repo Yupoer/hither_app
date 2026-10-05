@@ -20,8 +20,10 @@ export function decidePushTokenAdoption(opts: {
   eventActivityId: string;
   eventPushToken?: string | null;
   eventNavigationSessionId?: string | null;
+  eventDestinationId?: string | null;
   currentHandle: string | null;
   currentNavigationSessionId?: string | null;
+  currentDestinationId?: string | null;
 }): PushTokenAdoptionAction {
   const activityId = opts.eventActivityId?.trim() ?? '';
   const pushToken = opts.eventPushToken?.trim() ?? '';
@@ -35,8 +37,12 @@ export function decidePushTokenAdoption(opts: {
     && !!opts.currentNavigationSessionId
     && opts.eventNavigationSessionId === opts.currentNavigationSessionId;
 
-  // Exact active handle: token rotation for the live activity.
-  if (sameHandle) {
+  const sameDestination = !!opts.currentDestinationId && opts.eventDestinationId === opts.currentDestinationId;
+  const knownMismatch = (opts.eventNavigationSessionId != null && opts.currentNavigationSessionId != null && !sameNavSession)
+    || (opts.eventDestinationId != null && opts.currentDestinationId != null && !sameDestination);
+
+  // Exact active handle permits legacy rotation, but never a known scope mismatch.
+  if (sameHandle && !knownMismatch) {
     return {
       action: 'adopt',
       activityId,
@@ -47,7 +53,7 @@ export function decidePushTokenAdoption(opts: {
 
   // No handle yet: only adopt when the event is for the current nav session.
   if (!opts.currentHandle) {
-    if (!sameNavSession) {
+    if (!sameNavSession || !sameDestination) {
       return { action: 'ignore', reason: 'null_handle_foreign_or_missing_session' };
     }
     return {

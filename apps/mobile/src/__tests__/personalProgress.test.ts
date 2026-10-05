@@ -1,5 +1,6 @@
 import { personalDisplayProgress } from '../utils/journeyProgress';
 import { derivePersonalProgress } from '../utils/personalProgress';
+import { etaSecondsFor } from '../utils/geo';
 
 const origin = { latitude: 25.033, longitude: 121.565 };
 const nearTarget = { latitude: 25.0335, longitude: 121.5654 };
@@ -77,7 +78,8 @@ describe('derivePersonalProgress (shared local model)', () => {
       travelMode: 'walk',
       routeEtaSeconds: 120,
     });
-    expect(model.etaSeconds).toBe(120);
+    expect(model.etaToPinSeconds).toBe(120);
+    expect(model.etaSeconds).toBeCloseTo(120 * (model.distanceMeters! - 50) / model.distanceMeters!);
   });
 
   it('marks freshness stale when sample is old but keeps last values', () => {
@@ -148,8 +150,7 @@ describe('derivePersonalProgress (shared local model)', () => {
     expect(model.distanceMeters).toBe(900);
   });
 
-  it('caps pre-arrival progress at 95% even when remaining distance is tiny', () => {
-    // 10m remaining of 1000m → raw 99%, must clamp to 0.95 until arrival
+  it('reaches the distance endpoint without confirming personal arrival', () => {
     const nearDone = derivePersonalProgress({
       deviceCoords: origin,
       targetCoords: atTarget,
@@ -160,8 +161,8 @@ describe('derivePersonalProgress (shared local model)', () => {
       routeDistanceM: 10,
     });
     expect(nearDone.arrived).toBe(false);
-    expect(nearDone.progress).toBeLessThanOrEqual(0.95);
-    expect(nearDone.progress).toBeCloseTo(0.95);
+    expect(nearDone.progress).toBe(1);
+    expect(nearDone.etaSeconds).toBe(0);
   });
 
   it('reaches 100% only on confirmed arrival', () => {
@@ -178,7 +179,7 @@ describe('derivePersonalProgress (shared local model)', () => {
     expect(model.progress).toBe(1);
   });
 
-  it('never decreases progress for the same destination (monotonic max)', () => {
+  it('uses current distance rather than a historic milestone when a route detours', () => {
     const later = derivePersonalProgress({
       deviceCoords: origin,
       targetCoords: atTarget,
@@ -189,7 +190,7 @@ describe('derivePersonalProgress (shared local model)', () => {
       routeDistanceM: 800, // raw progress 0.2
       previousProgressMax: 0.55,
     });
-    expect(later.progress).toBeCloseTo(0.55);
+    expect(later.progress).toBeCloseTo(200 / 950);
   });
 
   it('resets progress baseline when previousProgressMax is cleared for new destination', () => {
@@ -203,7 +204,7 @@ describe('derivePersonalProgress (shared local model)', () => {
       routeDistanceM: 700,
       previousProgressMax: null,
     });
-    expect(model.progress).toBeCloseTo(0.3);
+    expect(model.progress).toBeCloseTo(300 / 950);
   });
 
   it('estimates remaining from GPS move between throttled route results', () => {
@@ -315,7 +316,8 @@ describe('derivePersonalProgress (shared local model)', () => {
       routeEtaSeconds: 720, // new ETA for new routed origin
     });
     expect(afterEqualDistanceResult.distanceMeters).toBe(1000);
-    expect(afterEqualDistanceResult.etaSeconds).toBe(720);
+    expect(afterEqualDistanceResult.etaToPinSeconds).toBe(720);
+    expect(afterEqualDistanceResult.etaSeconds).toBe(684);
   });
 
   it('retains last valid distance/ETA/progress when GPS is missing', () => {
@@ -389,7 +391,7 @@ describe('personal progress surface contracts', () => {
 });
 
 describe('personalDisplayProgress (#194 A3/A4)', () => {
-  it('uses gated walking remaining, not ungated 1-current/initial', () => {
+  it('shows the selected distance formula independently of departure bookkeeping', () => {
     const ungated = 1 - 870 / 1000;
     expect(ungated).toBeCloseTo(0.13);
     expect(
@@ -398,14 +400,14 @@ describe('personalDisplayProgress (#194 A3/A4)', () => {
         currentM: 870,
         movedFromStartM: 5,
       }),
-    ).toBe(0);
+    ).toBeCloseTo(130 / 950);
     expect(
       personalDisplayProgress({
         initialM: 1000,
         currentM: 870,
         movedFromStartM: 40,
       }),
-    ).toBeCloseTo(0.13);
+    ).toBeCloseTo(130 / 950);
   });
 
   it('resets sticky max when the destination id changes', () => {
@@ -415,7 +417,7 @@ describe('personalDisplayProgress (#194 A3/A4)', () => {
       movedFromStartM: 80,
       previousMax: 0.2,
     });
-    expect(walking).toBeCloseTo(0.6);
+    expect(walking).toBeCloseTo(600 / 950);
     expect(
       personalDisplayProgress({
         initialM: 2000,
@@ -425,10 +427,10 @@ describe('personalDisplayProgress (#194 A3/A4)', () => {
         destinationId: 'dest-b',
         previousDestinationId: 'dest-a',
       }),
-    ).toBe(0);
+    ).toBeCloseTo(20 / 1950);
   });
 
-  it('caps pre-arrival progress at 95% until arrived', () => {
+  it('distance 100% does not require an arrival receipt', () => {
     expect(
       personalDisplayProgress({
         initialM: 1000,
@@ -436,7 +438,7 @@ describe('personalDisplayProgress (#194 A3/A4)', () => {
         movedFromStartM: 200,
         hasDepartedStart: true,
       }),
-    ).toBe(0.95);
+    ).toBe(1);
     expect(
       personalDisplayProgress({
         initialM: 1000,
@@ -453,7 +455,7 @@ it('a coordinate inside the geofence cannot confirm arrival without the accuracy
   const model = derivePersonalProgress({ deviceCoords: atTarget, targetCoords: atTarget,
     initialDistanceM: 740, travelMode: 'walk', hasDepartedStart: true });
   expect(model.arrived).toBe(false);
-  expect(model.progress).toBeLessThan(1);
+  expect(model.progress).toBe(1);
 });
 
 
@@ -466,6 +468,27 @@ it('increases local route distance and ETA when moving away without a route refr
     routeAnchorRemainingM: 1500, routeEtaSeconds: 900, travelMode: 'walk',
   });
   expect(model.distanceMeters).toBeGreaterThan(1500);
-  expect(model.etaSeconds).toBeCloseTo(900 * model.distanceMeters! / 1500);
+  expect(model.etaSeconds).toBeCloseTo(900 * (model.distanceMeters! - 50) / 1500);
   expect(model.arrived).toBe(false);
+});
+
+it('computes exact radius progress, permits detours, and keeps arrival authority separate', () => {
+  const input = { deviceCoords: origin, targetCoords: atTarget, initialDistanceM: 167,
+    travelMode: 'walk' as const, distanceSource: 'route' as const, arrivalRadiusM: 50 };
+  const approaching = derivePersonalProgress({ ...input, routeDistanceM: 100, previousProgressMax: 0.9 });
+  expect(approaching.progress).toBeCloseTo(67 / 117);
+  const endpoint = derivePersonalProgress({ ...input, routeDistanceM: 50 });
+  expect(endpoint.progress).toBe(1);
+  expect(endpoint.etaSeconds).toBe(0);
+  expect(endpoint.arrived).toBe(false);
+  const lostGps = derivePersonalProgress({ ...input, sampleAgeMs: 120000, routeDistanceM: 20,
+    lastValidDistanceM: 100, lastValidEtaSeconds: 60, lastValidProgress: 67 / 117 });
+  expect(lostGps).toMatchObject({ distanceMeters: 100, etaSeconds: 60, progress: 67 / 117, freshness: 'stale', arrived: false });
+});
+
+it('fallback GPS ETA updates from its own metric rather than a sticky MapKit duration', () => {
+  const model = derivePersonalProgress({ deviceCoords: origin, targetCoords: atTarget,
+    initialDistanceM: 1000, distanceSource: 'fallback', routeEtaSeconds: 900, travelMode: 'walk' });
+  expect(model.etaToPinSeconds).toBe(etaSecondsFor(model.distanceMeters!, 'walk'));
+  expect(model.etaSeconds).toBeCloseTo(model.etaToPinSeconds! * (model.distanceMeters! - 50) / model.distanceMeters!);
 });

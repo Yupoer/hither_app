@@ -168,27 +168,22 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain('if (!canEditItinerary) return;');
   });
 
-  it('offers database reconciliation and refreshes before arrival writes', () => {
-    expect(reorderList).toContain('onSync?: () => Promise<void>');
+  it('reconciles silently while keeping durable personal receipts and route drafts visible', () => {
     expect(reorderList).toContain("t('kml.entry')");
     expect(reorderList).toContain('onImport?:');
-    expect(reorderList).toContain("t('map.syncDbRetry')");
-    expect(mapScreen).toContain('const syncFromDatabase = useCallback');
-    expect(mapScreen).toContain('setOptimisticDestinations(null)');
-    expect(mapScreen).toContain('syncFromDatabase()');
-    // Open-once silent sync + import CTA; retry only after failed open-sync (#154).
+    expect(reorderList).not.toContain('onSync');
+    expect(reorderList).not.toContain("t('map.syncDbRetry')");
+    expect(mapScreen).not.toContain('routeSyncFailed');
+    expect(mapScreen).not.toContain('syncFromDatabaseAndUploadLogs');
+    const syncStart = mapScreen.indexOf('const syncFromDatabase = useCallback');
+    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('const tRef', syncStart));
+    expect(syncBlock).toContain('await reconcileRouteOnOpen(refreshLocalSnapshot, refresh)');
+    expect(syncBlock).not.toContain('setOptimisticDestinations(null)');
+    expect(syncBlock).not.toContain('throw');
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
     expect(mapScreen).toContain('openKmlImportForScope');
-    expect(mapScreen).toContain(
-      'onSync={routeSyncFailed ? retryRouteSync : undefined}',
-    );
-    expect(mapScreen).toContain(
-      'if (await syncFromDatabaseAndUploadLogs()) setRouteSyncFailed(false)',
-    );
-    expect(mapScreen).toContain('uploadLocalLogs');
-    expect(mapScreen).toContain('const syncFromDatabaseAndUploadLogs');
-    expect(i18n).toContain("'map.syncDb'");
-    expect(i18n).toContain("'map.syncDbRetry'");
+    expect(mapScreen).toContain('projectPersonalArrivals');
+    expect(mapScreen).toMatch(/activeDestinationArrivals = useMemo\([\s\S]*?projectArrivals\(/);
   });
 
   it('gates foreground arrival ACK to session/status transitions', () => {

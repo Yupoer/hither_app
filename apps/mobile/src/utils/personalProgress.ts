@@ -13,10 +13,10 @@ import {
   type TravelMode,
 } from './geo';
 import {
-  gatedJourneyProgress,
   journeyProgress,
-  capPreArrivalProgress,
-  monotonicProgress,
+  clampDisplayProgress,
+  etaToRadiusBoundary,
+  ARRIVAL_RADIUS_M,
 } from './journeyProgress';
 
 export type ProgressFreshness = 'live' | 'stale' | 'unknown';
@@ -56,7 +56,7 @@ export interface PersonalProgressInput {
   routeResultGeneration?: number | null;
   /** Generation stored with the current GPS route anchor. */
   routeAnchorGeneration?: number | null;
-  /** Sticky max progress for this destination (monotonic milestone). */
+  /** Compatibility milestone, used only when no valid display snapshot remains. */
   previousProgressMax?: number | null;
   /** Last valid presentation values retained across GPS/route gaps. */
   lastValidDistanceM?: number | null;
@@ -133,6 +133,8 @@ export function nextRouteAnchorFromResult(
 export interface PersonalProgressModel {
   distanceMeters: number | null;
   etaSeconds: number | null;
+  /** Pin ETA before removing the final radius segment; used by background anchors. */
+  etaToPinSeconds?: number | null;
   /** 0–1 progress; null when unknown (no baseline / no target). */
   progress: number | null;
   freshness: ProgressFreshness;
@@ -317,13 +319,8 @@ export function derivePersonalProgress(
   if (!hasDevice && distanceMetersValue === input.lastValidDistanceM) {
     const stickyProgress =
       input.lastValidProgress != null && Number.isFinite(input.lastValidProgress)
-        ? capPreArrivalProgress(
-            monotonicProgress(
-              input.lastValidProgress,
-              input.previousProgressMax,
-            ) ?? input.lastValidProgress,
-          )
-        : monotonicProgress(null, input.previousProgressMax);
+        ? clampDisplayProgress(input.lastValidProgress)
+        : input.previousProgressMax ?? null;
     return {
       distanceMeters: distanceMetersValue,
       etaSeconds:
@@ -351,6 +348,14 @@ export function derivePersonalProgress(
     freshness = 'stale';
   }
 
+  if (freshness === 'stale' && input.lastValidDistanceM != null
+    && Number.isFinite(input.lastValidDistanceM)) {
+    return { distanceMeters: input.lastValidDistanceM,
+      etaSeconds: input.lastValidEtaSeconds ?? null,
+      progress: input.lastValidProgress == null ? null : clampDisplayProgress(input.lastValidProgress),
+      freshness, arrived: false, completed: false };
+  }
+
   const usedStickyDistance =
     !hasDevice
     || (
@@ -362,7 +367,7 @@ export function derivePersonalProgress(
 
   // Between-route GPS estimate: recompute ETA from distance (stale route ETA lies).
   // Fresh route snap may keep routeEtaSeconds when provided.
-  const etaSeconds =
+  const etaToPinSeconds =
     distanceMetersValue == null
       ? input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
         ? Math.max(0, input.lastValidEtaSeconds)
@@ -372,7 +377,7 @@ export function derivePersonalProgress(
           && input.routeAnchorRemainingM != null && input.routeAnchorRemainingM > 0
           ? Math.max(0, input.routeEtaSeconds * distanceMetersValue / input.routeAnchorRemainingM)
           : etaSecondsFor(distanceMetersValue, input.travelMode)
-        : input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
+        : input.distanceSource !== 'fallback' && input.routeEtaSeconds != null && Number.isFinite(input.routeEtaSeconds)
           ? Math.max(0, input.routeEtaSeconds)
           : usedStickyDistance
             && input.lastValidEtaSeconds != null
@@ -381,44 +386,43 @@ export function derivePersonalProgress(
             ? Math.max(0, input.lastValidEtaSeconds)
             : etaSecondsFor(distanceMetersValue, input.travelMode);
 
+  const radius = input.arrivalRadiusM != null && Number.isFinite(input.arrivalRadiusM)
+    ? Math.max(0, input.arrivalRadiusM) : ARRIVAL_RADIUS_M;
+  // Last-valid ETA is already measured to the boundary, so never subtract twice.
+  const etaSeconds = etaToPinSeconds == null ? null
+    : usedStickyDistance && etaToPinSeconds === input.lastValidEtaSeconds
+      ? etaToPinSeconds
+      : distanceMetersValue == null ? etaToPinSeconds
+        : etaToRadiusBoundary(etaToPinSeconds, distanceMetersValue, radius);
+
   let progress: number | null = null;
   const initialM = input.initialDistanceM;
   if (
     distanceMetersValue != null
     && initialM != null
     && Number.isFinite(initialM)
-    && initialM > 0
+    && initialM >= 0
   ) {
-    if (input.startCoords && hasDevice) {
-      const movedFromStartM = distanceMeters(
-        input.startCoords,
-        input.deviceCoords as Coordinates,
-      );
-      progress = gatedJourneyProgress({
-        initialM,
-        currentM: distanceMetersValue,
-        movedFromStartM,
-        hasDepartedStart: input.hasDepartedStart,
-      }).progress;
-    } else {
-      progress = journeyProgress(initialM, distanceMetersValue);
-    }
-    progress = capPreArrivalProgress(progress);
+    progress = journeyProgress(initialM, distanceMetersValue, radius);
+    progress = clampDisplayProgress(progress);
   } else if (
     input.lastValidProgress != null
     && Number.isFinite(input.lastValidProgress)
   ) {
-    progress = capPreArrivalProgress(input.lastValidProgress);
+    progress = clampDisplayProgress(input.lastValidProgress);
   }
 
-  progress = monotonicProgress(progress, input.previousProgressMax);
+  if (freshness === 'stale' && input.lastValidProgress != null) {
+    progress = input.lastValidProgress;
+  }
   if (progress != null) {
-    progress = capPreArrivalProgress(progress);
+    progress = clampDisplayProgress(progress);
   }
 
   return {
     distanceMeters: distanceMetersValue,
     etaSeconds,
+    etaToPinSeconds,
     progress,
     freshness,
     arrived: false,

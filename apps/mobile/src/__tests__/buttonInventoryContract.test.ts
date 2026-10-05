@@ -50,7 +50,6 @@ const HIGH_RISK_ACTION_IDS = [
   'map.fit_all_members',
   'map.locate_me',
   'map.open_feedback',
-  'map.sync_db_and_logs',
   // Account / network (batch 3c)
   'login.sign_in',
   'login.sign_up',
@@ -102,7 +101,7 @@ describe('button inventory / high-risk action contract', () => {
     expect(mapScreen).toContain("'map.fit_all_members'");
     expect(mapScreen).toContain("'map.locate_me'");
     expect(mapScreen).toContain("'map.open_feedback'");
-    expect(mapScreen).toContain("'map.sync_db_and_logs'");
+    expect(mapScreen).not.toContain("'map.sync_db_and_logs'");
   });
 
   it('treats destination_add_coords success as true (sheet closes only on success)', () => {
@@ -144,8 +143,9 @@ describe('button inventory / high-risk action contract', () => {
     expect(feedbackSheet).toContain('token.isCurrent()');
   });
 
-  it('mounts the shared interaction recovery banner at the app root', () => {
-    expect(app).toContain('InteractionRecoveryBanner');
+  it('keeps backend recovery silent without root notification banners', () => {
+    expect(app).not.toContain('InteractionRecoveryBanner');
+    expect(app).not.toContain('AppNoticeHost');
   });
 
   it('keeps a local map subtree boundary with finite remount (no timer remount)', () => {

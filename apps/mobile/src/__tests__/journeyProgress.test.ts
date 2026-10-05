@@ -1,8 +1,8 @@
 import {
   ARRIVAL_RADIUS_M,
   ANCHOR_MAX_ACCURACY_M,
-  PRE_ARRIVAL_PROGRESS_CAP,
-  capPreArrivalProgress,
+  clampDisplayProgress,
+  etaToRadiusBoundary,
   gatedJourneyProgress,
   hasArrived,
   hasDepartedProgressStart,
@@ -87,15 +87,15 @@ describe('progress start radius (short vs long trips)', () => {
   });
 });
 
-describe('departed-start gate keeps progress at 0 until real movement', () => {
-  it('stays at zero while still inside the start radius', () => {
+describe('departure bookkeeping is independent of distance presentation', () => {
+  it('reports distance progress while departure still awaits real movement', () => {
     const { progress, departed } = gatedJourneyProgress({
       initialM: 1000,
       currentM: 870, // would be 13% without the gate
       movedFromStartM: 5,
     });
     expect(departed).toBe(false);
-    expect(progress).toBe(0);
+    expect(progress).toBeCloseTo(0.13);
   });
 
   it('starts reporting remaining-distance progress after leaving the start radius', () => {
@@ -125,11 +125,11 @@ describe('departed-start gate keeps progress at 0 until real movement', () => {
   });
 });
 
-describe('pre-arrival progress cap and monotonic milestones (#145)', () => {
-  it('caps raw progress at 95%', () => {
-    expect(PRE_ARRIVAL_PROGRESS_CAP).toBe(0.95);
-    expect(capPreArrivalProgress(0.99)).toBe(0.95);
-    expect(capPreArrivalProgress(0.5)).toBe(0.5);
+describe('distance endpoint and monotonic milestones', () => {
+  it('allows 100% distance completion and bounds invalid percentages', () => {
+    expect(clampDisplayProgress(1)).toBe(1);
+    expect(clampDisplayProgress(2)).toBe(1);
+    expect(clampDisplayProgress(Number.NaN)).toBe(0);
   });
 
   it('keeps the higher of raw and previous max', () => {
@@ -137,6 +137,18 @@ describe('pre-arrival progress cap and monotonic milestones (#145)', () => {
     expect(monotonicProgress(0.7, 0.55)).toBeCloseTo(0.7);
     expect(monotonicProgress(null, 0.4)).toBeCloseTo(0.4);
   });
+});
+
+it('uses the configured radius as the endpoint, including overlapping starts', () => {
+  expect(journeyProgress(167, 50, 50)).toBe(1);
+  expect(journeyProgress(167, 108.5, 50)).toBeCloseTo(0.5);
+  expect(journeyProgress(40, 30, 50)).toBe(1);
+  expect(journeyProgress(40, 60, 50)).toBe(0);
+  expect(journeyProgress(0, 0, 50)).toBe(1);
+  expect(gatedJourneyProgress({ initialM: 40, currentM: 30, movedFromStartM: 0, arrivalRadiusM: 50 }).progress).toBe(1);
+  expect(etaToRadiusBoundary(167, 167, 50)).toBe(117);
+  expect(etaToRadiusBoundary(50, 50, 50)).toBe(0);
+  expect(etaToRadiusBoundary(20, 0, 50)).toBe(0);
 });
 
 describe('same-metric current distance', () => {

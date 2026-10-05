@@ -220,8 +220,8 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
     });
     expect(routes?.selfRouteGeneration).toBe(1);
     expect(surfaces?.gatheringCard.distanceMeters!).toBeGreaterThan(1000);
-    expect(surfaces?.gatheringCard.etaSeconds!).toBeGreaterThan(900);
-    expect(surfaces?.gatheringCard.progress!).toBeLessThan(0.5);
+    expect(surfaces?.gatheringCard.etaSeconds!).toBeGreaterThan(855);
+    expect(surfaces?.gatheringCard.progress!).toBeLessThan(1000 / 1950);
     expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
     // Advance wall clock past the full route interval so recompute can fire.
@@ -244,11 +244,11 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
     expect(surfaces?.routeAnchor?.generation).toBe(2);
 
     expect(surfaces?.gatheringCard.distanceMeters).toBe(1000);
-    expect(surfaces?.gatheringCard.etaSeconds).toBe(720);
-    expect(surfaces?.gatheringCard.progress).toBe(0.5);
+    expect(surfaces?.gatheringCard.etaSeconds).toBe(684);
+    expect(surfaces?.gatheringCard.progress).toBeCloseTo(1000 / 1950);
     expect(surfaces?.liveActivityPayload.distanceMeters).toBe(1000);
-    expect(surfaces?.liveActivityPayload.etaSeconds).toBe(720);
-    expect(surfaces?.liveActivityPayload.progress).toBe(0.5);
+    expect(surfaces?.liveActivityPayload.etaSeconds).toBe(684);
+    expect(surfaces?.liveActivityPayload.progress).toBeCloseTo(1000 / 1950);
     expect(surfaces?.gatheringCard).toEqual(surfaces?.liveActivityPayload);
 
     await act(async () => {
@@ -355,7 +355,7 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
 
 });
 
-it('resets both displayed progress surfaces before the new journey baseline hydrates', async () => {
+it('does not force fresh distance progress to zero or reuse the previous milestone on a new journey', async () => {
   let surface: ReturnType<typeof usePersonalProgressSurfaces> | undefined;
   function Harness({ resetKey }: { resetKey: string }) {
     surface = usePersonalProgressSurfaces({ resetKey, deviceCoords: { latitude: 25, longitude: 121 },
@@ -365,10 +365,30 @@ it('resets both displayed progress surfaces before the new journey baseline hydr
   }
   let tree: ReturnType<typeof create>;
   await act(async () => { tree = create(React.createElement(Harness, { resetKey: 'old-session' })); });
-  expect(surface?.gatheringCard.progress).toBe(0.8);
+  const actualDistanceProgress = surface?.gatheringCard.progress;
+  expect(actualDistanceProgress).toBeGreaterThan(0);
+  expect(actualDistanceProgress).toBeLessThan(0.8);
   await act(async () => { tree.update(React.createElement(Harness, { resetKey: 'new-session' })); });
-  expect(surface?.gatheringCard.progress).toBe(0);
-  expect(surface?.liveActivityPayload.progress).toBe(0);
+  expect(surface?.gatheringCard.progress).toBe(actualDistanceProgress);
+  expect(surface?.liveActivityPayload.progress).toBe(actualDistanceProgress);
+  await act(async () => { tree.unmount(); });
+});
+
+it('shows 100% on the first render of a tiny trip already inside the radius', async () => {
+  let surface: ReturnType<typeof usePersonalProgressSurfaces> | undefined;
+  function Harness({ resetKey }: { resetKey: string }) {
+    surface = usePersonalProgressSurfaces({ resetKey, deviceCoords: me, targetCoords: me,
+      initialDistanceM: 40, arrivalRadiusM: 50, travelMode: 'walk', sampledAtMs: 1000 });
+    return null;
+  }
+  let tree: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(Harness, { resetKey: 'tiny-1' })); });
+  expect(surface?.gatheringCard.progress).toBe(1);
+  expect(surface?.gatheringCard.etaSeconds).toBe(0);
+  expect(surface?.personalProgress.arrived).toBe(false);
+  await act(async () => { tree.update(React.createElement(Harness, { resetKey: 'tiny-2' })); });
+  expect(surface?.liveActivityPayload.progress).toBe(1);
+  await act(async () => { tree.unmount(); });
 });
 
 describe('destination changes while directions are pending', () => {
@@ -516,5 +536,32 @@ describe('destination changes while directions are pending', () => {
     const unmountedRenders = renders;
     await act(async () => { afterUnmount.resolve(routeTo(nextStop)); });
     expect(renders).toBe(unmountedRenders);
+  });
+});
+
+describe('paused navigation directions ownership', () => {
+  it('does not request directions from paused GPS and drops an in-flight navigation result', async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    mockGetDirections.mockReset();
+    let resolveRoute!: (route: Awaited<ReturnType<typeof getDirections>>) => void;
+    mockGetDirections.mockImplementation(() => new Promise<Awaited<ReturnType<typeof getDirections>>>(resolve => { resolveRoute = resolve; }));
+    let routes!: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ navigationActive, self }: { navigationActive: boolean; self: typeof me }) {
+      routes = useMapKitRoutes({ selfCoordinates: self, members: [],
+        gathering: navigationActive ? gathering : null, travelMode: 'walk' });
+      return null;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { navigationActive: false, self: me })); });
+    await act(async () => { tree.update(React.createElement(Harness, { navigationActive: false, self: meFarther })); });
+    expect(mockGetDirections).not.toHaveBeenCalled();
+    await act(async () => { tree.update(React.createElement(Harness, { navigationActive: true, self: meFarther })); });
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    await act(async () => { tree.update(React.createElement(Harness, { navigationActive: false, self: me })); });
+    await act(async () => { resolveRoute({ distanceMeters: 1000, expectedTravelTimeSeconds: 600,
+      points: [meFarther, gathering.coordinates] }); });
+    expect(routes.selfRoute).toBeNull();
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    await act(async () => { tree.unmount(); });
   });
 });

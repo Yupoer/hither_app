@@ -71,7 +71,8 @@ describe('root / map recovery source contracts', () => {
     expect(groupMap).not.toMatch(/setInterval\([^)]*setSurfaceKey/);
     // Root still uses AppErrorBoundary separately
     expect(app).toContain('AppErrorBoundary');
-    expect(app).toContain('InteractionRecoveryBanner');
+    expect(app).not.toContain('InteractionRecoveryBanner');
+    expect(app).not.toContain('AppNoticeHost');
   });
 
   it('recovery banner offers retry and cancel only (shared surface)', () => {

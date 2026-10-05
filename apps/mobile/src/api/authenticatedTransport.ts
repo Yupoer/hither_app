@@ -75,12 +75,17 @@ function guardBuilder(
         // PostgREST's then reads this.fetch and awaits native Promises. Running
         // it with the Proxy receiver recursively proxies those Promises and
         // breaks their constructor/receiver invariants (including Hermes).
-        if (!mutation) return originalThen.bind(target);
         return (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
           authRecovery
             .withAuthenticatedOperation(
-              () => queryPromise({ then: originalThen.bind(target) }),
-              { operation, mutation: true, recoverOnce: true },
+              (session) => {
+                // Supabase fetch preserves an existing Authorization header.
+                // Replace it on every attempt, including the 401 retry.
+                const request = target as { setHeader?: (name: string, value: string) => unknown };
+                request.setHeader?.('Authorization', `Bearer ${session.access_token}`);
+                return queryPromise({ then: originalThen.bind(target) });
+              },
+              { operation, mutation, recoverOnce: true },
             )
             .then(resolve, reject);
       }
@@ -99,7 +104,7 @@ function guardBuilder(
 }
 
 /**
- * Guard Supabase mutations before they can reach PostgREST.
+ * Guard authenticated Supabase reads and writes before they reach PostgREST.
  *
  * The proxy checks/refreshes the session before invoking the underlying
  * builder. If Supabase still returns an auth failure, the same operation gets
@@ -119,9 +124,6 @@ export function withAuthenticatedTransport<T extends AnyClient>(
         const rpc = Reflect.get(target, property, receiver);
         if (typeof rpc !== 'function') return rpc;
         return (name: string, ...args: unknown[]) => {
-          if (isReadOnlyRpc(name, readOnlyRpcNames)) {
-            return rpc.apply(target, [name, ...args]);
-          }
           // Supabase RPC returns a lazy PostgREST builder. Keep that builder
           // intact so callers can attach abortSignal(), select(), single(),
           // maybeSingle(), throwOnError(), etc. Auth is checked only when the
@@ -129,7 +131,7 @@ export function withAuthenticatedTransport<T extends AnyClient>(
           return guardBuilder(
             rpc.apply(target, [name, ...args]),
             `api.rpc.${name}`,
-            true,
+            !isReadOnlyRpc(name, readOnlyRpcNames),
             authRecovery,
           );
         };

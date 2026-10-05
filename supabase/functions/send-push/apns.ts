@@ -80,10 +80,16 @@ export interface AlertPayload {
 
 export interface LiveActivityContentState {
   navigationSessionId?: string;
+  destinationId?: string;
+  personalArrived?: boolean;
+  personalArrivalAtMs?: number;
+  personalArrivalSequence?: number;
   status?: string;
   gatheringTitle: string;
   distanceMeters: number;
   etaSeconds: number;
+  sampledAtMs?: number;
+  etaTargetAtMs?: number;
   progress: number;
   gatheredCount: number;
   memberCount: number;
@@ -98,6 +104,31 @@ export interface LiveActivityPayload {
   event: "update" | "end";
   timestamp: number;
   contentState: LiveActivityContentState;
+}
+
+/** ETA origin is a stored sample clock, independent of APNs event ordering. */
+export function liveActivityEtaFields(etaSeconds: number | null | undefined, updatedAt: string | null | undefined): {
+  sampledAtMs?: number; etaTargetAtMs?: number;
+} {
+  if (etaSeconds == null || !Number.isFinite(etaSeconds) || !updatedAt) return {};
+  const sampledAtMs = Date.parse(updatedAt);
+  return Number.isFinite(sampledAtMs)
+    ? { sampledAtMs, etaTargetAtMs: sampledAtMs + Math.max(0, etaSeconds) * 1000 } : {};
+}
+
+/**
+ * Remote updates contain a complete position/ETA snapshot. Never give an older
+ * snapshot a new event time: ActivityKit would replace a newer native update.
+ * Authoritative end events may use now regardless of the last position sample.
+ */
+export function liveActivityOrderingTimestamp(event: 'update' | 'end', updatedAt: string | null | undefined, nowMs: number): number | null {
+  if (!Number.isFinite(nowMs) || nowMs < 0) return null;
+  if (event === 'end') return Math.floor(nowMs / 1000);
+  if (!updatedAt) return null;
+  const sampledAtMs = Date.parse(updatedAt);
+  // Clock-skewed/unknown snapshots cannot safely establish update ordering.
+  if (!Number.isFinite(sampledAtMs) || sampledAtMs < 0 || sampledAtMs > nowMs) return null;
+  return Math.floor(sampledAtMs / 1000);
 }
 
 export interface LiveActivityStartPayload {

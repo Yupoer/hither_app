@@ -69,6 +69,7 @@ export function projectArrivals(
   operations: CoreOperation[],
   actorId: string,
   sessionScope?: ArrivalSessionScope,
+  preservePersonalReceipt = false,
 ): DestinationArrival[] {
   // A new ACTIVE session starts with an empty personal projection. Historical
   // rows without a session remain available to the history surface, but are
@@ -82,9 +83,16 @@ export function projectArrivals(
       : Number.NaN;
     return Number.isFinite(occurredAt) ? occurredAt : (op.sequence ?? op.createdAt);
   };
-  for (const op of [...operations].sort((a, b) => eventOrder(a) - eventOrder(b)
-    || (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt))) {
-    if (op.status === 'conflict') continue;
+  for (const op of [...operations].sort((a, b) => typeof a.sequence === 'number' && typeof b.sequence === 'number'
+    ? a.sequence - b.sequence
+    : eventOrder(a) - eventOrder(b) || a.createdAt - b.createdAt)) {
+    const personalReceipt = op.operationType === 'record_arrival'
+      && (op.actorId ?? op.payload.actorId) === actorId
+      && op.payload.actorId === actorId && op.payload.userId === actorId
+      && op.payload.source !== 'leader_correction';
+    // A server rejection settles transport; it cannot erase a saved personal event.
+    // Team projections still exclude rejected intent, including leader corrections.
+    if (op.status === 'conflict' && !(preservePersonalReceipt && personalReceipt)) continue;
     const isLeaderCorrection = op.operationType === 'leader_correct_arrival'
       || (op.operationType === 'record_arrival' && op.payload.source === 'leader_correction');
     if (isLeaderCorrection) {
@@ -116,13 +124,16 @@ export function projectArrivals(
       }
       continue;
     }
-    if (op.operationType !== 'record_arrival' || op.payload.actorId !== actorId) continue;
+    if (op.operationType !== 'record_arrival' || op.payload.actorId !== actorId
+      || (op.actorId != null && op.actorId !== actorId)) continue;
     if (sessionScope != null && !belongsToSession(op.payload.navigationSessionId, sessionScope)) continue;
     if (op.payload.arrived === false) {
-      result = result.filter(a => a.destinationId !== op.entityId || a.userId !== op.payload.userId);
+      result = result.filter(a => a.destinationId !== op.entityId || a.userId !== op.payload.userId
+        || (a.navigationSessionId ?? null) !== (op.payload.navigationSessionId ?? null));
       continue;
     }
-    if (result.some(a => a.destinationId === op.entityId && a.userId === op.payload.userId)) continue;
+    if (result.some(a => a.destinationId === op.entityId && a.userId === op.payload.userId
+      && (a.navigationSessionId ?? null) === (op.payload.navigationSessionId ?? null))) continue;
     result.push({ id: op.id, groupId: op.groupId, destinationId: op.entityId,
       userId: op.payload.userId as string,
       arrivedAt: typeof op.payload.arrivedAt === 'string' ? op.payload.arrivedAt : null,
@@ -133,6 +144,45 @@ export function projectArrivals(
     });
   }
   return result;
+}
+
+/** Personal UI/history only; never use rejected receipts for team completion. */
+export function projectPersonalArrivals(
+  remote: DestinationArrival[], operations: CoreOperation[], actorId: string,
+  sessionScope?: ArrivalSessionScope,
+): DestinationArrival[] {
+  return projectArrivals(remote, operations, actorId, sessionScope, true);
+}
+
+/** Stable personal arrival/undo event time for native resume authority. */
+export function personalArrivalEvent(
+  remote: DestinationArrival[], operations: CoreOperation[], actorId: string,
+  destinationId: string, sessionScope: ArrivalSessionScope,
+): { atMs: number; sequence?: number } | undefined {
+  const latest = operations.filter(op => op.operationType === 'record_arrival'
+    && op.entityId === destinationId && op.payload.actorId === actorId
+    && op.payload.userId === actorId && (op.actorId ?? actorId) === actorId
+    && op.payload.source !== 'leader_correction'
+    && belongsToSession(op.payload.navigationSessionId, sessionScope))
+    .sort((a, b) => (a.sequence ?? a.createdAt) - (b.sequence ?? b.createdAt)).at(-1);
+  if (latest) {
+    const eventTime = typeof latest.payload.occurredAt === 'string'
+      ? Date.parse(latest.payload.occurredAt) : latest.createdAt;
+    return Number.isFinite(eventTime) ? { atMs: eventTime,
+      ...(typeof latest.sequence === 'number' ? { sequence: latest.sequence } : {}) } : undefined;
+  }
+  const times = remote.filter(row => row.destinationId === destinationId && row.userId === actorId
+    && belongsToSession(row.navigationSessionId, sessionScope) && row.source !== 'leader_correction')
+    .map(row => typeof row.arrivedAt === 'string' ? Date.parse(row.arrivedAt) : Number.NaN)
+    .filter(Number.isFinite);
+  return times.length > 0 ? { atMs: Math.max(...times) } : undefined;
+}
+
+export function personalArrivalEventTimeMs(
+  remote: DestinationArrival[], operations: CoreOperation[], actorId: string,
+  destinationId: string, sessionScope: ArrivalSessionScope,
+): number | undefined {
+  return personalArrivalEvent(remote, operations, actorId, destinationId, sessionScope)?.atMs;
 }
 
 export function pendingSoloDestinationIds(operations: CoreOperation[], actorId: string): Set<string> {

@@ -66,7 +66,8 @@ describe('measured performance regressions', () => {
     expect(mapsBoundary).toContain('onUserLocationChange');
     expect(locationHook).toContain('nativeMapLocationEnabled');
     expect(locationHook).toContain('consumeForegroundSample');
-    expect(mapScreen).toContain("nativeMapLocationEnabled: Platform.OS === 'ios'");
+    expect(mapScreen).toContain("nativeMapLocationEnabled: foregroundLocation.owner === 'mapkit'");
+    expect(mapScreen).toContain('const mapRoutesEnabled = effectiveNavigationActive &&');
     expect(mapScreen).toContain('consumeForegroundSample');
     expect(mapScreen).not.toContain('startNavigationEnergyMonitor(');
     expect(app).toContain('startPerformanceMonitor()');

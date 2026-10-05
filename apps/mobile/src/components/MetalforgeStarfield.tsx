@@ -28,34 +28,37 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
   const [width, setWidth] = useState(0);
   const [windows, setWindows] = useState<ChargeEmission[]>([]);
   const emissions = useSharedValue<ChargeEmission[]>([]);
-  const now = useSharedValue(Date.now());
+  // Particle births, motion and drain deadlines share an active-only clock.
+  const now = useSharedValue(0);
   const lastFrameAt = useSharedValue(-1);
   const appActive = useForegroundUi();
   const visible = active && appActive && windows.length > 0;
   const policy = getMetalforgeStarfieldAnimationPolicy({ active: active && windows.length > 0, appActive, reducedMotion, lowPowerMode, thermalState });
   useEffect(() => {
-    const at = Date.now();
-    now.value = at;
+    const at = now.value;
     setWindows(current => changeChargeEmission(current, emitting, at));
   }, [emitting, now]);
   useEffect(() => { emissions.value = windows; }, [windows, emissions]);
   useEffect(() => {
+    if (!policy.shouldAnimate) return;
     const stopped = windows.filter(window => window.stoppedAt != null);
     if (!stopped.length) return;
     const deadline = Math.min(...stopped.map(window => window.stoppedAt! + CHARGE_BALL_MAX_TRAVEL_MS));
     const timer = setTimeout(() => {
-      setWindows(current => current.filter(window => window.stoppedAt == null || Date.now() < window.stoppedAt + CHARGE_BALL_MAX_TRAVEL_MS));
-    }, Math.max(0, deadline - Date.now()));
+      setWindows(current => current.filter(window => window.stoppedAt == null || now.value < window.stoppedAt + CHARGE_BALL_MAX_TRAVEL_MS));
+    }, Math.max(1, deadline - now.value));
     return () => clearTimeout(timer);
-  }, [windows]);
+  }, [windows, policy.shouldAnimate, now]);
   const frame = useFrameCallback(({ timestamp }) => {
-    if (!policy.shouldAnimate || (lastFrameAt.value >= 0 && timestamp - lastFrameAt.value < 1000 / policy.fps)) return;
+    if (!policy.shouldAnimate) return;
+    if (lastFrameAt.value < 0) { lastFrameAt.value = timestamp; return; }
+    const delta = Math.max(0, timestamp - lastFrameAt.value);
+    if (delta < 1000 / policy.fps) return;
     lastFrameAt.value = timestamp;
-    now.value = Date.now();
+    now.value += Math.min(delta, 100);
   }, false);
   useEffect(() => {
     lastFrameAt.value = -1;
-    now.value = Date.now();
     frame.setActive(policy.shouldAnimate);
     return () => frame.setActive(false);
   }, [policy.shouldAnimate, frame, lastFrameAt, now]);

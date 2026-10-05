@@ -23,6 +23,7 @@ import {
   shouldWatchLocation,
   type LocationGateState,
   type MotionState,
+  type LocationPowerMode,
 } from '../../../utils/locationPolicy';
 
 interface UseDeviceLocationParams {
@@ -36,6 +37,8 @@ interface UseDeviceLocationParams {
   sharingEnabled?: boolean;
   hasMembership?: boolean;
   teamNavigationActive?: boolean;
+  /** Shared owner policy: paused foreground uses the same Low profile as presence. */
+  powerMode?: LocationPowerMode;
   /**
    * Receives every valid, fresh foreground sensor fix before React UI
    * projection throttling. The coordinator can use this for arrival and
@@ -70,6 +73,7 @@ export function useDeviceLocation({
   sharingEnabled = true,
   hasMembership,
   teamNavigationActive = false,
+  powerMode = highAccuracy || teamNavigationActive ? 'journey' : 'foreground',
   onIncomingSample,
 }: UseDeviceLocationParams) {
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
@@ -88,12 +92,12 @@ export function useDeviceLocation({
   const forceSyncInFlightRef = useRef(false);
   const groupIdRef = useRef(groupId);
   groupIdRef.current = groupId;
-  const teamNavigationRef = useRef(teamNavigationActive);
-  teamNavigationRef.current = teamNavigationActive;
   const highAccuracyRef = useRef(highAccuracy);
   // Precision is an explicit user switch. Team navigation selects the journey
   // power profile but must not silently promote upload/GPS precision.
   highAccuracyRef.current = highAccuracy;
+  const powerModeRef = useRef(powerMode);
+  powerModeRef.current = powerMode;
   const deviceCoordsRef = useRef(deviceCoords);
   deviceCoordsRef.current = deviceCoords;
   const sharingEnabledRef = useRef(sharingEnabled);
@@ -116,10 +120,7 @@ export function useDeviceLocation({
 
   const policyNow = () => locationPolicy(
     highAccuracyRef.current,
-    // The precise switch is sufficient to opt into the high-frequency journey
-    // profile; team navigation is only an independent reason to use journey
-    // cadence, never an implicit precision switch.
-    highAccuracyRef.current || teamNavigationRef.current ? 'journey' : 'foreground',
+    powerModeRef.current,
   );
 
   const scheduleOutboxFlush = useCallback(() => {
@@ -273,7 +274,7 @@ export function useDeviceLocation({
     if (!access) return null;
     const fix = await location.getCurrentLocation(
       highAccuracyRef.current,
-      highAccuracyRef.current || teamNavigationRef.current ? 'journey' : 'foreground',
+      powerModeRef.current,
     );
     if (!fix || !isLocationAccessCurrent(access) || !sharingEnabledRef.current || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || AppState.currentState !== 'active') return null;
     const now = Date.now();
@@ -314,7 +315,7 @@ export function useDeviceLocation({
     lastSampleAtRef.current = 0;
     latestSampleRef.current = null;
     motionRef.current = createMotionState(Date.now());
-  }, [highAccuracy, teamNavigationActive, groupId]);
+  }, [highAccuracy, teamNavigationActive, powerMode, groupId]);
 
   // Bootstrap an estimate when MapKit has not delivered its first fix yet.
   // MapKit remains the continuous owner; this is one bounded foreground read.
@@ -342,12 +343,15 @@ export function useDeviceLocation({
     if (!groupId || appState !== 'active' || !sharingEnabled || !hasMembershipResolved) return;
     const timer = setInterval(() => {
       void flushLocationOutbox().catch(() => undefined);
+      // Passive fixes belong to the Low watch cadence; the MapKit recovery
+      // watchdog must not add faster sensor reads while navigation is paused.
+      if (!nativeMapLocationEnabled && powerModeRef.current === 'allDay') return;
       if (Date.now() - lastSampleAtRef.current < 60_000 || forceSyncInFlightRef.current) return;
       forceSyncInFlightRef.current = true;
       void refreshDeviceLocation().catch(() => null).finally(() => { forceSyncInFlightRef.current = false; });
     }, 30_000);
     return () => clearInterval(timer);
-  }, [groupId, appState, sharingEnabled, hasMembershipResolved, refreshDeviceLocation]);
+  }, [groupId, appState, sharingEnabled, hasMembershipResolved, refreshDeviceLocation, nativeMapLocationEnabled]);
 
   // Publish only timestamped sensor fixes.
   useEffect(() => () => {
@@ -381,8 +385,8 @@ export function useDeviceLocation({
     let stop = () => {};
     void location
       .watchLocation((sample: LocationSample) => {
-        consumeForegroundSample(sample);
-      }, highAccuracy, highAccuracy || teamNavigationActive ? 'journey' : 'foreground')
+        if (!cancelled) consumeForegroundSample(sample);
+      }, highAccuracy, powerMode)
       .then((unsub: () => void) => {
         if (cancelled) unsub();
         else stop = unsub;
@@ -396,7 +400,7 @@ export function useDeviceLocation({
       }
       stop();
     };
-  }, [appState, groupId, highAccuracy, teamNavigationActive, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
+  }, [appState, groupId, highAccuracy, powerMode, teamNavigationActive, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
 
   return {
     deviceCoords,

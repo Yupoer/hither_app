@@ -239,9 +239,9 @@
     {
       "parent": 193,
       "child": 194,
-      "acceptance": "A3 Progress matches gated walking remaining, not ungated 1 - current/initial.",
+      "acceptance": "A3 Personal display progress shares the remaining-distance model; the selected arrival-radius formula supersedes the earlier departure gate.",
       "testFile": "personalProgress.test.ts",
-      "testNamePattern": "uses gated walking remaining"
+      "testNamePattern": "shows the selected distance formula independently of departure bookkeeping"
     },
     {
       "parent": 193,
@@ -1873,6 +1873,54 @@
       "acceptance": "The optimized native executor accepts a multithreaded main-thread UI runtime with nested calls and typed errors, while rejecting arbitrary background threads; the CI jsi-ui-runtime job executes this probe.",
       "testFile": "scripts/test-jsi-executor.swift",
       "testNamePattern": "UI runtime main-thread/nested/typed-throw=PASS"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "particles",
+      "acceptance": "Particle identity, positions and lifecycle resume from active time after a long background interval.",
+      "testFile": "starfieldPauseResume.test.ts",
+      "testNamePattern": "freezes ball identity and phase through background time"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "eta",
+      "acceptance": "Identical estimates, foreground resumes and GPS gaps retain their original countdown deadline.",
+      "testFile": "liveActivityEta.test.ts",
+      "testNamePattern": "keeps the original deadline through identical estimates"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "arrival",
+      "acceptance": "A durable personal receipt survives a terminal backend rejection and worker restart without duplicate transport or team completion.",
+      "testFile": "personalArrivalReceipt.test.ts",
+      "testNamePattern": "retains a rejected receipt across worker restart"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "location",
+      "acceptance": "Pause selects one Low Expo location owner; resume restores MapKit navigation and disabling sharing stops acquisition.",
+      "testFile": "pausedLocationOwnership.test.ts",
+      "testNamePattern": "switches directly between MapKit navigation and one Low Expo paused owner"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "session",
+      "acceptance": "Cold startup and every actual foreground edge refresh a healthy session while temporary failures retain local identity.",
+      "testFile": "sessionProviderRecovery.test.ts",
+      "testNamePattern": "force-refreshes a healthy JWT at startup and each real foreground edge|restores local identity through offline refresh"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "terminal-session",
+      "acceptance": "Confirmed terminal refresh clears identity, membership and native runtime while preserving durable drafts.",
+      "testFile": "sessionProviderRecovery.test.ts",
+      "testNamePattern": "clears identity/membership and stops native runtime on confirmed unrecoverable refresh"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "account-switch",
+      "acceptance": "Switching actors clears the prior account UI before profile enrichment, and successful reauthentication restarts foreground SDK renewal.",
+      "testFile": "sessionProviderRecovery.test.ts",
+      "testNamePattern": "clears the prior actor ownership before a switched account profile can fail|restarts SDK auto refresh after terminal recovery"
+    },
+    {
+      "parent": "foreground-navigation-20261006", "child": "route-sync",
+      "acceptance": "Route-open reconciliation reads local state first, never waits for remote reads, ignores retired generations and handles advisory failures silently.",
+      "testFile": "routeOpenSync.test.ts",
+      "testNamePattern": "starts remote work after local completion|swallows advisory local and remote reconciliation failures"
     }
   ]
 }

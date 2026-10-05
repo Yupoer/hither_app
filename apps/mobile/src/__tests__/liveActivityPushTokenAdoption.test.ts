@@ -20,6 +20,7 @@ let pushTokenListener:
       activityId: string;
       pushToken: string;
       navigationSessionId?: string;
+      destinationId?: string;
     }) => void)
   | null = null;
 let pushToStartListener: ((event: { token: string | null }) => void) | null = null;
@@ -69,6 +70,7 @@ jest.mock('../native', () => ({
         activityId: string;
         pushToken: string;
         navigationSessionId?: string;
+      destinationId?: string;
       }) => void,
     ) => {
       pushTokenListener = cb;
@@ -110,8 +112,10 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
       eventActivityId: 'act-1',
       eventPushToken: 'tok-rotated',
       eventNavigationSessionId: 'nav-1',
+      eventDestinationId: 'd1',
       currentHandle: 'act-1',
       currentNavigationSessionId: 'nav-1',
+      currentDestinationId: 'd1',
     });
     expect(decision).toEqual({
       action: 'adopt',
@@ -128,6 +132,7 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
       eventNavigationSessionId: 'other-nav',
       currentHandle: null,
       currentNavigationSessionId: 'nav-1',
+      currentDestinationId: 'd1',
     });
     expect(decision.action).toBe('ignore');
   });
@@ -139,6 +144,7 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
       eventNavigationSessionId: undefined,
       currentHandle: null,
       currentNavigationSessionId: 'nav-1',
+      currentDestinationId: 'd1',
     });
     expect(decision.action).toBe('ignore');
   });
@@ -148,8 +154,10 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
       eventActivityId: 'recovered',
       eventPushToken: 'tok-obs',
       eventNavigationSessionId: 'nav-1',
+      eventDestinationId: 'd1',
       currentHandle: null,
       currentNavigationSessionId: 'nav-1',
+      currentDestinationId: 'd1',
     });
     expect(decision).toEqual({
       action: 'adopt',
@@ -164,8 +172,10 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
       eventActivityId: 'act-B',
       eventPushToken: 'tok-B',
       eventNavigationSessionId: 'nav-1',
+      eventDestinationId: 'd1',
       currentHandle: 'act-A',
       currentNavigationSessionId: 'nav-1',
+      currentDestinationId: 'd1',
     });
     expect(decision.action).toBe('ignore');
   });
@@ -190,8 +200,10 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
       eventActivityId: 'act-B',
       eventPushToken: 'tok-B',
       eventNavigationSessionId: 'nav-1',
+      eventDestinationId: 'd1',
       currentHandle: reconciler.currentHandle,
       currentNavigationSessionId: 'nav-1',
+      currentDestinationId: 'd1',
     });
     expect(decision.action).toBe('ignore');
     // Even if a caller tried observe, adopt must fail and leave pairing intact.
@@ -254,11 +266,12 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
       destinationName: '集合點',
     };
 
+    require('../native').liveActivity.startGroupActivity.mockResolvedValueOnce(null);
     let tree: { unmount: () => void };
     await act(async () => {
       tree = create(
         React.createElement(function Harness() {
-          useLiveActivity(false, state as never, session, false);
+          useLiveActivity(true, state as never, session, true);
           return null;
         }),
       );
@@ -277,12 +290,20 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     });
     expect(mockUpsertLiveActivitySession).not.toHaveBeenCalled();
 
-    // Matching nav session + null handle → adopt observed + force persist.
+    // Matching session alone cannot guess the event's destination.
+    await act(async () => {
+      pushTokenListener!({ activityId: 'wrong-stop', pushToken: 'token', navigationSessionId: 'nav-1', destinationId: 'other-stop' });
+      pushTokenListener!({ activityId: 'missing-stop', pushToken: 'token', navigationSessionId: 'nav-1' });
+    });
+    expect(mockUpsertLiveActivitySession).not.toHaveBeenCalled();
+
+    // Matching full scope + null handle → adopt observed + force persist.
     await act(async () => {
       pushTokenListener!({
         activityId: 'act-1',
         pushToken: 'tok-1',
         navigationSessionId: 'nav-1',
+        destinationId: 'd1',
       });
       await Promise.resolve();
       await Promise.resolve();
@@ -307,6 +328,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         activityId: 'act-B',
         pushToken: 'tok-B',
         navigationSessionId: 'nav-1',
+        destinationId: 'd1',
       });
       await Promise.resolve();
     });
@@ -318,6 +340,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
         activityId: 'act-1',
         pushToken: 'tok-rotated',
         navigationSessionId: 'nav-1',
+        destinationId: 'd1',
       });
       await Promise.resolve();
       await Promise.resolve();
@@ -577,4 +600,25 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     await act(async () => { tree = create(React.createElement(Harness, { active: true, count: 1 })); });
     await act(async () => { tree.unmount(); });
   });
+});
+
+it.each([undefined, 'other-stop'])('ignores observed token adoption with matching session but invalid destination %s', eventDestinationId => {
+  expect(decidePushTokenAdoption({ eventActivityId: 'pts', eventPushToken: 'token',
+    eventNavigationSessionId: 'nav-1', eventDestinationId,
+    currentHandle: null, currentNavigationSessionId: 'nav-1', currentDestinationId: 'd1' }).action).toBe('ignore');
+});
+
+it('an explicitly stopped hook cannot adopt a matching late PTS token', async () => {
+  const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+  mockUpsertLiveActivitySession.mockClear();
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(function StoppedHarness() {
+    useLiveActivity(false, { groupName: 'Team', distanceMeters: 80 },
+      { groupId: 'g1', destinationId: 'd1', navigationSessionId: 'nav-1', initialDistanceM: 100, travelMode: 'walk' });
+    return null;
+  })); });
+  await act(async () => { pushTokenListener?.({ activityId: 'late-pts', pushToken: 'token',
+    navigationSessionId: 'nav-1', destinationId: 'd1' }); });
+  expect(mockUpsertLiveActivitySession).not.toHaveBeenCalled();
+  await act(async () => { tree.unmount(); });
 });

@@ -75,8 +75,6 @@ import { getDiagnosticConsentRevision, isDiagnosticConsentCurrent } from './src/
 import { uploadLocalLogs } from './src/utils/uploadLocalLogs';
 import { startOtaUpdateBootstrap } from './src/utils/otaUpdates';
 import OtaUpdateToast from './src/components/OtaUpdateToast';
-import AppNoticeHost from './src/components/AppNoticeHost';
-import InteractionRecoveryBanner from './src/components/InteractionRecoveryBanner';
 import PremiumPurchaseRecovery from './src/components/PremiumPurchaseRecovery';
 import PasswordRecoveryScreen from './src/screens/PasswordRecoveryScreen';
 import { initializeCoreDataLayer } from './src/state/coreDataSync';
@@ -439,8 +437,6 @@ export default function App() {
               {/* Global: any screen — brief top toast after an OTA apply. */}
               <OtaUpdateToast />
               {/* Global: action error/timeout recovery (runUiAction). */}
-              <InteractionRecoveryBanner />
-              <AppNoticeHost />
             </SessionProvider>
           </PreferencesProvider>
         </SafeAreaProvider>

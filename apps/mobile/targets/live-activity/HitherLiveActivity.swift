@@ -1,6 +1,7 @@
 import ActivityKit
 import SwiftUI
 import WidgetKit
+import Foundation
 
 // Live Activity UI: the lock-screen banner + Dynamic Island presentations for
 // the group "heading to gathering point" journey. Styled after the Hither
@@ -19,8 +20,8 @@ private enum Brand {
   static let accent = Color(red: 0xF5 / 255, green: 0xB1 / 255, blue: 0x42 / 255)
   static let card = Color.black
   static let textPrimary = Color(red: 0xF5 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
-  static let textSecondary = Color(white: 1, opacity: 0.6)
-  static let track = Color(white: 1, opacity: 0.14)
+  static let textSecondary = Color(white: 0.85)
+  static let track = Color(white: 0.4)
   // Deterministic member-avatar palette from the design.
   static let avatarColors: [Color] = [
     Color(red: 0x2a / 255, green: 0x34 / 255, blue: 0x50 / 255),
@@ -31,6 +32,21 @@ private enum Brand {
 }
 
 private extension Color {
+  /// Text accents must remain readable against the actual opaque surface.
+  static func accessibleAccent(hexString: String?, lightBackground: Bool) -> Color {
+    let hex = (hexString ?? "#F5B142").replacingOccurrences(of: "#", with: "")
+    guard hex.count == 6, let value = UInt64(hex, radix: 16) else {
+      return lightBackground ? .black : .white
+    }
+    func linear(_ byte: UInt64) -> Double {
+      let s = Double(byte) / 255
+      return s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
+    }
+    let luminance = 0.2126 * linear((value >> 16) & 255)
+      + 0.7152 * linear((value >> 8) & 255) + 0.0722 * linear(value & 255)
+    let contrast = lightBackground ? 1.05 / (luminance + 0.05) : (luminance + 0.05) / 0.05
+    return contrast >= 4.5 ? Color(hexString: hex)! : lightBackground ? .black : .white
+  }
   /// Parse a "#RRGGBB" hex string (the app's theme accent). Nil on bad input.
   init?(hexString: String?) {
     guard var s = hexString else { return nil }
@@ -96,8 +112,8 @@ struct HitherLiveActivityWidget: Widget {
         }
         DynamicIslandExpandedRegion(.trailing) {
           VStack(alignment: .trailing, spacing: 0) {
-            if let eta = context.state.etaText {
-              Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
+            if context.state.etaSeconds != nil {
+              EtaCountdown(state: context.state)
                 .font(.system(size: 18, weight: .bold))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -148,7 +164,7 @@ struct HitherLiveActivityWidget: Widget {
           .foregroundStyle(accent)
           .accessibilityLabel(context.state.modeAccessibilityLabel)
       } compactTrailing: {
-        Text(context.state.shortEta ?? context.state.formattedDistance ?? "")
+        EtaCountdown(state: context.state, compact: true)
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(accent)
       } minimal: {
@@ -174,21 +190,11 @@ private struct DestinationTitle: View {
   }
 }
 
-/// Clear the ActivityKit tint so the native glass surface can read the wallpaper.
-/// Earlier systems retain the established dark lock-screen presentation.
+/// A stable opaque surface keeps wallpaper from competing with navigation text.
 private struct LockScreenBackground: ViewModifier {
+  @Environment(\.colorScheme) private var colorScheme
   func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content
-        .background {
-          Color.clear
-            .glassEffect(.regular, in: .rect(cornerRadius: 24))
-            .environment(\.colorScheme, .dark)
-        }
-        .activityBackgroundTint(.clear)
-    } else {
-      content.activityBackgroundTint(Brand.card)
-    }
+    content.activityBackgroundTint(colorScheme == .dark ? .black : .white)
   }
 }
 
@@ -196,12 +202,17 @@ private struct LockScreenBackground: ViewModifier {
 
 private struct LockScreenView: View {
   let context: ActivityViewContext<HitherGroupAttributes>
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    let accent = context.state.accentColor
+    let light = colorScheme != .dark
+    let background: Color = light ? .white : .black
+    let primary: Color = light ? .black : Brand.textPrimary
+    let secondary = Color(white: light ? 0.27 : 0.85)
+    let accent = Color.accessibleAccent(hexString: context.state.accentHex, lightBackground: light)
     return VStack(alignment: .leading, spacing: 10) {
       HStack(alignment: .top, spacing: 10) {
-        TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 40)
+        TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 40, plate: background)
           .accessibilityLabel(context.state.modeAccessibilityLabel)
           .fixedSize()
         VStack(alignment: .leading, spacing: 3) {
@@ -210,34 +221,35 @@ private struct LockScreenView: View {
             .foregroundStyle(accent)
           DestinationTitle(text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
             .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(Brand.textPrimary)
+            .foregroundStyle(primary)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
       }
       // ETA has its own row: neither a long title nor large type can push it
       // beyond the lock-screen host's width.
       HStack(alignment: .firstTextBaseline, spacing: 10) {
-        if let eta = context.state.etaText {
-          Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
+        if context.state.etaSeconds != nil {
+          EtaCountdown(state: context.state)
             .font(.system(size: 18, weight: .bold))
-            .foregroundStyle(Brand.textPrimary)
+            .foregroundStyle(primary)
             .lineLimit(2)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
         if let distance = context.state.formattedDistance {
           Text(distance).font(.system(size: 12))
-            .foregroundStyle(Brand.textSecondary)
+            .foregroundStyle(secondary)
             .lineLimit(2)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
         }
       }
-      ProgressRow(value: context.state.clampedProgress, accent: accent)
+      ProgressRow(value: context.state.clampedProgress, accent: accent,
+        textColor: secondary, trackColor: Color(white: light ? 0.55 : 0.4))
       HStack(spacing: 8) {
-        AvatarStack(emojis: context.state.avatarEmojis, arrived: context.state.avatarArrived)
+        AvatarStack(emojis: context.state.avatarEmojis, arrived: context.state.avatarArrived, outline: background)
           .frame(maxWidth: .infinity, alignment: .leading)
         if let status = context.state.arrivalStatus {
           Text(status).font(.system(size: 12.5, weight: .medium))
-            .foregroundStyle(Brand.textSecondary)
+            .foregroundStyle(secondary)
             .lineLimit(2)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
         }
@@ -255,10 +267,11 @@ private struct TravelModeBadge: View {
   let symbol: String
   let accent: Color
   var size: CGFloat = 44
+  var plate: Color = Color(red: 0.18, green: 0.15, blue: 0.10)
   var body: some View {
     ZStack {
       RoundedRectangle(cornerRadius: 12)
-        .fill(Color(red: 0.18, green: 0.15, blue: 0.10))
+        .fill(plate)
         .frame(width: size, height: size)
       Image(systemName: symbol)
         .font(.system(size: size * 0.42, weight: .semibold))
@@ -286,12 +299,13 @@ private enum ProgressMotion {
 private struct ProgressBar: View {
   let value: Double
   let accent: Color
+  var trackColor: Color = Brand.track
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     GeometryReader { geo in
       ZStack(alignment: .leading) {
-        Capsule().fill(Brand.track)
+        Capsule().fill(trackColor)
         Capsule()
           .fill(accent)
           .frame(width: max(6, geo.size.width * value))
@@ -305,17 +319,19 @@ private struct ProgressBar: View {
 
 /// Progress bar + percent label — shared by Lock Screen and expanded Dynamic Island.
 private struct ProgressRow: View {
-  let value: Double
+  let value: Double?
   let accent: Color
+  var textColor: Color = Brand.textSecondary
+  var trackColor: Color = Brand.track
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    let pct = Int((min(1, max(0, value)) * 100).rounded())
+    let pct = value.map { Int((min(1, max(0, $0)) * 100).rounded()) }
     return HStack(spacing: 8) {
-      ProgressBar(value: value, accent: accent)
-      Text("\(pct)%")
+      ProgressBar(value: value ?? 0, accent: accent, trackColor: trackColor)
+      Text(pct.map { "\($0)%" } ?? "—")
         .font(.system(size: 12, weight: .semibold).monospacedDigit())
-        .foregroundStyle(Brand.textSecondary)
+        .foregroundStyle(textColor)
         .frame(minWidth: 34, alignment: .trailing)
         .contentTransition(.numericText())
         .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: pct)
@@ -326,6 +342,7 @@ private struct ProgressRow: View {
 private struct AvatarStack: View {
   let emojis: [String]
   let arrived: [Bool]
+  var outline: Color = Brand.card
   var body: some View {
     HStack(spacing: -7) {
       ForEach(Array(emojis.prefix(4).enumerated()), id: \.offset) { i, emoji in
@@ -337,9 +354,13 @@ private struct AvatarStack: View {
           }
         }
         .frame(width: 24, height: 24)
-        .overlay(Circle().stroke(Brand.card, lineWidth: 1.5))
-        .opacity(isArrived ? 1 : 0.35)
-        .saturation(isArrived ? 1 : 0.25)
+        .overlay(Circle().stroke(outline, lineWidth: 1.5))
+        .overlay(alignment: .bottomTrailing) {
+          if isArrived {
+            Image(systemName: "checkmark.circle.fill")
+              .font(.system(size: 10, weight: .bold)).foregroundStyle(.white, .black)
+          }
+        }
       }
     }
   }
@@ -347,9 +368,35 @@ private struct AvatarStack: View {
 
 // MARK: - Presentation helpers
 
+/// ActivityKit manages this timer without waking the app or polling the widget.
+/// Older payloads retain localized duration copy until a deadline is available.
+private struct EtaCountdown: View {
+  let state: HitherGroupAttributes.ContentState
+  var compact = false
+
+  var body: some View {
+    if let interval = state.etaTimerInterval {
+      Text(timerInterval: interval, countsDown: true, showsHours: true)
+        .monospacedDigit()
+    } else if compact {
+      Text(state.shortEta ?? state.formattedDistance ?? "")
+    } else if let eta = state.etaText {
+      Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
+    }
+  }
+}
+
 private extension HitherGroupAttributes.ContentState {
   /// The app's theme accent (from `accentHex`), or the brand fallback.
-  var accentColor: Color { Color(hexString: accentHex) ?? Brand.accent }
+  var accentColor: Color { Color.accessibleAccent(hexString: accentHex, lightBackground: false) }
+
+  var etaTimerInterval: ClosedRange<Date>? {
+    guard let target = etaTargetAtMs, target.isFinite else { return nil }
+    let end = Date(timeIntervalSince1970: target / 1000)
+    let origin = sampledAtMs ?? target - max(0, etaSeconds ?? 0) * 1000
+    guard origin.isFinite else { return nil }
+    return min(Date(timeIntervalSince1970: origin / 1000), end)...end
+  }
 
   /// Gathering point title when present; team/group name only as fallback.
   /// Prefixes destination emoji when set (Ticket 07), same fallback as JS resolve.
@@ -429,7 +476,7 @@ private extension HitherGroupAttributes.ContentState {
   }
 
   /// Progress clamped to 0...1, defaulting to 0 when unknown.
-  var clampedProgress: Double { min(1, max(0, progress ?? 0)) }
+  var clampedProgress: Double? { progress.map { min(1, max(0, $0)) } }
 
   /// "2 / 4 已抵達" — the expanded island's arrival caption (nil without a count).
   var arrivalStatus: String? {

@@ -17,6 +17,7 @@ import { decidePushTokenAdoption } from '../utils/liveActivityPushTokenAdoption'
 import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 import { diagnostics } from './diagnostics';
 import { useSession } from './SessionContext';
+import { useForegroundUi, isForegroundUi } from './foregroundUi';
 
 /** Allow-listed register outcome only — never the push token itself. */
 function recordTokenRegisterResult(result: LiveActivityTokenRegisterResult): void {
@@ -48,8 +49,11 @@ export interface LiveActivitySessionContext {
  */
 export async function clearLiveActivities(opts?: {
   groupIds?: string[];
+  /** Terminal authentication cleanup must not call an authenticated API. */
+  localOnly?: boolean;
 }): Promise<void> {
   await liveActivity.endAllGroupActivities();
+  if (opts?.localOnly) return;
   if (opts?.groupIds?.length) {
     await deleteMyLiveActivitySessionsForGroups(opts.groupIds).catch(() => undefined);
   } else {
@@ -64,26 +68,35 @@ export function useLiveActivity(
   liveActivitiesEnabled = true,
 ): void {
   const { user } = useSession();
+  const foreground = useForegroundUi();
   const lastPersistAtRef = useRef(0);
   const lastDisplayRef = useRef({ at: 0, semantic: '', payload: '' });
+  const displayQueueRef = useRef(Promise.resolve());
   const lastPersistedAccentRef = useRef<string | undefined>(undefined);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
   const pushToStartTokenRef = useRef<string | null>(null);
   const deviceIdRef = useRef<string | null>(null);
   const enabledRef = useRef(liveActivitiesEnabled);
+  const activeRef = useRef(active);
   const userIdRef = useRef<string | null>(user?.id ?? null);
   const reconcilerRef = useRef<LiveActivityLifecycleReconciler | null>(null);
   stateRef.current = state;
   sessionRef.current = session;
   enabledRef.current = liveActivitiesEnabled;
+  activeRef.current = active;
   userIdRef.current = user?.id ?? null;
+
+  const currentScopedState = (): GroupActivityState => ({ ...stateRef.current,
+    ...(sessionRef.current ? { destinationId: sessionRef.current.destinationId,
+      navigationSessionId: sessionRef.current.navigationSessionId } : {}) });
 
   if (reconcilerRef.current == null) {
     reconcilerRef.current = new LiveActivityLifecycleReconciler({
       endGroupActivity: (activityId) => liveActivity.endGroupActivity(activityId),
       endAllGroupActivities: () => liveActivity.endAllGroupActivities(),
-      startGroupActivity: () => liveActivity.startGroupActivity(stateRef.current),
+      startGroupActivity: (intent) => liveActivity.startGroupActivity({ ...stateRef.current,
+        destinationId: intent.destinationId, navigationSessionId: intent.navigationSessionId }),
       listGroupActivities: () => liveActivity.listGroupActivities(),
       deleteSession: (activityId) =>
         deleteLiveActivitySession(activityId).catch(() => undefined),
@@ -106,9 +119,11 @@ export function useLiveActivity(
     opts?: { force?: boolean },
   ): Promise<void> => {
     const currentSession = sessionRef.current;
-    const currentState = stateRef.current;
+    const currentState = currentScopedState();
     if (
       !currentSession ||
+      reconcilerRef.current?.currentHandle !== activityId ||
+      !reconcilerRef.current.ownsScope(currentSession.destinationId, currentSession.navigationSessionId) ||
       currentState.distanceMeters == null ||
       currentSession.initialDistanceM <= 0
     ) {
@@ -128,6 +143,7 @@ export function useLiveActivity(
       pushToken: reconcilerRef.current?.currentPushToken,
       currentDistanceM: currentState.distanceMeters,
       sampledAtMs: currentState.sampledAtMs,
+      etaTargetAtMs: currentState.etaTargetAtMs,
       etaSeconds: currentState.etaSeconds,
       progress: currentState.progress,
       accentHex: currentState.accentHex,
@@ -138,12 +154,15 @@ export function useLiveActivity(
   useEffect(() => {
     const subscription = liveActivity.addPushTokenListener((event) => {
       const reconciler = reconcilerRef.current;
-      if (!reconciler) return;
+      if (!reconciler || activeRef.current !== true || !sessionRef.current?.destinationId) return;
       const decision = decidePushTokenAdoption({
         eventActivityId: event.activityId,
         eventPushToken: event.pushToken,
         eventNavigationSessionId: event.navigationSessionId,
-        currentHandle: reconciler.currentHandle,
+        eventDestinationId: event.destinationId,
+        currentDestinationId: sessionRef.current.destinationId,
+        currentHandle: reconciler.ownsScope(sessionRef.current.destinationId, sessionRef.current.navigationSessionId)
+          ? reconciler.currentHandle : null,
         currentNavigationSessionId: sessionRef.current?.navigationSessionId,
       });
       if (decision.action === 'ignore') return;
@@ -154,7 +173,8 @@ export function useLiveActivity(
         ? reconciler.adoptObservedActivity({
             activityId: decision.activityId,
             pushToken: decision.pushToken,
-            destinationId: sessionRef.current?.destinationId,
+            destinationId: event.destinationId,
+            navigationSessionId: event.navigationSessionId,
           })
         : reconciler.adoptPushToken(decision.activityId, decision.pushToken);
       if (!adopted) return;
@@ -272,11 +292,11 @@ export function useLiveActivity(
 
     if (active && session?.destinationId) {
       void reconciler
-        .request({ kind: 'start', destinationId: session.destinationId })
+        .request({ kind: 'start', destinationId: session.destinationId, navigationSessionId: session.navigationSessionId })
         .then(() => {
           const handle = reconciler.currentHandle;
-          if (handle) {
-            void liveActivity.updateGroupActivity(handle, stateRef.current).catch(() => undefined);
+          if (handle && sessionRef.current && reconciler.ownsScope(sessionRef.current.destinationId, sessionRef.current.navigationSessionId)) {
+            void liveActivity.updateGroupActivity(handle, currentScopedState()).catch(() => undefined);
             void persistSession(handle, { force: true }).catch(() => undefined);
           }
         })
@@ -291,7 +311,7 @@ export function useLiveActivity(
       // Active journey but session not ready yet — leave existing activity alone.
     } // Unknown/hydrating state must not end a native activity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, session?.destinationId]);
+  }, [active, session?.destinationId, session?.navigationSessionId]);
 
 
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
@@ -300,20 +320,52 @@ export function useLiveActivity(
   const destinationEmojiSig = state.destinationEmoji ?? '';
 
   useEffect(() => {
+    // Native may have received a newer headless update while hidden. Returning
+    // to the foreground sends the current snapshot without changing its ETA.
+    if (!foreground) lastDisplayRef.current = { at: 0, semantic: '', payload: '' };
+  }, [foreground]);
+
+  useEffect(() => {
     const handle = reconcilerRef.current?.currentHandle;
-    if (!active || !handle || AppState.currentState !== 'active') return;
-    const semantic = JSON.stringify([session?.destinationId, state.status, state.gatheredCount,
+    if (!active || !handle || !session || !reconcilerRef.current?.ownsScope(session.destinationId, session.navigationSessionId)
+      || !foreground || AppState.currentState !== 'active') return;
+    const semantic = JSON.stringify([session?.navigationSessionId, session?.destinationId, state.status, state.personalArrived, state.personalArrivalAtMs, state.personalArrivalSequence, state.gatheredCount,
       state.memberCount, state.gatheringTitle, state.groupName, state.accentHex, state.travelMode,
-      arrivalSignature, emojiSignature, destinationEmojiSig]);
-    const payload = JSON.stringify(stateRef.current);
+      arrivalSignature, emojiSignature, destinationEmojiSig, state.language]);
+    const payload = JSON.stringify(currentScopedState());
     const last = lastDisplayRef.current;
-    if (last.payload === payload || (last.semantic === semantic && Date.now() - last.at < 10_000)) return;
-    lastDisplayRef.current = { at: Date.now(), semantic, payload };
-    void liveActivity.updateGroupActivity(handle, stateRef.current).catch(() => undefined);
-    void persistSession(handle).catch(() => undefined);
+    if (last.payload === payload) return;
+    let cancelled = false;
+    const send = () => {
+      displayQueueRef.current = displayQueueRef.current.then(async () => {
+        if (cancelled || !isForegroundUi() || reconcilerRef.current?.currentHandle !== handle
+          || !sessionRef.current || !reconcilerRef.current.ownsScope(sessionRef.current.destinationId, sessionRef.current.navigationSessionId)) return;
+        const latestState = currentScopedState();
+        const latestPayload = JSON.stringify(latestState);
+        if (lastDisplayRef.current.payload === latestPayload) return;
+        await liveActivity.updateGroupActivity(handle, latestState);
+        // Only successful native delivery advances the throttle / dedupe state.
+        lastDisplayRef.current = { at: Date.now(), semantic, payload: latestPayload };
+        await persistSession(handle);
+      }).catch(() => undefined);
+    };
+    const waitMs = last.semantic === semantic ? Math.max(0, 10_000 - (Date.now() - last.at)) : 0;
+    const timer = waitMs > 0 ? setTimeout(send, waitMs) : undefined;
+    if (waitMs === 0) send();
+    return () => { cancelled = true; if (timer != null) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     active,
+    foreground,
+    session?.destinationId,
+    session?.navigationSessionId,
+    state.status,
+    state.personalArrived,
+    state.personalArrivalAtMs,
+    state.personalArrivalSequence,
+    state.language,
+    state.sampledAtMs,
+    state.etaTargetAtMs,
     state.distanceMeters,
     state.etaSeconds,
     state.progress,

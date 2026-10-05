@@ -28,10 +28,14 @@ export function installAuthLifecycle(options: AuthLifecycleOptions): () => void 
     setTimeout(work, 0);
   });
 
+  let previous: string | null | undefined;
+  let installed = true;
   const apply = (state: string | null | undefined) => {
+    if (state === previous) return;
+    previous = state;
     if (state === 'active') {
       options.auth.startAutoRefresh?.();
-      if (options.onForeground) defer(options.onForeground);
+      if (options.onForeground) defer(() => { if (installed) options.onForeground?.(); });
     } else if (state === 'background' || state === 'inactive') {
       options.auth.stopAutoRefresh?.();
     }
@@ -39,5 +43,5 @@ export function installAuthLifecycle(options: AuthLifecycleOptions): () => void 
 
   apply(options.appState.currentState);
   const subscription = options.appState.addEventListener('change', apply);
-  return () => subscription.remove();
+  return () => { installed = false; subscription.remove(); };
 }

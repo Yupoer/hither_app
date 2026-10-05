@@ -54,6 +54,13 @@ export interface BackgroundJourneyConfig {
   hasDepartedStart?: boolean;
   previousProgressMax?: number;
   etaSeconds?: number;
+  /** Anchor ETA to the pin, before removing the configured radius segment. */
+  etaToPinSeconds?: number;
+  etaTargetAtMs?: number;
+  etaSampledAtMs?: number;
+  lastEtaDistanceM?: number;
+  personalArrivalAtMs?: number;
+  personalArrivalSequence?: number;
   /**
    * Only meaningful for `powerMode: 'journey'`.
    * All-day presence always uses the Low-accuracy budget profile.

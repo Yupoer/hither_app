@@ -4,11 +4,10 @@ import { requestWithDeadline } from '../utils/requestDeadline';
 import { createClient } from '@supabase/supabase-js';
 import { supabaseAuthStorage } from './authStorage';
 import { withSupabasePerformanceTracing } from './instrumentedSupabase';
-import {
-  configureDefaultAuthRecovery,
-  type AuthAdapterResult,
-} from './authRecovery';
+import { configureDefaultAuthRecovery } from './authRecovery';
+import { createSupabaseAuthRecoveryAdapter } from './supabaseAuthRecoveryAdapter';
 import { withAuthenticatedTransport } from './authenticatedTransport';
+import { withRetryableAuthRefresh } from './authRefreshFetch';
 import {
   defaultSupabaseAuthStorageKey,
   readLocalAuthActor,
@@ -35,7 +34,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const baseSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-  global: { fetch: (input, init) => requestWithDeadline(signal => fetch(input, { ...init, signal }), 10_000, init?.signal) },
+  global: { fetch: withRetryableAuthRefresh((input, init) => requestWithDeadline(signal => fetch(input, { ...init, signal }), 10_000, init?.signal)) },
   auth: {
     storage: supabaseAuthStorage,
     autoRefreshToken: true,
@@ -56,10 +55,9 @@ export async function getLocalAuthActorId(): Promise<string | null> {
 
 // Keep Auth recovery injectable while ensuring production requests share the
 // same single-flight refresh coordinator as the guarded mutation transport.
-const authRecovery = configureDefaultAuthRecovery({
-  getSession: () => baseSupabase.auth.getSession() as Promise<AuthAdapterResult>,
-  refreshSession: () => baseSupabase.auth.refreshSession() as Promise<AuthAdapterResult>,
-});
+const authRecovery = configureDefaultAuthRecovery(
+  createSupabaseAuthRecoveryAdapter(baseSupabase.auth, supabaseAuthStorage, SUPABASE_AUTH_STORAGE_KEY),
+);
 
 const authenticatedSupabase = withAuthenticatedTransport(baseSupabase, { authRecovery });
 

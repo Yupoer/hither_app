@@ -9,6 +9,8 @@ import { commandSenderIsAuthorized, secureEqual } from "./auth.ts";
 import { isExpiredPush } from "./deadline.ts";
 import {
   providerToken,
+  liveActivityEtaFields,
+  liveActivityOrderingTimestamp,
   readApnsConfig,
   sendApns,
   sendBackgroundLocationRefresh,
@@ -813,15 +815,18 @@ async function sendLiveActivities(
     : payload.category === "journey" && payload.status === "paused"
     ? "end" as const
     : "update" as const;
-  const timestamp = Math.floor(Date.now() / 1000);
+  const activityEventAtMs = Date.now();
 
   return await Promise.all(
-    sessions.map((session) => {
+    sessions.flatMap((session) => {
+      const timestamp = liveActivityOrderingTimestamp(event, session.updated_at, activityEventAtMs);
+      if (timestamp == null) return [];
       const owner = memberByUser.get(session.user_id);
       const visibleMembers = owner
         ? members.filter((member) => member.subgroup_id === owner.subgroup_id)
         : [];
       const contentState: LiveActivityContentState = {
+        destinationId: session.destination_id,
         navigationSessionId: payload.category === "navigation_session"
           ? payload.session_id ?? undefined
           : undefined,
@@ -831,6 +836,8 @@ async function sendLiveActivities(
         gatheringTitle: titleByDestination.get(session.destination_id) ?? "集合點",
         distanceMeters: Math.max(0, Math.round(session.current_distance_m)),
         etaSeconds: Math.max(0, session.eta_seconds ?? 0),
+        // updated_at and eta_seconds are stored as one estimate snapshot.
+        ...liveActivityEtaFields(session.eta_seconds, session.updated_at),
         progress: clampProgress(
           session.last_progress_bucket != null
             ? session.last_progress_bucket / 20
@@ -847,13 +854,12 @@ async function sendLiveActivities(
         language: "zh",
       };
 
-      return sendLiveActivityApns(cfg, jwt, session.push_token, {
+      return [sendLiveActivityApns(cfg, jwt, session.push_token, {
         event,
-        // Use the snapshot time: an old cloud position must not replace a newer local ActivityKit update.
-        timestamp: event === "update" && session.updated_at
-          ? Math.min(timestamp, Math.floor((Date.parse(session.updated_at) || Date.now()) / 1000)) : timestamp,
+        // Preserve snapshot ordering; old cloud positions cannot outrank native GPS.
+        timestamp,
         contentState,
-      });
+      })];
     }),
   );
 }

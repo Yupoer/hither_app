@@ -7,6 +7,24 @@ import { distanceMeters } from './geo';
  */
 export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
 
+/** Choose a single foreground acquisition owner from the local navigation intent. */
+export function foregroundLocationConfiguration(input: {
+  navigationActive: boolean;
+  nativeMapAvailable: boolean;
+  highAccuracy: boolean;
+  sharingEnabled: boolean;
+  hasMembership: boolean;
+  appState: string;
+}): { owner: 'none' | 'mapkit' | 'expo'; highAccuracy: boolean; powerMode: LocationPowerMode } {
+  const allowed = input.sharingEnabled && input.hasMembership && input.appState === 'active';
+  return {
+    owner: !allowed ? 'none' : input.navigationActive && input.nativeMapAvailable ? 'mapkit' : 'expo',
+    // Preserve the preference at the caller; a paused journey never promotes GPS.
+    highAccuracy: input.navigationActive && input.highAccuracy,
+    powerMode: input.navigationActive ? 'journey' : 'allDay',
+  };
+}
+
 /**
  * Product-level tracking state. `LocationPowerMode` remains the low-level
  * battery profile; this type describes why that profile is active.

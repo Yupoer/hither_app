@@ -66,3 +66,22 @@ describe('installAuthLifecycle edge behavior', () => {
     expect(events).toEqual(['start', 'defer', 'foreground']);
   });
 });
+
+
+describe('foreground refresh coalescing', () => {
+  it('ignores repeated active notifications and cancels deferred work on cleanup', () => {
+    let listener!: (state: string) => void;
+    const work: Array<() => void> = [];
+    const foreground = jest.fn();
+    const start = jest.fn();
+    const cleanup = installAuthLifecycle({ auth: { startAutoRefresh: start },
+      appState: { currentState: 'active', addEventListener: (_name, next) => {
+        listener = next; return { remove: jest.fn() };
+      } }, defer: next => { work.push(next); }, onForeground: foreground });
+    listener('active'); expect(start).toHaveBeenCalledTimes(1);
+    work.shift()!(); expect(foreground).toHaveBeenCalledTimes(1);
+    listener('background'); listener('active'); listener('active');
+    expect(start).toHaveBeenCalledTimes(2);
+    cleanup(); work.shift()!(); expect(foreground).toHaveBeenCalledTimes(1);
+  });
+});

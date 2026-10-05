@@ -224,6 +224,7 @@ export function classifyOperationError(
     || normalizedCode === 'auth_session_missing'
     || normalizedCode === 'local_auth_actor_missing'
     || normalizedCode === 'account_changed'
+    || ['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found', 'session_expired'].includes(normalizedCode)
     || normalizedCode === '28000'
     || normalizedCode === 'pgrst301'
     || normalizedCode === 'pgrst302'

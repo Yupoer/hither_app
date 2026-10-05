@@ -369,7 +369,7 @@ export const en: Record<keyof ZhDict, string> = {
 
   'operationError.offline': 'The network connection is unavailable. Check your connection; saved offline actions are shown separately as pending sync.',
   'operationError.timeout': 'The request timed out. The result may still be processing; refresh before retrying.',
-  'operationError.session': 'Your session is unavailable or expired. Sign in again, then retry.',
+  'operationError.session': 'Your session is being restored. Please try again shortly.',
   'operationError.leader': 'This action is restricted to the group leader.',
   'operationError.access': 'The server denied access to this data or service. This does not necessarily mean your leader role is incorrect.',
   'operationError.rateLimited': 'Too many requests. Wait a moment and try again.',

@@ -24,7 +24,8 @@ describe('installation auth storage compatibility', () => {
     await capabilities.revokeInstallationCapabilities();
     expect(mockRevoke).toHaveBeenCalledWith('revoke_installation_capabilities', expect.objectContaining({ p_device_id: 'fallback-installation-id' }));
     expect(await supabaseAuthStorage.getItem('hither.live-activity-device-id')).toBe('fallback-installation-id');
-    expect(mockSetItem).toHaveBeenCalledTimes(1); // Session write preceded the unavailable Keychain read.
+    expect(mockSetItem).toHaveBeenCalledTimes(2); // Both independent values attempt SecureStore persistence.
+    await expect(supabaseAuthStorage.getItem('unread-auth-session')).rejects.toMatchObject({ code: 'ERR_KEY_CHAIN' });
     mockActor = 'account-b'; capabilities.resumeInstallationCapabilities();
     const register = jest.fn(); await capabilities.writeInstallationCapability('account-b', register);
     expect(register).toHaveBeenCalledWith('fallback-installation-id');

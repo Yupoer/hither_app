@@ -189,6 +189,8 @@ export interface GroupMapProps {
    * account has no memberships so Control Center does not list Hither.
    */
   showsUserLocation?: boolean;
+  /** A native pin fed by the passive sensor owner; never starts MapKit GPS. */
+  passiveSelfCoordinates?: Coordinates | null;
 }
 
 /**
@@ -508,6 +510,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     onLongPressCoordinate,
     onRequestGoHome,
     showsUserLocation = true,
+    passiveSelfCoordinates = null,
   },
   ref,
 ) {
@@ -1022,6 +1025,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
           accent={colors.accent}
           styles={styles}
         />
+      )}
+
+      {!showsUserLocation && passiveSelfCoordinates && (
+        <Marker coordinate={passiveSelfCoordinates} pinColor={colors.accent}
+          title={t('flock.you')} identifier="passive-self-location" />
       )}
 
       {members.map((m) => {

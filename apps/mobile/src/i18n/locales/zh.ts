@@ -378,7 +378,7 @@ export const zh = {
 
   'operationError.offline': '網路連線中斷或無法連線。請檢查網路；已儲存的離線操作會另行顯示待同步。',
   'operationError.timeout': '請求逾時，結果可能仍在處理；請先重新整理再重試。',
-  'operationError.session': '無法取得有效的登入狀態，請重新登入後再試。',
+  'operationError.session': '登入狀態正在恢復，請稍後再試。',
   'operationError.leader': '此操作僅限群組隊長使用。',
   'operationError.access': '伺服器拒絕存取此資料或服務；這不一定代表隊長身分有誤。',
   'operationError.rateLimited': '操作次數過多，請稍候再試。',
