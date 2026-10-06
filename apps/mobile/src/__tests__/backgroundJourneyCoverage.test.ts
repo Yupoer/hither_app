@@ -476,18 +476,43 @@ describe('background journey lifecycle and callback gate', () => {
     const count = mockLiveActivity.updateAllGroupActivities.mock.calls.length;
     jest.advanceTimersByTime(1000);
     const occurredAt = new Date().toISOString();
-    mockListByGroup.mockResolvedValue([{
+    const receipt = {
       operationType: 'record_arrival', entityId: baseConfig.destinationId,
       actorId: baseConfig.actorId, sequence: 42, createdAt: Date.now(), status: 'conflict',
       payload: { actorId: baseConfig.actorId, userId: baseConfig.actorId,
         navigationSessionId: baseConfig.navigationSessionId, arrived: true, occurredAt },
-    }]);
+    };
+    // An older undo must not win over the newer personal arrival receipt.
+    mockListByGroup.mockResolvedValue([receipt,
+      { ...receipt, sequence: 41, payload: { ...receipt.payload, arrived: false } }]);
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.01)] } });
     expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(count + 1);
     expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
       personalArrived: true, personalArrivalSequence: 42, personalArrivalAtMs: Date.parse(occurredAt),
       memberArrived: [false],
     }));
+  });
+
+  it('keeps a personal receipt and location uploads when cloud progress and optional notifications fail', async () => {
+    await startBackgroundJourney(baseConfig);
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: baseConfig.navigationSessionId }, target: baseConfig.target });
+    mockArrival.mockImplementationOnce(async input => savedArrival(input, 'conflict'));
+    mockUpdateLiveActivity.mockRejectedValueOnce(new Error('network unavailable'));
+    mockNotifyApproach.mockRejectedValueOnce(new Error('notification unavailable'));
+    mockFlushCore.mockRejectedValueOnce(new Error('sync unavailable'));
+    await expect(handleBackgroundLocations({ data: { locations: [location()] } })).resolves.toBeUndefined();
+    await settle();
+    expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(1);
+    expect(mockNotifyApproach).toHaveBeenCalledTimes(1);
+    expect(mockFlushCore).toHaveBeenCalledTimes(1);
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      personalArrived: true, memberArrived: [false], progress: 1,
+    }));
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
+    expect(mockFlushLocation).toHaveBeenCalledTimes(1);
+    expect((await loadBackgroundJourney())?.personalArrivalAtMs).toBe(Date.now());
+    expect(mockComplete).not.toHaveBeenCalled();
   });
 
   it('persists arrival progress, gates uploads by cadence, and reports retry/discard results', async () => {
