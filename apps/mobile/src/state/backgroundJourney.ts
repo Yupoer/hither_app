@@ -391,8 +391,11 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         );
         if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
         latestSample = { epoch: config.trackingEpoch ?? 0, timestamp: latest.timestamp };
-        const displaySignature = JSON.stringify([config.navigationSessionId, arrival.status, memberArrived, config.accentHex]);
-        if (config.powerMode === 'journey' && (displaySignature !== lastLocalProgressSignature || now - lastLocalProgressAt >= 10_000)) {
+        const displaySignature = JSON.stringify([config.navigationSessionId, config.destinationId,
+          arrival.status, personalArrivalConfirmed, personalArrivalAtMs, personalArrivalSequence,
+          memberArrived, config.accentHex, config.groupName, config.gatheringTitle,
+          config.travelMode, config.memberEmojis]);
+        if (config.powerMode === 'journey' && (displaySignature !== lastLocalProgressSignature || now - lastLocalProgressAt >= 5_000)) {
           lastLocalProgressSignature = displaySignature;
           lastLocalProgressAt = now;
           await timeBackgroundStage(stages, 'live_activity_update', () =>
@@ -470,6 +473,16 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             }),
           );
           return;
+        }
+
+        // Live Activity estimates have their own cadence; location-upload
+        // filtering must not discard a due estimate from a fresh GPS sample.
+        if (config.powerMode === 'journey' && controller.isCurrent(config) && isLocationAccessCurrent(access)
+          && (arrival.status !== previousArrival.status || now - lastCloudProgressAt >= 15_000)) {
+          lastCloudProgressAt = now;
+          await updateLiveActivityProgress(config.groupId, config.destinationId,
+            { ...progress, etaTargetAtMs: etaSnapshot?.etaTargetAtMs }, config.accentHex,
+            etaSnapshot?.sampledAtMs ?? latest.timestamp).catch(() => undefined);
         }
 
         const powerMode = config.powerMode ?? 'journey';
@@ -559,13 +572,6 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             errorCode: 'permanent_reject',
             sequence,
           });
-        }
-        if (config.powerMode === 'journey' && controller.isCurrent(config) && isLocationAccessCurrent(access)
-          && (arrival.status !== previousArrival.status || now - lastCloudProgressAt >= 30_000)) {
-          lastCloudProgressAt = now;
-          await updateLiveActivityProgress(config.groupId, config.destinationId,
-            { ...progress, etaTargetAtMs: etaSnapshot?.etaTargetAtMs }, config.accentHex,
-            etaSnapshot?.sampledAtMs ?? latest.timestamp).catch(() => undefined);
         }
         if (
           config.navigationSessionId &&
@@ -668,6 +674,7 @@ export async function startBackgroundJourney(
     latestSample = null;
     lastLocalProgressSignature = '';
     lastLocalProgressAt = 0;
+    lastCloudProgressAt = 0;
   }
   if (!isLocationAccessCurrent(access)) return 'cancelled';
   return controller.start(effectiveConfig);

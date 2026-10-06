@@ -445,6 +445,76 @@ describe('background journey lifecycle and callback gate', () => {
     expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
   });
 
+  it('delivers background estimates at 5 seconds and cloud progress at 15 seconds', async () => {
+    await startBackgroundJourney(baseConfig);
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: baseConfig.navigationSessionId }, target: baseConfig.target });
+    const startedAt = Date.now();
+    const sample = async (elapsed: number) => {
+      jest.setSystemTime(startedAt + elapsed);
+      await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.01 + elapsed / 1e9)] } });
+    };
+    await sample(0);
+    const nativeCount = mockLiveActivity.updateAllGroupActivities.mock.calls.length;
+    const cloudCount = mockUpdateLiveActivity.mock.calls.length;
+    expect(nativeCount).toBeGreaterThan(0);
+    expect(cloudCount).toBeGreaterThan(0);
+    await sample(4999);
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(nativeCount);
+    await sample(5000);
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(nativeCount + 1);
+    expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(cloudCount);
+    await sample(14999);
+    expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(cloudCount);
+    await sample(15000);
+    expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(cloudCount + 1);
+  });
+
+  it('sends a changed personal receipt immediately inside the background throttle', async () => {
+    await startBackgroundJourney(baseConfig);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.01)] } });
+    const count = mockLiveActivity.updateAllGroupActivities.mock.calls.length;
+    jest.advanceTimersByTime(1000);
+    const occurredAt = new Date().toISOString();
+    const receipt = {
+      operationType: 'record_arrival', entityId: baseConfig.destinationId,
+      actorId: baseConfig.actorId, sequence: 42, createdAt: Date.now(), status: 'conflict',
+      payload: { actorId: baseConfig.actorId, userId: baseConfig.actorId,
+        navigationSessionId: baseConfig.navigationSessionId, arrived: true, occurredAt },
+    };
+    // An older undo must not win over the newer personal arrival receipt.
+    mockListByGroup.mockResolvedValue([receipt,
+      { ...receipt, sequence: 41, payload: { ...receipt.payload, arrived: false } }]);
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.01)] } });
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(count + 1);
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      personalArrived: true, personalArrivalSequence: 42, personalArrivalAtMs: Date.parse(occurredAt),
+      memberArrived: [false],
+    }));
+  });
+
+  it('keeps a personal receipt and location uploads when cloud progress and optional notifications fail', async () => {
+    await startBackgroundJourney(baseConfig);
+    mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
+      sharingEnabled: true, session: { id: baseConfig.navigationSessionId }, target: baseConfig.target });
+    mockArrival.mockImplementationOnce(async input => savedArrival(input, 'conflict'));
+    mockUpdateLiveActivity.mockRejectedValueOnce(new Error('network unavailable'));
+    mockNotifyApproach.mockRejectedValueOnce(new Error('notification unavailable'));
+    mockFlushCore.mockRejectedValueOnce(new Error('sync unavailable'));
+    await expect(handleBackgroundLocations({ data: { locations: [location()] } })).resolves.toBeUndefined();
+    await settle();
+    expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(1);
+    expect(mockNotifyApproach).toHaveBeenCalledTimes(1);
+    expect(mockFlushCore).toHaveBeenCalledTimes(1);
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      personalArrived: true, memberArrived: [false], progress: 1,
+    }));
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
+    expect(mockFlushLocation).toHaveBeenCalledTimes(1);
+    expect((await loadBackgroundJourney())?.personalArrivalAtMs).toBe(Date.now());
+    expect(mockComplete).not.toHaveBeenCalled();
+  });
+
   it('persists arrival progress, gates uploads by cadence, and reports retry/discard results', async () => {
     await startBackgroundJourney(baseConfig);
     const task = mockTaskCallback.current!;
@@ -700,6 +770,8 @@ describe('background journey lifecycle and callback gate', () => {
       groupId: 'group-1', destinationId: 'destination-1', sessionId: 'session-1', subgroupId: null,
       reason: 'all_arrived' }));
     expect(mockArrival.mock.invocationCallOrder[0]).toBeLessThan(mockComplete.mock.invocationCallOrder[0]);
+    // Terminal UI and durable completion never wait for a cloud-progress request.
+    expect(mockUpdateLiveActivity).not.toHaveBeenCalled();
     expect(mockLiveActivity.endAllGroupActivities).toHaveBeenCalled();
     expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({ powerMode: 'allDay', navigationSessionId: null }));
   });

@@ -221,13 +221,18 @@ describe('ActivityKit remote push contract', () => {
     expect(mapScreen).toContain('language,');
   });
 
-  it('uses an opaque adaptive surface so wallpaper cannot obscure navigation text', () => {
+  it('uses native glass with a material fallback and shows an estimate without countdown', () => {
     const lockBackground = widget.slice(widget.indexOf('private struct LockScreenBackground'), widget.indexOf('// MARK: - Lock screen'));
-    expect(lockBackground).toContain('colorScheme == .dark ? .black : .white');
-    expect(lockBackground).not.toContain('glassEffect');
-    expect(lockBackground).not.toContain('activityBackgroundTint(.clear)');
+    expect(lockBackground).toContain('#available(iOS 26.0, *)');
+    expect(lockBackground).toContain('.glassEffect(.regular');
+    expect(lockBackground).toMatch(/\.background\s*\{[\s\S]*RoundedRectangle[\s\S]*\.glassEffect\(\.regular\)/);
+    expect(lockBackground).not.toMatch(/content\s*\.glassEffect/);
+    expect(lockBackground).toContain('.background(.regularMaterial');
+    expect(lockBackground).toContain('activityBackgroundTint(.clear)');
     expect(widget).toContain('contrast >= 4.5');
-    expect(widget).toContain('Text(timerInterval: interval, countsDown: true');
+    expect(widget).not.toContain('Text(timerInterval:');
+    expect(widget).toContain('EstimatedEta');
+    expect(widget).toContain('Est. ');
     expect(appAttributes).toContain('etaTargetAtMs: Double?');
     expect(widgetAttributes).toContain('etaTargetAtMs: Double?');
     const dynamicIsland = widget.slice(widget.indexOf('} dynamicIsland:'), widget.indexOf('private struct DestinationTitle'));
@@ -242,7 +247,7 @@ describe('ActivityKit remote push contract', () => {
     expect(widget).not.toMatch(/compactLeading:[\s\S]*Crook\(/);
     // Single activity reconciliation still ends all before start.
     expect(liveHook).toContain('endAllGroupActivities');
-    expect(liveHook).toContain('PERSIST_MIN_MS = 30_000');
+    expect(liveHook).toContain('PERSIST_MIN_MS = 15_000');
     expect(liveHook).not.toContain('Math.round(state.distanceMeters / 10) * 10');
     expect(liveHook).toContain('state.distanceMeters,');
   });

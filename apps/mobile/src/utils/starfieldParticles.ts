@@ -1,5 +1,8 @@
 export const CHARGE_BALL_INTERVAL_MS = 280 / 1.5;
-export const CHARGE_BALL_MAX_TRAVEL_MS = 6800;
+export const CHARGE_BALL_MAX_TRAVEL_MS = 6800 / 1.25;
+export const CHARGE_BALL_OPACITY_LEVELS = 16;
+export const CHARGE_BALL_MIN_OPACITY = 0.12;
+export const CHARGE_BALL_MAX_OPACITY = 0.45;
 export interface ChargeEmission { startedAt: number; stoppedAt?: number; }
 export interface ChargeBall { id: string; x: number; y: number; radius: number; shade: number; }
 
@@ -28,16 +31,19 @@ export function chargeBallsAt(now: number, width: number, windows: ChargeEmissio
       seed = (Math.imul(seed ^ (seed >>> 16), 2246822507)) >>> 0;
       const vertical = (seed & 65535) / 65535;
       const variation = (seed >>> 16) / 65535;
-      const radius = (5 + variation * 3) * width / 360;
-      const duration = 5000 + variation * 1800;
+      const radius = (5 + variation * 3) * 0.8 * width / 360;
+      // Preserve the exact velocity multiplier even though the exit margins shrink.
+      const duration = (5000 + variation * 1800) / 1.25
+        * (width + radius * 2) / (width + radius / 0.8 * 2);
       if (age < 0 || age >= duration) continue;
       balls.push({
         id: `${window.startedAt}:${index}`,
-        // Fully outside the left boundary at birth, fully outside the right at death.
-        x: -radius + (width + radius * 2) * age / duration,
+        // Enter outside the right boundary and leave outside the left.
+        x: width + radius - (width + radius * 2) * age / duration,
         y: radius + vertical * (fieldHeight - radius * 2) + Math.sin(age / 1100 + variation * 6) * 3,
         radius,
-        shade: index % 3,
+        // Deterministic, independent 4–6 second fade cycles.
+        shade: Math.round((0.5 + 0.5 * Math.sin(age / (4000 + variation * 2000) * Math.PI * 2 + vertical * Math.PI * 2)) * (CHARGE_BALL_OPACITY_LEVELS - 1)),
       });
     }
   }

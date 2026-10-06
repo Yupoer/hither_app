@@ -112,7 +112,7 @@ export function useLiveActivity(
   }
 
   /** Min interval between Supabase live_activity_sessions upserts (local LA still updates more often). */
-  const PERSIST_MIN_MS = 30_000;
+  const PERSIST_MIN_MS = 15_000;
 
   const persistSession = async (
     activityId: string,
@@ -349,7 +349,7 @@ export function useLiveActivity(
         await persistSession(handle);
       }).catch(() => undefined);
     };
-    const waitMs = last.semantic === semantic ? Math.max(0, 10_000 - (Date.now() - last.at)) : 0;
+    const waitMs = last.semantic === semantic ? Math.max(0, 5_000 - (Date.now() - last.at)) : 0;
     const timer = waitMs > 0 ? setTimeout(send, waitMs) : undefined;
     if (waitMs === 0) send();
     return () => { cancelled = true; if (timer != null) clearTimeout(timer); };

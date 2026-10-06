@@ -1921,6 +1921,11 @@
       "acceptance": "Route-open reconciliation reads local state first, never waits for remote reads, ignores retired generations and handles advisory failures silently.",
       "testFile": "routeOpenSync.test.ts",
       "testNamePattern": "starts remote work after local completion|swallows advisory local and remote reconciliation failures"
-    }
+    },
+    {"parent": 293, "child": 293, "acceptance": "Particles enter from the right at 1.25 speed with 0.8 radius and independent slow twinkling.", "testFile": "metalforgeStarfield.test.ts", "testNamePattern": "moves 1.25 times the previous speed"},
+    {"parent": 293, "child": 293, "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.", "testFile": "starfieldPauseResume.test.ts", "testNamePattern": "freezes ball identity and phase"},
+    {"parent": 293, "child": 293, "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.", "testFile": "liveActivityDisplay.test.ts", "testNamePattern": "persists changed snapshots at 15 seconds"},
+    {"parent": 293, "child": 293, "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.", "testFile": "backgroundJourneyCoverage.test.ts", "testNamePattern": "delivers background estimates at 5 seconds"},
+    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"}
   ]
 }
