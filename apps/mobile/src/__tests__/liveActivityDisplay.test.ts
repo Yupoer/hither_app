@@ -11,14 +11,16 @@ const mockNative = {
   addPushTokenListener: () => ({ remove() {} }), addPushToStartTokenListener: () => ({ remove() {} }),
   startPushToStartTokenObservation: jest.fn(async () => {}),
 };
+let mockUser: { id: string } | null = null;
+const mockPersistSession = jest.fn(async (..._args: unknown[]) => {});
 const mockDeleteMySessions = jest.fn(async () => {});
 jest.mock('react-native', () => ({ AppState: mockApp, Platform: { OS: 'ios' } }));
 jest.mock('../native', () => ({ liveActivity: mockNative }));
 jest.mock('../api/services/LiveActivityService', () => ({
   deleteLiveActivitySession: jest.fn(async () => {}), deleteMyLiveActivitySessions: mockDeleteMySessions,
-  getOrCreateLiveActivityDeviceId: jest.fn(async () => 'device'), upsertLiveActivitySession: jest.fn(async () => {}),
+  getOrCreateLiveActivityDeviceId: jest.fn(async () => 'device'), upsertLiveActivitySession: (...args: unknown[]) => mockPersistSession(...args),
 }));
-jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: null }) }));
+jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: mockUser }) }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: { write: jest.fn(async () => {}) } }));
 import { useLiveActivity, clearLiveActivities } from '../state/useLiveActivity';
 const { act, create } = require('react-test-renderer');
@@ -39,7 +41,9 @@ it('flushes the final throttled update and sends the same deadline immediately o
   const firstCount = mockNative.updateGroupActivity.mock.calls.length;
   await act(async () => { jest.advanceTimersByTime(1000); tree.update(React.createElement(Harness, { progress: 0.2 })); });
   expect(mockNative.updateGroupActivity).toHaveBeenCalledTimes(firstCount);
-  await act(async () => { jest.advanceTimersByTime(9000); });
+  await act(async () => { jest.advanceTimersByTime(3999); });
+  expect(mockNative.updateGroupActivity).toHaveBeenCalledTimes(firstCount);
+  await act(async () => { jest.advanceTimersByTime(1); });
   expect(mockNative.updateGroupActivity).toHaveBeenLastCalledWith('activity', expect.objectContaining({ progress: 0.2, etaTargetAtMs: 700000 }));
   await act(async () => { tree.update(React.createElement(Harness, { progress: 0.3 })); });
   expect(jest.getTimerCount()).toBe(1);
@@ -65,4 +69,32 @@ it('terminal cleanup ends native activities without entering the authenticated s
   await clearLiveActivities();
   expect(mockNative.endAllGroupActivities).toHaveBeenCalledTimes(2);
   expect(mockDeleteMySessions).toHaveBeenCalledTimes(1);
+});
+
+it('persists changed snapshots at 15 seconds while native delivery can update every 5 seconds', async () => {
+  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  jest.setSystemTime(200000);
+  mockUser = { id: 'self' };
+  mockPersistSession.mockClear();
+  function Harness({ progress }: { progress: number }) {
+    useLiveActivity(true, { groupName: 'Team', distanceMeters: 900, etaSeconds: 600, progress },
+      { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' });
+    return null;
+  }
+  let tree: any;
+  await act(async () => { tree = create(React.createElement(Harness, { progress: 0 })); });
+  expect(mockPersistSession).toHaveBeenCalled();
+  const initialCount = mockPersistSession.mock.calls.length;
+  for (const progress of [0.1, 0.2]) {
+    await act(async () => { jest.advanceTimersByTime(5000); tree.update(React.createElement(Harness, { progress })); });
+    expect(mockPersistSession).toHaveBeenCalledTimes(initialCount);
+  }
+  await act(async () => { tree.update(React.createElement(Harness, { progress: 0.3 })); jest.advanceTimersByTime(4999); });
+  expect(mockPersistSession).toHaveBeenCalledTimes(initialCount);
+  await act(async () => { jest.advanceTimersByTime(1); });
+  expect(mockPersistSession).toHaveBeenCalledTimes(initialCount + 1);
+  expect(mockPersistSession).toHaveBeenLastCalledWith(expect.objectContaining({ progress: 0.3 }), 'self');
+  await act(async () => { tree.unmount(); });
+  mockUser = null;
+  jest.useRealTimers();
 });

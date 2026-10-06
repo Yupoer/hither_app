@@ -5,9 +5,9 @@ import { type DerivedValue, useDerivedValue, useFrameCallback, useReducedMotion,
 import { optionalVisualsAllowed } from '../state/runtimePowerState';
 import { useForegroundUi } from '../state/foregroundUi';
 import { energyObservability } from '../state/energyObservability';
-import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, type ChargeEmission } from '../utils/starfieldParticles';
+import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, CHARGE_BALL_OPACITY_LEVELS, CHARGE_BALL_MIN_OPACITY, CHARGE_BALL_MAX_OPACITY, type ChargeEmission } from '../utils/starfieldParticles';
 
-export const METALFORGE_STARFIELD_RUNTIME_FACTORS = { maxFps: 20 } as const;
+export const METALFORGE_STARFIELD_RUNTIME_FACTORS = { maxFps: 60 } as const;
 export interface StarfieldAnimationPolicyInput {
   active: boolean; appActive: boolean; reducedMotion: boolean; lowPowerMode?: boolean | null; thermalState?: string | null;
 }
@@ -16,13 +16,13 @@ export function getMetalforgeStarfieldAnimationPolicy(input: StarfieldAnimationP
     shouldAnimate: input.active && input.appActive && !input.reducedMotion && optionalVisualsAllowed({
       thermalState: input.thermalState ?? null, lowPowerMode: input.lowPowerMode ?? null,
     }),
-    fps: 20,
+    fps: METALFORGE_STARFIELD_RUNTIME_FACTORS.maxFps,
   };
 }
 export type MetalforgeStarfieldProps = {
   emitting?: boolean; active?: boolean; lowPowerMode?: boolean | null; thermalState?: string | null; color?: string; style?: StyleProp<ViewStyle>;
 };
-/** Balls enter from the left. The same field lives through expansion and exit. */
+/** Solid circles enter from the right. The same field lives through expansion and exit. */
 export default function MetalforgeStarfield({ emitting = false, active = true, lowPowerMode, thermalState, color = '#FFFFFF', style }: MetalforgeStarfieldProps) {
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(0);
@@ -53,7 +53,8 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
     if (!policy.shouldAnimate) return;
     if (lastFrameAt.value < 0) { lastFrameAt.value = timestamp; return; }
     const delta = Math.max(0, timestamp - lastFrameAt.value);
-    if (delta < 1000 / policy.fps) return;
+    // Allow timestamp rounding at 60Hz without accidentally dropping to 30Hz.
+    if (delta + 0.5 < 1000 / policy.fps) return;
     lastFrameAt.value = timestamp;
     now.value += Math.min(delta, 100);
   }, false);
@@ -64,16 +65,14 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
   }, [policy.shouldAnimate, frame, lastFrameAt, now]);
   useEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: policy.shouldAnimate ? 1 : 0 }), [visible, policy.shouldAnimate]);
   const paths = useDerivedValue(() => {
-    const layers = Array.from({ length: 3 }, () => ({ body: Skia.Path.Make(), rim: Skia.Path.Make(), highlight: Skia.Path.Make() }));
+    const layers = Array.from({ length: CHARGE_BALL_OPACITY_LEVELS }, () => Skia.Path.Make());
     for (const ball of chargeBallsAt(now.value, width, emissions.value)) {
-      const layer = layers[ball.shade];
-      layer.rim.addCircle(ball.x, ball.y, ball.radius);
-      layer.body.addCircle(ball.x, ball.y, ball.radius * 0.88);
-      layer.highlight.addCircle(ball.x - ball.radius * 0.28, ball.y - ball.radius * 0.3, ball.radius * 0.29);
+      layers[ball.shade].addCircle(ball.x, ball.y, ball.radius);
     }
     return layers;
   }, [width]);
-  const shades = useMemo(() => [0.20, 0.32, 0.45], []);
+  const shades = useMemo(() => Array.from({ length: CHARGE_BALL_OPACITY_LEVELS }, (_, index) =>
+    CHARGE_BALL_MIN_OPACITY + (CHARGE_BALL_MAX_OPACITY - CHARGE_BALL_MIN_OPACITY) * index / (CHARGE_BALL_OPACITY_LEVELS - 1)), []);
   return <View onLayout={({ nativeEvent }) => setWidth(current => current === nativeEvent.layout.width ? current : nativeEvent.layout.width)}
     pointerEvents="none" accessibilityElementsHidden style={[StyleSheet.absoluteFill, styles.container, style]}>
     {visible && <Canvas style={StyleSheet.absoluteFill}>
@@ -83,14 +82,8 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
 }
 const styles = StyleSheet.create({ container: { overflow: 'hidden', zIndex: 0 } });
 function ChargeBallLayer({ paths, index, opacity, color }: {
-  paths: DerivedValue<{ body: SkPath; rim: SkPath; highlight: SkPath }[]>; index: number; opacity: number; color: string;
+  paths: DerivedValue<SkPath[]>; index: number; opacity: number; color: string;
 }) {
-  const body = useDerivedValue(() => paths.value[index].body);
-  const rim = useDerivedValue(() => paths.value[index].rim);
-  const highlight = useDerivedValue(() => paths.value[index].highlight);
-  return <>
-    <Path path={rim} color={color} opacity={opacity * 0.5} />
-    <Path path={body} color={color} opacity={opacity} />
-    <Path path={highlight} color="white" opacity={opacity * 0.6} />
-  </>;
+  const path = useDerivedValue(() => paths.value[index]);
+  return <Path path={path} color={color} opacity={opacity} />;
 }

@@ -36,7 +36,10 @@ it('freezes ball identity and phase through background time, and drains only whi
   await act(async () => { tree = create(element(true)); });
   await act(async () => { tree.root.findByType('View').props.onLayout({ nativeEvent: { layout: { width: 360 } } }); });
   const frame = mockFrames[0];
-  frame.callback({ timestamp: 1000 }); frame.callback({ timestamp: 1050 });
+  frame.callback({ timestamp: 1000 });
+  frame.callback({ timestamp: 1016.666 });
+  expect(mockValues[1].value).toBeCloseTo(16.666);
+  frame.callback({ timestamp: 1050 });
   const clock = mockValues[1];
   const before = chargeBallsAt(clock.value, 360, mockValues[0].value);
   const frozen = clock.value;
@@ -51,7 +54,7 @@ it('freezes ball identity and phase through background time, and drains only whi
   expect(chargeBallsAt(clock.value, 360, mockValues[0].value)).toEqual(before);
   frame.callback({ timestamp: 200050 });
   expect(clock.value).toBe(frozen + 50);
-  expect(chargeBallsAt(clock.value, 360, mockValues[0].value)[0].x).toBeGreaterThan(before[0].x);
+  expect(chargeBallsAt(clock.value, 360, mockValues[0].value)[0].x).toBeLessThan(before[0].x);
   await act(async () => { tree.update(element(false)); });
   expect(jest.getTimerCount()).toBe(1);
   await act(async () => { mockApp.currentState = 'background'; mockListeners.forEach(cb => cb()); });

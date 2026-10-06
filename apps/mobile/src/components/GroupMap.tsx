@@ -1028,8 +1028,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       )}
 
       {!showsUserLocation && passiveSelfCoordinates && (
-        <Marker coordinate={passiveSelfCoordinates} pinColor={colors.accent}
-          title={t('flock.you')} identifier="passive-self-location" />
+        <Marker coordinate={passiveSelfCoordinates} anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false} title={t('flock.you')} identifier="passive-self-location">
+          <View style={styles.selfLocationDot} />
+        </Marker>
       )}
 
       {members.map((m) => {
@@ -1054,6 +1056,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({
+  selfLocationDot: {
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: '#007AFF', borderWidth: 3, borderColor: '#FFFFFF',
+  },
   // Small Apple-Maps-style place disc — accent circle, white ring, flag glyph.
   gatherMarker: {
     width: 28,

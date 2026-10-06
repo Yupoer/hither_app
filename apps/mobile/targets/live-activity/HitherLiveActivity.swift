@@ -113,7 +113,7 @@ struct HitherLiveActivityWidget: Widget {
         DynamicIslandExpandedRegion(.trailing) {
           VStack(alignment: .trailing, spacing: 0) {
             if context.state.etaSeconds != nil {
-              EtaCountdown(state: context.state)
+              EstimatedEta(state: context.state)
                 .font(.system(size: 18, weight: .bold))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -164,7 +164,7 @@ struct HitherLiveActivityWidget: Widget {
           .foregroundStyle(accent)
           .accessibilityLabel(context.state.modeAccessibilityLabel)
       } compactTrailing: {
-        EtaCountdown(state: context.state, compact: true)
+        EstimatedEta(state: context.state, compact: true)
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(accent)
       } minimal: {
@@ -190,11 +190,24 @@ private struct DestinationTitle: View {
   }
 }
 
-/// A stable opaque surface keeps wallpaper from competing with navigation text.
+/// Native glass on iOS 26; readable material fallback on earlier systems.
 private struct LockScreenBackground: ViewModifier {
-  @Environment(\.colorScheme) private var colorScheme
   func body(content: Content) -> some View {
-    content.activityBackgroundTint(colorScheme == .dark ? .black : .white)
+    if #available(iOS 26.0, *) {
+      content
+        // Keep text outside the glass view: applying glass to the entire
+        // content hid the foreground in lock-screen host QA.
+        .background {
+          RoundedRectangle(cornerRadius: 24)
+            .fill(.clear)
+            .glassEffect(.regular)
+        }
+        .activityBackgroundTint(.clear)
+    } else {
+      content
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .activityBackgroundTint(.clear)
+    }
   }
 }
 
@@ -229,7 +242,7 @@ private struct LockScreenView: View {
       // beyond the lock-screen host's width.
       HStack(alignment: .firstTextBaseline, spacing: 10) {
         if context.state.etaSeconds != nil {
-          EtaCountdown(state: context.state)
+          EstimatedEta(state: context.state)
             .font(.system(size: 18, weight: .bold))
             .foregroundStyle(primary)
             .lineLimit(2)
@@ -368,20 +381,22 @@ private struct AvatarStack: View {
 
 // MARK: - Presentation helpers
 
-/// ActivityKit manages this timer without waking the app or polling the widget.
-/// Older payloads retain localized duration copy until a deadline is available.
-private struct EtaCountdown: View {
+/// ETA is an estimate from the latest delivered snapshot, never a ticking timer.
+private struct EstimatedEta: View {
   let state: HitherGroupAttributes.ContentState
   var compact = false
 
   var body: some View {
-    if let interval = state.etaTimerInterval {
-      Text(timerInterval: interval, countsDown: true, showsHours: true)
-        .monospacedDigit()
-    } else if compact {
-      Text(state.shortEta ?? state.formattedDistance ?? "")
+    if compact {
+      if let eta = state.shortEta {
+        Text(HitherGroupAttributes.ContentState.usesEnglish(state.language) ? "~" + eta : "約" + eta)
+      } else {
+        Text(state.formattedDistance ?? "")
+      }
     } else if let eta = state.etaText {
-      Text(eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
+      Text(HitherGroupAttributes.ContentState.usesEnglish(state.language)
+        ? "Est. " + (eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
+        : "約" + (eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)"))
     }
   }
 }
@@ -389,14 +404,6 @@ private struct EtaCountdown: View {
 private extension HitherGroupAttributes.ContentState {
   /// The app's theme accent (from `accentHex`), or the brand fallback.
   var accentColor: Color { Color.accessibleAccent(hexString: accentHex, lightBackground: false) }
-
-  var etaTimerInterval: ClosedRange<Date>? {
-    guard let target = etaTargetAtMs, target.isFinite else { return nil }
-    let end = Date(timeIntervalSince1970: target / 1000)
-    let origin = sampledAtMs ?? target - max(0, etaSeconds ?? 0) * 1000
-    guard origin.isFinite else { return nil }
-    return min(Date(timeIntervalSince1970: origin / 1000), end)...end
-  }
 
   /// Gathering point title when present; team/group name only as fallback.
   /// Prefixes destination emoji when set (Ticket 07), same fallback as JS resolve.
