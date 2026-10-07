@@ -22,7 +22,7 @@ export function getMetalforgeStarfieldAnimationPolicy(input: StarfieldAnimationP
 export type MetalforgeStarfieldProps = {
   emitting?: boolean; active?: boolean; lowPowerMode?: boolean | null; thermalState?: string | null; color?: string; style?: StyleProp<ViewStyle>;
 };
-/** Solid circles enter from the right. The same field lives through expansion and exit. */
+/** Solid circles enter from the left. The same field lives through expansion and exit. */
 export default function MetalforgeStarfield({ emitting = false, active = true, lowPowerMode, thermalState, color = '#FFFFFF', style }: MetalforgeStarfieldProps) {
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(0);

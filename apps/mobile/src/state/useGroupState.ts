@@ -211,7 +211,10 @@ export function useGroupState(
   }, []);
 
 
+  const localSnapshotReadRef = useRef(0);
+  const localPaintRevisionRef = useRef(0);
   const applyOptimisticGathering = useCallback((gathering: ActiveGatheringState) => {
+    localPaintRevisionRef.current += 1;
     setState((prev) => {
       if (!prev) return prev;
       const next = projectOptimisticGathering(prev, gathering);
@@ -227,8 +230,10 @@ export function useGroupState(
     expectedGeneration = groupGenerationRef.current,
     expectedActorId = myUserIdRef.current,
   ): Promise<boolean> => {
+    const localRead = ++localSnapshotReadRef.current;
     const isCurrent = () => (
-      activeRef.current
+      localRead === localSnapshotReadRef.current
+      && activeRef.current
       && groupGenerationRef.current === expectedGeneration
       && groupIdRef.current === id
       && myUserIdRef.current === expectedActorId
@@ -242,14 +247,13 @@ export function useGroupState(
         setDataSource('none');
         return false;
       }
-      await refreshOpenOperations(id, expectedGeneration, expectedActorId);
-      if (!isCurrent()) return false;
       const projected = groupStateFromCoreSnapshot(snapshot);
       const current = stateRef.current;
       // Core writes change itinerary/gathering, not the live location feed.
       const next = current?.group.id === id ? { ...projected,
         members: current.members, subgroups: current.subgroups } : projected;
       const freshness = coreSnapshotFreshness(snapshot, Date.now());
+      localPaintRevisionRef.current += 1;
       stateRef.current = next;
       setState(next);
       setDataSource('local_cache');
@@ -257,6 +261,9 @@ export function useGroupState(
       setEmptyLocalSnapshot(false);
       const source: CoreSnapshotSource = snapshot.source;
       void source;
+      // Receipt/status metadata is secondary to the committed local card.
+      // It may wait behind another queue read; do not put it before paint.
+      void refreshOpenOperations(id, expectedGeneration, expectedActorId);
       return true;
     } catch {
       return false;
@@ -317,12 +324,26 @@ export function useGroupState(
     pendingReloadReasonRef.current = null;
     inFlightReasonRef.current = loadReason;
     setRefreshing(true);
+    const localPaintRevision = localPaintRevisionRef.current;
     const run = (async () => {
       try {
         energyObservability.increment('snapshot');
         energyObservability.event('snapshot');
         const recovery = await requestWithDeadline(() => getGroupRecoverySnapshot(groupId));
         if (!isCurrentRequest()) return false;
+        // A local enqueue may have happened while the remote request was in
+        // flight. Read its receipts before projecting this response so a
+        // stale network snapshot cannot remove the just-painted local card.
+        await refreshOpenOperations(groupId, generation, actorId);
+        if (!isCurrentRequest()) return false;
+        if (localPaintRevisionRef.current !== localPaintRevision) {
+          // Even a fast ACK can remove the pending receipt before this older
+          // response arrives. Keep the newer committed projection and fetch a
+          // fresh recovery; never persist the pre-command remote snapshot.
+          pendingReloadRef.current = true;
+          pendingReloadReasonRef.current = 'itinerary_mutation';
+          return false;
+        }
         const next = recovery.state;
         const staleResponse = isOlderRevision(recovery.revision, latestRevisionRef.current);
         const isCurrentGeneration = isCurrentRequest();

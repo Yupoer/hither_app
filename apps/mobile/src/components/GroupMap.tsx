@@ -45,7 +45,7 @@ import {
 } from '../native/maps';
 import { defaultMapTransitProps } from '../native/mapTransitDefaults';
 import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
-import { useForegroundUi, isForegroundUi } from '../state/foregroundUi';
+import { useForegroundUi, useVisibleUi, isVisibleUi } from '../state/foregroundUi';
 import { energyObservability } from '../state/energyObservability';
 import {
   displayRoutePoints,
@@ -189,8 +189,6 @@ export interface GroupMapProps {
    * account has no memberships so Control Center does not list Hither.
    */
   showsUserLocation?: boolean;
-  /** A native pin fed by the passive sensor owner; never starts MapKit GPS. */
-  passiveSelfCoordinates?: Coordinates | null;
 }
 
 /**
@@ -510,7 +508,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     onLongPressCoordinate,
     onRequestGoHome,
     showsUserLocation = true,
-    passiveSelfCoordinates = null,
   },
   ref,
 ) {
@@ -533,9 +530,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   const [remountUsed, setRemountUsed] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const appActive = useForegroundUi() && active;
+  const foreground = useForegroundUi();
+  const appActive = useVisibleUi() && active;
   const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
-  const allowMarkerMotion = appActive && optionalVisualsAllowed(power);
+  const allowMarkerMotion = appActive && foreground && optionalVisualsAllowed(power);
   const readyLoggedRef = useRef(false);
   const loadedLoggedRef = useRef(false);
   const readyAtRef = useRef<number | null>(null);
@@ -924,7 +922,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // Help long-press win over pan on both platforms (esp. iOS MapKit).
       moveOnMarkerPress={false}
       onRegionChangeComplete={(region) => {
-        if (!isForegroundUi()) return;
+        if (!isVisibleUi()) return;
         if (cameraState) {
           cameraState.current.region = region;
           cameraState.current.centeredMode = centeredModeRef.current;
@@ -1027,13 +1025,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         />
       )}
 
-      {!showsUserLocation && passiveSelfCoordinates && (
-        <Marker coordinate={passiveSelfCoordinates} anchor={{ x: 0.5, y: 0.5 }}
-          tracksViewChanges={false} title={t('flock.you')} identifier="passive-self-location">
-          <View style={styles.selfLocationDot} />
-        </Marker>
-      )}
-
       {members.map((m) => {
         if (!m.coordinates) return null;
         // Self uses native showsUserLocation — no avatar pin.
@@ -1056,10 +1047,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({
-  selfLocationDot: {
-    width: 16, height: 16, borderRadius: 8,
-    backgroundColor: '#007AFF', borderWidth: 3, borderColor: '#FFFFFF',
-  },
   // Small Apple-Maps-style place disc — accent circle, white ring, flag glyph.
   gatherMarker: {
     width: 28,

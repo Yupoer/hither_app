@@ -76,14 +76,72 @@ it('persists every Start End Start in tap order before projection without legacy
   });
   expect(calls).toEqual(['start:a']);
   expect(projection).not.toHaveBeenCalled();
-  expect(api.navTargetId).toBeNull();
+  expect(api.navTargetId).toBe('b');
   await act(async () => { release(saved('a', 1)); });
   expect(calls).toEqual(['start:a', 'end', 'start:b']);
-  expect(projection.mock.calls.map(([value]) => value.activeDestinationId)).toEqual(['a', null, 'b']);
+  expect(projection.mock.calls.map(([value]) => value.activeDestinationId)).toEqual(['b']);
   expect(api.navTargetId).toBe('b');
   expect(startSession).not.toHaveBeenCalled();
   expect(cancelSession).not.toHaveBeenCalled();
   expect(pauseConfirm).not.toHaveBeenCalled();
+});
+
+it('shows Start immediately and coalesces repeated taps while its local write is pending', async () => {
+  let release!: (value: any) => void;
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  await act(async () => { await api.startNavigation(first, 0); });
+  expect(api.navTargetId).toBe('a');
+  expect(api.journeyGoing).toBe(true);
+  expect(projection).not.toHaveBeenCalled();
+  await act(async () => { await api.startNavigation(first, 0); });
+  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(1);
+  await act(async () => { release(saved('a', 1)); });
+  await act(async () => { await api.startNavigation(first, 0); });
+  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(1);
+});
+
+it('keeps same-destination End then Start in the same render as distinct ordered commands', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValueOnce(saved('a', 1) as any)
+    .mockResolvedValueOnce(saved('a', 3) as any);
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValue(saved(null, 2) as any);
+  await act(async () => { await api.startNavigation(first, 0); });
+  await act(async () => {
+    void api.requestTeamEnd(first, 0);
+    await api.startNavigation(first, 0);
+  });
+  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(2);
+  expect(sync.enqueueLeaderGatheringEnd).toHaveBeenCalledTimes(1);
+  expect(api.navTargetId).toBe('a');
+});
+
+it('does not expose an older queued Start alias for the newest visible target', async () => {
+  let releaseA!: (value: any) => void;
+  let releaseB!: (value: any) => void;
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockImplementationOnce(() => new Promise(resolve => { releaseA = resolve; }));
+  jest.mocked(sync.enqueueLeaderGatheringSwitch).mockImplementationOnce(() => new Promise(resolve => { releaseB = resolve; }));
+  await act(async () => { await api.startNavigation(first, 0); await api.startNavigation(second, 1); });
+  expect(api.navTargetId).toBe('b');
+  expect(api.localSessionId).toBeNull();
+  await act(async () => { releaseA(saved('a', 1)); });
+  expect(api.navTargetId).toBe('b');
+  expect(api.localSessionId).toBeNull();
+  expect(localSessionChanges).not.toContain('op-1');
+  await act(async () => { releaseB(saved('b', 2)); });
+  expect(api.localSessionId).toBe('op-2');
+  expect(localSessionChanges.at(-1)).toBe('op-2');
+});
+
+it('does not resume a paused soft cursor when a later Start fails to save', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValueOnce(saved('a', 1) as any)
+    .mockRejectedValueOnce(new Error('storage unavailable'));
+  const paused = saved(null, 2);
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValue({ ...paused,
+    local: { ...paused.local, activeDestinationId: 'a' } } as any);
+  await act(async () => { await api.startNavigation(first, 0); });
+  await act(async () => { await api.requestTeamEnd(first, 0); });
+  await act(async () => { await api.startNavigation(first, 0); });
+  expect(api.navTargetId).toBeNull();
+  expect(api.journeyGoing).toBe(false);
 });
 
 it('confirms Pause only after the current durable command is acknowledged', async () => {

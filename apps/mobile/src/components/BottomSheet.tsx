@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useForegroundUi } from '../state/foregroundUi';
+import { useVisibleUi } from '../state/foregroundUi';
 import { Platform, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
@@ -125,7 +125,7 @@ export default React.memo(function BottomSheet({
   useSwiftUIGlassSurface?: boolean;
   children: React.ReactNode;
 }) {
-  const foreground = useForegroundUi();
+  const foreground = useVisibleUi();
   const scrollRef = useAnimatedRef<RNScrollView>();
   // Live scroll offset, mirrored on the UI thread so the Pan worklet can decide
   // "is the list at the top?" without a JS round-trip.

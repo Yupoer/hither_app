@@ -4,7 +4,7 @@ import * as Location from 'expo-location';
 import { AppState } from 'react-native';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges } from '../state/locationPrivacy';
 import type { Coordinates } from '../types';
-import { locationPolicy, type LocationPowerMode } from '../utils/locationPolicy';
+import { isForegroundLocationState, locationPolicy, type LocationPowerMode } from '../utils/locationPolicy';
 import {
   getDebugLocationSample,
   isDebugRouteActive,
@@ -149,7 +149,7 @@ export async function getCurrentLocation(
   if (!granted || !isLocationAccessCurrent(access)) {
     return null;
   }
-  if (AppState.currentState !== 'active') {
+  if (!isForegroundLocationState(AppState.currentState)) {
     const fix = await nextBackgroundLocation(access.signal);
     return fix && isLocationAccessCurrent(access) ? toSample(fix) : null;
   }
@@ -191,15 +191,17 @@ export async function watchLocation(
   powerMode: LocationPowerMode = 'foreground',
 ): Promise<() => void> {
   const access = await captureLocationAccess();
-  if (!access || AppState.currentState !== 'active') return () => {};
-  const granted = await requestPermission();
+  if (!access || !isForegroundLocationState(AppState.currentState)) return () => {};
+  const granted = AppState.currentState === 'active'
+    ? await requestPermission()
+    : (await Location.getForegroundPermissionsAsync()).status === 'granted';
   if (!granted || !isLocationAccessCurrent(access)) {
     return () => {};
   }
   let unsubscribeDebug = () => {};
   try {
     const accept = (sample: LocationSample) => {
-      if (isLocationAccessCurrent(access) && AppState.currentState === 'active') onSample(sample);
+      if (isLocationAccessCurrent(access) && isForegroundLocationState(AppState.currentState)) onSample(sample);
     };
     unsubscribeDebug = subscribeDebugLocation(accept);
     const sub = await Location.watchPositionAsync(

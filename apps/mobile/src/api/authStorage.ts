@@ -6,6 +6,8 @@ export interface AuthStorageAdapter {
   deleteItemAsync: (key: string) => Promise<void>;
 }
 export interface SupabaseAuthStorage {
+  /** Draft identity only: cached value without waiting for credential persistence. */
+  getLocalItem?: (key: string) => Promise<string | null>;
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
   removeItem: (key: string) => Promise<void>;
@@ -59,6 +61,14 @@ export function createSupabaseAuthStorage(
     }
   }
   const storage: SupabaseAuthStorage = {
+    getLocalItem(key) {
+      // Auth bootstrap warms latest. A rotated-token write must never hold a
+      // local button behind Keychain I/O. Logout publishes its tombstone before
+      // any await; replacement actors remain fenced until old-slot deletion.
+      return latest.has(key)
+        ? Promise.resolve().then(() => latest.get(key) ?? null)
+        : storage.getItem(key);
+    },
     getItem(key) {
       return serialize(key, async () => {
         if (latest.has(key)) {

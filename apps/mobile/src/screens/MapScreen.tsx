@@ -1,5 +1,5 @@
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
-import { foregroundLocationConfiguration } from '../utils/locationPolicy';
+import { foregroundLocationConfiguration, isForegroundLocationState } from '../utils/locationPolicy';
 import WaveLoading from '../components/WaveLoading';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
@@ -68,7 +68,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { useForegroundUi, useForegroundClock, isForegroundUi } from '../state/foregroundUi';
+import { useVisibleUi, useForegroundClock, isForegroundUi } from '../state/foregroundUi';
 import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
 import {
@@ -752,7 +752,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const [optimisticDestinations, setOptimisticDestinations] = useState<Destination[] | null>(null);
   const mapFocused = useIsFocused();
-  const foregroundUi = useForegroundUi();
+  const foregroundUi = useVisibleUi();
   const uiVisible = foregroundUi && mapFocused;
   const [arrivalOperations, setArrivalOperations] = useState<CoreOperation[]>([]);
   useEffect(() => {
@@ -2403,6 +2403,9 @@ export default function MapScreen({ route, navigation }: Props) {
    * is acknowledged or settled, allowing a later remote session to win.
    */
   const resolveCurrentNavigationSessionId = useCallback((destination: Destination): string | null => {
+    // A Start tap is visible before its local receipt/session alias commits.
+    // Do not bind arrivals to the previous local/server session in that gap.
+    if (journeyBusy && pendingLeaderTargetId === destination.id) return null;
     if (localNavigationSessionId && navTarget?.id === destination.id) {
       return localNavigationSessionId;
     }
@@ -2413,7 +2416,7 @@ export default function MapScreen({ route, navigation }: Props) {
       return session.id;
     }
     return null;
-  }, [localNavigationSessionId, navTarget?.id, navigationSessionState.session]);
+  }, [localNavigationSessionId, navTarget?.id, journeyBusy, pendingLeaderTargetId, navigationSessionState.session]);
   // Prefer the local Start operation as the stable identity while its server
   // session alias is hydrating; adding the server id must not reset an undo
   // suppression inside the same trip.
@@ -2520,6 +2523,9 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [arrivalOperations, arrivalSessionKey, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
   const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string, automatic = false) => {
     if (!groupId || !user?.id) return;
+    // The route can paint the tap before SQLite saves its Start. Wait for the
+    // bound session instead of emitting a sessionless arrival into that gap.
+    if (pendingLeaderTargetId === destination.id && !resolveCurrentNavigationSessionId(destination)) return;
     const context = arrivalContext;
     const stillCurrent = () => mapMountedRef.current && arrivalContextRef.current === context;
     const key = `${context}:${destination.id}:${targetUserId}`;
@@ -2565,7 +2571,7 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       arrivalSubmitInFlight.current.delete(key);
     }
-  }, [arrivalContext, groupId, user?.id, loadGatheringWorkflow, refresh, t, resolveCurrentNavigationSessionId]);
+  }, [arrivalContext, groupId, user?.id, pendingLeaderTargetId, loadGatheringWorkflow, refresh, t, resolveCurrentNavigationSessionId]);
 
   const evaluateForegroundArrival = useCallback(() => {
     // Raw fixes stay current while stationary without forcing a map rerender.
@@ -2574,7 +2580,7 @@ export default function MapScreen({ route, navigation }: Props) {
     const deviceCoords = fix?.coordinates;
     const deviceAccuracyM = fix?.accuracy;
     const deviceCoordsAcceptedAtMs = fix?.timestamp ?? null;
-    if (!mapFocused || !sharingEnabled || appState !== 'active'
+    if (!mapFocused || !sharingEnabled || !isForegroundLocationState(appState)
       || !canEvaluateSynchronizedArrival({ sampledAt: deviceCoordsAcceptedAtMs,
         now: Date.now(), accuracyM: deviceAccuracyM, radiusM: localArrivalRadiusM })) return;
     // Auto-arrive while navigating (shared flock session or local path plan).
@@ -2583,12 +2589,17 @@ export default function MapScreen({ route, navigation }: Props) {
       foregroundArrivalRef.current = null;
       return;
     }
+    if (pendingLeaderTargetId === navTarget.id && !currentArrivalNavigationSessionId) return;
     if (foregroundUndoHydrationRef.current.pending
       && foregroundUndoHydrationRef.current.key === foregroundUndoHydrationKey) return;
     if (myCompletedDestinationIds.has(navTarget.id)) {
       return;
     }
-    const session = navigationSessionState.session;
+    const serverSession = navigationSessionState.session;
+    const session = serverSession?.destinationId === navTarget.id
+      && (serverSession.scopeSubgroupId ?? null) === (navTarget.subgroupId ?? null)
+      && (serverSession.id === currentArrivalNavigationSessionId
+        || serverSession.requestId === currentArrivalNavigationSessionId) ? serverSession : null;
     const memberStatus = navigationSessionState.memberState?.localStatus;
     if (session && !isLeader && !['activity_started', 'tracking_active', 'arriving', 'arrived'].includes(memberStatus ?? '')) return;
     const key = synchronizedArrivalTargetKey(session?.id, navTarget, localArrivalRadiusM);
@@ -2692,6 +2703,7 @@ export default function MapScreen({ route, navigation }: Props) {
     deviceAccuracyM,
     deviceCoords,
     journeyActive,
+    pendingLeaderTargetId,
     loadGatheringWorkflow,
     localArrivalRadiusM,
     myCompletedDestinationIds,
@@ -2879,6 +2891,13 @@ export default function MapScreen({ route, navigation }: Props) {
       return;
     }
 
+    // A system cover keeps the existing foreground GPS owner and permissions.
+    if (appState === 'inactive') {
+      backgroundStartedKeyRef.current = null;
+      void stopBackgroundJourney();
+      return;
+    }
+
     // Foreground owns GPS.
     if (appState === 'active') {
       backgroundStartedKeyRef.current = null;
@@ -2942,6 +2961,7 @@ export default function MapScreen({ route, navigation }: Props) {
     const backgroundNavigationSessionId = navTarget
       ? resolveCurrentNavigationSessionId(navTarget)
       : null;
+    if (pendingLeaderTargetId === navTarget?.id && !backgroundNavigationSessionId) return;
     const sessionKey = backgroundNavigationSessionId ?? 'none';
     const key = JSON.stringify([backgroundSharingScope, backgroundScopeSubgroupId, powerMode,
       navTarget?.id ?? 'presence', sessionKey, highAccuracy, travelMode, localArrivalRadiusM,
@@ -3022,6 +3042,7 @@ export default function MapScreen({ route, navigation }: Props) {
     language,
     localArrivalRadiusM,
     localNavigationSessionId,
+    pendingLeaderTargetId,
     myScopeId,
     activeDestinationArrivals,
     resolveCurrentNavigationSessionId,
@@ -3055,7 +3076,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     energyObservability.setTrackingMode(!sharingEnabled ? 'hidden'
-      : appState !== 'active' ? effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'passiveBackground'
+      : appState === 'background' ? effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'passiveBackground'
       : effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'foreground');
   }, [appState, highAccuracy, effectiveNavigationActive, sharingEnabled]);
 
@@ -4012,6 +4033,7 @@ export default function MapScreen({ route, navigation }: Props) {
     // (closed_at → leaves carousel → history). End only pauses flock travel.
     // Server complete_gathering_stop also cancels any active nav for this stop.
     if (!groupId || !user?.id || !canEditItinerary) return false;
+    if (pendingLeaderTargetId === destination.id && !resolveCurrentNavigationSessionId(destination)) return false;
     const completionContext = arrivalContext;
     const isCurrent = () => mapMountedRef.current && arrivalContextRef.current === completionContext;
       const alreadyClosed = !!destination.closedAt
@@ -4085,6 +4107,7 @@ export default function MapScreen({ route, navigation }: Props) {
     loadHistory,
     navigationSessionState,
     resolveCurrentNavigationSessionId,
+    pendingLeaderTargetId,
     refresh,
     refreshLocalSnapshot,
     startArrivalCardExit,
@@ -6982,7 +7005,6 @@ export default function MapScreen({ route, navigation }: Props) {
           cameraState={mapCameraState}
           members={members}
           showsUserLocation={foregroundLocation.owner === 'mapkit'}
-          passiveSelfCoordinates={foregroundLocation.owner === 'expo' && sharingEnabled ? deviceCoords : null}
           gathering={activePoint}
           destinations={[...allScopedDestinations.filter(d => d.day == null && !d.closedAt), ...destinations]}
           dailyAccommodations={mapDailyAccommodations}

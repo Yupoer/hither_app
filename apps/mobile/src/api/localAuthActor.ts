@@ -11,10 +11,10 @@ export function defaultSupabaseAuthStorageKey(supabaseUrl: string): string {
 }
 
 export async function readLocalAuthActor(
-  storage: { getItem: (key: string) => Promise<string | null> },
+  storage: { getItem: (key: string) => Promise<string | null>; getLocalItem?: (key: string) => Promise<string | null> },
   storageKey: string,
 ): Promise<string | null> {
-  const raw = await storage.getItem(storageKey);
+  const raw = await (storage.getLocalItem ? storage.getLocalItem(storageKey) : storage.getItem(storageKey));
   if (!raw) return null;
   let session: unknown;
   try { session = JSON.parse(raw); } catch { return null; }

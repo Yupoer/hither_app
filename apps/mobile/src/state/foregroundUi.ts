@@ -35,6 +35,13 @@ export function subscribeForegroundUi(listener: () => void): () => void {
 export function useForegroundUi(): boolean {
   return useSyncExternalStore(subscribeForegroundUi, isForegroundUi, isForegroundUi);
 }
+/** iOS system covers are still visible UI; only true background hides native surfaces. */
+export function isVisibleUi(): boolean {
+  return isForegroundUi() || (Platform?.OS === 'ios' && AppState?.currentState === 'inactive');
+}
+export function useVisibleUi(): boolean {
+  return useSyncExternalStore(subscribeForegroundUi, isVisibleUi, isVisibleUi);
+}
 export function useOptionalVisuals(): boolean {
   const active = useForegroundUi();
   const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
@@ -42,12 +49,12 @@ export function useOptionalVisuals(): boolean {
 }
 /** Same display cadence while visible; resume reads wall time once, never replays ticks. */
 export function useForegroundClock(intervalMs: number, enabled = true): number {
-  const active = useForegroundUi();
+  const active = useVisibleUi();
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!active || !enabled) return;
     setNow(Date.now());
-    const timer = setInterval(() => { if (isForegroundUi()) setNow(Date.now()); }, intervalMs);
+    const timer = setInterval(() => { if (isVisibleUi()) setNow(Date.now()); }, intervalMs);
     return () => clearInterval(timer);
   }, [active, enabled, intervalMs]);
   return now;

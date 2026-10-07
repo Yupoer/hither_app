@@ -10,7 +10,7 @@ import {
 } from 'react-native-reanimated';
 
 import { getRuntimePowerState, subscribeRuntimePowerState, optionalVisualsAllowed } from '../state/runtimePowerState';
-import { useAppState, useForegroundUi } from '../state/foregroundUi';
+import { useAppState, useForegroundUi, useVisibleUi } from '../state/foregroundUi';
 import { authLoadingMotionAllowed } from '../utils/loadingDots';
 import { energyObservability } from '../state/energyObservability';
 
@@ -144,15 +144,17 @@ export type MetalforgeBackgroundProps = {
 export default function MetalforgeBackground({ active = true, allowInactive = false }: MetalforgeBackgroundProps) {
   const reducedMotion = useReducedMotion();
   const appActive = useForegroundUi();
+  const uiVisible = useVisibleUi();
   const appState = useAppState();
   const { width, height } = useWindowDimensions();
   const frozen = useSharedValue(globalElapsedTime.value);
   const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
-  const visible = active && (appActive || (allowInactive && appState === 'inactive'));
+  const visible = active && uiVisible;
   const motionAllowed = allowInactive
     ? authLoadingMotionAllowed(appState, power.thermalState, power.lowPowerMode)
     : optionalVisualsAllowed(power);
-  const isActive = visible && !reducedMotion && motionAllowed;
+  const isActive = visible && (appActive || (allowInactive && appState === 'inactive'))
+    && !reducedMotion && motionAllowed;
   const lastFrameAt = useSharedValue(-1);
   const lastTimestamp = useSharedValue(-1);
   useEffect(() => {

@@ -211,6 +211,61 @@ describe('useGroupState recovery snapshot race', () => {
     await act(async () => root.unmount());
   });
 
+  it('paints a committed local card before slow outbox metadata resolves', async () => {
+    mockRecovery.mockImplementation(() => new Promise(() => {}));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    const next = { ...state('local add'), destinations: [{ id: 'added', title: 'Added', order: 0,
+      coordinates: { latitude: 25, longitude: 121 }, day: 1 }] } as GroupState;
+    mockReadSnapshot.mockResolvedValue({ state: next, source: 'local_optimistic' });
+    let settle!: (value: unknown[]) => void;
+    mockListOperations.mockImplementation(() => new Promise(resolve => { settle = resolve; }));
+    await act(async () => { void api.refreshLocalSnapshot(); });
+    expect(api.state?.destinations.map(item => item.id)).toEqual(['added']);
+    await act(async () => { settle([]); });
+    await act(async () => root.unmount());
+  });
+
+  it('ignores an older local read when a newer committed snapshot is already visible', async () => {
+    mockRecovery.mockImplementation(() => new Promise(() => {}));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    let settle!: (value: unknown) => void;
+    mockReadSnapshot.mockImplementationOnce(() => new Promise(resolve => { settle = resolve; }))
+      .mockResolvedValueOnce({ state: state('new local'), source: 'local_optimistic' });
+    await act(async () => { void api.refreshLocalSnapshot(); });
+    await act(async () => { await api.refreshLocalSnapshot(); });
+    expect(api.state?.group.name).toBe('new local');
+    await act(async () => { settle({ state: state('old local'), source: 'local_optimistic' }); });
+    expect(api.state?.group.name).toBe('new local');
+    await act(async () => root.unmount());
+  });
+
+  it('keeps a local add after its receipt ACK when an older remote response finally arrives', async () => {
+    const pending: Array<(value: ReturnType<typeof snapshot>) => void> = [];
+    mockRecovery.mockImplementation(() => new Promise(resolve => pending.push(resolve)));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    const next = { ...state('committed add'), destinations: [{ id: 'added', title: 'Added', order: 0,
+      coordinates: { latitude: 25, longitude: 121 }, day: 1 }] } as GroupState;
+    // An accepted operation's receipt may already be gone; SQLite still owns
+    // the new card and the in-flight remote request predates that commit.
+    mockReadSnapshot.mockResolvedValue({ state: next, source: 'local_optimistic' });
+    mockListOperations.mockResolvedValue([]);
+    await act(async () => { await api.refreshLocalSnapshot(); });
+    await act(async () => { pending[0]!(snapshot(state('old remote'), '2026-09-19T00:00:00Z')); });
+    expect(api.state?.destinations.map(item => item.id)).toEqual(['added']);
+    expect(mockHydrateVersions).not.toHaveBeenCalled();
+    expect(pending).toHaveLength(2);
+    await act(async () => root.unmount());
+  });
+
   it('does not apply a delayed local snapshot from the previous group', async () => {
     let resolveGroupOne!: (value: unknown) => void;
     let resolveGroupTwo!: (value: unknown) => void;

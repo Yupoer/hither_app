@@ -26,7 +26,7 @@ jest.mock('react-native-reanimated', () => ({
     return ref.current;
   },
 }));
-import { useForegroundClock, useForegroundUi, useOptionalVisuals, isForegroundUi, subscribeForegroundUi } from '../state/foregroundUi';
+import { useForegroundClock, useForegroundUi, useVisibleUi, useOptionalVisuals, isForegroundUi, subscribeForegroundUi } from '../state/foregroundUi';
 import { updateRuntimePowerState } from '../state/runtimePowerState';
 import { energyObservability, __resetEnergyObservabilityForTests } from '../state/energyObservability';
 import MetalforgeBackground from '../components/MetalforgeBackground';
@@ -40,7 +40,8 @@ function Clock() {
   const now = useForegroundClock(1000);
   const active = useForegroundUi();
   const visuals = useOptionalVisuals();
-  return React.createElement('clock', { now, active, visuals });
+  const visible = useVisibleUi();
+  return React.createElement('clock', { now, active, visible, visuals });
 }
 beforeEach(() => {
   jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] }); mockAppState.currentState = 'active'; mockFrames.length = 0;
@@ -136,7 +137,7 @@ it('pauses Android UI on blur while AppState stays active and resumes focus once
   unsubscribe(); expect(mockListeners.size).toBe(0);
 });
 
-it('keeps only the visible auth background alive under a system sheet and stops both in background', async () => {
+it('keeps visible backgrounds under a system sheet, freezes normal motion and stops both in background', async () => {
   let root: any;
   await act(async () => { root = create(React.createElement(React.Fragment, null,
     React.createElement(MetalforgeBackground),
@@ -144,7 +145,7 @@ it('keeps only the visible auth background alive under a system sheet and stops 
   )); });
   expect(mockListeners.size).toBe(1);
   await act(async () => { transition('inactive'); });
-  expect(root.root.findAllByType('Canvas')).toHaveLength(1);
+  expect(root.root.findAllByType('Canvas')).toHaveLength(2);
   expect(mockFrames[0].setActive).toHaveBeenLastCalledWith(false);
   expect(mockFrames[1].setActive).toHaveBeenLastCalledWith(true);
   await act(async () => { transition('background'); });
@@ -154,4 +155,22 @@ it('keeps only the visible auth background alive under a system sheet and stops 
   expect(mockFrames[1].setActive).toHaveBeenLastCalledWith(false);
   await act(async () => { root.unmount(); });
   expect(mockListeners.size).toBe(0);
+});
+
+
+it('keeps iOS visible UI and its clock through a system cover while optional visuals pause', async () => {
+  let root: any;
+  await act(async () => { root = create(React.createElement(Clock)); });
+  const started = root.root.findByType('clock').props.now;
+  await act(async () => { transition('inactive'); });
+  expect(root.root.findByType('clock').props).toMatchObject({ active: false, visible: true, visuals: false });
+  expect(jest.getTimerCount()).toBe(1);
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  expect(root.root.findByType('clock').props.now).toBe(started + 2000);
+  await act(async () => { transition('active'); });
+  expect(root.root.findByType('clock').props).toMatchObject({ active: true, visible: true, visuals: true });
+  await act(async () => { transition('background'); });
+  expect(root.root.findByType('clock').props.visible).toBe(false);
+  expect(jest.getTimerCount()).toBe(0);
+  await act(async () => { root.unmount(); });
 });

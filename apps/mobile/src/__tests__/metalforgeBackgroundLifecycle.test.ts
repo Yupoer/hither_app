@@ -2,6 +2,7 @@ import React from 'react';
 const mockFrames: any[] = [];
 const mockUniforms: any[] = [];
 jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
   StyleSheet: { absoluteFill: {}, create: (styles: unknown) => styles },
   useWindowDimensions: () => ({ width: 390, height: 844 }), View: 'View',
@@ -66,4 +67,46 @@ it('caps active GPU frame updates and stops optional graphics at fair thermal pr
   await act(async () => { updateRuntimePowerState({ thermalState: 'fair', lowPowerMode: false }); });
   expect(frame.setActive).toHaveBeenLastCalledWith(false);
   await act(async () => { root.unmount(); });
+});
+
+it('retains the same frozen shader canvas under iOS system covers and resumes without replaying elapsed cover time', async () => {
+  mockFrames.length = 0; mockUniforms.length = 0;
+  updateRuntimePowerState({ lowPowerMode: false, thermalState: 'nominal' });
+  const listeners = new Set<() => void>();
+  const native = require('react-native').AppState;
+  native.currentState = 'active';
+  native.addEventListener = (_event: string, listener: () => void) => {
+    listeners.add(listener); return { remove: () => listeners.delete(listener) };
+  };
+  const transition = (next: string) => {
+    native.currentState = next;
+    for (const listener of listeners) listener();
+  };
+  let root: any;
+  await act(async () => { root = create(React.createElement(MetalforgeBackground)); });
+  try {
+    const canvas = root.root.findByType('Canvas');
+    const frame = mockFrames[0];
+    frame.callback({ timestamp: 1000 });
+    frame.callback({ timestamp: 1100 });
+    const frozenTime = mockUniforms[0]().time;
+    for (let index = 0; index < 30; index += 1) {
+      await act(async () => { transition('inactive'); });
+      expect(root.root.findByType('Canvas')).toBe(canvas);
+      expect(frame.setActive).toHaveBeenLastCalledWith(false);
+      expect(mockUniforms[0]().time).toBe(frozenTime);
+      await act(async () => { transition('active'); });
+      expect(root.root.findByType('Canvas')).toBe(canvas);
+      expect(frame.setActive).toHaveBeenLastCalledWith(true);
+      frame.callback({ timestamp: 200_000 + index * 1000 });
+      expect(mockUniforms[0]().time).toBe(frozenTime);
+    }
+    await act(async () => { transition('background'); });
+    expect(root.root.findAllByType('Canvas')).toHaveLength(0);
+    expect(frame.setActive).toHaveBeenLastCalledWith(false);
+  } finally {
+    await act(async () => { root.unmount(); });
+    native.currentState = 'active';
+  }
+  expect(listeners.size).toBe(0);
 });

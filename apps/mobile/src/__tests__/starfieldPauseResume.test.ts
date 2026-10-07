@@ -54,7 +54,7 @@ it('freezes ball identity and phase through background time, and drains only whi
   expect(chargeBallsAt(clock.value, 360, mockValues[0].value)).toEqual(before);
   frame.callback({ timestamp: 200050 });
   expect(clock.value).toBe(frozen + 50);
-  expect(chargeBallsAt(clock.value, 360, mockValues[0].value)[0].x).toBeLessThan(before[0].x);
+  expect(chargeBallsAt(clock.value, 360, mockValues[0].value)[0].x).toBeGreaterThan(before[0].x);
   await act(async () => { tree.update(element(false)); });
   expect(jest.getTimerCount()).toBe(1);
   await act(async () => { mockApp.currentState = 'background'; mockListeners.forEach(cb => cb()); });

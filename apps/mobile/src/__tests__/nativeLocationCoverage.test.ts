@@ -169,6 +169,42 @@ describe('native location boundary lifecycle', () => {
     expect(mockAccessUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it('reads an inactive foreground fix without permission prompts or background GPS', async () => {
+    mockAppState.currentState = 'inactive';
+    let onPosition!: (position: unknown) => void;
+    mockLocationApi.watchPositionAsync.mockImplementationOnce((_options: unknown, callback: (position: unknown) => void) => {
+      onPosition = callback;
+      return Promise.resolve({ remove: jest.fn() });
+    });
+    const reading = getCurrentLocation(false, 'allDay');
+    await settle();
+    onPosition(nativePosition);
+    await expect(reading).resolves.toMatchObject({ timestamp: nativePosition.timestamp });
+    expect(mockLocationApi.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(mockNextBackgroundLocation).not.toHaveBeenCalled();
+  });
+
+  it('keeps a foreground stream through inactive and rejects it in actual background', async () => {
+    mockAppState.currentState = 'inactive';
+    let onPosition!: (position: unknown) => void;
+    mockLocationApi.watchPositionAsync.mockImplementationOnce((_options: unknown, callback: (position: unknown) => void) => {
+      onPosition = callback;
+      return Promise.resolve({ remove: jest.fn() });
+    });
+    const onSample = jest.fn();
+    const stop = await watchLocation(onSample);
+    onPosition(nativePosition);
+    expect(onSample).toHaveBeenCalledTimes(1);
+    expect(mockLocationApi.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    mockAppState.currentState = 'active';
+    onPosition(nativePosition);
+    expect(onSample).toHaveBeenCalledTimes(2);
+    mockAppState.currentState = 'background';
+    onPosition(nativePosition);
+    expect(onSample).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
   it('cancels a foreground one-shot on access revocation and on timeout', async () => {
     const remove = jest.fn();
     mockLocationApi.watchPositionAsync.mockResolvedValueOnce({ remove });
@@ -187,7 +223,7 @@ describe('native location boundary lifecycle', () => {
     jest.useRealTimers();
   });
 
-  it('uses the existing background owner while inactive and rejects stale access', async () => {
+  it('uses the existing background owner in background and rejects stale access', async () => {
     mockAppState.currentState = 'background';
     mockNextBackgroundLocation.mockResolvedValueOnce(nativePosition);
     await expect(getCurrentLocation(false, 'allDay')).resolves.toEqual({
@@ -222,7 +258,7 @@ describe('native location boundary lifecycle', () => {
     expect(mockAccessUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('does not forward inactive, denied, revoked, or failed streams', async () => {
+  it('does not forward background, denied, revoked, or failed streams', async () => {
     mockAppState.currentState = 'background';
     await expect(watchLocation(jest.fn())).resolves.toEqual(expect.any(Function));
     expect(mockLocationApi.watchPositionAsync).not.toHaveBeenCalled();

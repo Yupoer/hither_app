@@ -1,5 +1,5 @@
 import React from 'react';
-import { useForegroundUi } from '../state/foregroundUi';
+import { useVisibleUi } from '../state/foregroundUi';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Host, Spacer, VStack } from '@expo/ui/swift-ui';
 import { frame, glassEffect } from '@expo/ui/swift-ui/modifiers';
@@ -31,7 +31,7 @@ export default function SwiftUIGlassSurface({
   fallbackTintColor,
   children,
 }: SwiftUIGlassSurfaceProps) {
-  const foreground = useForegroundUi();
+  const foreground = useVisibleUi();
   if (!liquidGlass.isLiquidGlassAvailable()) {
     return (
       <liquidGlass.GlassView

@@ -1894,9 +1894,9 @@
     },
     {
       "parent": "foreground-navigation-20261006", "child": "location",
-      "acceptance": "Pause selects one Low Expo location owner; resume restores MapKit navigation and disabling sharing stops acquisition.",
+      "acceptance": "iOS keeps the native MapKit user location when paused or covered by system UI; only true background hands GPS off, and sharing-off stops acquisition.",
       "testFile": "pausedLocationOwnership.test.ts",
-      "testNamePattern": "switches directly between MapKit navigation and one Low Expo paused owner"
+      "testNamePattern": "keeps MapKit for paused and navigating iOS, preserves inactive fixes"
     },
     {
       "parent": "foreground-navigation-20261006", "child": "session",

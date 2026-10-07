@@ -219,8 +219,11 @@ describe('resolveTrackingMode', () => {
 });
 
 describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
-  it('splits GPS ownership: FG watch only when active', () => {
+  it('keeps foreground GPS under system covers and transfers ownership only in background', () => {
     expect(shouldWatchLocation('group-1', 'active')).toBe(true);
+    expect(shouldWatchLocation('group-1', 'inactive')).toBe(true);
+    expect(shouldRunBackgroundLocation('group-1', 'inactive')).toBe(false);
+    expect(shouldRunBackgroundLocation('group-1', 'unknown')).toBe(false);
     expect(shouldWatchLocation('group-1', 'background')).toBe(false);
     expect(shouldWatchLocation(null, 'active')).toBe(false);
 

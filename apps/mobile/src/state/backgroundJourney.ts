@@ -166,7 +166,7 @@ function writeTimeline(
 /** Re-read mutable owners after an awaited navigation/Live Activity teardown. */
 function canContinueBackgroundSharing(config: BackgroundJourneyConfig, access: LocationAccess): boolean {
   return controller.isCurrent(config) && isLocationAccessCurrent(access)
-    && AppState.currentState !== 'active';
+    && AppState.currentState === 'background';
 }
 
 async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }, generation = trackingGeneration): Promise<void> {
@@ -218,7 +218,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           await purgeLocationOutbox();
           return;
         }
-        if (AppState.currentState === 'active' || generation !== trackingGeneration || !controller.isCurrent(config)) return;
+        if (AppState.currentState !== 'background' || generation !== trackingGeneration || !controller.isCurrent(config)) return;
         navigationSessionId = config.navigationSessionId;
 
         const trackingMode = resolveBackgroundTrackingMode(config);
@@ -729,7 +729,7 @@ export function reconcileBackgroundNavigation(groupId: string, fromLocationTask 
   if (controlSync) return controlSync;
   controlSync = (async () => {
     const access = await captureLocationAccess(groupId);
-    if (!access || AppState.currentState === 'active') return;
+    if (!access || AppState.currentState !== 'background') return;
     const config = await controller.load();
     if (!config || config.groupId !== groupId) return;
     lastControlSyncAt = Date.now();

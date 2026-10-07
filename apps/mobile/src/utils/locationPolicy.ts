@@ -7,6 +7,11 @@ import { distanceMeters } from './geo';
  */
 export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
 
+/** A system cover does not transfer GPS ownership to the background task. */
+export function isForegroundLocationState(appState: string): boolean {
+  return appState === 'active' || appState === 'inactive';
+}
+
 /** Choose a single foreground acquisition owner from the local navigation intent. */
 export function foregroundLocationConfiguration(input: {
   navigationActive: boolean;
@@ -16,9 +21,9 @@ export function foregroundLocationConfiguration(input: {
   hasMembership: boolean;
   appState: string;
 }): { owner: 'none' | 'mapkit' | 'expo'; highAccuracy: boolean; powerMode: LocationPowerMode } {
-  const allowed = input.sharingEnabled && input.hasMembership && input.appState === 'active';
+  const allowed = input.sharingEnabled && input.hasMembership && isForegroundLocationState(input.appState);
   return {
-    owner: !allowed ? 'none' : input.navigationActive && input.nativeMapAvailable ? 'mapkit' : 'expo',
+    owner: !allowed ? 'none' : input.nativeMapAvailable ? 'mapkit' : 'expo',
     // Preserve the preference at the caller; a paused journey never promotes GPS.
     highAccuracy: input.navigationActive && input.highAccuracy,
     powerMode: input.navigationActive ? 'journey' : 'allDay',
@@ -188,13 +193,13 @@ export function shouldWatchLocation(
 ): boolean {
   return (
     Boolean(groupId)
-    && appState === 'active'
+    && isForegroundLocationState(appState)
     && sharingEnabled
     && hasMembership
   );
 }
 
-/** Background task should run only when the app is not active (single GPS owner). */
+/** Only actual background transfers GPS ownership to the background task. */
 export function shouldRunBackgroundLocation(
   groupId: string | null,
   appState: string,
@@ -203,7 +208,7 @@ export function shouldRunBackgroundLocation(
 ): boolean {
   return (
     Boolean(groupId)
-    && appState !== 'active'
+    && appState === 'background'
     && sharingEnabled
     && hasMembership
   );

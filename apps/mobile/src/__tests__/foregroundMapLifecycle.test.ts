@@ -82,3 +82,35 @@ it('releases the actual map subtree, stops route projection during background up
   await act(async () => { root.unmount(); });
   expect(mockListeners.size).toBe(0);
 });
+
+it('keeps the same native blue-dot map visible through repeated iOS system covers and accepts camera changes', async () => {
+  transition('active');
+  const own = { latitude: 25.01, longitude: 121.01 };
+  const cameraState: { current: GroupMapCameraState } = { current: {} };
+  let root: any;
+  await act(async () => { root = create(React.createElement(GroupMap, {
+    members: [{ userId: 'self', name: 'Self', role: 'leader', status: 'active', coordinates: own }],
+    currentUserId: 'self', selfCoordinates: own, showsUserLocation: true, cameraState,
+  })); });
+  try {
+    const original = root.root.findByType('NativeMap');
+    expect(original.props.showsUserLocation).toBe(true);
+    expect(root.root.findAllByType('Marker')).toHaveLength(0);
+    for (let index = 0; index < 30; index += 1) {
+      await act(async () => { transition('inactive'); });
+      expect(root.root.findByType('NativeMap')).toBe(original);
+      expect(energyObservability.workloadSnapshot().mapCount).toBe(1);
+      const region = { latitude: 25 + index / 1000, longitude: 121, latitudeDelta: 0.01, longitudeDelta: 0.01 };
+      await act(async () => { original.props.onRegionChangeComplete(region); });
+      expect(cameraState.current.region).toEqual(region);
+      await act(async () => { transition('active'); });
+      expect(root.root.findByType('NativeMap')).toBe(original);
+    }
+    await act(async () => { transition('background'); });
+    expect(root.root.findAllByType('NativeMap')).toHaveLength(0);
+  } finally {
+    await act(async () => { root.unmount(); });
+    transition('active');
+  }
+  expect(mockListeners.size).toBe(0);
+});

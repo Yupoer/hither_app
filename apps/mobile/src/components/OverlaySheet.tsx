@@ -1,4 +1,4 @@
-import { useForegroundUi } from '../state/foregroundUi';
+import { useVisibleUi } from '../state/foregroundUi';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -72,7 +72,7 @@ export default function OverlaySheet({
   children: React.ReactNode;
   floatingContent?: React.ReactNode;
 }) {
-  const foreground = useForegroundUi();
+  const foreground = useVisibleUi();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const t = useRef(new Animated.Value(0)).current; // 0 hidden → 1 shown

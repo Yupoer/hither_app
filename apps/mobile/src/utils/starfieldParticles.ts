@@ -1,4 +1,4 @@
-export const CHARGE_BALL_INTERVAL_MS = 280 / 1.5;
+export const CHARGE_BALL_INTERVAL_MS = 280 / 1.5 / 2;
 export const CHARGE_BALL_MAX_TRAVEL_MS = 6800 / 1.25;
 export const CHARGE_BALL_OPACITY_LEVELS = 16;
 export const CHARGE_BALL_MIN_OPACITY = 0.12;
@@ -29,17 +29,21 @@ export function chargeBallsAt(now: number, width: number, windows: ChargeEmissio
       const age = now - bornAt;
       let seed = (Math.imul(index + 1, 747796405) + window.startedAt) >>> 0;
       seed = (Math.imul(seed ^ (seed >>> 16), 2246822507)) >>> 0;
-      const vertical = (seed & 65535) / 65535;
+      // Each consecutive batch visits all 12 height bands once. Keep a little
+      // jitter inside the band so coverage is even without forming rigid rows.
+      const band = (index * 5) % 12;
+      const vertical = (band + 0.2 + (seed & 65535) / 65535 * 0.6) / 12;
       const variation = (seed >>> 16) / 65535;
-      const radius = (5 + variation * 3) * 0.8 * width / 360;
+      const baseRadius = (5 + variation * 3) * width / 360;
+      const radius = baseRadius * 0.4;
       // Preserve the exact velocity multiplier even though the exit margins shrink.
       const duration = (5000 + variation * 1800) / 1.25
-        * (width + radius * 2) / (width + radius / 0.8 * 2);
+        * (width + radius * 2) / (width + baseRadius * 2);
       if (age < 0 || age >= duration) continue;
       balls.push({
         id: `${window.startedAt}:${index}`,
-        // Enter outside the right boundary and leave outside the left.
-        x: width + radius - (width + radius * 2) * age / duration,
+        // Enter outside the left boundary and leave outside the right.
+        x: -radius + (width + radius * 2) * age / duration,
         y: radius + vertical * (fieldHeight - radius * 2) + Math.sin(age / 1100 + variation * 6) * 3,
         radius,
         // Deterministic, independent 4–6 second fade cycles.

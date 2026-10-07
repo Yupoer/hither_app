@@ -68,6 +68,34 @@ describe('rotating credentials and logout persistence races', () => {
       setItemAsync: jest.fn(async (key: string, value: string) => { disk.set(key, value); }),
       deleteItemAsync: jest.fn(async (key: string) => { disk.delete(key); }) };
   }
+  it('reads the draft actor without waiting for a pending token write and honors logout immediately', async () => {
+    const secure = adapter(); secure.disk.set('auth', session('actor-a'));
+    const { storage } = createSupabaseAuthStorage(secure);
+    await storage.getItem('auth');
+    let release!: () => void;
+    secure.setItemAsync.mockImplementationOnce(async () => new Promise<void>(resolve => { release = resolve; }));
+    const rotation = storage.setItem('auth', session('actor-a', 'next'));
+    await Promise.resolve(); await Promise.resolve();
+    let local: string | null | undefined;
+    const read = storage.getLocalItem!('auth').then(value => { local = value; });
+    await Promise.resolve(); await Promise.resolve();
+    expect(local).toBe(session('actor-a', 'next'));
+    const logout = storage.removeItem('auth');
+    await expect(storage.getLocalItem!('auth')).resolves.toBeNull();
+    release(); await Promise.all([rotation, logout, read]);
+  });
+  it('does not publish a replacement actor before retiring the previous credential', async () => {
+    const secure = adapter(); secure.disk.set('auth', session('actor-a'));
+    const { storage } = createSupabaseAuthStorage(secure);
+    await storage.getItem('auth');
+    let release!: () => void;
+    secure.deleteItemAsync.mockImplementationOnce(async () => new Promise<void>(resolve => { release = resolve; }));
+    const replacement = storage.setItem('auth', session('actor-b'));
+    await Promise.resolve(); await Promise.resolve();
+    await expect(storage.getLocalItem!('auth')).resolves.toBe(session('actor-a'));
+    release(); await replacement;
+    await expect(storage.getLocalItem!('auth')).resolves.toBe(session('actor-b'));
+  });
   it('retains the latest rotation through generic write failure and later flushes it', async () => {
     const secure = adapter(); secure.disk.set('auth', 'old');
     const { storage } = createSupabaseAuthStorage(secure);

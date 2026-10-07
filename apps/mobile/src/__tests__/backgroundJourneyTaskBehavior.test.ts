@@ -174,6 +174,18 @@ describe('background journey native task wiring', () => {
     }));
   });
 
+  it('does not process background GPS callbacks while inactive system UI covers the map', async () => {
+    await stopBackgroundJourney();
+    await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
+    jest.clearAllMocks();
+    mockAppState.currentState = 'inactive';
+    await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() }] } });
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(mockAckNavigation).not.toHaveBeenCalled();
+    expect(mockLiveActivity.updateAllGroupActivities).not.toHaveBeenCalled();
+    expect(require('../state/arrivalSync').enqueueArrival).not.toHaveBeenCalled();
+  });
+
   it('keeps a terminal personal receipt local without duplicating it and fences the next account', async () => {
     await stopBackgroundJourney();
     mockArrivalRows.mockResolvedValue([{

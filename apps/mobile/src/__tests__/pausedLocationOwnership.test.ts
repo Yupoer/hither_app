@@ -17,16 +17,19 @@ import { foregroundLocationConfiguration, locationPolicy } from '../utils/locati
 import { useDeviceLocation } from '../screens/MapScreen/hooks/useDeviceLocation';
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-it('switches directly between MapKit navigation and one Low Expo paused owner, then stops on lock/share-off', async () => {
+it('keeps MapKit for paused and navigating iOS, preserves inactive fixes, then stops on background/share-off', async () => {
   jest.useFakeTimers(); jest.clearAllMocks(); mockAppState.currentState = 'active';
   let config!: ReturnType<typeof foregroundLocationConfiguration>;
+  let feed!: ReturnType<typeof useDeviceLocation>;
   const incoming = jest.fn();
-  function Probe({ active, sharing = true }: { active: boolean; sharing?: boolean }) {
-    config = foregroundLocationConfiguration({ navigationActive: active, nativeMapAvailable: true,
-      highAccuracy: true, sharingEnabled: sharing, hasMembership: true, appState: mockAppState.currentState });
-    useDeviceLocation({ groupId: 'group', highAccuracy: config.highAccuracy, powerMode: config.powerMode,
+  function Probe({ active, sharing = true, membership = true, nativeMap = true }: {
+    active: boolean; sharing?: boolean; membership?: boolean; nativeMap?: boolean;
+  }) {
+    config = foregroundLocationConfiguration({ navigationActive: active, nativeMapAvailable: nativeMap,
+      highAccuracy: true, sharingEnabled: sharing, hasMembership: membership, appState: mockAppState.currentState });
+    feed = useDeviceLocation({ groupId: 'group', highAccuracy: config.highAccuracy, powerMode: config.powerMode,
       teamNavigationActive: active, nativeMapLocationEnabled: config.owner === 'mapkit',
-      sharingEnabled: sharing, onIncomingSample: incoming });
+      sharingEnabled: sharing, hasMembership: membership, onIncomingSample: incoming });
     return null;
   }
   let renderer!: ReactTestRenderer;
@@ -34,24 +37,38 @@ it('switches directly between MapKit navigation and one Low Expo paused owner, t
     await act(async () => { renderer = create(React.createElement(Probe, { active: true })); });
     expect(config.owner).toBe('mapkit'); expect(mockWatch).not.toHaveBeenCalled();
     await act(async () => { renderer.update(React.createElement(Probe, { active: false })); });
-    expect(config).toEqual({ owner: 'expo', highAccuracy: false, powerMode: 'allDay' });
-    expect(mockWatch).toHaveBeenCalledTimes(1);
-    expect(mockWatch).toHaveBeenCalledWith(expect.any(Function), false, 'allDay');
+    expect(config).toEqual({ owner: 'mapkit', highAccuracy: false, powerMode: 'allDay' });
+    expect(mockWatch).not.toHaveBeenCalled();
     const sensor = require('../native').location.getCurrentLocation as jest.Mock;
     const pausedBootstrapReads = sensor.mock.calls.length;
     await act(async () => { jest.advanceTimersByTime(120_000); });
     expect(sensor).toHaveBeenCalledTimes(pausedBootstrapReads);
     expect(locationPolicy(config.highAccuracy, config.powerMode)).toMatchObject({ accuracy: 'low', distanceInterval: 150, timeInterval: 150_000 });
-    const retiredSample = mockWatch.mock.calls[0][0] as (sample: unknown) => void;
+    await act(async () => { mockAppState.currentState = 'inactive'; mockAppListener('inactive'); });
+    expect(config.owner).toBe('mapkit');
+    expect(sensor).toHaveBeenCalledTimes(pausedBootstrapReads);
+    await act(async () => { feed.consumeForegroundSample({ coordinates: { latitude: 25, longitude: 121 }, accuracy: 5, timestamp: Date.now() }); });
+    expect(feed.deviceCoords).toEqual({ latitude: 25, longitude: 121 });
+    expect(incoming).toHaveBeenCalledTimes(1);
+    await act(async () => { mockAppState.currentState = 'active'; mockAppListener('active'); });
+    expect(config.owner).toBe('mapkit'); expect(mockWatch).not.toHaveBeenCalled();
     await act(async () => { renderer.update(React.createElement(Probe, { active: true })); });
-    expect(mockStop).toHaveBeenCalledTimes(1); expect(config.owner).toBe('mapkit');
-    retiredSample({ coordinates: { latitude: 25, longitude: 121 }, accuracy: 5, timestamp: Date.now() });
-    expect(incoming).not.toHaveBeenCalled();
-    await act(async () => { renderer.update(React.createElement(Probe, { active: false })); });
+    expect(config).toEqual({ owner: 'mapkit', highAccuracy: true, powerMode: 'journey' });
     await act(async () => { mockAppState.currentState = 'background'; mockAppListener('background'); });
-    expect(config.owner).toBe('none'); expect(mockStop).toHaveBeenCalledTimes(2);
+    expect(config.owner).toBe('none');
+    feed.consumeForegroundSample({ coordinates: { latitude: 26, longitude: 121 }, accuracy: 5, timestamp: Date.now() + 1 });
+    expect(incoming).toHaveBeenCalledTimes(1);
     await act(async () => { mockAppState.currentState = 'active'; mockAppListener('active'); });
     await act(async () => { renderer.update(React.createElement(Probe, { active: false, sharing: false })); });
-    expect(config.owner).toBe('none'); expect(mockStop).toHaveBeenCalledTimes(3);
+    expect(config.owner).toBe('none'); expect(mockWatch).not.toHaveBeenCalled();
+    await act(async () => { renderer.update(React.createElement(Probe, { active: false, membership: false })); });
+    expect(config.owner).toBe('none'); expect(mockWatch).not.toHaveBeenCalled();
+    await act(async () => { renderer.update(React.createElement(Probe, { active: false, nativeMap: false })); });
+    expect(config.owner).toBe('expo'); expect(mockWatch).toHaveBeenCalledTimes(1);
+    expect(mockWatch).toHaveBeenCalledWith(expect.any(Function), false, 'allDay');
+    await act(async () => { mockAppState.currentState = 'inactive'; mockAppListener('inactive'); });
+    expect(mockWatch).toHaveBeenCalledTimes(1); expect(mockStop).not.toHaveBeenCalled();
+    await act(async () => { mockAppState.currentState = 'background'; mockAppListener('background'); });
+    expect(mockStop).toHaveBeenCalledTimes(1);
   } finally { await act(async () => renderer?.unmount()); jest.useRealTimers(); }
 });
