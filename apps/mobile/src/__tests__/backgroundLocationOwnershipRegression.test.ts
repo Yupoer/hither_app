@@ -7,6 +7,8 @@ const mockStartExpo = jest.fn(async (_name: string, _options: object) => undefin
 const mockStopExpo = jest.fn(async () => undefined);
 const mockBackgroundPermission = jest.fn(async () => ({ status: 'granted' }));
 const mockAppState = { currentState: 'active' };
+const mockRemoveListener = jest.fn();
+let mockBackgroundListener: ((sample: import('expo-location').LocationObject) => void) | undefined;
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 let mockAllowed = true;
 let mockAccessChanged: (() => void) | undefined;
@@ -17,7 +19,10 @@ jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => ({
   hasBackgroundLocation: () => mockHasNative(),
   startBackgroundLocation: (options: object) => mockStartNative(options),
   stopBackgroundLocation: () => mockStopNative(),
-  addListener: () => ({ remove() {} }),
+  addListener: (_name: string, listener: typeof mockBackgroundListener) => {
+    mockBackgroundListener = listener;
+    return { remove: mockRemoveListener };
+  },
 }) }));
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(), requestBackgroundPermissionsAsync: jest.fn(),
@@ -32,7 +37,7 @@ jest.mock('../state/locationPrivacy', () => ({
   isLocationAccessEnabled: () => mockAllowed,
   subscribeLocationAccessChanges: (listener: () => void) => { mockAccessChanged = listener; return () => undefined; },
 }));
-import { backgroundLocationAdapter, prepareNativeBackgroundLocation } from '../native/backgroundLocation';
+import { backgroundLocationAdapter, nextBackgroundLocation, observeNativeBackgroundLocation, prepareNativeBackgroundLocation } from '../native/backgroundLocation';
 import { backgroundPresenceConfig, backgroundLocationOptions, hasActiveBackgroundJourney, resolveBackgroundTrackingMode, type BackgroundJourneyConfig } from '../state/backgroundJourneyController';
 const task = 'hither-background-journey-location';
 beforeEach(async () => {
@@ -41,6 +46,7 @@ beforeEach(async () => {
   await prepareNativeBackgroundLocation(false);
   jest.clearAllMocks(); mockBackgroundPermission.mockResolvedValue({ status: 'granted' });
   mockHasExpo.mockResolvedValue(false); mockHasNative.mockResolvedValue(false);
+  mockBackgroundListener = undefined;
 });
 async function settle() { for (let index = 0; index < 20; index += 1) await Promise.resolve(); }
 
@@ -131,6 +137,82 @@ it('does not acquire background GPS while the map still owns the foreground', as
   })).rejects.toThrow();
   expect(mockStartExpo).not.toHaveBeenCalled();
   expect(mockStartNative).not.toHaveBeenCalled();
+});
+
+it('recognizes exactly one owner matching the passive or prepared journey profile', async () => {
+  const passive = { activityType: 1, showsBackgroundLocationIndicator: false };
+  const journey = { activityType: 3, showsBackgroundLocationIndicator: true };
+  mockHasExpo.mockResolvedValue(true);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync!(task, passive)).resolves.toBe(true);
+  mockHasNative.mockResolvedValue(true);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync!(task, passive)).resolves.toBe(false);
+  await prepareNativeBackgroundLocation(true);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync!(task, journey)).resolves.toBe(false);
+  mockHasExpo.mockResolvedValue(false);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync!(task, journey)).resolves.toBe(true);
+  await prepareNativeBackgroundLocation(false);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync!(task, journey)).resolves.toBe(false);
+});
+
+it('forwards native samples to the journey observer without preparing or starting GPS', () => {
+  const onSample = jest.fn();
+  observeNativeBackgroundLocation(onSample);
+  const sample = { timestamp: 1000, coords: { latitude: 25, longitude: 121, altitude: null,
+    accuracy: 10, altitudeAccuracy: null, heading: null, speed: null } };
+  mockBackgroundListener!(sample);
+  expect(onSample).toHaveBeenCalledWith(sample);
+  expect(mockPrepare).not.toHaveBeenCalled();
+  expect(mockStartNative).not.toHaveBeenCalled();
+  expect(mockStartExpo).not.toHaveBeenCalled();
+});
+
+it('returns no native refresh for a passive Expo owner instead of acquiring a new stream', async () => {
+  mockHasExpo.mockResolvedValue(true);
+  await expect(nextBackgroundLocation(new AbortController().signal)).resolves.toBeNull();
+  expect(mockBackgroundListener).toBeUndefined();
+  expect(mockStartNative).not.toHaveBeenCalled();
+  expect(mockStartExpo).not.toHaveBeenCalled();
+});
+
+it('refreshes from an existing native owner and releases its listener without starting another GPS stream', async () => {
+  mockHasNative.mockResolvedValue(true);
+  const refresh = nextBackgroundLocation(new AbortController().signal);
+  await settle();
+  const sample = { timestamp: 1000, coords: { latitude: 25, longitude: 121, altitude: null,
+    accuracy: 10, altitudeAccuracy: null, heading: null, speed: null } };
+  expect(mockBackgroundListener).toBeDefined();
+  mockBackgroundListener!(sample);
+  await expect(refresh).resolves.toEqual(sample);
+  expect(mockRemoveListener).toHaveBeenCalledTimes(1);
+  expect(mockStartNative).not.toHaveBeenCalled();
+  expect(mockStartExpo).not.toHaveBeenCalled();
+});
+
+it('aborts a pending existing-owner refresh and removes the temporary listener', async () => {
+  mockHasNative.mockResolvedValue(true);
+  const controller = new AbortController();
+  const refresh = nextBackgroundLocation(controller.signal);
+  await settle();
+  controller.abort();
+  await expect(refresh).resolves.toBeNull();
+  expect(mockRemoveListener).toHaveBeenCalledTimes(1);
+  expect(mockStopNative).not.toHaveBeenCalled();
+});
+
+it('times out an unresponsive existing owner without retaining a listener or acquiring a replacement owner', async () => {
+  jest.useFakeTimers();
+  try {
+    mockHasNative.mockResolvedValue(true);
+    const refresh = nextBackgroundLocation(new AbortController().signal);
+    await settle();
+    jest.advanceTimersByTime(15_000);
+    await expect(refresh).resolves.toBeNull();
+    expect(mockRemoveListener).toHaveBeenCalledTimes(1);
+    expect(mockStartNative).not.toHaveBeenCalled();
+    expect(mockStartExpo).not.toHaveBeenCalled();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 const validJourney: BackgroundJourneyConfig = {

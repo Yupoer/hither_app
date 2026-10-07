@@ -87,6 +87,7 @@ describe('locationPolicy', () => {
     expect(backgroundLocationOptions('journey', false, 'teamNavigation')).toMatchObject({
       accuracy: 4,
       activityType: 3,
+      showsBackgroundLocationIndicator: true,
       pausesUpdatesAutomatically: false,
       deferredUpdatesDistance: 0,
       deferredUpdatesInterval: 0,
@@ -104,8 +105,9 @@ describe('locationPolicy', () => {
   it('prevents indefinite passive presence stalls in the Expo fallback', () => {
     expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
       accuracy: 2,
+      activityType: 1,
       pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: true,
+      showsBackgroundLocationIndicator: false,
     });
   });
 });

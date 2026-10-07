@@ -68,7 +68,20 @@ describe('durable location refresh contract (#191)', () => {
     expect(controller).toContain('permissionsPrepared?: boolean');
     expect(controller).toContain('config.permissionsPrepared === false && config.appState != null');
     expect(mapScreen).toContain('prepareBackgroundJourneyPermissions');
-    expect(mapScreen).toContain('permissionsPrepared: backgroundPermissionsPreparedFor === groupId');
+    expect(mapScreen).toContain("const backgroundPermissionProfileKey = `${groupId}:${effectiveNavigationActive ? 'journey' : 'presence'}`;");
+    expect(mapScreen).toContain('permissionsPrepared: backgroundPermissionsPreparedFor === backgroundPermissionProfileKey');
+    expect(mapScreen).toContain('prepareBackgroundJourneyPermissions(false, effectiveNavigationActive)');
+    expect(mapScreen).toContain('prepareBackgroundJourneyPermissions(true, effectiveNavigationActive)');
+    const preparation = mapScreen.slice(mapScreen.indexOf('const backgroundPermissionProfileKey'),
+      mapScreen.indexOf('void startBackgroundJourney({'));
+    const completionAt = preparation.indexOf('.then((result) =>');
+    const failureAt = preparation.indexOf('.catch(() =>', completionAt);
+    const completion = preparation.slice(completionAt, failureAt);
+    expect(completion).toContain('backgroundJourneyWantedRef.current !== backgroundSharingScope');
+    expect(completion).toContain('backgroundPermissionProfileRef.current !== backgroundPermissionProfileKey');
+    const failure = preparation.slice(failureAt, preparation.indexOf('.finally(() =>', failureAt));
+    expect(failure).toContain('backgroundJourneyWantedRef.current === backgroundSharingScope');
+    expect(failure).toContain('backgroundPermissionProfileRef.current === backgroundPermissionProfileKey');
     expect(controller).toContain('pausesUpdatesAutomatically: false');
   });
 });
