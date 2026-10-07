@@ -266,6 +266,31 @@ describe('useGroupState recovery snapshot race', () => {
     await act(async () => root.unmount());
   });
 
+  it.each([
+    ['paused', undefined, 'going', 'old-target', 4],
+    ['going', 'new-target', 'going', 'old-target', 5],
+  ] as const)('keeps durable %s/%s over stale remote %s/%s gathering version %s', async (localStatus, localTarget, remoteStatus, remoteTarget, remoteVersion) => {
+    const local = { ...state('Durable'), group: { ...state('Durable').group,
+      journeyStatus: localStatus, activeDestinationId: localTarget, journeyStartedAt: localStatus === 'going' ? '2026-10-08T08:00:00Z' : undefined } } as GroupState;
+    const remote = { ...state('Remote metadata'), group: { ...state('Remote metadata').group,
+      journeyStatus: remoteStatus, activeDestinationId: remoteTarget, journeyStartedAt: '2026-10-08T07:00:00Z' } } as GroupState;
+    mockReadSnapshot.mockResolvedValue({ state: local, source: 'remote', activeGathering: { entityVersion: 5 } });
+    mockRecovery.mockResolvedValue({ ...snapshot(remote, '2026-10-08T09:00:00Z'),
+      entityVersions: { 'active_gathering:group-1': remoteVersion } });
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1'); return null; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    expect(api.state?.group.name).toBe('Remote metadata');
+    expect(api.state?.group.journeyStatus).toBe(localStatus);
+    expect(api.state?.group.activeDestinationId).toBe(localTarget);
+    expect(api.state?.group.journeyStartedAt).toBe(local.group.journeyStartedAt);
+    expect(mockHydrateVersions).toHaveBeenCalledWith('group-1', expect.objectContaining({
+      group: expect.objectContaining({ journeyStatus: localStatus, activeDestinationId: localTarget }),
+    }), { 'active_gathering:group-1': remoteVersion });
+    await act(async () => root.unmount());
+  });
+
   it('does not apply a delayed local snapshot from the previous group', async () => {
     let resolveGroupOne!: (value: unknown) => void;
     let resolveGroupTwo!: (value: unknown) => void;

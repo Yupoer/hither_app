@@ -1,5 +1,6 @@
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
+import { AppState } from 'react-native';
 import type { BackgroundLocationAdapter } from '../state/backgroundJourneyController';
 import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessEnabled, subscribeLocationAccessChanges } from '../state/locationPrivacy';
 
@@ -15,8 +16,33 @@ const native = requireOptionalNativeModule<{
 const supported = native?.supportsBackgroundLiveUpdates?.() === true;
 export const nativeBackgroundAvailable = supported;
 
-export async function prepareNativeBackgroundLocation(enabled: boolean): Promise<boolean> {
-  return supported ? native!.prepareBackgroundLocation(enabled) : true;
+let activityGeneration = 0;
+let activityWanted = false;
+let activityPrepared = false;
+let activityPreparation: Promise<unknown> = Promise.resolve();
+
+/** Only a live journey may retain the iOS activity session (and its blue indicator). */
+export function prepareNativeBackgroundLocation(enabled: boolean): Promise<boolean> {
+  const generation = ++activityGeneration;
+  activityWanted = enabled;
+  if (!enabled) activityPrepared = false;
+  const work = async () => {
+    if (!supported) return true;
+    if (!enabled) return native!.prepareBackgroundLocation(false);
+    if (generation !== activityGeneration || !activityWanted || AppState.currentState !== 'active') return false;
+    const access = await captureLocationAccess();
+    if (!access || generation !== activityGeneration || !activityWanted || AppState.currentState !== 'active') return false;
+    const prepared = await native!.prepareBackgroundLocation(true);
+    if (generation !== activityGeneration || !activityWanted || !isLocationAccessCurrent(access)) {
+      // A newer pause/off queued its own release. Never release a newer Start.
+      return false;
+    }
+    activityPrepared = prepared;
+    return prepared;
+  };
+  const result = activityPreparation.then(work, work);
+  activityPreparation = result.catch(() => undefined);
+  return result;
 }
 
 export function observeNativeBackgroundLocation(onSample: (sample: NativeFix) => void): void {
@@ -27,13 +53,23 @@ subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) void prepareNativeBackgroundLocation(false).catch(() => undefined);
 });
 
-/** One background owner; Expo remains the older-iOS/Android fallback. */
+const usesJourneyActivity = (options: object) => (options as { activityType?: number }).activityType === 3
+  && (options as { showsBackgroundLocationIndicator?: boolean }).showsBackgroundLocationIndicator === true;
+
+/** One background owner; passive presence always uses the legacy low profile. */
 export const backgroundLocationAdapter: BackgroundLocationAdapter = {
   requestForegroundPermissionsAsync: Location.requestForegroundPermissionsAsync,
   requestBackgroundPermissionsAsync: Location.requestBackgroundPermissionsAsync,
   async hasStartedLocationUpdatesAsync(name) {
     return (supported && await native!.hasBackgroundLocation())
       || await Location.hasStartedLocationUpdatesAsync(name);
+  },
+  async hasMatchingLocationOwnerAsync(name, options) {
+    const nativeRunning = supported && await native!.hasBackgroundLocation();
+    const expoRunning = await Location.hasStartedLocationUpdatesAsync(name);
+    return supported && usesJourneyActivity(options) && activityWanted && activityPrepared
+      ? Boolean(nativeRunning && !expoRunning && activityWanted)
+      : Boolean(expoRunning && !nativeRunning && !activityPrepared);
   },
   async stopLocationUpdatesAsync(name) {
     if (supported) await native!.stopBackgroundLocation();
@@ -42,14 +78,27 @@ export const backgroundLocationAdapter: BackgroundLocationAdapter = {
   async startLocationUpdatesAsync(name, options) {
     const access = await captureLocationAccess();
     if (!access) throw new Error('location_access_denied');
-    if (supported) {
+    if (AppState.currentState !== 'background') throw new Error('location_owner_changed');
+    const journey = usesJourneyActivity(options);
+    if (supported && journey) await activityPreparation;
+    const nativeJourney = supported && journey && activityWanted && activityPrepared;
+    if (nativeJourney) {
+      if (!activityWanted || !isLocationAccessCurrent(access) || AppState.currentState !== 'background') throw new Error('location_access_denied');
       if (await Location.hasStartedLocationUpdatesAsync(name)) await Location.stopLocationUpdatesAsync(name);
       if (!isLocationAccessCurrent(access)) throw new Error('location_access_denied');
       if (!await native!.startBackgroundLocation(options)) throw new Error('background_location_not_prepared');
     } else {
+      // CLLocationManager with Always authorization supports passive presence
+      // without the journey activity session. While-in-use cannot hide its pill.
+      await prepareNativeBackgroundLocation(false);
+      if (!isLocationAccessCurrent(access)) throw new Error('location_access_denied');
+      if ((await Location.getBackgroundPermissionsAsync()).status !== 'granted') {
+        throw new Error('passive_background_permission_denied');
+      }
+      if (!isLocationAccessCurrent(access) || AppState.currentState !== 'background') throw new Error('location_access_denied');
       await Location.startLocationUpdatesAsync(name, options);
     }
-    if (!isLocationAccessCurrent(access)) {
+    if (!isLocationAccessCurrent(access) || AppState.currentState !== 'background' || (nativeJourney && !activityWanted)) {
       await backgroundLocationAdapter.stopLocationUpdatesAsync(name);
       throw new Error('location_access_denied');
     }

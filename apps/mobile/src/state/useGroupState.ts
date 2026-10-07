@@ -354,10 +354,19 @@ export function useGroupState(
           latestRevisionRef.current = recovery.revision;
           const serverTime = Date.parse(recovery.generatedAt ?? '');
           if (Number.isFinite(serverTime)) setServerTimeOffsetMs(serverTime - Date.now());
-          const preserveLocalGathering = openOperationsRef.current.some(
+          const durable = await readCoreSnapshot(groupId);
+          if (!isCurrentRequest()) return false;
+          const recoveryGatheringVersion = recovery.entityVersions[`active_gathering:${groupId}`];
+          const durableAhead = durable && typeof recoveryGatheringVersion === 'number'
+            && durable.activeGathering.entityVersion > 0
+            && durable.activeGathering.entityVersion >= recoveryGatheringVersion;
+          const preserveLocalGathering = Boolean(durableAhead) || openOperationsRef.current.some(
             (operation) => isLeaderGatheringOperation(operation),
           );
-          const previous = stateRef.current;
+          const previous = durableAhead && durable
+            ? { ...(stateRef.current ?? groupStateFromCoreSnapshot(durable)),
+                group: groupStateFromCoreSnapshot(durable).group }
+            : stateRef.current;
           const previousCount = previous?.destinations.length ?? 0;
           const remoteCount = next.destinations.length;
           const fenced = shouldFenceEmptyItinerary({
@@ -383,7 +392,7 @@ export function useGroupState(
             // eslint-disable-next-line no-console
             console.info('[group-recovery-merge]', meta);
           }
-          const merged = mergeRemoteGroupStatePreservingOwnLocation(
+          const remoteMerged = mergeRemoteGroupStatePreservingOwnLocation(
             previous,
             next,
             myUserIdRef.current,
@@ -392,6 +401,12 @@ export function useGroupState(
               reloadReason: loadReason,
             },
           );
+          const durableGroup = durableAhead && durable ? groupStateFromCoreSnapshot(durable).group : null;
+          const merged = durableGroup ? { ...remoteMerged, group: { ...remoteMerged.group,
+            journeyStatus: durableGroup.journeyStatus,
+            activeDestinationId: durableGroup.activeDestinationId,
+            journeyStartedAt: durableGroup.journeyStartedAt,
+          } } : remoteMerged;
           stateRef.current = merged;
           setState(merged);
           persistSnapshot = merged;
@@ -404,7 +419,7 @@ export function useGroupState(
           if (!isCurrentRequest()) return false;
           // Persist the same merged snapshot used for paint (never raw empty fenced next).
           if (!staleResponse && isCurrentGeneration && persistSnapshot) {
-            await hydrateCoreEntityVersions(groupId, persistSnapshot);
+            await hydrateCoreEntityVersions(groupId, persistSnapshot, recovery.entityVersions);
           }
           if (!isCurrentRequest()) return false;
           const snap = await readCoreSnapshot(groupId);

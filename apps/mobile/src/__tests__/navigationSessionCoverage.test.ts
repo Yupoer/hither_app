@@ -227,4 +227,19 @@ describe('useNavigationSession lifecycle and mutations', () => {
     expect(view.value().session).toBeNull();
     view.tree.unmount();
   });
+  it('exposes a terminal tombstone separately from empty active reads and clears it for a newer session', async () => {
+    const mounted = await mount('group-1');
+    await act(async () => { sessionCallback!(session('session-1', 2, 'cancelled')); });
+    expect(mounted.value().session).toBeNull();
+    expect(mounted.value().terminalSession?.id).toBe('session-1');
+    mockGetActive.mockResolvedValue(null);
+    await act(async () => { await mounted.value().refresh(); });
+    expect(mounted.value().terminalSession?.id).toBe('session-1');
+    const newer = { ...session('session-2'), startedAt: '2026-09-19T01:00:00Z' };
+    await act(async () => { sessionCallback!(newer); });
+    expect(mounted.value().session?.id).toBe('session-2');
+    expect(mounted.value().terminalSession).toBeNull();
+    await act(async () => mounted.tree.unmount());
+  });
+
 });

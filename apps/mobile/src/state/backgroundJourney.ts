@@ -6,14 +6,14 @@ import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccess
 import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
 import { enqueueArrival, projectArrivals } from './arrivalSync';
 import { enqueueJourneyCompletion } from './journeyCompletion';
-import { getCoreOperationOutbox, flushCoreOperationOutbox } from './coreDataSync';
+import { getCoreOperationOutbox, flushCoreOperationOutbox, readLocalJourneyProjection } from './coreDataSync';
 import type { CoreOperation } from '../types/coreData';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { updateLiveActivityProgress } from '../api/services/LiveActivityService';
-import { ackNavigationSession, getBackgroundNavigationContext } from '../api/services/NavigationService';
+import { ackNavigationSession, getBackgroundNavigationContext, getNavigationSessionById } from '../api/services/NavigationService';
 import { liveActivity } from '../native';
 import { distanceMeters } from '../utils/geo';
 import { canEvaluateSynchronizedArrival } from '../utils/synchronizedArrival';
@@ -40,6 +40,7 @@ import {
 import { derivePersonalProgress } from '../utils/personalProgress';
 import {
   backgroundPresenceConfig,
+  hasActiveBackgroundJourney,
   BACKGROUND_JOURNEY_TASK,
   createBackgroundJourneyController,
   resolveBackgroundTrackingMode,
@@ -630,7 +631,14 @@ if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
   TaskManager.defineTask<BackgroundLocationTaskData>(BACKGROUND_JOURNEY_TASK, handleBackgroundLocations);
 }
 observeNativeBackgroundLocation(sample => {
-  void handleBackgroundLocations({ data: { locations: [sample] } }).catch(() => undefined);
+  void (async () => {
+    const config = await controller.load();
+    if (config && !hasActiveBackgroundJourney(config) && AppState.currentState === 'background') {
+      await startBackgroundJourney(backgroundPresenceConfig(config));
+      return;
+    }
+    await handleBackgroundLocations({ data: { locations: [sample] } });
+  })().catch(() => undefined);
 });
 subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) {
@@ -644,14 +652,22 @@ subscribeLocationAccessChanges(() => {
 export async function startBackgroundJourney(
   config: BackgroundJourneyConfig,
 ): Promise<'started' | 'permission_denied' | 'hidden' | 'cancelled'> {
-  config = config.powerMode === 'allDay' || !config.navigationSessionId
-    ? backgroundPresenceConfig(config) : config;
+  config = hasActiveBackgroundJourney(config) ? config : backgroundPresenceConfig(config);
   const generation = ++trackingGeneration;
   const access = await captureLocationAccess(config.groupId);
   if (generation !== trackingGeneration) return 'cancelled';
   if (!access || !config.sharingEnabled || config.hasMembership === false) {
     await stopBackgroundJourney(true);
     return 'hidden';
+  }
+  if (hasActiveBackgroundJourney(config)) {
+    const projection = await readLocalJourneyProjection(config.groupId, config.destinationId).catch(() => null);
+    if (generation !== trackingGeneration || !isLocationAccessCurrent(access)) return 'cancelled';
+    if (projection?.gathering.journeyPhase === 'en_route'
+      && projection.gathering.activeDestinationId === projection.canonicalDestinationId) {
+      config = { ...config, journeyEntityVersion: projection.gathering.entityVersion,
+        journeyPhaseChangedAtMs: projection.gathering.phaseChangedAt };
+    }
   }
   const manualUndo = config.actorId && config.navigationSessionId
     ? await loadBackgroundManualUndo(config.actorId, config.groupId, config.destinationId, config.navigationSessionId)
@@ -680,32 +696,22 @@ export async function startBackgroundJourney(
   return controller.start(effectiveConfig);
 }
 
-export async function prepareBackgroundJourneyPermissions(allowPrompt = true): Promise<'ready' | 'permission_denied'> {
+export async function prepareBackgroundJourneyPermissions(allowPrompt = true, journeyActive = false): Promise<'ready' | 'permission_denied'> {
   const access = await captureLocationAccess();
   if (!access || AppState.currentState !== 'active') return 'permission_denied';
-  // iOS liveUpdates needs its activity session created while foregrounded.
-  // Prepare before permission reads yield, so already-granted users can safely
-  // finish those reads after locking without discarding a prepared owner.
-  let nativePrepared = await prepareNativeBackgroundLocation(true);
-  if (!isLocationAccessCurrent(access)) return 'permission_denied';
+  // Permission preparation never creates a navigation activity session.
+  // Passive iOS background presence requires Always authorization; when-in-use
+  // continuous delivery would force the same blue indicator as a journey.
   const foreground = await Location.getForegroundPermissionsAsync();
   const background = await Location.getBackgroundPermissionsAsync();
-  let ready = foreground.status === 'granted' && (nativeBackgroundAvailable || background.status === 'granted');
+  let ready = foreground.status === 'granted' && ((journeyActive && nativeBackgroundAvailable) || background.status === 'granted');
   if (!ready && allowPrompt) {
     if (!isLocationAccessCurrent(access) || AppState.currentState !== 'active') return 'permission_denied';
     const allowed = foreground.status === 'granted' || (await Location.requestForegroundPermissionsAsync()).status === 'granted';
     if (!isLocationAccessCurrent(access) || AppState.currentState !== 'active') return 'permission_denied';
-    ready = allowed && (nativeBackgroundAvailable || (await Location.requestBackgroundPermissionsAsync()).status === 'granted');
+    ready = allowed && ((journeyActive && nativeBackgroundAvailable) || background.status === 'granted' || (await Location.requestBackgroundPermissionsAsync()).status === 'granted');
   }
-  if (!ready || !isLocationAccessCurrent(access)) return 'permission_denied';
-  // A first-time grant may have made the initial native preparation fail.
-  // Retry only in the foreground; permission alone cannot create a native
-  // activity session after the app has already entered the background.
-  if (!nativePrepared) {
-    if (AppState.currentState !== 'active') return 'permission_denied';
-    nativePrepared = await prepareNativeBackgroundLocation(true);
-  }
-  return nativePrepared && isLocationAccessCurrent(access) ? 'ready' : 'permission_denied';
+  return ready && isLocationAccessCurrent(access) ? 'ready' : 'permission_denied';
 }
 
 export async function stopBackgroundJourney(releaseSession = false, expected?: BackgroundJourneyConfig): Promise<void> {
@@ -743,11 +749,38 @@ export function reconcileBackgroundNavigation(groupId: string, fromLocationTask 
       return;
     }
     if (!next.session || !next.target) {
+      // A missing server session is also possible between local Start ACK and
+      // session hydration. Require a newer durable End before retiring it.
+      const projection = await readLocalJourneyProjection(groupId, config.destinationId).catch(() => null);
+      if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+      const newerEnd = projection?.gathering.journeyPhase === 'staying'
+        && config.journeyEntityVersion != null
+        && projection.gathering.entityVersion > config.journeyEntityVersion;
+      const unavailableTarget = Boolean((next.session && !next.target
+          && (next.session.id === config.navigationSessionId || next.session.requestId === config.navigationSessionId))
+        || (projection && (!projection.destination
+          || (projection.destination.subgroupId ?? null) !== (config.scopeSubgroupId ?? null))));
+      const knownSession = !newerEnd && !unavailableTarget && config.navigationSessionId
+        ? await getNavigationSessionById(groupId, config.navigationSessionId, config.scopeSubgroupId ?? null).catch(() => null) : null;
+      if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+      const terminal = knownSession && (knownSession.id === config.navigationSessionId
+        || knownSession.requestId === config.navigationSessionId) && knownSession.status !== 'active';
+      if (!newerEnd && !terminal && !unavailableTarget) return;
       if (config.powerMode === 'journey') {
         await liveActivity.endAllGroupActivities();
         if (canContinueBackgroundSharing(config, access)) await startBackgroundJourney(backgroundPresenceConfig(config));
       }
       return;
+    }
+    const matchesCurrent = next.session.id === config.navigationSessionId
+      || next.session.requestId === config.navigationSessionId;
+    if (config.powerMode === 'journey' && !matchesCurrent && config.navigationSessionId) {
+      // A stale active session for the previous destination must not overwrite
+      // a newer locally committed Start while its session is still hydrating.
+      const knownCurrent = await getNavigationSessionById(groupId, config.navigationSessionId, config.scopeSubgroupId ?? null).catch(() => null);
+      if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+      if (!knownCurrent || knownCurrent.status === 'active'
+        || (knownCurrent.id !== config.navigationSessionId && knownCurrent.requestId !== config.navigationSessionId)) return;
     }
     if (next.session.id === config.navigationSessionId) {
       if (!next.navigationMemberIds || !next.arrivedMemberIds) return;

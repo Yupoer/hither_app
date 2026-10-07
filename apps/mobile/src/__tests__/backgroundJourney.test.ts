@@ -10,8 +10,10 @@ import { join } from 'node:path';
 
 const config: BackgroundJourneyConfig = {
   groupId: 'group-1',
-  navigationSessionId: null,
+  navigationSessionId: 'session-1',
   destinationId: 'destination-1',
+  target: { id: 'destination-1', title: 'Stop', coordinates: { latitude: 25, longitude: 121 }, order: 0, day: 1 },
+  teamNavigationActive: true,
   destination: { latitude: 25.0478, longitude: 121.517 },
   arrivalRadiusMeters: 50,
   initialDistanceM: 1000,
@@ -133,8 +135,8 @@ describe('background journey controller', () => {
       accuracy: number;
       pausesUpdatesAutomatically: boolean;
     };
-    // Default journey (highAccuracy unset) uses Balanced and never pauses while sharing.
-    expect(opts.accuracy).toBe(3);
+    // An actual active team journey uses the High fitness profile.
+    expect(opts.accuracy).toBe(4);
     expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
@@ -154,7 +156,7 @@ describe('background journey controller', () => {
     expect(opts.distanceInterval).toBe(8);
   });
 
-  it('keeps the precise switch effective without a team navigation session', async () => {
+  it('keeps no active journey passive even when the precise preference remains enabled', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -175,10 +177,11 @@ describe('background journey controller', () => {
         teamNavigationActive: false,
         appState: 'background',
       }),
-    ).toBe('manualHighAccuracy');
+    ).toBe('passiveBackground');
     expect(location.startLocationUpdatesAsync.mock.calls[0][1]).toMatchObject({
-      accuracy: 5,
-      timeInterval: 5_000,
+      accuracy: 2,
+      timeInterval: 150_000,
+      activityType: 1, showsBackgroundLocationIndicator: false,
     });
   });
 

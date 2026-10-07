@@ -11,6 +11,8 @@ const base: BackgroundJourneyConfig = {
   groupId: 'group-1',
   navigationSessionId: 'session-1',
   destinationId: 'destination-1',
+  target: { id: 'destination-1', title: 'Stop', coordinates: { latitude: 25, longitude: 121 }, order: 0, day: 1 },
+  teamNavigationActive: true,
   destination: { latitude: 25, longitude: 121 },
   arrivalRadiusMeters: 50,
   initialDistanceM: 1000,
@@ -48,13 +50,14 @@ describe('background journey controller state transitions', () => {
       completeSolo: false,
     });
     expect(resolveBackgroundTrackingMode({ ...base, sharingEnabled: false })).toBe('hidden');
-    expect(resolveBackgroundTrackingMode({ ...base, appState: 'active' })).toBe('foreground');
+    expect(resolveBackgroundTrackingMode({ ...base, appState: 'active', teamNavigationActive: false })).toBe('foreground');
     expect(resolveBackgroundTrackingMode({ ...base, appState: 'background', teamNavigationActive: true })).toBe('teamNavigation');
-    expect(resolveBackgroundTrackingMode({ ...base, appState: 'background', highAccuracy: true })).toBe('manualHighAccuracy');
+    expect(resolveBackgroundTrackingMode({ ...base, appState: 'background', highAccuracy: true })).toBe('navigationMax');
     expect(backgroundLocationOptions('journey', true, 'navigationMax')).toMatchObject({
       accuracy: 5, timeInterval: 5_000, deferredUpdatesDistance: 0,
     });
-    expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
+    expect(backgroundLocationOptions('journey', true, 'passiveBackground')).toMatchObject({
+      activityType: 1, showsBackgroundLocationIndicator: false,
       accuracy: 2, timeInterval: 150_000, deferredUpdatesInterval: 150_000,
     });
   });
@@ -109,4 +112,49 @@ describe('background journey controller state transitions', () => {
       location.requestBackgroundPermissionsAsync.mock.invocationCallOrder[0],
     );
   });
+});
+
+
+it.each([
+  { teamNavigationActive: false }, { teamNavigationActive: undefined }, { target: undefined },
+  { navigationSessionId: null }, { destinationId: '' },
+])('uses passive GPS for missing actual journey intent or target: %j', async invalid => {
+  const { controller, location } = harness();
+  await controller.start({ ...base, powerMode: 'journey', highAccuracy: true, ...invalid });
+  expect(location.startLocationUpdatesAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+    accuracy: 2, timeInterval: 150_000, activityType: 1, showsBackgroundLocationIndicator: false,
+  }));
+});
+
+it('migrates an old native passive owner even when its persisted power profile is unchanged', async () => {
+  const { controller, location } = harness(true);
+  const passive = backgroundPresenceConfig(base);
+  await controller.start(passive);
+  Object.assign(location, { hasMatchingLocationOwnerAsync: jest.fn(async () => false) });
+  await controller.start(passive);
+  expect(location.stopLocationUpdatesAsync).toHaveBeenCalled();
+  expect(location.startLocationUpdatesAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+    accuracy: 2, activityType: 1, showsBackgroundLocationIndicator: false,
+  }));
+});
+
+
+it('restores a same-owner passive mode if background navigation acquisition fails', async () => {
+  const { controller, location } = harness(true);
+  await controller.start({ ...base, actorId: 'actor', powerMode: 'allDay' });
+  location.startLocationUpdatesAsync.mockRejectedValueOnce(new Error('permission_changed'));
+  await expect(controller.start({ ...base, actorId: 'actor', highAccuracy: true })).rejects.toThrow('permission_changed');
+  expect(await controller.load()).toMatchObject({ actorId: 'actor', powerMode: 'allDay' });
+  expect(location.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
+    accuracy: 2, activityType: 1, showsBackgroundLocationIndicator: false,
+  }));
+});
+
+it('does not restore a previous account owner after acquisition fails for the next account', async () => {
+  const { controller, location } = harness(true);
+  await controller.start({ ...base, actorId: 'previous', powerMode: 'allDay' });
+  location.startLocationUpdatesAsync.mockRejectedValueOnce(new Error('permission_changed'));
+  await expect(controller.start({ ...base, actorId: 'next', highAccuracy: true })).rejects.toThrow('permission_changed');
+  expect(await controller.load()).toBeNull();
+  expect(location.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
 });

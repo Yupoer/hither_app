@@ -53,6 +53,7 @@ export interface CoreDataDatabase {
     canonicalDestinationId: string,
     createdAt?: number,
   ): Promise<void>;
+  getDestinationAlias?(groupId: string, localDestinationId: string): Promise<string | null>;
   getActiveGathering(groupId: string): Promise<ActiveGatheringState | null>;
   /** Opens its own exclusive transaction. Defaults to optimistic snapshot patch. */
   putActiveGathering(
@@ -362,6 +363,10 @@ export class MemoryCoreDataDatabase implements CoreDataDatabase {
     return null;
   }
 
+  async getDestinationAlias(groupId: string, localDestinationId: string): Promise<string | null> {
+    return this.destinationAliases.get(`${groupId}:${localDestinationId}`) ?? null;
+  }
+
   async writeDestinationAlias(
     _exec: CoreSqlExecutor,
     groupId: string,
@@ -580,6 +585,15 @@ export class SQLiteCoreDataDatabase implements CoreDataDatabase {
       }
     }
     return null;
+  }
+
+  async getDestinationAlias(groupId: string, localDestinationId: string): Promise<string | null> {
+    const database = await getHitherDatabase();
+    const row = await database.getFirstAsync<{ canonical_destination_id: string }>(
+      'SELECT canonical_destination_id FROM core_destination_id_aliases WHERE group_id = ? AND local_destination_id = ?',
+      groupId, localDestinationId,
+    );
+    return row?.canonical_destination_id ?? null;
   }
 
   async writeDestinationAlias(
@@ -863,15 +877,14 @@ export function createCoreDataStore(
 
           if (actor) snapshot.ownerActorId = actor;
           if (
-            pendingGathering
-            && existing
-            && existing.activeGathering.entityVersion
-              >= snapshot.activeGathering.entityVersion
+            existing
+            && existing.activeGathering.entityVersion >= snapshot.activeGathering.entityVersion
+            && (pendingGathering || existing.activeGathering.entityVersion > 0)
           ) {
-            // Preserve only the active gathering portion while a gathering
-            // transition is waiting. The remote group and itinerary remain
-            // authoritative; an old local_optimistic source alone must never
-            // fence newer remote destinations.
+            // A pending or ACKed gathering keeps its committed phase until a
+            // coherent higher remote version replaces it. An older recovery
+            // cannot downgrade the phase/version after its receipt is removed.
+            // Itinerary/member data still converges independently.
             snapshot.itineraryVersion = Math.max(
               snapshot.itineraryVersion ?? 0,
               existing.itineraryVersion ?? 0,
@@ -881,7 +894,7 @@ export function createCoreDataStore(
               snapshot.entityVersion,
               existing.activeGathering.entityVersion,
             );
-            snapshot.source = 'local_optimistic';
+            snapshot.source = pendingGathering ? 'local_optimistic' : existing.source;
           }
 
           if (pendingItinerary && existing) {

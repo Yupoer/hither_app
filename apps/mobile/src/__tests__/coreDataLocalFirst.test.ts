@@ -306,6 +306,23 @@ describe('OTA-04 core snapshot store (ticket 01)', () => {
     expect(restored?.destinations.map((d) => d.id)).toEqual(['d1', 'd2', 'd3']);
   });
 
+  it('never downgrades an ACKed Start from an older recovery but accepts a newer authoritative End', async () => {
+    const db = new MemoryCoreDataDatabase();
+    const store = createCoreDataStore(db, () => 2_000);
+    await store.saveRemoteGroupState(makeState(), { gatheringVersion: 4 });
+    const current = startGathering(deriveActiveGatheringFromGroupState(makeState(), 4, 1_000), 1_000);
+    await db.putActiveGathering(current, { patchSnapshot: 'remote' });
+    // Receipt already compacted: there is deliberately no pending guard.
+    await store.saveRemoteGroupState(makeState(), { gatheringVersion: 3 });
+    expect((await store.getActiveGathering('group-1'))?.entityVersion).toBe(5);
+    expect((await store.readGroupState('group-1'))?.group.journeyStatus).toBe('going');
+    await store.saveRemoteGroupState(makeState(), { gatheringVersion: 5 });
+    expect((await store.readGroupState('group-1'))?.group.journeyStatus).toBe('going');
+    await store.saveRemoteGroupState(makeState(), { gatheringVersion: 6 });
+    expect((await store.getActiveGathering('group-1'))?.entityVersion).toBe(6);
+    expect((await store.readGroupState('group-1'))?.group.journeyStatus).toBe('paused');
+  });
+
   it('does not clobber local_optimistic gathering while pending guard is true', async () => {
     const db = new MemoryCoreDataDatabase();
     let pending = true;

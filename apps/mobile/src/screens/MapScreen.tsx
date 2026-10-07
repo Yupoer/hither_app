@@ -5,6 +5,7 @@ import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
 import { claimAppNotice, showAppNotice } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
+import { prepareNativeBackgroundLocation } from '../native/backgroundLocation';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
   useCallback,
@@ -672,7 +673,7 @@ export default function MapScreen({ route, navigation }: Props) {
       // Retained server receipts reconcile silently; saved local intent remains usable.
     }
   }, [openOperations, roleContext, refresh, t, user?.id]);
-  const navigationSessionState = useNavigationSession(groupId, myScopeId ?? null);
+  const navigationSessionState = useNavigationSession(groupId, myScopeId ?? null, user?.id ?? null);
   const navigationSessionId = navigationSessionState.session?.id ?? null;
   /** Local durable Start id used as a session alias before the server row is visible. */
   const [localNavigationSessionId, setLocalNavigationSessionId] = useState<string | null>(null);
@@ -2874,6 +2875,21 @@ export default function MapScreen({ route, navigation }: Props) {
   const backgroundSharingScope = preferencesReady && sharingEnabled && groupId && user?.id
     && members.some(member => member.userId === user.id) ? `${user.id}:${groupId}` : null;
   backgroundJourneyWantedRef.current = backgroundSharingScope;
+  const backgroundPermissionProfileKey = `${groupId}:${effectiveNavigationActive ? 'journey' : 'presence'}`;
+  const backgroundPermissionProfileRef = useRef(backgroundPermissionProfileKey);
+  backgroundPermissionProfileRef.current = backgroundPermissionProfileKey;
+
+  // Creating CLBackgroundActivitySession alone displays the iOS blue indicator.
+  // Retain it only for a live journey to a target; passive sharing never owns it.
+  useEffect(() => {
+    if (!backgroundSharingScope || !effectiveNavigationActive) {
+      void prepareNativeBackgroundLocation(false).catch(() => undefined);
+      return;
+    }
+    if (appState === 'active') {
+      void prepareNativeBackgroundLocation(true).catch(() => undefined);
+    }
+  }, [appState, backgroundSharingScope, effectiveNavigationActive, backgroundPermissionsPreparedFor]);
 
 
   /**
@@ -2902,12 +2918,14 @@ export default function MapScreen({ route, navigation }: Props) {
     if (appState === 'active') {
       backgroundStartedKeyRef.current = null;
       backgroundPermissionDeniedRef.current = null;
-      if (sharingEnabled && backgroundPermissionsPreparedFor !== groupId
-        && backgroundPermissionPrepareInFlightRef.current !== groupId
-        && backgroundPermissionAttemptedRef.current !== groupId) {
-        backgroundPermissionPrepareInFlightRef.current = groupId;
-        backgroundPermissionAttemptedRef.current = groupId;
+      if (sharingEnabled && backgroundPermissionsPreparedFor !== backgroundPermissionProfileKey
+        && backgroundPermissionPrepareInFlightRef.current !== backgroundPermissionProfileKey
+        && backgroundPermissionAttemptedRef.current !== backgroundPermissionProfileKey) {
+        backgroundPermissionPrepareInFlightRef.current = backgroundPermissionProfileKey;
+        backgroundPermissionAttemptedRef.current = backgroundPermissionProfileKey;
         void (async () => {
+          const granted = await prepareBackgroundJourneyPermissions(false, effectiveNavigationActive);
+          if (granted === 'ready') return granted;
           const key = 'pref.journeyBackgroundExplained';
           const saved = await AsyncStorage.getItem(key);
           if (!saved) {
@@ -2923,23 +2941,25 @@ export default function MapScreen({ route, navigation }: Props) {
             if (!accepted) return 'permission_denied' as const;
           }
           if (saved === 'declined') return 'permission_denied' as const;
-          return prepareBackgroundJourneyPermissions(true);
+          return prepareBackgroundJourneyPermissions(true, effectiveNavigationActive);
         })()
           .then((result) => {
-            if (backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
+            if (backgroundJourneyWantedRef.current !== backgroundSharingScope
+              || backgroundPermissionProfileRef.current !== backgroundPermissionProfileKey) return;
             if (result === 'ready') {
               backgroundPermissionDeniedRef.current = null;
-              setBackgroundPermissionsPreparedFor(groupId);
+              setBackgroundPermissionsPreparedFor(backgroundPermissionProfileKey);
             } else {
               setBackgroundPermissionsPreparedFor(null);
               void rememberPendingLocationPermission();
             }
           })
           .catch(() => {
-            if (backgroundJourneyWantedRef.current === backgroundSharingScope) setBackgroundPermissionsPreparedFor(null);
+            if (backgroundJourneyWantedRef.current === backgroundSharingScope
+              && backgroundPermissionProfileRef.current === backgroundPermissionProfileKey) setBackgroundPermissionsPreparedFor(null);
           })
           .finally(() => {
-            if (backgroundPermissionPrepareInFlightRef.current === groupId) {
+            if (backgroundPermissionPrepareInFlightRef.current === backgroundPermissionProfileKey) {
               backgroundPermissionPrepareInFlightRef.current = null;
             }
           });
@@ -3019,7 +3039,7 @@ export default function MapScreen({ route, navigation }: Props) {
       etaSeconds: lastValidPresentation.etaSeconds ?? selfRoute?.expectedTravelTimeSeconds,
       teamNavigationActive: effectiveNavigationActive,
       appState: appState === 'background' ? 'background' : 'inactive',
-      permissionsPrepared: backgroundPermissionsPreparedFor === groupId,
+      permissionsPrepared: backgroundPermissionsPreparedFor === backgroundPermissionProfileKey,
     }).then((result) => {
       if (result !== 'started' && backgroundStartedKeyRef.current === key) backgroundStartedKeyRef.current = null;
       if (result === 'hidden') {
@@ -3038,6 +3058,7 @@ export default function MapScreen({ route, navigation }: Props) {
     backgroundSharingScope,
     effectiveNavigationActive,
     backgroundPermissionsPreparedFor,
+    backgroundPermissionProfileKey,
     preferencesReady,
     language,
     localArrivalRadiusM,

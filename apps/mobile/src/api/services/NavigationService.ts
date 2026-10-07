@@ -204,6 +204,24 @@ export async function getActiveNavigationSession(
   return data ? mapNavigationSession(data as NavigationSessionRow) : null;
 }
 
+/** Read one known session, including terminal status; a missing row is unknown. */
+export async function getNavigationSessionById(
+  groupId: string, sessionId: string, scopeSubgroupId: string | null = null,
+): Promise<NavigationSession | null> {
+  const query = () => {
+    const base = supabase.from('navigation_sessions').select('*, navigation_member_states(user_id)').eq('group_id', groupId);
+    return scopeSubgroupId == null ? base.is('scope_subgroup_id', null) : base.eq('scope_subgroup_id', scopeSubgroupId);
+  };
+  const direct = await query().eq('id', sessionId).maybeSingle();
+  orThrow(direct.error);
+  if (direct.data) return mapNavigationSession(direct.data as NavigationSessionRow);
+  // A local Start operation id becomes the server request_id after ACK. Its
+  // matching terminal must remain discoverable even before id hydration.
+  const alias = await query().eq('request_id', sessionId).maybeSingle();
+  orThrow(alias.error);
+  return alias.data ? mapNavigationSession(alias.data as NavigationSessionRow) : null;
+}
+
 /** Minimal background control data; never downloads teammates' positions. */
 export async function getBackgroundNavigationContext(groupId: string, scopeSubgroupId?: string | null): Promise<{
   actorId: string; hasMembership: boolean; sharingEnabled: boolean;
@@ -231,7 +249,7 @@ export async function getBackgroundNavigationContext(groupId: string, scopeSubgr
     .select('id, title, latitude, longitude, position, day, subgroup_id, closed_at')
     .eq('group_id', groupId).eq('id', session.destinationId).maybeSingle();
   orThrow(error);
-  if (!data || data.day == null || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return result;
+  if (!data || data.day == null || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return { ...result, session };
   const [rosterResult, arrivalsResult, subgroupResult] = await Promise.all([
     supabase.from('memberships').select('user_id, role, subgroup_id, solo').eq('group_id', groupId),
     supabase.from('destination_arrivals').select('user_id').eq('group_id', groupId)

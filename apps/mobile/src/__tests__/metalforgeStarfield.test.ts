@@ -74,10 +74,10 @@ describe('MetalforgeStarfield performance contract', () => {
   });
 });
 
-import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, CHARGE_BALL_INTERVAL_MS } from '../utils/starfieldParticles';
+import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, CHARGE_BALL_INTERVAL_MS, CHARGE_BALLS_PER_SECOND } from '../utils/starfieldParticles';
 
 it('starts outside the left edge and every new ball moves right at half the previous size', () => {
-  expect(CHARGE_BALL_INTERVAL_MS).toBe(280 / 1.5 / 2);
+  expect(CHARGE_BALL_INTERVAL_MS).toBe(1000 / 22);
   const windows = [{ startedAt: 0 }];
   const birth = chargeBallsAt(0, 360, windows)[0];
   expect(birth.x + birth.radius).toBe(0);
@@ -94,33 +94,46 @@ it('starts outside the left edge and every new ball moves right at half the prev
         expect(ball.x).toBeLessThan(380 * 100 / 4000);
       }
     }
-    expect(current.length).toBeLessThanOrEqual(59);
+    expect(current.length).toBeLessThanOrEqual(121);
     expect(current.every(ball => ball.radius >= 2 && ball.radius <= 3.2)).toBe(true);
     previous = current;
   }
   expect(chargeBallsAt(1000, 0, windows)).toEqual([]);
 });
 
-it('emits twice as many balls over the same time window', () => {
-  const oldInterval = 280 / 1.5;
-  const stoppedAt = oldInterval * 6;
-  const balls = chargeBallsAt(stoppedAt, 360, [{ startedAt: 0, stoppedAt }]);
-  expect(balls).toHaveLength(12);
+it.each([0, 123.45, 2 ** 32])('emits the same 22 balls every second without cycle gaps from start %s', startedAt => {
+  expect(CHARGE_BALLS_PER_SECOND).toBe(11 * 2);
+  const windows = [{ startedAt }];
+  for (let second = 0; second < 120; second++) {
+    const end = startedAt + (second + 1) * 1000;
+    const births = chargeBallsAt(end - 0.001, 360, windows)
+      .filter(ball => Number(ball.id.split(':')[1]) >= second * CHARGE_BALLS_PER_SECOND);
+    expect(births).toHaveLength(CHARGE_BALLS_PER_SECOND);
+    expect(births.map(ball => Number(ball.id.split(':')[1])))
+      .toEqual(Array.from({ length: CHARGE_BALLS_PER_SECOND }, (_, index) => second * CHARGE_BALLS_PER_SECOND + index));
+  }
 });
 
-it.each([320, 360, 720])('covers every height band once per 12 births at width %s', width => {
+it.each([320, 360, 720])('chooses random height positions with uniform coverage at width %s', width => {
   const windows = [{ startedAt: 123 }];
   const fieldHeight = width * 0.85;
-  for (let batch = 0; batch < 10; batch++) {
-    const bands: number[] = [];
-    for (let offset = 0; offset < 12; offset++) {
-      const index = batch * 12 + offset;
-      const birth = chargeBallsAt(123 + index * CHARGE_BALL_INTERVAL_MS, width, windows)
-        .find(ball => ball.id === `123:${index}`)!;
-      bands.push(Math.floor((birth.y - birth.radius) / (fieldHeight - birth.radius * 2) * 12));
-    }
-    expect(bands.sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, index) => index));
+  const bins = Array.from({ length: 12 }, () => 0);
+  const positions: number[] = [];
+  for (let index = 0; index < 1200; index++) {
+    const now = 123 + index * CHARGE_BALL_INTERVAL_MS;
+    const birth = chargeBallsAt(now, width, windows).find(ball => ball.id === `123:${index}`)!;
+    // Remove its gentle vertical drift to inspect the random birth coordinate.
+    const variation = (birth.radius / (width / 360) / 0.4 - 5) / 3;
+    const position = (birth.y - birth.radius - Math.sin(variation * 6) * 3)
+      / (fieldHeight - birth.radius * 2);
+    positions.push(position);
+    bins[Math.min(11, Math.floor(position * 12))]++;
+    expect(chargeBallsAt(now, width, windows).find(ball => ball.id === birth.id)).toEqual(birth);
   }
+  expect(bins.every(count => count > 70 && count < 130)).toBe(true);
+  expect(new Set(positions.slice(0, 12).map(position => Math.floor(position * 12))).size).toBeLessThan(12);
+  expect(positions[0]).not.toBe(positions[12]);
+  expect(new Set(positions).size).toBeGreaterThan(1100);
 });
 
 it('keeps one full field across collapse; hidden lower balls keep moving', () => {
@@ -138,14 +151,14 @@ it('keeps one full field across collapse; hidden lower balls keep moving', () =>
 
 it('closes only the inlet, preserves in-flight balls and drains naturally to the right', () => {
   const running = changeChargeEmission([], true, 0);
-  const stopped = changeChargeEmission(running, false, 1500);
-  const atStop = chargeBallsAt(1500, 360, stopped);
-  expect(atStop).toEqual(chargeBallsAt(1500, 360, running));
+  const stopped = changeChargeEmission(running, false, 1510);
+  const atStop = chargeBallsAt(1510, 360, stopped);
+  expect(atStop).toEqual(chargeBallsAt(1510, 360, running));
   const afterStop = chargeBallsAt(2300, 360, stopped);
   expect(afterStop.map(ball => ball.id)).toEqual(atStop.map(ball => ball.id));
   expect(afterStop.every(ball => ball.x > atStop.find(item => item.id === ball.id)!.x)).toBe(true);
-  expect(chargeBallsAt(1500 + CHARGE_BALL_MAX_TRAVEL_MS, 360, stopped)).toEqual([]);
-  expect(changeChargeEmission(stopped, false, 1500 + CHARGE_BALL_MAX_TRAVEL_MS)).toEqual([]);
+  expect(chargeBallsAt(1510 + CHARGE_BALL_MAX_TRAVEL_MS, 360, stopped)).toEqual([]);
+  expect(changeChargeEmission(stopped, false, 1510 + CHARGE_BALL_MAX_TRAVEL_MS)).toEqual([]);
 });
 
 it('can resume the inlet while the previous batch is still draining', () => {

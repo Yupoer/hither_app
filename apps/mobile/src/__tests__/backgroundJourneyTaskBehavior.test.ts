@@ -51,6 +51,7 @@ jest.mock('expo-task-manager', () => ({
 }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'background-event-1') }));
 jest.mock('../api/services/NavigationService', () => ({
+  getNavigationSessionById: jest.fn(async () => null),
   ackNavigationSession: (...args: unknown[]) => mockAckNavigation(...args),
 }));
 jest.mock('../native', () => ({ liveActivity: mockLiveActivity }));
@@ -86,6 +87,7 @@ const baseConfig = {
   travelMode: 'walk' as const,
   sharingEnabled: true,
   powerMode: 'journey' as const,
+  teamNavigationActive: true,
 };
 const locationSample = {
   timestamp: Date.now(),
@@ -124,7 +126,8 @@ describe('background journey native task wiring', () => {
     mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(true);
     await expect(stopBackgroundJourney()).resolves.toBeUndefined();
     expect(mockLocation.getForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
-    expect(mockLocation.getBackgroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    // Preparation reads permissions once; the legacy adapter verifies Always again before acquisition.
+    expect(mockLocation.getBackgroundPermissionsAsync).toHaveBeenCalledTimes(2);
     expect(mockLocation.stopLocationUpdatesAsync).toHaveBeenCalledWith(
       'hither-background-journey-location',
     );
@@ -256,4 +259,4 @@ jest.mock('../state/arrivalSync', () => ({ enqueueArrival: jest.fn(async (input)
   status: 'pending', payload: input, createdAt: Date.parse(input.occurredAt),
 })) }));
 jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
-jest.mock('../state/coreDataSync', () => ({ getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));
+jest.mock('../state/coreDataSync', () => ({ readLocalJourneyProjection: jest.fn(async () => null), getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));

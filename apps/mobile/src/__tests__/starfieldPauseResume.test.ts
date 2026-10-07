@@ -8,7 +8,10 @@ const mockFrames: any[] = [];
 jest.mock('react-native', () => ({ AppState: mockApp, Platform: { OS: 'ios' },
   StyleSheet: { absoluteFill: {}, create: (value: unknown) => value }, View: 'View' }));
 jest.mock('@shopify/react-native-skia', () => ({ Canvas: 'Canvas', Path: 'Path',
-  Skia: { Path: { Make: () => ({ addCircle() {} }) } } }));
+  Skia: { Path: { Make: () => {
+    const circles: number[][] = [];
+    return { circles, addCircle: (x: number, y: number, radius: number) => circles.push([x, y, radius]) };
+  } } } }));
 jest.mock('react-native-reanimated', () => ({
   useReducedMotion: () => false,
   useSharedValue: (value: unknown) => {
@@ -55,6 +58,17 @@ it('freezes ball identity and phase through background time, and drains only whi
   frame.callback({ timestamp: 200050 });
   expect(clock.value).toBe(frozen + 50);
   expect(chargeBallsAt(clock.value, 360, mockValues[0].value)[0].x).toBeGreaterThan(before[0].x);
+  // The doubled population must all reach Skia, without a legacy 59-ball cap
+  // or extra Canvas/Path components for each particle.
+  for (let timestamp = 200100; timestamp <= 205100; timestamp += 50) frame.callback({ timestamp });
+  const fullField = chargeBallsAt(clock.value, 360, mockValues[0].value);
+  expect(fullField.length).toBeGreaterThan(59);
+  expect(fullField.length).toBeLessThanOrEqual(121);
+  const layers = tree.root.findAllByType('Path');
+  expect(layers).toHaveLength(16);
+  const circles = layers.flatMap((layer: any) => layer.props.path.value.circles);
+  expect(circles).toHaveLength(fullField.length);
+  for (const ball of fullField) expect(circles).toContainEqual([ball.x, ball.y, ball.radius]);
   await act(async () => { tree.update(element(false)); });
   expect(jest.getTimerCount()).toBe(1);
   await act(async () => { mockApp.currentState = 'background'; mockListeners.forEach(cb => cb()); });

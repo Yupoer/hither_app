@@ -1,4 +1,10 @@
+const mockNavigationDisk = new Map<string, string>();
+jest.mock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: {
+  getItem: jest.fn(async (key: string) => mockNavigationDisk.get(key) ?? null),
+  setItem: jest.fn(async (key: string, value: string) => { mockNavigationDisk.set(key, value); }),
+} }));
 jest.mock('../state/appNotice', () => ({ showOperationFailure: jest.fn(), showAppNotice: jest.fn() }));
+import { rememberEndedNavigationSession } from '../state/endedNavigationSessions';
 import { showOperationFailure, showAppNotice } from '../state/appNotice';
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'operation-id') }));
@@ -9,7 +15,9 @@ jest.mock('../state/coreDataSync', () => ({
   enqueueLeaderGatheringStart: jest.fn(), enqueueLeaderGatheringSwitch: jest.fn(),
   enqueueLeaderGatheringEnd: jest.fn(), flushCoreOperationOutbox: jest.fn(async () => undefined),
   getCoreOperationOutbox: () => ({ getOperation: mockGetOperation }),
+  readLocalJourneyProjection: (...args: unknown[]) => mockLocalProjection(...args),
 }));
+const mockLocalProjection = jest.fn(async (..._args: unknown[]): Promise<any> => null);
 const mockGetOperation = jest.fn(async (): Promise<unknown> => ({ status: 'pending' }));
 import React from 'react';
 import { Alert } from 'react-native';
@@ -36,14 +44,16 @@ const projection = jest.fn();
 const pauseConfirm = jest.fn();
 const localSessionChanges: Array<string | null> = [];
 const onLocalSessionIdChange = (sessionId: string | null) => localSessionChanges.push(sessionId);
-function Harness({ groupId = 'g', navigationSession = null, groupState, hasPendingTeamOperation = true }: {
+function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSession = null, groupState, hasPendingTeamOperation = true }: {
   groupId?: string;
+  actorId?: string;
+  terminalSession?: NavigationSession | null;
   navigationSession?: NavigationSession | null;
   groupState?: GroupState;
   hasPendingTeamOperation?: boolean;
 }) {
   const currentState = groupState ?? (groupId === 'g' ? state : { ...state, group: { ...state.group, id: groupId } });
-  const currentApi = useJourneyNavigation({ state: currentState, groupId, isLeader: true, destinations: [first, second],
+  const currentApi = useJourneyNavigation({ state: currentState, groupId, actorId, terminalSession, isLeader: true, destinations: currentState.destinations,
     selectedDestination: first, fromCoords: undefined, refresh: jest.fn(), t: key => key,
     mapRef: { current: null }, carouselRef: { current: null }, setSelectedIndex: jest.fn(),
     navigationSession, startSession, cancelSession, hasPendingTeamOperation,
@@ -56,6 +66,7 @@ beforeEach(async () => {
   jest.clearAllMocks();
   localSessionChanges.length = 0;
   mockGetOperation.mockResolvedValue({ status: 'pending' });
+  mockLocalProjection.mockResolvedValue(null);
   await act(async () => { root = create(React.createElement(Harness)); });
 });
 afterEach(async () => { await act(async () => root.unmount()); });
@@ -140,6 +151,162 @@ it('does not resume a paused soft cursor when a later Start fails to save', asyn
   await act(async () => { await api.startNavigation(first, 0); });
   await act(async () => { await api.requestTeamEnd(first, 0); });
   await act(async () => { await api.startNavigation(first, 0); });
+  expect(api.navTargetId).toBeNull();
+  expect(api.journeyGoing).toBe(false);
+});
+
+it('keeps an acknowledged local Start while the recovery projection still has no navigation session', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('b', 1) as any);
+  await act(async () => { await api.startNavigation(second, 1); });
+  mockGetOperation.mockResolvedValue(null);
+  await act(async () => { root.update(React.createElement(Harness, {
+    hasPendingTeamOperation: false, navigationSession: null,
+    groupState: { ...state, group: { ...state.group, journeyStatus: 'going', activeDestinationId: 'b' } },
+  })); });
+  expect(api.navTargetId).toBe('b');
+  expect(api.journeyGoing).toBe(true);
+  expect(api.localSessionId).toBe('op-1');
+  await act(async () => { root.update(React.createElement(Harness, {
+    hasPendingTeamOperation: false, navigationSession: null,
+    // A late read can still expose the old paused group while session hydration
+    // is catching up. The accepted local command must survive that projection.
+    groupState: state,
+  })); });
+  expect(api.navTargetId).toBe('b');
+  expect(api.localSessionId).toBe('op-1');
+});
+
+it('still releases a rejected Start instead of keeping its optimistic journey forever', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('b', 1) as any);
+  await act(async () => { await api.startNavigation(second, 1); });
+  mockGetOperation.mockResolvedValue({ status: 'conflict' });
+  await act(async () => { root.update(React.createElement(Harness, {
+    hasPendingTeamOperation: false, navigationSession: null, groupState: state,
+  })); });
+  expect(api.navTargetId).toBeNull();
+  expect(api.journeyGoing).toBe(false);
+  expect(api.localSessionId).toBeNull();
+});
+
+it('stops on a newer durable End even when the session subscription still returns an old active row', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('b', 1) as any);
+  await act(async () => { await api.startNavigation(second, 1); });
+  mockGetOperation.mockResolvedValue(null);
+  mockLocalProjection.mockResolvedValue({ canonicalDestinationId: 'b',
+    gathering: { ...base, entityVersion: 2, phaseChangedAt: 10 } });
+  const oldSession: NavigationSession = { id: 'old-row', groupId: 'g', destinationId: second.id,
+    destination: { name: second.title, coordinates: second.coordinates, arrivalRadiusMeters: 50 },
+    startedBy: 'leader', requestId: 'old-request', startedAt: '1970-01-01T00:00:00Z',
+    expiresAt: '2027-01-01T00:00:00Z', status: 'active', version: 1 };
+  await act(async () => { root.update(React.createElement(Harness, { hasPendingTeamOperation: false,
+    navigationSession: oldSession, groupState: state })); });
+  expect(api.journeyGoing).toBe(false);
+  expect(api.navTargetId).toBeNull();
+  expect(api.localSessionId).toBeNull();
+  // An unrelated render with stale going state must not erase durable End2.
+  await act(async () => { root.update(React.createElement(Harness, { hasPendingTeamOperation: false,
+    navigationSession: oldSession, groupState: { ...state, group: { ...state.group,
+      journeyStatus: 'going', activeDestinationId: 'b', journeyStartedAt: oldSession.startedAt } } })); });
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockImplementationOnce(async (_group, options) => {
+    expect(options?.baseState).toMatchObject({ journeyPhase: 'staying', entityVersion: 2 });
+    return { ...saved('b', 3), base: options?.baseState } as any;
+  });
+  await act(async () => { await api.startNavigation(second, 1); });
+  expect(projection.mock.calls.at(-1)?.[0]).toMatchObject({ journeyPhase: 'en_route', entityVersion: 3 });
+});
+
+it('follows the proven canonical quick-add identity without losing the local Start alias', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('b', 1) as any);
+  await act(async () => { await api.startNavigation(second, 1); });
+  const canonical = { ...second, id: 'canonical-b' };
+  mockLocalProjection.mockResolvedValue({ canonicalDestinationId: canonical.id,
+    gathering: { ...saved(canonical.id, 1).local } });
+  await act(async () => { root.update(React.createElement(Harness, { hasPendingTeamOperation: true,
+    groupState: { ...state, destinations: [first, canonical] } })); });
+  expect(api.navTargetId).toBe(canonical.id);
+  expect(api.journeyActive).toBe(true);
+  expect(api.localSessionId).toBe('op-1');
+});
+
+it('stops a removed destination when no canonical merge ledger exists', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('b', 1) as any);
+  await act(async () => { await api.startNavigation(second, 1); });
+  mockLocalProjection.mockResolvedValue({ canonicalDestinationId: 'b', gathering: saved('b', 1).local });
+  await act(async () => { root.update(React.createElement(Harness, { hasPendingTeamOperation: false,
+    groupState: { ...state, destinations: [first] } })); });
+  expect(api.navTargetId).toBeNull();
+  expect(api.journeyGoing).toBe(false);
+  expect(api.localSessionId).toBeNull();
+});
+
+it('stops on an explicit terminal row and ignores that tombstone for a later local Start', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValueOnce(saved('b', 1) as any)
+    .mockResolvedValueOnce(saved('b', 3) as any);
+  const serverSession: NavigationSession = { id: 'current-row', groupId: 'g', destinationId: second.id,
+    destination: { name: second.title, coordinates: second.coordinates, arrivalRadiusMeters: 50 },
+    startedBy: 'leader', requestId: 'op-1', startedAt: '2026-10-08T08:00:00Z',
+    expiresAt: '2027-01-01T00:00:00Z', status: 'active', version: 1 };
+  const goingState = { ...state, group: { ...state.group, journeyStatus: 'going', activeDestinationId: 'b', journeyStartedAt: serverSession.startedAt } } as GroupState;
+  await act(async () => { await api.startNavigation(second, 1); });
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: serverSession, groupState: goingState })); });
+  const terminal = { ...serverSession, status: 'cancelled', version: 2 } as NavigationSession;
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: null, terminalSession: terminal,
+    hasPendingTeamOperation: false, groupState: goingState })); });
+  expect(api.navTargetId).toBeNull();
+  await act(async () => { await api.startNavigation(second, 1); });
+  expect(api.journeyGoing).toBe(true);
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: null, terminalSession: { ...terminal },
+    hasPendingTeamOperation: false, groupState: goingState })); });
+  expect(api.navTargetId).toBe('b');
+  const replacement = { ...serverSession, id: 'new-row', requestId: 'op-3', startedAt: '2026-10-08T09:00:00Z' };
+  // The current session's identity wins even while group recovery still carries
+  // the dismissed previous session's legacy startedAt for the same stop.
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: replacement,
+    terminalSession: null, hasPendingTeamOperation: false, groupState: goingState })); });
+  expect(api.navTargetId).toBe('b');
+  expect(api.journeyGoing).toBe(true);
+});
+
+it('hands a settled same-stop Start to a newer server UUID even when the device clock is ahead', async () => {
+  const old: NavigationSession = { id: 'previous-clock-row', groupId: 'g', destinationId: second.id,
+    destination: { name: second.title, coordinates: second.coordinates, arrivalRadiusMeters: 50 },
+    startedBy: 'leader', requestId: 'previous-clock-request', startedAt: '2026-10-08T08:00:00Z',
+    expiresAt: '2027-01-01T00:00:00Z', status: 'active', version: 1 };
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: old })); });
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValueOnce(saved(null, 2) as any);
+  await act(async () => { await api.requestTeamEnd(second, 1); });
+  const futureStart = saved('b', 3);
+  futureStart.local.phaseChangedAt = Date.parse('2099-01-01T00:00:00Z');
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValueOnce(futureStart as any);
+  await act(async () => { await api.startNavigation(second, 1); });
+  mockGetOperation.mockResolvedValue(null);
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: old, hasPendingTeamOperation: false })); });
+  expect(api.localSessionId).toBe('op-3');
+  const replacement = { ...old, id: 'replacement-clock-row', requestId: 'other-device-request',
+    startedAt: '2026-10-08T09:00:00Z' };
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: replacement, hasPendingTeamOperation: false })); });
+  expect(api.localSessionId).toBeNull();
+  expect(api.navTargetId).toBe('b');
+  expect(api.journeyActive).toBe(true);
+});
+
+it('keeps a terminal session dismissed after remount while its cached group still says going', async () => {
+  const actorId = 'terminal-remount-actor';
+  const active: NavigationSession = { id: 'dismissed-server-row', groupId: 'g', destinationId: second.id,
+    destination: { name: second.title, coordinates: second.coordinates, arrivalRadiusMeters: 50 },
+    startedBy: actorId, requestId: 'dismissed-request', startedAt: '2026-10-08T08:00:00Z',
+    expiresAt: '2027-01-01T00:00:00Z', status: 'active', version: 1 };
+  const goingState = { ...state, group: { ...state.group, journeyStatus: 'going', activeDestinationId: 'b',
+    journeyStartedAt: active.startedAt } } as GroupState;
+  await act(async () => { root.update(React.createElement(Harness, { actorId, navigationSession: active, groupState: goingState })); });
+  await act(async () => { root.update(React.createElement(Harness, { actorId, navigationSession: null,
+    terminalSession: { ...active, status: 'cancelled', version: 2 }, groupState: goingState })); });
+  expect(api.journeyGoing).toBe(false);
+  // Drain the same persistence chain before simulating screen reentry.
+  await rememberEndedNavigationSession(actorId, 'g', 'test-write-barrier');
+  await act(async () => { root.unmount(); root = create(React.createElement(Harness, {
+    actorId, navigationSession: null, hasPendingTeamOperation: false, groupState: goingState,
+  })); });
   expect(api.navTargetId).toBeNull();
   expect(api.journeyGoing).toBe(false);
 });

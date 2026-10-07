@@ -105,6 +105,7 @@ import {
   projectOptimisticGathering,
   projectPendingDestinations,
   ensureCoreSnapshot,
+  readLocalJourneyProjection,
 } from '../state/coreDataSync';
 
 const randomUUID = Crypto.randomUUID as jest.MockedFunction<typeof Crypto.randomUUID>;
@@ -240,6 +241,20 @@ afterEach(async () => {
 });
 
 describe('coreDataSync production orchestration', () => {
+  it('reads canonical quick-add ledger chains with the durable target and never invents a replacement for deletion', async () => {
+    await seedSnapshot(makeState('group-1', [makeDestination('canonical', 0)]));
+    memoryCoreDb().destinationAliases.set('group-1:local', 'intermediate');
+    memoryCoreDb().destinationAliases.set('group-1:intermediate', 'canonical');
+    expect(await readLocalJourneyProjection('group-1', 'local')).toMatchObject({
+      canonicalDestinationId: 'canonical', destination: { id: 'canonical' },
+    });
+    expect(await readLocalJourneyProjection('group-1', 'deleted')).toMatchObject({
+      canonicalDestinationId: 'deleted', destination: null,
+    });
+    mockRequireLocalActorId.mockResolvedValueOnce('actor-a').mockResolvedValueOnce('actor-b');
+    expect(await readLocalJourneyProjection('group-1', 'local')).toBeNull();
+  });
+
   it('persists quick-add position and replay intent in the same durable mutation', async () => {
     await seedSnapshot(makeState('group-1', [makeDestination('start', 0, { kind: 'accommodation', stayAnchor: true }),
       makeDestination('old', 1)]));
@@ -604,6 +619,20 @@ describe('coreDataSync production orchestration', () => {
 
     await drainTransport();
     expect(mockApplyCoreOperation).toHaveBeenCalled();
+  });
+
+  it.each(['paused', 'going'] as const)('starts from durable End2 despite stale %s caller state0', async stalePhase => {
+    const ended = makeState();
+    await seedSnapshot(ended, { entityVersion: 2, gatheringVersion: 2 });
+    const stale = { ...ended, group: { ...ended.group, journeyStatus: stalePhase } };
+    const started = await enqueueLeaderGatheringStart('group-1', {
+      baseState: deriveActiveGatheringFromGroupState(stale, 0), groupState: stale,
+      activeDestinationId: 'd1', actorId: 'actor-a', flushImmediately: false,
+    });
+    expect(started.base).toMatchObject({ entityVersion: 2, journeyPhase: 'staying' });
+    expect(started.local).toMatchObject({ entityVersion: 3, journeyPhase: 'en_route' });
+    expect((await listOpenCoreOperations('group-1'))[0].entityVersion).toBe(2);
+    expect((await getCoreDataStore().getActiveGathering('group-1'))?.entityVersion).toBe(3);
   });
 
   it('runs the local-first gathering wrappers and preserves their payload/version contract', async () => {

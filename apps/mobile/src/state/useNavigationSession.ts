@@ -27,7 +27,9 @@ import { getActiveLanguage } from '../i18n';
 export function useNavigationSession(
   groupId: string | null,
   scopeSubgroupId: string | null = null,
+  actorId: string | null = null,
 ) {
+  const [terminalSession, setTerminalSession] = useState<NavigationSession | null>(null);
   const [session, setSession] = useState<NavigationSession | null>(null);
   const [memberState, setMemberState] = useState<MemberNavigationState | null>(null);
   const [loading, setLoading] = useState(Boolean(groupId));
@@ -35,8 +37,11 @@ export function useNavigationSession(
   const activeSessionIdRef = useRef<string | null>(null);
   const sessionRef = useRef<NavigationSession | null>(null);
   const lastEventRef = useRef<NavigationSession | null>(null);
+  const eventIdentityRef = useRef<string | null>(null);
 
   const revision = useRef(0);
+  const actorRef = useRef(actorId);
+  actorRef.current = actorId;
   const groupRef = useRef(groupId);
   groupRef.current = groupId;
   const scopeRef = useRef<string | null>(scopeSubgroupId);
@@ -47,9 +52,10 @@ export function useNavigationSession(
     activeSessionIdRef.current = null;
     sessionRef.current = null;
     lastEventRef.current = null;
+    setTerminalSession(null);
     setSession(null);
     setMemberState(null);
-  }, [groupId]);
+  }, [groupId, actorId]);
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       revision.current += 1;
@@ -71,14 +77,17 @@ export function useNavigationSession(
       next = { ...next, memberIds: previous.memberIds };
     }
     lastEventRef.current = next;
+    eventIdentityRef.current = JSON.stringify([groupRef.current, scopeRef.current, actorRef.current]);
     revision.current += 1;
     if (next.status !== 'active') {
+      setTerminalSession(next);
       activeSessionIdRef.current = null;
       sessionRef.current = null;
       setSession(null);
       setMemberState(null);
       return;
     }
+    setTerminalSession(null);
     activeSessionIdRef.current = next.id;
     sessionRef.current = next;
     if (previous?.id !== next.id) setMemberState(null);
@@ -99,7 +108,7 @@ export function useNavigationSession(
     setLoading(true);
     try {
       const next = await getActiveNavigationSession(groupId, scopeSubgroupId);
-      if (requestRevision !== revision.current || groupId !== groupRef.current) return null;
+      if (requestRevision !== revision.current || groupId !== groupRef.current || actorId !== actorRef.current) return null;
       if (!next) {
         activeSessionIdRef.current = null;
         sessionRef.current = null;
@@ -109,8 +118,11 @@ export function useNavigationSession(
         return null;
       }
       acceptSession(next);
+      const memberRevision = revision.current;
       const member = await getMyNavigationMemberState(next.id);
-      if (activeSessionIdRef.current === next.id && groupId === groupRef.current) setMemberState(member);
+      if (activeSessionIdRef.current === next.id && groupId === groupRef.current
+        && scopeSubgroupId === scopeRef.current && actorId === actorRef.current
+        && memberRevision === revision.current) setMemberState(member);
       setError(null);
       return next;
     } catch (cause) {
@@ -119,7 +131,7 @@ export function useNavigationSession(
     } finally {
       setLoading(false);
     }
-  }, [acceptSession, groupId, scopeSubgroupId]);
+  }, [acceptSession, groupId, scopeSubgroupId, actorId]);
 
   useEffect(() => {
     if (!foreground || !groupId) return;
@@ -160,7 +172,7 @@ export function useNavigationSession(
       revision.current += 1;
       unsubscribe?.();
     };
-  }, [acceptSession, groupId, refresh, foreground, scopeSubgroupId]);
+  }, [acceptSession, groupId, refresh, foreground, scopeSubgroupId, actorId]);
 
   const laneRef = useRef<{ groupId: string | null; scopeSubgroupId: string | null }>({
     groupId,
@@ -176,6 +188,7 @@ export function useNavigationSession(
     activeSessionIdRef.current = null;
     sessionRef.current = null;
     lastEventRef.current = null;
+    setTerminalSession(null);
     setSession(null);
     setMemberState(null);
     setError(null);
@@ -273,8 +286,9 @@ export function useNavigationSession(
   }, [groupId, session]);
 
   return {
-    session,
-    memberState,
+    terminalSession: eventIdentityRef.current === JSON.stringify([groupId, scopeSubgroupId, actorId]) ? terminalSession : null,
+    session: eventIdentityRef.current === JSON.stringify([groupId, scopeSubgroupId, actorId]) ? session : null,
+    memberState: eventIdentityRef.current === JSON.stringify([groupId, scopeSubgroupId, actorId]) ? memberState : null,
     loading,
     error,
     refresh,

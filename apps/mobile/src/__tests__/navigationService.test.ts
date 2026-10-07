@@ -1,6 +1,7 @@
 jest.mock('../api/supabase', () => ({
   supabase: {
     rpc: jest.fn(),
+    from: jest.fn(),
     auth: {
       getSession: jest.fn().mockResolvedValue({
         data: { session: { user: { id: 'user-1' } } },
@@ -15,6 +16,7 @@ import {
   ackNavigationSession,
   cancelNavigationSession,
   startNavigationSession,
+  getNavigationSessionById,
 } from '../api/services/NavigationService';
 
 const sessionRow = {
@@ -108,4 +110,30 @@ describe('NavigationService', () => {
       p_detail: { source: 'realtime' },
     });
   });
+});
+
+
+it('reads only the known group/session terminal status and preserves missing rows as unknown', async () => {
+  const query = { select: jest.fn(), eq: jest.fn(), is: jest.fn(), maybeSingle: jest.fn() };
+  query.select.mockReturnValue(query); query.eq.mockReturnValue(query); query.is.mockReturnValue(query);
+  (supabase.from as jest.Mock).mockReturnValue(query);
+  query.maybeSingle.mockResolvedValueOnce({ data: { ...sessionRow, status: 'completed', version: 2 }, error: null });
+  await expect(getNavigationSessionById('group-1', 'session-1')).resolves.toMatchObject({ status: 'completed', version: 2 });
+  expect(query.eq).toHaveBeenCalledWith('group_id', 'group-1');
+  expect(query.eq).toHaveBeenCalledWith('id', 'session-1');
+  expect(query.is).toHaveBeenCalledWith('scope_subgroup_id', null);
+  query.maybeSingle.mockResolvedValueOnce({ data: null, error: null }).mockResolvedValueOnce({ data: null, error: null });
+  await expect(getNavigationSessionById('group-1', 'not-yet-hydrated')).resolves.toBeNull();
+});
+
+
+it('finds an acknowledged local Start alias in its exact lane after the server session already ended', async () => {
+  const query = { select: jest.fn(), eq: jest.fn(), is: jest.fn(), maybeSingle: jest.fn() };
+  query.select.mockReturnValue(query); query.eq.mockReturnValue(query); query.is.mockReturnValue(query);
+  (supabase.from as jest.Mock).mockReturnValue(query);
+  query.maybeSingle.mockResolvedValueOnce({ data: null, error: null })
+    .mockResolvedValueOnce({ data: { ...sessionRow, scope_subgroup_id: 'lane', status: 'cancelled' }, error: null });
+  await expect(getNavigationSessionById('group-1', 'request-1', 'lane')).resolves.toMatchObject({ requestId: 'request-1', status: 'cancelled' });
+  expect(query.eq).toHaveBeenCalledWith('request_id', 'request-1');
+  expect(query.eq).toHaveBeenCalledWith('scope_subgroup_id', 'lane');
 });

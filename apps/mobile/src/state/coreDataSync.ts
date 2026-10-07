@@ -100,6 +100,26 @@ export async function ensureCoreSnapshot(groupId: string) {
   return sharedCoreDataStore.readSnapshot(groupId);
 }
 
+/** Read the actor-fenced durable target and its server-proven merge identity. */
+export async function readLocalJourneyProjection(groupId: string, destinationId: string): Promise<{
+  gathering: ActiveGatheringState; canonicalDestinationId: string; destination: Destination | null;
+} | null> {
+  const actorId = await requireLocalActorId();
+  const snapshot = await sharedCoreDataStore.readSnapshot(groupId);
+  if (!snapshot) return null;
+  const seen = new Set<string>();
+  let canonicalDestinationId = destinationId;
+  while (!seen.has(canonicalDestinationId)) {
+    seen.add(canonicalDestinationId);
+    const alias = await sharedCoreDb.getDestinationAlias?.(groupId, canonicalDestinationId);
+    if (!alias) break;
+    canonicalDestinationId = alias;
+  }
+  if (await requireLocalActorId() !== actorId) return null;
+  return { gathering: snapshot.activeGathering, canonicalDestinationId,
+    destination: snapshot.destinations.find(d => d.id === canonicalDestinationId && !d.closedAt) ?? null };
+}
+
 export function getCoreOperationOutbox(): CoreOperationOutbox {
   return outbox;
 }
@@ -564,6 +584,16 @@ export async function enqueueDailyAccommodation(input: {
   return operation;
 }
 
+async function resolveLocalGatheringBase(groupId: string, options: {
+  baseState?: ActiveGatheringState; groupState?: GroupState | null;
+}): Promise<ActiveGatheringState | null> {
+  // React closures may outlive a committed End/ACK. Prefer the actor-fenced
+  // durable version before making the next command's local transition.
+  const durable = await getCoreActiveGathering(groupId);
+  if (durable && (!options.baseState || durable.entityVersion >= options.baseState.entityVersion)) return durable;
+  return options.baseState ?? (options.groupState ? deriveActiveGatheringFromGroupState(options.groupState, 0) : null);
+}
+
 /**
  * Leader Start — local-first: write optimistic gathering + outbox.
  * Throws on enqueue failure so call sites do not pretend durability succeeded.
@@ -590,12 +620,7 @@ export async function enqueueLeaderGatheringStart(
   base: ActiveGatheringState;
   operationId: string;
 }> {
-  const base =
-    options.baseState
-    ?? (await getCoreActiveGathering(groupId))
-    ?? (options.groupState
-      ? deriveActiveGatheringFromGroupState(options.groupState, 0)
-      : null);
+  const base = await resolveLocalGatheringBase(groupId, options);
   if (!base) {
     throw new Error('no local gathering base for start');
   }
@@ -639,12 +664,7 @@ export async function enqueueLeaderGatheringSwitch(
   base: ActiveGatheringState;
   operationId: string;
 }> {
-  const base =
-    options.baseState
-    ?? (await getCoreActiveGathering(groupId))
-    ?? (options.groupState
-      ? deriveActiveGatheringFromGroupState(options.groupState, 0)
-      : null);
+  const base = await resolveLocalGatheringBase(groupId, options);
   if (!base) throw new Error('no local gathering base for switch');
   const { local, operation, base: appliedBase } =
     await outbox.enqueueGatheringTransition({
@@ -700,12 +720,7 @@ export async function enqueueLeaderGatheringEnd(
     flushImmediately?: boolean;
   } = {},
 ): Promise<{ local: ActiveGatheringState }> {
-  const base =
-    options.baseState
-    ?? (await getCoreActiveGathering(groupId))
-    ?? (options.groupState
-      ? deriveActiveGatheringFromGroupState(options.groupState, 0)
-      : null);
+  const base = await resolveLocalGatheringBase(groupId, options);
   if (!base) {
     return enqueueLeaderGatheringEnd(groupId, { ...options, baseState: {
       groupId, journeyPhase: 'staying', activeDestinationId: null, pointStatuses: {},
@@ -761,7 +776,16 @@ export async function enqueuePersonalNavigationResponse(input: {
 export async function hydrateCoreEntityVersions(
   groupId: string,
   state: GroupState,
+  coherentVersions?: Record<string, number>,
 ): Promise<void> {
+  if (coherentVersions) {
+    await sharedCoreDataStore.saveRemoteGroupState(state, {
+      gatheringVersion: coherentVersions[`active_gathering:${groupId}`],
+      entityVersion: coherentVersions[`active_gathering:${groupId}`],
+      itineraryVersion: coherentVersions[`itinerary:${groupId}`],
+    });
+    return;
+  }
   try {
     const versions = await fetchCoreEntityVersions(groupId);
     const gathering = versions.find(

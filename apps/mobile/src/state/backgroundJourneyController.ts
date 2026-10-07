@@ -14,6 +14,8 @@ export const BACKGROUND_JOURNEY_KEY = '@hither/background-journey';
 
 export interface BackgroundJourneyConfig {
   sessionExpiresAt?: string;
+  journeyEntityVersion?: number;
+  journeyPhaseChangedAtMs?: number;
   trackingEpoch?: number;
   actorId?: string;
   /** Main team is null; subgroup sessions use this lane id. */
@@ -82,10 +84,19 @@ export interface BackgroundJourneyConfig {
   permissionsPrepared?: boolean;
 }
 
+/** Navigation acquisition requires both a live intent and its actual target. */
+export function hasActiveBackgroundJourney(config: BackgroundJourneyConfig): boolean {
+  return config.powerMode !== 'allDay' && config.teamNavigationActive === true
+    && Boolean(config.navigationSessionId && config.destinationId && config.target
+      && config.target.id === config.destinationId && !config.target.closedAt
+      && Number.isFinite(config.target.coordinates.latitude)
+      && Number.isFinite(config.target.coordinates.longitude));
+}
+
 /** Keep scope and the user precision preference for the next journey.
  * Presence resolution ignores precision, so retaining intent does not promote GPS. */
 export function backgroundPresenceConfig(config: BackgroundJourneyConfig): BackgroundJourneyConfig {
-  return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, destinationId: 'group-presence',
+  return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, journeyEntityVersion: undefined, journeyPhaseChangedAtMs: undefined, destinationId: 'group-presence',
     target: undefined, powerMode: 'allDay', teamNavigationActive: false,
     arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
     navigationMemberIds: undefined, arrivedMemberIds: undefined, leaderId: undefined,
@@ -104,6 +115,7 @@ export interface BackgroundLocationAdapter {
   requestForegroundPermissionsAsync(): Promise<PermissionResult>;
   requestBackgroundPermissionsAsync(): Promise<PermissionResult>;
   hasStartedLocationUpdatesAsync(taskName: string): Promise<boolean>;
+  hasMatchingLocationOwnerAsync?(taskName: string, options: object): Promise<boolean>;
   startLocationUpdatesAsync(taskName: string, options: object): Promise<void>;
   stopLocationUpdatesAsync(taskName: string): Promise<void>;
 }
@@ -117,25 +129,13 @@ export interface BackgroundStorageAdapter {
 export function resolveBackgroundTrackingMode(
   config: BackgroundJourneyConfig,
 ): TrackingMode {
-  const powerMode = config.powerMode ?? 'journey';
-  const preciseJourney = powerMode === 'journey' && config.highAccuracy === true;
-  const resolved = resolveTrackingMode({
+  return resolveTrackingMode({
     sharingEnabled: config.sharingEnabled ?? true,
     hasMembership: config.hasMembership ?? true,
-    teamNavigationActive: config.teamNavigationActive ?? false,
-    // All-day presence intentionally ignores precision. A journey's explicit
-    // precise switch remains meaningful even while the app is backgrounded.
-    manualHighAccuracy: preciseJourney,
+    teamNavigationActive: hasActiveBackgroundJourney(config),
+    manualHighAccuracy: hasActiveBackgroundJourney(config) && config.highAccuracy === true,
     appState: config.appState ?? 'background',
   });
-  // resolveTrackingMode protects ordinary background presence from a manual
-  // precision request. Journey tracking is the one explicit exception: keep
-  // the same high-frequency profile when the user selected precise tracking,
-  // regardless of whether a shared team session is active.
-  if (resolved === 'passiveBackground' && preciseJourney) {
-    return 'manualHighAccuracy';
-  }
-  return resolved;
 }
 
 /**
@@ -172,7 +172,7 @@ export function backgroundLocationOptions(
           ? 2
           : 3;
 
-  const deferredInterval = powerMode === 'journey' ? 0 : mode === 'passiveBackground'
+  const deferredInterval = powerProfile === 'journey' ? 0 : mode === 'passiveBackground'
     ? 150_000
     : mode === 'navigationMax'
       ? 15_000
@@ -181,7 +181,7 @@ export function backgroundLocationOptions(
         : highAccuracy
           ? 20_000
           : 60_000;
-  const deferredDistance = powerMode === 'journey' ? 0 : mode === 'passiveBackground'
+  const deferredDistance = powerProfile === 'journey' ? 0 : mode === 'passiveBackground'
     ? 150
     : mode === 'navigationMax'
       ? 20
@@ -194,7 +194,7 @@ export function backgroundLocationOptions(
   return {
     accuracy: accuracyCode,
     // Fitness=3 for journey navigation; Other=1 for passive presence.
-    activityType: powerMode === 'journey' ? 3 : 1,
+    activityType: powerProfile === 'journey' ? 3 : 1,
     distanceInterval: policy.distanceInterval,
     timeInterval: policy.timeInterval,
     deferredUpdatesDistance: deferredDistance,
@@ -203,14 +203,14 @@ export function backgroundLocationOptions(
     // pause it indefinitely after a stationary interval. Distance, accuracy and
     // deferred delivery retain the passive budget without disabling updates.
     pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: true,
+    showsBackgroundLocationIndicator: powerProfile === 'journey',
     foregroundService: {
       notificationTitle:
-        powerMode === 'allDay'
+        powerProfile === 'allDay'
           ? translate(getActiveLanguage(), 'fgs.groupTitle')
           : translate(getActiveLanguage(), 'fgs.navTitle'),
       notificationBody:
-        powerMode === 'allDay'
+        powerProfile === 'allDay'
           ? translate(getActiveLanguage(), 'fgs.groupBody')
           : translate(getActiveLanguage(), 'fgs.navBody'),
     },
@@ -271,7 +271,7 @@ export function createBackgroundJourneyController(
       const requestedEpoch = epoch = Math.max(Date.now(), epoch + 1);
       return runSerial(async () => {
         if (requestedEpoch !== epoch) return 'cancelled';
-        config = { ...config, trackingEpoch: requestedEpoch };
+        config = { ...(hasActiveBackgroundJourney(config) ? config : backgroundPresenceConfig(config)), trackingEpoch: requestedEpoch };
         const nextMode = resolveBackgroundTrackingMode(config);
         const alreadyStarted = await location.hasStartedLocationUpdatesAsync(
           BACKGROUND_JOURNEY_TASK,
@@ -329,28 +329,40 @@ export function createBackgroundJourneyController(
           BACKGROUND_JOURNEY_KEY,
           JSON.stringify(persistedConfig),
         );
+        const desiredOptions = backgroundLocationOptions(config.powerMode ?? 'allDay', Boolean(config.highAccuracy), nextMode);
+        const ownerMatches = !location.hasMatchingLocationOwnerAsync
+          || await location.hasMatchingLocationOwnerAsync(BACKGROUND_JOURNEY_TASK, desiredOptions);
         const profileChanged =
-          alreadyStarted &&
+          alreadyStarted && (!ownerMatches || (
           previous != null &&
-          powerProfileKey(previous) !== powerProfileKey(config);
+          powerProfileKey(previous) !== powerProfileKey(config)));
 
         if (alreadyStarted && profileChanged) {
           await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
         }
         if (requestedEpoch !== epoch) return 'cancelled';
         if (!alreadyStarted || profileChanged) {
-          await location.startLocationUpdatesAsync(
-            BACKGROUND_JOURNEY_TASK,
-            backgroundLocationOptions(
-              config.powerMode ?? 'journey',
-              Boolean(config.highAccuracy),
-              config.sharingEnabled !== false &&
-                config.teamNavigationActive == null &&
-                config.appState == null
-                ? undefined
-                : nextMode,
-            ),
-          );
+          try {
+            await location.startLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK, desiredOptions);
+          } catch (error) {
+            if (requestedEpoch === epoch) {
+              const sameOwner = previous && previous.actorId === config.actorId && previous.groupId === config.groupId
+                && (previous.scopeSubgroupId ?? null) === (config.scopeSubgroupId ?? null);
+              if (previous && sameOwner) {
+                const restored = { ...previous, trackingEpoch: requestedEpoch };
+                await storage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(restored));
+                if (profileChanged && requestedEpoch === epoch) {
+                  await location.startLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK, backgroundLocationOptions(
+                    restored.powerMode ?? 'allDay', Boolean(restored.highAccuracy), resolveBackgroundTrackingMode(restored),
+                  )).catch(() => undefined);
+                }
+              } else {
+                await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK).catch(() => undefined);
+                await storage.removeItem(BACKGROUND_JOURNEY_KEY);
+              }
+            }
+            throw error;
+          }
         }
         return 'started';
       });

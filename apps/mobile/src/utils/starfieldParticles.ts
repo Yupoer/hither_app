@@ -1,4 +1,7 @@
-export const CHARGE_BALL_INTERVAL_MS = 280 / 1.5 / 2;
+// The previous 93.33ms inlet emitted 10–11 balls per second. Double its
+// 11-ball second into a fixed integer rate instead of alternating counts.
+export const CHARGE_BALLS_PER_SECOND = 22;
+export const CHARGE_BALL_INTERVAL_MS = 1000 / CHARGE_BALLS_PER_SECOND;
 export const CHARGE_BALL_MAX_TRAVEL_MS = 6800 / 1.25;
 export const CHARGE_BALL_OPACITY_LEVELS = 16;
 export const CHARGE_BALL_MIN_OPACITY = 0.12;
@@ -29,10 +32,11 @@ export function chargeBallsAt(now: number, width: number, windows: ChargeEmissio
       const age = now - bornAt;
       let seed = (Math.imul(index + 1, 747796405) + window.startedAt) >>> 0;
       seed = (Math.imul(seed ^ (seed >>> 16), 2246822507)) >>> 0;
-      // Each consecutive batch visits all 12 height bands once. Keep a little
-      // jitter inside the band so coverage is even without forming rigid rows.
-      const band = (index * 5) % 12;
-      const vertical = (band + 0.2 + (seed & 65535) / 65535 * 0.6) / 12;
+      seed = (Math.imul(seed ^ (seed >>> 13), 3266489909)) >>> 0;
+      seed = (seed ^ (seed >>> 16)) >>> 0;
+      // Independent uniform birth positions; stable hashes preserve the same
+      // random-looking field when paused or expanded, with no repeating lanes.
+      const vertical = (seed & 65535) / 65535;
       const variation = (seed >>> 16) / 65535;
       const baseRadius = (5 + variation * 3) * width / 360;
       const radius = baseRadius * 0.4;
