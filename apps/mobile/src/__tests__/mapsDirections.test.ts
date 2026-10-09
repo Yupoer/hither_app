@@ -82,6 +82,16 @@ describe('getDirections', () => {
     expect(mockProxyGetDirections).toHaveBeenCalledWith(from, to, 'transit');
   });
 
+  it('uses bicycle proxy without silently returning a walking route', async () => {
+    const route = { distanceMeters: 1000, expectedTravelTimeSeconds: 250, points: [from, to], source: 'google' as const };
+    mockProxyGetDirections.mockResolvedValue(route);
+    await expect(getDirections(from, to, 'bicycle')).resolves.toEqual(route);
+    expect(mockGetDirections).not.toHaveBeenCalled();
+    expect(mockProxyGetDirections).toHaveBeenCalledWith(from, to, 'bicycle');
+    mockProxyGetDirections.mockRejectedValue(new Error('cycling unavailable'));
+    await expect(getDirections(from, to, 'bicycle')).resolves.toBeNull();
+  });
+
   it('returns null when both native and proxy fail', async () => {
     mockGetDirections.mockRejectedValue(new Error('No route'));
     mockProxyGetDirections.mockRejectedValue(new Error('quota'));

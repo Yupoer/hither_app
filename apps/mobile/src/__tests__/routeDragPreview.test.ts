@@ -6,6 +6,7 @@ jest.mock('react-native', () => ({
   View: 'View', Text: 'Text', Pressable: 'Pressable', Modal: 'Modal',
   Platform: { OS: 'ios' }, Alert: { alert: jest.fn() },
   Dimensions: { get: () => ({ width: 390, height: 844 }) },
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
   StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1, absoluteFill: {} },
   PanResponder: { create: (handlers: unknown) => ({ panHandlers: handlers }) },
   Animated: { View: 'Animated.View', Value: class { value = 0; setValue(v: number) { this.value = v; } } },

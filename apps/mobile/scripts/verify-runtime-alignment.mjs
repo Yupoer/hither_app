@@ -15,6 +15,17 @@ const lock = readFileSync('ios/Podfile.lock', 'utf8');
 if (typeof app.runtimeVersion !== 'string' || app.runtimeVersion !== app.version) {
   fail('runtimeVersion must be a string matching the app version');
 }
+// Bare iOS archives read checked-in native files, rather than app.json alone.
+const nativeUpdates = readFileSync('ios/Hither/Supporting/Expo.plist', 'utf8');
+const nativeRuntime = nativeUpdates.match(/<key>EXUpdatesRuntimeVersion<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+if (nativeRuntime !== app.runtimeVersion) {
+  fail('iOS Expo.plist runtime differs from app.json runtimeVersion');
+}
+const xcodeProject = readFileSync('ios/Hither.xcodeproj/project.pbxproj', 'utf8');
+const nativeVersions = [...xcodeProject.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map((match) => match[1]);
+if (nativeVersions.length < 4 || nativeVersions.some((version) => version !== app.version)) {
+  fail('iOS App/Widget marketing versions differ from app.json version');
+}
 if (!['hermes', 'jsc'].includes(pods['expo.jsEngine'])) {
   fail('ios expo.jsEngine must be hermes or jsc');
 }

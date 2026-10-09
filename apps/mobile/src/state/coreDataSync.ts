@@ -612,6 +612,8 @@ export async function enqueueLeaderGatheringStart(
     navigationRequestId?: string;
     navigationSessionId?: string | null;
     subgroupId?: string | null;
+    /** Persist same-day promotion atomically, after Start in the FIFO. */
+    promoteWithinDay?: boolean;
     /** Default true. Journey start sets false until session outcome is known. */
     flushImmediately?: boolean;
   } = {},
@@ -629,6 +631,7 @@ export async function enqueueLeaderGatheringStart(
       operationId: options.operationId,
       groupId,
       action: 'start',
+      promoteWithinDay: options.promoteWithinDay,
       baseState: base,
       activeDestinationId: options.activeDestinationId ?? base.activeDestinationId,
       actorId: options.actorId,
@@ -652,6 +655,7 @@ export async function enqueueLeaderGatheringSwitch(
     baseState?: ActiveGatheringState;
     groupState?: GroupState | null;
     activeDestinationId: string;
+    promoteWithinDay?: boolean;
     operationId?: string;
     actorId?: string;
     navigationRequestId?: string;
@@ -671,6 +675,7 @@ export async function enqueueLeaderGatheringSwitch(
       operationId: options.operationId,
       groupId,
       action: 'switch',
+      promoteWithinDay: options.promoteWithinDay,
       baseState: base,
       activeDestinationId: options.activeDestinationId,
       actorId: options.actorId,

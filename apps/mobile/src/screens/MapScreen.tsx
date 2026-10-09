@@ -1943,6 +1943,10 @@ export default function MapScreen({ route, navigation }: Props) {
   >(async () => false);
 
   // --- Journey navigation + Live Activity ----------------------------------
+  // Device location depends on navigation's power policy and is declared below.
+  // Commands read this bridge at tap time, after the current render has settled.
+  const navigationOriginRef = useRef<Coordinates | undefined>(undefined);
+  const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
   const {
     navigationStoppedLocally,
     journeyStatus,
@@ -1959,6 +1963,7 @@ export default function MapScreen({ route, navigation }: Props) {
     requestTeamEnd,
     stopNavigation,
     stopRemovedDestination,
+    refreshStartFrame,
   } = useJourneyNavigation({
     state,
     actorId: user?.id,
@@ -1971,6 +1976,7 @@ export default function MapScreen({ route, navigation }: Props) {
     reorderDestinations: allScopedDestinations,
     selectedDestination,
     fromCoords: undefined,
+    getFromCoords: getNavigationOrigin,
     refresh,
     t,
     mapRef,
@@ -2029,6 +2035,10 @@ export default function MapScreen({ route, navigation }: Props) {
     hasMembership: (mapFocused || effectiveNavigationActive) && members.some(m => m.userId === user?.id),
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
+  navigationOriginRef.current = deviceCoords ?? undefined;
+  useEffect(() => {
+    if (deviceCoords) refreshStartFrame();
+  }, [deviceCoords, refreshStartFrame]);
 
   const reference = useMemo<MemberLocation | undefined>(
     () =>
@@ -2750,7 +2760,8 @@ export default function MapScreen({ route, navigation }: Props) {
     distanceM: number | null;
     etaSeconds: number | null;
     progress: number | null;
-  }>({ distanceM: null, etaSeconds: null, progress: null });
+    travelMode: TravelMode;
+  }>({ distanceM: null, etaSeconds: null, progress: null, travelMode });
   const [initialDistanceM, setInitialDistanceM] = useState<number | undefined>();
   const [distanceSource, setDistanceSource] = useState<DistanceSource | undefined>();
   const [progressDepartedStart, setProgressDepartedStart] = useState(false);
@@ -2805,7 +2816,7 @@ export default function MapScreen({ route, navigation }: Props) {
       setJourneyStartCoords(null);
       setLastRouteDistanceM(undefined);
       setProgressMaxSticky(null);
-      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
+      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null, travelMode });
       return;
     }
 
@@ -2820,7 +2831,7 @@ export default function MapScreen({ route, navigation }: Props) {
         progress: null,
       };
       setProgressMaxSticky(null);
-      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null });
+      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null, travelMode });
     }
     // Never baseline progress from peer/stale pins — only real device GPS.
     if (!deviceCoords) return;
@@ -3036,7 +3047,8 @@ export default function MapScreen({ route, navigation }: Props) {
       previousProgressMax: progressMaxSticky ?? undefined,
       ...backgroundEtaRef.current,
       etaToPinSeconds: backgroundEtaRef.current.etaToPinSeconds ?? selfRoute?.expectedTravelTimeSeconds,
-      etaSeconds: lastValidPresentation.etaSeconds ?? selfRoute?.expectedTravelTimeSeconds,
+      etaSeconds: (lastValidPresentation.travelMode === travelMode ? lastValidPresentation.etaSeconds : null)
+        ?? selfRoute?.expectedTravelTimeSeconds,
       teamNavigationActive: effectiveNavigationActive,
       appState: appState === 'background' ? 'background' : 'inactive',
       permissionsPrepared: backgroundPermissionsPreparedFor === backgroundPermissionProfileKey,
@@ -3090,6 +3102,7 @@ export default function MapScreen({ route, navigation }: Props) {
     colors.accent,
     lastValidPresentation.distanceM,
     lastValidPresentation.etaSeconds,
+    lastValidPresentation.travelMode,
     lastRouteDistanceM,
   ]);
 
@@ -3104,12 +3117,16 @@ export default function MapScreen({ route, navigation }: Props) {
   const lastFittedRouteRef = useRef<string | null>(null);
   useEffect(() => {
     const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
-    if (key && key !== lastFittedRouteRef.current && selfRoute?.points.length) {
+    if (activePoint && key && key !== lastFittedRouteRef.current && selfRoute?.points.length) {
       lastFittedRouteRef.current = key;
-      mapRef.current?.fitRoute(selfRoute.points);
+      mapRef.current?.fitRoute([
+        ...selfRoute.points,
+        ...(deviceCoords ? [deviceCoords] : []),
+        activePoint.coordinates,
+      ]);
     }
     if (!key) lastFittedRouteRef.current = null;
-  }, [activePoint, selfRoute, travelMode]);
+  }, [activePoint, selfRoute, travelMode, deviceCoords]);
 
   // --- Straggler alerts (leader-only, 1:N vs leader GPS) ----------------------
   // Followers never run distance logic; they only receive APNs from the leader.
@@ -3280,6 +3297,7 @@ export default function MapScreen({ route, navigation }: Props) {
     previousProgressMax: progressMaxSticky,
     lastValidDistanceM: lastValidPresentation.distanceM,
     lastValidEtaSeconds: lastValidPresentation.etaSeconds,
+    lastValidEtaTravelMode: lastValidPresentation.travelMode,
     lastValidProgress: lastValidPresentation.progress,
     routeResultGeneration: selfRouteGeneration,
     // Personal check-in / auto-arrive — not team stop completion.
@@ -3361,11 +3379,12 @@ export default function MapScreen({ route, navigation }: Props) {
         sticky.distanceM !== d
         || sticky.etaSeconds !== e
         || sticky.progress !== p
+        || lastValidPresentation.travelMode !== travelMode
       ) {
         sticky.distanceM = d;
         sticky.etaSeconds = e;
         sticky.progress = p;
-        setLastValidPresentation({ distanceM: d, etaSeconds: e, progress: p });
+        setLastValidPresentation({ distanceM: d, etaSeconds: e, progress: p, travelMode });
       }
     }
   }, [
@@ -3377,6 +3396,7 @@ export default function MapScreen({ route, navigation }: Props) {
     personalProgress.progress,
     personalProgress.distanceMeters,
     personalProgress.etaSeconds,
+    travelMode,
   ]);
 
   // Both presentation surfaces consume the same orchestration output.
@@ -7124,7 +7144,7 @@ export default function MapScreen({ route, navigation }: Props) {
       )}
 
       {/* Add-gather-point confirm card — a bottom sheet-style card shown after
-          picking a search result. Add (accent) / Cancel (red) side by side. */}
+          picking a search result. Cancel sits above the title and place controls. */}
       {confirmCardReady && pendingPlace && (() => {
         // Walking time + distance from me to the picked place — the follower-nav
         // card layout (arrow · N min · distance) applied to the add-confirm step.
@@ -7168,6 +7188,14 @@ export default function MapScreen({ route, navigation }: Props) {
               tintColor={Platform.OS === 'android' ? glass.cardActive : undefined}
               style={styles.confirmCardInner}
             >
+              <Pressable style={styles.confirmCloseTarget} disabled={confirmPlaceBusy}
+                accessibilityRole="button" accessibilityLabel={t('common.cancel')}
+                testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }}>
+                <View pointerEvents="none" accessible={false}>
+                  <NativeGlassButton systemImage="xmark" shape="circle" size={36.3}
+                    imageSize={14.85} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')} />
+                </View>
+              </Pressable>
               <View style={styles.confirmTitleRow}>
                 <View style={styles.confirmTextCol}>
                   {/* Inline rename — single draft; no separate Modal. */}
@@ -7188,26 +7216,6 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Text style={styles.confirmNameHint} numberOfLines={1}>
                     {t('map.droppedPinHint')}
                   </Text>
-                </View>
-                <Pressable style={styles.confirmCloseTarget} disabled={confirmPlaceBusy}
-                  accessibilityRole="button" accessibilityLabel={t('common.cancel')}
-                  testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }}>
-                  <View pointerEvents="none" accessible={false}>
-                    <NativeGlassButton systemImage="xmark" shape="circle" size={36.3}
-                      imageSize={14.85} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')} />
-                  </View>
-                </Pressable>
-              </View>
-              <View style={styles.confirmTopRow}>
-                <View style={styles.confirmEtaRow}>
-                  <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
-                    {pMin ?? '—'}
-                  </Text>
-                  {pDist != null ? (
-                    <Text style={styles.confirmDist} numberOfLines={1}>
-                      · {formatDistance(pDist)}
-                    </Text>
-                  ) : null}
                 </View>
                 <View style={styles.confirmControlRow}>
                   <View
@@ -7273,6 +7281,18 @@ export default function MapScreen({ route, navigation }: Props) {
                       <Ionicons name="navigate" size={31.5} color={accent} />
                     </Pressable>
                   </View>
+                </View>
+              </View>
+              <View style={styles.confirmTopRow}>
+                <View style={styles.confirmEtaRow}>
+                  <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
+                    {pMin ?? '—'}
+                  </Text>
+                  {pDist != null ? (
+                    <Text style={styles.confirmDist} numberOfLines={1}>
+                      · {formatDistance(pDist)}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
               <View style={styles.confirmBtnRow}>
@@ -7425,7 +7445,9 @@ export default function MapScreen({ route, navigation }: Props) {
                   ? 'walk-outline'
                   : travelMode === 'drive'
                     ? 'car-outline'
-                    : 'bus-outline';
+                    : travelMode === 'bicycle'
+                      ? 'bicycle-outline'
+                      : 'bus-outline';
               // Route ETA/distance — always visible; expand only scales layout.
               const etaSeconds = (navTarget?.id === dest.id && personalEtaSeconds != null)
                 ? personalEtaSeconds
@@ -7698,7 +7720,9 @@ export default function MapScreen({ route, navigation }: Props) {
                                         ? 'walk'
                                         : travelMode === 'drive'
                                           ? 'car'
-                                          : 'bus'
+                                          : travelMode === 'bicycle'
+                                            ? 'bicycle'
+                                            : 'bus'
                                     }
                                     size={chromeCompact ? 14 : 16}
                                     color={accent}
@@ -7981,7 +8005,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         onPress={() => {
                           registerCardActivity(dest.id);
                           lightTap();
-                          const order = ['walk', 'transit', 'drive'] as const;
+                          const order = ['walk', 'bicycle', 'transit', 'drive'] as const;
                           setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
                         }}
                         accessibilityRole="button"
@@ -10381,10 +10405,10 @@ const makeStyles = (
     // ancestor of its Liquid Glass surface.
     sheetHidden: { display: 'none' },
     sheetBodyHidden: { display: 'none' },
-    confirmTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+    confirmTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
     confirmTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 },
-    confirmTextCol: { flex: 1, gap: 2 },
+    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+    confirmTextCol: { flex: 1, minWidth: 0, gap: 2 },
     confirmTitleInput: {
       color: '#fff',
       fontSize: 18,
@@ -10433,7 +10457,7 @@ const makeStyles = (
       justifyContent: 'space-around',
       marginTop: 6,
     },
-    confirmCloseTarget: { width: 44, height: 44, alignSelf: 'flex-start', alignItems: 'center', justifyContent: 'center' },
+    confirmCloseTarget: { width: 44, height: 44, marginTop: -8, marginRight: -8, alignSelf: 'flex-end', alignItems: 'center', justifyContent: 'center' },
     confirmBtnSlot: { flex: 1, alignItems: 'center' },
     confirmPool: {
       width: '90%', height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',

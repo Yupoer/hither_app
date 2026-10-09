@@ -73,6 +73,7 @@ export function useLiveActivity(
   const lastDisplayRef = useRef({ at: 0, semantic: '', payload: '' });
   const displayQueueRef = useRef(Promise.resolve());
   const lastPersistedAccentRef = useRef<string | undefined>(undefined);
+  const lastPersistedTravelModeRef = useRef<string | undefined>(undefined);
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
   const pushToStartTokenRef = useRef<string | null>(null);
@@ -130,7 +131,8 @@ export function useLiveActivity(
       return;
     }
     const now = Date.now();
-    if (!opts?.force && currentState.accentHex === lastPersistedAccentRef.current
+    if (!opts?.force && currentSession.travelMode === lastPersistedTravelModeRef.current
+      && currentState.accentHex === lastPersistedAccentRef.current
       && now - lastPersistAtRef.current < PERSIST_MIN_MS) {
       return;
     }
@@ -149,6 +151,7 @@ export function useLiveActivity(
       accentHex: currentState.accentHex,
     }, actorId);
     lastPersistedAccentRef.current = currentState.accentHex;
+    lastPersistedTravelModeRef.current = currentSession.travelMode;
   };
 
   useEffect(() => {

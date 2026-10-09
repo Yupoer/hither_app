@@ -95,7 +95,7 @@ export interface ProjectTeamGatheringInput {
 /** Personal (user-scoped) overlay — never written into team state. */
 export interface PersonalGatheringProgress {
   userId: string;
-  travelMode?: 'walk' | 'drive' | 'transit' | string | null;
+  travelMode?: 'walk' | 'drive' | 'transit' | 'bicycle' | string | null;
   /** Rough hint only; not a completion criterion. */
   etaSeconds?: number | null;
   location?: { latitude: number; longitude: number } | null;

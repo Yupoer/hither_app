@@ -9,6 +9,7 @@ import {
   View,
   Modal,
   Dimensions,
+  useWindowDimensions,
   Platform,
   Alert,
 } from 'react-native';
@@ -61,6 +62,7 @@ import { classifyOperationError } from '../utils/operationError';
 
 const REORDER_VISUAL_SCALE = 1;
 const ROW_HEIGHT = 52;
+const FAVORITE_TITLE_SIZE = 15 * 2;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = Math.round(76 * REORDER_VISUAL_SCALE);
 /** Fixed right-column width so day ≡ and stop ≡ share one vertical line. */
@@ -203,6 +205,8 @@ export default function DestinationReorderList({
   onTourTargetRef,
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { fontScale } = useWindowDimensions();
+  const favoriteIconSize = FAVORITE_TITLE_SIZE * fontScale;
   const { t } = useTranslation();
   const { dayColors, setDayColor, gatherCardTitleMarquee, gatherCardMarqueeSpeed } = usePreferences();
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -1287,26 +1291,28 @@ export default function DestinationReorderList({
         visible={favoritesOpen}
         onClose={() => setFavoritesOpen(false)}
         title={t('stay.favorites')}
+        titleFontSize={17 * 2}
         initialStage={1}
         stageTwoRatio={0.9}
       >
         <View style={styles.childSheetBody}>
             {(favoritePlaces ?? []).length === 0 ? (
-              <Text style={styles.empty}>{t('stay.noFavorites')}</Text>
+              <Text style={styles.favoriteEmpty}>{t('stay.noFavorites')}</Text>
             ) : (
               (favoritePlaces ?? []).map((fav) => (
-                <View key={fav.id} style={styles.favRow}>
+                <View key={fav.id} style={styles.favoriteRow}>
                   <Pressable
-                    style={styles.favRowMain}
+                    style={styles.favoriteRowMain}
                     onPress={() => {
                       // New favorite places enter the pool; scheduling uses the same drag list.
                       onPickFavorite?.(fav, 0);
                       setFavoritesOpen(false);
                     }}
                     accessibilityRole="button"
+                    accessibilityLabel={fav.title}
                   >
-                    <Ionicons name="star" size={16} color={colors.accent} />
-                    <Text style={styles.favTitle} numberOfLines={1}>{fav.title}</Text>
+                    <Ionicons name="star" size={favoriteIconSize} color={colors.accent} />
+                    <Text style={styles.favoriteTitle}>{fav.title}</Text>
                   </Pressable>
                   {onDeleteFavorite ? (
                     <Pressable
@@ -1317,9 +1323,9 @@ export default function DestinationReorderList({
                       accessibilityRole="button"
                       accessibilityLabel={t('stay.unfavoriteA11y')}
                       hitSlop={8}
-                      style={styles.favDeleteBtn}
+                      style={styles.favoriteDeleteBtn}
                     >
-                      <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
+                      <Ionicons name="trash-outline" size={favoriteIconSize} color="#FF5A5F" />
                     </Pressable>
                   ) : null}
                 </View>
@@ -2218,16 +2224,32 @@ const makeStyles = (colors: Palette) =>
       gap: 8,
       paddingVertical: 10,
     },
-    favRowMain: {
-      flex: 1,
+    favoriteRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
     },
-    favDeleteBtn: {
-      paddingHorizontal: 6,
-      paddingVertical: 4,
+    favoriteRowMain: {
+      flex: 1,
+      minWidth: 0,
+      minHeight: 60,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
     },
+    favoriteDeleteBtn: {
+      minWidth: 48,
+      minHeight: 60,
+      paddingHorizontal: 8,
+      paddingVertical: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    favoriteTitle: { color: colors.textPrimary, fontSize: FAVORITE_TITLE_SIZE, flex: 1, minWidth: 0 },
+    favoriteEmpty: { color: colors.textSecondary, fontSize: 14 * 2, paddingVertical: spacing.md },
     favTitle: { color: colors.textPrimary, fontSize: 15, flex: 1 },
     hint: {
       color: colors.textSecondary,

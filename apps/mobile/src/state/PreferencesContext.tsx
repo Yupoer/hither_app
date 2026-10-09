@@ -4,9 +4,11 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { TravelMode } from '../utils/geo';
 import {
   DEFAULT_THEME,
   themes,
@@ -26,7 +28,7 @@ import {
 } from './locationPrivacy';
 
 /**
- * Device-local user preferences: the UI language and the colour theme.
+ * Device-local user preferences: display settings and the selected transport mode.
  *
  * These are personal display settings (not group state), so they live outside
  * the session/group contexts and persist to AsyncStorage — a relaunch restores
@@ -49,6 +51,7 @@ export const TEXT_SCALE_OPTIONS = [0.8, 0.9, 1.0, 1.1, 1.2] as const;
 export const DEFAULT_TEXT_SCALE: TextScalePref = 1.0;
 
 const LANGUAGE_KEY = 'pref.language';
+const TRAVEL_MODE_KEY = 'pref.travelMode';
 const THEME_KEY = 'pref.theme';
 const TEXT_SCALE_KEY = 'pref.textScale';
 const HIGH_ACCURACY_KEY = 'pref.highAccuracy';
@@ -99,6 +102,9 @@ export const MEET_RED_OPTIONS = [3, 5, 10] as const;
 export const DEFAULT_MEET_RED_MIN = 5;
 
 interface PreferencesValue {
+  /** Personal transport mode, persisted on this device outside journey/group state. */
+  travelMode: TravelMode;
+  setTravelMode: (mode: TravelMode) => void;
   language: Language;
   themeName: ThemeName;
   /** App text size multiplier (0.8–1.2). Default 1.0 = design sizes. */
@@ -173,7 +179,14 @@ function parseTextScalePref(value: string | null): TextScalePref | null {
     : null;
 }
 
+function isTravelMode(value: string | null | undefined): value is TravelMode {
+  return value === 'walk' || value === 'drive' || value === 'transit' || value === 'bicycle';
+}
+
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
+  const [travelMode, setTravelModeState] = useState<TravelMode>('walk');
+  // A choice made while the storage read is pending owns the mode.
+  const travelModeChosenRef = useRef(false);
   const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
   const [textScale, setTextScaleState] = useState<TextScalePref>(DEFAULT_TEXT_SCALE);
@@ -217,6 +230,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           storedGatherCardMarqueeSpeed,
           storedArrivalRadius,
           storedPassiveCompanionMode,
+          storedTravelMode,
         ] = await AsyncStorage.multiGet([
           LANGUAGE_KEY,
           THEME_KEY,
@@ -233,10 +247,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           GATHER_CARD_MARQUEE_SPEED_KEY,
           ARRIVAL_RADIUS_KEY,
           PASSIVE_COMPANION_MODE_KEY,
+          TRAVEL_MODE_KEY,
         ]);
         const diagnosticConsent = await getDiagnosticConsentEnabled();
         if (!active) return;
         setDiagnosticUploadEnabledState(diagnosticConsent);
+        if (!travelModeChosenRef.current) {
+          const mode = storedTravelMode?.[1];
+          setTravelModeState(isTravelMode(mode) ? mode : 'walk');
+        }
         if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
         const parsedTextScale = parseTextScalePref(storedTextScale[1]);
@@ -298,6 +317,13 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return () => {
       active = false;
     };
+  }, []);
+
+  const setTravelMode = useCallback((mode: TravelMode) => {
+    const next = isTravelMode(mode) ? mode : 'walk';
+    travelModeChosenRef.current = true;
+    setTravelModeState(next);
+    void AsyncStorage.setItem(TRAVEL_MODE_KEY, next);
   }, []);
 
   const setLanguage = useCallback((next: Language) => {
@@ -393,6 +419,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
   const value = useMemo<PreferencesValue>(
     () => ({
+      travelMode,
+      setTravelMode,
       language,
       themeName,
       textScale,
@@ -426,6 +454,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setDiagnosticUploadEnabled,
     }),
     [
+      travelMode,
+      setTravelMode,
       language,
       themeName,
       textScale,

@@ -4,6 +4,9 @@ import { useCarouselSelection } from '../screens/MapScreen/hooks/useCarouselSele
 import type { Destination } from '../types';
 
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn() }));
+jest.mock('../state/PreferencesContext', () => ({
+  usePreferences: () => ({ travelMode: 'walk', setTravelMode: jest.fn() }),
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

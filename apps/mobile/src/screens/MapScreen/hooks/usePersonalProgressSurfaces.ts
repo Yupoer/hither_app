@@ -58,6 +58,9 @@ export function usePersonalProgressSurfaces(
 ): PersonalProgressSurfaces {
   const anchorRef = useRef<RouteAnchorState | null>(null);
   const resetKeyRef = useRef(input.resetKey);
+  const travelModeRef = useRef(input.travelMode);
+  const modeChanged = travelModeRef.current !== input.travelMode;
+  travelModeRef.current = input.travelMode;
   const etaSnapshotRef = useRef<EtaSnapshot | null>(null);
   const resetChanged = resetKeyRef.current !== input.resetKey;
   if (resetChanged) {
@@ -65,6 +68,9 @@ export function usePersonalProgressSurfaces(
     anchorRef.current = null;
     etaSnapshotRef.current = null;
   }
+
+  // Keep distance/progress anchors when changing transport; only ETA loses ownership.
+  if (modeChanged) etaSnapshotRef.current = null;
 
   const routeGeneration = input.routeResultGeneration ?? 0;
   let isNewRouteResult = false;
@@ -90,7 +96,7 @@ export function usePersonalProgressSurfaces(
     ...input,
     previousProgressMax: resetChanged ? null : input.previousProgressMax,
     lastValidDistanceM: resetChanged ? null : input.lastValidDistanceM,
-    lastValidEtaSeconds: resetChanged ? null : input.lastValidEtaSeconds,
+    lastValidEtaSeconds: resetChanged || modeChanged ? null : input.lastValidEtaSeconds,
     lastValidProgress: resetChanged ? null : input.lastValidProgress,
     routeAnchorGps: anchor?.gps,
     routeAnchorRemainingM: anchor?.remainingM,
@@ -105,11 +111,11 @@ export function usePersonalProgressSurfaces(
     progress: personalProgress.progress ?? input.fallbackProgress ?? null,
   };
   etaSnapshotRef.current = resolveEtaSnapshot(etaSnapshotRef.current, {
-    key: JSON.stringify([input.resetKey, routeGeneration, sharedValues.distanceMeters, sharedValues.etaSeconds, input.arrivalRadiusM]),
+    key: JSON.stringify([input.resetKey, input.travelMode, routeGeneration, sharedValues.distanceMeters, sharedValues.etaSeconds, input.arrivalRadiusM]),
     etaSeconds: sharedValues.etaSeconds,
-    sampledAtMs: isNewRouteResult ? undefined : input.sampledAtMs,
+    sampledAtMs: isNewRouteResult || modeChanged ? undefined : input.sampledAtMs,
     nowMs: Date.now(),
-    fresh: personalProgress.arrived || personalProgress.freshness === 'live',
+    fresh: modeChanged || personalProgress.arrived || personalProgress.freshness === 'live',
   });
   sharedValues.etaTargetAtMs = etaSnapshotRef.current?.etaTargetAtMs;
   sharedValues.etaSampledAtMs = etaSnapshotRef.current?.sampledAtMs;

@@ -35,6 +35,14 @@ describe('buildNavigationUrl', () => {
     expect(buildNavigationUrl('google', taipei101, 'transit')).toContain('travelmode=transit');
   });
 
+  it('requests cycling from both providers without a walking fallback', () => {
+    expect(buildNavigationUrl('google', taipei101, 'bicycle')).toContain('travelmode=bicycling');
+    const apple = buildNavigationUrl('apple', taipei101, 'bicycle');
+    expect(apple).toContain('maps.apple.com/directions?');
+    expect(apple).toContain('mode=cycling');
+    expect(apple).not.toContain('dirflg=w');
+  });
+
   it('builds an Apple Maps URL', () => {
     const url = buildNavigationUrl('apple', taipei101, 'walk');
     expect(url).toContain('maps.apple.com');

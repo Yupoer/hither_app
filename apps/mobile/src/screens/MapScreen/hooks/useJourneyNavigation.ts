@@ -29,6 +29,7 @@ interface TeamCommandIntent {
   operationId: string;
   targetSessionId?: string | null;
   previousServerSession?: NavigationSession | null;
+  switchFromDestinationId?: string;
   expectedSessionStartedAt?: string | null;
   destination: Destination;
   index: number;
@@ -50,6 +51,8 @@ interface UseJourneyNavigationParams {
   reorderDestinations?: Destination[];
   selectedDestination: Destination | undefined;
   fromCoords: Coordinates | undefined;
+  /** Read the latest device fix when location ownership is declared later. */
+  getFromCoords?: () => Coordinates | undefined;
   refresh: () => void;
   t: (key: string, params?: Record<string, any>) => string;
   mapRef: RefObject<GroupMapHandle | null>;
@@ -95,6 +98,7 @@ export function useJourneyNavigation({
   reorderDestinations = destinations,
   selectedDestination,
   fromCoords,
+  getFromCoords,
   refresh: _refresh,
   t,
   mapRef,
@@ -167,9 +171,28 @@ export function useJourneyNavigation({
     if (notify) { setVisibleLocalSessionId(sessionId); onLocalSessionIdChange?.(sessionId); }
   }, [onLocalSessionIdChange]);
   const lastFollowerCenterKeyRef = useRef<string | null>(null);
+  const startFrameRef = useRef<{ context: string; destination: Destination; fitted: boolean } | null>(null);
+  const frameStartedDestination = useCallback((destination: Destination) => {
+    const previous = startFrameRef.current;
+    const sameFrame = previous?.context === endedContext && previous.destination.id === destination.id;
+    if (sameFrame && previous.fitted) return;
+    const origin = getFromCoords?.() ?? fromCoords;
+    if (origin && mapRef.current) {
+      mapRef.current.fitRoute([origin, destination.coordinates]);
+    } else if (!sameFrame) {
+      mapRef.current?.centerOn(destination.coordinates, { animated: false });
+    }
+    startFrameRef.current = { context: endedContext, destination, fitted: Boolean(origin && mapRef.current) };
+  }, [endedContext, fromCoords, getFromCoords, mapRef]);
+  const refreshStartFrame = useCallback(() => {
+    const frame = startFrameRef.current;
+    if (frame?.context === endedContext && !frame.fitted) frameStartedDestination(frame.destination);
+  }, [endedContext, frameStartedDestination]);
+  useEffect(refreshStartFrame, [fromCoords, refreshStartFrame]);
   const requestRef = useRef<{ destinationId: string; requestId: string } | null>(null);
   const desiredTeamIntentRef = useRef<TeamCommandJob[]>([]);
   const pendingTeamStartIntentRef = useRef<TeamCommandIntent | null>(null);
+  const switchPromptRef = useRef<string | null>(null);
   const teamCommandRunnerRef = useRef<Promise<void> | null>(null);
   const teamCommandSequenceRef = useRef(0);
   const latestTeamTapRef = useRef<{ action: 'start' | 'end'; destinationId: string;
@@ -195,6 +218,9 @@ export function useJourneyNavigation({
     pendingStartRef.current = null;
     requestRef.current = null;
     latestTeamTapRef.current = null;
+    startFrameRef.current = null;
+    switchPromptRef.current = null;
+    pendingCarouselTargetIdRef.current = null;
   }, [groupId, actorId, publishLocalSessionId]);
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
   const pendingStartRef = useRef<{
@@ -329,7 +355,11 @@ export function useJourneyNavigation({
       && (lastVisibleServerSessionRef.current.session.scopeSubgroupId ?? null) === (terminalSession.scopeSubgroupId ?? null);
     // An old session's End may arrive after a new local Start of the same stop.
     // Its stable request identity, not destination equality, owns termination.
-    if (pendingStartRef.current && !matchesLocalStart) return;
+    const pendingIntent = pendingTeamStartIntentRef.current;
+    const matchesPendingIntent = Boolean(pendingIntent && (terminalSession.id === pendingIntent.operationId
+      || terminalSession.requestId === pendingIntent.operationId));
+    if (pendingIntent && teamCommandRunnerRef.current && !matchesPendingIntent) return;
+    if (pendingStartRef.current && !matchesLocalStart && !matchesPendingIntent) return;
     if (!matchesLocalStart && !matchesServer) return;
     const localStart = pendingStartRef.current;
     const localDestinationId = localSessionContextRef.current?.destinationId;
@@ -343,10 +373,13 @@ export function useJourneyNavigation({
       void Promise.all(endedKeys.map(key => rememberEndedNavigationSession(actorId, groupId, key))).catch(() => undefined);
     }
     stoppedServerSessionRef.current = terminalSession.id;
+    startFrameRef.current = null;
     stoppedAtRef.current = Date.now();
     setLocallyStopped(true);
     setOptimisticTeamTargetId(null);
     setPendingLeaderTargetId(null);
+    latestTeamTapRef.current = null;
+    pendingTeamStartIntentRef.current = null;
     clearLocalSessionAlias();
   }, [terminalSession, groupId, actorId, endedContext, clearLocalSessionAlias]);
 
@@ -438,7 +471,7 @@ export function useJourneyNavigation({
     serverOrStartedSessionRef.current = Boolean(authoritativeSharedTargetId);
     const override = optimisticTeamTargetId;
     if (override === undefined) return;
-    if (override === authoritativeSharedTargetId && !pendingStartRef.current) {
+    if (override === authoritativeSharedTargetId && !pendingStartRef.current && !pendingTeamStartIntentRef.current) {
       setOptimisticTeamTargetId(undefined);
     }
   }, [authoritativeSharedTargetId, optimisticTeamTargetId]);
@@ -606,9 +639,11 @@ export function useJourneyNavigation({
       const baseState = durable && (!cached || durable.gathering.entityVersion >= cached.entityVersion)
         ? durable.gathering : cached ?? (state ? deriveActiveGatheringFromGroupState(state, 0) : undefined);
       if (baseState) gatheringStatesRef.current.set(gatheringCacheKey, baseState);
-      const switching = Boolean(baseState?.activeDestinationId && baseState.activeDestinationId !== dest.id);
+      const switching = Boolean((intent.switchFromDestinationId && intent.switchFromDestinationId !== dest.id)
+        || (baseState?.activeDestinationId && baseState.activeDestinationId !== dest.id));
       const operationId = intent.operationId;
       const options = { baseState, groupState: state, actorId: actorId ?? undefined, activeDestinationId: dest.id, operationId,
+        promoteWithinDay: true,
         // The transition is durable before a server session exists. Reusing
         // this id as navigationRequestId lets delayed arrivals stay bound to
         // this exact local session after reconnect.
@@ -636,13 +671,11 @@ export function useJourneyNavigation({
       if (teamCommandSequenceRef.current === intent.sequence) {
         onOptimisticGathering?.(enqueued.local);
         setOptimisticTeamTargetId(dest.id);
-        mapRef.current?.centerOn(dest.coordinates, { animated: false });
+        frameStartedDestination(dest);
         const currentIndex = navigationDestinations.findIndex(item => item.id === dest.id);
         setSelectedIndex(currentIndex >= 0 ? currentIndex : index);
+        pendingCarouselTargetIdRef.current = dest.id;
       }
-      // Automatic carousel promotion is display-only. A separate reorder before
-      // Start would create a partial commit and poison the FIFO's base version.
-      pendingCarouselTargetIdRef.current = null;
       void flushCoreOperationOutbox().then(() => {
         if (!isCurrent()) return;
         _refresh();
@@ -655,6 +688,7 @@ export function useJourneyNavigation({
         pendingTeamStartIntentRef.current = null;
       }
       if (teamCommandSequenceRef.current === intent.sequence) {
+        startFrameRef.current = null;
         latestTeamTapRef.current = null;
         const savedGathering = gatheringStatesRef.current.get(gatheringCacheKey);
         setOptimisticTeamTargetId(savedGathering
@@ -671,15 +705,16 @@ export function useJourneyNavigation({
       }
     }
   }, [groupId, actorId, state, navigationSession?.id, navigationDestinations, mapRef, onOptimisticGathering,
-    setSelectedIndex, createRequestId, _refresh, refreshNavigationSession, publishLocalSessionId, gatheringCacheKey, t]);
+    setSelectedIndex, createRequestId, _refresh, refreshNavigationSession, publishLocalSessionId, gatheringCacheKey, t, frameStartedDestination]);
 
-  const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number): Promise<boolean> => {
+  const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number, switchFromDestinationId?: string): Promise<boolean> => {
     const latestTap = latestTeamTapRef.current;
     const ownLatestTap = latestTap?.groupId === groupId && latestTap?.actorId === actorId ? latestTap : null;
     if (action === 'start' && isLeader
-      && (ownLatestTap ? ownLatestTap.action === 'start' && ownLatestTap.destinationId === dest.id
+      && (ownLatestTap ? !locallyStopped && ownLatestTap.action === 'start' && ownLatestTap.destinationId === dest.id
         : !locallyStopped && navTargetId === dest.id)) return Promise.resolve(true);
     if (action === 'end') {
+      startFrameRef.current = null;
       stoppedServerSessionRef.current = navigationSession?.id ?? null;
       stoppedAtRef.current = Date.now();
       setLocallyStopped(true);
@@ -700,6 +735,7 @@ export function useJourneyNavigation({
       action,
       operationId: createRequestId(),
       destination: dest,
+      switchFromDestinationId,
       index,
       previousServerSession: (() => {
         const previous = navigationSession ?? (lastVisibleServerSessionRef.current?.context === endedContext
@@ -709,6 +745,9 @@ export function useJourneyNavigation({
       })(),
     };
     latestTeamTapRef.current = { action, destinationId: dest.id, groupId, actorId, sequence: intent.sequence };
+    // Any delayed promotion snapshot of the previous tap has lost selection
+    // ownership, even if that older command committed before this new tap.
+    pendingCarouselTargetIdRef.current = null;
     // Clear the externally visible old alias while retaining the FIFO's
     // internal session identity until the new command durably commits.
     setVisibleLocalSessionId(null);
@@ -721,7 +760,7 @@ export function useJourneyNavigation({
       setPendingLeaderTargetId(dest.id);
       setOptimisticTeamTargetId(dest.id);
       setSelectedIndex(index);
-      mapRef.current?.centerOn(dest.coordinates, { animated: false });
+      frameStartedDestination(dest);
     } else {
       pendingTeamStartIntentRef.current = null;
     }
@@ -760,16 +799,48 @@ export function useJourneyNavigation({
     };
     drain();
     return result;
-  }, [isLeader, locallyStopped, navTargetId, groupId, actorId, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession, endedContext, setSelectedIndex, mapRef, onLocalSessionIdChange]);
+  }, [isLeader, locallyStopped, navTargetId, groupId, actorId, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession, endedContext, setSelectedIndex, mapRef, onLocalSessionIdChange, frameStartedDestination]);
 
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
+      if (isLeader) {
+        // Resolve the current target independently of its local dismissal.
+        // A suppressed active server row still must be explicitly switched.
+        const latest = latestTeamTapRef.current;
+        const ownLatest = latest?.groupId === groupId && latest?.actorId === actorId ? latest : null;
+        const cached = gatheringStatesRef.current.get(gatheringCacheKey);
+        const currentId = ownLatest?.action === 'start' ? ownLatest.destinationId
+          : ownLatest?.action === 'end' ? null
+          : optimisticTeamTargetId ? optimisticTeamTargetId
+          : navigationSession?.status === 'active' ? navigationSession.destinationId
+          : cached?.journeyPhase === 'en_route' ? cached.activeDestinationId
+          : legacySharedTargetId;
+        if (currentId && currentId !== dest.id) {
+          const promptKey = JSON.stringify([actorId, groupId, currentId, dest.id]);
+          if (switchPromptRef.current === promptKey) return;
+          switchPromptRef.current = promptKey;
+          const dismiss = () => { if (switchPromptRef.current === promptKey) switchPromptRef.current = null; };
+          const currentName = navigationDestinations.find(d => d.id === currentId)?.title
+            ?? (navigationSession?.destinationId === currentId ? navigationSession.destination.name : currentId);
+          Alert.alert(t('map.switchJourneyTitle'), t('map.switchJourneyMessage', { currentName, newName: dest.title }), [
+            { text: t('common.cancel'), style: 'cancel', onPress: dismiss },
+            { text: t('map.switchJourneyConfirm'), onPress: () => {
+              dismiss();
+              if (mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId) {
+                void enqueueTeamCommand('start', dest, index, currentId);
+              }
+            } },
+          ], { cancelable: true, onDismiss: dismiss });
+          return;
+        }
+      }
       // Start taps are intentionally fire-and-forget at the UI boundary. The
       // FIFO still awaits each durable command internally, but callers must be
       // able to enqueue End/Start taps while the first local write is pending.
       void enqueueTeamCommand('start', dest, index);
     },
-    [enqueueTeamCommand],
+    [enqueueTeamCommand, isLeader, groupId, actorId, gatheringCacheKey, optimisticTeamTargetId,
+      navigationSession, legacySharedTargetId, navigationDestinations, t],
   );
 
   const requestTeamEnd = useCallback(
@@ -810,6 +881,7 @@ export function useJourneyNavigation({
     setOptimisticTeamTargetId(null);
     setLocalTargetId(null);
     setPendingLeaderTargetId(null);
+    startFrameRef.current = null;
     publishLocalSessionId(null);
   }, [navTargetId, publishLocalSessionId]);
 
@@ -847,7 +919,9 @@ export function useJourneyNavigation({
     setSelectedIndex(index);
     // Target changes from Start/follow are direct selections; only a manual
     // carousel swipe should animate the camera between points.
-    mapRef.current?.centerOn(destination.coordinates, { animated: false });
+    if (startFrameRef.current?.context !== endedContext || startFrameRef.current.destination.id !== destination.id) {
+      mapRef.current?.centerOn(destination.coordinates, { animated: false });
+    }
   }, [destinations, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {
@@ -870,6 +944,7 @@ export function useJourneyNavigation({
     openExternalNavigation,
     openInAppleMaps,
     startNavigation,
+    refreshStartFrame,
     requestTeamEnd,
     stopNavigation,
     stopRemovedDestination,

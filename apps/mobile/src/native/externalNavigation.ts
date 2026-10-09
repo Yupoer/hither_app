@@ -12,6 +12,8 @@ function googleTravelMode(mode: TravelMode): string {
       return 'driving';
     case 'transit':
       return 'transit';
+    case 'bicycle':
+      return 'bicycling';
     case 'walk':
     default:
       return 'walking';
@@ -48,6 +50,13 @@ export function buildNavigationUrl(
       travelmode: googleTravelMode(travelMode),
     });
     return `https://www.google.com/maps/dir/?${params.toString()}`;
+  }
+
+  if (travelMode === 'bicycle') {
+    const params = new URLSearchParams({
+      destination: `${latitude},${longitude}`, mode: 'cycling',
+    });
+    return `https://maps.apple.com/directions?${params.toString()}`;
   }
 
   const params = new URLSearchParams({

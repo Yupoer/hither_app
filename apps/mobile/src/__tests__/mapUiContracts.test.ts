@@ -90,7 +90,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps add-place secondary controls bright, transparent, and evenly spaced', () => {
-    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, marginLeft: 8 }');
+    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, flexShrink: 0 }');
     expect(mapScreen).toContain('confirmBtnRow: {');
     expect(mapScreen).toContain('gap: 12');
     expect(mapScreen).toContain('paddingHorizontal: 20');

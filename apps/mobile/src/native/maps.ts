@@ -70,7 +70,8 @@ export interface MapRegion {
   longitudeDelta: number;
 }
 
-export type TravelMode = 'walk' | 'drive' | 'transit';
+export type { TravelMode } from '../utils/geo';
+import type { TravelMode } from '../utils/geo';
 
 /** Where a route geometry / ETA came from — drives UI labels. */
 export type RouteSource = 'native' | 'google' | 'estimate';
@@ -473,7 +474,8 @@ export async function getDirections(
   // Public MapKit transit supports ETA, not route geometry. Use the existing
   // authenticated Routes proxy for the in-app transit polyline on iOS.
   try {
-    if (HitherMaps && !(Platform.OS === 'ios' && travelMode === 'transit')) {
+    // Native MapKit has no cycling directions; its default would be walking.
+    if (HitherMaps && travelMode !== 'bicycle' && !(Platform.OS === 'ios' && travelMode === 'transit')) {
       try {
         const route = await HitherMaps.getDirections(from, to, travelMode);
         if (route && route.points.length > 0) {

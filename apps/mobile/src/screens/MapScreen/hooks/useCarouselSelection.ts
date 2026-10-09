@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, RefObject } from 'react';
 import type { NativeSyntheticEvent, NativeScrollEvent, ScrollView } from 'react-native';
 import type { Destination } from '../../../types';
-import type { TravelMode } from '../../../utils/geo';
+import { usePreferences } from '../../../state/PreferencesContext';
 import { logEvent } from '../../../utils/activityLog';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 
@@ -22,7 +22,7 @@ export function useCarouselSelection({
   obliqueLocate = true,
 }: UseCarouselSelectionParams) {
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [travelMode, setTravelMode] = useState<TravelMode>('walk');
+  const { travelMode, setTravelMode } = usePreferences();
   // Ignore momentum completions from an older animated scroll after a newer
   // destination ID has become the selected target.
   const programmaticTargetRef = useRef<number | null>(null);
