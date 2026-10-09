@@ -47,6 +47,7 @@ function NativeSettingsChildSheet({
   doneLabel = action === 'close' ? 'close' : 'commit',
   onCommit,
   title,
+  titleFontSize,
   children,
   initialStage = 0,
   stageTwoRatio = STAGE_TWO_RATIO,
@@ -127,8 +128,8 @@ function NativeSettingsChildSheet({
               <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} />
               <SwiftText
                 modifiers={[
-                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: actionSlotSize, maxHeight: actionSlotSize, alignment: 'center' }),
-                  font({ size: 17, weight: 'bold' }),
+                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: actionSlotSize, ...(titleFontSize == null ? { maxHeight: actionSlotSize } : {}), alignment: 'center' }),
+                  font({ size: titleFontSize ?? 17, weight: 'bold' }),
                 ]}
               >
                 {title}

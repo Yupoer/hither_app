@@ -98,3 +98,30 @@ it('persists changed snapshots at 15 seconds while native delivery can update ev
   mockUser = null;
   jest.useRealTimers();
 });
+
+it('sends and persists a mode change immediately with its new estimate inside the display/persist throttle', async () => {
+  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  jest.setSystemTime(300000);
+  mockUser = { id: 'self' };
+  mockPersistSession.mockClear();
+  mockNative.updateGroupActivity.mockClear();
+  function Harness({ mode }: { mode: 'walk' | 'bicycle' }) {
+    const etaSeconds = mode === 'walk' ? 600 : 200;
+    useLiveActivity(true, { groupName: 'Team', distanceMeters: 900, etaSeconds, progress: 0.1,
+      travelMode: mode, sampledAtMs: 300000, etaTargetAtMs: 300000 + etaSeconds * 1000 },
+      { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: mode });
+    return null;
+  }
+  let tree: any;
+  await act(async () => { tree = create(React.createElement(Harness, { mode: 'walk' })); });
+  const persisted = mockPersistSession.mock.calls.length;
+  await act(async () => { tree.update(React.createElement(Harness, { mode: 'bicycle' })); });
+  expect(mockNative.updateGroupActivity).toHaveBeenLastCalledWith('activity', expect.objectContaining({
+    travelMode: 'bicycle', etaSeconds: 200, etaTargetAtMs: 500000, progress: 0.1 }));
+  expect(mockPersistSession.mock.calls.length).toBeGreaterThan(persisted);
+  expect(mockPersistSession).toHaveBeenLastCalledWith(expect.objectContaining({
+    travelMode: 'bicycle', etaSeconds: 200, etaTargetAtMs: 500000, progress: 0.1 }), 'self');
+  await act(async () => tree.unmount());
+  mockUser = null;
+  jest.useRealTimers();
+});

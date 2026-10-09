@@ -1,4 +1,5 @@
 import { operationWirePayload, rollbackItinerary, rollbackTripAndStays, type ItineraryRollback } from './itineraryRollback';
+import { promoteDestinationWithinDay } from '../utils/tripDay';
 /**
  * OTA-04 core operation outbox.
  *
@@ -787,6 +788,8 @@ export interface EnqueueGatheringInput {
   operationId?: string;
   groupId: string;
   action: 'start' | 'switch' | 'end';
+  /** Atomic local Start plus dependent same-day itinerary reorder. */
+  promoteWithinDay?: boolean;
   nextDestinationId?: string | null;
   baseState: ActiveGatheringState;
   /** Destination id for start/switch when base has none selected. */
@@ -901,6 +904,7 @@ export function createCoreOperationOutbox(
   const writeLocalAndOutbox = async (
     applyLocal: (exec: CoreSqlExecutor) => Promise<void>,
     operation: CoreOperation,
+    afterInsert?: (exec: CoreSqlExecutor) => Promise<void>,
   ): Promise<CoreOperation> => {
     const existingById = await outboxDb.get(operation.id);
     if (existingById) {
@@ -975,6 +979,7 @@ export function createCoreOperationOutbox(
             afterDailyAccommodations: after?.dailyAccommodations ?? before.dailyAccommodations ?? [] } };
       }
       await outboxDb.writeInsert(exec, operation);
+      await afterInsert?.(exec);
       });
     });
     return operation;
@@ -1381,7 +1386,9 @@ export function createCoreOperationOutbox(
           await coreDb.writeActiveGathering(exec, snapshot.activeGathering, current, { patchSnapshot: 'none' });
         }
       }
-      if (isItineraryMutation(operation) && !conflict.serverState) {
+      if ((isItineraryMutation(operation) && !conflict.serverState)
+        || (operation.entityType !== 'itinerary' && conflictRows.some(row =>
+          invalidated.has(row.id) && row.actorId === operation.actorId && isItineraryMutation(row)))) {
         const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
         if (snapshot) {
           let destinations = snapshot.destinations;
@@ -1549,9 +1556,22 @@ export function createCoreOperationOutbox(
                 activeDestinationId: input.activeDestinationId,
               }
             : input.baseState;
+        // A fresh durable request may restart a locally dismissed session
+        // before its terminal server projection has reached this snapshot.
+        // Keep the original base/version for rollback and start the requested
+        // target exactly once, rather than rejecting the stale en_route phase.
+        const startBase = input.action === 'start' && input.activeDestinationId
+          ? { ...base, activeDestinationId: input.activeDestinationId,
+              ...(input.navigationRequestId && base.journeyPhase === 'en_route' ? {
+                journeyPhase: 'staying' as const,
+                pointStatuses: base.activeDestinationId
+                  && base.pointStatuses[base.activeDestinationId] === 'en_route'
+                  ? { ...base.pointStatuses, [base.activeDestinationId]: 'pending' as const } : base.pointStatuses,
+              } : {}) }
+          : base;
         const local =
           input.action === 'start'
-            ? startGathering(base, current)
+            ? startGathering(startBase, current)
             : input.action === 'switch'
               ? switchGathering(
                   base,
@@ -1607,13 +1627,53 @@ export function createCoreOperationOutbox(
           updatedAt: current,
         };
 
+        const itineraryPredecessors = input.promoteWithinDay
+          ? (await outboxDb.listByGroup(input.groupId)).filter(row => row.actorId === actorId
+            && isItineraryMutation(row) && isOpenOperation(row)) : [];
         await writeLocalAndOutbox(async (exec) => {
           // Outbox optimistic mutation deliberately marks snapshot local_optimistic.
           await coreDb.writeActiveGathering(exec, local, current, {
             patchSnapshot: 'optimistic',
             ownerActorId: operation.actorId,
           });
-        }, operation);
+        }, operation, async (exec) => {
+          if (input.promoteWithinDay && input.action !== 'end' && local.activeDestinationId) {
+            const snapshot = await coreDb.readSnapshotInTransaction(exec, input.groupId);
+            if (!snapshot) throw new Error('no local itinerary for start promotion');
+            const target = snapshot.destinations.find(d => d.id === local.activeDestinationId && !d.closedAt);
+            if (!target || target.day == null) throw new Error('invalid_start_promotion_target');
+            // Move only this day's open slots, preserving every closed row
+            // and every other day's exact day/order values.
+            const dayStops = snapshot.destinations.filter(d => d.day === target.day && !d.closedAt)
+              .sort((a, b) => a.order - b.order);
+            const promoted = promoteDestinationWithinDay(dayStops, target.id);
+            const updates = promoted.map((item, index) => ({ ...item, position: dayStops[index]!.order }));
+            if (updates.some(update => dayStops.find(d => d.id === update.id)?.order !== update.position)) {
+              const positions = new Map(updates.map(update => [update.id, update.position]));
+              const destinations = snapshot.destinations.map(d => positions.has(d.id)
+                ? { ...d, order: positions.get(d.id)! } : d).sort((a, b) => a.order - b.order);
+              const predecessor = itineraryPredecessors.sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0))[0];
+              const promotion: CoreOperation = {
+                ...operation, id: idFactory(), entityType: 'itinerary', entityId: input.groupId,
+                entityVersion: predecessor ? predecessor.entityVersion + 1 : snapshot.itineraryVersion ?? 0,
+                operationType: 'reorder_destinations', sequence: actorId
+                  ? await outboxDb.writeAllocateSequence(exec, actorId, input.groupId) : undefined,
+                dependencyIds: [...new Set([operation.id, ...itineraryPredecessors
+                  .filter(row => relatedOperations(row, { ...operation, payload: { updates },
+                    operationType: 'reorder_destinations', entityType: 'itinerary' }))
+                  .map(row => row.id)])],
+                payload: { updates, _localRollback: {
+                  before: snapshot.destinations, after: destinations,
+                  beforeActiveGathering: snapshot.activeGathering, afterActiveGathering: snapshot.activeGathering,
+                  beforeGroup: snapshot.group, afterGroup: snapshot.group,
+                } },
+              };
+              await coreDb.writeSnapshot(exec, { ...snapshot, destinations, updatedAt: current,
+                source: 'local_optimistic', ownerActorId: operation.actorId });
+              await outboxDb.writeInsert(exec, promotion);
+            }
+          }
+        });
 
         notifyCoreOutboxChanged();
         return { operation, local, base };

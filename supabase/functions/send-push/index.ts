@@ -58,7 +58,7 @@ interface LiveSessionRow {
   initial_distance_m: number;
   current_distance_m: number;
   eta_seconds: number | null;
-  travel_mode: "walk" | "transit" | "drive";
+  travel_mode: "walk" | "transit" | "drive" | "bicycle";
   last_progress_bucket?: number | null;
   accent_hex?: string | null;
 }

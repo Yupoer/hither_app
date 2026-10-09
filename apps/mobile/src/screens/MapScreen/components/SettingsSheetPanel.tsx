@@ -34,6 +34,8 @@ export type SettingsSheetPanelProps = {
   doneLabel?: string;
   onCommit?: () => void;
   title: string;
+  /** Optional per-sheet heading size; other settings keep their existing type. */
+  titleFontSize?: number;
   children: React.ReactNode;
   zIndex?: number;
   initialStage?: 0 | 1;
@@ -54,6 +56,7 @@ export default function SettingsSheetPanel({
   doneLabel = action === 'close' ? 'close' : 'commit',
   onCommit,
   title,
+  titleFontSize,
   children,
   zIndex = 90,
   initialStage = 0,
@@ -130,7 +133,7 @@ export default function SettingsSheetPanel({
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
       ) : <View style={styles.headerActionSlot} />}
-      <Text style={styles.title} numberOfLines={1}>{title}</Text>
+      <Text style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]} numberOfLines={titleFontSize != null ? 2 : 1}>{title}</Text>
       <SheetHeaderAction
         action={action}
         onPress={action === 'commit' ? () => onCommit?.() : onClose}

@@ -3,7 +3,7 @@ import type { Coordinates } from '../types';
 /** Mean walking speed in metres per second (~5 km/h), per the design's "walk" ETA. */
 const WALKING_SPEED_MPS = 1.4;
 
-export type TravelMode = 'walk' | 'drive' | 'transit';
+export type TravelMode = 'walk' | 'drive' | 'transit' | 'bicycle';
 
 // Rough average speeds (m/s) for the nav-mode switcher's ETA estimate — no
 // live routing API yet, so these are ballpark urban averages (drive accounts
@@ -12,6 +12,7 @@ const TRAVEL_SPEED_MPS: Record<TravelMode, number> = {
   walk: WALKING_SPEED_MPS,
   drive: 10,
   transit: 6.5,
+  bicycle: 4.2, // ~15 km/h: local estimate when cycling routes are unavailable.
 };
 
 const EARTH_RADIUS_M = 6_371_000;

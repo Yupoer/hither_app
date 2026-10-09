@@ -3,6 +3,7 @@ import {
   assertExists,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  computeRoute,
   parseDurationSeconds,
   searchPlaces,
   validateRequest,
@@ -118,4 +119,18 @@ Deno.test("searchPlaces uses Places field mask and never calls with empty query 
 Deno.test("quota gate contract: validateRequest never produces Google-callable body for blank query", () => {
   // Documents fail-closed validation before quota / Google: blank query is rejected.
   assertEquals(validateRequest({ action: "search", query: "\t  \n" }), null);
+});
+
+Deno.test("cycling accepts the client mode and calls BICYCLE upstream", async () => {
+  const from = { latitude: 25, longitude: 121 }, to = { latitude: 25.01, longitude: 121 };
+  assertExists(validateRequest({ action: "route", from, to, travelMode: "bicycle" }));
+  let mode = "";
+  const fakeFetch: typeof fetch = async (_input, init) => {
+    mode = JSON.parse(String(init?.body)).travelMode;
+    return new Response(JSON.stringify({ routes: [{ distanceMeters: 1000, duration: "250s",
+      polyline: { encodedPolyline: "encoded" } }] }), { status: 200 });
+  };
+  const route = await computeRoute("test-key", from, to, "bicycle", fakeFetch);
+  assertEquals(mode, "BICYCLE");
+  assertEquals(route?.expectedTravelTimeSeconds, 250);
 });

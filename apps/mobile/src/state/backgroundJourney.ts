@@ -362,11 +362,11 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           arrived: personalArrivalConfirmed,
         });
         const previousEta = config.etaTargetAtMs != null && config.etaSeconds != null
-          ? { key: JSON.stringify([config.lastEtaDistanceM ?? config.routeAnchorRemainingM, config.etaSeconds, config.arrivalRadiusMeters]),
+          ? { key: JSON.stringify([config.travelMode, config.lastEtaDistanceM ?? config.routeAnchorRemainingM, config.etaSeconds, config.arrivalRadiusMeters]),
             etaSeconds: config.etaSeconds, sampledAtMs: config.etaSampledAtMs ?? config.etaTargetAtMs - config.etaSeconds * 1000,
             etaTargetAtMs: config.etaTargetAtMs } : null;
         const etaSnapshot = resolveEtaSnapshot(previousEta, {
-          key: JSON.stringify([progress.distanceMeters, progress.etaSeconds, config.arrivalRadiusMeters]),
+          key: JSON.stringify([config.travelMode, progress.distanceMeters, progress.etaSeconds, config.arrivalRadiusMeters]),
           etaSeconds: progress.etaSeconds, sampledAtMs: latest.timestamp, nowMs: now,
         });
         const displayProgress = progress.progress ?? 0;

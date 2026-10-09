@@ -1,4 +1,4 @@
-export type TravelMode = "walk" | "drive" | "transit";
+export type TravelMode = "walk" | "drive" | "transit" | "bicycle";
 
 export interface Coordinates {
   latitude: number;

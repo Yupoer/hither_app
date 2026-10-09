@@ -241,6 +241,66 @@ afterEach(async () => {
 });
 
 describe('coreDataSync production orchestration', () => {
+  it('starts a fresh request over a stale en_route projection of the same dismissed session', async () => {
+    const state = makeState();
+    state.group = { ...state.group, journeyStatus: 'going', activeDestinationId: 'd1' };
+    await seedSnapshot(state);
+    const result = await enqueueLeaderGatheringStart('group-1', { activeDestinationId: 'd1',
+      operationId: 'fresh-request', navigationRequestId: 'fresh-request', actorId: 'actor-a', flushImmediately: false });
+    expect(result.local).toMatchObject({ journeyPhase: 'en_route', activeDestinationId: 'd1', entityVersion: 4 });
+    expect(result.base.journeyPhase).toBe('en_route');
+    expect((await listOpenCoreOperations('group-1'))[0]).toMatchObject({
+      id: 'fresh-request', entityVersion: 3, payload: { navigationRequestId: 'fresh-request' },
+    });
+  });
+
+  it('persists a same-day promotion after Start in FIFO while retaining history and other days', async () => {
+    const stops = [makeDestination('d1', 4),
+      { ...makeDestination('history', 5), closedAt: '2026-10-01T00:00:00Z' },
+      makeDestination('d2', 8), makeDestination('d3', 12),
+      { ...makeDestination('other-day', 20), day: 2 }];
+    await seedSnapshot(makeState('group-1', stops));
+    const switched = await enqueueLeaderGatheringSwitch('group-1', {
+      operationId: 'start-third', activeDestinationId: 'd3', actorId: 'actor-a',
+      navigationRequestId: 'start-third', promoteWithinDay: true, flushImmediately: false,
+    });
+    const rows = await listOpenCoreOperations('group-1');
+    expect(rows.map(row => row.operationType)).toEqual(['switch_gathering', 'reorder_destinations']);
+    expect(rows.map(row => row.entityVersion)).toEqual([3, 10]);
+    expect(rows[1].sequence).toBeGreaterThan(rows[0].sequence!);
+    expect(rows[1].dependencyIds).toContain('start-third');
+    expect(rows[1].payload.updates).toEqual([
+      { id: 'd3', day: 1, position: 4 }, { id: 'd1', day: 1, position: 8 }, { id: 'd2', day: 1, position: 12 },
+    ]);
+    const durable = await getCoreDataStore().readSnapshot('group-1');
+    expect(durable?.destinations.map(d => [d.id, d.order])).toEqual([
+      ['d3', 4], ['history', 5], ['d1', 8], ['d2', 12], ['other-day', 20],
+    ]);
+    expect(durable?.destinations.find(d => d.id === 'history')).toEqual(stops[1]);
+    expect(durable?.activeGathering).toEqual(switched.local);
+    await enqueueLeaderGatheringEnd('group-1', { actorId: 'actor-a', flushImmediately: false });
+    expect((await listOpenCoreOperations('group-1')).at(-1)?.entityVersion).toBe(4);
+    // A fresh reader sees the committed order even before any network ACK.
+    const reopened = createCoreDataStore(memoryCoreDb(), () => Date.now());
+    expect((await reopened.readSnapshot('group-1'))?.destinations[0]?.id).toBe('d3');
+  });
+
+  it('rolls back both Start and promotion if either durable row cannot be saved', async () => {
+    await seedSnapshot();
+    const before = await getCoreDataStore().readSnapshot('group-1');
+    const originalInsert = memoryOutboxDb().writeInsert.bind(memoryOutboxDb());
+    const insert = jest.spyOn(memoryOutboxDb(), 'writeInsert').mockImplementation(async (exec, row) => {
+      if (row.operationType === 'reorder_destinations') throw new Error('disk_full');
+      return originalInsert(exec, row);
+    });
+    try {
+      await expect(enqueueLeaderGatheringSwitch('group-1', { activeDestinationId: 'd2',
+        actorId: 'actor-a', promoteWithinDay: true, flushImmediately: false })).rejects.toThrow('disk_full');
+      expect(await listOpenCoreOperations('group-1')).toEqual([]);
+      expect(await getCoreDataStore().readSnapshot('group-1')).toEqual(before);
+    } finally { insert.mockRestore(); }
+  });
+
   it('reads canonical quick-add ledger chains with the durable target and never invents a replacement for deletion', async () => {
     await seedSnapshot(makeState('group-1', [makeDestination('canonical', 0)]));
     memoryCoreDb().destinationAliases.set('group-1:local', 'intermediate');

@@ -108,6 +108,19 @@ describe('google maps proxy runtime coverage', () => {
     expect(mockRecordClassifiedError).toHaveBeenCalled();
   });
 
+  it('keeps bicycle requests and cached ETA distinct from walking for identical coordinates', async () => {
+    const route = (seconds: number) => jsonResponse(200, { action: 'route', route: {
+      distanceMeters: 1000, expectedTravelTimeSeconds: seconds,
+      encodedPolyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } });
+    mockFetch.mockResolvedValueOnce(route(600)).mockResolvedValueOnce(route(200));
+    expect((await mod.proxyGetDirections(from, to, 'walk'))?.expectedTravelTimeSeconds).toBe(600);
+    expect((await mod.proxyGetDirections(from, to, 'bicycle'))?.expectedTravelTimeSeconds).toBe(200);
+    expect((await mod.proxyGetDirections(from, to, 'bicycle'))?.expectedTravelTimeSeconds).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const options = mockFetch.mock.calls[1][1] as RequestInit;
+    expect(JSON.parse(String(options.body)).travelMode).toBe('bicycle');
+  });
+
   it('classifies auth and quota failures globally across coordinate keys', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
     await expect(mod.proxyGetDirections(from, to, 'walk')).rejects.toMatchObject({

@@ -3,6 +3,36 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 298, "child": 298,
+      "acceptance": "Transport changes recompute card and Live Activity ETA without stale mode responses or lost progress.",
+      "testFile": "transportModeEta.test.ts",
+      "testNamePattern": "switches both surface ETAs|recalculates stale sticky ETA|rebases a stale deadline"
+    },
+    {
+      "parent": 298, "child": 298,
+      "acceptance": "Existing journeys require named confirmation, and stale terminal rows cannot cancel a pending Start.",
+      "testFile": "journeyDurableCommands.test.ts",
+      "testNamePattern": "names the active and requested stops|prompts for a suppressed prior server target|protects a new Start|keeps a same-target restart"
+    },
+    {
+      "parent": 298, "child": 298,
+      "acceptance": "Start frames the device and destination together, including when GPS becomes available later.",
+      "testFile": "journeyDurableCommands.test.ts",
+      "testNamePattern": "frames the device and destination once"
+    },
+    {
+      "parent": 298, "child": 298,
+      "acceptance": "Start and same-day promotion commit atomically, persist across restart, replay in order, and roll back together on rejection.",
+      "testFile": "coreSQLiteStorage.test.ts",
+      "testNamePattern": "commits Start and same-day promotion atomically|rejects the dependent promotion and restores order"
+    },
+    {
+      "parent": 298, "child": 298,
+      "acceptance": "Bicycle directions preserve the selected transport in provider requests and external navigation URLs.",
+      "testFile": "mapsDirections.test.ts",
+      "testNamePattern": "bicycle"
+    },
+    {
       "parent": 285, "child": 285,
       "acceptance": "Premium import preview matches the server batch ceiling without an upgrade promise.",
       "testFile": "kmlImportPreview.test.ts",

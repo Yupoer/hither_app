@@ -862,6 +862,68 @@ describe('SQLite core storage adapters', () => {
     expect(await restartedHarness.outbox.get('restart-op')).toBeNull();
   });
 
+  it('commits Start and same-day promotion atomically in SQLite and replays both after restart', async () => {
+    const harness = await newHarness();
+    const before = makeSnapshot('promotion-group');
+    await harness.core.putSnapshot(before);
+    let id = 0;
+    const queue = harness.createCoreOperationOutbox(harness.core, harness.outbox,
+      async (row: CoreOperation) => accepted(row), () => 4_000, () => `promotion-${++id}`, async () => 'actor-a');
+    const intent = { groupId: 'promotion-group', actorId: 'actor-a', action: 'start',
+      activeDestinationId: 'second-destination', baseState: before.activeGathering,
+      operationId: 'start-promotion', navigationRequestId: 'start-promotion', promoteWithinDay: true };
+    harness.raw.exec(`CREATE TRIGGER reject_promotion BEFORE INSERT ON core_operation_outbox
+      WHEN NEW.operation_type = 'reorder_destinations' BEGIN SELECT RAISE(ABORT, 'disk_full'); END`);
+    await expect(queue.enqueueGatheringTransition(intent)).rejects.toThrow('disk_full');
+    expect(await harness.core.getSnapshot('promotion-group')).toEqual(before);
+    expect(await harness.outbox.listByGroup('promotion-group')).toEqual([]);
+    harness.raw.exec('DROP TRIGGER reject_promotion');
+    await queue.enqueueGatheringTransition(intent);
+    const rows = await harness.outbox.listByGroup('promotion-group');
+    expect(rows.map((row: CoreOperation) => row.operationType)).toEqual(['start_gathering', 'reorder_destinations']);
+    expect(rows.map((row: CoreOperation) => row.sequence)).toEqual([1, 2]);
+    expect(rows[1].dependencyIds).toEqual(['start-promotion']);
+    const restarted = await loadProduction(harness.database);
+    expect((await restarted.core.getSnapshot('promotion-group')).destinations.map((d: Destination) => d.id))
+      .toEqual(['second-destination', 'local-destination']);
+    const replayed: CoreOperation[] = [];
+    const restartedQueue = restarted.createCoreOperationOutbox(restarted.core, restarted.outbox,
+      async (row: CoreOperation) => { replayed.push(row); return accepted(row); }, () => 5_000,
+      () => 'unused', async () => 'actor-a');
+    await restartedQueue.flush();
+    await restartedQueue.flush();
+    expect(replayed.map(row => row.operationType)).toEqual(['start_gathering', 'reorder_destinations']);
+    expect(replayed[0].payload.navigationRequestId).toBe('start-promotion');
+    expect((await restarted.core.getSnapshot('promotion-group')).destinations[0].id).toBe('second-destination');
+    expect(await restarted.outbox.listOpenByGroup('promotion-group')).toEqual([]);
+  });
+
+  it('rejects the dependent promotion and restores order when the original Start is rejected', async () => {
+    const harness = await newHarness();
+    const before = makeSnapshot('rejected-promotion');
+    await harness.core.putSnapshot(before);
+    let id = 0;
+    const submitted: string[] = [];
+    const queue = harness.createCoreOperationOutbox(harness.core, harness.outbox,
+      async (operation: CoreOperation) => {
+        submitted.push(operation.operationType);
+        return { status: 'conflict', operationId: operation.id, conflict: {
+          code: 'invalid_transition', message: 'destination was closed', serverEntityVersion: 2,
+          serverState: { ...before.activeGathering, entityVersion: 2 }, operationId: operation.id,
+          entityType: operation.entityType, entityId: operation.entityId, occurredAt: 4_000,
+        } };
+      }, () => 4_000, () => `reject-promotion-${++id}`, async () => 'actor-a');
+    await queue.enqueueGatheringTransition({ groupId: 'rejected-promotion', actorId: 'actor-a', action: 'start',
+      activeDestinationId: 'second-destination', baseState: before.activeGathering,
+      operationId: 'rejected-start', navigationRequestId: 'rejected-start', promoteWithinDay: true });
+    await queue.flush();
+    await queue.flush();
+    expect(submitted).toEqual(['start_gathering']);
+    expect((await harness.core.getSnapshot('rejected-promotion')).destinations).toEqual(before.destinations);
+    expect((await harness.outbox.listByGroup('rejected-promotion')).map((row: CoreOperation) => row.status))
+      .toEqual(['conflict', 'conflict']);
+  });
+
   it('reverts an invalid transition to authoritative state without retrying', async () => {
     const harness = await newHarness();
     const base = makeSnapshot('gathering-group', ['local-destination'], {

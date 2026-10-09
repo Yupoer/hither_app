@@ -117,12 +117,12 @@ struct HitherLiveActivityWidget: Widget {
                 .font(.system(size: 18, weight: .bold))
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(Brand.textPrimary)
-              if let d = context.state.formattedDistance {
-                Text(d).font(.system(size: 12)).foregroundStyle(Brand.textSecondary)
-              }
+            }
+            if let d = context.state.formattedDistance {
+              Text(d).font(.system(size: 12)).foregroundStyle(.white)
             }
           }
+          .modifier(MetricPlate())
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
@@ -166,7 +166,9 @@ struct HitherLiveActivityWidget: Widget {
       } compactTrailing: {
         EstimatedEta(state: context.state, compact: true)
           .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(accent)
+          .lineLimit(1)
+          .minimumScaleFactor(0.75)
+          .modifier(MetricPlate(horizontalInset: 4, verticalInset: 2))
       } minimal: {
         Image(systemName: context.state.modeSymbol)
           .font(.system(size: 12, weight: .semibold))
@@ -175,6 +177,21 @@ struct HitherLiveActivityWidget: Widget {
       }
       .keylineTint(accent)
     }
+  }
+}
+
+/// Critical values stay pure white on an opaque dark plate in every appearance.
+/// Glass and wallpaper can change luminance; the metric surface cannot.
+private struct MetricPlate: ViewModifier {
+  var horizontalInset: CGFloat = 8
+  var verticalInset: CGFloat = 6
+
+  func body(content: Content) -> some View {
+    content
+      .foregroundStyle(.white)
+      .padding(.horizontal, horizontalInset)
+      .padding(.vertical, verticalInset)
+      .background(Color.black, in: RoundedRectangle(cornerRadius: 10))
   }
 }
 
@@ -240,23 +257,26 @@ private struct LockScreenView: View {
       }
       // ETA has its own row: neither a long title nor large type can push it
       // beyond the lock-screen host's width.
-      HStack(alignment: .firstTextBaseline, spacing: 10) {
-        if context.state.etaSeconds != nil {
-          EstimatedEta(state: context.state)
-            .font(.system(size: 18, weight: .bold))
-            .foregroundStyle(primary)
-            .lineLimit(2)
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+      if context.state.etaSeconds != nil || context.state.formattedDistance != nil {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+          if context.state.etaSeconds != nil {
+            EstimatedEta(state: context.state)
+              .font(.system(size: 18, weight: .bold))
+              .foregroundStyle(.white)
+              .lineLimit(2)
+              .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+          }
+          if let distance = context.state.formattedDistance {
+            Text(distance).font(.system(size: 12))
+              .foregroundStyle(.white)
+              .lineLimit(2)
+              .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
+          }
         }
-        if let distance = context.state.formattedDistance {
-          Text(distance).font(.system(size: 12))
-            .foregroundStyle(secondary)
-            .lineLimit(2)
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
-        }
+        .modifier(MetricPlate())
       }
       ProgressRow(value: context.state.clampedProgress, accent: accent,
-        textColor: secondary, trackColor: Color(white: light ? 0.55 : 0.4))
+        trackColor: Color(white: light ? 0.55 : 0.4))
       HStack(spacing: 8) {
         AvatarStack(emojis: context.state.avatarEmojis, arrived: context.state.avatarArrived, outline: background)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -334,7 +354,6 @@ private struct ProgressBar: View {
 private struct ProgressRow: View {
   let value: Double?
   let accent: Color
-  var textColor: Color = Brand.textSecondary
   var trackColor: Color = Brand.track
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -344,8 +363,8 @@ private struct ProgressRow: View {
       ProgressBar(value: value ?? 0, accent: accent, trackColor: trackColor)
       Text(pct.map { "\($0)%" } ?? "—")
         .font(.system(size: 12, weight: .semibold).monospacedDigit())
-        .foregroundStyle(textColor)
         .frame(minWidth: 34, alignment: .trailing)
+        .modifier(MetricPlate(horizontalInset: 6, verticalInset: 3))
         .contentTransition(.numericText())
         .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: pct)
     }
@@ -423,6 +442,7 @@ private extension HitherGroupAttributes.ContentState {
     switch travelMode {
     case "drive": return "car.fill"
     case "transit": return "bus.fill"
+    case "bicycle": return "bicycle"
     default: return "figure.walk"
     }
   }
@@ -432,6 +452,7 @@ private extension HitherGroupAttributes.ContentState {
     switch travelMode {
     case "drive": return "開車"
     case "transit": return "大眾運輸"
+    case "bicycle": return Self.usesEnglish(language) ? "Cycling" : "自行車"
     default: return "步行"
     }
   }

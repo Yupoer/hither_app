@@ -41,7 +41,7 @@ function isValidRegion(r: unknown): r is MapRegion {
   );
 }
 
-const TRAVEL_MODES: TravelMode[] = ["walk", "drive", "transit"];
+const TRAVEL_MODES: TravelMode[] = ["walk", "drive", "transit", "bicycle"];
 
 /**
  * Validate and normalize a client request body.
@@ -86,6 +86,8 @@ function travelModeToGoogle(mode: TravelMode): string {
       return "DRIVE";
     case "transit":
       return "TRANSIT";
+    case "bicycle":
+      return "BICYCLE";
     case "walk":
     default:
       return "WALK";

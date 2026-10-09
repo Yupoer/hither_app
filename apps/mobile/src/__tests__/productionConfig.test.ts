@@ -86,6 +86,9 @@ describe('production mobile configuration', () => {
     );
     expect(appConfig.expo.runtimeVersion).toBe(appConfig.expo.version);
     expect(typeof appConfig.expo.runtimeVersion).toBe('string');
+    const nativeUpdates = readFileSync(join(__dirname, '../../ios/Hither/Supporting/Expo.plist'), 'utf8');
+    const nativeRuntime = nativeUpdates.match(/<key>EXUpdatesRuntimeVersion<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
+    expect(nativeRuntime).toBe(appConfig.expo.runtimeVersion);
     expect(appConfig.expo.extra?.eas?.projectId).toBe(
       '0f62ed14-1f2e-4d7b-b5b6-4eda273f2e35',
     );

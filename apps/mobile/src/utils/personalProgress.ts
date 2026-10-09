@@ -61,6 +61,8 @@ export interface PersonalProgressInput {
   /** Last valid presentation values retained across GPS/route gaps. */
   lastValidDistanceM?: number | null;
   lastValidEtaSeconds?: number | null;
+  /** Mode that produced the sticky ETA; distance and progress are mode independent. */
+  lastValidEtaTravelMode?: TravelMode;
   lastValidProgress?: number | null;
   /** Authoritative personal arrival (check-in / auto-arrive). */
   arrived?: boolean;
@@ -168,6 +170,9 @@ function sameMetricDistance(
 export function derivePersonalProgress(
   input: PersonalProgressInput,
 ): PersonalProgressModel {
+  if (input.lastValidEtaTravelMode != null && input.lastValidEtaTravelMode !== input.travelMode) {
+    input = { ...input, lastValidEtaSeconds: null };
+  }
   const completed = Boolean(input.completed);
   const staleAfter = input.staleAfterMs ?? 30_000;
 
@@ -327,7 +332,7 @@ export function derivePersonalProgress(
         input.lastValidEtaSeconds != null && Number.isFinite(input.lastValidEtaSeconds)
           ? Math.max(0, input.lastValidEtaSeconds)
           : distanceMetersValue != null
-            ? etaSecondsFor(distanceMetersValue, input.travelMode)
+            ? etaToRadiusBoundary(etaSecondsFor(distanceMetersValue, input.travelMode), distanceMetersValue, input.arrivalRadiusM ?? ARRIVAL_RADIUS_M)
             : null,
       progress: stickyProgress,
       freshness: distanceMetersValue != null ? 'stale' : 'unknown',
@@ -351,7 +356,9 @@ export function derivePersonalProgress(
   if (freshness === 'stale' && input.lastValidDistanceM != null
     && Number.isFinite(input.lastValidDistanceM)) {
     return { distanceMeters: input.lastValidDistanceM,
-      etaSeconds: input.lastValidEtaSeconds ?? null,
+      etaSeconds: input.lastValidEtaSeconds ?? etaToRadiusBoundary(
+        etaSecondsFor(input.lastValidDistanceM, input.travelMode),
+        input.lastValidDistanceM, input.arrivalRadiusM ?? ARRIVAL_RADIUS_M),
       progress: input.lastValidProgress == null ? null : clampDisplayProgress(input.lastValidProgress),
       freshness, arrived: false, completed: false };
   }
