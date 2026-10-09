@@ -4,6 +4,12 @@
   "entries": [
     {
       "parent": 298, "child": 298,
+      "acceptance": "Transport preference survives screen remount and cold startup, while delayed hydration preserves a newer choice.",
+      "testFile": "travelModePreference.test.ts",
+      "testNamePattern": "persists|keeps user choice"
+    },
+    {
+      "parent": 298, "child": 298,
       "acceptance": "Transport changes recompute card and Live Activity ETA without stale mode responses or lost progress.",
       "testFile": "transportModeEta.test.ts",
       "testNamePattern": "switches both surface ETAs|recalculates stale sticky ETA|rebases a stale deadline"

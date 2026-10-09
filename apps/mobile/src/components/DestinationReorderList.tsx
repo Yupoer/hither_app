@@ -1312,7 +1312,7 @@ export default function DestinationReorderList({
                     accessibilityLabel={fav.title}
                   >
                     <Ionicons name="star" size={favoriteIconSize} color={colors.accent} />
-                    <Text style={styles.favoriteTitle} numberOfLines={2} ellipsizeMode="tail">{fav.title}</Text>
+                    <Text style={styles.favoriteTitle}>{fav.title}</Text>
                   </Pressable>
                   {onDeleteFavorite ? (
                     <Pressable
