@@ -220,6 +220,7 @@ export function useJourneyNavigation({
     latestTeamTapRef.current = null;
     startFrameRef.current = null;
     switchPromptRef.current = null;
+    pendingCarouselTargetIdRef.current = null;
   }, [groupId, actorId, publishLocalSessionId]);
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
   const pendingStartRef = useRef<{
@@ -673,8 +674,8 @@ export function useJourneyNavigation({
         frameStartedDestination(dest);
         const currentIndex = navigationDestinations.findIndex(item => item.id === dest.id);
         setSelectedIndex(currentIndex >= 0 ? currentIndex : index);
+        pendingCarouselTargetIdRef.current = dest.id;
       }
-      pendingCarouselTargetIdRef.current = dest.id;
       void flushCoreOperationOutbox().then(() => {
         if (!isCurrent()) return;
         _refresh();
@@ -744,6 +745,9 @@ export function useJourneyNavigation({
       })(),
     };
     latestTeamTapRef.current = { action, destinationId: dest.id, groupId, actorId, sequence: intent.sequence };
+    // Any delayed promotion snapshot of the previous tap has lost selection
+    // ownership, even if that older command committed before this new tap.
+    pendingCarouselTargetIdRef.current = null;
     // Clear the externally visible old alias while retaining the FIFO's
     // internal session identity until the new command durably commits.
     setVisibleLocalSessionId(null);

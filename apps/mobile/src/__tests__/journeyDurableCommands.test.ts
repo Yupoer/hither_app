@@ -45,7 +45,7 @@ const pauseConfirm = jest.fn();
 const localSessionChanges: Array<string | null> = [];
 const onLocalSessionIdChange = (sessionId: string | null) => localSessionChanges.push(sessionId);
 function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSession = null, groupState, hasPendingTeamOperation = true,
-  camera, origin }: {
+  camera, origin, selectIndex }: {
   groupId?: string;
   actorId?: string;
   terminalSession?: NavigationSession | null;
@@ -54,12 +54,13 @@ function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSes
   hasPendingTeamOperation?: boolean;
   camera?: { fitRoute: jest.Mock; centerOn: jest.Mock };
   origin?: Coordinates;
+  selectIndex?: jest.Mock;
 }) {
   const currentState = groupState ?? (groupId === 'g' ? state : { ...state, group: { ...state.group, id: groupId } });
   const currentApi = useJourneyNavigation({ state: currentState, groupId, actorId, terminalSession, isLeader: true, destinations: currentState.destinations,
     selectedDestination: first, fromCoords: origin, refresh: jest.fn(),
     t: (key, params) => params ? `${key}:${params.currentName}:${params.newName}` : key,
-    mapRef: { current: camera as any ?? null }, carouselRef: { current: null }, setSelectedIndex: jest.fn(),
+    mapRef: { current: camera as any ?? null }, carouselRef: { current: null }, setSelectedIndex: selectIndex ?? jest.fn(),
     navigationSession, startSession, cancelSession, hasPendingTeamOperation,
     onOptimisticGathering: projection, onOperatorPauseConfirm: pauseConfirm,
     onLocalSessionIdChange });
@@ -74,6 +75,29 @@ beforeEach(async () => {
   await act(async () => { root = create(React.createElement(Harness)); });
 });
 afterEach(async () => { await act(async () => root.unmount()); });
+
+it('keeps selection on confirmed B when an earlier delayed Start A snapshot arrives', async () => {
+  const selectIndex = jest.fn();
+  let releaseA!: (value: any) => void;
+  let releaseB!: (value: any) => void;
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockImplementationOnce(() => new Promise(resolve => { releaseA = resolve; }));
+  jest.mocked(sync.enqueueLeaderGatheringSwitch).mockImplementationOnce(() => new Promise(resolve => { releaseB = resolve; }));
+  await act(async () => { root.update(React.createElement(Harness, { selectIndex })); });
+  await act(async () => { await api.startNavigation(first, 0); await api.startNavigation(second, 1); });
+  await act(async () => { jest.mocked(Alert.alert).mock.calls.at(-1)![2]![1]?.onPress?.(); });
+  expect(selectIndex).toHaveBeenLastCalledWith(1);
+  selectIndex.mockClear();
+  await act(async () => { releaseA(saved('a', 1)); });
+  await act(async () => { root.update(React.createElement(Harness, { selectIndex,
+    groupState: { ...state, destinations: state.destinations.map(d => ({ ...d })) } })); });
+  expect(api.navTargetId).toBe('b');
+  expect(selectIndex).not.toHaveBeenCalledWith(0);
+  await act(async () => { releaseB(saved('b', 2)); });
+  await act(async () => { root.update(React.createElement(Harness, { selectIndex,
+    groupState: { ...state, destinations: [{ ...second, order: 0 }, { ...first, order: 1 }] } })); });
+  expect(selectIndex).toHaveBeenLastCalledWith(0);
+  expect(api.navTargetId).toBe('b');
+});
 
 it('names the active and requested stops before switching; cancel preserves the old journey', async () => {
   jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);

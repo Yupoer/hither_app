@@ -28,8 +28,12 @@ let selection: ReturnType<typeof useCarouselSelection>;
 const carouselRef = { current: null };
 const mapRef = { current: null };
 function Harness() {
-  preferences = usePreferences();
-  selection = useCarouselSelection({ destinations: [], windowWidth: 390, carouselRef, mapRef });
+  const currentPreferences = usePreferences();
+  const currentSelection = useCarouselSelection({ destinations: [], windowWidth: 390, carouselRef, mapRef });
+  React.useLayoutEffect(() => {
+    preferences = currentPreferences;
+    selection = currentSelection;
+  }, [currentPreferences, currentSelection]);
   return null;
 }
 function app(show = true) {

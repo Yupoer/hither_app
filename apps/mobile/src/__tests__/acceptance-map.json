@@ -4,6 +4,24 @@
   "entries": [
     {
       "parent": 298, "child": 298,
+      "acceptance": "The production Live Activity travel_mode constraint accepts bicycle and existing modes and rejects unsupported values.",
+      "testFile": "supabase/tests/live_activity_bicycle_mode.test.sql",
+      "testNamePattern": "production Live Activity constraint accepts bicycle"
+    },
+    {
+      "parent": 298, "child": 298,
+      "acceptance": "A delayed older Start snapshot cannot move the card away from the newly confirmed destination.",
+      "testFile": "journeyDurableCommands.test.ts",
+      "testNamePattern": "keeps selection on confirmed B"
+    },
+    {
+      "parent": 298, "child": 298,
+      "acceptance": "Durable same-day promotion preserves omitted meeting time and accommodation anchor fields, while explicit null still clears its field.",
+      "testFile": "supabase/tests/durable_reorder_optional_fields.test.sql",
+      "testNamePattern": "durable promotion preserves omitted fields"
+    },
+    {
+      "parent": 298, "child": 298,
       "acceptance": "Transport preference survives screen remount and cold startup, while delayed hydration preserves a newer choice.",
       "testFile": "travelModePreference.test.ts",
       "testNamePattern": "persists|keeps user choice"
