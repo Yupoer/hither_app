@@ -643,8 +643,6 @@ export const zh = {
   'map.droppedPin': '新集合點',
   'map.droppedPinHint': '直接在此編輯名稱',
   'map.renameTitle': '集合點名稱',
-  'map.coverFlowNext': '下一個分頁',
-  'map.coverFlowPrev': '上一個分頁',
   'map.nextTag': '下一站',
   'map.overlaySettings': '設定',
   'map.endGroup': '結束群組',

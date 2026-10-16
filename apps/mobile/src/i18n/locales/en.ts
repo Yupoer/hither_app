@@ -637,8 +637,6 @@ export const en: Record<keyof ZhDict, string> = {
   'map.droppedPin': 'New gathering point',
   'map.droppedPinHint': 'Edit the name here',
   'map.renameTitle': 'Gathering point name',
-  'map.coverFlowNext': 'Next pane',
-  'map.coverFlowPrev': 'Previous pane',
   'map.nextTag': 'NEXT',
   'map.overlaySettings': 'Settings',
   'map.endGroup': 'End group',

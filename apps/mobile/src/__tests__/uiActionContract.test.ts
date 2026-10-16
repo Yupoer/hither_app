@@ -311,18 +311,3 @@ describe('SafePressable source contract', () => {
     expect(source).toContain('disableWhileBusy');
   });
 });
-
-describe('InteractionRecoveryBanner source contract', () => {
-  const source = readFileSync(
-    join(__dirname, '../components/InteractionRecoveryBanner.tsx'),
-    'utf8',
-  );
-
-  it('offers retry and cancel, not dismiss-only', () => {
-    expect(source).toContain('retryLastUiAction');
-    expect(source).toContain('clearUiActionFailure');
-    expect(source).toContain("t('interaction.retry')");
-    expect(source).toContain("t('common.cancel')");
-    expect(source).not.toMatch(/t\('common\.confirm'\)/);
-  });
-});

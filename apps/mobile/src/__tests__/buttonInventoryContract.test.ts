@@ -18,10 +18,6 @@ const premiumPresentation = readFileSync(
 const feedbackSheet = readFileSync(join(__dirname, '../components/FeedbackSheet.tsx'), 'utf8');
 const uiAction = readFileSync(join(__dirname, '../utils/uiAction.ts'), 'utf8');
 const safePressable = readFileSync(join(__dirname, '../components/SafePressable.tsx'), 'utf8');
-const recoveryBanner = readFileSync(
-  join(__dirname, '../components/InteractionRecoveryBanner.tsx'),
-  'utf8',
-);
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
 
@@ -64,7 +60,7 @@ const HIGH_RISK_ACTION_IDS = [
 ] as const;
 
 describe('button inventory / high-risk action contract', () => {
-  it('provides the shared action runner, SafePressable, and retryable recovery banner', () => {
+  it('provides the shared action runner, SafePressable, and retry API', () => {
     expect(uiAction).toContain('export async function runUiAction');
     expect(uiAction).toContain('export async function retryLastUiAction');
     expect(uiAction).toContain("logEvent('ui_action_start'");
@@ -73,10 +69,6 @@ describe('button inventory / high-risk action contract', () => {
     expect(uiAction).toContain("logEvent('ui_action_timeout'");
     expect(safePressable).toContain('runUiAction');
     expect(safePressable).toContain('suppressBanner');
-    expect(recoveryBanner).toContain('retryLastUiAction');
-    expect(recoveryBanner).toContain('clearUiActionFailure');
-    expect(recoveryBanner).toContain("t('interaction.retry')");
-    expect(recoveryBanner).toContain("t('common.cancel')");
   });
 
   it('wires Map navigation/session actions through runUiAction', () => {

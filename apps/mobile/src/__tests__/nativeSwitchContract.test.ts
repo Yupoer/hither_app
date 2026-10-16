@@ -5,7 +5,6 @@ const read = (rel: string) =>
   readFileSync(join(__dirname, '..', rel), 'utf8').replace(/\r\n/g, '\n');
 
 const systemToggle = read('components/SystemToggle.tsx');
-const nativeSwitch = read('components/NativeSwitch.tsx');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
 const notifCard = read('components/NotificationPreferencesCard.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
@@ -28,7 +27,6 @@ describe('SystemToggle iOS/Android chrome', () => {
     expect(settings).not.toContain('<NativeSwitch');
     expect(notifCard).not.toContain('<NativeSwitch');
     expect(mapScreen).not.toContain('<NativeSwitch');
-    expect(nativeSwitch).toContain("from './SystemToggle'");
   });
 
   it('centers every native toggle and routes locked Tools Live Activity to paywall', () => {
