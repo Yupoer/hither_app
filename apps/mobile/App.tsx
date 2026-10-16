@@ -436,7 +436,6 @@ export default function App() {
               <PremiumPurchaseRecovery />
               {/* Global: any screen — brief top toast after an OTA apply. */}
               <OtaUpdateToast />
-              {/* Global: action error/timeout recovery (runUiAction). */}
             </SessionProvider>
           </PreferencesProvider>
         </SafeAreaProvider>

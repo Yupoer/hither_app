@@ -42,10 +42,6 @@ describe('root / map recovery source contracts', () => {
   );
   const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
   const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
-  const banner = readFileSync(
-    join(__dirname, '../components/InteractionRecoveryBanner.tsx'),
-    'utf8',
-  );
 
   it('root boundary records component stack, route, screen and finite terminal state', () => {
     expect(boundary).toContain('componentStack');
@@ -73,11 +69,6 @@ describe('root / map recovery source contracts', () => {
     expect(app).toContain('AppErrorBoundary');
     expect(app).not.toContain('InteractionRecoveryBanner');
     expect(app).not.toContain('AppNoticeHost');
-  });
-
-  it('recovery banner offers retry and cancel only (shared surface)', () => {
-    expect(banner).toContain('retryLastUiAction');
-    expect(banner).toContain('clearUiActionFailure');
   });
 });
 
