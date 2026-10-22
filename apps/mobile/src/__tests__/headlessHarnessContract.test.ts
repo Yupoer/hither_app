@@ -98,5 +98,32 @@ describe('headless harness contract', () => {
       expect(await db.getAllAsync('SELECT * FROM proof')).toEqual([]);
     } finally { await db.closeAsync(); }
   });
+
+  it('finishes concurrent foreground transitions before unmounting the real native location owners', async () => {
+    const world = new World();
+    try {
+      const a = await world.device({ id: 'a', userId: LEADER });
+      await a.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(a, (value: any) => value.external.watches >= 2, 'native one-shot and continuous owners');
+      const held = a.command({ kind: 'probe', name: 'holdActTurn' }).catch((error: Error) => error);
+      expect((await a.observe()).external.heldActTurn).toBe(true);
+      const transitions = Promise.all([
+        a.command({ kind: 'barrier' }),
+        a.input({ kind: 'appState', value: 'background' }),
+        a.input({ kind: 'appState', value: 'active' }),
+      ]).catch((error: Error) => error);
+      const closing = world.close().catch((error: Error) => error);
+      const released = await a.command({ kind: 'probe', name: 'releaseActTurn' }).catch((error: Error) => error);
+      const closeOutcome = await closing;
+      if (closeOutcome instanceof Error) throw closeOutcome;
+      expect(released).not.toBeInstanceOf(Error);
+      expect(await held).not.toBeInstanceOf(Error);
+      expect(await transitions).not.toBeInstanceOf(Error);
+      expect(a.disposal.watches).toBe(0);
+      expect(a.disposal.listeners).toBe(0);
+      expect(a.child).toBeNull();
+    } finally { await world.close(); }
+  });
+
 });
 export {};

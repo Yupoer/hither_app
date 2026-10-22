@@ -11,6 +11,13 @@ exports.run = async function run(jest) {
   assert(ipc?.send, 'Device requires an IPC owner');
   const spec = JSON.parse(process.env.HITHER_HEADLESS_DEVICE);
   const failures = [];
+  const reportError = console.error;
+  console.error = (...args) => {
+    if (args.some(value => typeof value === 'string' && value.includes('overlapping act() calls'))) {
+      failures.push('React reported overlapping act() calls');
+    }
+    reportError(...args);
+  };
   const fatal = message => {
     failures.push(message);
     throw new Error(message);
@@ -29,6 +36,7 @@ exports.run = async function run(jest) {
   let nextRequest = 0;
   let disposing = false;
   let hangShutdown = false;
+  let releaseActTurn;
   const requests = new Map();
   const cancelled = new Set();
   function request(operation, signal) {
@@ -208,7 +216,14 @@ exports.run = async function run(jest) {
 
   const React = require('react');
   stage('external seams installed');
-  const { act, create } = require('react-test-renderer');
+  const { act: renderAct, create } = require('react-test-renderer');
+  let previousAct = Promise.resolve();
+  // IPC may await concurrent responses, but React requires each act scope to finish first.
+  const act = callback => {
+    const current = previousAct.then(() => renderAct(callback));
+    previousAct = current.catch(() => {});
+    return current;
+  };
   const { useGroupState } = require('../../src/state/useGroupState');
   const { useNavigationSession } = require('../../src/state/useNavigationSession');
   const { useDeviceLocation } = require('../../src/screens/MapScreen/hooks/useDeviceLocation');
@@ -269,7 +284,8 @@ exports.run = async function run(jest) {
       durable: { locations: await db.getAllAsync('SELECT * FROM location_outbox'),
         operations: app.groupId ? await core.listOpenCoreOperations(app.groupId) : [],
         snapshot: app.groupId ? await require('../../src/state/coreDataStore').readCoreSnapshot(app.groupId) : null },
-      external: { watches: watches.size, channels: channels.size, listeners: appListeners.size, alerts: alertQueue.length },
+      external: { watches: watches.size, channels: channels.size, listeners: appListeners.size, alerts: alertQueue.length,
+        heldActTurn: Boolean(releaseActTurn) },
       pending: [...requests.keys()], timers: jest.getTimerCount(), fatal: [...failures], now: Date.now(),
     };
   }
@@ -345,6 +361,16 @@ exports.run = async function run(jest) {
       return;
     }
     if (kind === 'probe') {
+      if (message.command.name === 'holdActTurn') {
+        await act(() => new Promise(resolve => { releaseActTurn = resolve; }));
+        return;
+      }
+      if (message.command.name === 'releaseActTurn') {
+        assert(releaseActTurn, 'No held React turn');
+        releaseActTurn();
+        releaseActTurn = undefined;
+        return;
+      }
       if (message.command.name === 'hangShutdown') { hangShutdown = true; return; }
       try {
         if (message.command.name === 'network') await fetch('https://example.invalid');

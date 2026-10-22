@@ -64,6 +64,8 @@ Set `device.online = false` to reject external SDK requests and suppress deliver
 
 `advance(ms)` advances all device fake clocks by a bounded amount. IPC, watchdogs and React task scheduling stay on real time. `settle()` drains tracked external responses, events and React turns without advancing time or running infinite polling timers. Thirty rounds is a failure. A pending held request is allowed. Test command, boot and exit watchdogs bound wedged children. Close unmounts React, cancels pending SDK work, checks native listeners/channels, closes SQLite and clears device-owned timers before exit. A missing disposal receipt or crash fails the scenario and terminates only that world's child.
 
+Each device serializes React `act` scopes while continuing to receive IPC and await transport outside that queue. Concurrent commands therefore cannot overlap foreground effects with unmount. React's unsupported-overlap warning remains a sticky harness failure.
+
 ## Evidence and limits
 
 The functional scenario suite runs in both iOS and Android mocked platform modes. A separate mixed-platform scenario publishes from iOS to an Android peer. These verify GPS pending-before-ACK and peer projection, missed-event repair at the real 30 second poll, offline persistence/restart/retry, offline snapshot restoration, stale fixes, consent/account fences, late older recovery, background reconnection, service lazy imports, and real journey Start/End including held Start followed by End and offline Start/End replay after restart. Contract tests cover isolation, sticky failures, registry dispatch, SQL rollback and crash/hung-shutdown cleanup.

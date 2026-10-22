@@ -4,6 +4,12 @@
   "entries": [
     {
       "parent": 316, "child": 316,
+      "acceptance": "Concurrent IPC commands finish real React foreground and native location cleanup in order without overlapping act scopes.",
+      "testFile": "headlessHarnessContract.test.ts",
+      "testNamePattern": "finishes concurrent foreground"
+    },
+    {
+      "parent": 316, "child": 316,
       "acceptance": "The functional scenarios execute in iOS and Android mocked native platform paths, including an automated iOS-to-Android location projection.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "headless multiplayer scenarios on|publishes iOS GPS into an Android"
