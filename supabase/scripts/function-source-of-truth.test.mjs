@@ -149,6 +149,18 @@ const laterCheck = (sql) => {
   return checkMigrations([...history, { name: canonical, sql: rendered }, { name: '20260101000010_later.sql', sql }], canonical);
 };
 
+test('PostgreSQL identifiers keep dollar signs and non-ASCII characters out of string delimiters', () => {
+  for (const name of ['unused$tag$', 'élève$tag$', '中文$tag$', '\u00a0$tag$', 'name$$', 'name$']) {
+    assert.deepEqual(lex(name).map(({ type, value }) => ({ type, value })), [{ type: 'ident', value: name }]);
+    assert.deepEqual(laterCheck('create table public.' + name + '(id integer);'), []);
+    const sql = 'do $body$ declare ' + name + ' integer; d text; begin ' +
+      "d := pg_get_functiondef('public.f(uuid,timestamptz)'::regprocedure); " +
+      "execute replace(d, 'return 2', 'return 3'); end; $body$;";
+    assert.match(laterCheck(sql)[0], /redefines a function/);
+  }
+  assert.deepEqual(lex('$標籤$hello$標籤$').map(({ type, value }) => ({ type, value })), [{ type: 'str', value: 'hello' }]);
+});
+
 test('nested block comments are skipped whole, so a patch after one is still detected', () => {
   assert.deepEqual(lex("/* a /* b */ it's */ select 1").map((t) => t.value), ['select', 1]);
   assert.throws(() => lex('/* a /* b */ c'), /unterminated block comment/);

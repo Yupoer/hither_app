@@ -36,7 +36,7 @@ export function lex(src) {
   const push = (type, value, start, end) => tokens.push({ type, value, start, end });
   while (i < src.length) {
     const c = src[i];
-    if (/\s/.test(c)) { i += 1; continue; }
+    if (/[ \t\n\r\f\v]/.test(c)) { i += 1; continue; }
     if (src.startsWith('--', i)) {
       const n = src.indexOf('\n', i);
       i = n < 0 ? src.length : n;
@@ -55,7 +55,7 @@ export function lex(src) {
     }
     const start = i;
     if (c === '$') {
-      const tag = /\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/y;
+      const tag = /\$(?:[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_\u0080-\uFFFF]*)?\$/y;
       tag.lastIndex = i;
       const m = tag.exec(src);
       if (m) {
@@ -102,7 +102,7 @@ export function lex(src) {
       i = n + 1;
       continue;
     }
-    const word = /[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/y;
+    const word = /[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_$\u0080-\uFFFF]*(?:\.[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_$\u0080-\uFFFF]*)*/y;
     word.lastIndex = i;
     const w = word.exec(src);
     if (w) { push('ident', w[0].toLowerCase(), start, i + w[0].length); i += w[0].length; continue; }
