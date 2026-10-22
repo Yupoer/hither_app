@@ -436,6 +436,7 @@ export default function MapScreen({ route, navigation }: Props) {
     canEditItinerary,
     roleContext,
     markLeaderRevoked,
+    lifecycle: groupRoleLifecycle,
   } = useGroupRole({
     groupId,
     userId: user?.id,
@@ -4650,6 +4651,9 @@ export default function MapScreen({ route, navigation }: Props) {
   }
 
   return (
+    <>
+      {routeDraft.lifecycle}
+      {groupRoleLifecycle}
     <View style={styles.flex}>
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
@@ -5287,5 +5291,6 @@ export default function MapScreen({ route, navigation }: Props) {
         ctaDisabled={tourTransitioning || tourCompleting}
       />
     </View>
+    </>
   );
 }

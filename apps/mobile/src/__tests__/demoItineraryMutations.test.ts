@@ -55,8 +55,8 @@ describe('demo itinerary service and clean route draft', () => {
       setKmlVisible: jest.fn(), setRouteSelectedIds: jest.fn(), showOperationFailure,
       stopRemovedDestination: jest.fn(), t: key => key, workflowContext: 'demo',
     });
-    return React.createElement('div', null,
-      (draft.destinations ?? server).map(destination => destination.title).join(','));
+    return React.createElement(React.Fragment, null, draft.lifecycle, React.createElement('div', null,
+      (draft.destinations ?? server).map(destination => destination.title).join(',')));
   }
 
   async function renderCleanEditor() {

@@ -78,7 +78,7 @@ describe('useItineraryMutations', () => {
       workflowContext: 'ctx',
       ...overrides,
     });
-    return null;
+    return draft.lifecycle;
   }
 
   async function render(overrides: Partial<UseItineraryMutationsInput> = {}) {
