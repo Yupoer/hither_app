@@ -5,6 +5,20 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
+      "testFile": "useMountEffect.test.ts",
+      "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "The actual mobile ESLint configuration rejects React effect imports, aliases, members, require destructures and reexports throughout src including tests, with only the mount helper exempt from useEffect.",
+      "testFile": "reactEffectLint.test.ts",
+      "testNamePattern": "rejects|allows|helper"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Actual demo services preserve reorder metadata and untouched stops, and a clean route editor displays saved delete/reorder results without durable or cloud writes.",
       "testFile": "demoItineraryMutations.test.ts",
       "testNamePattern": "deletes from the actual demo|reorders and patches demo metadata|renders b after confirming|renders b,a after a saved reorder"
