@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { useForegroundReconcile } from '../state/useForegroundReconcile';
 
 const mockListeners = new Set<(state: string) => void>();
 const mockRemove = jest.fn();
@@ -10,8 +11,7 @@ const mockApp = {
     return { remove: () => { mockRemove(); mockListeners.delete(callback); } };
   }),
 };
-jest.mock('react-native', () => ({ AppState: mockApp }));
-import { useForegroundReconcile } from '../state/useForegroundReconcile';
+jest.mock('react-native', () => ({ get AppState() { return mockApp; } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function RepairProbe({ reload, enabled = true, intervalMs = 30_000 }: {

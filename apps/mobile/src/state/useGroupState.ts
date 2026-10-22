@@ -644,7 +644,7 @@ function GroupIdentityHydration({ owner }: { owner: GroupStateOwner }) {
     const generation = identity.generation;
     if (!groupId) {
       setLoading(false);
-      return () => releaseGroupIdentity(owner, identity);
+      return;
     }
 
     let cancelled = false;
