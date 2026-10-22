@@ -125,17 +125,6 @@ function lifecycleStatus(
   return transactionStatus;
 }
 
-/**
- * The trip pass is a consumable, so only REFUND and REVOKE change it. Other
- * types (CONSUMPTION_REQUEST, REFUND_DECLINED, REFUND_REVERSED) are recorded
- * and acknowledged without touching the entitlement.
- */
-function tripRevocationStatus(notificationType: string): 'refunded' | 'revoked' | null {
-  if (notificationType === 'REFUND') return 'refunded';
-  if (notificationType === 'REVOKE') return 'revoked';
-  return null;
-}
-
 type NotificationTransaction =
   | { kind: 'trip'; transaction: ValidatedStoreKitTripTransaction }
   | { kind: 'subscription'; transaction: ValidatedStoreKitTransaction };
@@ -308,7 +297,6 @@ function createNotificationHandler(
     if (validated.value.kind === 'trip') {
       return await applyTripNotification(admin, {
         notificationId,
-        notificationType,
         userId: accountRow.user_id,
         transaction: validated.value.transaction,
         outerSignedAt,
@@ -387,22 +375,21 @@ const TRIP_LEDGER_REJECTIONS = new Set([
 ]);
 
 /**
- * Revokes (or only acknowledges) a trip-pass notification. The RPC applies
- * the entitlement change and the acceptance mark in one transaction, so a
- * retry after any failure converges without a separate accept step.
+ * Applies a recorded trip-pass notification. The RPC reads the notification
+ * type from the ledger row, derives the transaction's refund state from every
+ * accepted notification in signedDate order, and marks this one accepted in
+ * the same transaction, so a retry after any failure converges.
  */
 async function applyTripNotification(
   admin: AdminClient,
   input: {
     notificationId: string;
-    notificationType: string;
     userId: string;
     transaction: ValidatedStoreKitTripTransaction;
     outerSignedAt: string;
   },
 ): Promise<Response> {
   const { transaction } = input;
-  const status = tripRevocationStatus(input.notificationType);
   const { data, error } = await admin.rpc('apply_trip_storekit_notification', {
     p_notification_id: input.notificationId,
     p_user_id: input.userId,
@@ -410,7 +397,6 @@ async function applyTripNotification(
     p_original_transaction_id: transaction.originalTransactionId,
     p_product_id: transaction.productId,
     p_app_account_token: transaction.appAccountToken,
-    p_status: status,
     p_signed_at: input.outerSignedAt,
   });
   const ledger = data as JsonRecord | null;
@@ -424,13 +410,14 @@ async function applyTripNotification(
     return json(503, { ok: false, error: 'transaction_persistence_failed' });
   }
 
-  logOutcome(ledger.revoked === true ? 'trip_revoked' : 'trip_acknowledged');
+  const outcome = typeof ledger.outcome === 'string' ? ledger.outcome : 'acknowledged';
+  logOutcome(`trip_${outcome}`);
   return json(200, {
     ok: true,
     duplicate: ledger.duplicate === true,
     accepted: true,
     status: typeof ledger.status === 'string' ? ledger.status : null,
-    revoked: ledger.revoked === true,
+    outcome,
     transactionId: transaction.transactionId,
   });
 }
@@ -448,4 +435,4 @@ const handler = createNotificationHandler();
 
 if (import.meta.main) Deno.serve(handler);
 
-export { createNotificationHandler, handler, lifecycleStatus, tripRevocationStatus };
+export { createNotificationHandler, handler, lifecycleStatus };

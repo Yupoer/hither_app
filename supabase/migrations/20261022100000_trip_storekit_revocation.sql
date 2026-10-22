@@ -1,9 +1,72 @@
--- App Store REFUND / REVOKE for the consumable Small Trip Pass.
+-- App Store REFUND / REVOKE / REFUND_REVERSED for the consumable Small Trip Pass.
 -- apple-server-notifications verifies Apple's JWS, records the notification
 -- with record_storekit_notification, then calls this service_role-only RPC.
 -- The trip pass never writes premium_store_transactions, so the subscription
 -- accept_storekit_notification cannot accept these; this RPC applies the
 -- entitlement change and the acceptance mark in one transaction instead.
+--
+-- The accepted notification ledger is the source of truth for whether Apple
+-- currently considers a transaction refunded or revoked. Both this RPC and
+-- apply_verified_trip_storekit_purchase take the same per-transaction advisory
+-- lock before reading it, so a grant and a refund for the same transaction
+-- can never interleave, even before any entitlement row exists.
+
+create index if not exists premium_store_notifications_transaction_idx
+  on public.premium_store_notifications (transaction_id)
+  where accepted;
+
+-- Apple signs each notification with signedDate, so the order of delivery
+-- does not matter: a REFUND stays in force only while no later-signed
+-- REFUND_REVERSED exists. REVOKE (Family Sharing) has no reversal.
+create or replace function public.trip_store_revocation_status(p_transaction_id text)
+returns text
+language sql
+stable
+set search_path = ''
+as $$
+  select case
+    when exists (
+      select 1
+        from public.premium_store_notifications n
+       where n.transaction_id = p_transaction_id
+         and n.accepted
+         and n.notification_type = 'REVOKE'
+    ) then 'revoked'
+    when exists (
+      select 1
+        from public.premium_store_notifications refund
+       where refund.transaction_id = p_transaction_id
+         and refund.accepted
+         and refund.notification_type = 'REFUND'
+         and not exists (
+           select 1
+             from public.premium_store_notifications reversal
+            where reversal.transaction_id = p_transaction_id
+              and reversal.accepted
+              and reversal.notification_type = 'REFUND_REVERSED'
+              and reversal.signed_at > refund.signed_at
+         )
+    ) then 'refunded'
+  end;
+$$;
+
+revoke all on function public.trip_store_revocation_status(text)
+  from public, anon, authenticated, service_role;
+
+create or replace function public.lock_trip_storekit_transaction(p_original_transaction_id text)
+returns void
+language sql
+volatile
+set search_path = ''
+as $$
+  select pg_advisory_xact_lock(
+    hashtext('trip_storekit_transaction'),
+    hashtext(trim(p_original_transaction_id))
+  );
+$$;
+
+revoke all on function public.lock_trip_storekit_transaction(text)
+  from public, anon, authenticated, service_role;
 
 create or replace function public.apply_trip_storekit_notification(
   p_notification_id text,
@@ -12,7 +75,6 @@ create or replace function public.apply_trip_storekit_notification(
   p_original_transaction_id text,
   p_product_id text,
   p_app_account_token uuid,
-  p_status text,
   p_signed_at timestamptz
 )
 returns json
@@ -25,7 +87,8 @@ declare
   v_notification public.premium_store_notifications%rowtype;
   v_entitlement public.trip_entitlements%rowtype;
   v_token uuid;
-  v_revoked boolean := false;
+  v_store_status text;
+  v_outcome text := 'acknowledged';
 begin
   if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role'
      and current_user not in ('service_role', 'postgres') then
@@ -38,10 +101,11 @@ begin
      or nullif(trim(coalesce(p_original_transaction_id, '')), '') is null
      or p_product_id is distinct from 'hither.small_trip_pass'
      or p_app_account_token is null
-     or (p_status is not null and p_status not in ('refunded', 'revoked'))
      or p_signed_at is null then
     return json_build_object('ok', false, 'error', 'invalid');
   end if;
+
+  perform public.lock_trip_storekit_transaction(p_original_transaction_id);
 
   select * into v_notification
     from public.premium_store_notifications n
@@ -57,7 +121,9 @@ begin
     return json_build_object('ok', false, 'error', 'notification_payload_mismatch');
   end if;
   if v_notification.accepted then
-    return json_build_object('ok', true, 'durable', true, 'accepted', true, 'duplicate', true, 'revoked', false);
+    return json_build_object(
+      'ok', true, 'durable', true, 'accepted', true, 'duplicate', true, 'outcome', 'acknowledged'
+    );
   end if;
 
   select t.app_account_token into v_token
@@ -69,36 +135,77 @@ begin
 
   select * into v_entitlement
     from public.trip_entitlements e
-   where e.transaction_id = trim(p_transaction_id)
-   for update;
-  if v_entitlement.id is not null and v_entitlement.owner_user_id <> p_user_id then
-    return json_build_object('ok', false, 'error', 'transaction_binding_mismatch');
+   where e.transaction_id = trim(p_transaction_id);
+  if v_entitlement.id is not null then
+    if v_entitlement.owner_user_id <> p_user_id then
+      return json_build_object('ok', false, 'error', 'transaction_binding_mismatch');
+    end if;
+    -- Same group-then-entitlement lock order as the purchase grant.
+    perform 1 from public.groups where id = v_entitlement.group_id for update;
+    select * into v_entitlement
+      from public.trip_entitlements e
+     where e.id = v_entitlement.id
+     for update;
   end if;
 
-  -- A refund after a revoke (or vice versa) keeps the first terminal status.
-  if p_status is not null
-     and v_entitlement.id is not null
-     and v_entitlement.status not in ('refunded', 'revoked') then
-    update public.trip_entitlements
-       set status = p_status, updated_at = now()
-     where id = v_entitlement.id
-    returning * into v_entitlement;
-    v_revoked := true;
-  end if;
-
-  -- The accepted REFUND/REVOKE row also blocks a later grant of the same
-  -- transaction in apply_verified_trip_storekit_purchase, which covers a
-  -- refund that arrives before the purchase was ever applied.
   update public.premium_store_notifications
      set accepted = true
    where id = v_notification.id;
+
+  v_store_status := public.trip_store_revocation_status(trim(p_transaction_id));
+
+  if v_entitlement.id is not null then
+    if v_store_status is not null then
+      -- A refund after a revoke (or vice versa) keeps the first terminal status.
+      if v_entitlement.status not in ('refunded', 'revoked') then
+        update public.trip_entitlements
+           set status = v_store_status, updated_at = now()
+         where id = v_entitlement.id
+        returning * into v_entitlement;
+        v_outcome := 'revoked';
+      end if;
+    elsif v_entitlement.status = 'refunded'
+      and exists (
+        select 1
+          from public.premium_store_notifications n
+         where n.transaction_id = trim(p_transaction_id)
+           and n.accepted
+           and n.notification_type = 'REFUND'
+      ) then
+      -- Reinstate within the original window; started_at/expires_at stay put.
+      perform public.expire_stale_entitlements(v_entitlement.group_id);
+      if v_entitlement.expires_at is not null and v_entitlement.expires_at <= now() then
+        update public.trip_entitlements
+           set status = 'expired', updated_at = now()
+         where id = v_entitlement.id
+        returning * into v_entitlement;
+        v_outcome := 'reinstated';
+      elsif exists (
+        select 1
+          from public.trip_entitlements other
+         where other.group_id = v_entitlement.group_id
+           and other.id <> v_entitlement.id
+           and other.plan_code = 'small_trip_pass'
+           and other.status = 'active'
+      ) then
+        v_outcome := 'reinstatement_blocked';
+      else
+        update public.trip_entitlements
+           set status = 'active', updated_at = now()
+         where id = v_entitlement.id
+        returning * into v_entitlement;
+        v_outcome := 'reinstated';
+      end if;
+    end if;
+  end if;
 
   return json_build_object(
     'ok', true,
     'durable', true,
     'accepted', true,
     'duplicate', false,
-    'revoked', v_revoked,
+    'outcome', v_outcome,
+    'store_status', v_store_status,
     'status', v_entitlement.status,
     'entitlement_id', v_entitlement.id
   );
@@ -106,18 +213,18 @@ end;
 $$;
 
 revoke all on function public.apply_trip_storekit_notification(
-  text, uuid, text, text, text, uuid, text, timestamptz
+  text, uuid, text, text, text, uuid, timestamptz
 ) from public, anon, authenticated;
 grant execute on function public.apply_trip_storekit_notification(
-  text, uuid, text, text, text, uuid, text, timestamptz
+  text, uuid, text, text, text, uuid, timestamptz
 ) to service_role;
 
 comment on function public.apply_trip_storekit_notification(
-  text, uuid, text, text, text, uuid, text, timestamptz
-) is 'Service-role-only, idempotent App Store REFUND/REVOKE apply and acceptance for the Small Trip Pass.';
+  text, uuid, text, text, text, uuid, timestamptz
+) is 'Service-role-only, idempotent App Store REFUND/REVOKE/REFUND_REVERSED apply and acceptance for the Small Trip Pass.';
 
--- Same grant boundary as 20260825000000, plus: a transaction Apple already
--- refunded or revoked can never be granted.
+-- Same grant boundary as 20260825000000, plus: a transaction Apple currently
+-- considers refunded or revoked can never be granted.
 create or replace function public.apply_verified_trip_storekit_purchase(
   p_user_id uuid,
   p_group_id uuid,
@@ -164,6 +271,8 @@ begin
     return json_build_object('ok', false, 'error', 'invalid');
   end if;
 
+  perform public.lock_trip_storekit_transaction(p_original_transaction_id);
+
   select exists(select 1 from public.groups where id = p_group_id)
     into v_group_exists;
   if not v_group_exists then
@@ -199,13 +308,7 @@ begin
     );
   end if;
 
-  if exists (
-    select 1
-      from public.premium_store_notifications n
-     where n.transaction_id = trim(p_transaction_id)
-       and n.notification_type in ('REFUND', 'REVOKE')
-       and n.accepted
-  ) then
+  if public.trip_store_revocation_status(trim(p_transaction_id)) is not null then
     return json_build_object('ok', false, 'error', 'transaction_revoked');
   end if;
 

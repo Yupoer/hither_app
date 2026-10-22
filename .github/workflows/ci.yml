@@ -210,6 +210,7 @@ jobs:
           supabase test db --local supabase/tests/group_member_count_membership.test.sql
           supabase test db --local supabase/tests/destination_arrival_at_bounds.test.sql
           node supabase/tests/promo_redemption_concurrency.mjs
+          node supabase/tests/trip_storekit_refund_concurrency.mjs
 
   jsi-ui-runtime:
     needs: verify

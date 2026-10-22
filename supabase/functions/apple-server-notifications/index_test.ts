@@ -232,7 +232,7 @@ const tripTransaction = {
 function tripHandler(
   notificationType: string,
   tripRpc: () => { data: unknown; error: unknown } = () => ({
-    data: { ok: true, durable: true, accepted: true, duplicate: false, revoked: true, status: 'refunded' },
+    data: { ok: true, durable: true, accepted: true, duplicate: false, outcome: 'revoked', status: 'refunded' },
     error: null,
   }),
   transaction: Record<string, unknown> = tripTransaction,
@@ -273,12 +273,12 @@ Deno.test('trip-pass REFUND revokes through the trip ledger RPC', async () => {
   const { handler, calls } = tripHandler('REFUND');
   const response = await handler(request());
   const result = await body(response);
-  if (response.status !== 200 || result.revoked !== true || result.accepted !== true) {
+  if (response.status !== 200 || result.outcome !== 'revoked' || result.accepted !== true) {
     throw new Error(`expected durable trip revocation, got ${response.status} ${JSON.stringify(result)}`);
   }
   const trip = calls.find((call) => call.name === 'apply_trip_storekit_notification');
   if (!trip) throw new Error('trip revocation RPC was not called');
-  if (trip.args.p_status !== 'refunded' || trip.args.p_user_id !== 'user-1'
+  if (trip.args.p_user_id !== 'user-1'
     || trip.args.p_transaction_id !== tripTransaction.transactionId
     || trip.args.p_product_id !== TRIP_PRODUCT_ID
     || trip.args.p_notification_id !== 'notification-1') {
@@ -289,13 +289,33 @@ Deno.test('trip-pass REFUND revokes through the trip ledger RPC', async () => {
   }
 });
 
-Deno.test('trip-pass REVOKE maps to revoked; other types only acknowledge', async () => {
-  for (const [type, expected] of [['REVOKE', 'revoked'], ['CONSUMPTION_REQUEST', null], ['REFUND_REVERSED', null]] as const) {
-    const { handler, calls } = tripHandler(type);
+Deno.test('trip-pass REFUND_REVERSED reaches the trip ledger and reports reinstatement', async () => {
+  const { handler, calls } = tripHandler('REFUND_REVERSED', () => ({
+    data: { ok: true, durable: true, accepted: true, duplicate: false, outcome: 'reinstated', status: 'active' },
+    error: null,
+  }));
+  const response = await handler(request());
+  const result = await body(response);
+  if (response.status !== 200 || result.outcome !== 'reinstated' || result.status !== 'active') {
+    throw new Error(`expected reinstated trip pass, got ${response.status} ${JSON.stringify(result)}`);
+  }
+  const trip = calls.find((call) => call.name === 'apply_trip_storekit_notification');
+  if (trip?.args.p_notification_id !== 'notification-1') {
+    throw new Error('REFUND_REVERSED did not reach the trip ledger RPC');
+  }
+});
+
+Deno.test('every trip-pass notification type is applied by the trip ledger RPC', async () => {
+  for (const type of ['REVOKE', 'CONSUMPTION_REQUEST', 'REFUND_DECLINED']) {
+    const { handler, calls } = tripHandler(type, () => ({
+      data: { ok: true, durable: true, accepted: true, duplicate: false, outcome: 'acknowledged', status: 'active' },
+      error: null,
+    }));
     const response = await handler(request());
+    const result = await body(response);
     const trip = calls.find((call) => call.name === 'apply_trip_storekit_notification');
-    if (response.status !== 200 || !trip || trip.args.p_status !== expected) {
-      throw new Error(`${type}: expected p_status ${expected}, got ${response.status} ${trip?.args.p_status}`);
+    if (response.status !== 200 || !trip || result.outcome !== 'acknowledged') {
+      throw new Error(`${type}: expected acknowledged trip apply, got ${response.status} ${JSON.stringify(result)}`);
     }
   }
 });
