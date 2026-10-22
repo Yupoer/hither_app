@@ -24,6 +24,15 @@ const denied = [
   ['star reexport', "export * from 'react';"],
   ['namespace reexport', "export * as R from 'react';"],
   ['default reexport', "export { default as R } from 'react';"],
+  ['TS import equals effect', "import R = require('react'); R.useEffect(() => {}, []);"],
+  ['TS import equals layout', "import R = require('react'); R.useLayoutEffect(() => {}, []);"],
+  ['template destructure effect', "import R from 'react'; const { [`useEffect`]: mount } = R; mount(() => {}, []);"],
+  ['template destructure layout', "import R from 'react'; const { [`useLayoutEffect`]: mount } = R; mount(() => {}, []);"],
+  ['template namespace destructure', "import * as R from 'react'; const { [`default`]: Q } = R; Q.useEffect(() => {}, []);"],
+  ['satisfies namespace effect', "import R from 'react'; const Q = R satisfies unknown; Q.useEffect(() => {}, []);"],
+  ['satisfies namespace layout', "import R from 'react'; const Q = R satisfies unknown; Q.useLayoutEffect(() => {}, []);"],
+  ['default namespace binding', "import * as R from 'react'; const { default: Q = R } = R; Q.useEffect(() => {}, []);"],
+  ['default nested binding', "import * as R from 'react'; const { default: { useLayoutEffect: mount } = R } = R; mount(() => {}, []);"],
 ] as const;
 
 const allowed = [
@@ -40,6 +49,13 @@ const allowed = [
   ['type reexport', "export type { useEffect } from 'react';"],
   ['inline type reexport', "export { type useLayoutEffect } from 'react';"],
   ['source string', 'const source = "React.useEffect and useLayoutEffect";'],
+  ['unrelated TS import equals effect', "import Domain = require('domain'); Domain.useEffect();"],
+  ['unrelated TS import equals method', "import Domain = require('domain'); Domain.run();"],
+  ['type TS import equals', "import type R = require('react'); type F = typeof R.useEffect;"],
+  ['unrelated template destructure', "const R = { useEffect() {} }; const { [`useEffect`]: mount } = R; mount();"],
+  ['unrelated satisfies namespace', "const R = { useEffect() {} }; const Q = R satisfies unknown; Q.useEffect();"],
+  ['unrelated default namespace binding', "const R = { default: { useEffect() {} } }; const { default: Q = R.default } = R; Q.useEffect();"],
+  ['type-only satisfies namespace', "import type R from 'react'; type Q = typeof R.useEffect;"],
 ] as const;
 
 const paths = ['src/effectGateFixture.ts', 'src/__tests__/effectGateFixture.test.ts'];
