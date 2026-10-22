@@ -1,3 +1,4 @@
+import { MapArrivalOutboxResource, MapForegroundNavigationResource, MapCardWorkloadResource, MapKmlQuotaResource, MapConfirmKeyboardResource, MapAccountPlacesResource, MapNavigationStartFrameResource, MapSharingHydrationResource, MapNavigationAckResource, MapTrackingModeResource, MapRouteCameraResource, MapProgressDeadlineResource, MapApproachNoticeResource, MapPermissionRecoveryResource, MapRouteScopePreferenceResource } from './MapScreen/MapScreenResources';
 import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
 import { useGatheringCompletion } from './MapScreen/hooks/useGatheringCompletion';
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
@@ -419,17 +420,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const [arrivalOperations, setArrivalOperations] = useState<CoreOperation[]>([]);
-  useEffect(() => {
-    let active = true;
-    const reload = async () => {
-      const rows = groupId ? await getCoreOperationOutbox().listByGroup(groupId) : [];
-      if (active) setArrivalOperations(rows.filter(op =>
-        op.operationType === 'record_arrival' || op.operationType === 'leader_correct_arrival'));
-    };
-    void reload().catch(() => undefined);
-    const unsubscribe = subscribeCoreOutboxChanges(() => { void reload().catch(() => undefined); });
-    return () => { active = false; unsubscribe(); };
-  }, [groupId, user?.id]);
+  const arrivalOutboxLifecycle = <MapArrivalOutboxResource groupId={groupId} setArrivalOperations={setArrivalOperations} user={user} />;
   const {
     role,
     isLeader,
@@ -468,15 +459,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const hasNavigationSession = navigationSessionId !== null;
   // Cold start / return from background: re-pull the scoped flock session so
   // members immediately enter nav mode without tapping「路徑」.
-  useEffect(() => {
-    const onAppState = (next: string) => {
-      if (next !== 'active' || !groupId) return;
-      void navigationSessionState.refresh().catch(() => undefined);
-      void refresh().catch(() => undefined);
-    };
-    const sub = AppState.addEventListener('change', onAppState);
-    return () => sub.remove();
-  }, [groupId, navigationSessionState.refresh, refresh]);
+  const foregroundNavigationLifecycle = <MapForegroundNavigationResource groupId={groupId} navigationSessionState={navigationSessionState} refresh={refresh} />;
 
   // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
   const kickedHandledRef = useRef(false);
@@ -712,7 +695,7 @@ export default function MapScreen({ route, navigation }: Props) {
     () => [...allScopedDestinations.filter(d => d.day == null && !d.closedAt), ...destinations],
     [allScopedDestinations, destinations],
   );
-  useEffect(() => energyObservability.mountWorkload({ mountedCardCount: uiVisible ? destinations.length : 0 }), [uiVisible, destinations.length]);
+  const cardWorkloadLifecycle = <MapCardWorkloadResource uiVisible={uiVisible} destinations={destinations} />;
   const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
    * Full open itinerary for the route editor (all open days + stay cards).
@@ -872,56 +855,13 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [isPro, user?.id]);
 
-  useEffect(() => {
-    void refreshKmlQuota();
-  }, [refreshKmlQuota]);
+  const kmlQuotaLifecycle = <MapKmlQuotaResource refreshKmlQuota={refreshKmlQuota} />;
 
   // Keyboard inset for absolute confirm card (12pt gap; restore on dismiss).
-  useEffect(() => {
-    if (!confirmCardReady) {
-      setConfirmKeyboardHeight(0);
-      return;
-    }
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setConfirmKeyboardHeight(e.endCoordinates?.height ?? 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setConfirmKeyboardHeight(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [confirmCardReady]);
+  const confirmKeyboardLifecycle = <MapConfirmKeyboardResource confirmCardReady={confirmCardReady} setConfirmKeyboardHeight={setConfirmKeyboardHeight} />;
 
   // Load account favorites once per signed-in session (cross-team reuse).
-  useEffect(() => {
-    if (!user?.id) {
-      setFavoritePlaces([]);
-      return;
-    }
-    let cancelled = false;
-    void listFavoritePlaces()
-      .then((rows) => {
-        if (!cancelled) setFavoritePlaces(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setFavoritePlaces([]);
-      });
-    void readAddPlaceTourCompletedLocal(user?.id).then((done) => {
-      if (!cancelled) setAddPlaceTourLocalDone(done);
-    });
-    // Retry account completion sync left pending after a prior profile write failure.
-    void retryPendingAddPlaceTourAccountSync({
-      accountId: user.id,
-      existingPreferences: user.preferences ?? null,
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
+  const accountPlacesLifecycle = <MapAccountPlacesResource user={user} setFavoritePlaces={setFavoritePlaces} setAddPlaceTourLocalDone={setAddPlaceTourLocalDone} />;
 
   // Start only after BOTH star and center targets measure non-zero rects.
   useEffect(() => {
@@ -1328,9 +1268,7 @@ export default function MapScreen({ route, navigation }: Props) {
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
   navigationOriginRef.current = deviceCoords ?? undefined;
-  useEffect(() => {
-    if (deviceCoords) refreshStartFrame();
-  }, [deviceCoords, refreshStartFrame]);
+  const navigationStartFrameLifecycle = <MapNavigationStartFrameResource deviceCoords={deviceCoords} refreshStartFrame={refreshStartFrame} />;
 
   const reference = useMemo<MemberLocation | undefined>(
     () =>
@@ -1398,19 +1336,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const navigationAckRef = useRef<string | null>(null);
   const privacyHydratedUserRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (!preferencesReady || !user?.id || privacyHydratedUserRef.current === user.id) {
-      return;
-    }
-    privacyHydratedUserRef.current = user.id;
-    let cancelled = false;
-    void hydrateLocationSharing(user.id)
-      .then((enabled) => { if (!cancelled && enabled != null) setSharingEnabled(enabled); })
-      .catch(() => {
-        privacyHydratedUserRef.current = null;
-      });
-    return () => { cancelled = true; };
-  }, [preferencesReady, setSharingEnabled, user?.id]);
+  const sharingHydrationLifecycle = <MapSharingHydrationResource preferencesReady={preferencesReady} user={user} privacyHydratedUserRef={privacyHydratedUserRef} setSharingEnabled={setSharingEnabled} />;
 
   const [sharingApplying, setSharingApplying] = useState(false);
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
@@ -1467,21 +1393,7 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t]);
 
-  useEffect(() => {
-    if (isLeader || !navigationSessionState.session) {
-      navigationAckRef.current = null;
-      return;
-    }
-    const key = `${navigationSessionState.session.id}:${sharingEnabled ? 'tracking' : 'disabled'}`;
-    if (navigationAckRef.current === key) return;
-    navigationAckRef.current = key;
-    void navigationSessionState.ack(
-      sharingEnabled ? 'tracking_active' : 'sharing_disabled',
-      { source: 'foreground_session_effect' },
-    ).catch(() => {
-      navigationAckRef.current = null;
-    });
-  }, [isLeader, navigationSessionState, sharingEnabled]);
+  const navigationAckLifecycle = <MapNavigationAckResource isLeader={isLeader} navigationSessionState={navigationSessionState} navigationAckRef={navigationAckRef} sharingEnabled={sharingEnabled} />;
 
   // Prefer local prefs (available before inPassiveMode is derived below) so
   // passive mode can skip MapKit work without a temporal dead zone.
@@ -2396,25 +2308,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   useMountEffect(() => () => void stopBackgroundJourney());
 
-  useEffect(() => {
-    energyObservability.setTrackingMode(!sharingEnabled ? 'hidden'
-      : appState === 'background' ? effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'passiveBackground'
-      : effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'foreground');
-  }, [appState, highAccuracy, effectiveNavigationActive, sharingEnabled]);
+  const trackingModeLifecycle = <MapTrackingModeResource sharingEnabled={sharingEnabled} appState={appState} effectiveNavigationActive={effectiveNavigationActive} highAccuracy={highAccuracy} />;
 
   const lastFittedRouteRef = useRef<string | null>(null);
-  useEffect(() => {
-    const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
-    if (activePoint && key && key !== lastFittedRouteRef.current && selfRoute?.points.length) {
-      lastFittedRouteRef.current = key;
-      mapRef.current?.fitRoute([
-        ...selfRoute.points,
-        ...(deviceCoords ? [deviceCoords] : []),
-        activePoint.coordinates,
-      ]);
-    }
-    if (!key) lastFittedRouteRef.current = null;
-  }, [activePoint, selfRoute, travelMode, deviceCoords]);
+  const routeCameraLifecycle = <MapRouteCameraResource activePoint={activePoint} travelMode={travelMode} lastFittedRouteRef={lastFittedRouteRef} selfRoute={selfRoute} mapRef={mapRef} deviceCoords={deviceCoords} />;
   const {
     stragglers,
   } = useStragglerReporting({
@@ -2524,21 +2421,7 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const [progressClockMs, setProgressClockMs] = useState(() => Date.now());
   const PERSONAL_PROGRESS_STALE_MS = 30_000;
-  useEffect(() => {
-    if (!journeyActive || !navTarget || deviceCoordsAcceptedAtMs == null) {
-      return;
-    }
-    const now = Date.now();
-    setProgressClockMs(now);
-    const age = Math.max(0, now - deviceCoordsAcceptedAtMs);
-    if (age >= PERSONAL_PROGRESS_STALE_MS) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      setProgressClockMs(Date.now());
-    }, PERSONAL_PROGRESS_STALE_MS - age + 50);
-    return () => clearTimeout(timer);
-  }, [journeyActive, navTarget?.id, deviceCoordsAcceptedAtMs]);
+  const progressDeadlineLifecycle = <MapProgressDeadlineResource journeyActive={journeyActive} navTarget={navTarget} deviceCoordsAcceptedAtMs={deviceCoordsAcceptedAtMs} setProgressClockMs={setProgressClockMs} PERSONAL_PROGRESS_STALE_MS={PERSONAL_PROGRESS_STALE_MS} />;
 
   /**
    * Shared local personal progress — single derivation for gathering card,
@@ -2588,32 +2471,7 @@ export default function MapScreen({ route, navigation }: Props) {
   });
   const { personalProgress } = progressSurfaces;
 
-  useEffect(() => {
-    if (!journeyActive || !navTarget || personalProgress.arrived) return;
-    const remaining = personalProgress.distanceMeters;
-    const total = initialDistanceM;
-    if (remaining == null || total == null) return;
-    if (!shouldFireApproachNotify({
-      remainingM: remaining,
-      totalM: total,
-      arrivalRadiusM: localArrivalRadiusM,
-      arrived: personalProgress.arrived || localNavigationArrived,
-      alreadyFired: false,
-    })) return;
-    void notifyJourneyApproach(navigationSessionState.session?.id, navTarget.id, navTarget.title, {
-      remainingM: remaining, totalM: total, arrivalRadiusM: localArrivalRadiusM,
-      arrived: personalProgress.arrived || localNavigationArrived, alreadyFired: false,
-    }).catch(() => undefined);
-  }, [
-    journeyActive,
-    navTarget,
-    personalProgress.arrived,
-    personalProgress.distanceMeters,
-    initialDistanceM,
-    localArrivalRadiusM,
-    localNavigationArrived,
-    navigationSessionState.session?.id,
-  ]);
+  const approachNoticeLifecycle = <MapApproachNoticeResource journeyActive={journeyActive} navTarget={navTarget} personalProgress={personalProgress} initialDistanceM={initialDistanceM} localArrivalRadiusM={localArrivalRadiusM} localNavigationArrived={localNavigationArrived} navigationSessionState={navigationSessionState} />;
 
   // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
   useEffect(() => {
@@ -2837,29 +2695,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return remove;
   });
 
-  useEffect(() => {
-    if (appState !== 'active') return;
-    void Promise.all([
-      location.getPermissionState().catch(() => null),
-      consumePendingLocationPermission(),
-    ]).then(([permission, pending]) => {
-      if (permission?.backgroundStatus === 'granted') {
-        backgroundPermissionDeniedRef.current = null;
-      }
-      if (pending && permission?.backgroundStatus !== 'granted') {
-        showLocationPermissionAlert(
-          t('map.bgLocationTitle'),
-          t('map.bgLocationBody'),
-        );
-      }
-    });
-    void recoverPendingLocationRefreshes();
-  }, [
-    appState,
-    groupId,
-    showLocationPermissionAlert,
-    t,
-  ]);
+  const permissionRecoveryLifecycle = <MapPermissionRecoveryResource appState={appState} backgroundPermissionDeniedRef={backgroundPermissionDeniedRef} showLocationPermissionAlert={showLocationPermissionAlert} t={t} groupId={groupId} />;
 
   const refreshAllLocations = useCallback(async () => {
     if (!groupId || refreshingLocations) return;
@@ -4224,28 +4060,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeScopeExpanded, setRouteScopeExpanded] = useState<Record<string, boolean>>(
     (): Record<string, boolean> => (myScopeId ? { main: false, subgroup: true } : { main: true }),
   );
-  useEffect(() => {
-    let cancelled = false;
-    const defaults: Record<string, boolean> = myScopeId
-      ? { main: false, subgroup: true }
-      : { main: true };
-    if (!routeScopeStorageKey) {
-      setRouteScopeExpanded(defaults);
-      return () => { cancelled = true; };
-    }
-    void AsyncStorage.getItem(routeScopeStorageKey).then((stored) => {
-      if (cancelled) return;
-      try {
-        const parsed = stored ? JSON.parse(stored) as Record<string, boolean> : null;
-        setRouteScopeExpanded(parsed && typeof parsed === 'object' ? { ...defaults, ...parsed } : defaults);
-      } catch {
-        setRouteScopeExpanded(defaults);
-      }
-    }).catch(() => {
-      if (!cancelled) setRouteScopeExpanded(defaults);
-    });
-    return () => { cancelled = true; };
-  }, [myScopeId, routeScopeStorageKey]);
+  const routeScopePreferenceLifecycle = <MapRouteScopePreferenceResource myScopeId={myScopeId} routeScopeStorageKey={routeScopeStorageKey} setRouteScopeExpanded={setRouteScopeExpanded} />;
   const toggleRouteScope = useCallback((scopeKey: string) => {
     setRouteScopeExpanded((current) => {
       const next = { ...current, [scopeKey]: !current[scopeKey] };
@@ -4565,11 +4380,30 @@ export default function MapScreen({ route, navigation }: Props) {
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
+  const mapScreenLifecycle = (<>
+    <React.Fragment key="map-owner-arrivalOutboxLifecycle">{arrivalOutboxLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-foregroundNavigationLifecycle">{foregroundNavigationLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-cardWorkloadLifecycle">{cardWorkloadLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-kmlQuotaLifecycle">{kmlQuotaLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-confirmKeyboardLifecycle">{confirmKeyboardLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-accountPlacesLifecycle">{accountPlacesLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-navigationStartFrameLifecycle">{navigationStartFrameLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-sharingHydrationLifecycle">{sharingHydrationLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-navigationAckLifecycle">{navigationAckLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-trackingModeLifecycle">{trackingModeLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-routeCameraLifecycle">{routeCameraLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-progressDeadlineLifecycle">{progressDeadlineLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-approachNoticeLifecycle">{approachNoticeLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-permissionRecoveryLifecycle">{permissionRecoveryLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-routeScopePreferenceLifecycle">{routeScopePreferenceLifecycle}</React.Fragment>
+  </>);
+
   if (loading && !state) {
     // Passive mode must still offer switch-back during first load.
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
+      {mapScreenLifecycle}
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4589,6 +4423,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
+      {mapScreenLifecycle}
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
@@ -4601,6 +4436,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
+      {mapScreenLifecycle}
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
             {refreshing ? <WaveLoading color={accent} /> : null}
@@ -4632,6 +4468,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
+      {mapScreenLifecycle}
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4652,6 +4489,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.flex}>
+      {mapScreenLifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap

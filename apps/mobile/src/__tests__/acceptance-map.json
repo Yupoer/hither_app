@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "MapScreen named resources preserve exact callback and coordinate identity, stable owner drafts, subscription disposal, stale async fencing and one stale deadline.",
+      "testFile": "mapScreenResources.test.ts",
+      "testNamePattern": "installs the outbox listener|callback identity|preserves Object.is|card count|old stale deadline|reversed storage"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
       "testFile": "useMountEffect.test.ts",
       "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"
