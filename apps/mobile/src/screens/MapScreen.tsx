@@ -210,9 +210,7 @@ import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
 import { requestPermission as requestLocationPermission } from '../native/location';
 import {
-  consumePendingLocationPermission,
   recoverPendingLocationRefreshes,
-  rememberPendingLocationPermission,
 } from '../state/backgroundLocationRefresh';
 import { gatedJourneyProgress, sameMetricDistance, type DistanceSource } from '../utils/journeyProgress';
 import {
@@ -233,7 +231,7 @@ import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/n
 import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '../utils/synchronizedArrival';
 import { getOperationErrorMessage } from '../utils/operationError';
 
-import { location, notifications, type MapRegion, type PlaceResult } from '../native';
+import { notifications, type MapRegion, type PlaceResult } from '../native';
 import { addDestination, addDestinationsBatch, deleteDestination, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, sendCommand, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isDemoGroup } from '../api/demo';
