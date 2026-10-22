@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import OverlaySheet from './OverlaySheet';
 import { useTranslation } from '../i18n';
@@ -21,17 +21,20 @@ export default function CustomQuickCommandSheet({
   const { t, language } = useTranslation();
   const { colors } = useTheme();
   const { customQuickCommands, setCustomQuickCommand } = useSession();
-  const [label, setLabel] = useState('');
-  const [message, setMessage] = useState('');
-
   const safeSlot = Math.max(0, Math.min(CUSTOM_QUICK_COMMAND_SLOTS - 1, slot));
-
-  useEffect(() => {
-    if (!visible) return;
-    const existing = customQuickCommands[safeSlot];
-    setLabel(existing?.label ?? '');
-    setMessage(existing?.message ?? '');
-  }, [visible, customQuickCommands, safeSlot]);
+  const [label, setLabel] = useState(visible ? customQuickCommands[safeSlot]?.label ?? '' : '');
+  const [message, setMessage] = useState(visible ? customQuickCommands[safeSlot]?.message ?? '' : '');
+  const [formIdentity, setFormIdentity] = useState({ visible, customQuickCommands, safeSlot });
+  if (!Object.is(formIdentity.visible, visible)
+    || !Object.is(formIdentity.customQuickCommands, customQuickCommands)
+    || !Object.is(formIdentity.safeSlot, safeSlot)) {
+    setFormIdentity({ visible, customQuickCommands, safeSlot });
+    if (visible) {
+      const existing = customQuickCommands[safeSlot];
+      setLabel(existing?.label ?? '');
+      setMessage(existing?.message ?? '');
+    }
+  }
 
   async function save() {
     const command = { label: label.trim(), message: message.trim() };

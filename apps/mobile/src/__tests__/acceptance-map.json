@@ -2164,6 +2164,41 @@
       "acceptance": "Foreground repair uses the committed latest callback without restarting its deadline and releases native listeners across enabled, interval, unmount and Strict replay.",
       "testFile": "foregroundReconcileLifecycle.test.ts",
       "testNamePattern": "commits the latest|replaces only enabled|Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Route reorder preserves optimistic drop acknowledgement, ends background drag before applying route changes, fences account collapse reads, and retains onboarding callback identity and its original completion policy.",
+      "testFile": "routeDragPreview.test.ts",
+      "testNamePattern": "same-commit route projection|optimistic drop|old account collapse|onboarding callback identity"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "BottomSheet arbitrates cancellation before close/resume and detent snap, preserves native scroll/gesture identity, and fences stale close completions across reopen, unmount and StrictMode.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "keeps native scroll|orders same-commit|replays bottom-sheet|retains a committed bottom-sheet|cancels mid-dismiss|failed gesture"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Overlay motion keeps drafts mounted through background and close/reopen, preserves commit/cancel callbacks, and fences old native and gesture completions including StrictMode replay.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "retains an overlay draft|committed overlay drag|keeps overlay content|fences old overlay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Search keeps its opening bias and native input across GPS and callback changes, resumes foreground queries, and fences timeout, reverse responses, old picks and StrictMode debounce replay.",
+      "testFile": "destinationSearchLifecycle.test.ts",
+      "testNamePattern": "fixed centre|captures a new opening|fences reversed|replays StrictMode|resumes the retained|stalled request|old pick"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Coordinate and quick-command forms retain native input and scroll instances while preserving Object.is reset semantics and feedback close-timer cleanup.",
+      "testFile": "sheetFormIdentity.test.ts",
+      "testNamePattern": "resets coordinates|resets only quick-command|clears the feedback"
     }
   ]
 }
