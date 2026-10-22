@@ -130,12 +130,27 @@ describe('source-only test ratchet', () => {
     ['an unused import', "import { formatDistance } from '../utils/distance';"],
     ['an unused require', "const { formatDistance } = require('../utils/distance');"],
     ['a bare side-effect require', "require('../utils/distance');"],
+    ['an object property key', "import { formatDistance } from '../utils/distance';\nconst options = { formatDistance: false };"],
+    ['a type query', "import { formatDistance } from '../utils/distance';\ntype D = typeof formatDistance;"],
+    ['an interface property', "import { formatDistance } from '../utils/distance';\ninterface Options { formatDistance: boolean }"],
+    ['a mock-only reference', "import { formatDistance } from '../utils/distance';\njest.mock('../utils/distance', () => ({ formatDistance: jest.fn() }));"],
+    ['a mock-only value reference', "import { formatDistance } from '../utils/distance';\njest.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['an imported Jest mock factory', "import { jest as testing } from '@jest/globals';\nimport { formatDistance } from '../utils/distance';\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a late-imported Jest mock factory', "import { formatDistance } from '../utils/distance';\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));\nimport { jest as testing } from '@jest/globals';"],
+    ['a parenthesized mock factory', "import { formatDistance } from '../utils/distance';\n(jest.mock)('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['an element-access mock factory', "import { formatDistance } from '../utils/distance';\njest['mock']('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a shadowed binding', "import { formatDistance } from '../utils/distance';\nfunction mock(formatDistance: (n: number) => string) { return formatDistance(1); }"],
+    ['a type-only heritage reference', "import { Distance } from '../utils/distance';\ninterface Options extends Distance {}"],
+    ['a regex after a condition', "import { formatDistance } from '../utils/distance';\nif (src) /formatDistance/.test(src);"],
+    ['JSX text', "import { formatDistance } from '../utils/distance';\nconst node = <Text>formatDistance</Text>;"],
+    ['a shadowed require', "function mock(require: (s: string) => any) { return require('../utils/distance').formatDistance(1); }"],
   ])('still flags a source-only test with %s', (_label, prelude) => {
     writeBaseline([]);
-    writeTest('probe.test.ts', sourceOnlyWith(prelude));
+    const file = _label.includes('JSX') ? 'probe.test.tsx' : 'probe.test.ts';
+    writeTest(file, sourceOnlyWith(prelude));
     const { status, out } = runMeta();
     expect(status).toBe(1);
-    expect(out).toContain('[L2/source-only-test] probe.test.ts');
+    expect(out).toContain(`[L2/source-only-test] ${file}`);
   });
 
   it.each([
@@ -143,9 +158,14 @@ describe('source-only test ratchet', () => {
     ['a used require binding', "const distance = require('../utils/distance');\ndistance.formatDistance(1);"],
     ['an inline require', "expect(require('../utils/distance').formatDistance(1)).toBe('1 m');"],
     ['a used dynamic import', "it('loads', async () => {\n  const d = await import('../utils/distance');\n  d.formatDistance(1);\n});"],
+    ['a shorthand value', "import { formatDistance } from '../utils/distance';\nexpect({ formatDistance }).toBeDefined();"],
+    ['a computed property value', "import { formatDistance } from '../utils/distance';\nexpect({ [formatDistance(1)]: true }).toBeDefined();"],
+    ['a JSX expression after an apostrophe', "import { formatDistance } from '../utils/distance';\nconst node = <Text>It's {formatDistance(1)}</Text>;\nexpect(node.props.children[1]).toBe('1 m');"],
+    ['a template expression', "import { formatDistance } from '../utils/distance';\nexpect(`${formatDistance(1)}`).toBe('1 m');"],
+    ['a class base value', "import { Distance } from '../utils/distance';\nclass ShortDistance extends Distance {}\nexpect(new ShortDistance()).toBeDefined();"],
   ])('does not flag a source-reading test with %s', (_label, prelude) => {
     writeBaseline([]);
-    writeTest('probe.test.ts', sourceOnlyWith(prelude));
+    writeTest(_label.includes('JSX') ? 'probe.test.tsx' : 'probe.test.ts', sourceOnlyWith(prelude));
     const { status, out } = runMeta();
     expect(status).toBe(0);
     expect(out).not.toContain('source-only-test');
@@ -168,6 +188,9 @@ describe('source-only test ratchet', () => {
       'await read',
     ],
     ['an inline promises require', '', "await require('fs').promises.readFile"],
+    ['a reader variable alias', "import * as files from 'node:fs';\nconst read = files.readFileSync;", 'read'],
+    ['a destructured namespace alias', "import * as files from 'node:fs';\nconst { readFileSync: read } = files;", 'read'],
+    ['an element access alias', "import * as files from 'node:fs';\nconst read = files['readFileSync'];", 'read'],
   ])('detects a source read through %s', (_label, prelude, call) => {
     writeBaseline([]);
     writeTest('probe.test.ts', readingThrough(prelude, call));

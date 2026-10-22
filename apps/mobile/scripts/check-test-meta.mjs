@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
@@ -120,310 +121,175 @@ function checkL2(files) {
 
 const PRODUCTION_SOURCE_PATH = /\.(?:tsx?|jsx?|swift|mm?|h|kt|java)$/;
 const FS_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
-const REGEX_PRECEDERS = new Set([...'(,=:[!&|?{};+-*%~^']);
-const REGEX_PRECEDING_WORDS = /\b(?:return|typeof|case|in|of|void|delete|throw|new|yield|await)$/;
-const ID = '[A-Za-z_$][\\w$]*';
 
 function isTestPath(p) {
   return /(^|[\\/])__tests__([\\/]|$)|\.test\.[jt]sx?$/.test(p);
 }
 
-/**
- * Blanks comments and the bodies of strings, templates and regex literals with
- * spaces, so offsets in `code` match the original text. Quote characters stay;
- * `strings` maps each quote's offset to the literal's value. Template `${}`
- * expressions stay as code. Quote strings and regex literals end at a newline
- * so a stray apostrophe in JSX text cannot swallow the rest of the file.
- */
-function lex(text) {
-  const out = text.split('');
-  const strings = new Map();
-  const blank = (from, to) => {
-    for (let k = from; k < to; k++) if (out[k] !== '\n') out[k] = ' ';
-  };
-  const braceStack = [];
-  let i = 0;
-  const startsRegex = () => {
-    let k = i - 1;
-    while (k >= 0 && /\s/.test(out[k])) k--;
-    if (k < 0 || REGEX_PRECEDERS.has(out[k])) return true;
-    let w = k;
-    while (w >= 0 && /[\w$]/.test(out[w])) w--;
-    return REGEX_PRECEDING_WORDS.test(out.slice(w + 1, k + 1).join(''));
-  };
-
-  const scanTemplate = (start) => {
-    let j = start + 1;
-    let value = '';
-    while (j < text.length) {
-      const ch = text[j];
-      if (ch === '\\') {
-        value += text[j + 1] ?? '';
-        j += 2;
-        continue;
-      }
-      if (ch === '`' || (ch === '$' && text[j + 1] === '{')) break;
-      value += ch;
-      j++;
-    }
-    blank(start + 1, j);
-    strings.set(start, value);
-    if (text[j] === '$') {
-      braceStack.push('template');
-      return j + 2;
-    }
-    return j + 1;
-  };
-
-  while (i < text.length) {
-    const ch = text[i];
-    const next = text[i + 1];
-    if (ch === '/' && next === '/') {
-      const end = text.indexOf('\n', i);
-      const stop = end === -1 ? text.length : end;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    if (ch === '/' && next === '*') {
-      const end = text.indexOf('*/', i + 2);
-      const stop = end === -1 ? text.length : end + 2;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      let j = i + 1;
-      let value = '';
-      while (j < text.length && text[j] !== ch && text[j] !== '\n') {
-        if (text[j] === '\\') {
-          value += text[j + 1] ?? '';
-          j += 2;
-        } else {
-          value += text[j++];
-        }
-      }
-      blank(i + 1, j);
-      strings.set(i, value);
-      i = j + 1;
-      continue;
-    }
-    if (ch === '`') {
-      i = scanTemplate(i);
-      continue;
-    }
-    if (ch === '{') {
-      braceStack.push('brace');
-    } else if (ch === '}') {
-      if (braceStack.pop() === 'template') {
-        i = scanTemplate(i);
-        continue;
-      }
-    } else if (ch === '/') {
-      if (startsRegex()) {
-        let j = i + 1;
-        let inClass = false;
-        while (j < text.length && text[j] !== '\n') {
-          const c = text[j];
-          if (c === '\\') j++;
-          else if (c === '[') inClass = true;
-          else if (c === ']') inClass = false;
-          else if (c === '/' && !inClass) break;
-          j++;
-        }
-        blank(i + 1, j);
-        i = j + 1;
-        continue;
-      }
-    }
-    i++;
-  }
-  return { code: out.join(''), strings };
+function isProductionSpec(spec, file) {
+  if (spec.startsWith('@/')) return true;
+  return spec.startsWith('.') && !isTestPath(path.resolve(path.dirname(file), spec));
 }
 
-/** Offset just past the `)` closing the `(` at `open`, or -1. */
-function matchParen(code, open) {
-  let depth = 0;
-  for (let i = open; i < code.length; i++) {
-    if (code[i] === '(') depth++;
-    else if (code[i] === ')' && --depth === 0) return i + 1;
+function unwrap(node) {
+  while (ts.isParenthesizedExpression(node) || ts.isAwaitExpression(node) ||
+    ts.isAsExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) {
+    node = node.expression;
   }
-  return -1;
+  return node;
 }
 
-/**
- * Bindings introduced by a destructuring pattern, each with the property path
- * it reads: `{ a, b: { c: d } }` gives a ← [a] and d ← [b, c].
- */
-function patternEntries(pattern, at = []) {
-  const p = pattern.trim();
-  if (!/^[{[]/.test(p)) {
-    const m = p.match(new RegExp(`^(?:\\.\\.\\.)?(${ID})`));
-    return m ? [{ name: m[1], path: at }] : [];
+function memberName(node) {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) {
+    return node.argumentExpression.text;
   }
-  const inner = p.slice(1, -1);
-  const parts = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < inner.length; i++) {
-    if ('{[('.includes(inner[i])) depth++;
-    else if ('}])'.includes(inner[i])) depth--;
-    else if (inner[i] === ',' && depth === 0) {
-      parts.push(inner.slice(start, i));
-      start = i + 1;
-    }
-  }
-  parts.push(inner.slice(start));
-  return parts.flatMap((part) => {
-    const t = part.trim().replace(/\s*=[^]*$/, '');
-    if (!t) return [];
-    if (p[0] === '{' && !t.startsWith('...')) {
-      const colon = t.indexOf(':');
-      const key = (colon === -1 ? t : t.slice(0, colon)).trim();
-      return patternEntries(colon === -1 ? t : t.slice(colon + 1), [...at, key]);
-    }
-    return patternEntries(t, at);
+  return undefined;
+}
+
+function bindingEntries(name, at = []) {
+  if (ts.isIdentifier(name)) return [{ node: name, path: at }];
+  return name.elements.flatMap((element, index) => {
+    if (!ts.isBindingElement(element) || element.dotDotDotToken) return [];
+    const key = ts.isObjectBindingPattern(name)
+      ? (element.propertyName ?? element.name).text : String(index);
+    return key === undefined ? [] : bindingEntries(element.name, [...at, key]);
   });
 }
 
-/** Bindings of an import clause, skipping `type` specifiers; default and namespace bindings get path []. */
-function importClauseEntries(clause) {
-  const entries = [];
-  const braces = clause.match(/\{([^}]*)\}/);
-  const head = clause.replace(/\{[^}]*\}/, '').replace(/,/g, ' ').trim();
-  const ns = head.match(new RegExp(`\\*\\s*as\\s+(${ID})`));
-  if (ns) entries.push({ name: ns[1], path: [] });
-  const def = head.replace(/\*\s*as\s+\S+/, '').trim();
-  if (def) entries.push({ name: def, path: [] });
-  for (const spec of braces ? braces[1].split(',') : []) {
-    const t = spec.trim();
-    if (!t || /^type\s/.test(t)) continue;
-    const m = t.match(new RegExp(`^(${ID})(?:\\s+as\\s+(${ID}))?$`));
-    if (m) entries.push({ name: m[2] ?? m[1], path: m[1] === 'default' ? [] : [m[1]] });
+function importEntries(clause) {
+  if (!clause || clause.isTypeOnly) return [];
+  const entries = clause.name ? [{ node: clause.name, path: [] }] : [];
+  if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+    entries.push({ node: clause.namedBindings.name, path: [] });
+  } else if (clause.namedBindings) {
+    for (const specifier of clause.namedBindings.elements) {
+      const key = (specifier.propertyName ?? specifier.name).text;
+      if (!specifier.isTypeOnly) entries.push({ node: specifier.name, path: key === 'default' ? [] : [key] });
+    }
   }
   return entries;
 }
 
-/** Blanks every jest.mock/doMock/setMock/unmock call, factory included. */
-function stripMockDeclarations(code) {
-  let out = code;
-  for (const m of code.matchAll(/\bjest\s*\.\s*(?:mock|doMock|setMock|unmock|dontMock)\s*\(/g)) {
-    const end = matchParen(code, m.index + m[0].length - 1);
-    const stop = end === -1 ? code.length : end;
-    out = out.slice(0, m.index) + code.slice(m.index, stop).replace(/[^\n]/g, ' ') + out.slice(stop);
-  }
-  return out;
-}
-
-/**
- * Every value-level module load: static imports (`import type` excluded),
- * `require`, `jest.requireActual` and dynamic `import()` (outside `typeof`).
- * `entries` lists the bindings the load introduces. `inlineUse` marks a load
- * whose result is consumed in place, as in `require('x').f()` or
- * `expect(require('x'))`, rather than discarded as a bare statement.
- */
-function moduleLoads(code, strings) {
-  const loads = [];
-  const staticImport = new RegExp(
-    `(^|[;}\\n])\\s*import\\s+(?!type\\b)([^'"\`;]*?)\\s+from\\s*(['"])`,
-    'g',
-  );
-  for (const m of code.matchAll(staticImport)) {
-    const quote = m.index + m[0].length - 1;
-    loads.push({
-      spec: strings.get(quote),
-      entries: importClauseEntries(m[2]),
-      inlineUse: false,
-      span: [m.index + m[1].length, quote + 1],
-    });
-  }
-  const assignment = new RegExp(
-    `(?:\\b(?:const|let|var)\\s+)?(${ID}|\\{[^=]*\\}|\\[[^=]*\\])\\s*(?::[^=]*)?=\\s*(?:await\\s+)?$`,
-  );
-  const dynamic = /(\btypeof\s+)?\b(?:require|jest\s*\.\s*requireActual|import)\s*\(\s*(['"`])/g;
-  for (const m of code.matchAll(dynamic)) {
-    if (m[1]) continue;
-    const quote = m.index + m[0].length - 1;
-    const end = matchParen(code, code.lastIndexOf('(', quote));
-    if (end === -1) continue;
-    const before = code.slice(Math.max(0, m.index - 400), m.index);
-    const chained = /^\s*[.[]/.test(code.slice(end));
-    const assigned = chained ? null : before.match(assignment);
-    const bare =
-      /(?:^|[;{}\n])[ \t]*(?:await\s+)?$/.test(before) && /^[ \t]*(?:[;\n}]|$)/.test(code.slice(end));
-    loads.push({
-      spec: strings.get(quote),
-      entries: assigned ? patternEntries(assigned[1]) : [],
-      inlineUse: !assigned && !bare,
-      span: [assigned ? m.index - assigned[0].length : m.index, end],
-    });
-  }
-  return loads;
-}
-
-/** True when `name` is read somewhere outside `span` (assignment targets and property keys excluded). */
-function isReferenced(code, name, span) {
-  const re = new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}(?![\\w$])`, 'g');
-  for (const m of code.matchAll(re)) {
-    if (m.index >= span[0] && m.index < span[1]) continue;
-    if (/\b(?:let|const|var)\s+$/.test(code.slice(Math.max(0, m.index - 20), m.index))) continue;
-    if (/^\s*=(?![=>])/.test(code.slice(m.index + name.length))) continue;
-    return true;
-  }
-  return false;
-}
-
-function isProductionSpec(spec, file) {
-  if (spec.startsWith('@/')) return true;
-  if (!spec.startsWith('.')) return false;
-  return !isTestPath(path.resolve(path.dirname(file), spec));
-}
-
-/** True when the code calls a file reader from `fs`, through any import or alias form. */
-function readsFile(code, loads) {
-  if (/(?<![\w$])readFileSync\s*\(/.test(code)) return true;
-  const fsMember = '(?:promises\\s*\\.\\s*)?readFile(?:Sync)?';
-  const promisesMember = 'readFile';
-  for (const load of loads.filter((l) => FS_MODULES.has(l.spec))) {
-    const root = load.spec.endsWith('promises') ? ['promises'] : [];
-    const tail = code.slice(load.span[1]);
-    const member = root.length ? promisesMember : fsMember;
-    if (load.inlineUse && new RegExp(`^\\s*\\.\\s*${member}\\s*\\(`).test(tail)) return true;
-    for (const { name, path: at } of load.entries) {
-      const full = [...root, ...at].join('.');
-      const escaped = name.replace(/\$/g, '\\$');
-      if (['readFileSync', 'readFile', 'promises.readFile'].includes(full)) {
-        if (new RegExp(`(?<![\\w$.])${escaped}\\s*\\(`).test(code)) return true;
-      } else if (full === '' || full === 'promises') {
-        const m = full === '' ? fsMember : promisesMember;
-        if (new RegExp(`(?<![\\w$.])${escaped}\\s*\\.\\s*${m}\\s*\\(`).test(code)) return true;
-      }
+/** Parse one test without resolving imports or loading application files. */
+function classifyTestSource(text, file) {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const options = { noLib: true, noResolve: true, target: ts.ScriptTarget.Latest };
+  const host = ts.createCompilerHost(options);
+  host.getSourceFile = (name) => path.resolve(name) === path.resolve(file) ? source : undefined;
+  const checker = ts.createProgram([file], options, host).getTypeChecker();
+  const productionBindings = new Set();
+  const fsBindings = new Map();
+  const jestBindings = new Set();
+  const variables = [];
+  const references = [];
+  const calls = [];
+  let namesProductionSource = false;
+  let importsProduction = false;
+  const isGlobal = (node, name) => ts.isIdentifier(node) && node.text === name &&
+    !checker.getSymbolAtLocation(node)?.declarations?.length;
+  const isJestCall = (node, methods) => {
+    if (!ts.isCallExpression(node)) return false;
+    const expression = unwrap(node.expression);
+    if (!methods.includes(memberName(expression))) return false;
+    const receiver = unwrap(expression.expression);
+    return isGlobal(receiver, 'jest') || jestBindings.has(checker.getSymbolAtLocation(receiver));
+  };
+  const moduleSpec = (node) => {
+    if (!ts.isCallExpression(node) || !node.arguments[0] || !ts.isStringLiteralLike(node.arguments[0])) return undefined;
+    if (node.expression.kind === ts.SyntaxKind.ImportKeyword || isGlobal(node.expression, 'require') ||
+      isJestCall(node, ['requireActual'])) return node.arguments[0].text;
+    return undefined;
+  };
+  const addBindings = (entries, spec) => {
+    for (const entry of entries) {
+      const symbol = checker.getSymbolAtLocation(entry.node);
+      if (!symbol) continue;
+      if (FS_MODULES.has(spec)) {
+        fsBindings.set(symbol, [...(spec.endsWith('/promises') ? ['promises'] : []), ...entry.path]);
+      } else if (spec === '@jest/globals' && entry.path[0] === 'jest') {
+        jestBindings.add(symbol);
+      } else if (isProductionSpec(spec, file)) productionBindings.add(symbol);
+    }
+  };
+  for (const statement of source.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteralLike(statement.moduleSpecifier)) {
+      addBindings(importEntries(statement.importClause), statement.moduleSpecifier.text);
     }
   }
-  return false;
-}
-
-/**
- * A test "reads production source" when it calls an fs file reader and names a
- * non-test source file in a string. It "imports production" only through an
- * executable value import of a relative or `@/` module outside __tests__ whose
- * binding (or inline result) the test actually uses; type imports, mock
- * declarations, comments and unused imports do not count.
- */
-function classifyTestSource(text, file) {
-  const { code, strings } = lex(text);
-  const loads = moduleLoads(stripMockDeclarations(code), strings);
-  const namesProductionSource = [...strings.values()].some(
-    (s) => PRODUCTION_SOURCE_PATH.test(s) && !isTestPath(s),
-  );
-  const importsProduction = loads.some(
-    (load) =>
-      load.spec !== undefined &&
-      isProductionSpec(load.spec, file) &&
-      (load.inlineUse || load.entries.some(({ name }) => isReferenced(code, name, load.span))),
-  );
+  function visit(node) {
+    if (ts.isExpressionWithTypeArguments(node) &&
+      node.parent.token === ts.SyntaxKind.ExtendsKeyword && ts.isClassLike(node.parent.parent)) {
+      visit(node.expression);
+      return;
+    }
+    if (ts.isTypeNode(node) || ts.isExportDeclaration(node) ||
+      isJestCall(node, ['mock', 'doMock', 'setMock', 'unmock', 'dontMock'])) return;
+    if (ts.isImportDeclaration(node)) return;
+    if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+      namesProductionSource ||= PRODUCTION_SOURCE_PATH.test(node.text) && !isTestPath(node.text);
+    }
+    if (ts.isVariableDeclaration(node) && node.initializer) variables.push(node);
+    if (ts.isIdentifier(node)) references.push(node);
+    if (ts.isCallExpression(node)) {
+      calls.push(node);
+      const spec = moduleSpec(node);
+      if (spec !== undefined && isProductionSpec(spec, file)) {
+        let consumer = node;
+        while (consumer.parent && (
+          ((ts.isPropertyAccessExpression(consumer.parent) || ts.isElementAccessExpression(consumer.parent)) && consumer.parent.expression === consumer) ||
+          ((ts.isParenthesizedExpression(consumer.parent) || ts.isAwaitExpression(consumer.parent) || ts.isAsExpression(consumer.parent) ||
+            ts.isNonNullExpression(consumer.parent) || ts.isSatisfiesExpression(consumer.parent)) && consumer.parent.expression === consumer)
+        )) consumer = consumer.parent;
+        if (ts.isVariableDeclaration(consumer.parent) && consumer.parent.initializer === consumer) {
+          addBindings(bindingEntries(consumer.parent.name), spec);
+        } else if (!ts.isExpressionStatement(consumer.parent) || unwrap(consumer) !== node) importsProduction = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  const fsPath = (expression) => {
+    const node = unwrap(expression);
+    if (ts.isIdentifier(node)) return fsBindings.get(checker.getSymbolAtLocation(node));
+    const member = memberName(node);
+    if (member !== undefined) {
+      const root = fsPath(node.expression);
+      return root && [...root, member];
+    }
+    const spec = moduleSpec(node);
+    if (FS_MODULES.has(spec)) return spec.endsWith('/promises') ? ['promises'] : [];
+    return undefined;
+  };
+  // Resolve aliases by symbol without crossing shadowed bindings.
+  let added;
+  do {
+    added = false;
+    for (const variable of variables) {
+      const root = fsPath(variable.initializer);
+      if (!root) continue;
+      for (const entry of bindingEntries(variable.name)) {
+        const symbol = checker.getSymbolAtLocation(entry.node);
+        if (symbol && !fsBindings.has(symbol)) {
+          fsBindings.set(symbol, [...root, ...entry.path]);
+          added = true;
+        }
+      }
+    }
+  } while (added);
+  importsProduction ||= references.some((node) => {
+    const parent = node.parent;
+    if ((parent.name === node && !ts.isShorthandPropertyAssignment(parent)) ||
+      (ts.isBindingElement(parent) && parent.propertyName === node) ||
+      (ts.isBinaryExpression(parent) && parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) ||
+      ts.isLabeledStatement(parent) || ts.isBreakOrContinueStatement(parent)) return false;
+    const symbol = ts.isShorthandPropertyAssignment(parent)
+      ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(node);
+    return productionBindings.has(symbol);
+  });
   return {
-    readsProductionSource: namesProductionSource && readsFile(code, loads),
+    readsProductionSource: namesProductionSource && calls.some((node) =>
+      ['readFileSync', 'readFile', 'promises.readFile'].includes(fsPath(node.expression)?.join('.'))),
     importsProduction,
   };
 }
