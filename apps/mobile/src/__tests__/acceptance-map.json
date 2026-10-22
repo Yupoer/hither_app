@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Shader and starfield jobs preserve active-only animation time, native registration ordering, visibility, drain timers and balanced workload leases through suspension and Strict replay.",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "installs activation|disables hidden|caps active|retains the same frozen"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Onboarding progress, reduce-motion subscriptions, confetti and theme pulses retain content and shared-value owners through type scaling, selection and suspension.",
       "testFile": "onboardingMotionLifecycle.test.ts",
       "testNamePattern": "updates progress|keeps the intro|retains celebration|applies theme selection"

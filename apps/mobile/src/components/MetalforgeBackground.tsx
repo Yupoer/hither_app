@@ -1,4 +1,5 @@
-import React, { useEffect, useSyncExternalStore } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useState, useSyncExternalStore } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Canvas, Fill, Shader, Skia } from '@shopify/react-native-skia';
 import {
@@ -157,11 +158,6 @@ export default function MetalforgeBackground({ active = true, allowInactive = fa
     && !reducedMotion && motionAllowed;
   const lastFrameAt = useSharedValue(-1);
   const lastTimestamp = useSharedValue(-1);
-  useEffect(() => {
-    const release = energyObservability.mountWorkload({ shaderCanvasCount: visible ? 1 : 0, animatedCanvasCount: isActive ? 1 : 0 });
-    return release;
-  }, [visible, isActive]);
-
 
   const animationClock = useFrameCallback((frameInfo) => {
     if (frameInfo.timestamp !== undefined && frameInfo.timestamp > 0) {
@@ -173,19 +169,10 @@ export default function MetalforgeBackground({ active = true, allowInactive = fa
     }
   }, false);
 
-  useEffect(() => {
-    lastFrameAt.value = -1;
-    lastTimestamp.value = -1;
-    animationClock.setActive(isActive);
-    return () => animationClock.setActive(false);
-  }, [animationClock, isActive, lastFrameAt, lastTimestamp]);
-
-  // When frozen (reduced motion), hold a static frame
-  useEffect(() => {
-    if (reducedMotion) {
-      frozen.value = 0.5; // static mid-point
-    }
-  }, [frozen, reducedMotion]);
+  const [clockInput, setClockInput] = useState({ animationClock, isActive, generation: 0 });
+  if (!Object.is(clockInput.animationClock, animationClock) || !Object.is(clockInput.isActive, isActive)) {
+    setClockInput({ animationClock, isActive, generation: clockInput.generation + 1 });
+  }
 
   const uniforms = useDerivedValue(() => ({
     size: [width, height],
@@ -205,16 +192,19 @@ export default function MetalforgeBackground({ active = true, allowInactive = fa
     color9: COLOR_UNIFORMS[8],
   }), [width, height, reducedMotion]);
 
-  if (!visible) return null;
-
   return (
-    <View style={[StyleSheet.absoluteFill, styles.container]} pointerEvents="none" accessibilityElementsHidden>
-      <Canvas style={StyleSheet.absoluteFill}>
-        <Fill>
-          <Shader source={grainSkSL} uniforms={uniforms} />
-        </Fill>
-      </Canvas>
-    </View>
+    <>
+      <ShaderWorkload key={`${visible}:${isActive}`} visible={visible} isActive={isActive} />
+      <ShaderClockActivation key={clockInput.generation} animationClock={animationClock} isActive={isActive} lastFrameAt={lastFrameAt} lastTimestamp={lastTimestamp} />
+      <ShaderReducedMotionFrame key={String(reducedMotion)} frozen={frozen} reducedMotion={reducedMotion} />
+      {visible && <View style={[StyleSheet.absoluteFill, styles.container]} pointerEvents="none" accessibilityElementsHidden>
+        <Canvas style={StyleSheet.absoluteFill}>
+          <Fill>
+            <Shader source={grainSkSL} uniforms={uniforms} />
+          </Fill>
+        </Canvas>
+      </View>}
+    </>
   );
 }
 
@@ -223,3 +213,30 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 });
+
+function ShaderWorkload({ visible, isActive }: { visible: boolean; isActive: boolean }) {
+  useMountEffect(() => {
+    const release = energyObservability.mountWorkload({ shaderCanvasCount: visible ? 1 : 0, animatedCanvasCount: isActive ? 1 : 0 });
+    return release;
+  });
+  return null;
+}
+
+function ShaderClockActivation({ animationClock, isActive, lastFrameAt, lastTimestamp }: { animationClock: ReturnType<typeof useFrameCallback>; isActive: boolean; lastFrameAt: ReturnType<typeof useSharedValue<number>>; lastTimestamp: ReturnType<typeof useSharedValue<number>> }) {
+  useMountEffect(() => {
+    lastFrameAt.value = -1;
+    lastTimestamp.value = -1;
+    animationClock.setActive(isActive);
+    return () => animationClock.setActive(false);
+  });
+  return null;
+}
+
+function ShaderReducedMotionFrame({ frozen, reducedMotion }: { frozen: ReturnType<typeof useSharedValue<number>>; reducedMotion: boolean }) {
+  useMountEffect(() => {
+    if (reducedMotion) {
+      frozen.value = 0.5; // static mid-point
+    }
+  });
+  return null;
+}
