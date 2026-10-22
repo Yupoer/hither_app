@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
 const reorder = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
   'utf8',
@@ -160,11 +161,11 @@ describe('route editor + KML contracts (#151)', () => {
   });
 
   it('meet-time sheet exposes approved sections and selected quick state', () => {
-    expect(mapScreen).toContain("t('meetTime.quickSection')");
-    expect(mapScreen).toContain("t('meetTime.timeSection')");
-    expect(mapScreen).toContain("t('meetTime.redInfo')");
-    expect(mapScreen).toContain('meetTimeEditor.quickMinutes === m');
-    expect(mapScreen).toContain('styles.meetDateSummary');
+    expect(meetTimeSheet).toContain("t('meetTime.quickSection')");
+    expect(meetTimeSheet).toContain("t('meetTime.timeSection')");
+    expect(meetTimeSheet).toContain("t('meetTime.redInfo')");
+    expect(meetTimeSheet).toContain('meetTimeEditor.quickMinutes === m');
+    expect(meetTimeSheet).toContain('styles.meetDateSummary');
   });
 
   it('KmlImportSheet maps persistence separately from parse', () => {

@@ -45,9 +45,6 @@ if (
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-import DateTimePicker, {
-  DateTimePickerAndroid,
-} from '@react-native-community/datetimepicker';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -141,7 +138,6 @@ import { useSession } from '../state/SessionContext';
 import {
   usePreferences,
   useTheme,
-  MEET_RED_OPTIONS,
   DEFAULT_MEET_RED_MIN,
   ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
@@ -175,6 +171,8 @@ import { GatheringCardPressable } from './MapScreen/components/GatheringCardPres
 import { RefreshLocationsButton } from './MapScreen/components/RefreshLocationsButton';
 import { FlockRow } from './MapScreen/components/FlockRow';
 import { arrivalErrorMessage, shortEta, splitDistanceParts, splitEtaParts, formatTripDayLine, navCommandDisplayLabel } from '../utils/mapFormatters';
+import { MeetTimeSheet } from './MapScreen/components/MeetTimeSheet';
+import { useMeetTimeEditor } from './MapScreen/hooks/useMeetTimeEditor';
 import { useGatheringWorkflow } from './MapScreen/hooks/useGatheringWorkflow';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import { useSubgroupActions } from './MapScreen/hooks/useSubgroupActions';
@@ -221,7 +219,6 @@ import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
 import InviteMembersSheet from './MapScreen/components/InviteMembersSheet';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
-import { Segmented } from './MapScreen/components/Segmented';
 import { SheetPaneTabs } from './MapScreen/components/SheetPaneTabs';
 import type { SheetPaneTabOption } from './MapScreen/components/SheetPaneTabs';
 import { StorePane } from './MapScreen/components/StorePane';
@@ -266,11 +263,7 @@ import {
   type TravelMode,
 } from '../utils/geo';
 import {
-  alignMeetTimeToTripDay,
-  addMinutesToPickerValue,
-  clampDateNotBeforeToday,
   minutesUntil,
-  startOfTodayLocal,
 } from '../utils/meetTime';
 import { buildOpenReorderPayload } from '../utils/openReorderSlots';
 import {
@@ -302,7 +295,6 @@ import {
   recordVisitedWaypoint,
   reorderDestinations,
   saveOnboardingProfile,
-  setDestinationMeetTime,
   setSolo,
   reportStraggler,
   leaveGroups,
@@ -1229,158 +1221,22 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
-  const [meetTimeEditor, setMeetTimeEditor] = useState<{
-    id: string;
-    value: Date;
-    redMin: number;
-    quickMinutes: number | null;
-  } | null>(null);
-  // Meet labels / location freshness tick inside small memo children
-  // (MeetCountdown, LocationFreshnessText) so MapScreen is not re-rendered on a timer.
-
-  // The soonest gathering point whose meet time is still ahead — schedule local
-  // due + red-threshold warning as a device-side backup to server APNs.
-  const nextMeet = useMemo(() => {
-    const now = Date.now();
-    return (
-      destinations
-        .filter((d) => d.meetAt && new Date(d.meetAt as string).getTime() > now)
-        .sort(
-          (a, b) =>
-            new Date(a.meetAt as string).getTime() -
-            new Date(b.meetAt as string).getTime(),
-        )[0] ?? null
-    );
-  }, [destinations]);
-
-  useEffect(() => {
-    if (!nextMeet?.meetAt) return;
-    const meetAt = new Date(nextMeet.meetAt as string);
-    const redMin = nextMeet.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN;
-    const warnAt = new Date(meetAt.getTime() - redMin * 60_000);
-    const ids: string[] = [];
-    let cancelled = false;
-
-    const track = (nid: string | null) => {
-      if (!nid) return;
-      if (cancelled) void notifications.cancelScheduledNotification(nid);
-      else ids.push(nid);
-    };
-
-    // Red-zone warning (e.g. enter 9:59 when threshold is 10 min).
-    if (warnAt.getTime() > Date.now()) {
-      void notifications
-        .scheduleLocalNotificationAt(
-          {
-            title: t('meetTime.warnTitle'),
-            body: t('meetTime.warnBody', { title: nextMeet.title, minutes: redMin }),
-            data: { kind: 'meetTimeWarn', destinationId: nextMeet.id },
-          },
-          warnAt,
-        )
-        .then(track);
-    }
-
-    void notifications
-      .scheduleLocalNotificationAt(
-        {
-          title: t('meetTime.notifyTitle'),
-          body: t('meetTime.notifyBody', { title: nextMeet.title }),
-          data: { kind: 'meetTime', destinationId: nextMeet.id },
-        },
-        meetAt,
-      )
-      .then(track);
-
-    const off = notifications.addForegroundListener((data) => {
-      if (data.kind === 'meetTime' || data.kind === 'meetTimeWarn') alertBuzz();
-    });
-    return () => {
-      cancelled = true;
-      for (const id of ids) void notifications.cancelScheduledNotification(id);
-      off();
-    };
-  }, [nextMeet?.id, nextMeet?.meetAt, nextMeet?.meetRedMinutes, nextMeet?.title, meetRedMin, t]);
-
-  const persistMeetTime = useCallback(
-    (destinationId: string, value: Date | null, redMin?: number) => {
-      const clamped = value ? clampDateNotBeforeToday(value) : null;
-      setDestinationMeetTime(
-        destinationId,
-        clamped ? clamped.toISOString() : null,
-        clamped ? (redMin ?? meetRedMin ?? DEFAULT_MEET_RED_MIN) : null,
-      )
-        .then(() => {
-          if (typeof redMin === 'number') setMeetRedMin(redMin);
-          return refresh();
-        })
-        .catch((cause) => showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause)));
-    },
-    [refresh, t, meetRedMin, setMeetRedMin],
-  );
-
-  const openMeetTimePicker = useCallback(
-    (dest: Destination) => {
-      if (!canEditItinerary) return;
-      const initial = clampDateNotBeforeToday(
-        alignMeetTimeToTripDay(
-          dest.meetAt ? new Date(dest.meetAt) : new Date(),
-          group?.departureDate,
-          dest.day || 1,
-        ),
-      );
-      const red =
-        dest.meetRedMinutes ??
-        ((MEET_RED_OPTIONS as readonly number[]).includes(meetRedMin)
-          ? meetRedMin
-          : DEFAULT_MEET_RED_MIN);
-      setMeetTimeEditor({
-        id: dest.id,
-        value: initial,
-        redMin: red,
-        quickMinutes: null,
-      });
-    },
-    [canEditItinerary, group?.departureDate, meetRedMin],
-  );
-
-  const openAndroidMeetDate = useCallback(() => {
-    if (!meetTimeEditor) return;
-    const minDate = startOfTodayLocal();
-    DateTimePickerAndroid.open({
-      value: meetTimeEditor.value,
-      mode: 'date',
-      minimumDate: minDate,
-      onChange: (event, selected) => {
-        if (event.type !== 'set' || !selected) return;
-        const next = new Date(meetTimeEditor.value);
-        next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-        const clamped = clampDateNotBeforeToday(next);
-        setMeetTimeEditor((s) =>
-          s ? { ...s, value: clamped, quickMinutes: null } : s,
-        );
-        // Chain into time picker so date+time is one flow on Android.
-        DateTimePickerAndroid.open({
-          value: clamped,
-          mode: 'time',
-          is24Hour: true,
-          onChange: (timeEvent, timeSelected) => {
-            if (timeEvent.type !== 'set' || !timeSelected) return;
-            setMeetTimeEditor((s) => {
-              if (!s) return s;
-              const merged = new Date(s.value);
-              merged.setHours(timeSelected.getHours(), timeSelected.getMinutes(), 0, 0);
-              return {
-                ...s,
-                value: clampDateNotBeforeToday(merged),
-                quickMinutes: null,
-              };
-            });
-          },
-        });
-      },
-    });
-  }, [meetTimeEditor]);
+  const {
+    meetTimeEditor,
+    setMeetTimeEditor,
+    persistMeetTime,
+    openMeetTimePicker,
+    openAndroidMeetDate,
+  } = useMeetTimeEditor({
+    destinations,
+    departureDate: group?.departureDate,
+    canEditItinerary,
+    meetRedMin,
+    setMeetRedMin,
+    refresh,
+    showOperationFailure,
+    t,
+  });
   // Freeze the route overlay's scroll while a stop is being drag-reordered so
   // the two vertical gestures never fight. Auto-scroll still works via ref.
   const [routeDragPreview, setRouteDragPreview] = useState<React.ReactNode>(null);
@@ -8278,186 +8134,15 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* Meet-time editor: date + time + red-threshold warning + Set/Clear */}
-      <OverlaySheet
-        visible={!!meetTimeEditor}
-        onClose={() => setMeetTimeEditor(null)}
-        title={t('meetTime.set')}
+      <MeetTimeSheet
         accent={accent}
-        doneLabel={t('common.cancel')}
-        doneSystemImage="xmark"
-        edgeToEdge
-      >
-        {meetTimeEditor && (
-          <View style={styles.meetEditorBody}>
-            <Text style={[styles.sectionLabel, styles.meetSectionLabel]}>
-              {t('meetTime.quickSection')}
-            </Text>
-            <View style={styles.meetQuickRow}>
-              {[10, 30, 60].map((m) => (
-                <Pressable
-                  key={m}
-                  style={[
-                    styles.meetQuickBtn,
-                    meetTimeEditor.quickMinutes === m && {
-                      borderColor: accent,
-                      backgroundColor: accentMix(accent, 14),
-                    },
-                  ]}
-                  onPress={() => {
-                    lightTap();
-                    const shortcut = addMinutesToPickerValue(meetTimeEditor.value, m);
-                    setMeetTimeEditor((s) =>
-                      s ? { ...s, value: shortcut, quickMinutes: m } : s,
-                    );
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    m < 60
-                      ? t('map.meetInMinutes', { n: m })
-                      : t('map.meetInHours', { n: m / 60 })
-                  }
-                >
-                  <Ionicons
-                    name="time-outline"
-                    size={16}
-                    color={
-                      meetTimeEditor.quickMinutes === m ? accent : glass.textSecondary
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.meetQuickBtnText,
-                      meetTimeEditor.quickMinutes === m && { color: accent },
-                    ]}
-                  >
-                    {m < 60
-                      ? t('map.meetInMinutes', { n: m })
-                      : t('map.meetInHours', { n: m / 60 })}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={[styles.sectionLabel, styles.meetSectionLabel]}>
-              {t('meetTime.timeSection')}
-            </Text>
-            <Pressable
-              style={styles.meetDateSummary}
-              onPress={
-                Platform.OS === 'android'
-                  ? () => {
-                      lightTap();
-                      openAndroidMeetDate();
-                    }
-                  : undefined
-              }
-              accessibilityRole={Platform.OS === 'android' ? 'button' : undefined}
-              accessibilityLabel={t('meetTime.pickDateTime')}
-            >
-              <Ionicons name="calendar-outline" size={20} color={accent} />
-              <Text style={styles.meetSelectedClock}>
-                {meetTimeEditor.value.toLocaleString(undefined, {
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: false,
-                })}
-              </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={glass.textSecondary}
-              />
-            </Pressable>
-
-            {Platform.OS !== 'android' && (
-              <View style={styles.meetPickerWrap}>
-                <DateTimePicker
-                  value={meetTimeEditor.value}
-                  mode="datetime"
-                  display="spinner"
-                  minuteInterval={1}
-                  minimumDate={startOfTodayLocal()}
-                  onChange={(_event, selected) =>
-                    selected &&
-                    setMeetTimeEditor((s) =>
-                      s
-                        ? {
-                            ...s,
-                            value: clampDateNotBeforeToday(selected),
-                            quickMinutes: null,
-                          }
-                        : s,
-                    )
-                  }
-                />
-              </View>
-            )}
-
-            <View style={{ marginTop: 10, marginBottom: 6 }}>
-              <View style={styles.meetSectionHeader}>
-                <Text style={styles.meetSectionHeaderLabel}>
-                  {t('meetTime.redSection')}
-                </Text>
-                <Pressable
-                  hitSlop={10}
-                  onPress={() =>
-                    Alert.alert(t('meetTime.redSection'), t('meetTime.redHint'))
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel={t('meetTime.redInfo')}
-                  style={styles.meetSectionHeaderInfo}
-                >
-                  <Ionicons
-                    name="information-circle-outline"
-                    size={20}
-                    color={accent}
-                  />
-                </Pressable>
-              </View>
-              <Segmented
-                accent={accent}
-                options={MEET_RED_OPTIONS.map((m) => ({
-                  key: String(m),
-                  label: t('meetTime.redOption', { minutes: m }),
-                }))}
-                value={String(meetTimeEditor.redMin)}
-                onChange={(v) =>
-                  setMeetTimeEditor((s) => (s ? { ...s, redMin: Number(v) } : s))
-                }
-              />
-            </View>
-            <Pressable
-              style={[
-                styles.meetSetBtn,
-                { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
-              ]}
-              onPress={() => {
-                persistMeetTime(
-                  meetTimeEditor.id,
-                  meetTimeEditor.value,
-                  meetTimeEditor.redMin,
-                );
-                setMeetTimeEditor(null);
-              }}
-              accessibilityRole="button"
-            >
-              <Text style={styles.meetSetText}>{t('meetTime.set')}</Text>
-            </Pressable>
-            <Pressable
-              style={styles.meetClearBtn}
-              onPress={() => {
-                persistMeetTime(meetTimeEditor.id, null);
-                setMeetTimeEditor(null);
-              }}
-              accessibilityRole="button"
-            >
-              <Text style={styles.meetClearText}>{t('meetTime.clear')}</Text>
-            </Pressable>
-          </View>
-        )}
-      </OverlaySheet>
+        meetTimeEditor={meetTimeEditor}
+        openAndroidMeetDate={openAndroidMeetDate}
+        persistMeetTime={persistMeetTime}
+        setMeetTimeEditor={setMeetTimeEditor}
+        styles={styles}
+        t={t}
+      />
 
       <GroupFeatureTourOverlay
         visible={routeTourActive && overlay === 'route'}

@@ -156,7 +156,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   });
 
   it('coalesces workflow events and guards destination deletion to leaders', () => {
-    expect(mapScreen).toContain('if (!canEditItinerary) return;');
+    expect(mapScreen).toContain('if (!groupId || !canEditItinerary) return;');
   });
 
   it('reconciles silently while keeping durable personal receipts and route drafts visible', () => {

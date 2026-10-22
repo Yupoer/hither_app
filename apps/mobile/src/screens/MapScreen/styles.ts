@@ -1755,3 +1755,5 @@ export const makeStyles = (
     applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS) as any,
   );
 };
+
+export type MapStyles = ReturnType<typeof makeStyles>;

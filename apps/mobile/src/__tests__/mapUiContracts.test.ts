@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
 const flockRow = readFileSync(join(__dirname, '../screens/MapScreen/components/FlockRow.tsx'), 'utf8');
 const cardPressable = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCardPressable.tsx'), 'utf8');
 const carouselDots = readFileSync(join(__dirname, '../screens/MapScreen/components/CarouselDots.tsx'), 'utf8');
@@ -193,9 +194,9 @@ describe('map UI placement contracts', () => {
     expect(overlayBlock).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
     expect(overlayBlock).not.toContain("t('map.addStop')");
     expect(overlayBlock).toContain('edgeToEdge');
-    const meetEditor = mapScreen.indexOf("visible={!!meetTimeEditor}");
+    const meetEditor = meetTimeSheet.indexOf("visible={!!meetTimeEditor}");
     expect(meetEditor).toBeGreaterThan(-1);
-    expect(mapScreen.slice(meetEditor, meetEditor + 350)).toContain('edgeToEdge');
+    expect(meetTimeSheet.slice(meetEditor, meetEditor + 350)).toContain('edgeToEdge');
     expect(destinationSearch).toContain('edgeToEdge');
   });
 
@@ -314,8 +315,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('aligns per-destination meet clocks when itinerary dates change', () => {
-    expect(mapScreen).toContain('alignMeetTimeToTripDay');
-    expect(mapScreen).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
+    expect(meetTimeSheet).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
     expect(mapScreen).toContain('flushRouteDraft');
   });
 
