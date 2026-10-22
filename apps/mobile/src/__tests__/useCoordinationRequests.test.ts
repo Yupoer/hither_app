@@ -142,7 +142,7 @@ describe('useCoordinationRequests', () => {
         userId: 'member-1',
         enabled: true,
       });
-      return null;
+      return api.lifecycle;
     }
 
     mountHarness(() => React.createElement(Harness));
@@ -161,11 +161,11 @@ describe('useCoordinationRequests', () => {
 
   it('subscribes to realtime tables and cleans up on unmount', async () => {
     function Harness() {
-      useCoordinationRequests({
+      const lifecycleApi = useCoordinationRequests({
         groupId: 'group-1',
         userId: 'leader-1',
       });
-      return null;
+      return lifecycleApi.lifecycle;
     }
 
     const root = mountHarness(() => React.createElement(Harness));
@@ -199,7 +199,7 @@ describe('useCoordinationRequests', () => {
         groupId: 'group-1',
         userId: 'member-1',
       });
-      return null;
+      return api.lifecycle;
     }
 
     mountHarness(() => React.createElement(Harness));
@@ -224,7 +224,7 @@ describe('useCoordinationRequests', () => {
         groupId: 'group-1',
         userId: 'leader-1',
       });
-      return null;
+      return api.lifecycle;
     }
 
     mountHarness(() => React.createElement(Harness));
@@ -260,7 +260,7 @@ describe('useCoordinationRequests', () => {
         groupId: 'group-1',
         userId: 'leader-1',
       });
-      return null;
+      return api.lifecycle;
     }
 
     mountHarness(() => React.createElement(Harness));
@@ -281,7 +281,7 @@ describe('useCoordinationRequests', () => {
     let api!: ReturnType<typeof useCoordinationRequests>;
     function Harness() {
       api = useCoordinationRequests({ groupId: 'group-1', userId: 'member-1', enabled: true });
-      return null;
+      return api.lifecycle;
     }
     mountHarness(() => React.createElement(Harness));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
@@ -297,12 +297,12 @@ describe('useCoordinationRequests', () => {
 
   it('does not load when disabled', async () => {
     function Harness() {
-      useCoordinationRequests({
+      const lifecycleApi = useCoordinationRequests({
         groupId: 'group-1',
         userId: 'member-1',
         enabled: false,
       });
-      return null;
+      return lifecycleApi.lifecycle;
     }
 
     mountHarness(() => React.createElement(Harness));

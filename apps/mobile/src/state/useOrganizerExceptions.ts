@@ -9,7 +9,7 @@
 
 import { useForegroundReconcile } from './useForegroundReconcile';
 import { AppState } from 'react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { supabase } from '../api/supabase';
 import {
   listNavigationMemberStates,
@@ -60,6 +60,7 @@ export interface UseOrganizerExceptionsOptions {
 }
 
 export interface UseOrganizerExceptionsResult {
+  lifecycle: ReactElement;
   exceptions: OrganizerExceptionItem[];
   openCount: number;
   handling: ExceptionHandlingMap;
@@ -241,7 +242,7 @@ export function useOrganizerExceptions(
     };
   }, [enabled, navigationSessionId, refreshNavStates]);
 
-  useForegroundReconcile(enabled && Boolean(navigationSessionId), refreshNavStates);
+  const lifecycle = useForegroundReconcile(enabled && Boolean(navigationSessionId), refreshNavStates);
 
   // Seed historical need_help + subscribe to live inserts.
   useEffect(() => {
@@ -459,6 +460,7 @@ export function useOrganizerExceptions(
   );
 
   return {
+    lifecycle,
     exceptions,
     openCount,
     handling,

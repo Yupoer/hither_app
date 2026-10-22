@@ -116,7 +116,7 @@ export function useGatheringWorkflow({
     } while (isCurrent() && workflowPendingRef.current);
   }, [groupId, workflowContext]);
 
-  useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
+  const lifecycle = useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
 
   /** Optimistic arrival row so N/M progress updates before reload finishes. */
   const patchLocalArrival = useCallback((
@@ -257,6 +257,7 @@ export function useGatheringWorkflow({
   }, [groupId, loadGatheringWorkflow, scheduleWorkflowReload]);
 
   return {
+    lifecycle,
     remoteArrivals,
     gatherPointRequests,
     setGatherPointRequests,

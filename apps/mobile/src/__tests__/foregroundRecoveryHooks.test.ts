@@ -44,7 +44,7 @@ test('organizer recovery retains older unhandled help, follows navigation, resum
     gatheringPoint: { id: 'd', title: 'Meeting', meetAt: '2026-09-30T00:09:00Z' }, stragglers: [{ userId: 'B', name: 'B', distanceM: 1000 }] };
   mockHelp.mockResolvedValue({ data: [{ sender_id: 'A', created_at: '2026-09-30T00:00:00Z' }], error: null });
   let api!: ReturnType<typeof useOrganizerExceptions>;
-  function Harness() { api = useOrganizerExceptions(options); return null; }
+  function Harness() { api = useOrganizerExceptions(options); return api.lifecycle; }
   let root!: ReactTestRenderer;
   await act(async () => { root = create(React.createElement(Harness)); });
   expect(api.exceptions.some(item => item.memberId === 'A')).toBe(true);
@@ -82,7 +82,7 @@ test('invite recovery keeps cached rows on failure, deduplicates notices and rej
   mockSession.user = { id: 'me' }; mockSession.membership = { group: { id: 'g' } };
   mockInvites.mockResolvedValue([{ id: 'initial', inviterName: 'Leader', subgroupName: 'Team' }]);
   let api!: ReturnType<typeof useSubgroupInvites>;
-  function Harness() { api = useSubgroupInvites(); return null; }
+  function Harness() { api = useSubgroupInvites(); return api.lifecycle; }
   let root!: ReactTestRenderer;
   await act(async () => { root = create(React.createElement(Harness)); });
   expect(api.invites.map(row => row.id)).toEqual(['initial']); expect(mockNotify).not.toHaveBeenCalled();

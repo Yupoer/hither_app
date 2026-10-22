@@ -41,6 +41,7 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
     accept: acceptInvite,
     decline: declineInvite,
     refresh: refreshInvites,
+    lifecycle,
   } = useSubgroupInvites();
 
   // Invites I've sent for my subgroup that are still pending — shown on the
@@ -179,6 +180,7 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
   }, [groupId, onMergedBack, refresh, t]);
 
   return {
+    lifecycle,
     subgroups,
     pendingInvites,
     sentInvites,
