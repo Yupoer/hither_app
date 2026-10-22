@@ -3,6 +3,78 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 316, "child": 316,
+      "acceptance": "Concurrent IPC commands finish real React foreground and native location cleanup in order without overlapping act scopes.",
+      "testFile": "headlessHarnessContract.test.ts",
+      "testNamePattern": "finishes concurrent foreground"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "The functional scenarios execute in iOS and Android mocked native platform paths, including an automated iOS-to-Android location projection.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "headless multiplayer scenarios on|publishes iOS GPS into an Android"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "Controlled backend fixtures preserve real ingestion timestamp ordering and duplicate ACK behavior across independent devices, offline delivery holds and restarts.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "same-tick|lost ACK|delivery hold captures"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "The callable manual-refresh action exposes the existing continuous-watch rejection together with the actual successful watch upload and peer observation.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "existing manual-refresh rejection"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "Independent headless app processes execute real GPS, privacy, SQLite outbox, auth transport and peer hooks before and after the controlled backend ACK.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "publishes an Expo GPS fix"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "Missed events recover at the real polling deadline and offline state persists across a real device process restart.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "repairs missed Realtime|persists offline GPS"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "Stale samples, revoked consent, replacement accounts and denied native permission cannot publish forbidden location data.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "fences stale samples|replacement account|permission boundary"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "The peer hook preserves a newer location against an older captured recovery response and reconnects after background.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "ignores an old recovery"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "Real journey Start and End callbacks persist durable operations and update the peer, including End before a held Start acknowledgement.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "real public journey Start and End|End authoritative|restores offline Start"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "Real destination service lazy imports add, reorder and delete through actor-bound durable operations and both mounted hooks.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "real destination service lazy import"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "The runnable catalog comes from the actual dispatch registry; unexpected external operations remain fatal even when caught by the app.",
+      "testFile": "headlessHarnessContract.test.ts",
+      "testNamePattern": "callable catalog|swallowed unexpected"
+    },
+    {
+      "parent": 316, "child": 316,
+      "acceptance": "The harness isolates actor storage, executes genuine SQL rollback, and reaps owned crashed or hung processes with failure receipts.",
+      "testFile": "headlessHarnessContract.test.ts",
+      "testNamePattern": "independent app processes|real SQLite|shutdown hangs|actor crash"
+    },
+    {
       "parent": 298, "child": 298,
       "acceptance": "The production Live Activity travel_mode constraint accepts bicycle and existing modes and rejects unsupported values.",
       "testFile": "supabase/tests/live_activity_bicycle_mode.test.sql",
