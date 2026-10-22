@@ -497,6 +497,32 @@ describe('coreDataSync production orchestration', () => {
     expect(mockApplyCoreOperation).toHaveBeenCalled();
   });
 
+  it('paints a marker edit locally and restores only that marker when the server rejects it', async () => {
+    await seedSnapshot(makeState('group-1', [
+      makeDestination('d1', 0, { emoji: '🍜', markerColor: '#ff0000' }),
+      makeDestination('d2', 1, { emoji: '🏯' }),
+    ]));
+    mockApplyCoreOperation.mockImplementation(async (operation: CoreOperation) => ({
+      status: 'conflict',
+      operationId: operation.id,
+      conflict: { code: 'unauthorized', message: 'itinerary scope leader required' },
+    }));
+
+    await enqueueDestinationEdit({
+      groupId: 'group-1', destinationId: 'd1', patch: { emoji: '⛩️' }, actorId: 'actor-a',
+    });
+    const painted = await getCoreDataStore().readSnapshot('group-1');
+    expect(painted?.destinations.find((destination) => destination.id === 'd1'))
+      .toMatchObject({ emoji: '⛩️', markerColor: '#ff0000' });
+
+    await drainTransport();
+    const restored = await getCoreDataStore().readSnapshot('group-1');
+    expect(restored?.destinations.map(({ id, emoji, markerColor }) => ({ id, emoji, markerColor }))).toEqual([
+      { id: 'd1', emoji: '🍜', markerColor: '#ff0000' },
+      { id: 'd2', emoji: '🏯', markerColor: undefined },
+    ]);
+  });
+
   it('does not throw the transport failure through a durable caller', async () => {
     await seedSnapshot();
     mockApplyCoreOperation.mockRejectedValue(networkError());

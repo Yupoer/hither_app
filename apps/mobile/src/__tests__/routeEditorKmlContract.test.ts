@@ -70,9 +70,6 @@ describe('route editor + KML contracts (#151)', () => {
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
     expect(mapScreen).toContain('const destinations = useMemo');
-    // Slot remap lives on applyReorderToDestinations (shared local + nav persist).
-    expect(mapScreen).toContain('openPositionSlotsFromOpenDestinations');
-    expect(mapScreen).toContain('mapOpenReorderToPersistedPositions');
     expect(mapScreen).toContain('buildOpenReorderPayload');
     expect(mapScreen).not.toMatch(
       /openPositionSlots\s*=\s*\[\.\.\.destinations\]/,
@@ -83,8 +80,6 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain('destination_reorder_local');
     expect(mapScreen).toContain('flushRouteDraft');
     expect(mapScreen).toContain('route_draft_flush');
-    // Navigation promote still persists immediately.
-    expect(mapScreen).toContain('reorderForNavigationRef.current = persistReorderNow');
     // Route list onReorder is the local handler.
     expect(mapScreen).toContain('onReorder={handleReorder}');
     // No 3s optimistic timeout that clobbers draft.
@@ -102,7 +97,6 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).toContain("t('interaction.timeout')");
     // Must not blame leader role on route-sheet save failures.
     expect(block).not.toContain("t('map.setFailedMsg')");
-    expect(block).toContain('deletedIds: [...routeDraftDirtyRef.current.deletedIds]');
     expect(block).toContain('draft_ids_in_reorder');
     expect(block).toContain('draft_materialize_empty');
   });
@@ -114,9 +108,6 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).not.toContain('setOptimistic');
     expect(block).not.toContain('setDraftDailyAccommodations');
     expect(block).not.toContain('routeDraftDirtyRef.current =');
-    expect(mapScreen).toContain('if (!optimisticDestinations || routeDraftDirtyRef.current.destinations) return');
-    expect(mapScreen).toContain('if (hasDirtyDraft && routeEditorScopeIdRef.current !== scopeId) return');
-    expect(mapScreen).toContain('if (!hasDirtyDraft) setOptimisticDestinations(scopeDestinations)');
   });
 
   it('favorites CTA stays visible with empty list; multi-mode + bulk delete wired', () => {

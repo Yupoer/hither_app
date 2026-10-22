@@ -72,9 +72,6 @@ interface UseJourneyNavigationParams {
   /** Re-read the server session when a start response was ambiguous. */
   refreshNavigationSession?: () => Promise<NavigationSession | null>;
   createRequestId?: () => string;
-  reorderForNavigation?: (
-    updates: { id: string; position: number; day: number | null }[],
-  ) => Promise<boolean>;
   travelMode?: TravelMode;
   onOptimisticGathering?: (gathering: ActiveGatheringState) => void;
   /**
@@ -109,7 +106,6 @@ export function useJourneyNavigation({
   cancelSession,
   refreshNavigationSession,
   createRequestId = Crypto.randomUUID,
-  reorderForNavigation,
   travelMode = 'walk',
   onOptimisticGathering,
   onOperatorStartConfirm,

@@ -104,7 +104,6 @@ describe('Dynamic Type contract', () => {
   it('scales gathering-point card chrome and shows day + date when expanded', () => {
     expect(mapScreen).toContain('formatTripDayLine');
     expect(mapScreen).toContain('cardDayLine');
-    expect(mapScreen).toContain('optimisticDepartureDate ?? group?.departureDate');
     // Expanded mock layout: day + people chip, metrics row (dist | eta | map).
     expect(mapScreen).toContain('cardSubRow');
     expect(mapScreen).toContain('arrivalPeopleChip');

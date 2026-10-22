@@ -307,7 +307,6 @@ describe('useJourneyNavigation', () => {
       status: 'active',
       destinationId: later.id,
     } as NavigationSession);
-    const reorderForNavigation = jest.fn().mockResolvedValue(true);
     const setSelectedIndex = jest.fn();
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
     function Harness() {
@@ -325,56 +324,17 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex,
         startSession,
         createRequestId: () => 'request-2',
-        reorderForNavigation,
       });
       return null;
     }
     act(() => { create(React.createElement(Harness)); });
     await act(async () => { await navigation?.startNavigation(later, 1); });
 
-    expect(reorderForNavigation).not.toHaveBeenCalled();
     expect(startSession).not.toHaveBeenCalled();
     expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1',
       expect.objectContaining({ activeDestinationId: later.id, operationId: 'request-2' }));
     expect(setSelectedIndex).toHaveBeenCalledWith(1);
     expect(navigation?.navTarget?.id).toBe(later.id);
-  });
-
-  it('does not let the obsolete remote reorder gate block a durable local Start', async () => {
-    const later = { ...destination, id: 'destination-2', order: 1 };
-    const startSession = jest.fn().mockResolvedValue({
-      id: 'session-2',
-      status: 'active',
-      destinationId: later.id,
-    } as NavigationSession);
-    const reorderForNavigation = jest.fn().mockResolvedValue(false);
-    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
-    function Harness() {
-      navigation = useJourneyNavigation({
-        state: pausedState,
-        groupId: 'group-1',
-        isLeader: true,
-        destinations: [destination, later],
-        selectedDestination: destination,
-        fromCoords: undefined,
-        refresh: jest.fn(),
-        t: (key) => key,
-        mapRef: { current: null },
-        carouselRef: { current: null },
-        setSelectedIndex: jest.fn(),
-        startSession,
-        createRequestId: () => 'request-2',
-        reorderForNavigation,
-      });
-      return null;
-    }
-    act(() => { create(React.createElement(Harness)); });
-    await act(async () => { await navigation?.startNavigation(later, 1); });
-
-    expect(reorderForNavigation).not.toHaveBeenCalled();
-    expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1', expect.objectContaining({ activeDestinationId: later.id }));
-    expect(startSession).not.toHaveBeenCalled();
-    expect(navigation?.pendingLeaderTargetId).toBeNull();
   });
 
   it('uses the persisted active destination instead of the local carousel selection', () => {

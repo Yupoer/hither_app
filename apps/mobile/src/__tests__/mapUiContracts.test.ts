@@ -113,7 +113,6 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('routeOverlayBody');
     expect(mapScreen).toContain("await refresh('membership_change')");
-    expect(mapScreen).toContain('setOptimisticDestinations(null);');
     expect(mapScreen).toContain('setKmlScopeId(myScopeId);');
   });
 
@@ -312,10 +311,7 @@ describe('map UI placement contracts', () => {
 
   it('aligns per-destination meet clocks when itinerary dates change', () => {
     expect(mapScreen).toContain('alignMeetTimeToTripDay');
-    expect(mapScreen).toContain('meetAt: alignedMeetAt.toISOString()');
     expect(mapScreen).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
-    // Trip date edits are route-draft local; flush writes trip + reorder together.
-    expect(mapScreen).toContain('routeDraftDirtyRef.current.trip = true');
     expect(mapScreen).toContain('flushRouteDraft');
   });
 
