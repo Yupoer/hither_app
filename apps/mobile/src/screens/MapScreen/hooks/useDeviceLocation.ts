@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { createElement, useState, useCallback, useRef, type ReactElement, type RefObject } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
 import { setLocationAccessContext, captureLocationAccess, isLocationAccessCurrent } from '../../../state/locationPrivacy';
@@ -107,19 +108,6 @@ export function useDeviceLocation({
   const hasMembershipResolved = hasMembership ?? Boolean(groupId);
   const hasMembershipRef = useRef(hasMembershipResolved);
   hasMembershipRef.current = hasMembershipResolved;
-  const watchAllowed = (state: string = appState) =>
-    shouldWatchLocation(
-      groupId ?? null,
-      state,
-      sharingEnabledRef.current,
-      hasMembershipRef.current,
-    );
-
-  useEffect(() => {
-    setLocationAccessContext(hasMembershipResolved ? groupId ?? null : null, sharingEnabled, appState === 'active');
-  }, [groupId, hasMembershipResolved, sharingEnabled, appState]);
-  useEffect(() => () => setLocationAccessContext(null, false), []);
-
   const policyNow = () => locationPolicy(
     highAccuracyRef.current,
     powerModeRef.current,
@@ -305,106 +293,18 @@ export function useDeviceLocation({
     return fix.coordinates;
   }, [acceptIncomingSample, applySampleToUi, enqueueUpload]);
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', setAppState);
-    return () => subscription.remove();
-  }, []);
-
-  // Reset gates when profile changes so the next sample is accepted immediately.
-  useEffect(() => {
-    uiGateRef.current = { lastCoords: null, lastAtMs: 0 };
-    uploadGateRef.current = { lastCoords: null, lastAtMs: 0 };
-    lastSampleAtRef.current = 0;
-    latestSampleRef.current = null;
-    motionRef.current = createMotionState(Date.now());
-  }, [highAccuracy, teamNavigationActive, powerMode, groupId]);
-
-  // Bootstrap an estimate when MapKit has not delivered its first fix yet.
-  // MapKit remains the continuous owner; this is one bounded foreground read.
-  useEffect(() => {
-    if (!groupId || !isForegroundLocationState(appState) || !sharingEnabled || !hasMembershipResolved) return;
-    if (nativeMapLocationEnabled && latestSampleRef.current
-      && Date.now() - latestSampleRef.current.timestamp < 60_000) return;
-    if (forceSyncInFlightRef.current) return;
-    forceSyncInFlightRef.current = true;
-    void refreshDeviceLocation()
-      .catch(() => null)
-      .finally(() => {
-        forceSyncInFlightRef.current = false;
-      });
-  }, [foregroundLocationAvailable, groupId, refreshDeviceLocation, sharingEnabled, hasMembershipResolved, nativeMapLocationEnabled]);
-
-  useEffect(() => {
-    if (groupId && isForegroundLocationState(appState) && sharingEnabled && hasMembershipResolved) {
-      void flushLocationOutbox().catch(() => undefined);
-    }
-  }, [foregroundLocationAvailable, groupId, sharingEnabled, hasMembershipResolved]);
-
-  // Recover a silent MapKit feed with one bounded fix, never retimestamp cached coordinates.
-  useEffect(() => {
-    if (!groupId || !isForegroundLocationState(appState) || !sharingEnabled || !hasMembershipResolved) return;
-    const timer = setInterval(() => {
-      void flushLocationOutbox().catch(() => undefined);
-      // Passive fixes belong to the Low watch cadence; the MapKit recovery
-      // watchdog must not add faster sensor reads while navigation is paused.
-      if (powerModeRef.current === 'allDay') return;
-      if (Date.now() - lastSampleAtRef.current < 60_000 || forceSyncInFlightRef.current) return;
-      forceSyncInFlightRef.current = true;
-      void refreshDeviceLocation().catch(() => null).finally(() => { forceSyncInFlightRef.current = false; });
-    }, 30_000);
-    return () => clearInterval(timer);
-  }, [groupId, foregroundLocationAvailable, sharingEnabled, hasMembershipResolved, refreshDeviceLocation, nativeMapLocationEnabled]);
-
-  // Publish only timestamped sensor fixes.
-  useEffect(() => () => {
-    if (outboxFlushTimerRef.current) clearTimeout(outboxFlushTimerRef.current);
-    outboxFlushTimerRef.current = null;
-  }, [foregroundLocationAvailable, groupId, sharingEnabled, hasMembershipResolved]);
-
-  // DEV debug route: always feed samples into UI, even when MapKit owns real GPS.
-  // Debug samples stay local — they must not enter the team location outbox.
-  useEffect(() => {
-    if (!watchAllowed(appState)) return;
-    return subscribeDebugLocation((sample: LocationSample) => {
-      if (!isDebugRouteActive()) return;
-      const now = Date.now();
-      const policy = policyNow();
-      motionRef.current = reduceMotionState(
-        motionRef.current,
-        sample.coordinates,
-        now,
-        policy,
-      );
-      applySampleToUi(sample, now, { immediate: true });
-    });
-  }, [foregroundLocationAvailable, groupId, applySampleToUi, sharingEnabled, hasMembershipResolved]);
-
-  // Expo watch is fallback only when MapKit is not the foreground owner.
-  useEffect(() => {
-    if (nativeMapLocationEnabled) return;
-    if (!watchAllowed(appState)) return;
-    let cancelled = false;
-    let stop = () => {};
-    void location
-      .watchLocation((sample: LocationSample) => {
-        if (!cancelled) consumeForegroundSample(sample);
-      }, highAccuracy, powerMode)
-      .then((unsub: () => void) => {
-        if (cancelled) unsub();
-        else stop = unsub;
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      if (outboxFlushTimerRef.current) {
-        clearTimeout(outboxFlushTimerRef.current);
-        outboxFlushTimerRef.current = null;
-      }
-      stop();
-    };
-  }, [foregroundLocationAvailable, groupId, highAccuracy, powerMode, teamNavigationActive, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
+  const [sampleOwner] = useState<DeviceLocationSampleOwner>(() => ({
+    uiGateRef, uploadGateRef, lastSampleAtRef, latestSampleRef, motionRef,
+    outboxFlushTimerRef, forceSyncInFlightRef, powerModeRef, setAppState, policyNow,
+  }));
+  const lifecycle = createElement(DeviceLocationLifecycle, { owner: sampleOwner, input: {
+    groupId, highAccuracy, teamNavigationActive, powerMode, nativeMapLocationEnabled,
+    sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
+    refreshDeviceLocation, applySampleToUi, consumeForegroundSample,
+  } });
 
   return {
+    lifecycle,
     deviceCoords,
     /** Horizontal accuracy of the last accepted device fix, metres. */
     deviceAccuracyM,
@@ -417,4 +317,169 @@ export function useDeviceLocation({
     /** Raw latest fix for imperative coordinator wiring; does not trigger renders. */
     latestLocationSampleRef: latestSampleRef,
   };
+}
+
+
+interface DeviceLocationSampleOwner {
+  uiGateRef: RefObject<LocationGateState>;
+  uploadGateRef: RefObject<LocationGateState>;
+  lastSampleAtRef: RefObject<number>;
+  latestSampleRef: RefObject<LocationSample | null>;
+  motionRef: RefObject<MotionState>;
+  outboxFlushTimerRef: RefObject<ReturnType<typeof setTimeout> | null>;
+  forceSyncInFlightRef: RefObject<boolean>;
+  powerModeRef: RefObject<LocationPowerMode>;
+  setAppState: (state: AppStateStatus) => void;
+  policyNow: () => ReturnType<typeof locationPolicy>;
+}
+interface DeviceLocationInput {
+  groupId: string | null | undefined;
+  highAccuracy: boolean;
+  teamNavigationActive: boolean;
+  powerMode: LocationPowerMode;
+  nativeMapLocationEnabled: boolean;
+  sharingEnabled: boolean;
+  hasMembershipResolved: boolean;
+  appState: AppStateStatus;
+  foregroundLocationAvailable: boolean;
+  refreshDeviceLocation: (options?: { requireUpload?: boolean }) => Promise<Coordinates | null>;
+  applySampleToUi: (sample: LocationSample, now: number, options?: ForegroundSampleOptions) => boolean;
+  consumeForegroundSample: (sample: LocationSample, options?: ForegroundSampleOptions) => void;
+}
+interface DeviceLocationResources {
+  previous: DeviceLocationInput | null;
+  appStateSubscription: { remove(): void } | null;
+  stopWatch: (() => void) | null;
+  stopDebug: (() => void) | null;
+  watchdog: ReturnType<typeof setInterval> | null;
+}
+
+function clearDeviceFlush(owner: DeviceLocationSampleOwner): void {
+  if (owner.outboxFlushTimerRef.current) clearTimeout(owner.outboxFlushTimerRef.current);
+  owner.outboxFlushTimerRef.current = null;
+}
+
+/** The same owner publishes access before any synchronous native sample can arrive. */
+function DeviceLocationLifecycle({ owner, input }: {
+  owner: DeviceLocationSampleOwner; input: DeviceLocationInput;
+}): ReactElement {
+  const [resources] = useState<DeviceLocationResources>(() => ({
+    previous: null, appStateSubscription: null, stopWatch: null, stopDebug: null, watchdog: null,
+  }));
+  const [profile, setProfile] = useState(() => ({ input, generation: 0 }));
+  const previous = profile.input;
+  if (!Object.is(previous.groupId, input.groupId)
+    || !Object.is(previous.highAccuracy, input.highAccuracy)
+    || !Object.is(previous.teamNavigationActive, input.teamNavigationActive)
+    || !Object.is(previous.powerMode, input.powerMode)
+    || !Object.is(previous.nativeMapLocationEnabled, input.nativeMapLocationEnabled)
+    || !Object.is(previous.sharingEnabled, input.sharingEnabled)
+    || !Object.is(previous.hasMembershipResolved, input.hasMembershipResolved)
+    || !Object.is(previous.appState, input.appState)
+    || !Object.is(previous.foregroundLocationAvailable, input.foregroundLocationAvailable)
+    || !Object.is(previous.refreshDeviceLocation, input.refreshDeviceLocation)
+    || !Object.is(previous.applySampleToUi, input.applySampleToUi)
+    || !Object.is(previous.consumeForegroundSample, input.consumeForegroundSample)) {
+    setProfile({ input, generation: profile.generation + 1 });
+  }
+  useMountEffect(() => () => {
+    resources.stopWatch?.(); resources.stopWatch = null;
+    resources.stopDebug?.(); resources.stopDebug = null;
+    if (resources.watchdog) clearInterval(resources.watchdog);
+    resources.watchdog = null;
+    resources.appStateSubscription?.remove(); resources.appStateSubscription = null;
+    clearDeviceFlush(owner);
+    resources.previous = null;
+    setLocationAccessContext(null, false);
+  });
+  return createElement(DeviceLocationProfile, {
+    key: profile.generation, owner, resources, input: profile.input,
+  });
+}
+
+/** Concrete location lifetimes share ordered privacy, gate reset and source ownership. */
+function DeviceLocationProfile({ owner, resources, input }: {
+  owner: DeviceLocationSampleOwner; resources: DeviceLocationResources; input: DeviceLocationInput;
+}): null {
+  useMountEffect(() => {
+    const old = resources.previous;
+    const { groupId, highAccuracy, teamNavigationActive, powerMode, nativeMapLocationEnabled,
+      sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
+      refreshDeviceLocation, applySampleToUi, consumeForegroundSample } = input;
+    const scopeChanged = !old || !Object.is(old.foregroundLocationAvailable, foregroundLocationAvailable)
+      || !Object.is(old.groupId, groupId) || !Object.is(old.sharingEnabled, sharingEnabled)
+      || !Object.is(old.hasMembershipResolved, hasMembershipResolved);
+    const bootstrapChanged = scopeChanged || !old || !Object.is(old.refreshDeviceLocation, refreshDeviceLocation)
+      || !Object.is(old.nativeMapLocationEnabled, nativeMapLocationEnabled);
+    const debugChanged = scopeChanged || !old || !Object.is(old.applySampleToUi, applySampleToUi);
+    const watchChanged = scopeChanged || !old || !Object.is(old.highAccuracy, highAccuracy)
+      || !Object.is(old.powerMode, powerMode) || !Object.is(old.teamNavigationActive, teamNavigationActive)
+      || !Object.is(old.nativeMapLocationEnabled, nativeMapLocationEnabled)
+      || !Object.is(old.consumeForegroundSample, consumeForegroundSample);
+    // Stop accepting the old source before changing privacy or resetting shared gates.
+    if (watchChanged) { resources.stopWatch?.(); resources.stopWatch = null; }
+    if (debugChanged) { resources.stopDebug?.(); resources.stopDebug = null; }
+    if (bootstrapChanged && resources.watchdog) { clearInterval(resources.watchdog); resources.watchdog = null; }
+    if (scopeChanged) clearDeviceFlush(owner);
+    if (!old || !Object.is(old.groupId, groupId) || !Object.is(old.hasMembershipResolved, hasMembershipResolved)
+      || !Object.is(old.sharingEnabled, sharingEnabled) || !Object.is(old.appState, appState)) {
+      setLocationAccessContext(hasMembershipResolved ? groupId ?? null : null, sharingEnabled, appState === 'active');
+    }
+    if (!resources.appStateSubscription) {
+      resources.appStateSubscription = AppState.addEventListener('change', owner.setAppState);
+    }
+    // Profile reset deliberately preserves the displayed React sample.
+    if (!old || !Object.is(old.highAccuracy, highAccuracy) || !Object.is(old.teamNavigationActive, teamNavigationActive)
+      || !Object.is(old.powerMode, powerMode) || !Object.is(old.groupId, groupId)) {
+      owner.uiGateRef.current = { lastCoords: null, lastAtMs: 0 };
+      owner.uploadGateRef.current = { lastCoords: null, lastAtMs: 0 };
+      owner.lastSampleAtRef.current = 0;
+      owner.latestSampleRef.current = null;
+      owner.motionRef.current = createMotionState(Date.now());
+    }
+    const foregroundAllowed = Boolean(groupId && isForegroundLocationState(appState) && sharingEnabled && hasMembershipResolved);
+    const watchAllowed = shouldWatchLocation(groupId ?? null, appState, sharingEnabled, hasMembershipResolved);
+    if (bootstrapChanged && foregroundAllowed
+      && !(nativeMapLocationEnabled && owner.latestSampleRef.current
+        && Date.now() - owner.latestSampleRef.current.timestamp < 60_000)
+      && !owner.forceSyncInFlightRef.current) {
+      owner.forceSyncInFlightRef.current = true;
+      void refreshDeviceLocation().catch(() => null).finally(() => { owner.forceSyncInFlightRef.current = false; });
+    }
+    if (scopeChanged && foregroundAllowed) void flushLocationOutbox().catch(() => undefined);
+    // Recover a silent MapKit feed with real fixes. Passive allDay never adds sensor reads.
+    if (bootstrapChanged && foregroundAllowed) {
+      resources.watchdog = setInterval(() => {
+        void flushLocationOutbox().catch(() => undefined);
+        if (owner.powerModeRef.current === 'allDay') return;
+        if (Date.now() - owner.lastSampleAtRef.current < 60_000 || owner.forceSyncInFlightRef.current) return;
+        owner.forceSyncInFlightRef.current = true;
+        void refreshDeviceLocation().catch(() => null).finally(() => { owner.forceSyncInFlightRef.current = false; });
+      }, 30_000);
+    }
+    // DEV debug route: always feed samples into UI, even when MapKit owns real GPS.
+    // Debug samples stay local and never enter the team location outbox.
+    if (debugChanged && watchAllowed) {
+      resources.stopDebug = subscribeDebugLocation((sample: LocationSample) => {
+        if (!isDebugRouteActive()) return;
+        const now = Date.now();
+        owner.motionRef.current = reduceMotionState(owner.motionRef.current, sample.coordinates, now, owner.policyNow());
+        applySampleToUi(sample, now, { immediate: true });
+      });
+    }
+    // Expo watch is fallback only when MapKit is not the foreground owner.
+    if (watchChanged && !nativeMapLocationEnabled && watchAllowed) {
+      let cancelled = false;
+      let stop = () => {};
+      void location.watchLocation((sample: LocationSample) => {
+        if (!cancelled) consumeForegroundSample(sample);
+      }, highAccuracy, powerMode).then((unsubscribe: () => void) => {
+        if (cancelled) unsubscribe();
+        else stop = unsubscribe;
+      }).catch(() => undefined);
+      resources.stopWatch = () => { cancelled = true; clearDeviceFlush(owner); stop(); };
+    }
+    resources.previous = input;
+  });
+  return null;
 }

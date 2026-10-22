@@ -5,6 +5,27 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Native marker commands retain stable initial coordinates, reject invalid/nonmonotonic samples, clean replaced marker refs to the accepted endpoint, and ignore discarded renders through Strict replay.",
+      "testFile": "memberMarkerMotion.test.ts",
+      "testNamePattern": "never moves|rejects invalid|equal-value samples|suspended uncommitted sample|Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Device lifecycle publishes privacy before synchronous watch callbacks, preserves UI across profile resets, cancels late watch promises, keeps debug local and allDay watchdog sensor-free, and survives Strict replay.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "publishes privacy|late watch Promise|real watchdog|debug fixes local|Strict setup"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Route committed inputs preserve Object.is reevaluation, same-key pending requests, stale result fences, Strict replay, and no directions from discarded renders.",
+      "testFile": "mapKitRoutes.test.ts",
+      "testNamePattern": "accepts the in-flight request|equal-value new input|suspended uncommitted|cached result after StrictMode|A to B to A"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
       "testFile": "useMountEffect.test.ts",
       "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"
