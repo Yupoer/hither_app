@@ -1,7 +1,8 @@
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { legacyNavigationSessionKey, readEndedNavigationSessions, rememberEndedNavigationSession } from '../../../state/endedNavigationSessions';
 import { showOperationFailure } from '../../../state/appNotice';
 import * as Crypto from 'expo-crypto';
-import { useState, useMemo, useEffect, useCallback, useRef, RefObject } from 'react';
+import { createElement, Fragment, useState, useMemo, useCallback, useRef, type Dispatch, type SetStateAction, type RefObject } from 'react';
 import { Alert, type ScrollView } from 'react-native';
 import { getOperationErrorMessage } from '../../../utils/operationError';
 import { distanceMeters } from '../../../utils/geo';
@@ -137,22 +138,6 @@ export function useJourneyNavigation({
   const [endedSessions, setEndedSessions] = useState<Set<string>>(new Set());
   const [endedLoadedFor, setEndedLoadedFor] = useState('');
   const endedContext = `${actorId ?? ''}:${groupId ?? ''}`;
-  useEffect(() => {
-    let active = true;
-    setLocallyStopped(false);
-    setEndedSessions(new Set());
-    if (!actorId || !groupId) { setEndedLoadedFor(endedContext); return; }
-    void readEndedNavigationSessions(actorId, groupId).then(values => {
-      if (active) { setEndedSessions(current => new Set([...current, ...values])); setEndedLoadedFor(endedContext); }
-    }).catch(error => {
-      if (active) {
-        // Fail closed: unreadable dismissal history cannot resurrect navigation.
-        setEndedLoadedFor('');
-        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
-      }
-    });
-    return () => { active = false; };
-  }, [actorId, groupId, endedContext]);
 
   const localSessionIdRef = useRef<string | null>(null);
   const [visibleLocalSessionId, setVisibleLocalSessionId] = useState<string | null>(null);
@@ -184,7 +169,6 @@ export function useJourneyNavigation({
     const frame = startFrameRef.current;
     if (frame?.context === endedContext && !frame.fitted) frameStartedDestination(frame.destination);
   }, [endedContext, frameStartedDestination]);
-  useEffect(refreshStartFrame, [fromCoords, refreshStartFrame]);
   const requestRef = useRef<{ destinationId: string; requestId: string } | null>(null);
   const desiredTeamIntentRef = useRef<TeamCommandJob[]>([]);
   const pendingTeamStartIntentRef = useRef<TeamCommandIntent | null>(null);
@@ -201,23 +185,7 @@ export function useJourneyNavigation({
   const currentGroupRef = useRef(groupId);
   currentGroupRef.current = groupId;
   const mountedRef = useRef(true);
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
-  useEffect(() => {
-    setOptimisticTeamTargetId(undefined);
-    setLocalTargetId(null);
-    setPendingLeaderTargetId(null);
-    setPendingLeaderStop(false);
-    setJourneyBusy(false);
-    publishLocalSessionId(null);
-    localSessionContextRef.current = null;
-    pendingTeamStartIntentRef.current = null;
-    pendingStartRef.current = null;
-    requestRef.current = null;
-    latestTeamTapRef.current = null;
-    startFrameRef.current = null;
-    switchPromptRef.current = null;
-    pendingCarouselTargetIdRef.current = null;
-  }, [groupId, actorId, publishLocalSessionId]);
+
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
   const pendingStartRef = useRef<{
     operationId: string;
@@ -242,18 +210,6 @@ export function useJourneyNavigation({
   }, [publishLocalSessionId]);
 
   // Realtime/retry may confirm a start after the original request lost its response.
-  useEffect(() => {
-    const pending = requestRef.current;
-    if (!pendingStartRef.current || !pending || navigationSession?.status !== 'active'
-      || navigationSession.requestId !== pending.requestId) return;
-    const destination = navigationDestinations.find((item) => item.id === navigationSession.destinationId);
-    if (!destination) return;
-    setOptimisticTeamTargetId(navigationSession.destinationId);
-    clearLocalSessionAlias();
-    serverOrStartedSessionRef.current = true;
-    onOperatorStartConfirm?.(destination, `start:${groupId}:${pending.requestId}`);
-    void flushCoreOperationOutbox().catch(() => undefined);
-  }, [clearLocalSessionAlias, groupId, navigationSession, navigationDestinations, onOperatorStartConfirm]);
 
   /**
    * Reconcile a local Start that was acknowledged without the matching
@@ -263,121 +219,11 @@ export function useJourneyNavigation({
    * key for local arrivals.  Once settled, the server session is authoritative
    * for this destination/scope and the alias must not shadow it.
    */
-  useEffect(() => {
-    const localSessionId = localSessionIdRef.current;
-    const localContext = localSessionContextRef.current;
-    const session = navigationSession;
-    if (!localSessionId || !localContext || !session) return;
-
-    const sameLane = session.destinationId === localContext.destinationId
-      && (session.scopeSubgroupId ?? null) === (localContext.subgroupId ?? null);
-    if (!sameLane) return;
-
-    // A matching active/terminal row is the authoritative acknowledgement of
-    // this local Start.  The request-matching effect above handles the active
-    // row's notification; this branch also clears aliases for terminal rows.
-    if (session.id === localSessionId || session.requestId === localSessionId) {
-      clearLocalSessionAlias();
-      return;
-    }
-
-    // A different active session in the same lane wins only after the local
-    // Start has settled.  This is the T -> U handoff: U must receive the next
-    // arrival and End instead of the stale local T alias.
-    if (session.status !== 'active') return;
-    // Prove replacement against the known prior server row. Comparing server
-    // time with the device's local phase time breaks on clock skew; without a
-    // known baseline only this Start's request identity can prove its ACK.
-    const previousServer = pendingStartRef.current?.previousServerSession;
-    if (pendingStartRef.current && (!previousServer || session.id === previousServer.id
-      || Date.parse(session.startedAt) <= Date.parse(previousServer.startedAt))) return;
-    let cancelled = false;
-    void getCoreOperationOutbox().getOperation(localSessionId).then((operation) => {
-      if (cancelled || localSessionIdRef.current !== localSessionId) return;
-      // Non-arrival Start operations are removed from the outbox on ACK, so a
-      // missing row is also a settled operation.  The local id was only
-      // published after a successful enqueue; it is never a speculative key.
-      const settled = !operation
-        || operation.status === 'acked'
-        || operation.status === 'conflict';
-      if (settled) clearLocalSessionAlias();
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  // Re-run when the owning group projection reports that the Start operation
-  // settled, even if the realtime session row itself did not change.
-  }, [clearLocalSessionAlias, hasPendingTeamOperation, navigationSession]);
-
-  useEffect(() => {
-    const context = localSessionContextRef.current;
-    const pending = pendingStartRef.current;
-    if (!groupId || !context || !pending || navigationDestinations.some(d => d.id === context.destinationId && !d.closedAt)) return;
-    if (typeof readLocalJourneyProjection !== 'function') return;
-    let cancelled = false;
-    const originalId = context.destinationId;
-    const sequence = teamCommandSequenceRef.current;
-    void readLocalJourneyProjection(groupId, originalId).then(projection => {
-      if (!projection || cancelled || sequence !== teamCommandSequenceRef.current
-        || localSessionContextRef.current !== context || pendingStartRef.current !== pending) return;
-      const destination = navigationDestinations.find(d => d.id === projection.canonicalDestinationId && !d.closedAt);
-      if (projection.canonicalDestinationId === originalId || !destination) {
-        // There is no merge ledger for this removed target. It is deletion or
-        // completion, not permission to follow another destination.
-        setOptimisticTeamTargetId(null);
-        setPendingLeaderTargetId(null);
-        clearLocalSessionAlias();
-        return;
-      }
-      context.destinationId = destination.id;
-      if (requestRef.current) requestRef.current.destinationId = destination.id;
-      if (latestTeamTapRef.current?.action === 'start') latestTeamTapRef.current.destinationId = destination.id;
-      if (pendingTeamStartIntentRef.current) pendingTeamStartIntentRef.current.destination = destination;
-      gatheringStatesRef.current.set(gatheringCacheKey, projection.gathering);
-      setOptimisticTeamTargetId(destination.id);
-      setSelectedIndex(navigationDestinations.findIndex(d => d.id === destination.id));
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [state, groupId, navigationDestinations, hasPendingTeamOperation, gatheringCacheKey, clearLocalSessionAlias, setSelectedIndex]);
 
   const lastVisibleServerSessionRef = useRef<{ context: string; session: NavigationSession } | null>(null);
   if (navigationSession?.status === 'active' && navigationSession.groupId === groupId) {
     lastVisibleServerSessionRef.current = { context: endedContext, session: navigationSession };
   }
-  useEffect(() => {
-    if (!terminalSession || terminalSession.status === 'active' || terminalSession.groupId !== groupId) return;
-    const localId = localSessionIdRef.current;
-    const matchesLocalStart = Boolean(localId && (terminalSession.id === localId || terminalSession.requestId === localId));
-    const matchesServer = lastVisibleServerSessionRef.current?.context === endedContext
-      && lastVisibleServerSessionRef.current.session.id === terminalSession.id
-      && (lastVisibleServerSessionRef.current.session.scopeSubgroupId ?? null) === (terminalSession.scopeSubgroupId ?? null);
-    // An old session's End may arrive after a new local Start of the same stop.
-    // Its stable request identity, not destination equality, owns termination.
-    const pendingIntent = pendingTeamStartIntentRef.current;
-    const matchesPendingIntent = Boolean(pendingIntent && (terminalSession.id === pendingIntent.operationId
-      || terminalSession.requestId === pendingIntent.operationId));
-    if (pendingIntent && teamCommandRunnerRef.current && !matchesPendingIntent) return;
-    if (pendingStartRef.current && !matchesLocalStart && !matchesPendingIntent) return;
-    if (!matchesLocalStart && !matchesServer) return;
-    const localStart = pendingStartRef.current;
-    const localDestinationId = localSessionContextRef.current?.destinationId;
-    const endedKeys = [...new Set([terminalSession.id, terminalSession.requestId,
-      legacyNavigationSessionKey(terminalSession.startedAt, terminalSession.destinationId),
-      ...(localStart && localDestinationId ? [legacyNavigationSessionKey(
-        new Date(localStart.startedAt).toISOString(), localDestinationId)] : []),
-    ].filter((key): key is string => Boolean(key)))];
-    setEndedSessions(values => new Set([...values, ...endedKeys]));
-    if (actorId && groupId) {
-      void Promise.all(endedKeys.map(key => rememberEndedNavigationSession(actorId, groupId, key))).catch(() => undefined);
-    }
-    stoppedServerSessionRef.current = terminalSession.id;
-    startFrameRef.current = null;
-    stoppedAtRef.current = Date.now();
-    setLocallyStopped(true);
-    setOptimisticTeamTargetId(null);
-    setPendingLeaderTargetId(null);
-    latestTeamTapRef.current = null;
-    pendingTeamStartIntentRef.current = null;
-    clearLocalSessionAlias();
-  }, [terminalSession, groupId, actorId, endedContext, clearLocalSessionAlias]);
 
   const legacySessionKey = legacyNavigationSessionKey(state?.group.journeyStartedAt, authoritativeSharedTargetId);
   const visibleSessionKey = navigationSession?.id ?? legacySessionKey;
@@ -386,98 +232,11 @@ export function useJourneyNavigation({
     ? endedSessions.has(visibleSessionKey) || endedSessions.has(serverLegacyKey)
       || Boolean(navigationSession.requestId && endedSessions.has(navigationSession.requestId))
     : endedSessions.has(legacySessionKey)) && !optimisticTeamTargetId;
-  useEffect(() => {
-    if (locallyStopped && navigationSession?.status === 'active' && !hiddenSession
-      && navigationSession.id !== stoppedServerSessionRef.current
-      && Date.parse(navigationSession.startedAt) > stoppedAtRef.current) {
-      setLocallyStopped(false);
-    }
-  }, [locallyStopped, navigationSession, hiddenSession]);
   const suppressNavigation = locallyStopped || (isLeader && (hiddenSession
     || (Boolean(actorId) && endedLoadedFor !== endedContext && !optimisticTeamTargetId)));
   const sharedTargetId = suppressNavigation ? null : optimisticTeamTargetId !== undefined
     ? optimisticTeamTargetId
     : authoritativeSharedTargetId;
-
-  useEffect(() => {
-    if (groupId && !gatheringStatesRef.current.has(gatheringCacheKey) && state) {
-      gatheringStatesRef.current.set(gatheringCacheKey, deriveActiveGatheringFromGroupState(state, 0));
-    }
-  }, [state, groupId, gatheringCacheKey]);
-
-  useEffect(() => {
-    if (hasPendingTeamOperation !== false || !state || !groupId || teamCommandRunnerRef.current) return;
-    const localStart = pendingStartRef.current;
-    if (localStart && localSessionIdRef.current) {
-      let cancelled = false;
-      const sequence = teamCommandSequenceRef.current;
-      void getCoreOperationOutbox().getOperation(localStart.operationId).then(async operation => {
-        if (cancelled || sequence !== teamCommandSequenceRef.current
-          || pendingStartRef.current !== localStart) return;
-        let committedGathering: ActiveGatheringState | undefined;
-        if (operation?.status !== 'conflict') {
-          // Queue ACK and navigation-session hydration are separate. Missing
-          // receipt means accepted, not paused. Only a newer durable End can
-          // retire this Start before its matching server session is visible.
-          const projection = typeof readLocalJourneyProjection === 'function'
-            ? await readLocalJourneyProjection(groupId, localSessionContextRef.current?.destinationId ?? '') : null;
-          if (cancelled || sequence !== teamCommandSequenceRef.current
-            || pendingStartRef.current !== localStart) return;
-          committedGathering = projection?.gathering;
-          if (committedGathering) gatheringStatesRef.current.set(gatheringCacheKey, committedGathering);
-          if (!projection || projection.gathering.journeyPhase === 'en_route'
-            || projection.gathering.entityVersion <= localStart.entityVersion) {
-            if (projection?.gathering.journeyPhase === 'en_route') {
-              localStart.entityVersion = Math.max(localStart.entityVersion, projection.gathering.entityVersion);
-            }
-            return;
-          }
-        }
-        const rejected = operation?.status === 'conflict';
-        clearLocalSessionAlias();
-        if (committedGathering) gatheringStatesRef.current.set(gatheringCacheKey, committedGathering);
-        else if (rejected) gatheringStatesRef.current.set(gatheringCacheKey, localStart.base);
-        if (!rejected) {
-          stoppedServerSessionRef.current = navigationSession?.id ?? null;
-          stoppedAtRef.current = Date.now();
-          setLocallyStopped(true);
-        }
-        latestTeamTapRef.current = null;
-        pendingTeamStartIntentRef.current = null;
-        setOptimisticTeamTargetId(rejected ? undefined : null);
-      }).catch(() => undefined);
-      return () => { cancelled = true; };
-    }
-    const sequence = teamCommandSequenceRef.current;
-    let cancelled = false;
-    void readLocalJourneyProjection(groupId, state.group.activeDestinationId ?? '').then(projection => {
-      if (cancelled || sequence !== teamCommandSequenceRef.current) return;
-      const previous = gatheringStatesRef.current.get(gatheringCacheKey);
-      if (projection && (!previous || projection.gathering.entityVersion >= previous.entityVersion)) {
-        gatheringStatesRef.current.set(gatheringCacheKey, projection.gathering);
-      }
-    }).catch(() => undefined);
-    latestTeamTapRef.current = null;
-    pendingTeamStartIntentRef.current = null;
-    setOptimisticTeamTargetId(undefined);
-    return () => { cancelled = true; };
-  }, [state, groupId, gatheringCacheKey, hasPendingTeamOperation, clearLocalSessionAlias, navigationSession?.id]);
-
-  useEffect(() => {
-    serverOrStartedSessionRef.current = Boolean(authoritativeSharedTargetId);
-    const override = optimisticTeamTargetId;
-    if (override === undefined) return;
-    if (override === authoritativeSharedTargetId && !pendingStartRef.current && !pendingTeamStartIntentRef.current) {
-      setOptimisticTeamTargetId(undefined);
-    }
-  }, [authoritativeSharedTargetId, optimisticTeamTargetId]);
-
-  useEffect(() => {
-    if (!teamCommandRunnerRef.current && sharedTargetId && pendingLeaderTargetId === sharedTargetId) {
-      setPendingLeaderTargetId(null);
-    }
-    if (sharedTargetId) setPendingLeaderStop(false);
-  }, [pendingLeaderTargetId, sharedTargetId]);
 
   // Shared flock session owns the target for leaders and members. During a
   // local optimistic End, `sharedTargetId` is null and the route disappears
@@ -884,43 +643,20 @@ export function useJourneyNavigation({
   // Reorder is asynchronous. Project the selected page only after the latest
   // visible carousel order exactly matches the ID-based promote result; a
   // stale array still contains the target but must not clear the pending ID.
-  useEffect(() => {
-    const targetId = pendingCarouselTargetIdRef.current;
-    if (!targetId) return;
-    const index = followCarouselIndexAfterPromote({
-      destinations: navigationDestinations,
-      sharedTargetId: targetId,
-    });
-    if (index == null) return;
-    pendingCarouselTargetIdRef.current = null;
-    setSelectedIndex(index);
-  }, [navigationDestinations, setSelectedIndex]);
-
-  useEffect(() => {
-    if (!sharedTargetId) {
-      lastFollowerCenterKeyRef.current = null;
-      return;
-    }
-    const index = followCarouselIndexAfterPromote({
-      destinations,
-      sharedTargetId,
-    });
-    if (index == null) return;
-    const destination = destinations[index];
-    if (!destination) return;
-    const orderKey = destinations.map((d) => d.id).join(',');
-    const centerKey = `${navigationSession?.id ?? 'legacy'}:${sharedTargetId}:${orderKey}`;
-    if (lastFollowerCenterKeyRef.current === centerKey) return;
-    lastFollowerCenterKeyRef.current = centerKey;
-    setSelectedIndex(index);
-    // Target changes from Start/follow are direct selections; only a manual
-    // carousel swipe should animate the camera between points.
-    if (startFrameRef.current?.context !== endedContext || startFrameRef.current.destination.id !== destination.id) {
-      mapRef.current?.centerOn(destination.coordinates, { animated: false });
-    }
-  }, [destinations, mapRef, navigationSession?.id, setSelectedIndex, sharedTargetId]);
 
   return {
+    lifecycle: createElement(JourneyNavigationRuntime, {
+      setLocallyStopped, setEndedSessions, actorId, groupId, setEndedLoadedFor, endedContext, t, refreshStartFrame,
+      fromCoords, mountedRef, setOptimisticTeamTargetId, setLocalTargetId, setPendingLeaderTargetId,
+      setPendingLeaderStop, setJourneyBusy, publishLocalSessionId, localSessionContextRef, pendingTeamStartIntentRef,
+      pendingStartRef, requestRef, latestTeamTapRef, startFrameRef, switchPromptRef, pendingCarouselTargetIdRef,
+      navigationSession, navigationDestinations, clearLocalSessionAlias, serverOrStartedSessionRef,
+      onOperatorStartConfirm, localSessionIdRef, hasPendingTeamOperation, teamCommandSequenceRef, gatheringStatesRef,
+      gatheringCacheKey, setSelectedIndex, state, terminalSession, lastVisibleServerSessionRef, teamCommandRunnerRef,
+      stoppedServerSessionRef, stoppedAtRef, locallyStopped, hiddenSession, navigationSessionId: navigationSession?.id,
+      authoritativeSharedTargetId, optimisticTeamTargetId, sharedTargetId, pendingLeaderTargetId,
+      lastFollowerCenterKeyRef, destinations, mapRef,
+    }),
     navigationStoppedLocally: suppressNavigation,
     journeyStatus,
     journeyGoing,
@@ -946,4 +682,570 @@ export function useJourneyNavigation({
     stopRemovedDestination,
     startLocalRoutePlan,
   };
+}
+
+interface JourneyResourceInput {
+  setLocallyStopped: Dispatch<SetStateAction<boolean>>;
+  setEndedSessions: Dispatch<SetStateAction<Set<string>>>;
+  actorId: UseJourneyNavigationParams['actorId'];
+  groupId: UseJourneyNavigationParams['groupId'];
+  setEndedLoadedFor: Dispatch<SetStateAction<string>>;
+  endedContext: string;
+  t: UseJourneyNavigationParams['t'];
+  refreshStartFrame: () => void;
+  fromCoords: Coordinates | undefined;
+  mountedRef: RefObject<boolean>;
+  setOptimisticTeamTargetId: Dispatch<SetStateAction<string | null | undefined>>;
+  setLocalTargetId: Dispatch<SetStateAction<string | null>>;
+  setPendingLeaderTargetId: Dispatch<SetStateAction<string | null>>;
+  setPendingLeaderStop: Dispatch<SetStateAction<boolean>>;
+  setJourneyBusy: Dispatch<SetStateAction<boolean>>;
+  publishLocalSessionId: (sessionId: string | null, notify?: boolean) => void;
+  localSessionContextRef: RefObject<{ destinationId: string; subgroupId: string | null; commandSequence: number; } | null>;
+  pendingTeamStartIntentRef: RefObject<TeamCommandIntent | null>;
+  pendingStartRef: RefObject<{ operationId: string; base: ActiveGatheringState; startedAt: number; entityVersion: number; previousServerSession?: NavigationSession | null; } | null>;
+  requestRef: RefObject<{ destinationId: string; requestId: string; } | null>;
+  latestTeamTapRef: RefObject<{ action: "start" | "end"; destinationId: string; groupId: string | null | undefined; actorId: string | null | undefined; sequence: number; } | null>;
+  startFrameRef: RefObject<{ context: string; destination: Destination; fitted: boolean; } | null>;
+  switchPromptRef: RefObject<string | null>;
+  pendingCarouselTargetIdRef: RefObject<string | null>;
+  navigationSession: NavigationSession | null | undefined;
+  navigationDestinations: Destination[];
+  clearLocalSessionAlias: () => void;
+  serverOrStartedSessionRef: RefObject<boolean>;
+  onOperatorStartConfirm: ((destination: Destination, eventId: string) => void) | undefined;
+  localSessionIdRef: RefObject<string | null>;
+  hasPendingTeamOperation: boolean | undefined;
+  teamCommandSequenceRef: RefObject<number>;
+  gatheringStatesRef: RefObject<Map<string, ActiveGatheringState>>;
+  gatheringCacheKey: string;
+  setSelectedIndex: (index: number) => void;
+  state: GroupState | null;
+  terminalSession: NavigationSession | null | undefined;
+  lastVisibleServerSessionRef: RefObject<{ context: string; session: NavigationSession; } | null>;
+  teamCommandRunnerRef: RefObject<Promise<void> | null>;
+  stoppedServerSessionRef: RefObject<string | null>;
+  stoppedAtRef: RefObject<number>;
+  locallyStopped: boolean;
+  hiddenSession: boolean;
+  navigationSessionId: string | undefined;
+  authoritativeSharedTargetId: string | null;
+  optimisticTeamTargetId: string | null | undefined;
+  sharedTargetId: string | null;
+  pendingLeaderTargetId: string | null;
+  lastFollowerCenterKeyRef: RefObject<string | null>;
+  destinations: Destination[];
+  mapRef: RefObject<GroupMapHandle | null>;
+}
+
+function JourneyEndedHistory({
+  setLocallyStopped, setEndedSessions, actorId, groupId, setEndedLoadedFor, endedContext, t,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    let active = true;
+    setLocallyStopped(false);
+    setEndedSessions(new Set());
+    if (!actorId || !groupId) { setEndedLoadedFor(endedContext); return; }
+    void readEndedNavigationSessions(actorId, groupId).then(values => {
+      if (active) { setEndedSessions(current => new Set([...current, ...values])); setEndedLoadedFor(endedContext); }
+    }).catch(error => {
+      if (active) {
+        // Fail closed: unreadable dismissal history cannot resurrect navigation.
+        setEndedLoadedFor('');
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      }
+    });
+    return () => { active = false; };
+  });
+  return null;
+}
+
+function JourneyStartFrame({
+  refreshStartFrame,
+}: JourneyResourceInput) {
+  useMountEffect(refreshStartFrame);
+  return null;
+}
+
+function JourneyCommandLifetime({
+  mountedRef,
+}: JourneyResourceInput) {
+  useMountEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; });
+  return null;
+}
+
+function JourneyIdentityReset({
+  setOptimisticTeamTargetId, setLocalTargetId, setPendingLeaderTargetId, setPendingLeaderStop, setJourneyBusy,
+  publishLocalSessionId, localSessionContextRef, pendingTeamStartIntentRef, pendingStartRef, requestRef,
+  latestTeamTapRef, startFrameRef, switchPromptRef, pendingCarouselTargetIdRef,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    setOptimisticTeamTargetId(undefined);
+    setLocalTargetId(null);
+    setPendingLeaderTargetId(null);
+    setPendingLeaderStop(false);
+    setJourneyBusy(false);
+    publishLocalSessionId(null);
+    localSessionContextRef.current = null;
+    pendingTeamStartIntentRef.current = null;
+    pendingStartRef.current = null;
+    requestRef.current = null;
+    latestTeamTapRef.current = null;
+    startFrameRef.current = null;
+    switchPromptRef.current = null;
+    pendingCarouselTargetIdRef.current = null;
+  });
+  return null;
+}
+
+function JourneyStartAcknowledgement({
+  requestRef, pendingStartRef, navigationSession, navigationDestinations, setOptimisticTeamTargetId,
+  clearLocalSessionAlias, serverOrStartedSessionRef, onOperatorStartConfirm, groupId,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    const pending = requestRef.current;
+    if (!pendingStartRef.current || !pending || navigationSession?.status !== 'active'
+      || navigationSession.requestId !== pending.requestId) return;
+    const destination = navigationDestinations.find((item) => item.id === navigationSession.destinationId);
+    if (!destination) return;
+    setOptimisticTeamTargetId(navigationSession.destinationId);
+    clearLocalSessionAlias();
+    serverOrStartedSessionRef.current = true;
+    onOperatorStartConfirm?.(destination, `start:${groupId}:${pending.requestId}`);
+    void flushCoreOperationOutbox().catch(() => undefined);
+  });
+  return null;
+}
+
+function JourneyAliasSettlement({
+  localSessionIdRef, localSessionContextRef, navigationSession, clearLocalSessionAlias, pendingStartRef,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    const localSessionId = localSessionIdRef.current;
+    const localContext = localSessionContextRef.current;
+    const session = navigationSession;
+    if (!localSessionId || !localContext || !session) return;
+
+    const sameLane = session.destinationId === localContext.destinationId
+      && (session.scopeSubgroupId ?? null) === (localContext.subgroupId ?? null);
+    if (!sameLane) return;
+
+    // A matching active/terminal row is the authoritative acknowledgement of
+    // this local Start.  The request-matching effect above handles the active
+    // row's notification; this branch also clears aliases for terminal rows.
+    if (session.id === localSessionId || session.requestId === localSessionId) {
+      clearLocalSessionAlias();
+      return;
+    }
+
+    // A different active session in the same lane wins only after the local
+    // Start has settled.  This is the T -> U handoff: U must receive the next
+    // arrival and End instead of the stale local T alias.
+    if (session.status !== 'active') return;
+    // Prove replacement against the known prior server row. Comparing server
+    // time with the device's local phase time breaks on clock skew; without a
+    // known baseline only this Start's request identity can prove its ACK.
+    const previousServer = pendingStartRef.current?.previousServerSession;
+    if (pendingStartRef.current && (!previousServer || session.id === previousServer.id
+      || Date.parse(session.startedAt) <= Date.parse(previousServer.startedAt))) return;
+    let cancelled = false;
+    void getCoreOperationOutbox().getOperation(localSessionId).then((operation) => {
+      if (cancelled || localSessionIdRef.current !== localSessionId) return;
+      // Non-arrival Start operations are removed from the outbox on ACK, so a
+      // missing row is also a settled operation.  The local id was only
+      // published after a successful enqueue; it is never a speculative key.
+      const settled = !operation
+        || operation.status === 'acked'
+        || operation.status === 'conflict';
+      if (settled) clearLocalSessionAlias();
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  // Re-run when the owning group projection reports that the Start operation
+  // settled, even if the realtime session row itself did not change.
+  });
+  return null;
+}
+
+function JourneyCanonicalTarget({
+  localSessionContextRef, pendingStartRef, groupId, navigationDestinations, teamCommandSequenceRef,
+  setOptimisticTeamTargetId, setPendingLeaderTargetId, clearLocalSessionAlias, requestRef, latestTeamTapRef,
+  pendingTeamStartIntentRef, gatheringStatesRef, gatheringCacheKey, setSelectedIndex,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    const context = localSessionContextRef.current;
+    const pending = pendingStartRef.current;
+    if (!groupId || !context || !pending || navigationDestinations.some(d => d.id === context.destinationId && !d.closedAt)) return;
+    if (typeof readLocalJourneyProjection !== 'function') return;
+    let cancelled = false;
+    const originalId = context.destinationId;
+    const sequence = teamCommandSequenceRef.current;
+    void readLocalJourneyProjection(groupId, originalId).then(projection => {
+      if (!projection || cancelled || sequence !== teamCommandSequenceRef.current
+        || localSessionContextRef.current !== context || pendingStartRef.current !== pending) return;
+      const destination = navigationDestinations.find(d => d.id === projection.canonicalDestinationId && !d.closedAt);
+      if (projection.canonicalDestinationId === originalId || !destination) {
+        // There is no merge ledger for this removed target. It is deletion or
+        // completion, not permission to follow another destination.
+        setOptimisticTeamTargetId(null);
+        setPendingLeaderTargetId(null);
+        clearLocalSessionAlias();
+        return;
+      }
+      context.destinationId = destination.id;
+      if (requestRef.current) requestRef.current.destinationId = destination.id;
+      if (latestTeamTapRef.current?.action === 'start') latestTeamTapRef.current.destinationId = destination.id;
+      if (pendingTeamStartIntentRef.current) pendingTeamStartIntentRef.current.destination = destination;
+      gatheringStatesRef.current.set(gatheringCacheKey, projection.gathering);
+      setOptimisticTeamTargetId(destination.id);
+      setSelectedIndex(navigationDestinations.findIndex(d => d.id === destination.id));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  });
+  return null;
+}
+
+function JourneyTerminalHistory({
+  terminalSession, groupId, localSessionIdRef, lastVisibleServerSessionRef, endedContext, pendingTeamStartIntentRef,
+  teamCommandRunnerRef, pendingStartRef, localSessionContextRef, setEndedSessions, actorId, stoppedServerSessionRef,
+  startFrameRef, stoppedAtRef, setLocallyStopped, setOptimisticTeamTargetId, setPendingLeaderTargetId,
+  latestTeamTapRef, clearLocalSessionAlias,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    if (!terminalSession || terminalSession.status === 'active' || terminalSession.groupId !== groupId) return;
+    const localId = localSessionIdRef.current;
+    const matchesLocalStart = Boolean(localId && (terminalSession.id === localId || terminalSession.requestId === localId));
+    const matchesServer = lastVisibleServerSessionRef.current?.context === endedContext
+      && lastVisibleServerSessionRef.current.session.id === terminalSession.id
+      && (lastVisibleServerSessionRef.current.session.scopeSubgroupId ?? null) === (terminalSession.scopeSubgroupId ?? null);
+    // An old session's End may arrive after a new local Start of the same stop.
+    // Its stable request identity, not destination equality, owns termination.
+    const pendingIntent = pendingTeamStartIntentRef.current;
+    const matchesPendingIntent = Boolean(pendingIntent && (terminalSession.id === pendingIntent.operationId
+      || terminalSession.requestId === pendingIntent.operationId));
+    if (pendingIntent && teamCommandRunnerRef.current && !matchesPendingIntent) return;
+    if (pendingStartRef.current && !matchesLocalStart && !matchesPendingIntent) return;
+    if (!matchesLocalStart && !matchesServer) return;
+    const localStart = pendingStartRef.current;
+    const localDestinationId = localSessionContextRef.current?.destinationId;
+    const endedKeys = [...new Set([terminalSession.id, terminalSession.requestId,
+      legacyNavigationSessionKey(terminalSession.startedAt, terminalSession.destinationId),
+      ...(localStart && localDestinationId ? [legacyNavigationSessionKey(
+        new Date(localStart.startedAt).toISOString(), localDestinationId)] : []),
+    ].filter((key): key is string => Boolean(key)))];
+    setEndedSessions(values => new Set([...values, ...endedKeys]));
+    if (actorId && groupId) {
+      void Promise.all(endedKeys.map(key => rememberEndedNavigationSession(actorId, groupId, key))).catch(() => undefined);
+    }
+    stoppedServerSessionRef.current = terminalSession.id;
+    startFrameRef.current = null;
+    stoppedAtRef.current = Date.now();
+    setLocallyStopped(true);
+    setOptimisticTeamTargetId(null);
+    setPendingLeaderTargetId(null);
+    latestTeamTapRef.current = null;
+    pendingTeamStartIntentRef.current = null;
+    clearLocalSessionAlias();
+  });
+  return null;
+}
+
+function JourneyNewServerSession({
+  locallyStopped, navigationSession, hiddenSession, stoppedServerSessionRef, stoppedAtRef, setLocallyStopped,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    if (locallyStopped && navigationSession?.status === 'active' && !hiddenSession
+      && navigationSession.id !== stoppedServerSessionRef.current
+      && Date.parse(navigationSession.startedAt) > stoppedAtRef.current) {
+      setLocallyStopped(false);
+    }
+  });
+  return null;
+}
+
+function JourneyGatheringSeed({
+  groupId, gatheringStatesRef, gatheringCacheKey, state,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    if (groupId && !gatheringStatesRef.current.has(gatheringCacheKey) && state) {
+      gatheringStatesRef.current.set(gatheringCacheKey, deriveActiveGatheringFromGroupState(state, 0));
+    }
+  });
+  return null;
+}
+
+function JourneyDurableProjection({
+  hasPendingTeamOperation, state, groupId, teamCommandRunnerRef, pendingStartRef, localSessionIdRef,
+  teamCommandSequenceRef, localSessionContextRef, gatheringStatesRef, gatheringCacheKey, clearLocalSessionAlias,
+  stoppedServerSessionRef, navigationSession, stoppedAtRef, setLocallyStopped, latestTeamTapRef,
+  pendingTeamStartIntentRef, setOptimisticTeamTargetId,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    if (hasPendingTeamOperation !== false || !state || !groupId || teamCommandRunnerRef.current) return;
+    const localStart = pendingStartRef.current;
+    if (localStart && localSessionIdRef.current) {
+      let cancelled = false;
+      const sequence = teamCommandSequenceRef.current;
+      void getCoreOperationOutbox().getOperation(localStart.operationId).then(async operation => {
+        if (cancelled || sequence !== teamCommandSequenceRef.current
+          || pendingStartRef.current !== localStart) return;
+        let committedGathering: ActiveGatheringState | undefined;
+        if (operation?.status !== 'conflict') {
+          // Queue ACK and navigation-session hydration are separate. Missing
+          // receipt means accepted, not paused. Only a newer durable End can
+          // retire this Start before its matching server session is visible.
+          const projection = typeof readLocalJourneyProjection === 'function'
+            ? await readLocalJourneyProjection(groupId, localSessionContextRef.current?.destinationId ?? '') : null;
+          if (cancelled || sequence !== teamCommandSequenceRef.current
+            || pendingStartRef.current !== localStart) return;
+          committedGathering = projection?.gathering;
+          if (committedGathering) gatheringStatesRef.current.set(gatheringCacheKey, committedGathering);
+          if (!projection || projection.gathering.journeyPhase === 'en_route'
+            || projection.gathering.entityVersion <= localStart.entityVersion) {
+            if (projection?.gathering.journeyPhase === 'en_route') {
+              localStart.entityVersion = Math.max(localStart.entityVersion, projection.gathering.entityVersion);
+            }
+            return;
+          }
+        }
+        const rejected = operation?.status === 'conflict';
+        clearLocalSessionAlias();
+        if (committedGathering) gatheringStatesRef.current.set(gatheringCacheKey, committedGathering);
+        else if (rejected) gatheringStatesRef.current.set(gatheringCacheKey, localStart.base);
+        if (!rejected) {
+          stoppedServerSessionRef.current = navigationSession?.id ?? null;
+          stoppedAtRef.current = Date.now();
+          setLocallyStopped(true);
+        }
+        latestTeamTapRef.current = null;
+        pendingTeamStartIntentRef.current = null;
+        setOptimisticTeamTargetId(rejected ? undefined : null);
+      }).catch(() => undefined);
+      return () => { cancelled = true; };
+    }
+    const sequence = teamCommandSequenceRef.current;
+    let cancelled = false;
+    void readLocalJourneyProjection(groupId, state.group.activeDestinationId ?? '').then(projection => {
+      if (cancelled || sequence !== teamCommandSequenceRef.current) return;
+      const previous = gatheringStatesRef.current.get(gatheringCacheKey);
+      if (projection && (!previous || projection.gathering.entityVersion >= previous.entityVersion)) {
+        gatheringStatesRef.current.set(gatheringCacheKey, projection.gathering);
+      }
+    }).catch(() => undefined);
+    latestTeamTapRef.current = null;
+    pendingTeamStartIntentRef.current = null;
+    setOptimisticTeamTargetId(undefined);
+    return () => { cancelled = true; };
+  });
+  return null;
+}
+
+function JourneySharedTarget({
+  serverOrStartedSessionRef, authoritativeSharedTargetId, optimisticTeamTargetId, pendingStartRef,
+  pendingTeamStartIntentRef, setOptimisticTeamTargetId,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    serverOrStartedSessionRef.current = Boolean(authoritativeSharedTargetId);
+    const override = optimisticTeamTargetId;
+    if (override === undefined) return;
+    if (override === authoritativeSharedTargetId && !pendingStartRef.current && !pendingTeamStartIntentRef.current) {
+      setOptimisticTeamTargetId(undefined);
+    }
+  });
+  return null;
+}
+
+function JourneyLeaderPending({
+  teamCommandRunnerRef, sharedTargetId, pendingLeaderTargetId, setPendingLeaderTargetId, setPendingLeaderStop,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    if (!teamCommandRunnerRef.current && sharedTargetId && pendingLeaderTargetId === sharedTargetId) {
+      setPendingLeaderTargetId(null);
+    }
+    if (sharedTargetId) setPendingLeaderStop(false);
+  });
+  return null;
+}
+
+function JourneyCarouselPromotion({
+  pendingCarouselTargetIdRef, navigationDestinations, setSelectedIndex,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    const targetId = pendingCarouselTargetIdRef.current;
+    if (!targetId) return;
+    const index = followCarouselIndexAfterPromote({
+      destinations: navigationDestinations,
+      sharedTargetId: targetId,
+    });
+    if (index == null) return;
+    pendingCarouselTargetIdRef.current = null;
+    setSelectedIndex(index);
+  });
+  return null;
+}
+
+function JourneyFollowerCamera({
+  sharedTargetId, lastFollowerCenterKeyRef, destinations, navigationSession, setSelectedIndex, startFrameRef,
+  endedContext, mapRef,
+}: JourneyResourceInput) {
+  useMountEffect(() => {
+    if (!sharedTargetId) {
+      lastFollowerCenterKeyRef.current = null;
+      return;
+    }
+    const index = followCarouselIndexAfterPromote({
+      destinations,
+      sharedTargetId,
+    });
+    if (index == null) return;
+    const destination = destinations[index];
+    if (!destination) return;
+    const orderKey = destinations.map((d) => d.id).join(',');
+    const centerKey = `${navigationSession?.id ?? 'legacy'}:${sharedTargetId}:${orderKey}`;
+    if (lastFollowerCenterKeyRef.current === centerKey) return;
+    lastFollowerCenterKeyRef.current = centerKey;
+    setSelectedIndex(index);
+    // Target changes from Start/follow are direct selections; only a manual
+    // carousel swipe should animate the camera between points.
+    if (startFrameRef.current?.context !== endedContext || startFrameRef.current.destination.id !== destination.id) {
+      mapRef.current?.centerOn(destination.coordinates, { animated: false });
+    }
+  });
+  return null;
+}
+
+function JourneyNavigationRuntime(input: JourneyResourceInput) {
+  const {
+    actorId, groupId, endedContext, fromCoords, refreshStartFrame, publishLocalSessionId, clearLocalSessionAlias,
+    navigationSession, navigationDestinations, onOperatorStartConfirm, hasPendingTeamOperation, state,
+    gatheringCacheKey, setSelectedIndex, terminalSession, locallyStopped, hiddenSession, navigationSessionId,
+    authoritativeSharedTargetId, optimisticTeamTargetId, pendingLeaderTargetId, sharedTargetId, destinations, mapRef,
+  } = input;
+  const [previous, setPrevious] = useState({
+    actorId, groupId, endedContext, fromCoords, refreshStartFrame, publishLocalSessionId, clearLocalSessionAlias,
+    navigationSession, navigationDestinations, onOperatorStartConfirm, hasPendingTeamOperation, state,
+    gatheringCacheKey, setSelectedIndex, terminalSession, locallyStopped, hiddenSession, navigationSessionId,
+    authoritativeSharedTargetId, optimisticTeamTargetId, pendingLeaderTargetId, sharedTargetId, destinations, mapRef,
+    JourneyEndedHistoryGeneration: 0, JourneyStartFrameGeneration: 0, JourneyCommandLifetimeGeneration: 0,
+    JourneyIdentityResetGeneration: 0, JourneyStartAcknowledgementGeneration: 0, JourneyAliasSettlementGeneration: 0,
+    JourneyCanonicalTargetGeneration: 0, JourneyTerminalHistoryGeneration: 0, JourneyNewServerSessionGeneration: 0,
+    JourneyGatheringSeedGeneration: 0, JourneyDurableProjectionGeneration: 0, JourneySharedTargetGeneration: 0,
+    JourneyLeaderPendingGeneration: 0, JourneyCarouselPromotionGeneration: 0, JourneyFollowerCameraGeneration: 0,
+  });
+  const JourneyEndedHistoryChanged =
+    !Object.is(previous.actorId, actorId)
+    || !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.endedContext, endedContext);
+  const JourneyStartFrameChanged =
+    !Object.is(previous.fromCoords, fromCoords)
+    || !Object.is(previous.refreshStartFrame, refreshStartFrame);
+  const JourneyIdentityResetChanged =
+    !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.actorId, actorId)
+    || !Object.is(previous.publishLocalSessionId, publishLocalSessionId);
+  const JourneyStartAcknowledgementChanged =
+    !Object.is(previous.clearLocalSessionAlias, clearLocalSessionAlias)
+    || !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.navigationSession, navigationSession)
+    || !Object.is(previous.navigationDestinations, navigationDestinations)
+    || !Object.is(previous.onOperatorStartConfirm, onOperatorStartConfirm);
+  const JourneyAliasSettlementChanged =
+    !Object.is(previous.clearLocalSessionAlias, clearLocalSessionAlias)
+    || !Object.is(previous.hasPendingTeamOperation, hasPendingTeamOperation)
+    || !Object.is(previous.navigationSession, navigationSession);
+  const JourneyCanonicalTargetChanged =
+    !Object.is(previous.state, state)
+    || !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.navigationDestinations, navigationDestinations)
+    || !Object.is(previous.hasPendingTeamOperation, hasPendingTeamOperation)
+    || !Object.is(previous.gatheringCacheKey, gatheringCacheKey)
+    || !Object.is(previous.clearLocalSessionAlias, clearLocalSessionAlias)
+    || !Object.is(previous.setSelectedIndex, setSelectedIndex);
+  const JourneyTerminalHistoryChanged =
+    !Object.is(previous.terminalSession, terminalSession)
+    || !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.actorId, actorId)
+    || !Object.is(previous.endedContext, endedContext)
+    || !Object.is(previous.clearLocalSessionAlias, clearLocalSessionAlias);
+  const JourneyNewServerSessionChanged =
+    !Object.is(previous.locallyStopped, locallyStopped)
+    || !Object.is(previous.navigationSession, navigationSession)
+    || !Object.is(previous.hiddenSession, hiddenSession);
+  const JourneyGatheringSeedChanged =
+    !Object.is(previous.state, state)
+    || !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.gatheringCacheKey, gatheringCacheKey);
+  const JourneyDurableProjectionChanged =
+    !Object.is(previous.state, state)
+    || !Object.is(previous.groupId, groupId)
+    || !Object.is(previous.gatheringCacheKey, gatheringCacheKey)
+    || !Object.is(previous.hasPendingTeamOperation, hasPendingTeamOperation)
+    || !Object.is(previous.clearLocalSessionAlias, clearLocalSessionAlias)
+    || !Object.is(previous.navigationSessionId, navigationSessionId);
+  const JourneySharedTargetChanged =
+    !Object.is(previous.authoritativeSharedTargetId, authoritativeSharedTargetId)
+    || !Object.is(previous.optimisticTeamTargetId, optimisticTeamTargetId);
+  const JourneyLeaderPendingChanged =
+    !Object.is(previous.pendingLeaderTargetId, pendingLeaderTargetId)
+    || !Object.is(previous.sharedTargetId, sharedTargetId);
+  const JourneyCarouselPromotionChanged =
+    !Object.is(previous.navigationDestinations, navigationDestinations)
+    || !Object.is(previous.setSelectedIndex, setSelectedIndex);
+  const JourneyFollowerCameraChanged =
+    !Object.is(previous.destinations, destinations)
+    || !Object.is(previous.mapRef, mapRef)
+    || !Object.is(previous.navigationSessionId, navigationSessionId)
+    || !Object.is(previous.setSelectedIndex, setSelectedIndex)
+    || !Object.is(previous.sharedTargetId, sharedTargetId);
+  if (JourneyEndedHistoryChanged
+    || JourneyStartFrameChanged
+    || JourneyIdentityResetChanged
+    || JourneyStartAcknowledgementChanged
+    || JourneyAliasSettlementChanged
+    || JourneyCanonicalTargetChanged
+    || JourneyTerminalHistoryChanged
+    || JourneyNewServerSessionChanged
+    || JourneyGatheringSeedChanged
+    || JourneyDurableProjectionChanged
+    || JourneySharedTargetChanged
+    || JourneyLeaderPendingChanged
+    || JourneyCarouselPromotionChanged
+    || JourneyFollowerCameraChanged) {
+    setPrevious({
+      actorId, groupId, endedContext, fromCoords, refreshStartFrame, publishLocalSessionId, clearLocalSessionAlias,
+      navigationSession, navigationDestinations, onOperatorStartConfirm, hasPendingTeamOperation, state,
+      gatheringCacheKey, setSelectedIndex, terminalSession, locallyStopped, hiddenSession, navigationSessionId,
+      authoritativeSharedTargetId, optimisticTeamTargetId, pendingLeaderTargetId, sharedTargetId, destinations, mapRef,
+      JourneyEndedHistoryGeneration: previous.JourneyEndedHistoryGeneration + (JourneyEndedHistoryChanged ? 1 : 0),
+      JourneyStartFrameGeneration: previous.JourneyStartFrameGeneration + (JourneyStartFrameChanged ? 1 : 0),
+      JourneyCommandLifetimeGeneration: previous.JourneyCommandLifetimeGeneration,
+      JourneyIdentityResetGeneration: previous.JourneyIdentityResetGeneration + (JourneyIdentityResetChanged ? 1 : 0),
+      JourneyStartAcknowledgementGeneration: previous.JourneyStartAcknowledgementGeneration + (JourneyStartAcknowledgementChanged ? 1 : 0),
+      JourneyAliasSettlementGeneration: previous.JourneyAliasSettlementGeneration + (JourneyAliasSettlementChanged ? 1 : 0),
+      JourneyCanonicalTargetGeneration: previous.JourneyCanonicalTargetGeneration + (JourneyCanonicalTargetChanged ? 1 : 0),
+      JourneyTerminalHistoryGeneration: previous.JourneyTerminalHistoryGeneration + (JourneyTerminalHistoryChanged ? 1 : 0),
+      JourneyNewServerSessionGeneration: previous.JourneyNewServerSessionGeneration + (JourneyNewServerSessionChanged ? 1 : 0),
+      JourneyGatheringSeedGeneration: previous.JourneyGatheringSeedGeneration + (JourneyGatheringSeedChanged ? 1 : 0),
+      JourneyDurableProjectionGeneration: previous.JourneyDurableProjectionGeneration + (JourneyDurableProjectionChanged ? 1 : 0),
+      JourneySharedTargetGeneration: previous.JourneySharedTargetGeneration + (JourneySharedTargetChanged ? 1 : 0),
+      JourneyLeaderPendingGeneration: previous.JourneyLeaderPendingGeneration + (JourneyLeaderPendingChanged ? 1 : 0),
+      JourneyCarouselPromotionGeneration: previous.JourneyCarouselPromotionGeneration + (JourneyCarouselPromotionChanged ? 1 : 0),
+      JourneyFollowerCameraGeneration: previous.JourneyFollowerCameraGeneration + (JourneyFollowerCameraChanged ? 1 : 0) });
+  }
+  return createElement(Fragment, null,
+    createElement(JourneyEndedHistory, { ...input, key: 'JourneyEndedHistory:' + previous.JourneyEndedHistoryGeneration }),
+    createElement(JourneyStartFrame, { ...input, key: 'JourneyStartFrame:' + previous.JourneyStartFrameGeneration }),
+    createElement(JourneyCommandLifetime, { ...input, key: 'JourneyCommandLifetime:' + previous.JourneyCommandLifetimeGeneration }),
+    createElement(JourneyIdentityReset, { ...input, key: 'JourneyIdentityReset:' + previous.JourneyIdentityResetGeneration }),
+    createElement(JourneyStartAcknowledgement, { ...input, key: 'JourneyStartAcknowledgement:' + previous.JourneyStartAcknowledgementGeneration }),
+    createElement(JourneyAliasSettlement, { ...input, key: 'JourneyAliasSettlement:' + previous.JourneyAliasSettlementGeneration }),
+    createElement(JourneyCanonicalTarget, { ...input, key: 'JourneyCanonicalTarget:' + previous.JourneyCanonicalTargetGeneration }),
+    createElement(JourneyTerminalHistory, { ...input, key: 'JourneyTerminalHistory:' + previous.JourneyTerminalHistoryGeneration }),
+    createElement(JourneyNewServerSession, { ...input, key: 'JourneyNewServerSession:' + previous.JourneyNewServerSessionGeneration }),
+    createElement(JourneyGatheringSeed, { ...input, key: 'JourneyGatheringSeed:' + previous.JourneyGatheringSeedGeneration }),
+    createElement(JourneyDurableProjection, { ...input, key: 'JourneyDurableProjection:' + previous.JourneyDurableProjectionGeneration }),
+    createElement(JourneySharedTarget, { ...input, key: 'JourneySharedTarget:' + previous.JourneySharedTargetGeneration }),
+    createElement(JourneyLeaderPending, { ...input, key: 'JourneyLeaderPending:' + previous.JourneyLeaderPendingGeneration }),
+    createElement(JourneyCarouselPromotion, { ...input, key: 'JourneyCarouselPromotion:' + previous.JourneyCarouselPromotionGeneration }),
+    createElement(JourneyFollowerCamera, { ...input, key: 'JourneyFollowerCamera:' + previous.JourneyFollowerCameraGeneration })
+  );
 }

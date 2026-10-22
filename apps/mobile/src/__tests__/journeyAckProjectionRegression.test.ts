@@ -47,8 +47,11 @@ const serverSession: NavigationSession = { id: 'server-row', groupId: 'g', desti
 const noop = () => undefined;
 const mapRef = { current: null };
 const carouselRef = { current: null };
-let api: ReturnType<typeof useJourneyNavigation>;
-let renderer: { update: (node: React.ReactElement) => void; unmount: () => void };
+function JourneyProbe({ api }: { api: ReturnType<typeof useJourneyNavigation> }) { return api.lifecycle; }
+function getJourneyApi(): ReturnType<typeof useJourneyNavigation> {
+  return renderer.root.findByType(JourneyProbe).props.api;
+}
+let renderer: import('react-test-renderer').ReactTestRenderer;
 function Harness({ state = groupState(), pending = true, session = null }: {
   state?: GroupState; pending?: boolean; session?: NavigationSession | null;
 }) {
@@ -57,8 +60,7 @@ function Harness({ state = groupState(), pending = true, session = null }: {
     destinations: state.destinations, selectedDestination: destination, fromCoords: undefined,
     refresh: noop, t: key => key, mapRef, carouselRef, setSelectedIndex: noop,
     navigationSession: session, hasPendingTeamOperation: pending, onLocalSessionIdChange: setLocalSessionId });
-  React.useLayoutEffect(() => { api = next; });
-  return null;
+  return React.createElement(JourneyProbe, { api: next });
 }
 beforeEach(async () => {
   jest.clearAllMocks();
@@ -71,58 +73,58 @@ afterEach(async () => { await act(async () => { renderer.unmount(); }); });
 
 it('keeps quick-add Start going after a delayed ACK until the separate session projection becomes visible', async () => {
   // The newly added local card exists, but no server session row has arrived.
-  await act(async () => { await api.startNavigation(destination, 0); });
-  expect(api.journeyActive).toBe(true);
+  await act(async () => { await getJourneyApi().startNavigation(destination, 0); });
+  expect(getJourneyApi().journeyActive).toBe(true);
   await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(true) })); });
-  expect(api.navTargetId).toBe(destination.id);
+  expect(getJourneyApi().navTargetId).toBe(destination.id);
   // Simulate the durable Start being removed on ACK several seconds later.
   // Group projection is current; the independent session subscription is late.
   await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(true), pending: false })); });
-  expect(api.journeyActive).toBe(true);
-  expect(api.journeyStatus).toBe('going');
-  expect(api.navTargetId).toBe(destination.id);
+  expect(getJourneyApi().journeyActive).toBe(true);
+  expect(getJourneyApi().journeyStatus).toBe('going');
+  expect(getJourneyApi().navTargetId).toBe(destination.id);
   expect(mockEnd).not.toHaveBeenCalled();
   // Unrelated renders / stale null session reads must not silently pause it.
   for (let index = 0; index < 3; index += 1) {
     await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(true), pending: false })); });
-    expect(api.journeyActive).toBe(true);
+    expect(getJourneyApi().journeyActive).toBe(true);
   }
   await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(true), pending: false, session: serverSession })); });
-  expect(api.journeyActive).toBe(true);
-  expect(api.localSessionId).toBeNull();
-  expect(api.navTargetId).toBe(destination.id);
+  expect(getJourneyApi().journeyActive).toBe(true);
+  expect(getJourneyApi().localSessionId).toBeNull();
+  expect(getJourneyApi().navTargetId).toBe(destination.id);
 });
 
 it('keeps an explicit local End paused while the delayed Start session projection finally arrives', async () => {
-  await act(async () => { await api.startNavigation(destination, 0); });
-  await act(async () => { await api.requestTeamEnd(destination, 0); });
-  expect(api.journeyActive).toBe(false);
+  await act(async () => { await getJourneyApi().startNavigation(destination, 0); });
+  await act(async () => { await getJourneyApi().requestTeamEnd(destination, 0); });
+  expect(getJourneyApi().journeyActive).toBe(false);
   await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(), pending: false, session: serverSession })); });
-  expect(api.journeyActive).toBe(false);
-  expect(api.navTargetId).toBeNull();
+  expect(getJourneyApi().journeyActive).toBe(false);
+  expect(getJourneyApi().navTargetId).toBeNull();
   expect(mockEnd).toHaveBeenCalledTimes(1);
 });
 
 it('keeps the newer End paused when an ACK-triggered local projection read resolves late', async () => {
-  await act(async () => { await api.startNavigation(destination, 0); });
+  await act(async () => { await getJourneyApi().startNavigation(destination, 0); });
   // Start may read the durable base first; this count tracks only the ACK read.
   mockProjection.mockClear();
   let resolveProjection!: (value: JourneyProjection) => void;
   mockProjection.mockImplementationOnce(() => new Promise(resolve => { resolveProjection = resolve; }));
   await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(true), pending: false })); });
   expect(mockProjection).toHaveBeenCalledTimes(1);
-  expect(api.journeyActive).toBe(true);
-  await act(async () => { await api.requestTeamEnd(destination, 0); });
-  expect(api.journeyActive).toBe(false);
+  expect(getJourneyApi().journeyActive).toBe(true);
+  await act(async () => { await getJourneyApi().requestTeamEnd(destination, 0); });
+  expect(getJourneyApi().journeyActive).toBe(false);
   await act(async () => { resolveProjection({ canonicalDestinationId: destination.id, gathering }); });
-  expect(api.journeyActive).toBe(false);
-  expect(api.navTargetId).toBeNull();
+  expect(getJourneyApi().journeyActive).toBe(false);
+  expect(getJourneyApi().navTargetId).toBeNull();
 });
 
 it('restores an acknowledged local journey while its session subscription is still loading after map reentry', async () => {
   await act(async () => { renderer.update(React.createElement(Harness, { state: groupState(true), pending: false, session: null })); });
-  expect(api.journeyActive).toBe(true);
-  expect(api.navTargetId).toBe(destination.id);
+  expect(getJourneyApi().journeyActive).toBe(true);
+  expect(getJourneyApi().navTargetId).toBe(destination.id);
   expect(mockStart).not.toHaveBeenCalled();
 });
 
@@ -130,17 +132,17 @@ it('does not resurrect stale going group state when a terminal server session is
   await act(async () => { renderer.update(React.createElement(Harness, {
     state: groupState(true), pending: false, session: { ...serverSession, status: 'completed' },
   })); });
-  expect(api.journeyActive).toBe(false);
-  expect(api.navTargetId).toBeNull();
+  expect(getJourneyApi().journeyActive).toBe(false);
+  expect(getJourneyApi().navTargetId).toBeNull();
 });
 
 it('stops a deleted quick-added target without following an unrelated selected card', async () => {
-  await act(async () => { await api.startNavigation(destination, 0); });
+  await act(async () => { await getJourneyApi().startNavigation(destination, 0); });
   const remaining = { ...destination, id: 'unrelated-card', title: 'Unrelated' };
   await act(async () => { renderer.update(React.createElement(Harness, {
     state: { ...groupState(true), destinations: [remaining], nextDestination: remaining }, pending: false,
   })); });
-  expect(api.journeyActive).toBe(false);
-  expect(api.navTargetId).toBeNull();
+  expect(getJourneyApi().journeyActive).toBe(false);
+  expect(getJourneyApi().navTargetId).toBeNull();
   expect(mockStart).toHaveBeenCalledTimes(1);
 });
