@@ -173,6 +173,61 @@ test('PostgreSQL line comments end at CR or LF before later executable SQL', () 
   assert.deepEqual(lex('-- comment through end of input'), []);
 });
 
+test('quoted tokens decode PostgreSQL escapes before checking catalog references', () => {
+  const readers = [
+    'pg_get_functiondef',
+    '"pg_get_functiondef"',
+    String.raw`U&"pg_get_functionde\0066"`,
+    String.raw`pg_catalog.U&"pg_get_functionde\0066"`,
+    String.raw`U&"pg_get_functionde\+000066"`,
+    String.raw`U&"pg_get_functionde!0066" /* outer /* inner */ */ UESCAPE -- escape
+      '!'`,
+    String.raw`U&"pg_get_functionde!0066" UESCAPE E'\041'`,
+  ];
+  for (const reader of readers) {
+    const read = `d := ${reader}('public.f(uuid,timestamptz)'::regprocedure);`;
+    const sql = (tail) => `do $body$ declare d text; begin ${read} ${tail} end; $body$;`;
+    assert.deepEqual(laterCheck(sql('')), [], reader);
+    assert.match(laterCheck(sql("execute replace(d, 'return 2', 'return 3');"))[0] ?? '', /redefines a function/, reader);
+  }
+  for (const literal of [
+    String.raw`E'select pg_get_functiond\145f(''public.f(uuid,timestamptz)''::regprocedure)'`,
+    String.raw`E'select pg_get_functiond\x65f(''public.f(uuid,timestamptz)''::regprocedure)'`,
+    String.raw`E'select pg_get_functiond\u0065f(''public.f(uuid,timestamptz)''::regprocedure)'`,
+    String.raw`E'select pg_get_functiond\U00000065f(''public.f(uuid,timestamptz)''::regprocedure)'`,
+    String.raw`U&'select pg_get_functionde\0066(''public.f(uuid,timestamptz)''::regprocedure)'`,
+    String.raw`U&'select pg_get_functionde!+000066(''public.f(uuid,timestamptz)''::regprocedure)' UESCAPE '!'`,
+    "E'select pg_get_functiond' -- continuation\r\n" + String.raw`'\145f(''public.f(uuid,timestamptz)''::regprocedure)'`,
+  ]) {
+    const sql = `do $body$ declare d text; begin execute ${literal} into d; execute replace(d, 'return 2', 'return 3'); end; $body$;`;
+    assert.match(laterCheck(sql)[0] ?? '', /redefines a function/, literal);
+    assert.deepEqual(laterCheck(`select ${literal};`), [], literal);
+    assert.deepEqual(laterCheck(sql.replace(/pg_get_functiond/g, 'pg_get_functionx')), [], literal);
+  }
+});
+
+test('quoted token values and positions preserve UTF-8 bytes, Unicode pairs and literal escapes', () => {
+  for (const [src, type, value] of [
+    ['"a""b"', 'ident', 'a"b'],
+    ["'a''b\\n'", 'str', "a'b\\n"],
+    [String.raw`E'a\'b\\c\n\t\b\f\r\q'`, 'str', "a'b\\c\n\t\b\f\rq"],
+    [String.raw`E'\1\12\123\x4\x41'`, 'str', '\x01\nS\x04A'],
+    [String.raw`E'\303\251\xE4\xB8\xAD\uD83D\uDE00\U0001F600'`, 'str', 'é中😀😀'],
+    [String.raw`E'\U0000D83D\U0000DE00\X41\xZ'`, 'str', '😀X41xZ'],
+    [String.raw`E'\357\273\277abc'`, 'str', '\uFEFFabc'],
+    [String.raw`U&"a""b\\c\D83D\DE00\+01F600"`, 'ident', 'a"b\\c😀😀'],
+    [String.raw`U&'\+00D83D\+00DE00'`, 'str', '😀'],
+    [String.raw`U&'a''b!!c!D83D!DE00!+01F600' /* escape */ UESCAPE '!'`, 'str', "a'b!c😀😀"],
+    ["'pg_get_'\n'functiondef'", 'str', 'pg_get_functiondef'],
+    ["U&'pg_get_functiond'\r'\\0065f'", 'str', 'pg_get_functiondef'],
+  ]) {
+    assert.deepEqual(lex(src), [{ type, value, start: 0, end: src.length }], src);
+  }
+  for (const src of [String.raw`E'\uD800'`, String.raw`E'\uDC00'`, String.raw`E'\U00110000'`, String.raw`E'\u12'`, String.raw`E'\xFF'`, String.raw`E'\000'`, String.raw`U&'\D800x\DC00'`, String.raw`U&'\0000'`, String.raw`U&'\006'`, "U&'x' UESCAPE '0'", "U&'x' UESCAPE 'xx'"]) {
+    assert.throws(() => lex(src), /invalid|encoded/, src);
+  }
+});
+
 test('nested block comments are skipped whole, so a patch after one is still detected', () => {
   assert.deepEqual(lex("/* a /* b */ it's */ select 1").map((t) => t.value), ['select', 1]);
   assert.throws(() => lex('/* a /* b */ c'), /unterminated block comment/);
