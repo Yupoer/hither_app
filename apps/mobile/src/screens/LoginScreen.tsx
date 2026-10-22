@@ -151,7 +151,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resendUntil, setResendUntil] = useState(0);
   const [resetUntil, setResetUntil] = useState(0);
-  const now = useForegroundClock(1000, Math.max(resendUntil, resetUntil) > Date.now());
+  const { now, lifecycle: clockLifecycle } = useForegroundClock(1000, Math.max(resendUntil, resetUntil) > Date.now());
   const resendCooldown = Math.max(0, Math.ceil((resendUntil - now) / 1000));
   const resetCooldown = Math.max(0, Math.ceil((resetUntil - now) / 1000));
   const setResendCooldown = (seconds: number) => setResendUntil(Date.now() + seconds * 1000);
@@ -679,6 +679,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <View style={styles.fill}>
+      {clockLifecycle}
       <MetalforgeBackground active={isFocused} allowInactive={busyAction === 'apple' || busyAction === 'google'} />
       {!resetMode ? (
         <View

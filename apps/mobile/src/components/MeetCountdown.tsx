@@ -52,7 +52,7 @@ export default React.memo(function MeetCountdown({
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
 }) {
-  const now = useForegroundClock(1000);
+  const { now, lifecycle: clockLifecycle } = useForegroundClock(1000);
 
   const remainingSec = Math.round((new Date(meetAtIso).getTime() - now) / 1000);
   const due = remainingSec <= 0;
@@ -79,6 +79,8 @@ export default React.memo(function MeetCountdown({
   }, [due, onDueChange]);
 
   return (
+    <>
+      {clockLifecycle}
     <Text
       style={[baseStyle, red ? { color: redColor } : null]}
       numberOfLines={1}
@@ -87,5 +89,6 @@ export default React.memo(function MeetCountdown({
     >
       {label}
     </Text>
+    </>
   );
 });

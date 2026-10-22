@@ -37,11 +37,11 @@ function transition(state: string) {
   for (const listener of mockListeners) listener(state);
 }
 function Clock() {
-  const now = useForegroundClock(1000);
+  const { now, lifecycle } = useForegroundClock(1000);
   const active = useForegroundUi();
   const visuals = useOptionalVisuals();
   const visible = useVisibleUi();
-  return React.createElement('clock', { now, active, visible, visuals });
+  return React.createElement(React.Fragment, null, lifecycle, React.createElement('clock', { now, active, visible, visuals }));
 }
 beforeEach(() => {
   jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] }); mockAppState.currentState = 'active'; mockFrames.length = 0;
@@ -93,7 +93,7 @@ it('keeps unknown/inactive states stopped, supports disabled clocks and removes 
   const unsubscribe = subscribeForegroundUi(notify);
   transition('background'); expect(notify).toHaveBeenCalledTimes(1);
   transition('active'); transition('active'); expect(notify).toHaveBeenCalledTimes(2);
-  function DisabledClock() { return React.createElement('clock', { now: useForegroundClock(1000, false) }); }
+  function DisabledClock() { const { now, lifecycle } = useForegroundClock(1000, false); return React.createElement(React.Fragment, null, lifecycle, React.createElement('clock', { now })); }
   await act(async () => { root = create(React.createElement(DisabledClock)); });
   expect(jest.getTimerCount()).toBe(0);
   unsubscribe(); expect(mockListeners.size).toBe(1);
@@ -173,4 +173,30 @@ it('keeps iOS visible UI and its clock through a system cover while optional vis
   expect(root.root.findByType('clock').props.visible).toBe(false);
   expect(jest.getTimerCount()).toBe(0);
   await act(async () => { root.unmount(); });
+});
+
+it('replaces only the clock timer across interval and enabled updates with Strict replay cleanup', async () => {
+  function AdjustableClock({ interval, enabled }: { interval: number; enabled: boolean }) {
+    const { now, lifecycle } = useForegroundClock(interval, enabled);
+    return React.createElement(React.Fragment, null, lifecycle, React.createElement('clock', { now }));
+  }
+  const app = (interval: number, enabled: boolean) => React.createElement(React.StrictMode, null,
+    React.createElement(AdjustableClock, { interval, enabled }));
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(app(1000, true)); });
+  expect(jest.getTimerCount()).toBe(1);
+  await act(async () => { tree.update(app(2000, true)); });
+  expect(jest.getTimerCount()).toBe(1);
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  const sampled = tree.root.findByType('clock').props.now;
+  await act(async () => { tree.update(app(2000, false)); });
+  await act(async () => { jest.advanceTimersByTime(20_000); });
+  expect(jest.getTimerCount()).toBe(0);
+  expect(tree.root.findByType('clock').props.now).toBe(sampled);
+  await act(async () => { tree.update(app(2000, true)); });
+  expect(tree.root.findByType('clock').props.now).toBe(Date.now());
+  expect(jest.getTimerCount()).toBe(1);
+  await act(async () => { tree.unmount(); });
+  expect(jest.getTimerCount()).toBe(0);
+  expect(mockListeners.size).toBe(0);
 });
