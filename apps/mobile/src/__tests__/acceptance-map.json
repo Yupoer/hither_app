@@ -2318,6 +2318,69 @@
       "acceptance": "Role resources preserve reference and callback identity, ordered rejection handling and committed-only Session writes.",
       "testFile": "groupRole.test.ts",
       "testNamePattern": "publishes committed membership|same-commit rejection|abandoned suspended render"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Real MapScreen installs external resources in all five return branches and preserves native map ownership and its first accepted camera center through location updates.",
+      "testFile": "mapScreenResourceInstallation.test.ts",
+      "testNamePattern": "mounts real resources through every MapScreen return"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Journey baseline publication precedes sticky/departure updates regardless of sibling mount order and preserves coordinate/route-generation identity and locked anchors.",
+      "testFile": "mapJourneyProgressResources.test.ts",
+      "testNamePattern": "publishes the baseline|reevaluates new coordinate references|arbitrates baseline before departure"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map background GPS handoff accepts the committed journey baseline and native intent first, preserves original object/callback reevaluation and permission flight ownership, and adds no per-input GPS stop.",
+      "testFile": "mapBackgroundLocationResource.test.ts",
+      "testNamePattern": "publishes the latest locked baseline|retains object and callback|keeps permission flight ownership|preserves native intent dependency boundaries"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Add-place tour resources preserve place/preferences/callback identity and shared start/measurement generation ordering, including reverse async completions and Strict replay.",
+      "testFile": "mapAddPlaceTourResource.test.ts",
+      "testNamePattern": "retains pending-place|publishes the start generation|reverse measurement completions|keeps Strict replay cancellation"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Completed-card resources retain full carousel rank, avoid replaying historical or background closures and clean timer ownership before visibility/context replacement.",
+      "testFile": "mapArrivalCardsResource.test.ts",
+      "testNamePattern": "seeds historical closures|cancels foreground exit|stable card owner resources"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Foreground arrival resets and hydrates undo ownership before evaluation, preserves array/callback identities and ignores old or superseded asynchronous reads including Strict replay.",
+      "testFile": "mapForegroundArrivalResource.test.ts",
+      "testNamePattern": "resets and starts undo hydration|retains every outbox array identity|newer foreground undo mutation|fences Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map access loss deduplicates, route opening fences stale sync completions, and FIFO selection/native pager preserve their stable owners and array identity.",
+      "testFile": "mapScreenChromeResources.test.ts",
+      "testNamePattern": "deduplicates access-loss|syncs each open once|keeps FIFO removal selection"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map subgroup changes reset only edit/import scope, retain unrelated draft state and correct an unavailable subgroup view.",
+      "testFile": "mapScreenScopeControls.test.ts",
+      "testNamePattern": "resets only edit and import scope|keeps a valid subgroup view"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "MapScreen named resources preserve exact callback and coordinate identity, stable owner drafts, subscription disposal, stale async fencing and one stale deadline.",
+      "testFile": "mapScreenResources.test.ts",
+      "testNamePattern": "installs the outbox listener|callback identity|preserves Object.is|card count|old stale deadline|reversed storage"
     }
   ]
 }

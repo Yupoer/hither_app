@@ -47,9 +47,13 @@ import {
 const member = (userId: string, subgroupId?: string) => ({ userId, subgroupId }) as MemberLocation;
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+function ActionsSnapshot(_props: { actions: ReturnType<typeof useSubgroupActions> }) { return null; }
+
 describe('useSubgroupActions', () => {
-  let actions: ReturnType<typeof useSubgroupActions> | undefined;
   let renderer: ReactTestRenderer | undefined;
+  function readActions(): ReturnType<typeof useSubgroupActions> {
+    return renderer!.root.findByType(ActionsSnapshot).props.actions;
+  }
   const refresh = jest.fn(async () => true);
   const onMergedBack = jest.fn();
 
@@ -66,8 +70,8 @@ describe('useSubgroupActions', () => {
       ...overrides,
     };
     function Harness() {
-      actions = useSubgroupActions(props);
-      return actions.lifecycle;
+      const actions = useSubgroupActions(props);
+      return React.createElement(React.Fragment, null, actions.lifecycle, React.createElement(ActionsSnapshot, { actions }));
     }
     act(() => { renderer = create(React.createElement(Harness)); });
   }
@@ -85,15 +89,15 @@ describe('useSubgroupActions', () => {
     render();
     expect(mockInviteMount).toHaveBeenCalledTimes(1);
     await act(flush);
-    expect(actions?.subgroups.map((subgroup) => subgroup.id)).toEqual(['s1']);
+    expect(readActions().subgroups.map((subgroup) => subgroup.id)).toEqual(['s1']);
     expect(mockClient.fetchSentInvites).toHaveBeenCalledWith('s1');
-    expect(actions?.sentInvites).toEqual([{ id: 'sent-1', inviteeName: 'Bo' }]);
+    expect(readActions().sentInvites).toEqual([{ id: 'sent-1', inviteeName: 'Bo' }]);
   });
 
   it('asks before leaving the main team, remembers "don\'t show again", then accepts and reloads membership', async () => {
     render();
     let accepted: Promise<void> | undefined;
-    act(() => { accepted = actions?.handleAcceptInvite('inv-1'); });
+    act(() => { accepted = readActions().handleAcceptInvite('inv-1'); });
     await act(flush);
     expect(mockInvites.accept).not.toHaveBeenCalled();
     const buttons = mockAlert.mock.calls[0][2] as { onPress: () => void }[];
@@ -103,7 +107,7 @@ describe('useSubgroupActions', () => {
     expect(mockStorage.get(LEAVE_GROUP_WARN_KEY)).toBe('1');
 
     mockAlert.mockClear();
-    await act(async () => { await actions?.handleAcceptInvite('inv-2'); });
+    await act(async () => { await readActions().handleAcceptInvite('inv-2'); });
     expect(mockAlert).not.toHaveBeenCalled();
     expect(mockInvites.accept).toHaveBeenLastCalledWith('inv-2');
   });
@@ -112,20 +116,20 @@ describe('useSubgroupActions', () => {
     mockStorage.set(LEAVE_GROUP_WARN_KEY, '1');
     render();
     let ok: boolean | undefined;
-    await act(async () => { ok = await actions?.doSelfSplit(); });
+    await act(async () => { ok = await readActions().doSelfSplit(); });
     expect(ok).toBe(true);
     expect(mockClient.selfSplit).toHaveBeenCalledWith('g1', 'subgroup.selfSplitName:{"name":"Ada"}');
   });
 
   it('wipes subgroup-scoped UI when I merge back, and reports failure without wiping', async () => {
     render();
-    await act(async () => { await actions?.doSelfMerge(); });
+    await act(async () => { await readActions().doSelfMerge(); });
     expect(onMergedBack).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalled();
 
     mockClient.selfMerge.mockRejectedValueOnce(new Error('nope'));
     let ok: boolean | undefined;
-    await act(async () => { ok = await actions?.doSelfMerge(); });
+    await act(async () => { ok = await readActions().doSelfMerge(); });
     expect(ok).toBe(false);
     expect(onMergedBack).toHaveBeenCalledTimes(1);
     expect(mockAlert).toHaveBeenCalledWith('subgroup.failed', 'nope');
@@ -133,13 +137,13 @@ describe('useSubgroupActions', () => {
 
   it('refreshes the invite list right away only for the demo flock after sending', async () => {
     render({ groupId: 'demo' });
-    await act(async () => { await actions?.handleInvite('s1', 'u2'); });
+    await act(async () => { await readActions().handleInvite('s1', 'u2'); });
     expect(mockClient.inviteToSubgroup).toHaveBeenCalledWith('s1', 'u2');
     expect(mockInvites.refresh).toHaveBeenCalledTimes(1);
     act(() => renderer?.unmount());
     renderer = undefined;
     render({ groupId: 'g1' });
-    await act(async () => { await actions?.handleInvite('s1', 'u2'); });
+    await act(async () => { await readActions().handleInvite('s1', 'u2'); });
     expect(mockInvites.refresh).toHaveBeenCalledTimes(1);
   });
 });

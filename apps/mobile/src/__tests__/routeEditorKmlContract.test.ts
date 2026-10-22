@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const chromeResources = readFileSync(join(__dirname, '../screens/MapScreen/MapScreenChromeResources.tsx'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
 const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
@@ -155,11 +156,11 @@ describe('route editor + KML contracts (#151)', () => {
   });
 
   it('open-sync completion is gated by generation after close/reopen', () => {
-    expect(mapScreen).toContain('routeOpenSyncGenerationRef');
-    expect(mapScreen).toContain(
+    expect(chromeResources).toContain('routeOpenSyncGenerationRef');
+    expect(chromeResources).toContain(
       "if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done'",
     );
-    expect(mapScreen).toContain('routeOpenSyncGenerationRef.current += 1');
+    expect(chromeResources).toContain('routeOpenSyncGenerationRef.current += 1');
   });
 
   it('meet-time sheet exposes approved sections and selected quick state', () => {

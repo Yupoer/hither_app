@@ -1,17 +1,47 @@
+import { MapBackgroundLocationResource } from './MapScreen/MapBackgroundLocationResource';
+import {
+  MapJourneyBaselineResource,
+  MapJourneyDepartedResource,
+  MapJourneyStickyResource,
+  useMapJourneyProgressPublication,
+  type MapJourneyBaselineInput,
+} from './MapScreen/MapJourneyProgressResources';
+import { MapAddPlaceTourResource } from './MapScreen/MapAddPlaceTourResource';
+import { MapArrivalCardsResource } from './MapScreen/MapArrivalCardsResource';
+import { MapForegroundArrivalResource } from './MapScreen/MapForegroundArrivalResource';
+import { MapAccessLossResource, MapRouteOpenResource, MapGatherRequestPagerResource } from './MapScreen/MapScreenChromeResources';
+import {
+  MapArrivalOutboxResource,
+  MapForegroundNavigationResource,
+  MapCardWorkloadResource,
+  MapKmlQuotaResource,
+  MapConfirmKeyboardResource,
+  MapAccountPlacesResource,
+  MapNavigationStartFrameResource,
+  MapSharingHydrationResource,
+  MapNavigationAckResource,
+  MapTrackingModeResource,
+  MapRouteCameraResource,
+  MapProgressDeadlineResource,
+  MapApproachNoticeResource,
+  MapPermissionRecoveryResource,
+  MapRouteScopePreferenceResource,
+} from './MapScreen/MapScreenResources';
 import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
+import { useMapScopeControls } from './MapScreen/hooks/useMapScopeControls';
 import { useGatheringCompletion } from './MapScreen/hooks/useGatheringCompletion';
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
 import { foregroundLocationConfiguration, isForegroundLocationState } from '../utils/locationPolicy';
 import WaveLoading from '../components/WaveLoading';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
 import { showAppNotice } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
-import { prepareNativeBackgroundLocation } from '../native/backgroundLocation';
-import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
+
+import { rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -21,7 +51,6 @@ import {
   AccessibilityInfo,
   Alert,
   AppState,
-  Keyboard,
   LayoutAnimation,
   Linking,
   Platform,
@@ -33,16 +62,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-
-// New Architecture: setLayoutAnimationEnabledExperimental is a no-op and
-// logs a WARN on Android. Only enable on the legacy paper UIManager.
-if (
-  Platform.OS === 'android'
-  && UIManager.setLayoutAnimationEnabledExperimental
-  && !(global as { nativeFabricUIManager?: unknown }).nativeFabricUIManager
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -63,13 +82,8 @@ import {
   cameraOnLongPress,
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
-import { notifyJourneyOperator, notifyJourneyApproach } from '../state/journeyNotifications';
-import {
-  gatherRequestPageIndex,
-  recoverGatherRequestAfterFailedResolve,
-  resolveGatherRequestSelection,
-  sortGatherRequestsFifo,
-} from '../utils/gatherRequestInbox';
+import { notifyJourneyOperator } from '../state/journeyNotifications';
+import { recoverGatherRequestAfterFailedResolve, resolveGatherRequestSelection, sortGatherRequestsFifo } from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
 import DestinationReorderList from '../components/DestinationReorderList';
 import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
@@ -87,21 +101,15 @@ import { HitherText } from '../components/HitherText';
 import MapRecenterControl from '../components/MapRecenterControl';
 import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
 import { deriveCardNavFlags, resolveNavCommand } from '../utils/gatherCommand';
-import {
-  shouldFireApproachNotify,
-} from '../utils/approachNotify';
+
 import {
   ARRIVAL_CARD_EXIT_MS,
   ARRIVAL_EFFECT_HOLD_MS,
   PERSONAL_ARRIVAL_CELEBRATE_MS,
   armCelebrateClearTimer,
   beginArrivalCardExit,
-  newlyCompletedVisibleCards,
   cancelCelebrateClearTimer,
-  clearAllCelebrateClearTimers,
   mergeExitingDestinations,
-  nextVisibleCarouselOrder,
-  resolveExitIndexAtStart,
   type ArrivalCardExitRecord,
   type CelebrateClearStore,
 } from '../utils/arrivalCardExit';
@@ -121,7 +129,7 @@ import { displayMemberAvatar } from '../constants/avatars';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { useIsFocused } from '@react-navigation/native';
 import type { CoreOperation } from '../types/coreData';
-import { getCoreOperationOutbox, subscribeCoreOutboxChanges } from '../state/coreDataSync';
+import { getCoreOperationOutbox } from '../state/coreDataSync';
 import { enqueueArrival, syncArrival, projectArrivals, projectPersonalArrivals, personalArrivalEvent } from '../state/arrivalSync';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { runUiAction } from '../utils/uiAction';
@@ -133,7 +141,7 @@ import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgressSurfaces';
 import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
-import { energyObservability } from '../state/energyObservability';
+
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { FlockRow } from './MapScreen/components/FlockRow';
 import { arrivalErrorMessage } from '../utils/mapFormatters';
@@ -171,17 +179,10 @@ import {
   pickTourDestinationId,
   tourDestinationIndex,
   type TourTargetId,
-  ADD_PLACE_TOUR_SETTLE_MS,
   ADD_PLACE_TOUR_STEPS,
-  areAddPlaceTourTargetsReady,
   completeAddPlaceTour,
   expectedSheetChromeTop,
-  isMeasuredTourRect,
   isSheetTourTarget,
-  measureTargetWithRetry,
-  readAddPlaceTourCompletedLocal,
-  retryPendingAddPlaceTourAccountSync,
-  shouldStartAddPlaceTour,
   snapTourRectY,
   useRouteReorderTour,
   routeTourScrollOffset,
@@ -200,11 +201,8 @@ import { useNavigationSession } from '../state/useNavigationSession';
 import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
 import { LiveActivityRuntime } from '../state/useLiveActivity';
 import {
-  prepareBackgroundJourneyPermissions,
-  loadBackgroundManualUndo,
   rememberBackgroundManualUndo,
   releaseBackgroundManualUndo,
-  startBackgroundJourney,
   stopBackgroundJourney,
   type BackgroundManualUndoMarker,
 } from '../state/backgroundJourney';
@@ -212,17 +210,9 @@ import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
 import { requestPermission as requestLocationPermission } from '../native/location';
 import {
-  consumePendingLocationPermission,
   recoverPendingLocationRefreshes,
-  rememberPendingLocationPermission,
 } from '../state/backgroundLocationRefresh';
-import {
-  gatedJourneyProgress,
-  initialJourneyDistance,
-  sameMetricDistance,
-  shouldAnchorInitial,
-  type DistanceSource,
-} from '../utils/journeyProgress';
+import { gatedJourneyProgress, sameMetricDistance, type DistanceSource } from '../utils/journeyProgress';
 import {
   distanceMeters,
   etaSecondsFor,
@@ -241,7 +231,7 @@ import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/n
 import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '../utils/synchronizedArrival';
 import { getOperationErrorMessage } from '../utils/operationError';
 
-import { location, notifications, type MapRegion, type PlaceResult } from '../native';
+import { notifications, type MapRegion, type PlaceResult } from '../native';
 import { addDestination, addDestinationsBatch, deleteDestination, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, sendCommand, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isDemoGroup } from '../api/demo';
@@ -268,6 +258,16 @@ import {
 import { themes } from '../theme';
 import { glass } from '../glass';
 import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
+
+// New Architecture: setLayoutAnimationEnabledExperimental is a no-op and
+// logs a WARN on Android. Only enable on the legacy paper UIManager.
+if (
+  Platform.OS === 'android'
+  && UIManager.setLayoutAnimationEnabledExperimental
+  && !(global as { nativeFabricUIManager?: unknown }).nativeFabricUIManager
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
@@ -418,17 +418,13 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
   const [arrivalOperations, setArrivalOperations] = useState<CoreOperation[]>([]);
-  useEffect(() => {
-    let active = true;
-    const reload = async () => {
-      const rows = groupId ? await getCoreOperationOutbox().listByGroup(groupId) : [];
-      if (active) setArrivalOperations(rows.filter(op =>
-        op.operationType === 'record_arrival' || op.operationType === 'leader_correct_arrival'));
-    };
-    void reload().catch(() => undefined);
-    const unsubscribe = subscribeCoreOutboxChanges(() => { void reload().catch(() => undefined); });
-    return () => { active = false; unsubscribe(); };
-  }, [groupId, user?.id]);
+  const arrivalOutboxLifecycle = (
+    <MapArrivalOutboxResource
+      groupId={groupId}
+      setArrivalOperations={setArrivalOperations}
+      user={user}
+    />
+  );
   const {
     role,
     isLeader,
@@ -450,7 +446,11 @@ export default function MapScreen({ route, navigation }: Props) {
     arrivalOperations,
     refresh,
   });
-  useEffect(() => { setLocalActionError(null); }, [roleContext]);
+  const [actionErrorRoleContext, setActionErrorRoleContext] = useState(roleContext);
+  if (!Object.is(actionErrorRoleContext, roleContext)) {
+    setActionErrorRoleContext(roleContext);
+    setLocalActionError(null);
+  }
   const myScopeId = me?.subgroupId;
   // Navigation sessions are one lane per subgroup (plus the main-team lane),
   // so a shared group id is not sufficient once parallel teams are active.
@@ -468,54 +468,40 @@ export default function MapScreen({ route, navigation }: Props) {
   const hasNavigationSession = navigationSessionId !== null;
   // Cold start / return from background: re-pull the scoped flock session so
   // members immediately enter nav mode without tapping「路徑」.
-  useEffect(() => {
-    const onAppState = (next: string) => {
-      if (next !== 'active' || !groupId) return;
-      void navigationSessionState.refresh().catch(() => undefined);
-      void refresh().catch(() => undefined);
-    };
-    const sub = AppState.addEventListener('change', onAppState);
-    return () => sub.remove();
-  }, [groupId, navigationSessionState.refresh, refresh]);
+  const foregroundNavigationLifecycle = (
+    <MapForegroundNavigationResource
+      groupId={groupId}
+      navigationSessionState={navigationSessionState}
+      refresh={refresh}
+    />
+  );
 
   // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
   const kickedHandledRef = useRef(false);
   const voluntaryLeaveRef = useRef(false);
-  useEffect(() => {
-    if (!user?.id || !groupId || isDemoGroup(groupId)) return;
-    if (membership?.group.id !== groupId) return;
-    if (isLeader) return;
-    const stillMember = members.some((m) => m.userId === user.id);
-    const accessLost = groupStateError === 'not_member'
-      || (!loading && !!state && state.group?.id === groupId && !stillMember && members.length > 0);
-    if (!accessLost) {
-      if (stillMember) kickedHandledRef.current = false;
-      return;
-    }
-    if (kickedHandledRef.current) return;
-    kickedHandledRef.current = true;
-    leaveGroup();
-    if (!voluntaryLeaveRef.current) Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));
-    navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
-  }, [
-    user?.id,
-    groupId,
-    members,
-    state,
-    loading,
-    groupStateError,
-    membership?.group.id,
-    isLeader,
-    leaveGroup,
-    navigation,
-    t,
-  ]);
+  const accessLossLifecycle = (
+    <MapAccessLossResource
+      user={user}
+      groupId={groupId}
+      membership={membership}
+      isLeader={isLeader}
+      members={members}
+      groupStateError={groupStateError}
+      loading={loading}
+      state={state}
+      kickedHandledRef={kickedHandledRef}
+      leaveGroup={leaveGroup}
+      voluntaryLeaveRef={voluntaryLeaveRef}
+      t={t}
+      navigation={navigation}
+    />
+  );
 
-  const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
-  // Leave a subgroup → force main scope so we never filter against a stale id.
-  useEffect(() => {
-    if (!myScopeId && viewingScope === 'sub') setViewingScope('main');
-  }, [myScopeId, viewingScope]);
+  const {
+    viewingScope, setViewingScope,
+    editButtonActive, setEditButtonActive,
+    kmlScopeId, setKmlScopeId,
+  } = useMapScopeControls(myScopeId);
 
   // Subgroup / 暫時離隊: only that subgroup's itinerary (usually empty → hide
   // main gathering-point cards). Main flock: only main-team destinations.
@@ -604,19 +590,7 @@ export default function MapScreen({ route, navigation }: Props) {
     () => sortedGatherRequests.map((r) => r.id),
     [sortedGatherRequests],
   );
-  useEffect(() => {
-    setSelectedGatherRequestId((prev) => {
-      const next = resolveGatherRequestSelection({
-        sortedIds: sortedGatherRequestIds,
-        previousSortedIds: lastGatherRequestIdsRef.current,
-        previousId: prev,
-        removedId: pendingRemovedGatherRequestIdRef.current,
-      });
-      lastGatherRequestIdsRef.current = sortedGatherRequestIds;
-      pendingRemovedGatherRequestIdRef.current = null;
-      return next;
-    });
-  }, [sortedGatherRequestIds]);
+
   const mapDailyAccommodations = useMemo(() => {
     const departure = routeDepartureDate;
     const tripDays = routeTripDays ?? 1;
@@ -712,7 +686,12 @@ export default function MapScreen({ route, navigation }: Props) {
     () => [...allScopedDestinations.filter(d => d.day == null && !d.closedAt), ...destinations],
     [allScopedDestinations, destinations],
   );
-  useEffect(() => energyObservability.mountWorkload({ mountedCardCount: uiVisible ? destinations.length : 0 }), [uiVisible, destinations.length]);
+  const cardWorkloadLifecycle = (
+    <MapCardWorkloadResource
+      uiVisible={uiVisible}
+      destinations={destinations}
+    />
+  );
   const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
    * Full open itinerary for the route editor (all open days + stay cards).
@@ -731,10 +710,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const locationRefreshLifecycle = useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
   const mapMountedRef = useRef(true);
-  useEffect(() => {
+  useMountEffect(() => {
     mapMountedRef.current = true;
     return () => { mapMountedRef.current = false; };
-  }, []);
+  });
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -778,10 +757,6 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'arrival'
     | 'ops'
   >(null);
-  const [editButtonActive, setEditButtonActive] = useState(false);
-  useEffect(() => {
-    setEditButtonActive(false);
-  }, [myScopeId]);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
@@ -835,10 +810,6 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
   const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
-  const [kmlScopeId, setKmlScopeId] = useState<string | undefined>(myScopeId);
-  useEffect(() => {
-    setKmlScopeId(myScopeId);
-  }, [myScopeId]);
   const [kmlRemainingQuota, setKmlRemainingQuota] = useState<number | undefined>();
   const kmlScopedDestinations = useMemo(
     () => (state?.destinations ?? []).filter((destination) => (
@@ -872,138 +843,50 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [isPro, user?.id]);
 
-  useEffect(() => {
-    void refreshKmlQuota();
-  }, [refreshKmlQuota]);
+  const kmlQuotaLifecycle = (
+    <MapKmlQuotaResource
+      refreshKmlQuota={refreshKmlQuota}
+    />
+  );
 
   // Keyboard inset for absolute confirm card (12pt gap; restore on dismiss).
-  useEffect(() => {
-    if (!confirmCardReady) {
-      setConfirmKeyboardHeight(0);
-      return;
-    }
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setConfirmKeyboardHeight(e.endCoordinates?.height ?? 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setConfirmKeyboardHeight(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [confirmCardReady]);
+  const confirmKeyboardLifecycle = (
+    <MapConfirmKeyboardResource
+      confirmCardReady={confirmCardReady}
+      setConfirmKeyboardHeight={setConfirmKeyboardHeight}
+    />
+  );
 
   // Load account favorites once per signed-in session (cross-team reuse).
-  useEffect(() => {
-    if (!user?.id) {
-      setFavoritePlaces([]);
-      return;
-    }
-    let cancelled = false;
-    void listFavoritePlaces()
-      .then((rows) => {
-        if (!cancelled) setFavoritePlaces(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setFavoritePlaces([]);
-      });
-    void readAddPlaceTourCompletedLocal(user?.id).then((done) => {
-      if (!cancelled) setAddPlaceTourLocalDone(done);
-    });
-    // Retry account completion sync left pending after a prior profile write failure.
-    void retryPendingAddPlaceTourAccountSync({
-      accountId: user.id,
-      existingPreferences: user.preferences ?? null,
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
+  const accountPlacesLifecycle = (
+    <MapAccountPlacesResource
+      user={user}
+      setFavoritePlaces={setFavoritePlaces}
+      setAddPlaceTourLocalDone={setAddPlaceTourLocalDone}
+    />
+  );
 
   // Start only after BOTH star and center targets measure non-zero rects.
-  useEffect(() => {
-    const generation = ++addPlaceTourGenerationRef.current;
-    if (!confirmCardReady || !pendingPlace) {
-      setAddPlaceTourStep(null);
-      setAddPlaceTourTargetRect(null);
-      setAddPlaceTourTransitioning(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      setAddPlaceTourTransitioning(true);
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, ADD_PLACE_TOUR_SETTLE_MS);
-      });
-      if (cancelled) return;
-      const starRect = await measureTargetWithRetry({
-        measure: measureTourTarget,
-        target: 'addPlaceFavoriteStar',
-      });
-      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
-      const centerRect = await measureTargetWithRetry({
-        measure: measureTourTarget,
-        target: 'addPlaceCenter',
-      });
-      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
-      const targetsReady = areAddPlaceTourTargetsReady({ starRect, centerRect });
-      if (
-        shouldStartAddPlaceTour({
-          pendingPlaceVisible: true,
-          targetsReady,
-          localCompleted: addPlaceTourLocalDone,
-          accountPreferences: user?.preferences ?? null,
-        })
-      ) {
-        setAddPlaceTourStep(0);
-        setAddPlaceTourTargetRect(starRect);
-      }
-      if (generation === addPlaceTourGenerationRef.current) {
-        setAddPlaceTourTransitioning(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    confirmCardReady,
-    pendingPlace,
-    addPlaceTourLocalDone,
-    user?.preferences,
-    measureTourTarget,
-  ]);
+  const addPlaceTourLifecycle = (
+    <MapAddPlaceTourResource
+      addPlaceTourGenerationRef={addPlaceTourGenerationRef}
+      confirmCardReady={confirmCardReady}
+      pendingPlace={pendingPlace}
+      setAddPlaceTourStep={setAddPlaceTourStep}
+      setAddPlaceTourTargetRect={setAddPlaceTourTargetRect}
+      setAddPlaceTourTransitioning={setAddPlaceTourTransitioning}
+      measureTourTarget={measureTourTarget}
+      addPlaceTourLocalDone={addPlaceTourLocalDone}
+      user={user}
+      addPlaceTourStep={addPlaceTourStep}
+      confirmKeyboardHeight={confirmKeyboardHeight}
+    />
+  );
 
   // Remeasure highlight when the Add Place tour step advances or keyboard
   // moves the confirm card. Never clobber a good hole with null — only accept
   // non-zero rects. Step 0 always measures star (never Add/center fallback).
-  useEffect(() => {
-    if (addPlaceTourStep == null) {
-      setAddPlaceTourTargetRect(null);
-      return;
-    }
-    const step = ADD_PLACE_TOUR_STEPS[addPlaceTourStep];
-    if (!step) return;
-    let cancelled = false;
-    const generation = ++addPlaceTourGenerationRef.current;
-    setAddPlaceTourTransitioning(true);
-    void (async () => {
-      const rect = await measureTargetWithRetry({
-        measure: measureTourTarget,
-        target: step.target,
-      });
-      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
-      if (isMeasuredTourRect(rect)) {
-        setAddPlaceTourTargetRect(rect);
-      }
-      setAddPlaceTourTransitioning(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [addPlaceTourStep, measureTourTarget, confirmKeyboardHeight]);
+
 
   const pendingIsFavorite = useMemo(() => {
     if (!pendingPlace) return false;
@@ -1203,22 +1086,16 @@ export default function MapScreen({ route, navigation }: Props) {
     'drag' | 'select' | 'none'
   >('drag');
   const [routeSelectedIds, setRouteSelectedIds] = useState<string[]>([]);
-  useEffect(() => {
-    if (overlay !== 'route') {
-      routeOpenSyncGenerationRef.current += 1;
-      routeOpenSyncSessionRef.current = 'idle';
-      // Reset list chrome when leaving the sheet.
-      setRouteInteractionMode('drag');
-      setRouteSelectedIds([]);
-      return;
-    }
-    if (routeOpenSyncSessionRef.current !== 'idle') return;
-    routeOpenSyncSessionRef.current = 'started';
-    const generation = routeOpenSyncGenerationRef.current;
-    void syncFromDatabase().finally(() => {
-      if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done';
-    });
-  }, [overlay, syncFromDatabase]);
+  const routeOpenLifecycle = (
+    <MapRouteOpenResource
+      overlay={overlay}
+      routeOpenSyncGenerationRef={routeOpenSyncGenerationRef}
+      routeOpenSyncSessionRef={routeOpenSyncSessionRef}
+      setRouteInteractionMode={setRouteInteractionMode}
+      setRouteSelectedIds={setRouteSelectedIds}
+      syncFromDatabase={syncFromDatabase}
+    />
+  );
 
   const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
   // --- Carousel selection ---------------------------------------------------
@@ -1330,9 +1207,12 @@ export default function MapScreen({ route, navigation }: Props) {
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
   navigationOriginRef.current = deviceCoords ?? undefined;
-  useEffect(() => {
-    if (deviceCoords) refreshStartFrame();
-  }, [deviceCoords, refreshStartFrame]);
+  const navigationStartFrameLifecycle = (
+    <MapNavigationStartFrameResource
+      deviceCoords={deviceCoords}
+      refreshStartFrame={refreshStartFrame}
+    />
+  );
 
   const reference = useMemo<MemberLocation | undefined>(
     () =>
@@ -1349,10 +1229,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [mapInitialCenter, setMapInitialCenter] = useState<Coordinates | null>(
     fromCoords ?? null,
   );
-  useEffect(() => {
-    if (!fromCoords) return;
-    setMapInitialCenter((current) => current ?? fromCoords);
-  }, [fromCoords]);
+  if (mapInitialCenter == null && fromCoords != null) setMapInitialCenter(fromCoords);
 
   // OTA-01: single authoritative team gathering projection for map / broadcast /
   // notification / passive surfaces. Personal ETA/mode/progress never write here.
@@ -1400,19 +1277,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const navigationAckRef = useRef<string | null>(null);
   const privacyHydratedUserRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (!preferencesReady || !user?.id || privacyHydratedUserRef.current === user.id) {
-      return;
-    }
-    privacyHydratedUserRef.current = user.id;
-    let cancelled = false;
-    void hydrateLocationSharing(user.id)
-      .then((enabled) => { if (!cancelled && enabled != null) setSharingEnabled(enabled); })
-      .catch(() => {
-        privacyHydratedUserRef.current = null;
-      });
-    return () => { cancelled = true; };
-  }, [preferencesReady, setSharingEnabled, user?.id]);
+  const sharingHydrationLifecycle = (
+    <MapSharingHydrationResource
+      preferencesReady={preferencesReady}
+      user={user}
+      privacyHydratedUserRef={privacyHydratedUserRef}
+      setSharingEnabled={setSharingEnabled}
+    />
+  );
 
   const [sharingApplying, setSharingApplying] = useState(false);
   const handleSharingEnabledChange = useCallback(async (enabled: boolean) => {
@@ -1469,21 +1341,14 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [handleSharingEnabledChange, sharingApplying, sharingEnabled, t]);
 
-  useEffect(() => {
-    if (isLeader || !navigationSessionState.session) {
-      navigationAckRef.current = null;
-      return;
-    }
-    const key = `${navigationSessionState.session.id}:${sharingEnabled ? 'tracking' : 'disabled'}`;
-    if (navigationAckRef.current === key) return;
-    navigationAckRef.current = key;
-    void navigationSessionState.ack(
-      sharingEnabled ? 'tracking_active' : 'sharing_disabled',
-      { source: 'foreground_session_effect' },
-    ).catch(() => {
-      navigationAckRef.current = null;
-    });
-  }, [isLeader, navigationSessionState, sharingEnabled]);
+  const navigationAckLifecycle = (
+    <MapNavigationAckResource
+      isLeader={isLeader}
+      navigationSessionState={navigationSessionState}
+      navigationAckRef={navigationAckRef}
+      sharingEnabled={sharingEnabled}
+    />
+  );
 
   // Prefer local prefs (available before inPassiveMode is derived below) so
   // passive mode can skip MapKit work without a temporal dead zone.
@@ -1596,94 +1461,29 @@ export default function MapScreen({ route, navigation }: Props) {
    * Full visible carousel order (open + hold/exit). Open-only ranks collide when
    * a second card closes while the first is still exiting (#149 Sol r3).
    */
-  useEffect(() => {
-    const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
-    if (arrivalExitContextRef.current !== arrivalExitContext) {
-      arrivalExitContextRef.current = arrivalExitContext;
-      for (const timers of arrivalExitTimersRef.current.values()) for (const timer of timers) clearTimeout(timer);
-      arrivalExitTimersRef.current.clear();
-      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
-      setArrivalExitRecords(new Map());
-      setArrivalExitSnapshots(new Map());
-      setArrivalCelebrateDestId(null);
-      knownClosedDestIdsRef.current = null;
-      remoteAutoCompleteDestIdsRef.current.clear();
-    }
-    if (!state || state.group.id !== groupId || loading) {
-      knownClosedDestIdsRef.current = null;
-      prevVisibleDestOrderRef.current = [];
-      return;
-    }
-    if (!uiVisible) {
-      knownClosedDestIdsRef.current = new Set(closedNow.map(d => d.id));
-      prevVisibleDestOrderRef.current = openDestinations.map(d => d.id);
-      return;
-    }
-    if (knownClosedDestIdsRef.current == null) {
-      // First paint: seed known closed so past history does not animate out.
-      knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
-      prevVisibleDestOrderRef.current = openDestinations.map((d) => d.id);
-      return;
-    }
-    for (const id of knownClosedDestIdsRef.current) {
-      if (closedNow.some(d => d.id === id)) continue;
-      knownClosedDestIdsRef.current.delete(id);
-      for (const timer of arrivalExitTimersRef.current.get(id) ?? []) clearTimeout(timer);
-      arrivalExitTimersRef.current.delete(id);
-      cancelCelebrateClearTimer(celebrateClearTimersRef.current, id);
-      setArrivalCelebrateDestId(cur => cur === id ? null : cur);
-      setArrivalExitRecords(prev => { const next = new Map(prev); next.delete(id); return next; });
-      setArrivalExitSnapshots(prev => { const next = new Map(prev); next.delete(id); return next; });
-    }
-    const newlyStarted: string[] = [];
-    for (const dest of newlyCompletedVisibleCards(closedNow, knownClosedDestIdsRef.current,
-      prevVisibleDestOrderRef.current, true)) {
-      knownClosedDestIdsRef.current.add(dest.id);
-      const priorIdx = resolveExitIndexAtStart(
-        prevVisibleDestOrderRef.current,
-        dest.id,
-        prevVisibleDestOrderRef.current.length,
-      );
-      startArrivalCardExit(dest, priorIdx);
-      newlyStarted.push(dest.id);
-    }
-    knownClosedDestIdsRef.current = new Set(closedNow.map(destination => destination.id));
-    const exitingIds = new Set<string>([
-      ...arrivalExitRecords.keys(),
-      ...newlyStarted,
-    ]);
-    // Keep exiting cards ranked until their record is removed (exit complete).
-    prevVisibleDestOrderRef.current = nextVisibleCarouselOrder(
-      prevVisibleDestOrderRef.current,
-      openDestinations.map((d) => d.id),
-      [...exitingIds],
-    );
-  }, [
-    uiVisible,
-    allScopedDestinations,
-    openDestinations,
-    startArrivalCardExit,
-    arrivalExitRecords,
-    arrivalExitContext,
-    groupId,
-    loading,
-    state,
-  ]);
+  const arrivalCardsLifecycle = (
+    <MapArrivalCardsResource
+      allScopedDestinations={allScopedDestinations}
+      arrivalExitContextRef={arrivalExitContextRef}
+      arrivalExitContext={arrivalExitContext}
+      arrivalExitTimersRef={arrivalExitTimersRef}
+      celebrateClearTimersRef={celebrateClearTimersRef}
+      setArrivalExitRecords={setArrivalExitRecords}
+      setArrivalExitSnapshots={setArrivalExitSnapshots}
+      setArrivalCelebrateDestId={setArrivalCelebrateDestId}
+      knownClosedDestIdsRef={knownClosedDestIdsRef}
+      remoteAutoCompleteDestIdsRef={remoteAutoCompleteDestIdsRef}
+      state={state}
+      groupId={groupId}
+      loading={loading}
+      prevVisibleDestOrderRef={prevVisibleDestOrderRef}
+      uiVisible={uiVisible}
+      openDestinations={openDestinations}
+      startArrivalCardExit={startArrivalCardExit}
+      arrivalExitRecords={arrivalExitRecords}
+    />
+  );
 
-  useEffect(() => {
-    if (!uiVisible) {
-      setArrivalExitRecords(new Map());
-      setArrivalExitSnapshots(new Map());
-      setArrivalCelebrateDestId(null);
-    }
-    return () => {
-      for (const timers of arrivalExitTimersRef.current.values()) {
-        for (const t of timers) clearTimeout(t);
-      }
-      arrivalExitTimersRef.current.clear();
-      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
-    };
-  }, [uiVisible]);
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
@@ -1735,92 +1535,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // Include the destination separately from arrivalContext: a local route
   // can change cards before a server session id exists.
   const foregroundUndoHydrationKey = `${arrivalContext}:${navTarget?.id ?? ''}:${currentArrivalNavigationSessionId ?? ''}`;
-  useEffect(() => {
-    foregroundArrivalRef.current = null;
-    foregroundAckRef.current = null;
-    autoArrivalMarkedRef.current = null;
-    automaticArrivalRetryAt.current = 0;
-    arrivalFeedbackShownRef.current = null;
-    manualUndoSuppressedRef.current.clear();
-    foregroundUndoHydrationRef.current = {
-      key: foregroundUndoHydrationKey,
-      pending: Boolean(groupId && user?.id && navTarget?.id && currentArrivalNavigationSessionId),
-    };
-    setArrivalCelebrateDestId(null);
-  }, [arrivalContext, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
-  useEffect(() => {
-    const actorId = user?.id;
-    const destinationId = navTarget?.id;
-    const sessionId = currentArrivalNavigationSessionId;
-    const hydrationKey = foregroundUndoHydrationKey;
-    const suppressionKey = `${arrivalSessionKey}:${destinationId ?? ''}:${actorId ?? ''}`;
-    const generation = ++foregroundUndoHydrationSequenceRef.current;
-    const mutationAtStart = foregroundUndoMutationSequenceRef.current;
-    if (!groupId || !actorId || !destinationId || !sessionId) {
-      foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
-      return;
-    }
-    foregroundUndoHydrationRef.current = { key: hydrationKey, pending: true };
-    let cancelled = false;
-    const finishHydration = (marker: BackgroundManualUndoMarker | null) => {
-      if (cancelled
-        || generation !== foregroundUndoHydrationSequenceRef.current
-        || foregroundUndoHydrationRef.current.key !== hydrationKey) return;
-      // A tap can create or release an undo while the AsyncStorage read is
-      // in flight. Never let that older read overwrite the newer in-memory
-      // intent; the next outbox/store update will hydrate it again.
-      const hasNewerForegroundMutation = foregroundUndoMutationSequenceRef.current !== mutationAtStart;
-      if (hasNewerForegroundMutation) {
-        foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
-        incomingArrivalHandlerRef.current();
-        return;
-      }
-      if (marker) {
-        // Keep released markers too: they are the shared session state, but
-        // only a suppressed marker gates the next in-radius fix.
-        manualUndoSuppressedRef.current.set(suppressionKey, marker);
-      } else {
-        // Storage can be unavailable while the durable undo operation is
-        // already in the outbox. Retain that active tombstone as a fallback.
-        const fallback = arrivalOperations
-          .filter(op => op.operationType === 'record_arrival'
-            && op.entityId === destinationId
-            && (op.actorId ?? op.payload.actorId) === actorId
-            && op.payload.actorId === actorId
-            && op.payload.userId === actorId
-            && String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '') === sessionId
-            && op.payload.arrived === false)
-          .sort((a, b) => {
-            const aTime = typeof a.payload.occurredAt === 'string' ? Date.parse(a.payload.occurredAt) : Number.NaN;
-            const bTime = typeof b.payload.occurredAt === 'string' ? Date.parse(b.payload.occurredAt) : Number.NaN;
-            return (Number.isFinite(aTime) ? aTime : a.createdAt)
-              - (Number.isFinite(bTime) ? bTime : b.createdAt);
-          })
-          .at(-1);
-        if (fallback) {
-          manualUndoSuppressedRef.current.set(suppressionKey, {
-            actorId,
-            groupId,
-            destinationId,
-            navigationSessionId: sessionId,
-            operationId: fallback.id,
-            occurredAt: typeof fallback.payload.occurredAt === 'string'
-              ? fallback.payload.occurredAt
-              : new Date(fallback.createdAt).toISOString(),
-            suppressed: true,
-          });
-        }
-      }
-      foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
-      // A fix may have arrived while hydration was pending. Re-evaluate it
-      // now that suppression (including a released marker) is known.
-      incomingArrivalHandlerRef.current();
-    };
-    void loadBackgroundManualUndo(actorId, groupId, destinationId, sessionId)
-      .then(finishHydration)
-      .catch(() => finishHydration(null));
-    return () => { cancelled = true; };
-  }, [arrivalOperations, arrivalSessionKey, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
+
+
   const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string, automatic = false) => {
     if (!groupId || !user?.id) return;
     // The route can paint the tap before SQLite saves its Start. Wait for the
@@ -2020,7 +1736,30 @@ export default function MapScreen({ route, navigation }: Props) {
     user?.id,
   ]);
   incomingArrivalHandlerRef.current = evaluateForegroundArrival;
-  useEffect(evaluateForegroundArrival, [evaluateForegroundArrival]);
+  const foregroundArrivalLifecycle = (
+    <MapForegroundArrivalResource
+      foregroundArrivalRef={foregroundArrivalRef}
+      foregroundAckRef={foregroundAckRef}
+      autoArrivalMarkedRef={autoArrivalMarkedRef}
+      automaticArrivalRetryAt={automaticArrivalRetryAt}
+      arrivalFeedbackShownRef={arrivalFeedbackShownRef}
+      manualUndoSuppressedRef={manualUndoSuppressedRef}
+      foregroundUndoHydrationRef={foregroundUndoHydrationRef}
+      foregroundUndoHydrationKey={foregroundUndoHydrationKey}
+      groupId={groupId}
+      user={user}
+      navTarget={navTarget}
+      currentArrivalNavigationSessionId={currentArrivalNavigationSessionId}
+      setArrivalCelebrateDestId={setArrivalCelebrateDestId}
+      arrivalContext={arrivalContext}
+      arrivalSessionKey={arrivalSessionKey}
+      foregroundUndoHydrationSequenceRef={foregroundUndoHydrationSequenceRef}
+      foregroundUndoMutationSequenceRef={foregroundUndoMutationSequenceRef}
+      incomingArrivalHandlerRef={incomingArrivalHandlerRef}
+      arrivalOperations={arrivalOperations}
+      evaluateForegroundArrival={evaluateForegroundArrival}
+    />
+  );
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
@@ -2087,88 +1826,36 @@ export default function MapScreen({ route, navigation }: Props) {
   const backgroundPermissionAttemptedRef = useRef<string | null>(null);
 
   // Journey progress baseline (foreground only) — separate from GPS ownership.
-  useEffect(() => {
-    if (!journeyActive || !groupId || !navTarget) {
-      initialJourneyRef.current = null;
-      lastRouteDistanceRef.current = undefined;
-      departedStartRef.current = false;
-      presentationStickyRef.current = {
-        key: null,
-        progressMax: null,
-        distanceM: null,
-        etaSeconds: null,
-        progress: null,
-      };
-      setInitialDistanceM(undefined);
-      setDistanceSource(undefined);
-      setProgressDepartedStart(false);
-      setJourneyStartCoords(null);
-      setLastRouteDistanceM(undefined);
-      setProgressMaxSticky(null);
-      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null, travelMode });
-      return;
-    }
-
-    const key = `${groupId}:${navTarget.id}:${navigationSessionState.session?.id ?? state?.group.journeyStartedAt ?? ''}`;
-    // New destination / journey → reset monotonic progress + last-valid.
-    if (presentationStickyRef.current.key !== key) {
-      presentationStickyRef.current = {
-        key,
-        progressMax: null,
-        distanceM: null,
-        etaSeconds: null,
-        progress: null,
-      };
-      setProgressMaxSticky(null);
-      setLastValidPresentation({ distanceM: null, etaSeconds: null, progress: null, travelMode });
-    }
-    // Never baseline progress from peer/stale pins — only real device GPS.
-    if (!deviceCoords) return;
-
-    const routeDistanceM = selfRoute?.distanceMeters;
-    if (routeDistanceM != null && Number.isFinite(routeDistanceM)) {
-      lastRouteDistanceRef.current = routeDistanceM;
-      setLastRouteDistanceM(routeDistanceM);
-    }
-    const deviceStraightM = distanceMeters(deviceCoords, navTarget.coordinates);
-    const distanceM = initialJourneyDistance(routeDistanceM, deviceStraightM);
-    if (distanceM == null) return;
-
-    const source: DistanceSource = routeDistanceM != null ? 'route' : 'fallback';
-    const canLockProgress = shouldAnchorInitial({
-      hasDeviceGps: true,
-      accuracyM: deviceAccuracyM,
-    });
-    const current = initialJourneyRef.current;
-    if (
-      canLockProgress &&
-      (!current || current.key !== key || (current.source === 'fallback' && source === 'route'))
-    ) {
-      initialJourneyRef.current = {
-        key,
-        distanceM,
-        source,
-        startCoords: deviceCoords,
-      };
-      departedStartRef.current = false;
-      presentationStickyRef.current.progressMax = null;
-      setProgressMaxSticky(null);
-      setInitialDistanceM(distanceM);
-      setDistanceSource(source);
-      setProgressDepartedStart(false);
-      setJourneyStartCoords(deviceCoords);
-    }
-  }, [
-    deviceAccuracyM,
-    deviceCoords,
-    groupId,
+  const publishJourneyBaseline = useMapJourneyProgressPublication();
+  const journeyBaselineInput = {
     journeyActive,
+    groupId,
     navTarget,
-    selfRoute?.distanceMeters,
+    initialJourneyRef,
+    lastRouteDistanceRef,
+    departedStartRef,
+    presentationStickyRef,
+    setInitialDistanceM,
+    setDistanceSource,
+    setProgressDepartedStart,
+    setJourneyStartCoords,
+    setLastRouteDistanceM,
+    setProgressMaxSticky,
+    setLastValidPresentation,
+    travelMode,
+    navigationSessionState,
+    state,
+    deviceCoords,
+    selfRoute,
+    deviceAccuracyM,
     selfRouteGeneration,
-    state?.group.journeyStartedAt,
-    navigationSessionState.session?.id,
-  ]);
+  } satisfies MapJourneyBaselineInput;
+  const journeyBaselineLifecycle = (
+    <MapJourneyBaselineResource
+      input={journeyBaselineInput}
+      publishBaseline={publishJourneyBaseline}
+    />
+  );
 
   const backgroundEtaRef = useRef<{ etaToPinSeconds?: number; etaTargetAtMs?: number; etaSampledAtMs?: number; lastEtaDistanceM?: number; personalArrivalAtMs?: number; personalArrivalSequence?: number }>({});
   const backgroundJourneyWantedRef = useRef<string | null>(null);
@@ -2181,15 +1868,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Creating CLBackgroundActivitySession alone displays the iOS blue indicator.
   // Retain it only for a live journey to a target; passive sharing never owns it.
-  useEffect(() => {
-    if (!backgroundSharingScope || !effectiveNavigationActive) {
-      void prepareNativeBackgroundLocation(false).catch(() => undefined);
-      return;
-    }
-    if (appState === 'active') {
-      void prepareNativeBackgroundLocation(true).catch(() => undefined);
-    }
-  }, [appState, backgroundSharingScope, effectiveNavigationActive, backgroundPermissionsPreparedFor]);
 
   /**
    * Single foreground/background GPS owner:
@@ -2197,224 +1875,82 @@ export default function MapScreen({ route, navigation }: Props) {
    * - App background → allDay group presence, or denser journey profile.
    * Avoid overlapping GPS consumers; device measurements determine actual energy savings.
    */
-  useEffect(() => {
-    if (!backgroundSharingScope || !groupId) {
-      backgroundStartedKeyRef.current = null;
-      backgroundPermissionAttemptedRef.current = null;
-      setBackgroundPermissionsPreparedFor(null);
-      void stopBackgroundJourney(true);
-      return;
-    }
+  const backgroundLocationLifecycle = (
+    <MapBackgroundLocationResource
+      backgroundSharingScope={backgroundSharingScope}
+      groupId={groupId}
+      backgroundStartedKeyRef={backgroundStartedKeyRef}
+      backgroundPermissionAttemptedRef={backgroundPermissionAttemptedRef}
+      setBackgroundPermissionsPreparedFor={setBackgroundPermissionsPreparedFor}
+      appState={appState}
+      backgroundPermissionDeniedRef={backgroundPermissionDeniedRef}
+      sharingEnabled={sharingEnabled}
+      backgroundPermissionsPreparedFor={backgroundPermissionsPreparedFor}
+      backgroundPermissionProfileKey={backgroundPermissionProfileKey}
+      backgroundPermissionPrepareInFlightRef={backgroundPermissionPrepareInFlightRef}
+      effectiveNavigationActive={effectiveNavigationActive}
+      language={language}
+      backgroundJourneyWantedRef={backgroundJourneyWantedRef}
+      backgroundPermissionProfileRef={backgroundPermissionProfileRef}
+      navTarget={navTarget}
+      myScopeId={myScopeId}
+      deviceCoords={deviceCoords}
+      resolveCurrentNavigationSessionId={resolveCurrentNavigationSessionId}
+      pendingLeaderTargetId={pendingLeaderTargetId}
+      highAccuracy={highAccuracy}
+      travelMode={travelMode}
+      localArrivalRadiusM={localArrivalRadiusM}
+      canEditItinerary={canEditItinerary}
+      members={members}
+      sessionEligibleMembers={sessionEligibleMembers}
+      initialJourneyRef={initialJourneyRef}
+      user={user}
+      activeDestinationArrivals={activeDestinationArrivals}
+      state={state}
+      lastValidPresentation={lastValidPresentation}
+      lastRouteDistanceM={lastRouteDistanceM}
+      colors={colors}
+      membership={membership}
+      journeyStartCoords={journeyStartCoords}
+      progressDepartedStart={progressDepartedStart}
+      progressMaxSticky={progressMaxSticky}
+      backgroundEtaRef={backgroundEtaRef}
+      selfRoute={selfRoute}
+      mapFocused={mapFocused}
+      preferencesReady={preferencesReady}
+      localNavigationSessionId={localNavigationSessionId}
+      journeyActive={journeyActive}
+      navigationSessionId={navigationSessionId}
+      hasNavigationSession={hasNavigationSession}
+      navigationStoppedLocally={navigationStoppedLocally}
+      showLocationPermissionAlert={showLocationPermissionAlert}
+      baselineInput={journeyBaselineInput}
+      publishBaseline={publishJourneyBaseline}
+    />
+  );
 
-    // A system cover keeps the existing foreground GPS owner and permissions.
-    if (appState === 'inactive') {
-      backgroundStartedKeyRef.current = null;
-      void stopBackgroundJourney();
-      return;
-    }
+  useMountEffect(() => () => void stopBackgroundJourney());
 
-    // Foreground owns GPS.
-    if (appState === 'active') {
-      backgroundStartedKeyRef.current = null;
-      backgroundPermissionDeniedRef.current = null;
-      if (sharingEnabled && backgroundPermissionsPreparedFor !== backgroundPermissionProfileKey
-        && backgroundPermissionPrepareInFlightRef.current !== backgroundPermissionProfileKey
-        && backgroundPermissionAttemptedRef.current !== backgroundPermissionProfileKey) {
-        backgroundPermissionPrepareInFlightRef.current = backgroundPermissionProfileKey;
-        backgroundPermissionAttemptedRef.current = backgroundPermissionProfileKey;
-        void (async () => {
-          const granted = await prepareBackgroundJourneyPermissions(false, effectiveNavigationActive);
-          if (granted === 'ready') return granted;
-          const key = 'pref.journeyBackgroundExplained';
-          const saved = await AsyncStorage.getItem(key);
-          if (!saved) {
-            const accepted = await new Promise<boolean>(resolve => Alert.alert(
-              language === 'en' ? 'Share location in the background' : '背景位置分享',
-              language === 'en'
-                ? 'While location sharing is on, Hither shares your location with this team in the background, including when your screen is locked. Turn off location sharing to stop.'
-                : '開啟位置分享時，Hither 會在背景向團隊分享位置，鎖定畫面後也會繼續。關閉位置分享即可停止。',
-              [{ text: language === 'en' ? 'Not now' : '暫時不要', style: 'cancel', onPress: () => resolve(false) },
-               { text: language === 'en' ? 'Continue' : '繼續', onPress: () => resolve(true) }],
-            ));
-            await AsyncStorage.setItem(key, accepted ? 'accepted' : 'declined');
-            if (!accepted) return 'permission_denied' as const;
-          }
-          if (saved === 'declined') return 'permission_denied' as const;
-          return prepareBackgroundJourneyPermissions(true, effectiveNavigationActive);
-        })()
-          .then((result) => {
-            if (backgroundJourneyWantedRef.current !== backgroundSharingScope
-              || backgroundPermissionProfileRef.current !== backgroundPermissionProfileKey) return;
-            if (result === 'ready') {
-              backgroundPermissionDeniedRef.current = null;
-              setBackgroundPermissionsPreparedFor(backgroundPermissionProfileKey);
-            } else {
-              setBackgroundPermissionsPreparedFor(null);
-              void rememberPendingLocationPermission();
-            }
-          })
-          .catch(() => {
-            if (backgroundJourneyWantedRef.current === backgroundSharingScope
-              && backgroundPermissionProfileRef.current === backgroundPermissionProfileKey) setBackgroundPermissionsPreparedFor(null);
-          })
-          .finally(() => {
-            if (backgroundPermissionPrepareInFlightRef.current === backgroundPermissionProfileKey) {
-              backgroundPermissionPrepareInFlightRef.current = null;
-            }
-          });
-      } else if (!sharingEnabled && backgroundPermissionsPreparedFor != null) {
-        setBackgroundPermissionsPreparedFor(null);
-      }
-      void stopBackgroundJourney();
-      return;
-    }
-
-    backgroundPermissionAttemptedRef.current = null;
-    const powerMode = effectiveNavigationActive ? 'journey' : 'allDay';
-    const backgroundScopeSubgroupId = powerMode === 'journey'
-      ? navTarget?.subgroupId ?? null : myScopeId ?? null;
-    const dest =
-      navTarget?.coordinates ??
-      deviceCoords ??
-      { latitude: 0, longitude: 0 };
-    const backgroundNavigationSessionId = navTarget
-      ? resolveCurrentNavigationSessionId(navTarget)
-      : null;
-    if (pendingLeaderTargetId === navTarget?.id && !backgroundNavigationSessionId) return;
-    const sessionKey = backgroundNavigationSessionId ?? 'none';
-    const key = JSON.stringify([backgroundSharingScope, backgroundScopeSubgroupId, powerMode,
-      navTarget?.id ?? 'presence', sessionKey, highAccuracy, travelMode, localArrivalRadiusM,
-      navTarget?.coordinates.latitude, navTarget?.coordinates.longitude, canEditItinerary,
-      members.map(member => `${member.userId}:${member.subgroupId ?? ''}`).sort(),
-      sessionEligibleMembers.filter(member => !member.solo).map(member => member.userId).sort()]);
-    if (backgroundPermissionDeniedRef.current === key || backgroundStartedKeyRef.current === key) return;
-    backgroundStartedKeyRef.current = key;
-
-    const backgroundInitialM =
-      initialJourneyRef.current?.distanceM ??
-      (deviceCoords && navTarget
-        ? distanceMeters(deviceCoords, navTarget.coordinates)
-        : 0);
-
-    void startBackgroundJourney({
-      actorId: user?.id,
-      scopeSubgroupId: backgroundScopeSubgroupId,
-      memberIds: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.userId),
-      navigationMemberIds: sessionEligibleMembers.filter(m => !m.solo && (m.subgroupId ?? null)
-        === (navTarget?.subgroupId ?? null)).map(m => m.userId),
-      arrivedMemberIds: activeDestinationArrivals.filter(a => a.destinationId === navTarget?.id).map(a => a.userId),
-      leaderId: navTarget?.subgroupId
-        ? state?.subgroups.find(subgroup => subgroup.id === navTarget.subgroupId)?.leaderId
-        : members.find(member => member.role === 'leader')?.userId,
-      target: navTarget ?? undefined,
-      // The shared completion helper handles all-member completion separately from arrival.
-      completeSolo: false,
-      groupId,
-      navigationSessionId: backgroundNavigationSessionId,
-      destinationId: navTarget?.id ?? 'group-presence',
-      destination: dest,
-      arrivalRadiusMeters: localArrivalRadiusM,
-      initialDistanceM: backgroundInitialM,
-      distanceSource: initialJourneyRef.current?.source,
-      routeAnchorGps: deviceCoords ?? undefined,
-      routeAnchorRemainingM: lastValidPresentation.distanceM ?? lastRouteDistanceM ?? backgroundInitialM,
-      accentHex: colors.accent,
-      sequence: 0,
-      travelMode,
-      // Pause retains the preference while acquiring only passive fixes.
-      highAccuracy: effectiveNavigationActive && highAccuracy,
-      powerMode,
-      sharingEnabled,
-      hasMembership: members.some(m => m.userId === user?.id),
-      gatheringTitle: navTarget?.title ?? membership?.group.name,
-      groupName: membership?.group.name ?? '',
-      memberEmojis: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.avatar ?? ''),
-      memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
-      startCoords: journeyStartCoords ?? undefined,
-      hasDepartedStart: progressDepartedStart,
-      previousProgressMax: progressMaxSticky ?? undefined,
-      ...backgroundEtaRef.current,
-      etaToPinSeconds: backgroundEtaRef.current.etaToPinSeconds ?? selfRoute?.expectedTravelTimeSeconds,
-      etaSeconds: (lastValidPresentation.travelMode === travelMode ? lastValidPresentation.etaSeconds : null)
-        ?? selfRoute?.expectedTravelTimeSeconds,
-      teamNavigationActive: effectiveNavigationActive,
-      appState: appState === 'background' ? 'background' : 'inactive',
-      permissionsPrepared: backgroundPermissionsPreparedFor === backgroundPermissionProfileKey,
-    }).then((result) => {
-      if (result !== 'started' && backgroundStartedKeyRef.current === key) backgroundStartedKeyRef.current = null;
-      if (result === 'hidden') {
-        void purgeLocationOutbox();
-      }
-      if (result === 'permission_denied') {
-        backgroundPermissionDeniedRef.current = key;
-        void rememberPendingLocationPermission();
-      }
-    }).catch(() => {
-      if (backgroundStartedKeyRef.current === key) backgroundStartedKeyRef.current = null;
-    });
-  }, [
-    appState,
-    mapFocused,
-    backgroundSharingScope,
-    effectiveNavigationActive,
-    backgroundPermissionsPreparedFor,
-    backgroundPermissionProfileKey,
-    preferencesReady,
-    language,
-    localArrivalRadiusM,
-    localNavigationSessionId,
-    pendingLeaderTargetId,
-    myScopeId,
-    activeDestinationArrivals,
-    resolveCurrentNavigationSessionId,
-    sessionEligibleMembers,
-    user?.id,
-    canEditItinerary,
-    deviceCoords,
-    groupId,
-    highAccuracy,
-    journeyActive,
-    navTarget,
-    navigationSessionId,
-    hasNavigationSession,
-    navigationStoppedLocally,
-    sharingEnabled,
-    showLocationPermissionAlert,
-    travelMode,
-    members,
-    membership?.group.name,
-    journeyStartCoords,
-    progressDepartedStart,
-    progressMaxSticky,
-    selfRoute?.expectedTravelTimeSeconds,
-    colors.accent,
-    lastValidPresentation.distanceM,
-    lastValidPresentation.etaSeconds,
-    lastValidPresentation.travelMode,
-    lastRouteDistanceM,
-  ]);
-
-  useEffect(() => () => void stopBackgroundJourney(), []);
-
-  useEffect(() => {
-    energyObservability.setTrackingMode(!sharingEnabled ? 'hidden'
-      : appState === 'background' ? effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'passiveBackground'
-      : effectiveNavigationActive ? highAccuracy ? 'navigationMax' : 'teamNavigation' : 'foreground');
-  }, [appState, highAccuracy, effectiveNavigationActive, sharingEnabled]);
+  const trackingModeLifecycle = (
+    <MapTrackingModeResource
+      sharingEnabled={sharingEnabled}
+      appState={appState}
+      effectiveNavigationActive={effectiveNavigationActive}
+      highAccuracy={highAccuracy}
+    />
+  );
 
   const lastFittedRouteRef = useRef<string | null>(null);
-  useEffect(() => {
-    const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
-    if (activePoint && key && key !== lastFittedRouteRef.current && selfRoute?.points.length) {
-      lastFittedRouteRef.current = key;
-      mapRef.current?.fitRoute([
-        ...selfRoute.points,
-        ...(deviceCoords ? [deviceCoords] : []),
-        activePoint.coordinates,
-      ]);
-    }
-    if (!key) lastFittedRouteRef.current = null;
-  }, [activePoint, selfRoute, travelMode, deviceCoords]);
+  const routeCameraLifecycle = (
+    <MapRouteCameraResource
+      activePoint={activePoint}
+      travelMode={travelMode}
+      lastFittedRouteRef={lastFittedRouteRef}
+      selfRoute={selfRoute}
+      mapRef={mapRef}
+      deviceCoords={deviceCoords}
+    />
+  );
   const { lifecycle: stragglerReportingLifecycle,
     stragglers,
   } = useStragglerReporting({
@@ -2499,11 +2035,18 @@ export default function MapScreen({ route, navigation }: Props) {
       : undefined;
 
   // Sticky "left start" so stepping back toward the pin does not snap to 0%.
-  useEffect(() => {
-    if (!gatedProgress?.departed) return;
-    departedStartRef.current = true;
-    if (!progressDepartedStart) setProgressDepartedStart(true);
-  }, [gatedProgress?.departed, progressDepartedStart]);
+  const journeyDepartedLifecycle = (
+    <MapJourneyDepartedResource
+      input={{
+        gatedProgress,
+        departedStartRef,
+        progressDepartedStart,
+        setProgressDepartedStart,
+      }}
+      baselineInput={journeyBaselineInput}
+      publishBaseline={publishJourneyBaseline}
+    />
+  );
   const liveMembers = members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null));
   const liveMemberArrived = liveMembers.map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId));
   const liveGathered = navTarget ? liveMemberArrived.filter(Boolean).length : undefined;
@@ -2525,21 +2068,15 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const [progressClockMs, setProgressClockMs] = useState(() => Date.now());
   const PERSONAL_PROGRESS_STALE_MS = 30_000;
-  useEffect(() => {
-    if (!journeyActive || !navTarget || deviceCoordsAcceptedAtMs == null) {
-      return;
-    }
-    const now = Date.now();
-    setProgressClockMs(now);
-    const age = Math.max(0, now - deviceCoordsAcceptedAtMs);
-    if (age >= PERSONAL_PROGRESS_STALE_MS) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      setProgressClockMs(Date.now());
-    }, PERSONAL_PROGRESS_STALE_MS - age + 50);
-    return () => clearTimeout(timer);
-  }, [journeyActive, navTarget?.id, deviceCoordsAcceptedAtMs]);
+  const progressDeadlineLifecycle = (
+    <MapProgressDeadlineResource
+      journeyActive={journeyActive}
+      navTarget={navTarget}
+      deviceCoordsAcceptedAtMs={deviceCoordsAcceptedAtMs}
+      setProgressClockMs={setProgressClockMs}
+      PERSONAL_PROGRESS_STALE_MS={PERSONAL_PROGRESS_STALE_MS}
+    />
+  );
 
   /**
    * Shared local personal progress — single derivation for gathering card,
@@ -2589,83 +2126,38 @@ export default function MapScreen({ route, navigation }: Props) {
   });
   const { personalProgress } = progressSurfaces;
 
-  useEffect(() => {
-    if (!journeyActive || !navTarget || personalProgress.arrived) return;
-    const remaining = personalProgress.distanceMeters;
-    const total = initialDistanceM;
-    if (remaining == null || total == null) return;
-    if (!shouldFireApproachNotify({
-      remainingM: remaining,
-      totalM: total,
-      arrivalRadiusM: localArrivalRadiusM,
-      arrived: personalProgress.arrived || localNavigationArrived,
-      alreadyFired: false,
-    })) return;
-    void notifyJourneyApproach(navigationSessionState.session?.id, navTarget.id, navTarget.title, {
-      remainingM: remaining, totalM: total, arrivalRadiusM: localArrivalRadiusM,
-      arrived: personalProgress.arrived || localNavigationArrived, alreadyFired: false,
-    }).catch(() => undefined);
-  }, [
-    journeyActive,
-    navTarget,
-    personalProgress.arrived,
-    personalProgress.distanceMeters,
-    initialDistanceM,
-    localArrivalRadiusM,
-    localNavigationArrived,
-    navigationSessionState.session?.id,
-  ]);
+  const approachNoticeLifecycle = (
+    <MapApproachNoticeResource
+      journeyActive={journeyActive}
+      navTarget={navTarget}
+      personalProgress={personalProgress}
+      initialDistanceM={initialDistanceM}
+      localArrivalRadiusM={localArrivalRadiusM}
+      localNavigationArrived={localNavigationArrived}
+      navigationSessionState={navigationSessionState}
+    />
+  );
 
   // Stick presentation: monotonic progress max + last-valid distance/ETA (#145).
-  useEffect(() => {
-    if (!journeyActive || !navTarget || !groupId) return;
-    const key = `${groupId}:${navTarget.id}:${navigationSessionState.session?.id ?? state?.group.journeyStartedAt ?? ''}`;
-    const sticky = presentationStickyRef.current;
-    if (sticky.key !== key) {
-      // Key was just set in baseline effect; align ref so subsequent samples stick.
-      sticky.key = key;
-    }
-    const nextProgress = personalProgress.progress;
-    if (nextProgress != null && Number.isFinite(nextProgress)) {
-      const max =
-        sticky.progressMax == null
-          ? nextProgress
-          : Math.max(sticky.progressMax, nextProgress);
-      if (sticky.progressMax == null || max > sticky.progressMax + 1e-9) {
-        sticky.progressMax = max;
-        setProgressMaxSticky(max);
-      }
-    }
-    if (
-      personalProgress.distanceMeters != null
-      && Number.isFinite(personalProgress.distanceMeters)
-    ) {
-      const d = personalProgress.distanceMeters;
-      const e = personalProgress.etaSeconds;
-      const p = personalProgress.progress;
-      if (
-        sticky.distanceM !== d
-        || sticky.etaSeconds !== e
-        || sticky.progress !== p
-        || lastValidPresentation.travelMode !== travelMode
-      ) {
-        sticky.distanceM = d;
-        sticky.etaSeconds = e;
-        sticky.progress = p;
-        setLastValidPresentation({ distanceM: d, etaSeconds: e, progress: p, travelMode });
-      }
-    }
-  }, [
-    journeyActive,
-    navTarget,
-    groupId,
-    state?.group.journeyStartedAt,
-    navigationSessionState.session?.id,
-    personalProgress.progress,
-    personalProgress.distanceMeters,
-    personalProgress.etaSeconds,
-    travelMode,
-  ]);
+  const journeyStickyLifecycle = (
+    <MapJourneyStickyResource
+      input={{
+        journeyActive,
+        navTarget,
+        groupId,
+        navigationSessionState,
+        state,
+        presentationStickyRef,
+        personalProgress,
+        setProgressMaxSticky,
+        lastValidPresentation,
+        travelMode,
+        setLastValidPresentation,
+      }}
+      baselineInput={journeyBaselineInput}
+      publishBaseline={publishJourneyBaseline}
+    />
+  );
 
   // Both presentation surfaces consume the same orchestration output.
   const personalDistanceM = progressSurfaces.gatheringCard.distanceMeters;
@@ -2829,7 +2321,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [refreshingLocations, setRefreshingLocations] = useState(false);
   const [refreshCooldownUntil, setRefreshCooldownUntil] = useState(0);
 
-  useEffect(() => {
+  useMountEffect(() => {
     const remove = notifications.addForegroundListener((data) => {
       if (data.category !== 'location_refresh') return;
       // The server ledger is the source of truth. Recover all pending groups
@@ -2837,31 +2329,17 @@ export default function MapScreen({ route, navigation }: Props) {
       void recoverPendingLocationRefreshes();
     });
     return remove;
-  }, []);
+  });
 
-  useEffect(() => {
-    if (appState !== 'active') return;
-    void Promise.all([
-      location.getPermissionState().catch(() => null),
-      consumePendingLocationPermission(),
-    ]).then(([permission, pending]) => {
-      if (permission?.backgroundStatus === 'granted') {
-        backgroundPermissionDeniedRef.current = null;
-      }
-      if (pending && permission?.backgroundStatus !== 'granted') {
-        showLocationPermissionAlert(
-          t('map.bgLocationTitle'),
-          t('map.bgLocationBody'),
-        );
-      }
-    });
-    void recoverPendingLocationRefreshes();
-  }, [
-    appState,
-    groupId,
-    showLocationPermissionAlert,
-    t,
-  ]);
+  const permissionRecoveryLifecycle = (
+    <MapPermissionRecoveryResource
+      appState={appState}
+      backgroundPermissionDeniedRef={backgroundPermissionDeniedRef}
+      showLocationPermissionAlert={showLocationPermissionAlert}
+      t={t}
+      groupId={groupId}
+    />
+  );
 
   const refreshAllLocations = useCallback(async () => {
     if (!groupId || refreshingLocations) return;
@@ -3541,7 +3019,7 @@ export default function MapScreen({ route, navigation }: Props) {
     // Leave wipes subgroup-scoped UI: itinerary draft list, team pill scope.
     setRouteDraftDestinations(null);
     setViewingScope('main');
-  }, [setRouteDraftDestinations]);
+  }, [setRouteDraftDestinations, setViewingScope]);
   const { lifecycle: subgroupActionsLifecycle,
     subgroups,
     pendingInvites,
@@ -4087,7 +3565,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const [tourReduceMotion, setTourReduceMotion] = useState(false);
-  useEffect(() => {
+  useMountEffect(() => {
     let mounted = true;
     void AccessibilityInfo.isReduceMotionEnabled?.().then((enabled) => {
       if (mounted) setTourReduceMotion(Boolean(enabled));
@@ -4103,7 +3581,7 @@ export default function MapScreen({ route, navigation }: Props) {
         (sub as { remove: () => void }).remove();
       }
     };
-  }, []);
+  });
 
   const onTourActiveChange = useCallback(
     (active: boolean, destinationId: string | null) => {
@@ -4224,28 +3702,13 @@ export default function MapScreen({ route, navigation }: Props) {
   const [routeScopeExpanded, setRouteScopeExpanded] = useState<Record<string, boolean>>(
     (): Record<string, boolean> => (myScopeId ? { main: false, subgroup: true } : { main: true }),
   );
-  useEffect(() => {
-    let cancelled = false;
-    const defaults: Record<string, boolean> = myScopeId
-      ? { main: false, subgroup: true }
-      : { main: true };
-    if (!routeScopeStorageKey) {
-      setRouteScopeExpanded(defaults);
-      return () => { cancelled = true; };
-    }
-    void AsyncStorage.getItem(routeScopeStorageKey).then((stored) => {
-      if (cancelled) return;
-      try {
-        const parsed = stored ? JSON.parse(stored) as Record<string, boolean> : null;
-        setRouteScopeExpanded(parsed && typeof parsed === 'object' ? { ...defaults, ...parsed } : defaults);
-      } catch {
-        setRouteScopeExpanded(defaults);
-      }
-    }).catch(() => {
-      if (!cancelled) setRouteScopeExpanded(defaults);
-    });
-    return () => { cancelled = true; };
-  }, [myScopeId, routeScopeStorageKey]);
+  const routeScopePreferenceLifecycle = (
+    <MapRouteScopePreferenceResource
+      myScopeId={myScopeId}
+      routeScopeStorageKey={routeScopeStorageKey}
+      setRouteScopeExpanded={setRouteScopeExpanded}
+    />
+  );
   const toggleRouteScope = useCallback((scopeKey: string) => {
     setRouteScopeExpanded((current) => {
       const next = { ...current, [scopeKey]: !current[scopeKey] };
@@ -4362,6 +3825,7 @@ export default function MapScreen({ route, navigation }: Props) {
     accent,
     dark,
     editButtonActive,
+    setEditButtonActive,
     favoritePlaces,
     groupId,
     myScopeId,
@@ -4379,16 +3843,17 @@ export default function MapScreen({ route, navigation }: Props) {
     toggleRouteScope,
     user?.id,
   ]);
-  useEffect(() => {
-    const page = gatherRequestPageIndex(
-      sortedGatherRequestIds,
-      selectedGatherRequestId,
-    );
-    gatherRequestPagerRef.current?.scrollTo({
-      x: page * gatherRequestPageW,
-      animated: true,
-    });
-  }, [gatherRequestPageW, selectedGatherRequestId, sortedGatherRequestIds]);
+  const gatherRequestPagerLifecycle = (
+    <MapGatherRequestPagerResource
+      sortedGatherRequestIds={sortedGatherRequestIds}
+      selectedGatherRequestId={selectedGatherRequestId}
+      setSelectedGatherRequestId={setSelectedGatherRequestId}
+      lastGatherRequestIdsRef={lastGatherRequestIdsRef}
+      pendingRemovedGatherRequestIdRef={pendingRemovedGatherRequestIdRef}
+      gatherRequestPageW={gatherRequestPageW}
+      gatherRequestPagerRef={gatherRequestPagerRef}
+    />
+  );
   const routePaneBody = useMemo(() => (
     <RoutePane
       accent={accent}
@@ -4565,6 +4030,33 @@ export default function MapScreen({ route, navigation }: Props) {
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
+  const mapScreenLifecycle = (<>
+    <React.Fragment key="map-owner-journeyBaseline">{journeyBaselineLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-journeyDeparted">{journeyDepartedLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-journeySticky">{journeyStickyLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-backgroundLocation">{backgroundLocationLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-add-place-tour">{addPlaceTourLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-arrival-cards">{arrivalCardsLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-foreground-arrival">{foregroundArrivalLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-gather-request-pager">{gatherRequestPagerLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-accessLossLifecycle">{accessLossLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-routeOpenLifecycle">{routeOpenLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-arrivalOutboxLifecycle">{arrivalOutboxLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-foregroundNavigationLifecycle">{foregroundNavigationLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-cardWorkloadLifecycle">{cardWorkloadLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-kmlQuotaLifecycle">{kmlQuotaLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-confirmKeyboardLifecycle">{confirmKeyboardLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-accountPlacesLifecycle">{accountPlacesLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-navigationStartFrameLifecycle">{navigationStartFrameLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-sharingHydrationLifecycle">{sharingHydrationLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-navigationAckLifecycle">{navigationAckLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-trackingModeLifecycle">{trackingModeLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-routeCameraLifecycle">{routeCameraLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-progressDeadlineLifecycle">{progressDeadlineLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-approachNoticeLifecycle">{approachNoticeLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-permissionRecoveryLifecycle">{permissionRecoveryLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-routeScopePreferenceLifecycle">{routeScopePreferenceLifecycle}</React.Fragment>
+  </>);
   const groupDataLifecycle = <React.Fragment key="map-screen-resources">
     <React.Fragment key="group-state">{groupStateLifecycle}</React.Fragment>
     <React.Fragment key="location-refresh">{locationRefreshLifecycle}</React.Fragment>
@@ -4592,6 +4084,7 @@ export default function MapScreen({ route, navigation }: Props) {
     <React.Fragment key="journey-runtime">{journeyNavigationLifecycle}</React.Fragment>
     <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
     <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-runtime">{mapScreenLifecycle}</React.Fragment>
     <React.Fragment key="live-activity-runtime">{liveActivityLifecycle}</React.Fragment>
   </>;
 

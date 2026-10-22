@@ -20,7 +20,7 @@ const controller = readFileSync(
 const mapScreen = readFileSync(
   join(__dirname, '../screens/MapScreen.tsx'),
   'utf8',
-);
+) + readFileSync(join(__dirname, '../screens/MapScreen/MapBackgroundLocationResource.tsx'), 'utf8');
 const pushIndex = readFileSync(
   join(__dirname, '../../../../supabase/functions/send-push/index.ts'),
   'utf8',

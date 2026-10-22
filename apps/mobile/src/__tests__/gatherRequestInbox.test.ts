@@ -9,7 +9,8 @@ import {
   sortGatherRequestsFifo,
 } from '../utils/gatherRequestInbox';
 
-const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8')
+  + readFileSync(join(__dirname, '../screens/MapScreen/MapScreenChromeResources.tsx'), 'utf8');
 const routePane = readFileSync(join(__dirname, '../screens/MapScreen/components/RoutePane.tsx'), 'utf8');
 
 describe('gather request inbox FIFO (#173)', () => {

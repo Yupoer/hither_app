@@ -180,9 +180,10 @@ describe('arrivalCardExit (#149)', () => {
     // No orphan untracked 1600 clear that can race the hold.
     expect(map).not.toMatch(/setTimeout\(\(\) => \{\s*setArrivalCelebrateDestId[\s\S]*?\}, 1_600\)/);
     // Overlapping exits must rank from full visible order, not open-only.
-    expect(map).toContain('nextVisibleCarouselOrder');
-    expect(map).toContain('resolveExitIndexAtStart');
-    expect(map).toContain('prevVisibleDestOrderRef');
+    const cardResource = fs.readFileSync(path.join(__dirname, '../screens/MapScreen/MapArrivalCardsResource.tsx'), 'utf8');
+    expect(cardResource).toContain('nextVisibleCarouselOrder');
+    expect(cardResource).toContain('resolveExitIndexAtStart');
+    expect(cardResource).toContain('prevVisibleDestOrderRef');
   });
 
   it('rebases a surviving exit after an earlier card is done (#149 Sol r4)', () => {
