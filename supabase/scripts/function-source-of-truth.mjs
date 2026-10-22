@@ -602,12 +602,6 @@ export function findCatalogTextPatches(migrations, canonical = CANONICAL_MIGRATI
 
 const MAX_STRING_NESTING = 32;
 
-/**
- * Dynamic SQL hides in string literals (DO bodies, execute text), so lex those
- * too, iteratively so deep nesting cannot overflow the stack or silently drop
- * tokens. Returns null when nesting is too deep to inspect, which the caller
- * treats as a violation.
- */
 function collectWords(tokens) {
   const words = [];
   let level = tokens;
@@ -617,7 +611,7 @@ function collectWords(tokens) {
     for (const t of level) {
       if (t.type === 'ident') words.push(t.value.toLowerCase());
       else if (t.type === 'str') {
-        try { for (const inner of lex(t.value)) next.push(inner); } catch { /* not SQL */ }
+        try { for (const inner of lex(t.value)) next.push(inner); } catch {}
       }
     }
     level = next;
