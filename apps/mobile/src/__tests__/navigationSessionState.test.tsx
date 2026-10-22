@@ -54,10 +54,17 @@ import {
 } from '../api/services/NavigationService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { act, create } = require('react-test-renderer') as {
+const { act, create: createRenderer } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => void | Promise<void>;
-  create: (element: React.ReactElement) => unknown;
+  create: (element: React.ReactElement) => { unmount: () => void };
 };
+const trees: ReturnType<typeof createRenderer>[] = [];
+function create(element: React.ReactElement) {
+  const tree = createRenderer(element);
+  trees.push(tree);
+  return tree;
+}
+afterEach(() => { act(() => { trees.splice(0).forEach(tree => tree.unmount()); }); });
 
 const session = (version: number, status: NavigationSession['status'] = 'active') => ({
   id: 'session-1',

@@ -5,6 +5,7 @@ import { PreferencesProvider } from '../src/state/PreferencesContext';
 import { SessionProvider } from '../src/state/SessionContext';
 
 jest.mock('@react-navigation/native', () => ({
+  useIsFocused: () => true,
   useNavigation: () => ({ navigate: jest.fn() }),
   useRoute: () => ({ params: {} }),
 }));

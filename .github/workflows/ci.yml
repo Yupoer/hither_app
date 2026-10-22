@@ -93,6 +93,8 @@ jobs:
 
       - name: Component tests (jest-expo)
         run: npm test -- --config jest.config.components.js --runInBand --silent
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
 
       # Durable PR marker (not github.base_ref): <!-- hither-test-meta parent: N|pure-chore -->
       - name: Resolve META_PARENT from PR metadata

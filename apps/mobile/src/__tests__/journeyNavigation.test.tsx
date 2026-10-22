@@ -23,6 +23,7 @@ jest.mock('../state/appNotice', () => ({
   showOperationFailure: jest.fn(),
 }));
 import React from 'react';
+import { Alert } from 'react-native';
 import { deleteDestination, reorderDestinations } from '../api/client';
 import {
   abortLeaderGatheringStart,
@@ -62,6 +63,7 @@ jest.mock('../api/client', () => ({
 }));
 
 jest.mock('../state/coreDataSync', () => ({
+  readLocalJourneyProjection: jest.fn().mockResolvedValue(null),
   getCoreOperationOutbox: () => ({ getOperation: jest.fn(async () => null) }),
   abortLeaderGatheringStart: jest.fn().mockResolvedValue(undefined),
   enqueueLeaderGatheringStart: jest.fn(),
@@ -184,7 +186,7 @@ describe('useJourneyNavigation', () => {
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
     function Harness() {
       navigation = useJourneyNavigation({
-        state: pausedState,
+        state: { ...pausedState, destinations: [destination, { ...destination, id: 'hidden-stop', title: '昨日站' }] },
         groupId: 'group-1',
         isLeader: false,
         destinations: [destination],
@@ -255,6 +257,7 @@ describe('useJourneyNavigation', () => {
   });
 
   it('switches an active point without ending or completing the old point', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementationOnce((_title, _message, buttons) => buttons?.[1]?.onPress?.());
     const later = { ...destination, id: 'destination-2', order: 1 };
     const goingState = {
       ...pausedState,
@@ -296,6 +299,7 @@ describe('useJourneyNavigation', () => {
       'group-1',
       expect.objectContaining({ activeDestinationId: later.id, flushImmediately: false }),
     );
+    alert.mockRestore();
     expect(startSession).not.toHaveBeenCalled();
     expect(enqueueLeaderGatheringStart).not.toHaveBeenCalled();
   });
