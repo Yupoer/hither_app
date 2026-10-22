@@ -49,9 +49,29 @@ jobs:
             Expo Go compatibility is the #1 recurring failure class — native access must stay
             behind `src/native/` with a JS fallback; do not branch on Platform.OS in UI.
 
-            Find the root cause, make the smallest correct fix, run the gates locally, then
-            open a PR against master. Do not merge it, even where AGENTS.md authorizes merging;
-            this workflow only proposes changes for a maintainer to review.
+            Find the root cause, make the smallest correct fix, run the gates locally, and
+            commit it on the current checkout. Do not push, open a PR, or merge, even where
+            AGENTS.md authorizes it; a later workflow step pushes your commits to a dedicated
+            branch and opens a draft PR for a maintainer to review.
           claude_args: >-
             --allowedTools
-            "Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git add *),Bash(git commit *),Bash(git switch -c *),Bash(git checkout -b *),Bash(git push origin HEAD*),Bash(gh issue view *),Bash(gh pr create *),Bash(gh pr view *),Bash(npm ci*),Bash(npm test*),Bash(npm run *),Bash(npx expo install --check*),Edit,Read,Write,Glob,Grep"
+            "Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git add *),Bash(git commit *),Bash(gh issue view *),Bash(npm ci*),Bash(npm test*),Bash(npm run *),Bash(npx expo install --check*),Edit,Read,Write,Glob,Grep"
+
+      - name: Publish fix branch and open draft PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ inputs.issue_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin master
+          if [ "$(git rev-list --count origin/master..HEAD)" -eq 0 ]; then
+            echo "No commits from the agent; nothing to publish."
+            exit 0
+          fi
+          git merge-base --is-ancestor origin/master HEAD
+          branch="claude-fix/issue-${ISSUE}-${GITHUB_RUN_ID}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/${branch}"
+          gh pr create --repo "$REPO" --draft --base master --head "$branch" \
+            --title "Claude fix for #${ISSUE}" \
+            --body "Automated fix proposal for #${ISSUE} from workflow run ${GITHUB_RUN_ID}. Review before merging."
