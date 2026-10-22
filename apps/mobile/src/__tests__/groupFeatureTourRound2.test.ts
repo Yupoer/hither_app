@@ -480,7 +480,7 @@ describe('R3: reset replay with stale account prefs', () => {
   it('MapScreen resetPrefs optimistically patches session tour flag', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
-    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
     expect(map).toContain('groupFeatureTourCompleted: false');
     expect(map).toContain('updateProfile');
     expect(map).toContain('clearGroupFeatureTour');
@@ -597,7 +597,7 @@ describe('R2: MapScreen wires single tour destination + accountId', () => {
   it('source contracts', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
-    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
     expect(map).toContain('pickTourDestinationId');
     expect(map).toContain('tourDestinationId');
     expect(map).toContain('accountId: user?.id');

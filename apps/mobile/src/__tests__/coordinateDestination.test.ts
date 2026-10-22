@@ -79,6 +79,7 @@ describe('CoordinateDestinationSheet wiring contract', () => {
   );
   const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
   const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+  const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
   const kml = readFileSync(join(__dirname, '../components/KmlImportSheet.tsx'), 'utf8');
 
   it('disables submit while submitting and shows invalid-coords copy key', () => {
@@ -110,7 +111,7 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(longPressBlock).toContain('cameraOnLongPress');
     expect(longPressBlock).not.toContain('notifyLeaderPlace');
     expect(mapScreen).toContain('notifyLeaderPlace');
-    expect(mapScreen).toContain('handlePickDestination(place, placement)');
+    expect(addPlaceCard).toContain('handlePickDestination(place, placement)');
     expect(mapScreen).toContain('mediumTap()');
     expect(mapScreen).toContain('cameraAfterSuccessfulAdd');
     expect(groupMap).toContain('moveOnMarkerPress={false}');

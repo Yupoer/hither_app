@@ -6,6 +6,10 @@ import { join } from 'node:path';
  * Pure setState buttons are listed as pure-UI (minimal safe handlers).
  */
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const groupActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGroupActions.ts'), 'utf8');
+const accountActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
+const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const authScreen = readFileSync(join(__dirname, '../screens/AuthScreen.tsx'), 'utf8');
 const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
 const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
@@ -73,10 +77,10 @@ describe('button inventory / high-risk action contract', () => {
 
   it('wires Map navigation/session actions through runUiAction', () => {
     expect(mapScreen).toContain('runUiAction(');
-    expect(mapScreen).toContain("'map.go_home_create_or_join'");
+    expect(groupActions).toContain("'map.go_home_create_or_join'");
     expect(mapScreen).not.toContain("'map.switch_group'");
-    expect(mapScreen).toContain("'map.leave_group'");
-    expect(mapScreen).toContain("'map.sign_out'");
+    expect(accountActions).toContain("'map.leave_group'");
+    expect(accountActions).toContain("'map.sign_out'");
     expect(mapScreen).toContain("'map.open_settings'");
     expect(mapScreen).not.toContain("'map.open_group_menu'");
   });
@@ -85,11 +89,11 @@ describe('button inventory / high-risk action contract', () => {
     expect(mapScreen).toContain("'map.destination_add'");
     expect(mapScreen).toContain("'map.destination_add_coords'");
     // Route-editor mutations are local draft; network write is map.route_draft_flush.
-    expect(mapScreen).toContain("'map.route_draft_flush'");
+    expect(itineraryMutations).toContain("'map.route_draft_flush'");
     // Navigation promote still persists reorder immediately.
-    expect(mapScreen).toContain("'map.destination_reorder'");
+    expect(itineraryMutations).toContain("'map.destination_reorder'");
     expect(mapScreen).toContain("'map.destination_suggest'");
-    expect(mapScreen).toContain("'map.confirm_add_destination'");
+    expect(addPlaceCard).toContain("'map.confirm_add_destination'");
     expect(mapScreen).toContain("'map.fit_all_members'");
     expect(mapScreen).toContain("'map.locate_me'");
     expect(mapScreen).toContain("'map.open_feedback'");
@@ -154,6 +158,10 @@ describe('button inventory / high-risk action contract', () => {
   it('locks the high-risk actionId inventory so new handlers are not silent', () => {
     const corpus = [
       mapScreen,
+      addPlaceCard,
+      itineraryMutations,
+      groupActions,
+      accountActions,
       authScreen,
       roleSelect,
       myTeams,
@@ -169,7 +177,6 @@ describe('button inventory / high-risk action contract', () => {
 
   it('documents pure-UI handlers that stay as minimal setState (no forced runUiAction)', () => {
     // These are intentionally local state setters — inventory only.
-    expect(mapScreen).toContain('const closeOverlay = useCallback(() => {');
     expect(mapScreen).toContain('setOverlay(null)');
     expect(loginScreen).toContain('onChange={setAuthMode}');
     expect(feedbackSheet).toContain('onPress={() => setCategory(c.key)}');

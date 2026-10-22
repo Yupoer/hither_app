@@ -21,7 +21,7 @@ const widgetAttributes = readFileSync(
 );
 const jsBridge = readFileSync(join(__dirname, '../native/liveActivity.ts'), 'utf8');
 const liveHook = readFileSync(join(__dirname, '../state/useLiveActivity.ts'), 'utf8');
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
 const androidModule = readFileSync(
   join(
     __dirname,

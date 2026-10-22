@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const source = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
+const mapStyles = readFileSync(join(__dirname, '../screens/MapScreen/styles.ts'), 'utf8');
 
 describe('foreground arrival feedback', () => {
   it('uses accuracy-aware reduceArrival as sole auto-arrive authority (no bare OR)', () => {
@@ -33,15 +35,15 @@ describe('foreground arrival feedback', () => {
     expect(effect).toContain('.catch(() => undefined)');
     expect(effect).toContain('promptComplete: false');
     expect(effect).not.toContain('promptComplete: true');
-    expect(source).toContain('const personallyArrived = myCompletedDestinationIds.has(dest.id);');
-    expect(source).toContain('arrivalDimOverlay');
-    expect(source).toContain('arrivalCenterCheckLayer');
+    expect(carousel).toContain('const personallyArrived = myCompletedDestinationIds.has(dest.id);');
+    expect(carousel).toContain('arrivalDimOverlay');
+    expect(carousel).toContain('arrivalCenterCheckLayer');
     expect(source).toContain('1_600');
     // #149: all-arrived card hold 3.2s + 440ms whole-card exit before remove.
     expect(source).toContain('ARRIVAL_EFFECT_HOLD_MS');
     expect(source).toContain('ARRIVAL_CARD_EXIT_MS');
     expect(source).toContain('startArrivalCardExit');
-    expect(source).toContain('ArrivalCardExitShell');
+    expect(carousel).toContain('ArrivalCardExitShell');
     expect(source).toContain('mergeExitingDestinations');
     expect(source).toContain('COMPLETE_PROMPT_DELAY_MS');
     // Committed arrival INSERT drives notifications; animation does not schedule them.
@@ -55,7 +57,7 @@ describe('foreground arrival feedback', () => {
     expect(source).not.toMatch(
       /personallyArrived\s*\|\|\s*arrivalCelebrateDestId\s*===\s*dest\.id/,
     );
-    expect(source).toContain('arrivalCelebrateDestId === dest.id');
+    expect(carousel).toContain('arrivalCelebrateDestId === dest.id');
     // Dim + check are GlassView-level (outside padded pressable).
     const cardBlock = source.slice(
       source.indexOf('liquidGlass.GlassView'),
@@ -64,22 +66,22 @@ describe('foreground arrival feedback', () => {
     // First GlassView may be elsewhere — use carousel card marker.
     // Stable key (no index) so reorder remounts do not kill celebrate chrome.
     const cardKeyNeedle = 'key={`carousel-dest-${dest.id}`}';
-    const cardKeyIdx = source.indexOf(cardKeyNeedle);
+    const cardKeyIdx = carousel.indexOf(cardKeyNeedle);
     expect(cardKeyIdx).toBeGreaterThanOrEqual(0);
-    const carouselCard = source.slice(cardKeyIdx, cardKeyIdx + 4000);
+    const carouselCard = carousel.slice(cardKeyIdx, cardKeyIdx + 4000);
     const dimIdx = carouselCard.indexOf('styles.arrivalDimOverlay');
     const pressableIdx = carouselCard.indexOf('<GatheringCardPressable');
     expect(dimIdx).toBeGreaterThanOrEqual(0);
     expect(pressableIdx).toBeGreaterThan(dimIdx);
     expect(carouselCard).toContain('styles.cardInner');
     // Full-surface fill (not padded content box only).
-    expect(source).toMatch(/arrivalDimOverlay:\s*\{[\s\S]*?absoluteFill/);
-    expect(source).toMatch(/arrivalCenterCheckLayer:\s*\{[\s\S]*?absoluteFill/);
+    expect(mapStyles).toMatch(/arrivalDimOverlay:\s*\{[\s\S]*?absoluteFill/);
+    expect(mapStyles).toMatch(/arrivalCenterCheckLayer:\s*\{[\s\S]*?absoluteFill/);
     // Padding is on cardInner so dim can cover the whole shell.
-    expect(source).toMatch(/cardInner:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
-    const cardStyleBlock = source.slice(
-      source.indexOf('// Gathering-point card shell'),
-      source.indexOf('cardActiveBorder:'),
+    expect(mapStyles).toMatch(/cardInner:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
+    const cardStyleBlock = mapStyles.slice(
+      mapStyles.indexOf('// Gathering-point card shell'),
+      mapStyles.indexOf('cardActiveBorder:'),
     );
     expect(cardStyleBlock).toContain('card: {');
     expect(cardStyleBlock).toContain('cardInner: {');

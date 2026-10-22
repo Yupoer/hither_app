@@ -75,7 +75,7 @@ const anonymousAccess = readFileSync(
   join(mobileSrc, 'anonymousAccess.ts'),
   'utf8',
 );
-const mapScreen = readFileSync(join(mobileSrc, 'screens/MapScreen.tsx'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGroupActions.ts'), 'utf8');
 const entitlements = readFileSync(join(mobileSrc, 'entitlements.ts'), 'utf8');
 const productMd = existsSync(join(hitherAppRoot, 'docs/PRODUCT.md'))
   ? readFileSync(join(hitherAppRoot, 'docs/PRODUCT.md'), 'utf8')

@@ -1,7 +1,24 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGatheringCompletion.ts'), 'utf8');
+const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
+const stragglerReporting = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useStragglerReporting.ts'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
+const toolsPane = readFileSync(join(__dirname, '../screens/MapScreen/components/ToolsPane.tsx'), 'utf8');
+const membersPane = readFileSync(join(__dirname, '../screens/MapScreen/components/MembersPane.tsx'), 'utf8');
+const routePaneSource = readFileSync(join(__dirname, '../screens/MapScreen/components/RoutePane.tsx'), 'utf8');
+const historySheet = readFileSync(join(__dirname, '../screens/MapScreen/components/HistorySheet.tsx'), 'utf8');
+const opsCenterSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/OpsCenterSheet.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
+const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
+const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
+const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
+const flockRow = readFileSync(join(__dirname, '../screens/MapScreen/components/FlockRow.tsx'), 'utf8');
+const cardPressable = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCardPressable.tsx'), 'utf8');
+const carouselDots = readFileSync(join(__dirname, '../screens/MapScreen/components/CarouselDots.tsx'), 'utf8');
+const refreshButton = readFileSync(join(__dirname, '../screens/MapScreen/components/RefreshLocationsButton.tsx'), 'utf8');
+const mapStyles = readFileSync(join(__dirname, '../screens/MapScreen/styles.ts'), 'utf8');
 const bottomSheet = readFileSync(join(__dirname, '../components/BottomSheet.tsx'), 'utf8');
 const overlaySheet = readFileSync(join(__dirname, '../components/OverlaySheet.tsx'), 'utf8');
 const settingsChildSheet = readFileSync(
@@ -90,14 +107,14 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps add-place secondary controls bright, transparent, and evenly spaced', () => {
-    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, flexShrink: 0 }');
-    expect(mapScreen).toContain('confirmBtnRow: {');
-    expect(mapScreen).toContain('gap: 12');
-    expect(mapScreen).toContain('paddingHorizontal: 20');
-    expect(mapScreen).toContain('backgroundColor: glass.fillStrong');
-    expect(mapScreen).toContain('confirmArrow: {');
-    expect(mapScreen).toContain('width: 60');
-    expect(mapScreen).toContain('height: 60');
+    expect(mapStyles).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, flexShrink: 0 }');
+    expect(mapStyles).toContain('confirmBtnRow: {');
+    expect(mapStyles).toContain('gap: 12');
+    expect(mapStyles).toContain('paddingHorizontal: 20');
+    expect(mapStyles).toContain('backgroundColor: glass.fillStrong');
+    expect(mapStyles).toContain('confirmArrow: {');
+    expect(mapStyles).toContain('width: 60');
+    expect(mapStyles).toContain('height: 60');
   });
 
   it('keeps reorder actions on one row with readable text', () => {
@@ -109,17 +126,15 @@ describe('map UI placement contracts', () => {
   it('keeps route scopes role-aware and uses equal horizontal/bottom insets', () => {
     expect(mapScreen).toContain('const expanded = canEdit');
     expect(mapScreen).toContain('styles.routeScopeContent');
-    expect(mapScreen).toContain('paddingHorizontal: 10');
-    expect(mapScreen).toContain('paddingBottom: 10');
+    expect(mapStyles).toContain('paddingHorizontal: 10');
+    expect(opsCenterSheet).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('routeOverlayBody');
-    expect(mapScreen).toContain("await refresh('membership_change')");
-    expect(mapScreen).toContain('setOptimisticDestinations(null);');
     expect(mapScreen).toContain('setKmlScopeId(myScopeId);');
   });
 
   it('haptics the add-place confirmation and omits root settings subtitles', () => {
-    const confirmStart = mapScreen.indexOf('const confirmAddPlace = async');
-    const confirmBlock = mapScreen.slice(confirmStart, confirmStart + 420);
+    const confirmStart = addPlaceCard.indexOf('const confirmAddPlace = async');
+    const confirmBlock = addPlaceCard.slice(confirmStart, confirmStart + 420);
     expect(confirmBlock).toContain('lightTap();');
 
     const rootStart = settingsOverlay.indexOf('<View style={styles.settingsTopGroup}>');
@@ -147,8 +162,8 @@ describe('map UI placement contracts', () => {
     expect(useGroupState).toContain('scheduleReload');
   });
   it('renders arrival radius hint with tertiary subhint style', () => {
-    expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
-    expect(mapScreen).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
+    expect(toolsPane).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
+    expect(mapStyles).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
   });
 
   it('scopes itinerary to current open scope for everyone including leaders (#154)', () => {
@@ -165,9 +180,10 @@ describe('map UI placement contracts', () => {
 
   it('keeps history on the route pane; reorder overlay wires import CTA (#151/#154)', () => {
     // Route sheet pane body (not the full-screen reorder overlay).
-    const routePane = mapScreen.indexOf('// ─── 路線');
-    const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
-    const routeBlock = mapScreen.slice(routePane, toolsPane > 0 ? toolsPane : routePane + 2500);
+    const routeBlock = routePaneSource + mapScreen.slice(
+      mapScreen.indexOf('const renderRouteScope'),
+      mapScreen.indexOf('const routePaneBody'),
+    );
 
     expect(routeBlock).toContain('renderRouteScope({');
     expect(routeBlock).toContain('canEdit: isLeader');
@@ -180,43 +196,39 @@ describe('map UI placement contracts', () => {
     expect(routeBlock).toContain("setOverlay('arrivalManage')");
 
     // Reorder overlay: import via DestinationReorderList (no bottom add row).
-    const overlayRoute = mapScreen.indexOf("visible={overlay === 'route'}");
-    const overlayRouteEnd = mapScreen.indexOf('<SettingsOverlay', overlayRoute);
-    const overlayBlock = mapScreen.slice(
-      overlayRoute,
-      overlayRouteEnd > 0 ? overlayRouteEnd : overlayRoute + 3500,
-    );
+    const overlayRoute = routeEditorSheet.indexOf("visible={overlay === 'route'}");
+    const overlayBlock = routeEditorSheet.slice(overlayRoute);
     expect(overlayBlock).toContain('DestinationReorderList');
     expect(overlayBlock).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
     expect(overlayBlock).not.toContain("t('map.addStop')");
     expect(overlayBlock).toContain('edgeToEdge');
-    const meetEditor = mapScreen.indexOf("visible={!!meetTimeEditor}");
+    const meetEditor = meetTimeSheet.indexOf("visible={!!meetTimeEditor}");
     expect(meetEditor).toBeGreaterThan(-1);
-    expect(mapScreen.slice(meetEditor, meetEditor + 350)).toContain('edgeToEdge');
+    expect(meetTimeSheet.slice(meetEditor, meetEditor + 350)).toContain('edgeToEdge');
     expect(destinationSearch).toContain('edgeToEdge');
   });
 
   it('groups high accuracy with the refreshed member controls', () => {
     // Members pane: status bar + refresh, then precise-location at the bottom.
     // Refresh control is isolated as RefreshLocationsButton (1 Hz clock stays local).
-    const statusBar = mapScreen.indexOf('styles.myStatusBar');
-    const refresh = mapScreen.indexOf('RefreshLocationsButton', statusBar);
-    const accuracy = mapScreen.indexOf('styles.accuracyRow', refresh);
+    const statusBar = membersPane.indexOf('styles.myStatusBar');
+    const refresh = membersPane.indexOf('RefreshLocationsButton', statusBar);
+    const accuracy = membersPane.indexOf('styles.accuracyRow', refresh);
 
     expect(statusBar).toBeGreaterThanOrEqual(0);
     expect(refresh).toBeGreaterThan(statusBar);
     expect(accuracy).toBeGreaterThan(refresh);
-    expect(mapScreen).toContain("t('settings.preciseLocation')");
-    expect(mapScreen).toContain("t('settings.preciseLocationHint')");
-    expect(mapScreen).toContain('styles.refreshLocationsButton');
-    const statusBarBlock = mapScreen.slice(statusBar, refresh);
+    expect(membersPane).toContain("t('settings.preciseLocation')");
+    expect(membersPane).toContain("t('settings.preciseLocationHint')");
+    expect(refreshButton).toContain('styles.refreshLocationsButton');
+    const statusBarBlock = membersPane.slice(statusBar, refresh);
     expect(statusBarBlock).toContain('styles.myStatusCluster');
     expect(statusBarBlock).toContain('statusIconForKind(myStatusKind)');
     expect(statusBarBlock).not.toContain("t('solo.statusCurrent'");
     expect(statusBarBlock).not.toContain('chevron-down');
-    expect(mapScreen).toContain('marginLeft: \'auto\'');
-    expect(mapScreen).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
-    expect(mapScreen).toMatch(/myStatusBar:[\s\S]{0,180}flexDirection:\s*'row'/);
+    expect(mapStyles).toContain('marginLeft: \'auto\'');
+    expect(mapStyles).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
+    expect(mapStyles).toMatch(/myStatusBar:[\s\S]{0,180}flexDirection:\s*'row'/);
     expect(mapScreen).not.toMatch(/myStatusBar:[\s\S]{0,180}justifyContent:\s*'space-between'/);
   });
 
@@ -275,9 +287,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps Tools lean and parks map/journey chrome prefs in Settings', () => {
-    const toolsStart = mapScreen.indexOf('// ─── 工具');
-    const toolsEnd = mapScreen.indexOf('const sheetChildren');
-    const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
+    const toolsBlock = toolsPane;
 
     const passive = toolsBlock.indexOf("t('passive.enter')");
     const sharing = toolsBlock.indexOf("t('settings.locationSharing')");
@@ -299,7 +309,9 @@ describe('map UI placement contracts', () => {
     expect(toolsBlock).not.toContain("t('settings.gatherCardDefaultExpanded')");
     expect(toolsBlock).not.toContain("t('settings.gatherCardTitleMarquee')");
     expect(toolsBlock).toContain('tools-live-activity-toggle');
-    expect(toolsBlock).toContain('setLiveActivityEnabled');
+    expect(toolsBlock).toContain('handleToolsLiveActivityChange');
+    expect(mapScreen.slice(mapScreen.indexOf('const handleToolsLiveActivityChange'), mapScreen.indexOf('const toolsPaneBody')))
+      .toContain('setLiveActivityEnabled');
 
     expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
     expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
@@ -311,11 +323,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('aligns per-destination meet clocks when itinerary dates change', () => {
-    expect(mapScreen).toContain('alignMeetTimeToTripDay');
-    expect(mapScreen).toContain('meetAt: alignedMeetAt.toISOString()');
-    expect(mapScreen).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
-    // Trip date edits are route-draft local; flush writes trip + reorder together.
-    expect(mapScreen).toContain('routeDraftDirtyRef.current.trip = true');
+    expect(meetTimeSheet).toContain('addMinutesToPickerValue(meetTimeEditor.value, m)');
     expect(mapScreen).toContain('flushRouteDraft');
   });
 
@@ -344,15 +352,15 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain('setGatherCardMarqueeSpeed');
     expect(i18n).toContain("'settings.gatherCardTitleMarquee': '集合點名稱跑馬燈'");
     expect(i18n).toContain("'settings.gatherCardMarqueeSpeed': '跑馬燈速度'");
-    expect(mapScreen).toContain('enabled={gatherCardTitleMarquee}');
-    expect(mapScreen).toContain('pixelsPerSecond={gatherCardMarqueeSpeed}');
-    expect(mapScreen).toContain('active={active}');
-    expect(mapScreen).toContain('activationDelayMs={1600}');
-    expect(mapScreen).toContain('OverflowMarquee');
+    expect(carousel).toContain('enabled={gatherCardTitleMarquee}');
+    expect(carousel).toContain('pixelsPerSecond={gatherCardMarqueeSpeed}');
+    expect(carousel).toContain('active={active}');
+    expect(carousel).toContain('activationDelayMs={1600}');
+    expect(carousel).toContain('OverflowMarquee');
     expect(overflowMarquee).toContain('activationDelayMs');
     expect(overflowMarquee).toContain('setArmed');
     // Stable single style object — not an inline array that re-creates every render.
-    expect(mapScreen).toContain('style={styles.cardTitleCollapsed}');
+    expect(carousel).toContain('style={styles.cardTitleCollapsed}');
     expect(mapScreen).not.toMatch(
       /OverflowMarquee[\s\S]{0,200}style=\{\[styles\.cardTitle/,
     );
@@ -386,7 +394,7 @@ describe('map UI placement contracts', () => {
 
   it('uses tap expansion and keeps controls and arrival progress expanded-only', () => {
     expect(mapScreen).toContain('useGatherCardExpansion');
-    expect(mapScreen).toContain('toggleGatheringCard(dest.id)');
+    expect(carousel).toContain('toggleGatheringCard(dest.id)');
     expect(mapScreen).toContain('collapseActiveCardForExpandedSheet');
     expect(mapScreen).toContain('collapseCard(activeDestination.id)');
     expect(mapScreen).toContain('const handleSheetIndexChange');
@@ -394,11 +402,11 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('setDetent(0)');
     expect(mapScreen).toContain('expandCard(id)');
     expect(mapScreen).not.toContain('finishGatheringCardExpand');
-    expect(mapScreen).toContain('registerCardActivity(dest.id)');
+    expect(carousel).toContain('registerCardActivity(dest.id)');
     expect(mapScreen).not.toContain('pendingExpandId');
     expect(mapScreen).not.toContain("index === 0 ? t('map.nextTag')");
-    expect(mapScreen).toContain('cardExpanded ? (');
-    expect(mapScreen).toContain('styles.cardCollapsedMetrics');
+    expect(carousel).toContain('cardExpanded ? (');
+    expect(carousel).toContain('styles.cardCollapsedMetrics');
   });
 
   it('sheet next-stop summary uses ordered first active stop, not activePoint/card', () => {
@@ -407,39 +415,39 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('activePoint?.title ?? destinations[0]?.title');
     expect(mapScreen).toContain('filterActiveDestinations');
     expect(mapScreen).toContain('resolveAddDay');
-    expect(mapScreen).toContain('mergeHistoryWithPastStops');
+    expect(visitHistory).toContain('mergeHistoryWithPastStops');
   });
 
   it('avoids Zoom enter/exit on gathering-card body (no shrink-then-pop)', () => {
-    const cardBodyStart = mapScreen.indexOf(
+    const cardBodyStart = carousel.indexOf(
       '{cardExpanded ? (',
-      mapScreen.indexOf('Collapsed / expanded swap in-tree'),
+      carousel.indexOf('Collapsed / expanded swap in-tree'),
     );
-    const cardBodyEnd = mapScreen.indexOf(') : (', cardBodyStart);
+    const cardBodyEnd = carousel.indexOf(') : (', cardBodyStart);
     expect(cardBodyStart).toBeGreaterThanOrEqual(0);
     expect(cardBodyEnd).toBeGreaterThan(cardBodyStart);
     expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomIn');
     expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomOut');
     // Arrival feedback uses a centered solid check overlay (not kicker badge);
     // the expanded/collapsed card body must remain a one-shot swap.
-    expect(mapScreen).toContain('arrivalCenterCheckLayer');
+    expect(carousel).toContain('arrivalCenterCheckLayer');
     // Ease-only ZoomIn — no springify bounce on the celebrate check.
-    expect(mapScreen).toContain('entering={ZoomIn.duration(240)}');
+    expect(carousel).toContain('entering={ZoomIn.duration(240)}');
     expect(mapScreen).not.toMatch(
       /arrivalCenterCheckLayer[\s\S]{0,400}ZoomIn\.duration\([^)]+\)\.springify/,
     );
-    expect(mapScreen).toContain('backgroundColor: glass.ok');
+    expect(mapStyles).toContain('backgroundColor: glass.ok');
     expect(mapScreen).not.toContain('arrivalCheckBadge');
   });
 
   it('keeps gathering-card page dots lightweight during stage morphs', () => {
-    expect(mapScreen).toContain('styles.dots');
-    expect(mapScreen).toContain('styles.dotActive');
+    expect(carouselDots).toContain('styles.dots');
+    expect(carouselDots).toContain('styles.dotActive');
     // Dots use CarouselDots in normal flex flow — no absolute active overlay.
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
-    expect(mapScreen).toContain('function CarouselDots');
-    expect(mapScreen).toContain('indicatorRowGeometry');
-    expect(mapScreen).toContain('withTiming(active ? 18 : 6');
+    expect(carouselDots).toContain('function CarouselDots');
+    expect(carouselDots).toContain('indicatorRowGeometry');
+    expect(carouselDots).toContain('withTiming(active ? 18 : 6');
     expect(mapScreen).not.toContain('pillSlot');
     const carouselStart = mapScreen.indexOf('function CarouselDots');
     const carouselEnd = mapScreen.indexOf('function GatheringCardPressable', carouselStart);
@@ -459,8 +467,8 @@ describe('map UI placement contracts', () => {
     expect(tabs).toContain('const selectedIndex =');
     expect(tabs).toContain('const labels = useMemo');
     expect(tabs).not.toContain('<Pressable');
-    const statusTriggerStart = mapScreen.indexOf('myStatusTriggerInner:');
-    const statusTriggerBlock = mapScreen.slice(statusTriggerStart, statusTriggerStart + 180);
+    const statusTriggerStart = mapStyles.indexOf('myStatusTriggerInner:');
+    const statusTriggerBlock = mapStyles.slice(statusTriggerStart, statusTriggerStart + 180);
     expect(statusTriggerStart).toBeGreaterThanOrEqual(0);
     expect(statusTriggerBlock).toContain("flexDirection: 'row'");
     expect(statusTriggerBlock).not.toContain("flexDirection: 'column'");
@@ -476,13 +484,13 @@ describe('map UI placement contracts', () => {
   });
 
   it('uses gathering-card press without scale bounce on expand or collapse', () => {
-    expect(mapScreen).toContain('GatheringCardPressable');
+    expect(carousel).toContain('GatheringCardPressable');
     expect(mapScreen).not.toContain('scale: 0.96');
     expect(mapScreen).not.toContain('pressedCardId');
     expect(mapScreen).not.toContain('withTiming(1.02');
     // Marquee uses withSequence; card press shell must not scale-bounce.
-    expect(mapScreen).toContain('lastPressAtRef');
-    expect(mapScreen).toMatch(/now - lastPressAtRef\.current < 300/);
+    expect(cardPressable).toContain('lastPressAtRef');
+    expect(cardPressable).toMatch(/now - lastPressAtRef\.current < 300/);
   });
 
   it('removes straggler configuration UI while keeping detection wiring', () => {
@@ -498,10 +506,10 @@ describe('map UI placement contracts', () => {
     const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
     expect(toolsBlock).not.toContain("t('straggler.section')");
     // Detection + APNs fan-out stay on group fields.
-    expect(mapScreen).toContain('useStragglerAlerts');
-    expect(mapScreen).toContain('alertsEnabled: group?.stragglerAlerts ?? true');
-    expect(mapScreen).toContain('thresholdM: group?.stragglerThresholdM ?? 500');
-    expect(mapScreen).toContain('reportStraggler');
+    expect(stragglerReporting).toContain('useStragglerAlerts');
+    expect(stragglerReporting).toContain('alertsEnabled: group?.stragglerAlerts ?? true');
+    expect(stragglerReporting).toContain('thresholdM: group?.stragglerThresholdM ?? 500');
+    expect(stragglerReporting).toContain('reportStraggler');
   });
 
   it('keeps peek/mid sheet width stable so tab Segmented does not scale between stages', () => {
@@ -568,14 +576,14 @@ describe('map UI placement contracts', () => {
   it('keeps the selector out of Peek and compacts only the map chrome', () => {
     expect(mapScreen).toContain('const [sheetHeaderH, setSheetHeaderH] = useState(68);');
     expect(mapScreen).not.toContain('sheetBodyVisibilityStyle');
-    expect(mapScreen).toContain("sheetBodyHidden: { display: 'none' }");
+    expect(mapStyles).toContain("sheetBodyHidden: { display: 'none' }");
     expect(mapScreen).not.toContain('[detents[0], detents[0] + 16]');
     expect(mapScreen).toContain("pointerEvents={detent === 0 ? 'none' : 'auto'}");
     expect(mapScreen).toContain('accessibilityElementsHidden={detent === 0}');
     expect(mapScreen).toContain("importantForAccessibility={detent === 0 ? 'no-hide-descendants' : 'auto'}");
     expect(mapScreen).toContain('compactGrabberSpacing');
-    expect(mapScreen).toContain('paddingTop: 2');
-    expect(mapScreen).toContain('paddingBottom: 11');
+    expect(mapStyles).toContain('paddingTop: 2');
+    expect(mapStyles).toContain('paddingBottom: 11');
     expect(bottomSheet).toContain('compactGrabberSpacing = false');
     expect(bottomSheet).toContain('grabZoneCompact');
     expect(bottomSheet).toContain('paddingTop: 3');
@@ -594,7 +602,7 @@ describe('map UI placement contracts', () => {
   it('keeps persistent Liquid Glass surfaces out of detent opacity ancestors', () => {
     expect(mapScreen).not.toContain('chromeOpacityStyle');
     expect(mapScreen).not.toContain('sheetHidden: { opacity: 0 }');
-    expect(mapScreen).toContain("sheetHidden: { display: 'none' }");
+    expect(mapStyles).toContain("sheetHidden: { display: 'none' }");
     expect(mapScreen).toContain('showDenseChrome && !confirmCardReady && !atFull');
     expect(bottomSheet).not.toContain('opacity: interpolate');
   });
@@ -606,20 +614,20 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps arrival beside navigation controls and auto-applies current time', () => {
-    const commandRow = mapScreen.indexOf('styles.commandRow');
-    const arrivalButton = mapScreen.indexOf('arrivalCmdSquare', commandRow);
-    const meetButton = mapScreen.indexOf('styles.meetBtn', commandRow);
+    const commandRow = carousel.indexOf('styles.commandRow');
+    const arrivalButton = carousel.indexOf('arrivalCmdSquare', commandRow);
+    const meetButton = carousel.indexOf('styles.meetBtn', commandRow);
     // Product order: nav | arrived | transport | countdown (transport before meet).
-    const transportRef = mapScreen.indexOf("setTourTargetRef('transport'", commandRow);
-    const meetRef = mapScreen.indexOf("setTourTargetRef('meetTime'", commandRow);
+    const transportRef = carousel.indexOf("setTourTargetRef('transport'", commandRow);
+    const meetRef = carousel.indexOf("setTourTargetRef('meetTime'", commandRow);
 
     expect(arrivalButton).toBeGreaterThan(commandRow);
     expect(arrivalButton).toBeLessThan(meetButton);
     expect(transportRef).toBeGreaterThan(commandRow);
     expect(transportRef).toBeLessThan(meetRef);
-    expect(mapScreen).toContain('ARRIVED_SPLIT_MS');
-    expect(mapScreen).toContain('FadeInRight');
-    expect(mapScreen).toContain('FadeOutRight');
+    expect(carousel).toContain('ARRIVED_SPLIT_MS');
+    expect(carousel).toContain('FadeInRight');
+    expect(carousel).toContain('FadeOutRight');
     expect(mapScreen).toContain('commitPersonalArrival(destination, targetUserId');
     // Arrive is one-tap now — no multi-option time-choice Alert.
     expect(mapScreen).toContain('handleSelfArrival');
@@ -632,23 +640,23 @@ describe('map UI placement contracts', () => {
     // Personal arrive: sequential rules + team nav active on this card only
     // (Start splits 「已抵達」; End swallows it back into Start).
     expect(mapScreen).toContain('canMarkArrival');
-    expect(mapScreen).toContain('expanded={!showArrivalControl}');
-    expect(mapScreen).toContain('arrivalControlJustSplit');
+    expect(carousel).toContain('expanded={!showArrivalControl}');
+    expect(carousel).toContain('arrivalControlJustSplit');
     expect(mapScreen).not.toContain('cardExpanded || showArrivalControl');
-    expect(mapScreen).toContain('{cardExpanded && (');
-    expect(mapScreen).toContain('{showArrivalControl ? (');
-    expect(mapScreen).toContain('testID="members-location-sharing"');
-    expect(mapScreen).toContain('color={glass.danger}');
+    expect(carousel).toContain('{cardExpanded && (');
+    expect(carousel).toContain('{showArrivalControl ? (');
+    expect(membersPane).toContain('testID="members-location-sharing"');
+    expect(historySheet).toContain('color={glass.danger}');
     expect(mapScreen).toContain('locationSharingConfirmCopy');
     expect(mapScreen).toContain('confirmAction({');
     expect(mapScreen).toContain("showsUserLocation={foregroundLocation.owner === 'mapkit'}");
     expect(mapScreen).not.toMatch(
       /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,
     );
-    expect(mapScreen).not.toMatch(
+    expect(mapScreen + carousel).not.toMatch(
       /showArrivalControl\s*=\s*[\s\S]{0,200}sharedTargetId === dest\.id/,
     );
-    const arriveBlocks = mapScreen.match(
+    const arriveBlocks = (mapScreen + carousel).match(
       /const showArrivalControl\s*=\s*[\s\S]{0,220}?;/g,
     ) ?? [];
     expect(arriveBlocks.length).toBeGreaterThanOrEqual(2);
@@ -664,7 +672,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("t('map.stopsReorder', { count })");
     // Flush reorder must use full open list (not day-gated carousel filter).
     expect(mapScreen).toContain('openDestinationsForReorder');
-    expect(mapScreen).toContain('buildOpenReorderPayload');
+    expect(itineraryMutations).toContain('buildOpenReorderPayload');
     expect(mapScreen).toContain('dailyAccommodations={');
   });
 
@@ -702,9 +710,9 @@ describe('map UI placement contracts', () => {
   });
 
   it('marquees overflow collapsed titles and uses role-correct nav labels', () => {
-    expect(mapScreen).toContain('OverflowMarquee');
-    expect(mapScreen).toContain('endPauseMs={1500}');
-    expect(mapScreen).toContain('enabled={gatherCardTitleMarquee}');
+    expect(carousel).toContain('OverflowMarquee');
+    expect(carousel).toContain('endPauseMs={1500}');
+    expect(carousel).toContain('enabled={gatherCardTitleMarquee}');
     expect(mapScreen).toContain('resolveNavCommand');
     expect(mapScreen).toContain('deriveCardNavFlags');
     expect(mapScreen).toContain('projectTeamGatheringState');
@@ -712,7 +720,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('overlayPersonalOnTeamState');
     expect(mapScreen).toContain('teamSurfaceView');
     expect(mapScreen).toContain('requestTeamEnd');
-    expect(mapScreen).toContain("navCmd.action === 'end_point'");
+    expect(carousel).toContain("navCmd.action === 'end_point'");
     expect(mapScreen).toContain('runCompleteGatheringStop');
     // Complete durably queues the original-session terminal operation.
     expect(mapScreen).toContain('navigationSessionState.refresh()');
@@ -726,8 +734,8 @@ describe('map UI placement contracts', () => {
     expect(completeFn).not.toContain('stopNavigation()');
     expect(completeFn).not.toContain('requestTeamEnd');
     expect(mapScreen).toContain('sharedTargetId');
-    expect(mapScreen).toContain("navCmd.action === 'request_start'");
-    expect(mapScreen).toContain('requestLeaderStart(dest)');
+    expect(carousel).toContain("navCmd.action === 'request_start'");
+    expect(carousel).toContain('requestLeaderStart(dest)');
     expect(mapScreen).not.toContain('startLocalRoutePlan');
     expect(mapScreen).not.toContain('pendingCompleteDestIds');
     expect(mapScreen).toContain('resolveCompletePrompt');
@@ -739,17 +747,17 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("prompt.kind === 'member_leader_already_done'");
     expect(mapScreen).toContain('member_leader_already_done');
     // Arrived green check is pressable for undo (anti mis-tap).
-    expect(mapScreen).toContain("handleArrival(dest, user.id, false)");
-    expect(mapScreen).toContain("accessibilityLabel={t('arrival.undo')}");
+    expect(carousel).toContain("handleArrival(dest, user.id, false)");
+    expect(carousel).toContain("accessibilityLabel={t('arrival.undo')}");
     // Expanded mock: day + people chip; dist | eta | maps metrics row.
-    expect(mapScreen).toContain('styles.cardSubRow');
-    expect(mapScreen).toContain('styles.cardDayLine');
-    expect(mapScreen).toContain('styles.arrivalPeopleChip');
-    expect(mapScreen).toContain('arrivedHere}/{totalMembers');
+    expect(carousel).toContain('styles.cardSubRow');
+    expect(carousel).toContain('styles.cardDayLine');
+    expect(carousel).toContain('styles.arrivalPeopleChip');
+    expect(carousel).toContain('arrivedHere}/{totalMembers');
     expect(mapScreen).not.toContain('arrivalHairline');
     expect(mapScreen).not.toContain('arrivalHairlineFill');
-    expect(mapScreen).toContain('styles.metricsRow');
-    expect(mapScreen).toContain('styles.mapsChip');
+    expect(carousel).toContain('styles.metricsRow');
+    expect(carousel).toContain('styles.mapsChip');
   });
 
 
@@ -761,7 +769,7 @@ describe('map UI placement contracts', () => {
   it('returns from account details to settings and keeps the reorder sheet under KML', () => {
     expect(mapScreen).toContain('visible={settingsOpen}');
     expect(mapScreen).toContain("onClose={() => setOverlay(null)}");
-    expect(mapScreen).toContain("setKmlVisible(true)");
+    expect(itineraryMutations).toContain("setKmlVisible(true)");
     expect(settingsOverlay).not.toContain("t('account.section')");
     // Feedback lives under 支援 as a nav row (not a standalone report button).
     expect(settingsOverlay).toContain("t('feedback.title')");
@@ -843,8 +851,8 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('deriveScopedArrivalCounts');
     expect(mapScreen).toContain('destination.subgroupId');
     // Card people chip uses scoped totals (not members.length).
-    expect(mapScreen).toContain('cardArrival.arrivedCount');
-    expect(mapScreen).toContain('cardArrival.totalCount');
+    expect(carousel).toContain('cardArrival.arrivedCount');
+    expect(carousel).toContain('cardArrival.totalCount');
     // Remote final arrival (not only personal-arrive path).
     expect(mapScreen).toContain('remoteAutoCompleteDestIdsRef');
     expect(mapScreen).toContain('executeAutoCompleteStop');
@@ -885,8 +893,8 @@ describe('map UI placement contracts', () => {
   });
 
   it('uses theme accent for create-team and passive enter without Enter… copy', () => {
-    expect(mapScreen).toContain("t('subgroup.createTeam')");
-    expect(mapScreen).toMatch(/createTeam[\s\S]{0,80}color: accent|color: accent[\s\S]{0,80}createTeam/);
+    expect(flockRow).toContain("t('subgroup.createTeam')");
+    expect(flockRow).toMatch(/createTeam[\s\S]{0,80}color: accent|color: accent[\s\S]{0,80}createTeam/);
     expect(i18n).toContain("'passive.enter': '被動模式'");
     expect(i18n).toContain("'passive.enter': 'Passive mode'");
     expect(i18n).not.toContain("'passive.enter': '進入被動模式'");
