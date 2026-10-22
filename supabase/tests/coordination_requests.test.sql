@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(29);
+select plan(32);
 
 insert into auth.users (id, email) values
   ('11111111-1111-4111-8111-111111111111', 'leader@example.test'),
@@ -140,11 +140,54 @@ select throws_ok(
 
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 
+create temporary table test_coordinate_change as
+select * from public.create_coordination_request(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  null,
+  'Move existing stop',
+  'gathering_point',
+  jsonb_build_array(jsonb_build_object(
+    'id', 'change', 'label', 'Move north', 'kind', 'gathering_point',
+    'payload', jsonb_build_object(
+      'destinationId', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
+      'latitude', 25.2, 'longitude', 121.2
+    )
+  )),
+  now() + interval '1 hour',
+  'majority',
+  'change'
+);
+
+select throws_ok(
+  format(
+    'select public.override_coordination_request(%L, %L)',
+    (select id from test_coordinate_change),
+    'change'
+  ),
+  '22023',
+  'destination coordinates are immutable; delete and recreate the destination',
+  'coordination cannot move an existing destination'
+);
+
+select is(
+  (select jsonb_build_array(latitude, longitude) from public.itinerary_items
+    where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'),
+  '[25.1, 121.1]'::jsonb,
+  'rejected coordinate change preserves destination coordinates'
+);
+
+select is(
+  (select count(*) from public.itinerary_operations
+    where source_request_id = (select id from test_coordinate_change)),
+  0::bigint,
+  'rejected coordinate change creates no itinerary operation'
+);
+
 create temporary table test_req as
 select * from public.create_coordination_request(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   null,
-  'Move open stop',
+  'Rename open stop',
   'gathering_point',
   jsonb_build_array(
     jsonb_build_object(
@@ -154,13 +197,11 @@ select * from public.create_coordination_request(
     ),
     jsonb_build_object(
       'id', 'change',
-      'label', 'Move north',
+      'label', 'Rename stop',
       'kind', 'gathering_point',
       'payload', jsonb_build_object(
         'destinationId', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
-        'title', 'Open stop north',
-        'latitude', 25.2,
-        'longitude', 121.2
+        'title', 'Renamed open stop'
       )
     )
   ),
@@ -240,8 +281,8 @@ select is(
 select is(
   (select title from public.itinerary_items
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'),
-  'Open stop north',
-  'accepted outcome updates open itinerary stop'
+  'Renamed open stop',
+  'accepted outcome renames open itinerary stop'
 );
 
 select is(
@@ -369,6 +410,7 @@ select is(
   'deadline resolve expires with timeout default'
 );
 
+reset role;
 select is(
   (select resolution_source from public.coordination_requests
     where id = (select id from test_deadline)),
@@ -376,12 +418,14 @@ select is(
   'deadline resolution source is timeout_default'
 );
 
+set local role service_role;
 select is(
   (public.resolve_coordination_request_deadline((select id from test_deadline))).resolved_outcome,
   'keep',
   'repeated deadline resolve returns same outcome'
 );
 
+reset role;
 select is(
   (select count(*) from public.itinerary_operations
     where source_request_id = (select id from test_deadline)),

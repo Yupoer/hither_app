@@ -23,6 +23,7 @@ select throws_ok(
 );
 
 create temporary table reward_session_test as select public.create_reward_session('ios')::jsonb as result;
+grant select on reward_session_test to service_role;
 select is((select result->>'ok' from reward_session_test), 'true',
   'registered user creates a reward session');
 select ok((select result->>'session_ref' ~ '^[0-9a-f]{64}$' from reward_session_test),
@@ -36,19 +37,19 @@ select throws_ok(
 
 set local role service_role;
 select is(public.credit_rewarded_ad_transaction(
-  (select session_ref from public.reward_sessions where user_id = 'a7111111-1111-4111-8111-111111111111'),
+  (select result->>'session_ref' from reward_session_test),
   'reward-test-transaction', 'untrusted-unit', '1', 'hither_token', 'ios')->>'error',
   'invalid_ad_unit', 'untrusted ad unit cannot credit a reward');
 select is(public.credit_rewarded_ad_transaction(
-  (select session_ref from public.reward_sessions where user_id = 'a7111111-1111-4111-8111-111111111111'),
+  (select result->>'session_ref' from reward_session_test),
   'reward-test-transaction', public.rewarded_ad_unit_for_platform('ios'), '2', 'hither_token', 'ios')->>'error',
   'invalid_reward', 'production unit requires the exact reward amount');
 select is(public.credit_rewarded_ad_transaction(
-  (select session_ref from public.reward_sessions where user_id = 'a7111111-1111-4111-8111-111111111111'),
+  (select result->>'session_ref' from reward_session_test),
   'reward-test-transaction', public.rewarded_ad_unit_for_platform('ios'), '1', 'hither_token', 'ios')->>'balance',
   '1', 'valid SSV credit adds one token');
 select is(public.credit_rewarded_ad_transaction(
-  (select session_ref from public.reward_sessions where user_id = 'a7111111-1111-4111-8111-111111111111'),
+  (select result->>'session_ref' from reward_session_test),
   'reward-test-transaction', public.rewarded_ad_unit_for_platform('ios'), '1', 'hither_token', 'ios')->>'already_credited',
   'true', 'Google transaction replay is idempotent');
 reset role;
