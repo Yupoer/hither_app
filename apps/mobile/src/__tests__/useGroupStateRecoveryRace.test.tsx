@@ -95,7 +95,7 @@ describe('useGroupState recovery snapshot race', () => {
   it('exposes the real cold-start error and recovers without a local snapshot', async () => {
     mockRecovery.mockRejectedValue(new TypeError('Function is not a constructor'));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1'); return null; }
+    function Harness() { api = useGroupState('group-1'); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     expect(api.state).toBeNull();
@@ -124,7 +124,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness() {
       api = useGroupState('group-1');
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void };
@@ -176,7 +176,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness({ groupId }: { groupId: string }) {
       api = useGroupState(groupId);
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
@@ -214,7 +214,7 @@ describe('useGroupState recovery snapshot race', () => {
   it('paints a committed local card before slow outbox metadata resolves', async () => {
     mockRecovery.mockImplementation(() => new Promise(() => {}));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return null; }
+    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     const next = { ...state('local add'), destinations: [{ id: 'added', title: 'Added', order: 0,
@@ -231,7 +231,7 @@ describe('useGroupState recovery snapshot race', () => {
   it('ignores an older local read when a newer committed snapshot is already visible', async () => {
     mockRecovery.mockImplementation(() => new Promise(() => {}));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1'); return null; }
+    function Harness() { api = useGroupState('group-1'); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     let settle!: (value: unknown) => void;
@@ -249,7 +249,7 @@ describe('useGroupState recovery snapshot race', () => {
     const pending: Array<(value: ReturnType<typeof snapshot>) => void> = [];
     mockRecovery.mockImplementation(() => new Promise(resolve => pending.push(resolve)));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return null; }
+    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     const next = { ...state('committed add'), destinations: [{ id: 'added', title: 'Added', order: 0,
@@ -278,7 +278,7 @@ describe('useGroupState recovery snapshot race', () => {
     mockRecovery.mockResolvedValue({ ...snapshot(remote, '2026-10-08T09:00:00Z'),
       entityVersions: { 'active_gathering:group-1': remoteVersion } });
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1'); return null; }
+    function Harness() { api = useGroupState('group-1'); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     expect(api.state?.group.name).toBe('Remote metadata');
@@ -304,7 +304,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness({ groupId }: { groupId: string }) {
       api = useGroupState(groupId);
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
@@ -348,7 +348,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness({ groupId }: { groupId: string }) {
       api = useGroupState(groupId);
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
@@ -409,7 +409,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness({ actor }: { actor: string }) {
       api = useGroupState('group-1', { myUserId: actor });
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
@@ -524,7 +524,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness() {
       api = useGroupState('group-1', { myUserId: 'me' });
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void };
@@ -602,7 +602,7 @@ describe('useGroupState recovery snapshot race', () => {
     let api!: ReturnType<typeof useGroupState>;
     function Harness() {
       api = useGroupState('group-1');
-      return null;
+      return api.lifecycle;
     }
 
     let root!: { unmount: () => void };
@@ -661,7 +661,7 @@ describe('useGroupState recovery snapshot race', () => {
 
   it('coalesces non-location realtime events, polls without overlap and sleeps in background', async () => {
     mockRecovery.mockResolvedValue(snapshot(state('server'), '2026-09-19T00:00:00Z'));
-    function Harness() { useGroupState('group-1'); return null; }
+    function Harness() { return useGroupState('group-1').lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     const { supabase } = require('../api/supabase');
@@ -692,7 +692,7 @@ describe('useGroupState recovery snapshot race', () => {
     mockListOperations.mockResolvedValue([own, { ...own, id: 'other-op', actorId: 'other' }]);
     mockRecovery.mockResolvedValue(snapshot(state('server'), '2026-09-19T00:00:00Z'));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness({ actor }: { actor: string }) { api = useGroupState('group-1', { myUserId: actor }); return null; }
+    function Harness({ actor }: { actor: string }) { api = useGroupState('group-1', { myUserId: actor }); return api.lifecycle; }
     let root!: { unmount: () => void; update: (element: React.ReactElement) => void };
     await act(async () => { root = create(React.createElement(Harness, { actor: 'me' })); });
     expect(api.openOperations.map(op => op.id)).toEqual(['op1']);
@@ -711,7 +711,7 @@ describe('useGroupState recovery snapshot race', () => {
     const local = { ...state('local'), destinations: [{ id: 'local-point', title: 'saved locally',
       coordinates: { latitude: 25, longitude: 121 }, order: 0, day: null }] };
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1', { myUserId: 'me' }); return null; }
+    function Harness() { api = useGroupState('group-1', { myUserId: 'me' }); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     mockReadSnapshot.mockResolvedValue({ state: local, source: 'local_optimistic', syncedAt: Date.now() });
@@ -724,7 +724,7 @@ describe('useGroupState recovery snapshot race', () => {
     mockReadSnapshot.mockResolvedValue({ state: state('cached'), source: 'local_cache', syncedAt: Date.now() });
     mockRecovery.mockRejectedValue(new Error('Network request failed'));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1'); return null; }
+    function Harness() { api = useGroupState('group-1'); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     expect(api.state?.group.name).toBe('cached');
@@ -741,7 +741,7 @@ describe('useGroupState recovery snapshot race', () => {
     const first = state('live');
     mockRecovery.mockResolvedValue(snapshot(first, '2026-09-29T00:00:01Z'));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1'); return null; }
+    function Harness() { api = useGroupState('group-1'); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     expect(api.state?.group.name).toBe('live');
@@ -762,7 +762,7 @@ describe('useGroupState recovery snapshot race', () => {
   it('releases a hung request after its deadline so the next read can recover', async () => {
     mockRecovery.mockImplementationOnce(() => new Promise(() => {}));
     let api!: ReturnType<typeof useGroupState>;
-    function Harness() { api = useGroupState('group-1'); return null; }
+    function Harness() { api = useGroupState('group-1'); return api.lifecycle; }
     let root!: { unmount: () => void };
     await act(async () => { root = create(React.createElement(Harness)); });
     await act(async () => { jest.advanceTimersByTime(10_001); });

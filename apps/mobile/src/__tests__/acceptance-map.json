@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Group resources preserve realtime cadence, separate instance channels, stale callback fencing, committed visible seed leases and abandoned render privacy.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "polls every|fallback poll|two hook instances|Strict replay|suspended render"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Foreground repair uses the committed latest callback without restarting its deadline and releases native listeners across enabled, interval, unmount and Strict replay.",
       "testFile": "foregroundReconcileLifecycle.test.ts",
       "testNamePattern": "commits the latest|replaces only enabled|Strict replay"

@@ -385,6 +385,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const {
     state,
+    lifecycle: groupStateLifecycle,
     loading,
     error: groupStateError,
     loadError,
@@ -4568,6 +4569,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const groupDataLifecycle = <>
+    {groupStateLifecycle}
     {locationRefreshLifecycle}
     {gatheringWorkflowLifecycle}
     {organizerLifecycle}
