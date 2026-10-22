@@ -148,8 +148,8 @@ select throws_ok(
       where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'A'
     )
   ) $$,
-  '42501',
-  'permission denied',
+  'P0002',
+  'group not found',
   'non-leader rejected for group-level rows'
 );
 
@@ -182,8 +182,8 @@ select throws_ok(
         and title in ('A', 'SubS')
     )
   ) $$,
-  '42501',
-  'permission denied',
+  'P0002',
+  'group not found',
   'mixed-scope batch rejected for non-leader'
 );
 

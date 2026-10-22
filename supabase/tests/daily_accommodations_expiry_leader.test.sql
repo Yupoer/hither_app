@@ -123,6 +123,13 @@ insert into public.memberships (group_id, user_id, role, created_at) values
     now() - interval '2 days'
   );
 
+-- Membership setup stamps a fresh anonymous window; move it past expiry
+-- through the internal write gate.
+select public.allow_anonymous_expiry_write();
+update public.profiles
+set anonymous_expires_at = now() - interval '1 hour'
+where id = 'd2222222-2222-4222-8222-222222222222';
+
 -- Expired anonymous leader: memberships.role=leader but is_member false → denied.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'd2222222-2222-4222-8222-222222222222', true);
