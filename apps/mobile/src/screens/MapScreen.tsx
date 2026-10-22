@@ -25,7 +25,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   UIManager,
@@ -90,7 +89,6 @@ import {
   deriveCardNavFlags,
   deriveScopedArrivalCounts,
   planCompleteGatheringApply,
-  projectHistoryForViewer,
   resolveCompletePrompt,
   resolveNavCommand,
 } from '../utils/gatherCommand';
@@ -159,6 +157,11 @@ import { ToolsPane } from './MapScreen/components/ToolsPane';
 import { RoutePane } from './MapScreen/components/RoutePane';
 import { MembersPane } from './MapScreen/components/MembersPane';
 import { useItineraryMutations } from './MapScreen/hooks/useItineraryMutations';
+import { useStoreEntitlements } from './MapScreen/hooks/useStoreEntitlements';
+import { useAccountActions } from './MapScreen/hooks/useAccountActions';
+import { useGroupActions } from './MapScreen/hooks/useGroupActions';
+import { useStragglerReporting } from './MapScreen/hooks/useStragglerReporting';
+import { useVisitHistory } from './MapScreen/hooks/useVisitHistory';
 import { useGatheringWorkflow } from './MapScreen/hooks/useGatheringWorkflow';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import { useSubgroupActions } from './MapScreen/hooks/useSubgroupActions';
@@ -169,9 +172,6 @@ import {
 import {
   GroupFeatureTourOverlay,
   useGroupFeatureTour,
-  clearGroupFeatureTour,
-  clearAddPlaceTour,
-  clearRouteReorderTour,
   holeKindForTarget,
   pickTourDestinationId,
   tourDestinationIndex,
@@ -199,13 +199,11 @@ import { SheetPaneTabs } from './MapScreen/components/SheetPaneTabs';
 import type { SheetPaneTabOption } from './MapScreen/components/SheetPaneTabs';
 import { StorePane } from './MapScreen/components/StorePane';
 import type { SheetPaneKey } from '../store/types';
-import { getStoreSnapshot } from '../api/services/StoreService';
 import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useNavigationSession } from '../state/useNavigationSession';
-import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
-import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
+import { useLiveActivity } from '../state/useLiveActivity';
 import {
   prepareBackgroundJourneyPermissions,
   loadBackgroundManualUndo,
@@ -237,12 +235,6 @@ import {
   type TravelMode,
 } from '../utils/geo';
 import {
-  groupHistoryByDay,
-  historyFromDestinationArrivals,
-  mergeHistoryWithPastStops,
-  type HistoryDayGroup,
-} from '../utils/history';
-import {
   dateForTripDay,
   filterActiveDestinations,
   localDayKey,
@@ -259,13 +251,9 @@ import {
   addDestination,
   addDestinationsBatch,
   deleteDestination,
-  fetchVisitedWaypoints,
   deleteVisitedWaypoint,
   recordVisitedWaypoint,
-  saveOnboardingProfile,
   setSolo,
-  reportStraggler,
-  leaveGroups,
   kickGroupMember,
   requestGroupLocationRefresh,
   getGroupLocationRefreshAcknowledgements,
@@ -286,7 +274,6 @@ import {
   setNotificationPreferences,
 } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
 import {
@@ -311,7 +298,6 @@ import type {
 import type { KmlPlacemark } from '../utils/kml';
 import { normalizeImportBatch, KmlImportError } from '../utils/kmlBatch';
 import {
-  anonymousLeaderRequiresRegistration,
   countOpenDestinations,
   shouldBlockNewDestination,
 } from '../entitlements';
@@ -834,60 +820,22 @@ export default function MapScreen({ route, navigation }: Props) {
   const [appliedMacro, setAppliedMacro] = useState<PresenceMacroKind | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
-  // Visited-waypoint history — fetched fresh each time the overlay opens.
-  // Past trip-day stops the viewer never reached are merged in as 未抵達/未完成.
-  const [historyGroups, setHistoryGroups] = useState<HistoryDayGroup[]>([]);
-  const historyRequestRef = useRef(0);
-  const loadHistory = useCallback(async () => {
-    const request = ++historyRequestRef.current;
-    const renderHistory = (items: VisitedWaypoint[]) => {
-    const arrivalHistory = historyFromDestinationArrivals(destinationArrivals, allScopedDestinations, {
-      viewerId: user?.id,
-      isGroupLeader: !!isLeader,
-    });
-    const existingKeys = new Set(items.map((item) => item.destinationId + ":" + (item.userId ?? "")));
-    const projected = projectHistoryForViewer([...items, ...arrivalHistory.filter((item) => !existingKeys.has(item.destinationId + ":" + (item.userId ?? "")))], {
-      viewerId: user?.id,
-      isGroupLeader: !!isLeader,
-    });
-    const memberNames = new Map(members.map(member => [member.userId, member.name]));
-    const pendingArrivalKeys = new Set(arrivalOperations
-      .filter(op => op.payload.actorId === user?.id && op.status !== 'acked' && op.status !== 'conflict')
-      .map(op => `${op.entityId}:${op.payload.userId}`));
-    const named = projected.map((item) => ({
-      ...item,
-      userName: item.userId ? memberNames.get(item.userId) : undefined,
-      status: item.status ?? ('arrived' as const),
-      pendingSync: pendingArrivalKeys.has(`${item.destinationId}:${item.userId}`),
-    }));
-    const merged = mergeHistoryWithPastStops(named, allScopedDestinations, {
-      departureDate: routeDepartureDate,
-      tripDays: routeTripDays,
-      userId: user?.id,
-    });
-    setHistoryGroups(groupHistoryByDay(merged));
-    };
-    // Pending local history is visible even while a disconnected request waits.
-    renderHistory([]);
-    const items = await fetchVisitedWaypoints(groupId ?? undefined).catch(() => []);
-    if (historyRequestRef.current === request) renderHistory(items);
-  }, [
-    groupId,
-    members,
+  const {
+    historyGroups,
+    loadHistory,
+  } = useVisitHistory({
     allScopedDestinations,
+    arrivalOperations,
+    destinationArrivals,
+    group,
+    groupId,
+    isLeader,
+    members,
+    overlay,
     routeDepartureDate,
     routeTripDays,
-    group?.departureDate,
-    group?.tripDays,
-    user?.id,
-    isLeader,
-    destinationArrivals,
-    arrivalOperations,
-  ]);
-  useEffect(() => {
-    if (overlay !== 'history') return;
-    void loadHistory().catch(() => undefined);
-  }, [overlay, loadHistory]);
+    user,
+  });
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
@@ -2502,37 +2450,16 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     if (!key) lastFittedRouteRef.current = null;
   }, [activePoint, selfRoute, travelMode, deviceCoords]);
-
-  // --- Straggler alerts (leader-only, 1:N vs leader GPS) ----------------------
-  // Followers never run distance logic; they only receive APNs from the leader.
-  // Configuration UI was removed; detection still reads group fields from DB.
-  const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined, {
-    enabled: !!isLeader,
-    leaderUserId: user?.id,
-    alertsEnabled: group?.stragglerAlerts ?? true,
-    thresholdM: group?.stragglerThresholdM ?? 500,
+  const {
+    stragglers,
+  } = useStragglerReporting({
+    fromCoords,
+    group,
+    groupId,
+    isLeader,
+    state,
+    user,
   });
-  // On newly flagged members (hysteresis in the hook), leader fans out APNs
-  // via RPC — no local notification (would double-fire for the leader).
-  const lastStragglerIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!isLeader || !groupId) {
-      lastStragglerIdsRef.current = new Set();
-      return;
-    }
-    const ids = new Set(stragglers.map((s) => s.userId));
-    const newOnes = stragglers.filter((s) => !lastStragglerIdsRef.current.has(s.userId));
-    lastStragglerIdsRef.current = ids;
-    for (const s of newOnes) {
-      void reportStraggler(groupId, s.userId, s.distanceM).catch(() => {
-        // Soft-fail: leader-role mismatch / network blip must not escalate to
-        // root render fallback. No blind retry.
-        // Canonical error event is owned by instrumented Supabase `traceApi`
-        // (api.rpc.report_straggler + leader_role_required classification) —
-        // do not logError again or the outbox doubles every soft-fail.
-      });
-    }
-  }, [stragglers, isLeader, groupId]);
 
   // Organizer exception center — leader-only derived list (no second source of truth).
   const exceptionArrivedUserIds = useMemo(() => {
@@ -3843,75 +3770,23 @@ export default function MapScreen({ route, navigation }: Props) {
         ));
     });
   }, [loadHistory, t]);
-
-
-
-  // --- Group actions --------------------------------------------------------
-  const [codeCopied, setCodeCopied] = useState(false);
-  /** Anonymous Leader at 5 members must register before inviting a 6th. */
-  const inviteBlockedForAnonymousLeader = anonymousLeaderRequiresRegistration(
-    isAnonymous && role === 'leader',
-    members.length,
-  );
-  const promptAnonymousLeaderRegistration = useCallback(() => {
-    Alert.alert(
-      t('anon.registrationRequiredTitle'),
-      t('anon.registrationRequiredBody'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('anon.registrationRequiredCta'),
-          onPress: () => {
-            setOverlay('account');
-          },
-        },
-      ],
-    );
-  }, [t]);
-  const copyCode = useCallback(async () => {
-    if (!group) return;
-    if (inviteBlockedForAnonymousLeader) {
-      promptAnonymousLeaderRegistration();
-      return;
-    }
-    logEvent('code_copy');
-    await Clipboard.setStringAsync(group.inviteCode);
-    setCodeCopied(true);
-    setTimeout(() => setCodeCopied(false), 1500);
-  }, [group, inviteBlockedForAnonymousLeader, promptAnonymousLeaderRegistration]);
-  const shareCode = useCallback(async () => {
-    if (!group) return;
-    if (inviteBlockedForAnonymousLeader) {
-      promptAnonymousLeaderRegistration();
-      return;
-    }
-    logEvent('code_share');
-    await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
-  }, [group, t, inviteBlockedForAnonymousLeader, promptAnonymousLeaderRegistration]);
-
-  // --- Profile (nickname + emoji avatar) — avatar button only --------------
-  const openProfile = useCallback(() => {
-    lightTap();
-    setOverlay('profile');
-  }, []);
-
-  /** RoleSelect create/join home — workflow boundary: reset stack, keep membership. */
-  const goHomeCreateOrJoin = useCallback(() => {
-    void runUiAction(
-      'map.go_home_create_or_join',
-      () => {
-        lightTap();
-        logEvent('settings_go_home_create_or_join');
-        // Close overlay/sheet local state in the same transaction as the reset so the
-        // departing Map instance does not leave modal state hanging, and so re-entry
-        // cannot stack another Map on top of the old one.
-        setOverlay(null);
-        logEvent('navigation_reset', { target: 'RoleSelect', reason: 'go_home_create_or_join' });
-        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
-      },
-      { screen: 'Map' },
-    );
-  }, [navigation]);
+  const {
+    codeCopied,
+    copyCode,
+    goHomeCreateOrJoin,
+    inviteBlockedForAnonymousLeader,
+    openProfile,
+    promptAnonymousLeaderRegistration,
+    shareCode,
+  } = useGroupActions({
+    group,
+    isAnonymous,
+    members,
+    navigation,
+    role,
+    setOverlay,
+    t,
+  });
 
   // --- Solo mode (global user status — not on member cards) -----------------
   // Returns false if the RPC failed (caller should not close the status sheet).
@@ -4038,144 +3913,23 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
     workflowContext,
   });
-
-  const confirmLeave = useCallback(() => {
-    // Red style only on the confirm button in the dialog — not on settings rows.
-    confirmAction(
-      {
-        title: isLeader ? t('map.endGroupTitle') : t('group.leaveTitle'),
-        message: isLeader ? t('map.endGroupMsg') : t('group.leaveMsg'),
-        confirmLabel: isLeader ? t('map.endGroupConfirm') : t('group.leaveConfirm'),
-        cancelLabel: t('common.cancel'),
-        destructive: true,
-      },
-      () => {
-        void runUiAction(
-          'map.leave_group',
-          async (token) => {
-            voluntaryLeaveRef.current = true;
-            logEvent('group_leave', { groupId, isLeader });
-            try {
-            if (groupId) {
-              await leaveGroups([groupId]);
-              if (!token.isCurrent()) return;
-              await clearLiveActivities({ groupIds: [groupId] });
-            } else {
-              await clearLiveActivities();
-            }
-            if (!token.isCurrent()) return;
-            leaveGroup();
-            navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
-            } catch (error) {
-              voluntaryLeaveRef.current = false;
-              throw error;
-            }
-          },
-          { screen: 'Map' },
-        );
-      },
-    );
-  }, [t, groupId, isLeader, leaveGroup, navigation]);
-
-  function startMapSignOut(): void {
-    void runUiAction(
-      'map.sign_out',
-      async (token) => {
-        logEvent('sign_out');
-        await signOut();
-        if (!token.isCurrent()) return;
-        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-      },
-      {
-        screen: 'Map',
-        suppressBanner: true,
-        onError: (kind) => {
-          const message = kind === 'timeout'
-            ? t('interaction.signOutTimeout')
-            : t('interaction.error');
-          Alert.alert(t('settings.signOutTitle'), message, [
-            { text: t('common.cancel'), style: 'cancel' },
-            { text: t('interaction.retry'), onPress: startMapSignOut },
-          ]);
-        },
-      },
-    );
-  }
-
-  const confirmSignOut = useCallback(() => {
-    confirmAction(
-      {
-        title: t('settings.signOutTitle'),
-        message: t('settings.signOutMsg'),
-        confirmLabel: t('settings.signOut'),
-        cancelLabel: t('common.cancel'),
-        destructive: true,
-      },
-      startMapSignOut,
-    );
-  }, [t, signOut, navigation]);
-
-  const resetPrefs = useCallback(async () => {
-    logEvent('reset_prefs');
-    try {
-      await saveOnboardingProfile({});
-    } catch (e) {
-      logError('reset_prefs_failed', e);
-      console.warn('[settings] resetPrefs saveOnboardingProfile failed', e);
-    }
-    // #171: mark durable onboarding replay for create/join home — do not navigate.
-    await markOnboardingReplayForHome().catch(() => undefined);
-    await clearGroupFeatureTour({
-      accountId: user?.id ?? null,
-      existingPreferences: user?.preferences ?? null,
-    }).catch(() => undefined);
-    await clearAddPlaceTour({
-      accountId: user?.id ?? null,
-      existingPreferences: {
-        ...(user?.preferences ?? {}),
-        groupFeatureTourCompleted: false,
-      },
-    }).catch(() => undefined);
-    await clearRouteReorderTour({
-      accountId: user?.id ?? null,
-      existingPreferences: {
-        ...(user?.preferences ?? {}),
-        groupFeatureTourCompleted: false,
-        addPlaceTourCompleted: false,
-      },
-    }).catch(() => undefined);
-    reevaluateRouteTour();
-    setAddPlaceTourLocalDone(false);
-    // Optimistically clear session prefs so reevaluate does not see stale true.
-    // clearGroupFeatureTour already best-effort wrote the account; this updates
-    // in-memory user.preferences. Failures are non-fatal (reset intent covers them).
-    try {
-      await updateProfile({
-        preferences: {
-          ...(user?.preferences ?? {}),
-          groupFeatureTourCompleted: false,
-          addPlaceTourCompleted: false,
-          routeReorderTourCompleted: false,
-        },
-      });
-    } catch {
-      // Pending / reset-intent paths keep replay working without session write.
-    }
-    Alert.alert(t('settings.resetAllPrefs'), t('settings.resetPrefsDone'));
-  }, [t, user?.id, user?.preferences, updateProfile, reevaluateRouteTour]);
-
-  const confirmResetPrefs = useCallback(() => {
-    confirmAction(
-      {
-        title: t('settings.resetAllPrefs'),
-        message: t('settings.resetPrefsConfirm'),
-        confirmLabel: t('settings.resetAllPrefs'),
-        cancelLabel: t('common.cancel'),
-        destructive: true,
-      },
-      () => void resetPrefs(),
-    );
-  }, [t, resetPrefs]);
+  const {
+    confirmLeave,
+    confirmResetPrefs,
+    confirmSignOut,
+  } = useAccountActions({
+    groupId,
+    isLeader,
+    leaveGroup,
+    navigation,
+    reevaluateRouteTour,
+    setAddPlaceTourLocalDone,
+    signOut,
+    t,
+    updateProfile,
+    user,
+    voluntaryLeaveRef,
+  });
 
   // --- Derived view models --------------------------------------------------
   // Optimistic flip for the Solo switch — server round trip + realtime
@@ -4868,65 +4622,20 @@ export default function MapScreen({ route, navigation }: Props) {
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
     onTourActiveChange,
   });
-
-  // Entitlement snapshot is bound to the groupId it was fetched for. A slow
-  // response for team A must never apply after the user switched to team B.
-  const storeEntitlementGenRef = useRef(0);
-  const storeEntitlementGroupRef = useRef<string | null>(null);
-  /** Last group that successfully applied a store snapshot (for fail-closed scope). */
-  const storeEntitlementAppliedGroupRef = useRef<string | null>(null);
-  storeEntitlementGroupRef.current = groupId ?? null;
-
-  const refreshStoreEntitlements = useCallback(async () => {
-    const requestGroupId = groupId ?? null;
-    const gen = ++storeEntitlementGenRef.current;
-    if (!requestGroupId || isAnonymous) {
-      if (gen === storeEntitlementGenRef.current
-        && storeEntitlementGroupRef.current === requestGroupId) {
-        setLiveActivityEffective(false);
-        setExtraPointCredits(0);
-        storeEntitlementAppliedGroupRef.current = null;
-      }
-      return;
-    }
-    // Fail-closed only when switching teams so a same-group refresh (e.g. isPro
-    // flip) does not flash Tools back to the locked Live Activity row.
-    if (storeEntitlementAppliedGroupRef.current !== requestGroupId) {
-      setLiveActivityEffective(false);
-      setExtraPointCredits(0);
-    }
-    try {
-      const snap = await getStoreSnapshot(requestGroupId);
-      if (gen !== storeEntitlementGenRef.current) return;
-      if (storeEntitlementGroupRef.current !== requestGroupId) return;
-      // Server bit is authoritative; Premium session is a client safety net when
-      // snapshot lags after IAP/promo (tools must not stay locked while isPro).
-      setLiveActivityEffective(!!snap.liveActivityEffective || isPro);
-      setExtraPointCredits(Math.max(0, snap.extraPointCredits ?? 0));
-      storeEntitlementAppliedGroupRef.current = requestGroupId;
-    } catch {
-      if (gen !== storeEntitlementGenRef.current) return;
-      if (storeEntitlementGroupRef.current !== requestGroupId) return;
-      // Keep Premium-granted LA unlocked offline when session already knows isPro.
-      setLiveActivityEffective(isPro);
-      if (!isPro) setExtraPointCredits(0);
-    }
-  }, [groupId, isAnonymous, isPro]);
-
-  useEffect(() => {
-    void refreshStoreEntitlements();
-  }, [groupId, refreshStoreEntitlements, isPro]);
-
-  const handleEntitlementActivated = useCallback(async () => {
-    await refreshEntitlement(groupId);
-    await refreshStoreEntitlements();
-    await syncFromDatabase();
-  }, [groupId, refreshEntitlement, refreshStoreEntitlements, syncFromDatabase]);
-
-  const openPaywallForLiveActivity = useCallback(() => {
-    lightTap();
-    openPaywall();
-  }, [openPaywall]);
+  const {
+    handleEntitlementActivated,
+    openPaywallForLiveActivity,
+    refreshStoreEntitlements,
+  } = useStoreEntitlements({
+    groupId,
+    isAnonymous,
+    isPro,
+    openPaywall,
+    refreshEntitlement,
+    setExtraPointCredits,
+    setLiveActivityEffective,
+    syncFromDatabase,
+  });
 
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
