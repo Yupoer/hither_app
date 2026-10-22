@@ -102,6 +102,13 @@ textInputDefaults.defaultProps = {
  * Navigation theme + status bar follow the active palette, so the header and
  * screen backgrounds restyle when the user switches theme in Settings.
  */
+function SessionNotifications() {
+  const pushRegistration = usePushRegistration();
+  const groupNotifications = useGroupNotifications();
+  useSubgroupInvites();
+  return <>{pushRegistration}{groupNotifications}</>;
+}
+
 function ThemedNavigation() {
 
   const { colors } = useTheme();
@@ -112,16 +119,6 @@ function ThemedNavigation() {
   // first screen never flashes system font before Fredoka swaps in.
   const userId = user?.id;
   const [fontsLoaded] = useFonts({ Fredoka_500Medium, Fredoka_600SemiBold });
-  // Register this device for APNs once signed in (no-op until a Dev Build);
-  // also asks notification permission, which the local-notification flow needs.
-  usePushRegistration();
-  // Interim: turn group realtime events into local notifications (no APNs yet).
-  useGroupNotifications();
-  // Same realtime -> local-notification treatment for subgroup invites,
-  // wherever in the app the user happens to be. MapScreen mounts its own
-  // instance too (for the accept/decline UI) — see useSubgroupInvites for
-  // how duplicate notifications across the two instances are avoided.
-  useSubgroupInvites();
 
   useEffect(() => metrics.startRuntimePowerMonitoring(), []);
 
@@ -434,6 +431,7 @@ export default function App() {
             <SessionProvider>
               <ThemedNavigation />
               <PremiumPurchaseRecovery />
+              <SessionNotifications />
               {/* Global: any screen — brief top toast after an OTA apply. */}
               <OtaUpdateToast />
             </SessionProvider>
