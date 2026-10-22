@@ -50,6 +50,7 @@ jobs:
         run: |
           python3 scripts/test_workflow_scope.py
           python3 scripts/test_ci_required.py
+          node scripts/test-ci-meta.mjs
           node --test apps/mobile/scripts/check-changed-coverage.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
@@ -191,6 +192,12 @@ jobs:
         with:
           deno-version: v2.x
 
+      - name: SQL function source of truth (replayed catalog patches, no new ones)
+        working-directory: ${{ github.workspace }}
+        run: |
+          node --test supabase/scripts/function-source-of-truth.test.mjs
+          node supabase/scripts/function-source-of-truth.mjs --check
+
       - name: Deno Edge fixture tests
         working-directory: ${{ github.workspace }}
         run: |
@@ -220,6 +227,7 @@ jobs:
           test "${#tests[@]}" -gt 0
           supabase test db --local "${tests[@]}"
           node supabase/tests/promo_redemption_concurrency.mjs
+          node supabase/tests/trip_storekit_refund_concurrency.mjs
 
   jsi-ui-runtime:
     needs: scope
