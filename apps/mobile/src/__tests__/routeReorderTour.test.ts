@@ -28,7 +28,7 @@ jest.mock('../api/services/ProfileService', () => ({
 
 const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => Promise<void>;
-  create: (element: React.ReactElement) => { unmount: () => void };
+  create: typeof import('react-test-renderer').create;
 };
 
 function flushRouteTour(): Promise<void> {
@@ -193,7 +193,7 @@ describe('route reorder tour (#189)', () => {
       latest = useRouteReorderTour({ routeOverlayOpenComplete: true, isLeader: true,
         canEditItinerary: true, gatheringPointCount: 1, accountId: 'user-a',
         accountPreferences: { routeReorderTourCompleted: false }, measureTarget });
-      return null;
+      return latest.lifecycle;
     }
     const root = create(React.createElement(Probe));
     await flushRouteTour();
@@ -225,7 +225,7 @@ describe('route reorder tour (#189)', () => {
         measureTarget,
         scrollToTarget,
       });
-      return null;
+      return latest.lifecycle;
     }
 
     const root = create(React.createElement(Probe));
@@ -285,7 +285,7 @@ describe('route reorder tour (#189)', () => {
         measureTarget,
         scrollToTarget,
       });
-      return null;
+      return latest.lifecycle;
     }
 
     const root = create(React.createElement(Probe));
@@ -307,6 +307,42 @@ describe('route reorder tour (#189)', () => {
     expect(measureTarget).toHaveBeenLastCalledWith('routeAccommodation');
     expect(latest?.targetRect?.y).toBe(740);
     root.unmount();
+  });
+
+
+  it('publishes replacement callbacks after commit without restarting the eligible measurement job', async () => {
+    const firstRect = { x: 8, y: 12, width: 120, height: 36 };
+    const nextRect = { ...firstRect, y: 90 };
+    const measure = jest.fn(async () => firstRect);
+    const replacementMeasure = jest.fn(async () => nextRect);
+    const scroll = jest.fn();
+    const replacementScroll = jest.fn();
+    const input: Parameters<typeof useRouteReorderTour>[0] = {
+      routeOverlayOpenComplete: true, isLeader: true, canEditItinerary: true,
+      gatheringPointCount: 1, accountId: 'user-a',
+      accountPreferences: { routeReorderTourCompleted: false }, measureTarget: measure, scrollToTarget: scroll,
+    };
+    let latest!: ReturnType<typeof useRouteReorderTour>;
+    function Probe({ input }: { input: Parameters<typeof useRouteReorderTour>[0] }) {
+      latest = useRouteReorderTour(input);
+      return latest.lifecycle;
+    }
+    let root!: ReturnType<typeof create>;
+    await act(async () => { root = create(React.createElement(Probe, { input })); });
+    for (let i = 0; i < 5 && !latest.tourActive; i++) await flushRouteTour();
+    expect(latest.tourActive).toBe(true);
+    expect(measure).toHaveBeenCalledTimes(6);
+    await act(async () => { root.update(React.createElement(Probe, { input: {
+      ...input, accountPreferences: { routeReorderTourCompleted: false },
+      measureTarget: replacementMeasure, scrollToTarget: replacementScroll,
+    } })); });
+    expect(replacementMeasure).not.toHaveBeenCalled();
+    await act(async () => { await latest.onNext(); });
+    expect(replacementScroll).toHaveBeenCalledWith('routeDate');
+    expect(replacementMeasure).toHaveBeenCalledWith('routeDate');
+    expect(latest.targetRect).toEqual(nextRect);
+    expect(latest.stepIndex).toBe(1);
+    await act(async () => { root.unmount(); });
   });
 
   it('wires the tour to route-sheet completion and target refs without invoking route actions', () => {

@@ -313,7 +313,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setArrivalRadiusM,
     setPassiveCompanionMode,
   } = usePreferences();
-  const {
+  const { lifecycle: gatherCardExpansionLifecycle,
     isCardExpanded,
     toggleCard,
     collapseCard,
@@ -436,6 +436,7 @@ export default function MapScreen({ route, navigation }: Props) {
     canEditItinerary,
     roleContext,
     markLeaderRevoked,
+    lifecycle: groupRoleLifecycle,
   } = useGroupRole({
     groupId,
     userId: user?.id,
@@ -559,12 +560,11 @@ export default function MapScreen({ route, navigation }: Props) {
         : [],
     [localNavigationSessionId, navigationSessionId],
   );
-  const {
+  const { lifecycle: gatheringWorkflowLifecycle,
     remoteArrivals,
     gatherPointRequests,
     setGatherPointRequests,
     loadGatheringWorkflow,
-    lifecycle: gatheringWorkflowLifecycle,
     patchLocalArrival,
     workflowContext,
     isWorkflowContextCurrent,
@@ -785,7 +785,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
-  const {
+  const { lifecycle: visitHistoryLifecycle,
     historyGroups,
     loadHistory,
   } = useVisitHistory({
@@ -851,7 +851,7 @@ export default function MapScreen({ route, navigation }: Props) {
     { latitude: number; longitude: number } | undefined
   >(undefined);
   // Bounce-up entrance animation for the add-gather-point confirm card.
-  const { ready: confirmCardReady, progress: confirmCardAnim } = usePendingPlaceEntrance(pendingPlace, uiVisible, heightSV);
+  const { lifecycle: pendingPlaceEntranceLifecycle, ready: confirmCardReady, progress: confirmCardAnim } = usePendingPlaceEntrance(pendingPlace, uiVisible, heightSV);
   const confirmCardStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) },
@@ -1092,7 +1092,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
-  const {
+  const { lifecycle: meetTimeEditorLifecycle,
     meetTimeEditor,
     setMeetTimeEditor,
     persistMeetTime,
@@ -1173,7 +1173,7 @@ export default function MapScreen({ route, navigation }: Props) {
       await settleRouteScroll();
     }
   }, []);
-  const {
+  const { lifecycle: routeReorderTourLifecycle,
     tourActive: routeTourActive,
     step: routeTourStep,
     targetRect: routeTourTargetRect,
@@ -1222,7 +1222,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
   // --- Carousel selection ---------------------------------------------------
-  const {
+  const { lifecycle: carouselSelectionLifecycle,
     selectedIndex,
     setSelectedIndex,
     travelMode,
@@ -2415,7 +2415,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     if (!key) lastFittedRouteRef.current = null;
   }, [activePoint, selfRoute, travelMode, deviceCoords]);
-  const {
+  const { lifecycle: stragglerReportingLifecycle,
     stragglers,
   } = useStragglerReporting({
     fromCoords,
@@ -3332,7 +3332,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
-  const { promptCompleteAfterArrival } = useGatheringCompletion({
+  const { lifecycle: gatheringCompletionLifecycle, promptCompleteAfterArrival } = useGatheringCompletion({
     groupId,
     user,
     canEditItinerary,
@@ -3542,7 +3542,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setRouteDraftDestinations(null);
     setViewingScope('main');
   }, [setRouteDraftDestinations]);
-  const {
+  const { lifecycle: subgroupActionsLifecycle,
     subgroups,
     pendingInvites,
     sentInvites,
@@ -3551,7 +3551,6 @@ export default function MapScreen({ route, navigation }: Props) {
     handleInvite,
     doSelfSplit,
     doSelfMerge,
-    lifecycle: subgroupLifecycle,
   } = useSubgroupActions({
     groupId,
     userName: user?.name,
@@ -3657,7 +3656,7 @@ export default function MapScreen({ route, navigation }: Props) {
     voluntaryLeaveRef,
   });
 
-  const { flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId } = useMemberPresence({
+  const { lifecycle: memberPresenceLifecycle, flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId } = useMemberPresence({
     groupId,
     t,
     uiVisible,
@@ -4122,7 +4121,7 @@ export default function MapScreen({ route, navigation }: Props) {
     [destinations, selectedIndex, setSelectedIndex, windowWidth],
   );
 
-  const {
+  const { lifecycle: groupFeatureTourLifecycle,
     tourActive,
     step: tourStep,
     targetRect: tourTargetRect,
@@ -4152,7 +4151,7 @@ export default function MapScreen({ route, navigation }: Props) {
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
     onTourActiveChange,
   });
-  const {
+  const { lifecycle: storeEntitlementsLifecycle,
     handleEntitlementActivated,
     openPaywallForLiveActivity,
     refreshStoreEntitlements,
@@ -4566,15 +4565,27 @@ export default function MapScreen({ route, navigation }: Props) {
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
-  const groupDataLifecycle = <>
+  const groupDataLifecycle = <React.Fragment key="map-screen-resources">
     <React.Fragment key="group-state">{groupStateLifecycle}</React.Fragment>
     <React.Fragment key="location-refresh">{locationRefreshLifecycle}</React.Fragment>
-    <React.Fragment key="gathering-workflow">{gatheringWorkflowLifecycle}</React.Fragment>
     <React.Fragment key="organizer">{organizerLifecycle}</React.Fragment>
+    <React.Fragment key="route-draft">{routeDraft.lifecycle}</React.Fragment>
+    <React.Fragment key="group-role">{groupRoleLifecycle}</React.Fragment>
+    <React.Fragment key="route-tour">{routeReorderTourLifecycle}</React.Fragment>
+    <React.Fragment key="group-tour">{groupFeatureTourLifecycle}</React.Fragment>
+    <React.Fragment key="gathering-workflow">{gatheringWorkflowLifecycle}</React.Fragment>
+    <React.Fragment key="visit-history">{visitHistoryLifecycle}</React.Fragment>
+    <React.Fragment key="straggler-reporting">{stragglerReportingLifecycle}</React.Fragment>
     <React.Fragment key="coordination">{coordination.lifecycle}</React.Fragment>
-    <React.Fragment key="subgroup">{subgroupLifecycle}</React.Fragment>
-  </>;
-
+    <React.Fragment key="gathering-completion">{gatheringCompletionLifecycle}</React.Fragment>
+    <React.Fragment key="subgroup-actions">{subgroupActionsLifecycle}</React.Fragment>
+    <React.Fragment key="store-entitlements">{storeEntitlementsLifecycle}</React.Fragment>
+    <React.Fragment key="gather-card-expansion">{gatherCardExpansionLifecycle}</React.Fragment>
+    <React.Fragment key="pending-place">{pendingPlaceEntranceLifecycle}</React.Fragment>
+    <React.Fragment key="meet-time">{meetTimeEditorLifecycle}</React.Fragment>
+    <React.Fragment key="carousel">{carouselSelectionLifecycle}</React.Fragment>
+    <React.Fragment key="member-presence">{memberPresenceLifecycle}</React.Fragment>
+  </React.Fragment>;
   const screenLifecycle = <>
     <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
     <React.Fragment key="navigation-runtime">{navigationSessionState.lifecycle}</React.Fragment>
@@ -4587,9 +4598,8 @@ export default function MapScreen({ route, navigation }: Props) {
   if (loading && !state) {
     // Passive mode must still offer switch-back during first load.
     if (inPassiveMode) {
-      return (
+      return <>{screenLifecycle}{(
         <View style={styles.flex}>
-          {screenLifecycle}
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4605,24 +4615,22 @@ export default function MapScreen({ route, navigation }: Props) {
             onConfigureCustom={openCustomQuickCommand}
           />
         </View>
-      );
+      )}</>;
     }
-    return (
+    return <>{screenLifecycle}{(
       <View style={styles.loading}>
-        {screenLifecycle}
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
-    );
+    )}</>;
   }
 
   // OTA-04: offline cold start with no prior snapshot — clear empty outcome.
   // OTA-07: passive still mounts switch-back so users are never trapped.
   if (!state && (emptyLocalSnapshot || loadError)) {
     if (inPassiveMode) {
-      return (
+      return <>{screenLifecycle}{(
         <View style={styles.flex}>
-          {screenLifecycle}
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
             {refreshing ? <WaveLoading color={accent} /> : null}
@@ -4650,11 +4658,10 @@ export default function MapScreen({ route, navigation }: Props) {
             onConfigureCustom={openCustomQuickCommand}
           />
         </View>
-      );
+      )}</>;
     }
-    return (
+    return <>{screenLifecycle}{(
       <View style={styles.loading}>
-        {screenLifecycle}
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4670,12 +4677,12 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
         </Pressable>
       </View>
-    );
+    )}</>;
   }
 
-  return (
+  return <>{screenLifecycle}{(
+    <>
     <View style={styles.flex}>
-      {screenLifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
@@ -5311,5 +5318,6 @@ export default function MapScreen({ route, navigation }: Props) {
         ctaDisabled={tourTransitioning || tourCompleting}
       />
     </View>
-  );
+    </>
+  )}</>;
 }

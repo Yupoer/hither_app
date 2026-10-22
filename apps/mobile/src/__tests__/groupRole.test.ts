@@ -99,7 +99,7 @@ describe('useGroupRole', () => {
 
   function Harness({ props }: { props: UseGroupRoleInput }) {
     current = useGroupRole(props);
-    return null;
+    return current.lifecycle;
   }
 
   function render(props: UseGroupRoleInput) {
@@ -168,4 +168,52 @@ describe('useGroupRole', () => {
     render({ ...props, groupId: 'g2', membership: { group: { ...group, id: 'g2' }, role: 'leader' } });
     expect(current?.canEditItinerary).toBe(true);
   });
+  it('publishes committed membership for reference and callback changes without restarting on same inputs', () => {
+    const setMembership = jest.fn();
+    const props = input({ me: { role: 'follower' }, setMembership, dataSource: 'remote' });
+    render(props);
+    expect(setMembership).toHaveBeenCalledTimes(1);
+    render(props);
+    expect(setMembership).toHaveBeenCalledTimes(1);
+    render({ ...props, me: { role: 'follower' } });
+    expect(setMembership).toHaveBeenCalledTimes(2);
+    const replacement = jest.fn();
+    render({ ...props, setMembership: replacement });
+    expect(replacement).toHaveBeenCalledTimes(1);
+    render(props);
+    expect(setMembership).toHaveBeenCalledTimes(3);
+  });
+
+  it('applies a same-commit rejection after remote membership confirmation', () => {
+    const refresh = jest.fn(async () => true);
+    const props = input({ dataSource: 'remote', refresh, openOperations: [rejection('same-commit')] });
+    render(props);
+    expect(current?.canEditItinerary).toBe(false);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    render({ ...props, me: { role: 'leader' } });
+    expect(current?.canEditItinerary).toBe(true);
+  });
+
+  it('does not publish membership from an abandoned suspended render', () => {
+    const setMembership = jest.fn();
+    const pending = new Promise<void>(() => {});
+    const props = input({ dataSource: 'remote', me: { role: 'follower' }, setMembership });
+    function Suspended(): React.ReactElement {
+      useGroupRole(props);
+      throw pending;
+    }
+    act(() => { renderer = create(React.createElement(React.Suspense, { fallback: null }, React.createElement(Suspended))); });
+    expect(setMembership).not.toHaveBeenCalled();
+  });
+
+  it('replays ordered role publication under StrictMode while handling each rejection once', () => {
+    const setMembership = jest.fn();
+    const refresh = jest.fn(async () => true);
+    const props = input({ dataSource: 'remote', me: { role: 'follower' }, setMembership, refresh,
+      openOperations: [rejection('strict-role')] });
+    act(() => { renderer = create(React.createElement(React.StrictMode, null, React.createElement(Harness, { props }))); });
+    expect(setMembership).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
 });

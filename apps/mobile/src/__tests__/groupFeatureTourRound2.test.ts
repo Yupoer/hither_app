@@ -272,7 +272,7 @@ describe('R2: hook observable lifecycle', () => {
   }) {
     const snap = useGroupFeatureTour(props.input);
     props.onSnapshot(snap);
-    return null;
+    return snap.lifecycle;
   }
 
   function baseInput(overrides: Partial<Parameters<typeof useGroupFeatureTour>[0]> = {}) {
@@ -380,7 +380,7 @@ describe('R3: reset replay with stale account prefs', () => {
   }) {
     const snap = useGroupFeatureTour(props.input);
     props.onSnapshot(snap);
-    return null;
+    return snap.lifecycle;
   }
 
   function baseInput(overrides: Partial<Parameters<typeof useGroupFeatureTour>[0]> = {}) {
@@ -567,11 +567,11 @@ describe('REVIEW_FIX #179: remeasure after carousel locks to preferred dest', ()
         personalArriveVisible: true,
         onTourActiveChange,
       });
-      return React.createElement('probe', {
+      return React.createElement(React.Fragment, null, snap.lifecycle, React.createElement('probe', {
         tourActive: snap.tourActive,
         targetRect: snap.targetRect,
         stepId: snap.step?.id ?? null,
-      });
+      }));
     }
 
     let tree: ReturnType<typeof create>;

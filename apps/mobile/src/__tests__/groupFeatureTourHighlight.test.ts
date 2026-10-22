@@ -72,7 +72,7 @@ const { GroupFeatureTourOverlay } = require('../featureTour/GroupFeatureTourOver
 const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const overlaySrc = readFileSync(join(__dirname, '../featureTour/GroupFeatureTourOverlay.tsx'), 'utf8');
-const hookSrc = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.ts'), 'utf8');
+const hookSrc = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.tsx'), 'utf8');
 
 describe('paddedHole + ring share one rectangular geometry', () => {
   it('pads the measured rect with the same inset the overlay uses', () => {

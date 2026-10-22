@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createElement, useCallback, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { rollbackItinerary, type ItineraryRollback } from '../../../state/itineraryRollback';
 import type { DailyAccommodation, Destination, Group } from '../../../types';
 import type { CoreOperation } from '../../../types/coreData';
@@ -152,45 +153,21 @@ export function useRouteDraft(input: UseRouteDraftInput) {
     return true;
   }, [setDestinations, setEditorScopeId]);
 
-  useEffect(() => {
-    if (!destinations || dirtyRef.current.destinations) return;
-    if (serverMatchesDraft(destinations, rawDestinations)) setDestinations(null);
-  }, [rawDestinations, destinations, setDestinations]);
 
   const handledRejections = useRef(new Set<string>());
-  useEffect(() => {
-    const rejected = openOperations.filter((operation) => operation.entityType === 'itinerary'
-      && operation.status === 'conflict' && !handledRejections.current.has(operation.id));
-    if (!rejected.length) return;
-    rejected.forEach((operation) => handledRejections.current.add(operation.id));
-    if (!dirtyRef.current.destinations) {
-      setDestinations(null);
-      return;
-    }
-    let next = destinationsRef.current;
-    if (!next) return;
-    for (const operation of [...rejected].sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0))) {
-      const undo = operation.payload._localRollback as ItineraryRollback | undefined;
-      if (undo?.before && undo.after) next = rollbackItinerary(next, undo);
-    }
-    setDestinations(next);
-  }, [openOperations, setDestinations]);
 
-  useEffect(() => {
-    reset();
-    setEditorScopeId(scopeId);
-  }, [scopeId, reset, setEditorScopeId]);
 
-  useEffect(() => {
-    if (group && group.tripDays === draftTripDays && group.departureDate === draftDepartureDate) {
-      setDraftTripDays(null);
-      setDraftDepartureDate(null);
-    }
-  }, [group, draftTripDays, draftDepartureDate]);
+  if ((draftTripDays !== null || draftDepartureDate !== null) && group
+    && group.tripDays === draftTripDays && group.departureDate === draftDepartureDate) {
+    setDraftTripDays(null);
+    setDraftDepartureDate(null);
+  }
 
   const tripDays = draftTripDays ?? group?.tripDays;
   const departureDate = draftDepartureDate ?? group?.departureDate;
+  const lifecycle = createElement(RouteDraftReconciliation, { destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId });
   return useMemo(() => ({
+    lifecycle,
     editorScopeId,
     editorScopeIdRef,
     setEditorScopeId,
@@ -215,10 +192,85 @@ export function useRouteDraft(input: UseRouteDraftInput) {
     reset,
     openEditor,
     nextDraftId,
-  }), [daily, departureDate, destinations, dirty, editDaily, editDestinations, editorScopeId,
+  }), [lifecycle, daily, departureDate, destinations, dirty, editDaily, editDestinations, editorScopeId,
     editorServerDestinations, forgetDeleted, hasUnsavedChanges, latestDaily, latestDestinations, markDeleted,
     nextDraftId, openEditor, reset, serverDaily, setDaily, setDestinations, setEditorScopeId, setTripDetails,
     tripDays]);
 }
 
 export type RouteDraft = ReturnType<typeof useRouteDraft>;
+
+interface RouteDraftReconciliationGenerations { convergence: number; rejection: number; scope: number; }
+type RouteDraftReconciliationInput = {
+  destinations: Destination[] | null;
+  dirtyRef: import("react").RefObject<RouteDraftDirty>;
+  rawDestinations: Destination[];
+  setDestinations: (next: Destination[] | null, options?: { dirty?: boolean; }) => void;
+  openOperations: readonly CoreOperation[];
+  handledRejections: import("react").RefObject<Set<string>>;
+  destinationsRef: import("react").RefObject<Destination[] | null>;
+  reset: () => void;
+  setEditorScopeId: (next: string | undefined) => void;
+  scopeId: string | undefined;
+};
+
+function RouteDraftReconciliation({ destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId }: RouteDraftReconciliationInput) {
+  const [routeDraftConvergenceInputs, setRouteDraftConvergenceInputs] = useState(() => ({ generation: 0, rawDestinations, destinations, setDestinations }));
+  if (!(Object.is(routeDraftConvergenceInputs.rawDestinations, rawDestinations) && Object.is(routeDraftConvergenceInputs.destinations, destinations) && Object.is(routeDraftConvergenceInputs.setDestinations, setDestinations))) {
+      setRouteDraftConvergenceInputs({ generation: routeDraftConvergenceInputs.generation + 1, rawDestinations, destinations, setDestinations });
+    }
+  const [routeDraftRejectionRollbackInputs, setRouteDraftRejectionRollbackInputs] = useState(() => ({ generation: 0, openOperations, setDestinations }));
+  if (!(Object.is(routeDraftRejectionRollbackInputs.openOperations, openOperations) && Object.is(routeDraftRejectionRollbackInputs.setDestinations, setDestinations))) {
+      setRouteDraftRejectionRollbackInputs({ generation: routeDraftRejectionRollbackInputs.generation + 1, openOperations, setDestinations });
+    }
+  const [routeDraftScopeResetInputs, setRouteDraftScopeResetInputs] = useState(() => ({ generation: 0, scopeId, reset, setEditorScopeId }));
+  if (!(Object.is(routeDraftScopeResetInputs.scopeId, scopeId) && Object.is(routeDraftScopeResetInputs.reset, reset) && Object.is(routeDraftScopeResetInputs.setEditorScopeId, setEditorScopeId))) {
+      setRouteDraftScopeResetInputs({ generation: routeDraftScopeResetInputs.generation + 1, scopeId, reset, setEditorScopeId });
+    }
+  const [committedInputs, setCommittedInputs] = useState<RouteDraftReconciliationGenerations>({ convergence: -1, rejection: -1, scope: -1 });
+  return createElement(RouteDraftReconciliationCommit, {
+    key: `convergence:${routeDraftConvergenceInputs.generation}/rejection:${routeDraftRejectionRollbackInputs.generation}/scope:${routeDraftScopeResetInputs.generation}`, destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId, observeRouteDraftConvergence: routeDraftConvergenceInputs.generation !== committedInputs.convergence, observeRouteDraftRejectionRollback: routeDraftRejectionRollbackInputs.generation !== committedInputs.rejection, observeRouteDraftScopeReset: routeDraftScopeResetInputs.generation !== committedInputs.scope,
+    committedGenerations: { convergence: routeDraftConvergenceInputs.generation, rejection: routeDraftRejectionRollbackInputs.generation, scope: routeDraftScopeResetInputs.generation }, setCommittedInputs,
+  });
+}
+
+function RouteDraftReconciliationCommit({ destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId, observeRouteDraftConvergence, observeRouteDraftRejectionRollback, observeRouteDraftScopeReset, committedGenerations, setCommittedInputs }: RouteDraftReconciliationInput & {
+  observeRouteDraftConvergence: boolean;
+  observeRouteDraftRejectionRollback: boolean;
+  observeRouteDraftScopeReset: boolean;
+  committedGenerations: RouteDraftReconciliationGenerations;
+  setCommittedInputs: import('react').Dispatch<import('react').SetStateAction<RouteDraftReconciliationGenerations>>;
+}) {
+  useMountEffect(() => {
+    function reconcileDraftAgainstServer() {
+    if (!destinations || dirtyRef.current.destinations) return;
+    if (serverMatchesDraft(destinations, rawDestinations)) setDestinations(null);
+  }
+    if (observeRouteDraftConvergence) reconcileDraftAgainstServer();
+    function rollbackRejectedItinerary() {
+    const rejected = openOperations.filter((operation) => operation.entityType === 'itinerary'
+      && operation.status === 'conflict' && !handledRejections.current.has(operation.id));
+    if (!rejected.length) return;
+    rejected.forEach((operation) => handledRejections.current.add(operation.id));
+    if (!dirtyRef.current.destinations) {
+      setDestinations(null);
+      return;
+    }
+    let next = destinationsRef.current;
+    if (!next) return;
+    for (const operation of [...rejected].sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0))) {
+      const undo = operation.payload._localRollback as ItineraryRollback | undefined;
+      if (undo?.before && undo.after) next = rollbackItinerary(next, undo);
+    }
+    setDestinations(next);
+  }
+    if (observeRouteDraftRejectionRollback) rollbackRejectedItinerary();
+    function resetDraftScope() {
+    reset();
+    setEditorScopeId(scopeId);
+  }
+    if (observeRouteDraftScopeReset) resetDraftScope();
+    setCommittedInputs(committedGenerations);
+  });
+  return null;
+}

@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useRef, RefObject } from 'react';
+import { createElement, Fragment, useState, useCallback, useRef, RefObject } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { NativeSyntheticEvent, NativeScrollEvent, ScrollView } from 'react-native';
 import type { Destination } from '../../../types';
 import { usePreferences } from '../../../state/PreferencesContext';
@@ -36,21 +37,12 @@ export function useCarouselSelection({
     });
   }, [carouselRef, windowWidth]);
 
-  useEffect(() => {
-    const clamped =
-      destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
-    if (clamped !== selectedIndex) setSelectedIndex(clamped);
-    scrollToIndex(clamped, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [destinations.length, windowWidth, scrollToIndex]);
+  const carouselBoundsScrollLifecycle = createElement(CarouselBoundsScroll, { destinations, selectedIndex, setSelectedIndex, scrollToIndex, windowWidth });
 
   // Programmatic selection (leader journey broadcast → follower force-follow,
   // startNavigation reorder) must move the carousel; user swipes already land
   // on the same offset so re-scrolling is a no-op.
-  useEffect(() => {
-    if (destinations.length === 0) return;
-    scrollToIndex(selectedIndex, true);
-  }, [selectedIndex, destinations.length, scrollToIndex]);
+  const carouselSelectionScrollLifecycle = createElement(CarouselSelectionScroll, { destinations, scrollToIndex, selectedIndex });
 
   const selectedDestination: Destination | undefined = destinations[selectedIndex];
 
@@ -90,6 +82,7 @@ export function useCarouselSelection({
   );
 
   return {
+    lifecycle: createElement(Fragment, { key: 'carousel-selection-runtime' }, carouselBoundsScrollLifecycle, carouselSelectionScrollLifecycle),
     selectedIndex,
     setSelectedIndex,
     travelMode,
@@ -98,4 +91,58 @@ export function useCarouselSelection({
     handleScrollBeginDrag,
     handleMomentumEnd,
   };
+}
+
+function CarouselBoundsScroll({ destinations, selectedIndex, setSelectedIndex, scrollToIndex, windowWidth }: {
+  destinations: Destination[];
+  selectedIndex: number;
+  setSelectedIndex: import("react").Dispatch<import("react").SetStateAction<number>>;
+  scrollToIndex: (index: number, animated: boolean) => void;
+  windowWidth: number;
+}) {
+  const [carouselBoundsScrollInputs, setCarouselBoundsScrollInputs] = useState(() => ({ generation: 0, destinations_length: destinations.length, windowWidth, scrollToIndex }));
+  if (!(Object.is(carouselBoundsScrollInputs.destinations_length, destinations.length) && Object.is(carouselBoundsScrollInputs.windowWidth, windowWidth) && Object.is(carouselBoundsScrollInputs.scrollToIndex, scrollToIndex))) {
+    setCarouselBoundsScrollInputs({ generation: carouselBoundsScrollInputs.generation + 1, destinations_length: destinations.length, windowWidth, scrollToIndex });
+  }
+  return createElement(CarouselBoundsScrollCommit, { key: carouselBoundsScrollInputs.generation, destinations, selectedIndex, setSelectedIndex, scrollToIndex, windowWidth });
+}
+
+function CarouselBoundsScrollCommit({ destinations, selectedIndex, setSelectedIndex, scrollToIndex, windowWidth }: {
+  destinations: Destination[];
+  selectedIndex: number;
+  setSelectedIndex: import("react").Dispatch<import("react").SetStateAction<number>>;
+  scrollToIndex: (index: number, animated: boolean) => void;
+  windowWidth: number;
+}) {
+  useMountEffect(() => {
+    const clamped =
+      destinations.length === 0 ? 0 : Math.min(selectedIndex, destinations.length - 1);
+    if (clamped !== selectedIndex) setSelectedIndex(clamped);
+    scrollToIndex(clamped, false);
+  });
+  return null;
+}
+
+function CarouselSelectionScroll({ destinations, scrollToIndex, selectedIndex }: {
+  destinations: Destination[];
+  scrollToIndex: (index: number, animated: boolean) => void;
+  selectedIndex: number;
+}) {
+  const [carouselSelectionScrollInputs, setCarouselSelectionScrollInputs] = useState(() => ({ generation: 0, selectedIndex, destinations_length: destinations.length, scrollToIndex }));
+  if (!(Object.is(carouselSelectionScrollInputs.selectedIndex, selectedIndex) && Object.is(carouselSelectionScrollInputs.destinations_length, destinations.length) && Object.is(carouselSelectionScrollInputs.scrollToIndex, scrollToIndex))) {
+    setCarouselSelectionScrollInputs({ generation: carouselSelectionScrollInputs.generation + 1, selectedIndex, destinations_length: destinations.length, scrollToIndex });
+  }
+  return createElement(CarouselSelectionScrollCommit, { key: carouselSelectionScrollInputs.generation, destinations, scrollToIndex, selectedIndex });
+}
+
+function CarouselSelectionScrollCommit({ destinations, scrollToIndex, selectedIndex }: {
+  destinations: Destination[];
+  scrollToIndex: (index: number, animated: boolean) => void;
+  selectedIndex: number;
+}) {
+  useMountEffect(() => {
+    if (destinations.length === 0) return;
+    scrollToIndex(selectedIndex, true);
+  });
+  return null;
 }

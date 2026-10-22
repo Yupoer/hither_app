@@ -2268,7 +2268,56 @@
       "child": 311,
       "acceptance": "Invite loads use committed identity leases: abandoned account renders preserve the current response, while A to B to A rejects the retired request.",
       "testFile": "sessionNotificationsLifecycle.test.ts",
-      "testNamePattern": "uncommitted|retired"
+      "testNamePattern": "discarded|retired"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Actual subgroup, coordination and gathering consumers install all nested subscriptions and foreground repair jobs, retain them across screen branches and clean them on identity change and unmount.",
+      "testFile": "workflowNestedLifecycles.test.ts",
+      "testNamePattern": "installs nested invite and workflow repair jobs"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Group tour resources preserve atomic copy/geometry snapshots and navigation controls through transitions.",
+      "testFile": "groupFeatureTourOverlayFix.test.ts",
+      "testNamePattern": "copy, hole, and placement atomic|canGoPrev and retreats"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Route tour committed callback publication does not restart eligible work and preserves snapshot, scrolling and measurement order.",
+      "testFile": "routeReorderTour.test.ts",
+      "testNamePattern": "replacement callbacks after commit|six targets atomically|async accommodation scroll"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Pending place motion retains its pose across suspend/resume and restarts only for the original object identity changes.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "same pending map place"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Meet reminders preserve the soonest meet time, native listener cleanup and cancellation of late scheduling results.",
+      "testFile": "meetTimeEditor.test.ts",
+      "testNamePattern": "schedules|native scheduling resolves after unmount"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Distinct workflow lifetimes keep identical generation numbers isolated and reject retired account or entitlement responses.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "independent nested jobs|earlier account|old team store response"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Role resources preserve reference and callback identity, ordered rejection handling and committed-only Session writes.",
+      "testFile": "groupRole.test.ts",
+      "testNamePattern": "publishes committed membership|same-commit rejection|abandoned suspended render"
     }
   ]
 }

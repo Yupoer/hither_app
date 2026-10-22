@@ -85,7 +85,7 @@ describe('REVIEW_FIX: Stage Two per-tab targets', () => {
 
 describe('REVIEW_FIX: durable complete + a11y overlay', () => {
   it('hook awaits complete before stopping the tour', () => {
-    const hook = read('featureTour/useGroupFeatureTour.ts');
+    const hook = read('featureTour/useGroupFeatureTour.tsx');
     expect(hook).toContain('await completeGroupFeatureTour');
     expect(hook).toContain('setCtrl(stopTour())');
     // stopTour must not precede the await of complete.

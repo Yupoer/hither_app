@@ -3,7 +3,8 @@ import type { VisitedWaypoint, Destination, MemberLocation } from '../../../type
 import { type CoreOperation } from '../../../types/coreData';
 import { projectHistoryForViewer } from '../../../utils/gatherCommand';
 import { type HistoryDayGroup, historyFromDestinationArrivals, mergeHistoryWithPastStops, groupHistoryByDay } from '../../../utils/history';
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { createElement, Fragment, useState, useRef, useCallback, } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { DestinationArrival, Group, User } from '../../../types';
 
 export interface UseVisitHistoryInput {
@@ -83,12 +84,32 @@ export function useVisitHistory({
     destinationArrivals,
     arrivalOperations,
   ]);
-  useEffect(() => {
-    if (overlay !== 'history') return;
-    void loadHistory().catch(() => undefined);
-  }, [overlay, loadHistory]);
+  const visitedHistoryLoadLifecycle = createElement(VisitedHistoryLoad, { overlay, loadHistory });
   return {
+    lifecycle: createElement(Fragment, { key: 'visit-history-runtime' }, visitedHistoryLoadLifecycle),
     historyGroups,
     loadHistory,
   };
+}
+
+function VisitedHistoryLoad({ overlay, loadHistory }: {
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  loadHistory: () => Promise<void>;
+}) {
+  const [visitedHistoryLoadInputs, setVisitedHistoryLoadInputs] = useState(() => ({ generation: 0, overlay, loadHistory }));
+  if (!(Object.is(visitedHistoryLoadInputs.overlay, overlay) && Object.is(visitedHistoryLoadInputs.loadHistory, loadHistory))) {
+    setVisitedHistoryLoadInputs({ generation: visitedHistoryLoadInputs.generation + 1, overlay, loadHistory });
+  }
+  return createElement(VisitedHistoryLoadCommit, { key: visitedHistoryLoadInputs.generation, overlay, loadHistory });
+}
+
+function VisitedHistoryLoadCommit({ overlay, loadHistory }: {
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  loadHistory: () => Promise<void>;
+}) {
+  useMountEffect(() => {
+    if (overlay !== 'history') return;
+    void loadHistory().catch(() => undefined);
+  });
+  return null;
 }

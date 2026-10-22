@@ -1,7 +1,8 @@
 import { getStoreSnapshot } from '../../../api/services/StoreService';
 import { type TranslationKey } from '../../../i18n';
 import { lightTap } from '../../../utils/haptics';
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { createElement, Fragment, useState, useRef, useCallback, } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { TripEntitlement } from '../../../entitlements';
 
 export interface UseStoreEntitlementsInput {
@@ -70,9 +71,7 @@ export function useStoreEntitlements({
     }
   }, [groupId, isAnonymous, isPro]);
 
-  useEffect(() => {
-    void refreshStoreEntitlements();
-  }, [groupId, refreshStoreEntitlements, isPro]);
+  const groupStoreEntitlementLoadLifecycle = createElement(GroupStoreEntitlementLoad, { refreshStoreEntitlements, groupId, isPro });
 
   const handleEntitlementActivated = useCallback(async () => {
     await refreshEntitlement(groupId);
@@ -85,8 +84,32 @@ export function useStoreEntitlements({
     openPaywall();
   }, [openPaywall]);
   return {
+    lifecycle: createElement(Fragment, { key: 'store-entitlements-runtime' }, groupStoreEntitlementLoadLifecycle),
     handleEntitlementActivated,
     openPaywallForLiveActivity,
     refreshStoreEntitlements,
   };
+}
+
+function GroupStoreEntitlementLoad({ refreshStoreEntitlements, groupId, isPro }: {
+  refreshStoreEntitlements: () => Promise<void>;
+  groupId: string | null;
+  isPro: boolean;
+}) {
+  const [groupStoreEntitlementLoadInputs, setGroupStoreEntitlementLoadInputs] = useState(() => ({ generation: 0, groupId, refreshStoreEntitlements, isPro }));
+  if (!(Object.is(groupStoreEntitlementLoadInputs.groupId, groupId) && Object.is(groupStoreEntitlementLoadInputs.refreshStoreEntitlements, refreshStoreEntitlements) && Object.is(groupStoreEntitlementLoadInputs.isPro, isPro))) {
+    setGroupStoreEntitlementLoadInputs({ generation: groupStoreEntitlementLoadInputs.generation + 1, groupId, refreshStoreEntitlements, isPro });
+  }
+  return createElement(GroupStoreEntitlementLoadCommit, { key: groupStoreEntitlementLoadInputs.generation, refreshStoreEntitlements, groupId, isPro });
+}
+
+function GroupStoreEntitlementLoadCommit({ refreshStoreEntitlements, groupId, isPro }: {
+  refreshStoreEntitlements: () => Promise<void>;
+  groupId: string | null;
+  isPro: boolean;
+}) {
+  useMountEffect(() => {
+    void refreshStoreEntitlements();
+  });
+  return null;
 }

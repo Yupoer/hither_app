@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createElement, Fragment, useCallback, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { Alert } from 'react-native';
 import { fetchDestinationArrivals, fetchPendingGatherPointRequests } from '../../../api/client';
 import { isDemoGroup } from '../../../api/demo';
@@ -48,10 +49,10 @@ export function useGatheringWorkflow({
   // gathering Realtime and hammered destination_arrivals (~5–6 SELECT/s).
   const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-  useEffect(() => {
+  useMountEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
-  }, []);
+  });
   const tRef = useRef(t);
   tRef.current = t;
   const isMainLeaderRef = useRef(isMainLeader);
@@ -72,13 +73,7 @@ export function useGatheringWorkflow({
   const workflowContext = `${groupId ?? ''}:${userId ?? ''}:${myScopeId ?? 'main'}`;
   const workflowContextRef = useRef(workflowContext);
   workflowContextRef.current = workflowContext;
-  useEffect(() => {
-    workflowInFlightRef.current = null;
-    workflowPendingRef.current = false;
-    workflowLastLoadAtRef.current = 0;
-    setDestinationArrivals([]);
-    setGatherPointRequests([]);
-  }, [workflowContext]);
+  
 
   const loadGatheringWorkflow = useCallback(async () => {
     const isCurrent = () => mountedRef.current && workflowContextRef.current === workflowContext;
@@ -116,7 +111,7 @@ export function useGatheringWorkflow({
     } while (isCurrent() && workflowPendingRef.current);
   }, [groupId, workflowContext]);
 
-  const lifecycle = useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
+  const foregroundLifecycle = useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
 
   /** Optimistic arrival row so N/M progress updates before reload finishes. */
   const patchLocalArrival = useCallback((
@@ -150,7 +145,55 @@ export function useGatheringWorkflow({
     });
   }, [groupId, userId]);
 
-  useEffect(() => {
+  const arrivalReceiptCompactionLifecycle = createElement(ArrivalReceiptCompaction, { arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations });
+
+  const scheduleWorkflowReload = useCallback(() => {
+    if (workflowReloadRef.current) return;
+    workflowReloadRef.current = setTimeout(() => {
+      workflowReloadRef.current = null;
+      // Preserve the last event while coalescing bursts.
+      void loadGatheringWorkflow().catch(() => undefined);
+    }, Math.max(300, WORKFLOW_MIN_INTERVAL_MS - (Date.now() - workflowLastLoadAtRef.current)));
+  }, [loadGatheringWorkflow]);
+
+  const gatheringWorkflowChannelLifecycle = createElement(GatheringWorkflowChannel, { setDestinationArrivals, setGatherPointRequests, groupId, workflowLastLoadAtRef, loadGatheringWorkflow, workflowChannelSeqRef, scheduleWorkflowReload, isMainLeaderRef, isSubgroupLeaderRef, myScopeIdRef, isScopeLeaderRef, userIdRef, tRef, workflowReloadRef, workflowInFlightRef, workflowPendingRef, mountedRef });
+
+  return {
+    lifecycle: createElement(Fragment, { key: 'gathering-workflow-runtime' }, foregroundLifecycle, arrivalReceiptCompactionLifecycle, gatheringWorkflowChannelLifecycle),
+    remoteArrivals,
+    gatherPointRequests,
+    setGatherPointRequests,
+    loadGatheringWorkflow,
+    patchLocalArrival,
+    /** `group:user:scope`; async work started under one context must not land in another. */
+    workflowContext,
+    isWorkflowContextCurrent: useCallback((context: string) => mountedRef.current
+      && workflowContextRef.current === context, []),
+  };
+}
+
+function ArrivalReceiptCompaction({ arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations }: {
+  arrivalOperations: CoreOperation[];
+  userId: string | undefined;
+  arrivalSessionScope: string[];
+  remoteArrivals: DestinationArrival[];
+  rawDestinations: Destination[];
+}) {
+  const [arrivalReceiptCompactionInputs, setArrivalReceiptCompactionInputs] = useState(() => ({ generation: 0, arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, userId }));
+  if (!(Object.is(arrivalReceiptCompactionInputs.arrivalOperations, arrivalOperations) && Object.is(arrivalReceiptCompactionInputs.arrivalSessionScope, arrivalSessionScope) && Object.is(arrivalReceiptCompactionInputs.remoteArrivals, remoteArrivals) && Object.is(arrivalReceiptCompactionInputs.rawDestinations, rawDestinations) && Object.is(arrivalReceiptCompactionInputs.userId, userId))) {
+    setArrivalReceiptCompactionInputs({ generation: arrivalReceiptCompactionInputs.generation + 1, arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, userId });
+  }
+  return createElement(ArrivalReceiptCompactionCommit, { key: arrivalReceiptCompactionInputs.generation, arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations });
+}
+
+function ArrivalReceiptCompactionCommit({ arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations }: {
+  arrivalOperations: CoreOperation[];
+  userId: string | undefined;
+  arrivalSessionScope: string[];
+  remoteArrivals: DestinationArrival[];
+  rawDestinations: Destination[];
+}) {
+  useMountEffect(() => {
     const eventOrder = (op: CoreOperation) => {
       const occurredAt = typeof op.payload.occurredAt === 'string'
         ? Date.parse(op.payload.occurredAt)
@@ -205,18 +248,60 @@ export function useGatheringWorkflow({
         : op.payload.arrived === false ? !matching : Boolean(matching && closed);
       if (reflected) void getCoreOperationOutbox().removeArrival(op.id);
     }
-  }, [arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, userId]);
+  });
+  return null;
+}
 
-  const scheduleWorkflowReload = useCallback(() => {
-    if (workflowReloadRef.current) return;
-    workflowReloadRef.current = setTimeout(() => {
-      workflowReloadRef.current = null;
-      // Preserve the last event while coalescing bursts.
-      void loadGatheringWorkflow().catch(() => undefined);
-    }, Math.max(300, WORKFLOW_MIN_INTERVAL_MS - (Date.now() - workflowLastLoadAtRef.current)));
-  }, [loadGatheringWorkflow]);
+function GatheringWorkflowChannel({ setDestinationArrivals, setGatherPointRequests, groupId, workflowLastLoadAtRef, loadGatheringWorkflow, workflowChannelSeqRef, scheduleWorkflowReload, isMainLeaderRef, isSubgroupLeaderRef, myScopeIdRef, isScopeLeaderRef, userIdRef, tRef, workflowReloadRef, workflowInFlightRef, workflowPendingRef, mountedRef }: {
+  setDestinationArrivals: import("react").Dispatch<import("react").SetStateAction<DestinationArrival[]>>;
+  setGatherPointRequests: import("react").Dispatch<import("react").SetStateAction<GatherPointRequest[]>>;
+  groupId: string | null;
+  workflowLastLoadAtRef: import("react").RefObject<number>;
+  loadGatheringWorkflow: () => Promise<void>;
+  workflowChannelSeqRef: import("react").RefObject<number>;
+  scheduleWorkflowReload: () => void;
+  isMainLeaderRef: import("react").RefObject<boolean>;
+  isSubgroupLeaderRef: import("react").RefObject<boolean>;
+  myScopeIdRef: import("react").RefObject<string | undefined>;
+  isScopeLeaderRef: import("react").RefObject<boolean>;
+  userIdRef: import("react").RefObject<string | undefined>;
+  tRef: import("react").RefObject<(key: TranslationKey) => string>;
+  workflowReloadRef: import("react").RefObject<NodeJS.Timeout | null>;
+  workflowInFlightRef: import("react").RefObject<Promise<void> | null>;
+  workflowPendingRef: import("react").RefObject<boolean>;
+  mountedRef: import("react").RefObject<boolean>;
+}) {
+  const [gatheringWorkflowChannelInputs, setGatheringWorkflowChannelInputs] = useState(() => ({ generation: 0, groupId, loadGatheringWorkflow, scheduleWorkflowReload }));
+  if (!(Object.is(gatheringWorkflowChannelInputs.groupId, groupId) && Object.is(gatheringWorkflowChannelInputs.loadGatheringWorkflow, loadGatheringWorkflow) && Object.is(gatheringWorkflowChannelInputs.scheduleWorkflowReload, scheduleWorkflowReload))) {
+    setGatheringWorkflowChannelInputs({ generation: gatheringWorkflowChannelInputs.generation + 1, groupId, loadGatheringWorkflow, scheduleWorkflowReload });
+  }
+  return createElement(GatheringWorkflowChannelCommit, { key: gatheringWorkflowChannelInputs.generation, setDestinationArrivals, setGatherPointRequests, groupId, workflowLastLoadAtRef, loadGatheringWorkflow, workflowChannelSeqRef, scheduleWorkflowReload, isMainLeaderRef, isSubgroupLeaderRef, myScopeIdRef, isScopeLeaderRef, userIdRef, tRef, workflowReloadRef, workflowInFlightRef, workflowPendingRef, mountedRef });
+}
 
-  useEffect(() => {
+function GatheringWorkflowChannelCommit({ setDestinationArrivals, setGatherPointRequests, groupId, workflowLastLoadAtRef, loadGatheringWorkflow, workflowChannelSeqRef, scheduleWorkflowReload, isMainLeaderRef, isSubgroupLeaderRef, myScopeIdRef, isScopeLeaderRef, userIdRef, tRef, workflowReloadRef, workflowInFlightRef, workflowPendingRef, mountedRef }: {
+  setDestinationArrivals: import("react").Dispatch<import("react").SetStateAction<DestinationArrival[]>>;
+  setGatherPointRequests: import("react").Dispatch<import("react").SetStateAction<GatherPointRequest[]>>;
+  groupId: string | null;
+  workflowLastLoadAtRef: import("react").RefObject<number>;
+  loadGatheringWorkflow: () => Promise<void>;
+  workflowChannelSeqRef: import("react").RefObject<number>;
+  scheduleWorkflowReload: () => void;
+  isMainLeaderRef: import("react").RefObject<boolean>;
+  isSubgroupLeaderRef: import("react").RefObject<boolean>;
+  myScopeIdRef: import("react").RefObject<string | undefined>;
+  isScopeLeaderRef: import("react").RefObject<boolean>;
+  userIdRef: import("react").RefObject<string | undefined>;
+  tRef: import("react").RefObject<(key: TranslationKey) => string>;
+  workflowReloadRef: import("react").RefObject<NodeJS.Timeout | null>;
+  workflowInFlightRef: import("react").RefObject<Promise<void> | null>;
+  workflowPendingRef: import("react").RefObject<boolean>;
+  mountedRef: import("react").RefObject<boolean>;
+}) {
+  useMountEffect(() => {
+    mountedRef.current = true;
+    workflowInFlightRef.current = null;
+    workflowPendingRef.current = false;
+    workflowLastLoadAtRef.current = 0;
     setDestinationArrivals([]);
     setGatherPointRequests([]);
     if (!groupId || isDemoGroup(groupId)) return;
@@ -254,18 +339,6 @@ export function useGatheringWorkflow({
       workflowReloadRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [groupId, loadGatheringWorkflow, scheduleWorkflowReload]);
-
-  return {
-    lifecycle,
-    remoteArrivals,
-    gatherPointRequests,
-    setGatherPointRequests,
-    loadGatheringWorkflow,
-    patchLocalArrival,
-    /** `group:user:scope`; async work started under one context must not land in another. */
-    workflowContext,
-    isWorkflowContextCurrent: useCallback((context: string) => mountedRef.current
-      && workflowContextRef.current === context, []),
-  };
+  });
+  return null;
 }

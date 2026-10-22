@@ -161,11 +161,11 @@ describe('useCoordinationRequests', () => {
 
   it('subscribes to realtime tables and cleans up on unmount', async () => {
     function Harness() {
-      const lifecycleApi = useCoordinationRequests({
+      const api = useCoordinationRequests({
         groupId: 'group-1',
         userId: 'leader-1',
       });
-      return lifecycleApi.lifecycle;
+      return api.lifecycle;
     }
 
     const root = mountHarness(() => React.createElement(Harness));
@@ -297,12 +297,12 @@ describe('useCoordinationRequests', () => {
 
   it('does not load when disabled', async () => {
     function Harness() {
-      const lifecycleApi = useCoordinationRequests({
+      const api = useCoordinationRequests({
         groupId: 'group-1',
         userId: 'member-1',
         enabled: false,
       });
-      return lifecycleApi.lifecycle;
+      return api.lifecycle;
     }
 
     mountHarness(() => React.createElement(Harness));

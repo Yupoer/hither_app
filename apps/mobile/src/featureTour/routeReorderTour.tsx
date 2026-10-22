@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import type { LayoutRectangle } from 'react-native';
 import type { AccountPreferences } from '../types';
 import type { TourTargetId } from './constants';
@@ -256,6 +257,7 @@ export interface UseRouteReorderTourInput {
 }
 
 export interface UseRouteReorderTourResult {
+  lifecycle: import('react').ReactElement;
   tourActive: boolean;
   step: RouteReorderTourStep | null;
   stepIndex: number;
@@ -280,12 +282,10 @@ export function useRouteReorderTour(
   }>({ stepIndex: 0, targetRect: null });
   const [transitioning, setTransitioning] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const committedInput = useMemo<RouteReorderTourCommittedInput>(() => ({ measureTarget: input.measureTarget, scrollToTarget: input.scrollToTarget, accountPreferences: input.accountPreferences, accountId: input.accountId }), [input.measureTarget, input.scrollToTarget, input.accountPreferences, input.accountId]);
+  const committedInputRef = useRef(committedInput);
   const generationRef = useRef(0);
   const transitioningRef = useRef(false);
-  const measureRef = useRef(input.measureTarget);
-  const scrollRef = useRef(input.scrollToTarget);
-  const prefsRef = useRef(input.accountPreferences);
-  const accountIdRef = useRef(input.accountId);
   const tourEligible = input.routeOverlayOpenComplete
     && loaded
     && !localCompleted
@@ -294,26 +294,21 @@ export function useRouteReorderTour(
     && input.canEditItinerary
     && input.gatheringPointCount > 0;
 
-  useEffect(() => {
-    measureRef.current = input.measureTarget;
-    scrollRef.current = input.scrollToTarget;
-    prefsRef.current = input.accountPreferences;
-    accountIdRef.current = input.accountId;
-  }, [input.measureTarget, input.scrollToTarget, input.accountPreferences, input.accountId]);
+  const routeTourInputPublicationLifecycle = <RouteTourInputPublication committedInputRef={committedInputRef} committedInput={committedInput} />;
 
   const reevaluate = useCallback(() => {
     let cancelled = false;
     void (async () => {
       const [local, pending] = await Promise.all([
-        readRouteReorderTourCompletedLocal(accountIdRef.current),
-        readRouteReorderTourAccountSyncPending(accountIdRef.current),
+        readRouteReorderTourCompletedLocal(committedInputRef.current.accountId),
+        readRouteReorderTourAccountSyncPending(committedInputRef.current.accountId),
       ]);
       if (cancelled) return;
       setLocalCompleted(local || pending?.completed === true);
       setLoaded(true);
       void retryPendingRouteReorderTourAccountSync({
-        accountId: accountIdRef.current,
-        existingPreferences: prefsRef.current,
+        accountId: committedInputRef.current.accountId,
+        existingPreferences: committedInputRef.current.accountPreferences,
       });
     })();
     return () => {
@@ -321,52 +316,9 @@ export function useRouteReorderTour(
     };
   }, []);
 
-  useEffect(() => {
-    const cancel = reevaluate();
-    return typeof cancel === 'function' ? cancel : undefined;
-  }, [reevaluate, input.accountId, input.accountPreferences?.routeReorderTourCompleted]);
+  const routeTourCompletionLoadLifecycle = <RouteTourCompletionLoad committedInputRef={committedInputRef} committedInput={committedInput} reevaluate={reevaluate} input={input} />;
 
-  useEffect(() => {
-    if (!tourEligible) return;
-
-    let cancelled = false;
-    const generation = ++generationRef.current;
-    void (async () => {
-      setTransitioning(true);
-      transitioningRef.current = true;
-      const rects = await Promise.all(
-        ROUTE_REORDER_TOUR_STEPS.map((step) =>
-          measureTargetWithRetry({
-            measure: (id) => measureRef.current(id),
-            target: step.target,
-            maxAttempts: 6,
-          }),
-        ),
-      );
-      if (cancelled || generation !== generationRef.current) return;
-      if (rects.some((rect) => !rect || rect.width <= 0 || rect.height <= 0)) {
-        transitioningRef.current = false;
-        setTransitioning(false);
-        return;
-      }
-      setSnapshot({ stepIndex: 0, targetRect: rects[0] });
-      setActive(true);
-      transitioningRef.current = false;
-      setTransitioning(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    input.routeOverlayOpenComplete,
-    input.isLeader,
-    input.canEditItinerary,
-    input.gatheringPointCount,
-    input.accountPreferences?.routeReorderTourCompleted,
-    loaded,
-    localCompleted,
-    tourEligible,
-  ]);
+  const routeTourEligibilityMeasurementLifecycle = <RouteTourEligibilityMeasurement committedInputRef={committedInputRef} committedInput={committedInput} tourEligible={tourEligible} generationRef={generationRef} setTransitioning={setTransitioning} transitioningRef={transitioningRef} setSnapshot={setSnapshot} setActive={setActive} input={input} loaded={loaded} localCompleted={localCompleted} />;
 
   const tourActive = active && tourEligible;
 
@@ -376,8 +328,8 @@ export function useRouteReorderTour(
       transitioningRef.current = true;
       setCompleting(true);
       void completeRouteReorderTour({
-        accountId: accountIdRef.current,
-        existingPreferences: prefsRef.current,
+        accountId: committedInputRef.current.accountId,
+        existingPreferences: committedInputRef.current.accountPreferences,
       }).finally(() => {
         setLocalCompleted(true);
         setActive(false);
@@ -394,10 +346,10 @@ export function useRouteReorderTour(
     transitioningRef.current = true;
     setTransitioning(true);
     try {
-      await scrollRef.current?.(next.id);
+      await committedInputRef.current.scrollToTarget?.(next.id);
       if (generation !== generationRef.current) return;
       const rect = await measureTargetWithRetry({
-        measure: (id) => measureRef.current(id),
+        measure: (id) => committedInputRef.current.measureTarget(id),
         target: next.target,
         maxAttempts: 6,
       });
@@ -421,10 +373,10 @@ export function useRouteReorderTour(
     transitioningRef.current = true;
     setTransitioning(true);
     try {
-      await scrollRef.current?.(previous.id);
+      await committedInputRef.current.scrollToTarget?.(previous.id);
       if (generation !== generationRef.current) return;
       const rect = await measureTargetWithRetry({
-        measure: (id) => measureRef.current(id),
+        measure: (id) => committedInputRef.current.measureTarget(id),
         target: previous.target,
         maxAttempts: 6,
       });
@@ -440,6 +392,7 @@ export function useRouteReorderTour(
   }, [completing, snapshot.stepIndex, tourActive]);
 
   return {
+    lifecycle: <Fragment key={'route-tour-runtime'}>{routeTourInputPublicationLifecycle}{routeTourCompletionLoadLifecycle}{routeTourEligibilityMeasurementLifecycle}</Fragment>,
     tourActive,
     step: tourActive ? ROUTE_REORDER_TOUR_STEPS[snapshot.stepIndex] ?? null : null,
     stepIndex: snapshot.stepIndex,
@@ -451,4 +404,121 @@ export function useRouteReorderTour(
     canGoPrev: tourActive && snapshot.stepIndex > 0 && !transitioning,
     reevaluate,
   };
+}
+
+type RouteReorderTourCommittedInput = Pick<UseRouteReorderTourInput, 'measureTarget' | 'scrollToTarget' | 'accountPreferences' | 'accountId'>;
+
+function RouteTourInputPublication({ committedInputRef, committedInput }: {
+  committedInputRef: import("react").RefObject<RouteReorderTourCommittedInput>;
+  committedInput: RouteReorderTourCommittedInput;
+}) {
+  const [routeTourInputPublicationInputs, setRouteTourInputPublicationInputs] = useState(() => ({ generation: 0, committedInput }));
+  if (!(Object.is(routeTourInputPublicationInputs.committedInput, committedInput))) {
+    setRouteTourInputPublicationInputs({ generation: routeTourInputPublicationInputs.generation + 1, committedInput });
+  }
+  return <RouteTourInputPublicationCommit key={routeTourInputPublicationInputs.generation} committedInputRef={committedInputRef} committedInput={committedInput} />;
+}
+
+function RouteTourInputPublicationCommit({ committedInputRef, committedInput }: {
+  committedInputRef: import("react").RefObject<RouteReorderTourCommittedInput>;
+  committedInput: RouteReorderTourCommittedInput;
+}) {
+  useMountEffect(() => { committedInputRef.current = committedInput; });
+  return null;
+}
+
+function RouteTourCompletionLoad({ committedInputRef, committedInput, reevaluate, input }: {
+  committedInputRef: import("react").RefObject<RouteReorderTourCommittedInput>;
+  committedInput: RouteReorderTourCommittedInput;
+  reevaluate: () => () => void;
+  input: UseRouteReorderTourInput;
+}) {
+  const [routeTourCompletionLoadInputs, setRouteTourCompletionLoadInputs] = useState(() => ({ generation: 0, reevaluate, input_accountId: input.accountId, input_accountPreferences_routeReorderTourCompleted: input.accountPreferences?.routeReorderTourCompleted }));
+  if (!(Object.is(routeTourCompletionLoadInputs.reevaluate, reevaluate) && Object.is(routeTourCompletionLoadInputs.input_accountId, input.accountId) && Object.is(routeTourCompletionLoadInputs.input_accountPreferences_routeReorderTourCompleted, input.accountPreferences?.routeReorderTourCompleted))) {
+    setRouteTourCompletionLoadInputs({ generation: routeTourCompletionLoadInputs.generation + 1, reevaluate, input_accountId: input.accountId, input_accountPreferences_routeReorderTourCompleted: input.accountPreferences?.routeReorderTourCompleted });
+  }
+  return <RouteTourCompletionLoadCommit key={routeTourCompletionLoadInputs.generation} committedInputRef={committedInputRef} committedInput={committedInput} reevaluate={reevaluate} input={input} />;
+}
+
+function RouteTourCompletionLoadCommit({ committedInputRef, committedInput, reevaluate, input }: {
+  committedInputRef: import("react").RefObject<RouteReorderTourCommittedInput>;
+  committedInput: RouteReorderTourCommittedInput;
+  reevaluate: () => () => void;
+  input: UseRouteReorderTourInput;
+}) {
+  useMountEffect(() => {
+    committedInputRef.current = committedInput;
+    const cancel = reevaluate();
+    return typeof cancel === 'function' ? cancel : undefined;
+  });
+  return null;
+}
+
+function RouteTourEligibilityMeasurement({ committedInputRef, committedInput, tourEligible, generationRef, setTransitioning, transitioningRef, setSnapshot, setActive, input, loaded, localCompleted }: {
+  committedInputRef: import("react").RefObject<RouteReorderTourCommittedInput>;
+  committedInput: RouteReorderTourCommittedInput;
+  tourEligible: boolean;
+  generationRef: import("react").RefObject<number>;
+  setTransitioning: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  transitioningRef: import("react").RefObject<boolean>;
+  setSnapshot: import("react").Dispatch<import("react").SetStateAction<{ stepIndex: number; targetRect: LayoutRectangle | null; }>>;
+  setActive: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  input: UseRouteReorderTourInput;
+  loaded: boolean;
+  localCompleted: boolean;
+}) {
+  const [routeTourEligibilityMeasurementInputs, setRouteTourEligibilityMeasurementInputs] = useState(() => ({ generation: 0, input_routeOverlayOpenComplete: input.routeOverlayOpenComplete, input_isLeader: input.isLeader, input_canEditItinerary: input.canEditItinerary, input_gatheringPointCount: input.gatheringPointCount, input_accountPreferences_routeReorderTourCompleted: input.accountPreferences?.routeReorderTourCompleted, loaded, localCompleted, tourEligible }));
+  if (!(Object.is(routeTourEligibilityMeasurementInputs.input_routeOverlayOpenComplete, input.routeOverlayOpenComplete) && Object.is(routeTourEligibilityMeasurementInputs.input_isLeader, input.isLeader) && Object.is(routeTourEligibilityMeasurementInputs.input_canEditItinerary, input.canEditItinerary) && Object.is(routeTourEligibilityMeasurementInputs.input_gatheringPointCount, input.gatheringPointCount) && Object.is(routeTourEligibilityMeasurementInputs.input_accountPreferences_routeReorderTourCompleted, input.accountPreferences?.routeReorderTourCompleted) && Object.is(routeTourEligibilityMeasurementInputs.loaded, loaded) && Object.is(routeTourEligibilityMeasurementInputs.localCompleted, localCompleted) && Object.is(routeTourEligibilityMeasurementInputs.tourEligible, tourEligible))) {
+    setRouteTourEligibilityMeasurementInputs({ generation: routeTourEligibilityMeasurementInputs.generation + 1, input_routeOverlayOpenComplete: input.routeOverlayOpenComplete, input_isLeader: input.isLeader, input_canEditItinerary: input.canEditItinerary, input_gatheringPointCount: input.gatheringPointCount, input_accountPreferences_routeReorderTourCompleted: input.accountPreferences?.routeReorderTourCompleted, loaded, localCompleted, tourEligible });
+  }
+  return <RouteTourEligibilityMeasurementCommit key={routeTourEligibilityMeasurementInputs.generation} committedInputRef={committedInputRef} committedInput={committedInput} tourEligible={tourEligible} generationRef={generationRef} setTransitioning={setTransitioning} transitioningRef={transitioningRef} setSnapshot={setSnapshot} setActive={setActive} input={input} loaded={loaded} localCompleted={localCompleted} />;
+}
+
+function RouteTourEligibilityMeasurementCommit({ committedInputRef, committedInput, tourEligible, generationRef, setTransitioning, transitioningRef, setSnapshot, setActive, input, loaded, localCompleted }: {
+  committedInputRef: import("react").RefObject<RouteReorderTourCommittedInput>;
+  committedInput: RouteReorderTourCommittedInput;
+  tourEligible: boolean;
+  generationRef: import("react").RefObject<number>;
+  setTransitioning: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  transitioningRef: import("react").RefObject<boolean>;
+  setSnapshot: import("react").Dispatch<import("react").SetStateAction<{ stepIndex: number; targetRect: LayoutRectangle | null; }>>;
+  setActive: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  input: UseRouteReorderTourInput;
+  loaded: boolean;
+  localCompleted: boolean;
+}) {
+  useMountEffect(() => {
+    committedInputRef.current = committedInput;
+    if (!tourEligible) return;
+
+    let cancelled = false;
+    const generation = ++generationRef.current;
+    void (async () => {
+      setTransitioning(true);
+      transitioningRef.current = true;
+      const rects = await Promise.all(
+        ROUTE_REORDER_TOUR_STEPS.map((step) =>
+          measureTargetWithRetry({
+            measure: (id) => committedInputRef.current.measureTarget(id),
+            target: step.target,
+            maxAttempts: 6,
+          }),
+        ),
+      );
+      if (cancelled || generation !== generationRef.current) return;
+      if (rects.some((rect) => !rect || rect.width <= 0 || rect.height <= 0)) {
+        transitioningRef.current = false;
+        setTransitioning(false);
+        return;
+      }
+      setSnapshot({ stepIndex: 0, targetRect: rects[0] });
+      setActive(true);
+      transitioningRef.current = false;
+      setTransitioning(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+  return null;
 }

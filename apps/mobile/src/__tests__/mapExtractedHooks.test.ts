@@ -1,3 +1,4 @@
+import { useGatherCardExpansion } from '../screens/MapScreen/hooks/useGatherCardExpansion';
 import { useMemberPresence, type UseMemberPresenceInput } from '../screens/MapScreen/hooks/useMemberPresence';
 import { getNotificationPreferences, setNotificationPreferences, setSolo } from '../api/client';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
@@ -49,7 +50,11 @@ function deferred<T>() {
 async function mountHook<I, O>(hook: (input: I) => O, input: I) {
   let value!: O;
   let root!: ReactTestRenderer;
-  function Harness({ input: next }: { input: I }) { value = hook(next); return null; }
+  function Harness({ input: next }: { input: I }) {
+    value = hook(next);
+    return value != null && typeof value === 'object' && 'lifecycle' in value
+      && React.isValidElement(value.lifecycle) ? value.lifecycle : null;
+  }
   await act(async () => { root = create(React.createElement(Harness, { input })); });
   return {
     get value() { return value; },
@@ -302,4 +307,34 @@ describe('MapScreen member presence', () => {
     expect(mounted.value.myStatusKind).toBe('follow');
     await mounted.unmount();
   });
+  it('keeps independent nested jobs with the same generation isolated across identity changes', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+    const old = deferred<Awaited<ReturnType<typeof getNotificationPreferences>>>();
+    jest.mocked(getNotificationPreferences).mockReturnValueOnce(old.promise).mockResolvedValueOnce(DEFAULT_NOTIFICATION_PREFERENCES);
+    let expansion!: ReturnType<typeof useGatherCardExpansion>;
+    let presence!: ReturnType<typeof useMemberPresence>;
+    const input = { ...presenceInput(), sharingEnabled: false };
+    function Combined({ expanded, account }: { expanded: boolean; account: UseMemberPresenceInput }) {
+      expansion = useGatherCardExpansion(expanded);
+      presence = useMemberPresence(account);
+      return React.createElement(React.Fragment, null, expansion.lifecycle, presence.lifecycle);
+    }
+    let renderer!: ReactTestRenderer;
+    try {
+      await act(async () => { renderer = create(React.createElement(Combined, { expanded: false, account: input })); });
+      act(() => expansion.expandCard('tour-stop'));
+      expect(jest.getTimerCount()).toBe(1);
+      await act(async () => { renderer.update(React.createElement(Combined, {
+        expanded: true, account: { ...input, user: { id: 'next', name: 'Next', email: 'next@example.test' } },
+      })); });
+      expect(jest.getTimerCount()).toBe(0);
+      expect(getNotificationPreferences).toHaveBeenCalledTimes(2);
+      await act(async () => { old.resolve({ addGathering: false, leaderCommands: false, followerRequests: false, journey: false, arrival: false }); });
+      expect(presence.myStatusKind).toBe('follow');
+    } finally {
+      await act(async () => { renderer.unmount(); });
+      jest.useRealTimers();
+    }
+  });
+
 });

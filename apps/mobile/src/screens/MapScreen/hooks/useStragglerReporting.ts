@@ -1,7 +1,8 @@
 import { reportStraggler } from '../../../api/client';
 import { useStragglerAlerts } from '../../../state/useStragglerAlerts';
 import { type Coordinates } from '../../../types';
-import { useRef, useEffect } from 'react';
+import { createElement, Fragment, useState, useRef, } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { Group, GroupState, User } from '../../../types';
 
 export interface UseStragglerReportingInput {
@@ -34,7 +35,33 @@ export function useStragglerReporting({
   // On newly flagged members (hysteresis in the hook), leader fans out APNs
   // via RPC — no local notification (would double-fire for the leader).
   const lastStragglerIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
+  const committedStragglerReportLifecycle = createElement(CommittedStragglerReport, { isLeader, groupId, lastStragglerIdsRef, stragglers });
+  return {
+    lifecycle: createElement(Fragment, { key: 'straggler-reporting-runtime' }, committedStragglerReportLifecycle),
+    stragglers,
+  };
+}
+
+function CommittedStragglerReport({ isLeader, groupId, lastStragglerIdsRef, stragglers }: {
+  isLeader: boolean;
+  groupId: string | null;
+  lastStragglerIdsRef: import("react").RefObject<Set<string>>;
+  stragglers: import("../../../utils/straggler").Straggler[];
+}) {
+  const [committedStragglerReportInputs, setCommittedStragglerReportInputs] = useState(() => ({ generation: 0, stragglers, isLeader, groupId }));
+  if (!(Object.is(committedStragglerReportInputs.stragglers, stragglers) && Object.is(committedStragglerReportInputs.isLeader, isLeader) && Object.is(committedStragglerReportInputs.groupId, groupId))) {
+    setCommittedStragglerReportInputs({ generation: committedStragglerReportInputs.generation + 1, stragglers, isLeader, groupId });
+  }
+  return createElement(CommittedStragglerReportCommit, { key: committedStragglerReportInputs.generation, isLeader, groupId, lastStragglerIdsRef, stragglers });
+}
+
+function CommittedStragglerReportCommit({ isLeader, groupId, lastStragglerIdsRef, stragglers }: {
+  isLeader: boolean;
+  groupId: string | null;
+  lastStragglerIdsRef: import("react").RefObject<Set<string>>;
+  stragglers: import("../../../utils/straggler").Straggler[];
+}) {
+  useMountEffect(() => {
     if (!isLeader || !groupId) {
       lastStragglerIdsRef.current = new Set();
       return;
@@ -51,8 +78,6 @@ export function useStragglerReporting({
         // do not logError again or the outbox doubles every soft-fail.
       });
     }
-  }, [stragglers, isLeader, groupId]);
-  return {
-    stragglers,
-  };
+  });
+  return null;
 }

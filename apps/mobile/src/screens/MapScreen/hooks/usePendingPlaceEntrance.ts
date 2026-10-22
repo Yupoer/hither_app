@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { createElement, Fragment, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { cancelAnimation, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
 import type { PlaceResult } from '../../../native';
 
@@ -11,7 +12,35 @@ export function usePendingPlaceEntrance(
   const [ready, setReady] = useState(false);
   const progress = useSharedValue(0);
   const shownPlace = useRef<PlaceResult | null>(null);
-  useEffect(() => {
+  const pendingPlaceMotionLifecycle = createElement(PendingPlaceMotion, { visible, progress, sheetHeight, pendingPlace, shownPlace, setReady });
+  return {
+    lifecycle: createElement(Fragment, { key: 'pending-place-entrance-runtime' }, pendingPlaceMotionLifecycle), ready: ready && pendingPlace != null, progress };
+}
+
+function PendingPlaceMotion({ visible, progress, sheetHeight, pendingPlace, shownPlace, setReady }: {
+  visible: boolean;
+  progress: SharedValue<number>;
+  sheetHeight: SharedValue<number>;
+  pendingPlace: PlaceResult | null;
+  shownPlace: import("react").RefObject<PlaceResult | null>;
+  setReady: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+}) {
+  const [pendingPlaceMotionInputs, setPendingPlaceMotionInputs] = useState(() => ({ generation: 0, pendingPlace, progress, sheetHeight, visible }));
+  if (!(Object.is(pendingPlaceMotionInputs.pendingPlace, pendingPlace) && Object.is(pendingPlaceMotionInputs.progress, progress) && Object.is(pendingPlaceMotionInputs.sheetHeight, sheetHeight) && Object.is(pendingPlaceMotionInputs.visible, visible))) {
+    setPendingPlaceMotionInputs({ generation: pendingPlaceMotionInputs.generation + 1, pendingPlace, progress, sheetHeight, visible });
+  }
+  return createElement(PendingPlaceMotionCommit, { key: pendingPlaceMotionInputs.generation, visible, progress, sheetHeight, pendingPlace, shownPlace, setReady });
+}
+
+function PendingPlaceMotionCommit({ visible, progress, sheetHeight, pendingPlace, shownPlace, setReady }: {
+  visible: boolean;
+  progress: SharedValue<number>;
+  sheetHeight: SharedValue<number>;
+  pendingPlace: PlaceResult | null;
+  shownPlace: import("react").RefObject<PlaceResult | null>;
+  setReady: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+}) {
+  useMountEffect(() => {
     if (!visible) {
       cancelAnimation(progress);
       cancelAnimation(sheetHeight);
@@ -34,6 +63,6 @@ export function usePendingPlaceEntrance(
       }
     }, 0);
     return () => { clearTimeout(timer); cancelAnimation(progress); };
-  }, [pendingPlace, progress, sheetHeight, visible]);
-  return { ready: ready && pendingPlace != null, progress };
+  });
+  return null;
 }

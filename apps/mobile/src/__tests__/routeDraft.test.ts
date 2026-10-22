@@ -74,7 +74,7 @@ describe('useRouteDraft', () => {
   }
   function Harness({ props }: { props: UseRouteDraftInput }) {
     draft = useRouteDraft(props);
-    return null;
+    return draft.lifecycle;
   }
   function render(props: UseRouteDraftInput) {
     act(() => {
