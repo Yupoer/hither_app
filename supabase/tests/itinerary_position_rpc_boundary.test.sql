@@ -54,8 +54,8 @@ select is(
         and closed_at is null
     )
   ),
-  1,
-  'RPC reorder of open rows succeeds from locked slots'
+  2,
+  'RPC reorder updates both open rows from locked slots'
 );
 
 -- Source-level: resolve_gather + coordination include groups FOR UPDATE before insert path.

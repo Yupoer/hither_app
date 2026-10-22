@@ -545,6 +545,7 @@ select is(
       'userId', '22222222-2222-4222-8222-222222222222', 'arrived', false),
     34, '{}'::uuid[]
   )->>'status'), 'accepted', 'late undo removes the member projection');
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 select is(
   (select count(*) from public.visited_waypoints
    where group_id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'

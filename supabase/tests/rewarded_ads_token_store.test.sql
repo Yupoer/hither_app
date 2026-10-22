@@ -1,39 +1,110 @@
--- Rewarded Ads Token Store SQL contract notes (pgTAP-oriented).
--- Documents wallet / SSV credit / redeem / point-limit invariants enforced by
--- 20260730120000_rewarded_ads_token_store.sql.
+-- Rewarded-ad token store: wallet RLS, reward sessions, and SSV credit
+-- idempotency (20260730120000_rewarded_ads_token_store,
+-- 20260807000000_promo_premium_projection_and_test_ads).
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = extensions, public, auth;
+select plan(13);
 
--- plan: rls
--- 1. authenticated cannot insert/update token_wallets
--- 2. authenticated cannot insert token_ledger / reward_sessions / credits / user_entitlements
--- 3. authenticated can select own wallet and member trip credits
+insert into auth.users (id, email, is_anonymous) values
+  ('a8111111-1111-4111-8111-111111111111', 'tokens-user@example.test', false),
+  ('a8222222-2222-4222-8222-222222222222', 'tokens-anon@example.test', true);
 
--- plan: reward session
--- 4. create_reward_session rejects anonymous
--- 5. second active session while first active → session_active
--- 6. after expire/credit, next create succeeds (no daily cap)
--- 7. session_ref is opaque (not JWT)
+select ok(
+  not has_function_privilege('authenticated',
+    'public.credit_rewarded_ad_transaction(text,text,text,text,text,text)', 'EXECUTE'),
+  'clients cannot credit their own rewarded ads'
+);
+select ok(
+  has_function_privilege('service_role',
+    'public.credit_rewarded_ad_transaction(text,text,text,text,text,text)', 'EXECUTE'),
+  'the SSV callback role can credit rewarded ads'
+);
 
--- plan: ssv credit
--- 8. credit_rewarded_ad_transaction service_role only
--- 9. valid session + allow-listed ad unit + 1 hither_token → balance +1 once
--- 10. replay same google transaction_id → already_credited, balance unchanged
--- 11. bad ad unit / wrong reward / expired session → no credit
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'a8111111-1111-4111-8111-111111111111', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 
--- plan: redeem premium
--- 12. team_premium_1d/3d/7d debit + trip entitlement token_redemption
--- 13. stack extends expires_at when active token pass
--- 14. purchase/promo/lifetime active → not_applicable, no debit
--- 15. member_count outside 2–5 → not_applicable
+select throws_ok(
+  $$insert into public.token_wallets (user_id, balance)
+    values ('a8111111-1111-4111-8111-111111111111', 100)$$,
+  '42501',
+  null,
+  'a client cannot write its own wallet'
+);
+select throws_ok(
+  $$insert into public.token_ledger (user_id, delta, balance_after, reason)
+    values ('a8111111-1111-4111-8111-111111111111', 100, 100, 'rewarded_ad')$$,
+  '42501',
+  null,
+  'a client cannot write the token ledger'
+);
 
--- plan: extra points
--- 16. redeem team_extra_points_3/10 increases trip_extra_point_credits
--- 17. open points < 5 insert free; open >=5 + credit consumes 1; open >=5 + 0 credit → P0004
--- 18. complete/delete frees free slots but never refunds credits
--- 19. temporary unlimited override superseded by credit-aware enforce
+create temporary table reward_ref as
+select public.create_reward_session('ios') as result;
+grant select on reward_ref to postgres;
 
--- plan: live activity
--- 20. personal_live_activity_lifetime personal grant
--- 21. effective = personal OR group premium
--- 22. no auto-grandfather
+select is(
+  (select result->>'ok' from reward_ref),
+  'true',
+  'a registered user starts a reward session'
+);
+select is(
+  public.create_reward_session('ios')->>'error',
+  'session_active',
+  'a second session is refused while one is active'
+);
 
-select 'rewarded_ads_token_store contract documented' as note;
+select set_config('request.jwt.claim.sub', 'a8222222-2222-4222-8222-222222222222', true);
+select is(
+  public.create_reward_session('ios')->>'error',
+  'registration_required',
+  'anonymous users cannot start a reward session'
+);
+
+reset role;
+select is(
+  public.credit_rewarded_ad_transaction(
+    (select result->>'session_ref' from reward_ref), 'gtx-token-store-1',
+    'ca-app-pub-8135109277557342/7899053731', '1', 'hither_token', 'ios'
+  )->>'already_credited',
+  'false',
+  'a valid SSV callback credits the session'
+);
+select is(
+  (select balance from public.token_wallets where user_id = 'a8111111-1111-4111-8111-111111111111'),
+  1,
+  'a credit adds exactly one token'
+);
+select is(
+  public.credit_rewarded_ad_transaction(
+    (select result->>'session_ref' from reward_ref), 'gtx-token-store-1',
+    'ca-app-pub-8135109277557342/7899053731', '1', 'hither_token', 'ios'
+  )->>'already_credited',
+  'true',
+  'replaying a Google transaction id is reported as already credited'
+);
+select is(
+  (select balance from public.token_wallets where user_id = 'a8111111-1111-4111-8111-111111111111'),
+  1,
+  'a replay leaves the balance unchanged'
+);
+select is(
+  public.credit_rewarded_ad_transaction(
+    (select result->>'session_ref' from reward_ref), 'gtx-token-store-2',
+    'ca-app-pub-0000000000000000/0000000000', '1', 'hither_token', 'ios'
+  )->>'error',
+  'invalid_ad_unit',
+  'an ad unit outside the allow-list earns nothing'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'a8111111-1111-4111-8111-111111111111', true);
+select is(
+  public.create_reward_session('ios')->>'ok',
+  'true',
+  'a credited session frees the user for the next ad'
+);
+
+select * from finish();
+rollback;

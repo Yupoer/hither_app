@@ -58,9 +58,9 @@ describe('kick_group_member (#168)', () => {
     expect(sqlTest).toContain('expired anonymous leader cannot kick');
   });
 
-  it('CI verify job runs the kick SQL authorization as a required gate', () => {
+  it('CI verify job runs every pgTAP file, including the kick SQL authorization', () => {
     expect(ciWorkflow).toContain('supabase test db');
-    expect(ciWorkflow).toContain('supabase/tests/kick_group_member.test.sql');
+    expect(ciWorkflow).toContain('supabase/tests/*.test.sql');
     expect(ciWorkflow).toMatch(/\n  verify:\n/);
   });
 

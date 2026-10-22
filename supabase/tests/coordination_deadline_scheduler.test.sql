@@ -16,14 +16,14 @@ insert into public.profiles (id, nickname) values
   ('c1111111-1111-4111-8111-111111111111', 'SchedLeader');
 
 insert into public.groups (id, name, invite_code, created_by) values (
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'c0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'Scheduler trip',
   'SCH001',
   'c1111111-1111-4111-8111-111111111111'
 );
 
 insert into public.memberships (group_id, user_id, role) values (
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'c0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'leader'
 );
@@ -70,11 +70,11 @@ select is(
 reset role;
 insert into public.coordination_requests (
   id, group_id, created_by, subject, subject_kind,
-  options, deadline, policy, default_outcome, status
+  options, deadline, policy, default_outcome, status, created_at
 ) values
 (
   'cddddddd-dddd-4ddd-8ddd-dddddddddddd',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'c0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Due meet',
   'gathering_point',
@@ -82,11 +82,12 @@ insert into public.coordination_requests (
   now() - interval '1 minute',
   'majority',
   'keep',
-  'open'
+  'open',
+  now() - interval '1 hour'
 ),
 (
   'ceeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'c0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Future meet',
   'gathering_point',
@@ -94,7 +95,8 @@ insert into public.coordination_requests (
   now() + interval '1 hour',
   'majority',
   'keep',
-  'open'
+  'open',
+  now() - interval '1 hour'
 );
 
 set local role service_role;
@@ -116,8 +118,8 @@ reset role;
 select is(
   (select status from public.coordination_requests
     where id = 'cddddddd-dddd-4ddd-8ddd-dddddddddddd'),
-  'closed',
-  'due request closed after scheduler run'
+  'expired',
+  'due request without votes expires to its default after scheduler run'
 );
 
 select is(
@@ -136,11 +138,11 @@ select ok(
 -- Insert a due open request whose resolve path errors (unknown option id in default).
 insert into public.coordination_requests (
   id, group_id, created_by, subject, subject_kind,
-  options, deadline, policy, default_outcome, status
+  options, deadline, policy, default_outcome, status, created_at
 ) values
 (
   'cfffffff-ffff-4fff-8fff-ffffffffffff',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'c0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Poison meet',
   'gathering_point',
@@ -148,11 +150,12 @@ insert into public.coordination_requests (
   now() - interval '2 minutes',
   'majority',
   'missing_option',
-  'open'
+  'open',
+  now() - interval '1 hour'
 ),
 (
-  'cggggggg-gggg-4ggg-8ggg-gggggggggggg',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'c0000000-0000-4000-8000-000000000000',
+  'c0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Healthy due meet',
   'gathering_point',
@@ -160,7 +163,8 @@ insert into public.coordination_requests (
   now() - interval '30 seconds',
   'majority',
   'keep',
-  'open'
+  'open',
+  now() - interval '1 hour'
 );
 
 set local role service_role;

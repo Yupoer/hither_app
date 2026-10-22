@@ -24,7 +24,7 @@ insert into public.memberships (group_id, user_id, role) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '44444444-4444-4444-8444-444444444444', 'follower');
 
 insert into public.subgroups (id, group_id, name, mode) values (
-  'ssssssss-ssss-4sss-8sss-ssssssssssss',
+  '55555555-5555-4555-8555-555555555555',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'Alpha squad',
   'collab'
@@ -32,7 +32,7 @@ insert into public.subgroups (id, group_id, name, mode) values (
 
 -- Put follower + follower2 in the subgroup; outsider_member stays main-group only.
 update public.memberships
-set subgroup_id = 'ssssssss-ssss-4sss-8sss-ssssssssssss'
+set subgroup_id = '55555555-5555-4555-8555-555555555555'
 where user_id in (
   '22222222-2222-4222-8222-222222222222',
   '33333333-3333-4333-8333-333333333333'
@@ -154,13 +154,11 @@ select * from public.create_coordination_request(
     ),
     jsonb_build_object(
       'id', 'change',
-      'label', 'Move north',
+      'label', 'Rename stop',
       'kind', 'gathering_point',
       'payload', jsonb_build_object(
         'destinationId', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
-        'title', 'Open stop north',
-        'latitude', 25.2,
-        'longitude', 121.2
+        'title', 'Open stop north'
       )
     )
   ),
@@ -353,10 +351,17 @@ select * from public.create_coordination_request(
 );
 
 -- Force deadline into the past (create rejects past deadlines).
+reset role;
 update public.coordination_requests
 set deadline = now() - interval '5 seconds',
     created_at = now() - interval '1 hour'
 where id = (select id from test_deadline);
+
+-- Deadline closure is scheduler-owned: service_role with no end-user subject.
+grant select on test_deadline to service_role;
+set local role service_role;
+select set_config('request.jwt.claim.role', 'service_role', true);
+select set_config('request.jwt.claim.sub', '', true);
 
 select is(
   (public.resolve_coordination_request_deadline((select id from test_deadline))).status,
@@ -384,11 +389,16 @@ select is(
   'deadline resolve creates one operation only'
 );
 
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
+
 -- Subgroup eligibility: outsider main-group member cannot respond
 create temporary table test_sub as
 select * from public.create_coordination_request(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  'ssssssss-ssss-4sss-8sss-ssssssssssss',
+  '55555555-5555-4555-8555-555555555555',
   'Squad only',
   'itinerary',
   jsonb_build_array(

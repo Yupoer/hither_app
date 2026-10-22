@@ -8,7 +8,7 @@ name: CI
 #   5. iOS runtime / OTA alignment           -> verify:runtime
 #   6. Expo dependency version drift         -> expo install --check
 #   7. Expo doctor                           -> expo-doctor (blocking)
-#   8. Kick RPC authorization matrix         -> supabase test db (pgTAP)
+#   8. Supabase SQL behavior                  -> supabase test db (every supabase/tests/*.test.sql)
 #
 # Store/TestFlight release must pass runtime alignment so incompatible native
 # binaries cannot load an OTA built for a different engine/RN/Hermes set.
@@ -183,29 +183,23 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node supabase/scripts/strip-migration-bom.mjs
 
-      - name: Supabase SQL kick authorization (pgTAP)
+      - name: Supabase SQL tests (pgTAP)
         if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: |
           supabase db start
-          supabase test db --local supabase/tests/kick_group_member.test.sql
-          supabase test db --local supabase/tests/delete_account.test.sql
-          supabase test db --local supabase/tests/storekit_purchase_ledger.test.sql
-          supabase test db --local supabase/tests/premium_projection.test.sql
-          supabase test db --local supabase/tests/premium_anonymous_cleanup_skip.test.sql
-          supabase test db --local supabase/tests/database_security_role_matrix.test.sql
-          supabase test db --local supabase/tests/anonymous_expiry_is_member.test.sql
-          supabase test db --local supabase/tests/core_operation_gathering_validation.test.sql
-          supabase test db --local supabase/tests/core_operation_outbox_durable.test.sql
-          supabase test db --local supabase/tests/quick_add_first_stop.test.sql
-          supabase test db --local supabase/tests/durable_trip_daily_accommodation.test.sql
-          supabase test db --local supabase/tests/durable_solo_refresh_receipts.test.sql
-          supabase test db --local supabase/tests/durable_reorder_optional_fields.test.sql
-          supabase test db --local supabase/tests/live_activity_bicycle_mode.test.sql
-          supabase test db --local supabase/tests/reconcile_replaced_stay_cards.test.sql
-          supabase test db --local supabase/tests/security_group_command_import_arrival.test.sql
-          supabase test db --local supabase/tests/feedback_limits.test.sql
-          supabase test db --local supabase/tests/installation_capabilities.test.sql
+          failed=()
+          for test_file in supabase/tests/*.test.sql; do
+            echo "::group::$test_file"
+            if ! supabase test db --local "$test_file"; then
+              failed+=("$test_file")
+            fi
+            echo "::endgroup::"
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            printf '::error::pgTAP failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
           node supabase/tests/promo_redemption_concurrency.mjs
 
   jsi-ui-runtime:

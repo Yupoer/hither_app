@@ -1,5 +1,8 @@
 -- Transactional integration test; all fixtures and operation receipts are rolled back.
 begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = extensions, public, auth;
+select plan(1);
 insert into auth.users(id, email) values
  ('a1111111-1111-4111-8111-111111111111', 'compat-leader@example.test'),
  ('a3333333-3333-4333-8333-333333333333', 'compat-subleader@example.test');
@@ -78,4 +81,6 @@ begin
   assert (select status = 'cancelled' from public.navigation_sessions where id = next_session), 'legacy identity did not close session';
 end;
 $$;
+select pass('end_gathering is idempotent and only closes the session it names');
+select * from finish();
 rollback;
