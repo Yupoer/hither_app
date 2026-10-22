@@ -198,7 +198,7 @@ import AccountSheet from '../components/AccountSheet';
 import { useGroupState } from '../state/useGroupState';
 import { useNavigationSession } from '../state/useNavigationSession';
 import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
-import { useLiveActivity } from '../state/useLiveActivity';
+import { LiveActivityRuntime } from '../state/useLiveActivity';
 import {
   prepareBackgroundJourneyPermissions,
   loadBackgroundManualUndo,
@@ -249,7 +249,6 @@ import { confirmAction } from '../utils/confirm';
 import {
   locationSharingConfirmCopy,
 } from './MapScreen/memberStatusSharing';
-
 
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
@@ -1688,7 +1687,6 @@ export default function MapScreen({ route, navigation }: Props) {
     (destination: Destination, opts?: { promptComplete?: boolean }) => void
   >(() => undefined);
 
-
   const arrivalSubmitInFlight = useRef(new Set<string>());
   /** Manual undo suppresses auto-arrival until the member leaves and re-enters. */
   const manualUndoSuppressedRef = useRef(new Map<string, BackgroundManualUndoMarker>());
@@ -2189,7 +2187,6 @@ export default function MapScreen({ route, navigation }: Props) {
       void prepareNativeBackgroundLocation(true).catch(() => undefined);
     }
   }, [appState, backgroundSharingScope, effectiveNavigationActive, backgroundPermissionsPreparedFor]);
-
 
   /**
    * Single foreground/background GPS owner:
@@ -2762,11 +2759,11 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
   // Preference (liveActivityEnabled) ≠ entitlement (store + Premium session).
   const liveActivityAllowed = liveActivityEnabled && (liveActivityEffective || isPro);
-  useLiveActivity(
-    navigationStoppedLocally ? false : !preferencesReady ? undefined : !liveActivityAllowed ? false
+  const liveActivityLifecycle = React.createElement(LiveActivityRuntime, {
+    active: navigationStoppedLocally ? false : !preferencesReady ? undefined : !liveActivityAllowed ? false
       : effectiveNavigationActive ? true
       : navigationSessionState.loading || navigationSessionState.error || loading || groupStateError ? undefined : false,
-    {
+    state: {
     groupName: membership?.group.name ?? '',
     destinationId: navTarget?.id,
     personalArrived: localNavigationArrived,
@@ -2792,15 +2789,16 @@ export default function MapScreen({ route, navigation }: Props) {
     // Flag color is day-scoped in map/list chrome; LA keeps theme accent.
     destinationEmoji: navTarget?.emoji ?? undefined,
     language,
-  }, groupId && navTarget && liveActivityBaselineM != null ? {
+  },
+    session: groupId && navTarget && liveActivityBaselineM != null ? {
     groupId,
     navigationSessionId: currentArrivalNavigationSessionId ?? undefined,
     destinationId: navTarget.id,
     initialDistanceM: Math.max(1, liveActivityBaselineM),
     travelMode,
-  } : undefined, liveActivityAllowed);
-
-
+  } : undefined,
+    liveActivitiesEnabled: liveActivityAllowed,
+  });
 
   const locateMe = useCallback(() => {
     void runUiAction(
@@ -3803,8 +3801,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ? insets.top + 8 + (carouselHeight > 0 ? carouselHeight : carouselFallback)
       : insets.top + 8;
 
-
-
   // Sheet "下一站" is the first ordered active stop — not the carousel card
   // or current navigation target the user may be viewing.
   const nextStop = useMemo(
@@ -4572,6 +4568,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={styles.flex}>
           {navigationSessionState.lifecycle}
           {journeyNavigationLifecycle}
+          {liveActivityLifecycle}
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4592,7 +4589,8 @@ export default function MapScreen({ route, navigation }: Props) {
     return (
       <View style={styles.loading}>
         {navigationSessionState.lifecycle}
-          {journeyNavigationLifecycle}
+        {journeyNavigationLifecycle}
+        {liveActivityLifecycle}
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
@@ -4607,6 +4605,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={styles.flex}>
           {navigationSessionState.lifecycle}
           {journeyNavigationLifecycle}
+          {liveActivityLifecycle}
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
             {refreshing ? <WaveLoading color={accent} /> : null}
@@ -4639,7 +4638,8 @@ export default function MapScreen({ route, navigation }: Props) {
     return (
       <View style={styles.loading}>
         {navigationSessionState.lifecycle}
-          {journeyNavigationLifecycle}
+        {journeyNavigationLifecycle}
+        {liveActivityLifecycle}
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4661,7 +4661,8 @@ export default function MapScreen({ route, navigation }: Props) {
   return (
     <View style={styles.flex}>
       {navigationSessionState.lifecycle}
-          {journeyNavigationLifecycle}
+      {journeyNavigationLifecycle}
+      {liveActivityLifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
@@ -4749,7 +4750,6 @@ export default function MapScreen({ route, navigation }: Props) {
         </View>
       </Animated.View>
       )}
-
 
       {/* Recenter capsule — fit-all (top) + locate-me (bottom), always both. */}
       {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
