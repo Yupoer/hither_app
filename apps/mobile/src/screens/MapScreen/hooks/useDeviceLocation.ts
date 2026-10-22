@@ -16,7 +16,6 @@ import {
 } from '../../../state/locationOutbox';
 import {
   createMotionState,
-  foregroundUploadDelivery,
   locationPolicy,
   isForegroundLocationState,
   reduceMotionState,
@@ -92,7 +91,6 @@ export function useDeviceLocation({
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const motionRef = useRef<MotionState>(createMotionState());
   const outboxFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const outboxFlushGroupRef = useRef<string | null>(null);
   const forceSyncInFlightRef = useRef(false);
   const groupIdRef = useRef(groupId);
   groupIdRef.current = groupId;
@@ -129,26 +127,10 @@ export function useDeviceLocation({
 
   const scheduleOutboxFlush = useCallback(() => {
     if (outboxFlushTimerRef.current) return;
-    outboxFlushGroupRef.current = groupIdRef.current ?? null;
     outboxFlushTimerRef.current = setTimeout(() => {
       outboxFlushTimerRef.current = null;
       void flushLocationOutbox().catch(() => undefined);
     }, OUTBOX_FLUSH_DELAY_MS);
-  }, []);
-
-  // The batch timer is the only delivery for queued fixes, and the outbox
-  // schedules no retry until a flush runs. When the foreground owner stops,
-  // send the batch now instead of leaving it queued until the next resume.
-  // A group switch is left to the new group's resume flush: flushing here
-  // would race the access invalidation and purge the queue.
-  const handOffPendingOutboxFlush = useCallback(() => {
-    if (!outboxFlushTimerRef.current) return;
-    clearTimeout(outboxFlushTimerRef.current);
-    outboxFlushTimerRef.current = null;
-    if (outboxFlushGroupRef.current === groupIdRef.current
-      && sharingEnabledRef.current && hasMembershipRef.current) {
-      void flushLocationOutbox().catch(() => undefined);
-    }
   }, []);
 
   const acceptIncomingSample = useCallback((sample: LocationSample, now: number): boolean => {
@@ -222,10 +204,8 @@ export function useDeviceLocation({
         }
         const result = await flushLocationOutbox();
         if (!result.acceptedIds?.includes(eventId)) throw new Error('location_upload_not_confirmed');
-      } else if (isForegroundLocationState(AppState.currentState)) {
-        scheduleOutboxFlush();
       } else {
-        await flushLocationOutbox();
+        scheduleOutboxFlush();
       }
     },
     [scheduleOutboxFlush],
@@ -270,7 +250,7 @@ export function useDeviceLocation({
         void enqueueUpload(
           sample,
           now,
-          { immediate: foregroundUploadDelivery(powerModeRef.current) === 'immediate' },
+          { immediate: true },
           requestedGroup,
         ).catch(() => undefined);
       }
@@ -375,7 +355,11 @@ export function useDeviceLocation({
     return () => clearInterval(timer);
   }, [groupId, foregroundLocationAvailable, sharingEnabled, hasMembershipResolved, refreshDeviceLocation, nativeMapLocationEnabled]);
 
-  useEffect(() => handOffPendingOutboxFlush, [foregroundLocationAvailable, groupId, sharingEnabled, hasMembershipResolved, handOffPendingOutboxFlush]);
+  // Publish only timestamped sensor fixes.
+  useEffect(() => () => {
+    if (outboxFlushTimerRef.current) clearTimeout(outboxFlushTimerRef.current);
+    outboxFlushTimerRef.current = null;
+  }, [foregroundLocationAvailable, groupId, sharingEnabled, hasMembershipResolved]);
 
   // DEV debug route: always feed samples into UI, even when MapKit owns real GPS.
   // Debug samples stay local — they must not enter the team location outbox.
@@ -412,10 +396,13 @@ export function useDeviceLocation({
       .catch(() => undefined);
     return () => {
       cancelled = true;
-      handOffPendingOutboxFlush();
+      if (outboxFlushTimerRef.current) {
+        clearTimeout(outboxFlushTimerRef.current);
+        outboxFlushTimerRef.current = null;
+      }
       stop();
     };
-  }, [foregroundLocationAvailable, groupId, highAccuracy, powerMode, teamNavigationActive, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved, handOffPendingOutboxFlush]);
+  }, [foregroundLocationAvailable, groupId, highAccuracy, powerMode, teamNavigationActive, nativeMapLocationEnabled, consumeForegroundSample, sharingEnabled, hasMembershipResolved]);
 
   return {
     deviceCoords,

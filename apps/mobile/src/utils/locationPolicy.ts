@@ -292,16 +292,6 @@ export function shouldAcceptUiSample(
   return distanceMeters(last.lastCoords, sample) >= policy.uiMinDistanceM * 0.4;
 }
 
-export type ForegroundUploadDelivery = 'immediate' | 'batched';
-
-/**
- * During a journey peers watch this member live, so each accepted foreground
- * fix is flushed at once. Otherwise fixes join the coalesced outbox flush.
- */
-export function foregroundUploadDelivery(powerMode: LocationPowerMode): ForegroundUploadDelivery {
-  return powerMode === 'journey' ? 'immediate' : 'batched';
-}
-
 /**
  * Whether a sample should be uploaded to Supabase.
  * First sample always accepted. Heartbeat keeps liveness when stationary,
