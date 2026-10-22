@@ -176,6 +176,7 @@ import { RefreshLocationsButton } from './MapScreen/components/RefreshLocationsB
 import { FlockRow } from './MapScreen/components/FlockRow';
 import { arrivalErrorMessage, shortEta, splitDistanceParts, splitEtaParts, formatTripDayLine, navCommandDisplayLabel } from '../utils/mapFormatters';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
+import { useSubgroupActions } from './MapScreen/hooks/useSubgroupActions';
 import { makeStyles } from './MapScreen/styles';
 import {
   hasDraftWork,
@@ -231,7 +232,6 @@ import { useGroupState } from '../state/useGroupState';
 import { useNavigationSession } from '../state/useNavigationSession';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
-import { useSubgroupInvites } from '../state/useSubgroupInvites';
 import { clearLiveActivities, useLiveActivity } from '../state/useLiveActivity';
 import {
   prepareBackgroundJourneyPermissions,
@@ -296,17 +296,13 @@ import {
   addDestination,
   addDestinationsBatch,
   deleteDestination,
-  fetchSentInvites,
   fetchVisitedWaypoints,
   deleteVisitedWaypoint,
   fetchDestinationArrivals,
   fetchPendingGatherPointRequests,
-  inviteToSubgroup,
   recordVisitedWaypoint,
   reorderDestinations,
   saveOnboardingProfile,
-  selfMerge,
-  selfSplit,
   setDestinationMeetTime,
   setSolo,
   reportStraggler,
@@ -379,9 +375,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 // Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
 const DOTS_MAX_VISIBLE = 5;
 const EMPTY_DESTINATIONS: Destination[] = [];
-
-/** Persisted "don't warn me again" flag for the leave-the-main-group notice. */
-const LEAVE_GROUP_WARN_KEY = 'hither.subgroupLeaveWarnDismissed';
 
 /**
  * The whole app: a live map with an Apple-Maps pull-up glass sheet. Peek shows a
@@ -1142,21 +1135,6 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [overlay, loadHistory]);
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
-  // Invites I've sent for my subgroup that are still pending — shown on the
-  // card so "I invited someone" doesn't just look like nothing happened while
-  // they haven't accepted yet.
-  const [sentInvites, setSentInvites] = useState<{ id: string; inviteeName: string }[]>([]);
-  const refreshSentInvites = useCallback(async (subgroupId: string | undefined) => {
-    if (!subgroupId) {
-      setSentInvites([]);
-      return;
-    }
-    try {
-      setSentInvites(await fetchSentInvites(subgroupId));
-    } catch {
-      // best-effort
-    }
-  }, []);
   const [searchVisible, setSearchVisible] = useState(false);
   /** Resolves Amicro search Promise when OverlaySheet open animation completes. */
   const searchOpenCompleteResolveRef = useRef<(() => void) | null>(null);
@@ -4339,128 +4317,31 @@ export default function MapScreen({ route, navigation }: Props) {
 
 
   // --- Subgroups (小隊：邀請制；依 leader_id 判斷小隊隊長) --------------------
-  // Drop empty leftovers so the members list never shows "X 的小隊 · 0" after
-  // leave; server also deletes empty rows, this is the client-side safety net.
-  const subgroups = useMemo(() => {
-    const all = state?.subgroups ?? [];
-    return all.filter((sg) => members.some((m) => m.subgroupId === sg.id));
-  }, [state?.subgroups, members]);
+  const setRouteDraftDestinations = routeDraft.setDestinations;
+  const handleMergedBack = useCallback(() => {
+    // Leave wipes subgroup-scoped UI: itinerary draft list, team pill scope.
+    setRouteDraftDestinations(null);
+    setViewingScope('main');
+  }, [setRouteDraftDestinations]);
   const {
-    invites: pendingInvites,
-    accept: acceptInvite,
-    decline: declineInvite,
-    refresh: refreshInvites,
-  } = useSubgroupInvites();
-
-  // Leaving the main "組隊伍" (by creating or joining a subteam) hides the
-  // shared gathering-point cards. Warn once per action unless the user has
-  // ticked "don't show again". Resolves true = proceed (both buttons proceed;
-  // only the dismiss button silences future warnings). Never blocks if already
-  // dismissed.
-  const confirmLeaveMainGroup = useCallback(async (): Promise<boolean> => {
-    const dismissed = await AsyncStorage.getItem(LEAVE_GROUP_WARN_KEY);
-    if (dismissed === '1') return true;
-    return new Promise((resolve) => {
-      Alert.alert(
-        t('subgroup.leaveWarnTitle'),
-        t('subgroup.leaveWarnBody'),
-        [
-          {
-            text: t('subgroup.leaveWarnDontShow'),
-            onPress: () => {
-              void AsyncStorage.setItem(LEAVE_GROUP_WARN_KEY, '1');
-              resolve(true);
-            },
-          },
-          { text: t('subgroup.leaveWarnConfirm'), onPress: () => resolve(true) },
-        ],
-        { cancelable: false },
-      );
-    });
-  }, [t]);
-
-  const handleAcceptInvite = useCallback(async (inviteId: string) => {
-    if (!(await confirmLeaveMainGroup())) return;
-    mediumTap();
-    logEvent('invite_accept', { inviteId });
-    try {
-      await acceptInvite(inviteId);
-      logEvent('invite_accept_ok', { inviteId });
-      await refresh('membership_change');
-    } catch (e) {
-      logError('invite_accept_failed', e, { inviteId });
-      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
-    }
-  }, [confirmLeaveMainGroup, acceptInvite, refresh, t]);
-  const handleDeclineInvite = useCallback(async (inviteId: string) => {
-    selectionTick();
-    logEvent('invite_decline', { inviteId });
-    try {
-      await declineInvite(inviteId);
-    } catch (e) {
-      logError('invite_decline_failed', e, { inviteId });
-      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
-    }
-  }, [declineInvite, t]);
-
-  const handleInvite = useCallback(async (subgroupId: string, inviteeId: string) => {
-    mediumTap();
-    logEvent('invite_send', { subgroupId, inviteeId });
-    try {
-      await inviteToSubgroup(subgroupId, inviteeId);
-      logEvent('invite_send_ok', { subgroupId, inviteeId });
-      // Demo has no realtime channel to nudge the invite list, and simulates
-      // the invitee replying with a join-request — pull it in so the pending
-      // approve/decline card shows immediately.
-      if (isDemoGroup(groupId)) refreshInvites();
-      void refreshSentInvites(subgroupId);
-      Alert.alert(t('subgroup.inviteSent'));
-    } catch (e) {
-      logError('invite_send_failed', e, { subgroupId, inviteeId });
-      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
-    }
-  }, [t, groupId, refreshInvites, refreshSentInvites]);
-
-  // Any member can split themselves into their own new (collab, no-leader)
-  // subgroup, or merge themselves back up a level — no leader say-so needed.
-  // Returns false if the user cancelled the leave warning or the RPC failed.
-  const doSelfSplit = useCallback(async (): Promise<boolean> => {
-    if (!groupId) return false;
-    if (!(await confirmLeaveMainGroup())) return false;
-    mediumTap();
-    logEvent('team_create', { groupId });
-    try {
-      await selfSplit(
-        groupId,
-        t('subgroup.selfSplitName', { name: user?.name ?? t('group.travelerFallback') }),
-      );
-      logEvent('team_create_ok', { groupId });
-      refresh();
-      return true;
-    } catch (e) {
-      logError('team_create_failed', e, { groupId });
-      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
-      return false;
-    }
-  }, [groupId, confirmLeaveMainGroup, user?.name, t, refresh]);
-  const doSelfMerge = useCallback(async (): Promise<boolean> => {
-    if (!groupId) return false;
-    selectionTick();
-    logEvent('team_leave', { groupId });
-    try {
-      await selfMerge(groupId);
-      logEvent('team_leave_ok', { groupId });
-      // Leave wipes subgroup-scoped UI: itinerary draft list, team pill scope.
-      routeDraft.setDestinations(null);
-      setViewingScope('main');
-      await refresh();
-      return true;
-    } catch (e) {
-      logError('team_leave_failed', e, { groupId });
-      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
-      return false;
-    }
-  }, [groupId, refresh, t]);
+    subgroups,
+    pendingInvites,
+    sentInvites,
+    handleAcceptInvite,
+    handleDeclineInvite,
+    handleInvite,
+    doSelfSplit,
+    doSelfMerge,
+  } = useSubgroupActions({
+    groupId,
+    userName: user?.name,
+    members,
+    allSubgroups: state?.subgroups,
+    mySubgroupId: myScopeId,
+    refresh,
+    t,
+    onMergedBack: handleMergedBack,
+  });
 
   // ponytail: TEMPORARY test helper — archives every current gathering point to
   // 歷史行程 (record + delete, like a real arrival) and ends navigation, so the
@@ -5257,20 +5138,6 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, []);
 
-  useEffect(() => {
-    void refreshSentInvites(mySubgroupId);
-  }, [mySubgroupId, refreshSentInvites]);
-
-  // BUG-22: when invitee accepts/declines, inviter's pending list must drop
-  // the row without a manual refresh — poll only while invites are outstanding
-  // (membership realtime already covers accept → members.length change).
-  useEffect(() => {
-    if (!mySubgroupId || sentInvites.length === 0) return;
-    const id = setInterval(() => {
-      void refreshSentInvites(mySubgroupId);
-    }, 15_000);
-    return () => clearInterval(id);
-  }, [mySubgroupId, refreshSentInvites, sentInvites.length, members.length]);
   // Co-members I could still pull into my team — anyone not me and not already
   // in my subgroup.
   const invitable = useMemo(

@@ -117,7 +117,6 @@ describe('map UI placement contracts', () => {
     expect(mapStyles).toContain('paddingHorizontal: 10');
     expect(mapScreen).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('routeOverlayBody');
-    expect(mapScreen).toContain("await refresh('membership_change')");
     expect(mapScreen).toContain('setKmlScopeId(myScopeId);');
   });
 
