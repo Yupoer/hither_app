@@ -24,6 +24,22 @@ it('formats', () => {
 });
 `;
 
+const READ_AND_PIN = `
+const src = readSource('../utils/distance.ts', 'utf8');
+it('pins implementation', () => expect(src).toContain('return'));
+`;
+
+function sourceOnlyWith(prelude: string) {
+  return `import { readFileSync as readSource } from 'node:fs';\n${prelude}\n${READ_AND_PIN}`;
+}
+
+function readingThrough(prelude: string, call: string) {
+  return `${prelude}
+const src = ${call}('../utils/distance.ts', 'utf8');
+it('pins implementation', () => expect(src).toContain('return'));
+`;
+}
+
 let root: string;
 let testsRoot: string;
 let baseline: string;
@@ -93,6 +109,71 @@ describe('source-only test ratchet', () => {
     const { status, out } = runMeta();
     expect(status).toBe(0);
     expect(out).not.toContain('source-only-test');
+  });
+
+  it.each([
+    ['a type-only import', "import type { Distance } from '../utils/distance';"],
+    ['a type-only named specifier', "import { type Distance } from '../utils/distance';"],
+    ['a type re-export', "export type { Distance } from '../utils/distance';"],
+    ['a mock-only declaration', "jest.mock('../utils/distance', () => ({}));"],
+    [
+      'a doMock factory that requires the module',
+      "jest.doMock('../utils/distance', () => jest.requireActual('../utils/distance'));",
+    ],
+    ['a block-commented import', "/*\nimport { formatDistance } from '../utils/distance';\n*/"],
+    ['a line-commented import', "// import { formatDistance } from '../utils/distance';"],
+    ['an import inside a string', "const fixture = \"import { formatDistance } from '../utils/distance'\";"],
+    [
+      'an import inside a template',
+      "const fixture = `\nimport { formatDistance } from '../utils/distance';\n`;",
+    ],
+    ['an unused import', "import { formatDistance } from '../utils/distance';"],
+    ['an unused require', "const { formatDistance } = require('../utils/distance');"],
+    ['a bare side-effect require', "require('../utils/distance');"],
+  ])('still flags a source-only test with %s', (_label, prelude) => {
+    writeBaseline([]);
+    writeTest('probe.test.ts', sourceOnlyWith(prelude));
+    const { status, out } = runMeta();
+    expect(status).toBe(1);
+    expect(out).toContain('[L2/source-only-test] probe.test.ts');
+  });
+
+  it.each([
+    ['a used static import', "import { formatDistance } from '../utils/distance';\nformatDistance(1);"],
+    ['a used require binding', "const distance = require('../utils/distance');\ndistance.formatDistance(1);"],
+    ['an inline require', "expect(require('../utils/distance').formatDistance(1)).toBe('1 m');"],
+    ['a used dynamic import', "it('loads', async () => {\n  const d = await import('../utils/distance');\n  d.formatDistance(1);\n});"],
+  ])('does not flag a source-reading test with %s', (_label, prelude) => {
+    writeBaseline([]);
+    writeTest('probe.test.ts', sourceOnlyWith(prelude));
+    const { status, out } = runMeta();
+    expect(status).toBe(0);
+    expect(out).not.toContain('source-only-test');
+  });
+
+  it.each([
+    ['a named alias from node:fs', "import { readFileSync as read } from 'node:fs';", 'read'],
+    ['a named alias from fs', "import { readFileSync as read } from 'fs';", 'read'],
+    ['a namespace import', "import * as files from 'fs';", 'files.readFileSync'],
+    ['a default import', "import files from 'node:fs';", 'files.readFileSync'],
+    ['a destructured require alias', "const { readFileSync: read } = require('fs');", 'read'],
+    ['an inline require', '', "require('fs').readFileSync"],
+    ['fs.promises.readFile', "import files from 'fs';", 'await files.promises.readFile'],
+    ['callback readFile', "import { readFile } from 'node:fs';", 'readFile'],
+    ['fs/promises', "import { readFile as read } from 'fs/promises';", 'await read'],
+    ['a promises alias', "import { promises as p } from 'node:fs';", 'await p.readFile'],
+    [
+      'a nested destructured require',
+      "const { promises: { readFile: read } } = require('node:fs');",
+      'await read',
+    ],
+    ['an inline promises require', '', "await require('fs').promises.readFile"],
+  ])('detects a source read through %s', (_label, prelude, call) => {
+    writeBaseline([]);
+    writeTest('probe.test.ts', readingThrough(prelude, call));
+    const { status, out } = runMeta();
+    expect(status).toBe(1);
+    expect(out).toContain('[L2/source-only-test] probe.test.ts');
   });
 
   it('passes and asks to shrink the baseline when a file leaves the set', () => {

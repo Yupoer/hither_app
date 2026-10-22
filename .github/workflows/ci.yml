@@ -188,8 +188,15 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           supabase db start
+          shopt -s nullglob
+          test_files=(supabase/tests/*.test.sql)
+          shopt -u nullglob
+          if [ ${#test_files[@]} -eq 0 ]; then
+            echo '::error::no supabase/tests/*.test.sql files found'
+            exit 1
+          fi
           failed=()
-          for test_file in supabase/tests/*.test.sql; do
+          for test_file in "${test_files[@]}"; do
             echo "::group::$test_file"
             if ! supabase test db --local "$test_file"; then
               failed+=("$test_file")

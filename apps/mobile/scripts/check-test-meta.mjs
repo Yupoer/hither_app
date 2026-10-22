@@ -118,32 +118,314 @@ function checkL2(files) {
   return findings;
 }
 
-const PRODUCTION_SOURCE_LITERAL =
-  /['"`][^'"`\n]*\.(?:tsx?|jsx?|swift|mm?|h|kt|java)['"`]/g;
-// Statement-anchored so source snippets asserted inside string literals do not count.
-const MODULE_SPECIFIER =
-  /^\s*(?:(?:import|export)\b[^'"\n]*?\bfrom\s+|\}\s*from\s+|import\s+|(?:const|let|var)\s+[^=\n]+=\s*(?:require|jest\.requireActual)\s*\(\s*|(?:await\s+)?import\s*\(\s*|jest\.(?:mock|doMock|requireActual)\s*\(\s*)['"]([^'"]+)['"]/gm;
+const PRODUCTION_SOURCE_PATH = /\.(?:tsx?|jsx?|swift|mm?|h|kt|java)$/;
+const FS_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+const REGEX_PRECEDERS = new Set([...'(,=:[!&|?{};+-*%~^']);
+const REGEX_PRECEDING_WORDS = /\b(?:return|typeof|case|in|of|void|delete|throw|new|yield|await)$/;
+const ID = '[A-Za-z_$][\\w$]*';
 
 function isTestPath(p) {
   return /(^|[\\/])__tests__([\\/]|$)|\.test\.[jt]sx?$/.test(p);
 }
 
 /**
- * A test "reads production source" when it calls readFileSync and names a
- * non-test source file; it "imports production" when any relative or `@/`
- * module specifier resolves outside a __tests__ directory.
+ * Blanks comments and the bodies of strings, templates and regex literals with
+ * spaces, so offsets in `code` match the original text. Quote characters stay;
+ * `strings` maps each quote's offset to the literal's value. Template `${}`
+ * expressions stay as code. Quote strings and regex literals end at a newline
+ * so a stray apostrophe in JSX text cannot swallow the rest of the file.
+ */
+function lex(text) {
+  const out = text.split('');
+  const strings = new Map();
+  const blank = (from, to) => {
+    for (let k = from; k < to; k++) if (out[k] !== '\n') out[k] = ' ';
+  };
+  const braceStack = [];
+  let i = 0;
+  const startsRegex = () => {
+    let k = i - 1;
+    while (k >= 0 && /\s/.test(out[k])) k--;
+    if (k < 0 || REGEX_PRECEDERS.has(out[k])) return true;
+    let w = k;
+    while (w >= 0 && /[\w$]/.test(out[w])) w--;
+    return REGEX_PRECEDING_WORDS.test(out.slice(w + 1, k + 1).join(''));
+  };
+
+  const scanTemplate = (start) => {
+    let j = start + 1;
+    let value = '';
+    while (j < text.length) {
+      const ch = text[j];
+      if (ch === '\\') {
+        value += text[j + 1] ?? '';
+        j += 2;
+        continue;
+      }
+      if (ch === '`' || (ch === '$' && text[j + 1] === '{')) break;
+      value += ch;
+      j++;
+    }
+    blank(start + 1, j);
+    strings.set(start, value);
+    if (text[j] === '$') {
+      braceStack.push('template');
+      return j + 2;
+    }
+    return j + 1;
+  };
+
+  while (i < text.length) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (ch === '/' && next === '/') {
+      const end = text.indexOf('\n', i);
+      const stop = end === -1 ? text.length : end;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      const end = text.indexOf('*/', i + 2);
+      const stop = end === -1 ? text.length : end + 2;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      let value = '';
+      while (j < text.length && text[j] !== ch && text[j] !== '\n') {
+        if (text[j] === '\\') {
+          value += text[j + 1] ?? '';
+          j += 2;
+        } else {
+          value += text[j++];
+        }
+      }
+      blank(i + 1, j);
+      strings.set(i, value);
+      i = j + 1;
+      continue;
+    }
+    if (ch === '`') {
+      i = scanTemplate(i);
+      continue;
+    }
+    if (ch === '{') {
+      braceStack.push('brace');
+    } else if (ch === '}') {
+      if (braceStack.pop() === 'template') {
+        i = scanTemplate(i);
+        continue;
+      }
+    } else if (ch === '/') {
+      if (startsRegex()) {
+        let j = i + 1;
+        let inClass = false;
+        while (j < text.length && text[j] !== '\n') {
+          const c = text[j];
+          if (c === '\\') j++;
+          else if (c === '[') inClass = true;
+          else if (c === ']') inClass = false;
+          else if (c === '/' && !inClass) break;
+          j++;
+        }
+        blank(i + 1, j);
+        i = j + 1;
+        continue;
+      }
+    }
+    i++;
+  }
+  return { code: out.join(''), strings };
+}
+
+/** Offset just past the `)` closing the `(` at `open`, or -1. */
+function matchParen(code, open) {
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '(') depth++;
+    else if (code[i] === ')' && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+/**
+ * Bindings introduced by a destructuring pattern, each with the property path
+ * it reads: `{ a, b: { c: d } }` gives a ← [a] and d ← [b, c].
+ */
+function patternEntries(pattern, at = []) {
+  const p = pattern.trim();
+  if (!/^[{[]/.test(p)) {
+    const m = p.match(new RegExp(`^(?:\\.\\.\\.)?(${ID})`));
+    return m ? [{ name: m[1], path: at }] : [];
+  }
+  const inner = p.slice(1, -1);
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < inner.length; i++) {
+    if ('{[('.includes(inner[i])) depth++;
+    else if ('}])'.includes(inner[i])) depth--;
+    else if (inner[i] === ',' && depth === 0) {
+      parts.push(inner.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(inner.slice(start));
+  return parts.flatMap((part) => {
+    const t = part.trim().replace(/\s*=[^]*$/, '');
+    if (!t) return [];
+    if (p[0] === '{' && !t.startsWith('...')) {
+      const colon = t.indexOf(':');
+      const key = (colon === -1 ? t : t.slice(0, colon)).trim();
+      return patternEntries(colon === -1 ? t : t.slice(colon + 1), [...at, key]);
+    }
+    return patternEntries(t, at);
+  });
+}
+
+/** Bindings of an import clause, skipping `type` specifiers; default and namespace bindings get path []. */
+function importClauseEntries(clause) {
+  const entries = [];
+  const braces = clause.match(/\{([^}]*)\}/);
+  const head = clause.replace(/\{[^}]*\}/, '').replace(/,/g, ' ').trim();
+  const ns = head.match(new RegExp(`\\*\\s*as\\s+(${ID})`));
+  if (ns) entries.push({ name: ns[1], path: [] });
+  const def = head.replace(/\*\s*as\s+\S+/, '').trim();
+  if (def) entries.push({ name: def, path: [] });
+  for (const spec of braces ? braces[1].split(',') : []) {
+    const t = spec.trim();
+    if (!t || /^type\s/.test(t)) continue;
+    const m = t.match(new RegExp(`^(${ID})(?:\\s+as\\s+(${ID}))?$`));
+    if (m) entries.push({ name: m[2] ?? m[1], path: m[1] === 'default' ? [] : [m[1]] });
+  }
+  return entries;
+}
+
+/** Blanks every jest.mock/doMock/setMock/unmock call, factory included. */
+function stripMockDeclarations(code) {
+  let out = code;
+  for (const m of code.matchAll(/\bjest\s*\.\s*(?:mock|doMock|setMock|unmock|dontMock)\s*\(/g)) {
+    const end = matchParen(code, m.index + m[0].length - 1);
+    const stop = end === -1 ? code.length : end;
+    out = out.slice(0, m.index) + code.slice(m.index, stop).replace(/[^\n]/g, ' ') + out.slice(stop);
+  }
+  return out;
+}
+
+/**
+ * Every value-level module load: static imports (`import type` excluded),
+ * `require`, `jest.requireActual` and dynamic `import()` (outside `typeof`).
+ * `entries` lists the bindings the load introduces. `inlineUse` marks a load
+ * whose result is consumed in place, as in `require('x').f()` or
+ * `expect(require('x'))`, rather than discarded as a bare statement.
+ */
+function moduleLoads(code, strings) {
+  const loads = [];
+  const staticImport = new RegExp(
+    `(^|[;}\\n])\\s*import\\s+(?!type\\b)([^'"\`;]*?)\\s+from\\s*(['"])`,
+    'g',
+  );
+  for (const m of code.matchAll(staticImport)) {
+    const quote = m.index + m[0].length - 1;
+    loads.push({
+      spec: strings.get(quote),
+      entries: importClauseEntries(m[2]),
+      inlineUse: false,
+      span: [m.index + m[1].length, quote + 1],
+    });
+  }
+  const assignment = new RegExp(
+    `(?:\\b(?:const|let|var)\\s+)?(${ID}|\\{[^=]*\\}|\\[[^=]*\\])\\s*(?::[^=]*)?=\\s*(?:await\\s+)?$`,
+  );
+  const dynamic = /(\btypeof\s+)?\b(?:require|jest\s*\.\s*requireActual|import)\s*\(\s*(['"`])/g;
+  for (const m of code.matchAll(dynamic)) {
+    if (m[1]) continue;
+    const quote = m.index + m[0].length - 1;
+    const end = matchParen(code, code.lastIndexOf('(', quote));
+    if (end === -1) continue;
+    const before = code.slice(Math.max(0, m.index - 400), m.index);
+    const chained = /^\s*[.[]/.test(code.slice(end));
+    const assigned = chained ? null : before.match(assignment);
+    const bare =
+      /(?:^|[;{}\n])[ \t]*(?:await\s+)?$/.test(before) && /^[ \t]*(?:[;\n}]|$)/.test(code.slice(end));
+    loads.push({
+      spec: strings.get(quote),
+      entries: assigned ? patternEntries(assigned[1]) : [],
+      inlineUse: !assigned && !bare,
+      span: [assigned ? m.index - assigned[0].length : m.index, end],
+    });
+  }
+  return loads;
+}
+
+/** True when `name` is read somewhere outside `span` (assignment targets and property keys excluded). */
+function isReferenced(code, name, span) {
+  const re = new RegExp(`(?<![\\w$.])${name.replace(/\$/g, '\\$')}(?![\\w$])`, 'g');
+  for (const m of code.matchAll(re)) {
+    if (m.index >= span[0] && m.index < span[1]) continue;
+    if (/\b(?:let|const|var)\s+$/.test(code.slice(Math.max(0, m.index - 20), m.index))) continue;
+    if (/^\s*=(?![=>])/.test(code.slice(m.index + name.length))) continue;
+    return true;
+  }
+  return false;
+}
+
+function isProductionSpec(spec, file) {
+  if (spec.startsWith('@/')) return true;
+  if (!spec.startsWith('.')) return false;
+  return !isTestPath(path.resolve(path.dirname(file), spec));
+}
+
+/** True when the code calls a file reader from `fs`, through any import or alias form. */
+function readsFile(code, loads) {
+  if (/(?<![\w$])readFileSync\s*\(/.test(code)) return true;
+  const fsMember = '(?:promises\\s*\\.\\s*)?readFile(?:Sync)?';
+  const promisesMember = 'readFile';
+  for (const load of loads.filter((l) => FS_MODULES.has(l.spec))) {
+    const root = load.spec.endsWith('promises') ? ['promises'] : [];
+    const tail = code.slice(load.span[1]);
+    const member = root.length ? promisesMember : fsMember;
+    if (load.inlineUse && new RegExp(`^\\s*\\.\\s*${member}\\s*\\(`).test(tail)) return true;
+    for (const { name, path: at } of load.entries) {
+      const full = [...root, ...at].join('.');
+      const escaped = name.replace(/\$/g, '\\$');
+      if (['readFileSync', 'readFile', 'promises.readFile'].includes(full)) {
+        if (new RegExp(`(?<![\\w$.])${escaped}\\s*\\(`).test(code)) return true;
+      } else if (full === '' || full === 'promises') {
+        const m = full === '' ? fsMember : promisesMember;
+        if (new RegExp(`(?<![\\w$.])${escaped}\\s*\\.\\s*${m}\\s*\\(`).test(code)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * A test "reads production source" when it calls an fs file reader and names a
+ * non-test source file in a string. It "imports production" only through an
+ * executable value import of a relative or `@/` module outside __tests__ whose
+ * binding (or inline result) the test actually uses; type imports, mock
+ * declarations, comments and unused imports do not count.
  */
 function classifyTestSource(text, file) {
-  const readsFile = /\breadFileSync\s*\(/.test(text);
-  const namesProductionSource = [...text.matchAll(PRODUCTION_SOURCE_LITERAL)].some(
-    ([literal]) => !isTestPath(literal.slice(1, -1)),
+  const { code, strings } = lex(text);
+  const loads = moduleLoads(stripMockDeclarations(code), strings);
+  const namesProductionSource = [...strings.values()].some(
+    (s) => PRODUCTION_SOURCE_PATH.test(s) && !isTestPath(s),
   );
-  const importsProduction = [...text.matchAll(MODULE_SPECIFIER)].some(([, spec]) => {
-    if (spec.startsWith('@/')) return true;
-    if (!spec.startsWith('.')) return false;
-    return !isTestPath(path.resolve(path.dirname(file), spec));
-  });
-  return { readsProductionSource: readsFile && namesProductionSource, importsProduction };
+  const importsProduction = loads.some(
+    (load) =>
+      load.spec !== undefined &&
+      isProductionSpec(load.spec, file) &&
+      (load.inlineUse || load.entries.some(({ name }) => isReferenced(code, name, load.span))),
+  );
+  return {
+    readsProductionSource: namesProductionSource && readsFile(code, loads),
+    importsProduction,
+  };
 }
 
 function sourceOnlyTests(files, root) {
