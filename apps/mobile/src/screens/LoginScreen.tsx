@@ -1,6 +1,7 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import WaveLoading from '../components/WaveLoading';
 import { useForegroundClock } from '../state/foregroundUi';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
@@ -175,21 +176,22 @@ export default function LoginScreen({ navigation }: Props) {
     || busyAction === 'google'
     || busyAction === 'apple';
 
-  useEffect(() => {
+  useMountEffect(() => {
     void AppleAuthentication.isAvailableAsync()
       .then(setAppleAvailable)
       .catch(() => setAppleAvailable(false));
-  }, []);
+  });
 
-  useEffect(() => {
+  const [previousMode, setPreviousMode] = useState(mode);
+  if (previousMode !== mode) {
+    setPreviousMode(mode);
     setTouched({ email: false, password: false, confirmPassword: false });
     setErrors({});
-  }, [mode]);
-
-
-  useEffect(() => {
-    if (user && pendingEmail) navigation.replace('RoleSelect');
-  }, [navigation, pendingEmail, user]);
+  }
+  const [pendingNavigation, setPendingNavigation] = useState({ navigation, pendingEmail, user, generation: 0 });
+  if (!Object.is(pendingNavigation.navigation, navigation) || !Object.is(pendingNavigation.pendingEmail, pendingEmail) || !Object.is(pendingNavigation.user, user)) {
+    setPendingNavigation({ navigation, pendingEmail, user, generation: pendingNavigation.generation + 1 });
+  }
 
   function clearFieldError(field: FieldName): void {
     setErrors((current) => {
@@ -680,6 +682,7 @@ export default function LoginScreen({ navigation }: Props) {
   return (
     <View style={styles.fill}>
       {clockLifecycle}
+      <PendingEmailNavigation key={pendingNavigation.generation} navigation={navigation} pendingEmail={pendingEmail} user={user} />
       <MetalforgeBackground active={isFocused} allowInactive={busyAction === 'apple' || busyAction === 'google'} />
       {!resetMode ? (
         <View
@@ -848,6 +851,17 @@ export default function LoginScreen({ navigation }: Props) {
       </Modal>
     </View>
   );
+}
+
+function PendingEmailNavigation({ navigation, pendingEmail, user }: {
+  navigation: Props['navigation'];
+  pendingEmail: string | null;
+  user: ReturnType<typeof useSession>['user'];
+}) {
+  useMountEffect(() => {
+    if (user && pendingEmail) navigation.replace('RoleSelect');
+  });
+  return null;
 }
 
 const makeStyles = (accent: string) =>
