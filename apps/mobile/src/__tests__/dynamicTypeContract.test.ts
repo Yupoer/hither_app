@@ -13,6 +13,7 @@ import {
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const meetTimeChip = readFileSync(join(root, 'screens/MapScreen/components/MeetTimeChip.tsx'), 'utf8');
 const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const quickCommands = readFileSync(join(root, 'components/QuickCommandsCard.tsx'), 'utf8');
 const groupMap = readFileSync(join(root, 'components/GroupMap.tsx'), 'utf8');
@@ -117,7 +118,7 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain("subgroup.itineraryBadge");
     expect(mapScreen).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).toContain('meetBtn');
-    expect(mapScreen).toContain('meetBtnStack');
+    expect(meetTimeChip).toContain('meetBtnStack');
     // Apple Maps only after expand, in metrics row (not in the command row).
     expect(mapScreen).toContain('mapsChip');
     expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openExternalNavigation/);

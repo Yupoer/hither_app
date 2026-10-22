@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const flockRow = readFileSync(join(__dirname, '../screens/MapScreen/components/FlockRow.tsx'), 'utf8');
+const cardPressable = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCardPressable.tsx'), 'utf8');
+const carouselDots = readFileSync(join(__dirname, '../screens/MapScreen/components/CarouselDots.tsx'), 'utf8');
+const refreshButton = readFileSync(join(__dirname, '../screens/MapScreen/components/RefreshLocationsButton.tsx'), 'utf8');
 const mapStyles = readFileSync(join(__dirname, '../screens/MapScreen/styles.ts'), 'utf8');
 const bottomSheet = readFileSync(join(__dirname, '../components/BottomSheet.tsx'), 'utf8');
 const overlaySheet = readFileSync(join(__dirname, '../components/OverlaySheet.tsx'), 'utf8');
@@ -208,7 +212,7 @@ describe('map UI placement contracts', () => {
     expect(accuracy).toBeGreaterThan(refresh);
     expect(mapScreen).toContain("t('settings.preciseLocation')");
     expect(mapScreen).toContain("t('settings.preciseLocationHint')");
-    expect(mapScreen).toContain('styles.refreshLocationsButton');
+    expect(refreshButton).toContain('styles.refreshLocationsButton');
     const statusBarBlock = mapScreen.slice(statusBar, refresh);
     expect(statusBarBlock).toContain('styles.myStatusCluster');
     expect(statusBarBlock).toContain('statusIconForKind(myStatusKind)');
@@ -430,13 +434,13 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps gathering-card page dots lightweight during stage morphs', () => {
-    expect(mapScreen).toContain('styles.dots');
-    expect(mapScreen).toContain('styles.dotActive');
+    expect(carouselDots).toContain('styles.dots');
+    expect(carouselDots).toContain('styles.dotActive');
     // Dots use CarouselDots in normal flex flow — no absolute active overlay.
     expect(mapScreen).not.toContain('layout={LinearTransition.springify()');
-    expect(mapScreen).toContain('function CarouselDots');
-    expect(mapScreen).toContain('indicatorRowGeometry');
-    expect(mapScreen).toContain('withTiming(active ? 18 : 6');
+    expect(carouselDots).toContain('function CarouselDots');
+    expect(carouselDots).toContain('indicatorRowGeometry');
+    expect(carouselDots).toContain('withTiming(active ? 18 : 6');
     expect(mapScreen).not.toContain('pillSlot');
     const carouselStart = mapScreen.indexOf('function CarouselDots');
     const carouselEnd = mapScreen.indexOf('function GatheringCardPressable', carouselStart);
@@ -478,8 +482,8 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('pressedCardId');
     expect(mapScreen).not.toContain('withTiming(1.02');
     // Marquee uses withSequence; card press shell must not scale-bounce.
-    expect(mapScreen).toContain('lastPressAtRef');
-    expect(mapScreen).toMatch(/now - lastPressAtRef\.current < 300/);
+    expect(cardPressable).toContain('lastPressAtRef');
+    expect(cardPressable).toMatch(/now - lastPressAtRef\.current < 300/);
   });
 
   it('removes straggler configuration UI while keeping detection wiring', () => {
@@ -882,8 +886,8 @@ describe('map UI placement contracts', () => {
   });
 
   it('uses theme accent for create-team and passive enter without Enter… copy', () => {
-    expect(mapScreen).toContain("t('subgroup.createTeam')");
-    expect(mapScreen).toMatch(/createTeam[\s\S]{0,80}color: accent|color: accent[\s\S]{0,80}createTeam/);
+    expect(flockRow).toContain("t('subgroup.createTeam')");
+    expect(flockRow).toMatch(/createTeam[\s\S]{0,80}color: accent|color: accent[\s\S]{0,80}createTeam/);
     expect(i18n).toContain("'passive.enter': '被動模式'");
     expect(i18n).toContain("'passive.enter': 'Passive mode'");
     expect(i18n).not.toContain("'passive.enter': '進入被動模式'");

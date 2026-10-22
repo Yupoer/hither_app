@@ -7,6 +7,7 @@ const read = (rel: string) =>
 
 const groupMap = read('components/GroupMap.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
+const flockRow = read('screens/MapScreen/components/FlockRow.tsx');
 const mapStyles = read('screens/MapScreen/styles.ts');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
 const notifCard = read('components/NotificationPreferencesCard.tsx');
@@ -34,7 +35,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(mapScreen).not.toContain("overlay === 'myStatus'");
     expect(mapScreen).not.toContain('solo.tempLeave');
     expect(mapScreen).toContain('applyPresenceMacroKind');
-    expect(mapScreen).toContain('subgroup.createTeam');
+    expect(flockRow).toContain('subgroup.createTeam');
   });
 
   it('omits iOS switch chrome paint and uses native segmented tabs', () => {
@@ -49,9 +50,9 @@ describe('#220 map / status / settings / paywall contracts', () => {
   });
 
   it('renders self flock copy as 你 plus role and freshness', () => {
-    expect(mapScreen).toContain('{isMe ? t(\'flock.you\') : name}');
+    expect(flockRow).toContain('{isMe ? t(\'flock.you\') : name}');
     expect(mapScreen).not.toContain('{name}{isMe ? ` · ${t(\'flock.you\')}` : \'\'}');
-    expect(mapScreen).toContain('{!isMe && distOrStatus');
+    expect(flockRow).toContain('{!isMe && distOrStatus');
     expect(mapScreen).toContain('dist: isSelf');
     expect(translations.zh['trip.setDaysAndDate']).toBe('天數與日期');
     expect(reorder).toContain('const ROW_HEIGHT = 52;');

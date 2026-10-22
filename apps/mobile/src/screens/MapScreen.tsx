@@ -54,8 +54,6 @@ import Animated, {
   interpolate,
   Extrapolation,
   withSpring,
-  withTiming,
-  Easing,
   FadeIn,
   FadeInRight,
   FadeOut,
@@ -68,7 +66,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { useVisibleUi, useForegroundClock, isForegroundUi } from '../state/foregroundUi';
+import { useVisibleUi, isForegroundUi } from '../state/foregroundUi';
 import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
 import {
@@ -85,7 +83,6 @@ import {
   sortGatherRequestsFifo,
 } from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
-import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
 import MetalforgeStarfield from '../components/MetalforgeStarfield';
 import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
@@ -171,6 +168,12 @@ import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgre
 import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
+import { ArrivalCardExitShell } from './MapScreen/components/ArrivalCardExitShell';
+import { MeetTimeChip } from './MapScreen/components/MeetTimeChip';
+import { CarouselDots } from './MapScreen/components/CarouselDots';
+import { GatheringCardPressable } from './MapScreen/components/GatheringCardPressable';
+import { RefreshLocationsButton } from './MapScreen/components/RefreshLocationsButton';
+import { FlockRow } from './MapScreen/components/FlockRow';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import { makeStyles } from './MapScreen/styles';
 import {
@@ -260,7 +263,6 @@ import {
   walkingEtaSeconds,
   type TravelMode,
 } from '../utils/geo';
-import { indicatorRowGeometry } from '../utils/pagination';
 import {
   alignMeetTimeToTripDay,
   addMinutesToPickerValue,
@@ -269,10 +271,6 @@ import {
   startOfTodayLocal,
 } from '../utils/meetTime';
 import { buildOpenReorderPayload } from '../utils/openReorderSlots';
-import {
-  locationFreshness,
-  isLocationSampleFresh,
-} from '../utils/locationFreshness';
 import {
   groupHistoryByDay,
   historyFromDestinationArrivals,
@@ -353,7 +351,7 @@ import {
 } from '../utils/presenceMacros';
 import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferences } from '../types';
 import { logEvent, logError } from '../utils/activityLog';
-import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
+import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
 import type {
   Coordinates,
   DailyAccommodation,
@@ -8932,446 +8930,3 @@ export default function MapScreen({ route, navigation }: Props) {
     </View>
   );
 }
-
-/** Gathering-point card press shell — haptic only, no scale animation. */
-/**
- * #149 whole-card exit: 440ms fade + slight upward slide when stop completes.
- */
-function ArrivalCardExitShell({
-  exiting,
-  children,
-}: {
-  exiting: boolean;
-  children: React.ReactNode;
-}) {
-  const style = useAnimatedStyle(() => {
-    return {
-      opacity: withTiming(exiting ? 0 : 1, {
-        duration: ARRIVAL_CARD_EXIT_MS,
-        easing: Easing.out(Easing.cubic),
-      }),
-      transform: [
-        {
-          translateY: withTiming(exiting ? -16 : 0, {
-            duration: ARRIVAL_CARD_EXIT_MS,
-            easing: Easing.out(Easing.cubic),
-          }),
-        },
-      ],
-    };
-  }, [exiting]);
-  return <Animated.View style={style}>{children}</Animated.View>;
-}
-
-/**
- * Meet-time chip on the gather card. Owns due/live caption switching so the
- * parent carousel does not re-render 1×/s — only this chip ticks.
- * Due: top "{time} 集合", bottom "集合時間". Live: top "N 分鐘", bottom "集合倒數".
- */
-const MeetTimeChip = React.memo(function MeetTimeChip({
-  meetAtIso,
-  meetRedMinutes,
-  accent,
-  chromeTight,
-  chromeCompact,
-  expanded,
-  styles,
-  canEdit,
-  a11yLabel,
-  onPress,
-  formatMinutes,
-  formatDue,
-  captionLive,
-  captionDue,
-}: {
-  meetAtIso: string | null | undefined;
-  meetRedMinutes: number;
-  accent: string;
-  chromeTight: boolean;
-  chromeCompact: boolean;
-  expanded: boolean;
-  styles: any;
-  canEdit: boolean;
-  a11yLabel: string;
-  onPress: () => void;
-  formatMinutes: (minutes: number) => string;
-  formatDue: (time: string) => string;
-  captionLive: string;
-  captionDue: string;
-}) {
-  const [due, setDue] = useState(() => {
-    if (!meetAtIso) return false;
-    const t = new Date(meetAtIso).getTime();
-    return Number.isFinite(t) && t <= Date.now();
-  });
-  const onDueChange = useCallback((next: boolean) => {
-    setDue(next);
-  }, []);
-  const labelStyle = chromeTight
-    ? styles.meetBtnLabelTight
-    : chromeCompact
-      ? styles.meetBtnLabelCompact
-      : styles.meetBtnLabel;
-
-  return (
-    <Pressable
-      style={[styles.meetBtn, expanded ? styles.meetBtnExpanded : null]}
-      onPress={(event) => {
-        event.stopPropagation();
-        onPress();
-      }}
-      disabled={!canEdit}
-      accessibilityRole="button"
-      accessibilityLabel={a11yLabel}
-    >
-      <View style={styles.meetBtnStack}>
-        <View style={styles.meetBtnTimeRow}>
-          <Ionicons
-            name="time-outline"
-            size={chromeTight ? 14 : chromeCompact ? 15 : 16}
-            color={meetAtIso ? accent : glass.textSecondary}
-          />
-          {meetAtIso ? (
-            <MeetCountdown
-              meetAtIso={meetAtIso}
-              redWithinMin={meetRedMinutes}
-              redColor={glass.danger}
-              variant="minutes"
-              formatMinutes={formatMinutes}
-              formatDue={formatDue}
-              onDueChange={onDueChange}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-              baseStyle={[labelStyle, { color: accent }]}
-            />
-          ) : (
-            <Text
-              style={labelStyle}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-            >
-              ——
-            </Text>
-          )}
-        </View>
-        <Text
-          style={styles.meetBtnCaption}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-        >
-          {meetAtIso && due ? captionDue : captionLive}
-        </Text>
-      </View>
-    </Pressable>
-  );
-});
-
-/**
- * Gathering-point pagination (max 5 visible). Each item occupies its own
- * active pill / inactive dot width in normal flow — no absolute overlay.
- */
-function CarouselDots({
-  total,
-  active,
-  maxVisible,
-  destinationIds,
-  styles,
-  reduceMotion = false,
-}: {
-  total: number;
-  active: number;
-  maxVisible: number;
-  destinationIds: readonly string[];
-  styles: {
-    dots: object;
-    dot: object;
-    dotActive: object;
-  };
-  reduceMotion?: boolean;
-}) {
-  const row = useMemo(
-    () => indicatorRowGeometry(total, active, maxVisible),
-    [total, active, maxVisible],
-  );
-
-  return (
-    <View style={[styles.dots, { flexShrink: 0 }]}>
-      {row.items.map((item) => (
-        <CarouselDot
-          key={`dot-${destinationIds[item.index] ?? item.index}`}
-          active={item.active}
-          reduceMotion={reduceMotion}
-          styles={styles}
-        />
-      ))}
-    </View>
-  );
-}
-
-function CarouselDot({
-  active,
-  reduceMotion,
-  styles,
-}: {
-  active: boolean;
-  reduceMotion: boolean;
-  styles: {
-    dot: object;
-    dotActive: object;
-  };
-}) {
-  const animatedStyle = useAnimatedStyle(() => ({
-    width: withTiming(active ? 18 : 6, {
-      duration: reduceMotion ? 0 : 200,
-    }),
-  }), [active, reduceMotion]);
-
-  return (
-    <Animated.View
-      style={[styles.dot, active ? styles.dotActive : null, animatedStyle]}
-      accessibilityElementsHidden
-      importantForAccessibility="no"
-    />
-  );
-}
-
-function GatheringCardPressable({
-  onToggle,
-  accessibilityLabel,
-  accessibilityHint,
-  children,
-}: {
-  onToggle: () => void;
-  accessibilityLabel: string;
-  accessibilityHint: string;
-  children: React.ReactNode;
-}) {
-  // Guard against double-fire (expand then instant collapse) from a single gesture.
-  const lastPressAtRef = useRef(0);
-  const handlePress = useCallback(() => {
-    const now = Date.now();
-    if (now - lastPressAtRef.current < 300) return;
-    lastPressAtRef.current = now;
-    rigidTap();
-    onToggle();
-  }, [onToggle]);
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-    >
-      {children}
-    </Pressable>
-  );
-}
-
-/**
- * Location-refresh control owns the 1 Hz cooldown clock so MapScreen is not
- * re-rendered every second while the button counts down.
- */
-const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
-  refreshing,
-  cooldownUntil,
-  accent,
-  styles,
-  t,
-  onPress,
-}: {
-  refreshing: boolean;
-  cooldownUntil: number;
-  accent: string;
-  styles: any;
-  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
-  onPress: () => void;
-}) {
-  const now = useForegroundClock(1000, cooldownUntil > Date.now());
-  const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
-  const cooling = remaining > 0;
-
-  if (refreshing) {
-    return (
-      <View style={styles.refreshLocationsButton} accessibilityLabel={t('map.refreshLocationsA11y')}>
-        <WaveLoading size="small" color={accent} />
-      </View>
-    );
-  }
-  return (
-    <AmicroButton
-      icon="refresh"
-      mode="rotate"
-      color={accent}
-      style={styles.refreshLocationsButton}
-      onPress={() => { lightTap(); onPress(); }}
-      disabled={refreshing}
-      accessibilityLabel={t('map.refreshLocationsA11y')}
-      accessibilityHint={
-        cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
-      }
-    />
-  );
-});
-
-/**
- * One flock member row. Owns a 30s tick for freshness / "moving" status so the
- * parent MapScreen tree is not on a location-age interval.
- */
-const FlockRow = React.memo(function FlockRow({
-  userId,
-  name,
-  avatar,
-  color,
-  isLeader,
-  solo,
-  subgroupId,
-  dist,
-  arrived,
-  lastUpdated,
-  sharingEnabled,
-  locationTrackingMode,
-  locationSource,
-  locationNavigationSessionId,
-  serverTimeOffsetMs,
-  syncFailed,
-  isMe,
-  canKick = false,
-  last,
-  styles,
-  t,
-  accent,
-  onSelfMerge,
-  onSelfSplit,
-  onKick,
-}: {
-  userId: string;
-  name: string;
-  avatar?: string | null;
-  color: string;
-  isLeader: boolean;
-  solo: boolean;
-  subgroupId?: string | null;
-  dist: string;
-  arrived: boolean;
-  lastUpdated?: string;
-  sharingEnabled?: boolean;
-  locationTrackingMode?: string | null;
-  locationSource?: string | null;
-  locationNavigationSessionId?: string | null;
-  serverTimeOffsetMs: number;
-  syncFailed: boolean;
-  isMe: boolean;
-  canKick?: boolean;
-  last: boolean;
-  styles: any;
-  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
-  /** Theme accent for primary self actions (e.g. 建立小隊). */
-  accent: string;
-  onSelfMerge: () => void | Promise<unknown>;
-  onSelfSplit: () => void | Promise<unknown>;
-  onKick?: () => void;
-}) {
-  const nowMs = useForegroundClock(30_000);
-
-  const movingRecently = isLocationSampleFresh(lastUpdated, {
-    locationTrackingMode, locationSource, locationNavigationSessionId,
-  }, nowMs + serverTimeOffsetMs);
-  const statusText = solo
-    ? t('solo.badge')
-    : isLeader
-      ? t('flock.leading')
-      : arrived
-        ? t('memberStatus.arrived')
-        : movingRecently
-          ? t('memberStatus.moving')
-          : t('memberStatus.notStarted');
-  const role = isLeader ? t('map.leaderRole') : t('map.memberRole');
-  const distOrStatus = dist || statusText;
-  const freshness = locationFreshness(lastUpdated, nowMs + serverTimeOffsetMs);
-  const freshnessText = sharingEnabled === false ? t('map.locationSharingStopped') :
-    freshness.unit === 'minutes'
-      ? t('locationUpdate.minutes', { minutes: freshness.value })
-      : freshness.unit === 'hours'
-        ? t('locationUpdate.hours', { hours: freshness.value })
-        : t(`locationUpdate.${freshness.unit}`);
-
-  return (
-    <View style={[styles.flockRow, last && styles.flockRowLast]}>
-      <View style={styles.flockRowMain}>
-        <View
-          style={[
-            styles.flockAvatar,
-            {
-              backgroundColor: color,
-              borderColor: isLeader ? 'rgba(255,255,255,0.55)' : 'transparent',
-            },
-          ]}
-        >
-          <HitherText typeRole="emoji" style={styles.flockEmoji}>
-            {displayMemberAvatar(avatar, userId).emoji}
-          </HitherText>
-        </View>
-        <View style={styles.grow}>
-          <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>
-          <Text style={styles.flockStatus} numberOfLines={2}>
-            <Text style={styles.flockMetaRole}>{role}</Text>
-            {!isMe && distOrStatus ? (
-              <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
-            ) : null}
-            {freshnessText ? (
-              <Text style={styles.flockMetaFresh}>{` · ${freshnessText}${syncFailed ? ` · ${t('map.locationSyncFailed')}` : ''}`}</Text>
-            ) : null}
-            {!isMe && solo ? (
-              <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
-            ) : null}
-          </Text>
-        </View>
-      </View>
-      {isMe && (
-        <View style={styles.selfControls}>
-          {subgroupId ? (
-            <Pressable
-              onPress={() => void onSelfMerge()}
-              hitSlop={8}
-              accessibilityRole="button"
-              style={({ pressed }) => pressed && styles.rowActionPressed}
-            >
-              <Text style={styles.rowActionSecondary}>
-                {t('subgroup.leaveTeam')}
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => void onSelfSplit()}
-              hitSlop={8}
-              accessibilityRole="button"
-              style={({ pressed }) => pressed && styles.rowActionPressed}
-            >
-              <Text style={[styles.rowActionSecondary, { color: accent }]}>
-                {t('subgroup.createTeam')}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      )}
-      {!isMe && canKick && onKick ? (
-        <View style={styles.selfControls}>
-          <Pressable
-            onPress={onKick}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('group.kick')}
-            style={({ pressed }) => pressed && styles.rowActionPressed}
-          >
-            <Text style={[styles.rowActionSecondary, { color: glass.danger }]}>
-              {t('group.kick')}
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-    </View>
-  );
-});

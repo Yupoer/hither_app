@@ -9,6 +9,7 @@ describe('Amicro native animation contracts', () => {
   const map = read('screens/MapScreen.tsx');
   const mapStyles = read('screens/MapScreen/styles.ts');
   const passive = read('screens/MapScreen/components/PassiveCompanionPanel.tsx');
+  const refreshButton = read('screens/MapScreen/components/RefreshLocationsButton.tsx');
   const app = read('../App.tsx');
 
   it('haptics first, then runs the handler once at animation completion', () => {
@@ -25,7 +26,7 @@ describe('Amicro native animation contracts', () => {
       'search', 'close', 'pencil-outline', 'expand-outline', 'contract-outline',
       'refresh',
     ]) {
-      expect(map + passive).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
+      expect(map + passive + refreshButton).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
     expect(map).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
     expect(mapStyles).toContain('width: 44');
