@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createElement, Fragment, useCallback, useMemo, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { Alert } from 'react-native';
 import { getNotificationPreferences, setNotificationPreferences, setSolo } from '../../../api/client';
 import type { TranslationKey } from '../../../i18n';
@@ -160,11 +161,7 @@ export function useMemberPresence({
 
   // Drop the override once the server value catches up, so a later toggle
   // (from this device or another) isn't masked by a stale optimistic flip.
-  useEffect(() => {
-    if (soloOverride === null) return;
-    const mine = members.find((m) => m.userId === user?.id);
-    if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
-  }, [members, soloOverride, user?.id]);
+  const soloOverrideConvergenceLifecycle = createElement(SoloOverrideConvergence, { soloOverride, members, user, setSoloOverride });
 
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = myScopeId;
@@ -174,17 +171,7 @@ export function useMemberPresence({
     return !!members.find((m) => m.userId === user?.id)?.solo;
   }, [soloOverride, members, user?.id]);
 
-  useEffect(() => {
-    let alive = true;
-    void getNotificationPreferences()
-      .then((prefs) => {
-        if (alive) setNotifPrefs(prefs);
-      })
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [user?.id]);
+  const memberNotificationPreferencesLoadLifecycle = createElement(MemberNotificationPreferencesLoad, { setNotifPrefs, user });
 
   const derivedMacro = derivePresenceMacro({
     solo: mySoloActive,
@@ -284,5 +271,62 @@ export function useMemberPresence({
     );
   }, [applyPresenceMacroKind, statusMenuItems, t]);
 
-  return { flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId };
+  return {
+    lifecycle: createElement(Fragment, null, soloOverrideConvergenceLifecycle, memberNotificationPreferencesLoadLifecycle), flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId };
+}
+
+function SoloOverrideConvergence({ soloOverride, members, user, setSoloOverride }: {
+  soloOverride: boolean | null;
+  members: MemberLocation[];
+  user: User | null;
+  setSoloOverride: import("react").Dispatch<import("react").SetStateAction<boolean | null>>;
+}) {
+  const [soloOverrideConvergenceInputs, setSoloOverrideConvergenceInputs] = useState(() => ({ generation: 0, members, soloOverride, user_id: user?.id }));
+  if (!(Object.is(soloOverrideConvergenceInputs.members, members) && Object.is(soloOverrideConvergenceInputs.soloOverride, soloOverride) && Object.is(soloOverrideConvergenceInputs.user_id, user?.id))) {
+    setSoloOverrideConvergenceInputs({ generation: soloOverrideConvergenceInputs.generation + 1, members, soloOverride, user_id: user?.id });
+  }
+  return createElement(SoloOverrideConvergenceCommit, { key: soloOverrideConvergenceInputs.generation, soloOverride, members, user, setSoloOverride });
+}
+
+function SoloOverrideConvergenceCommit({ soloOverride, members, user, setSoloOverride }: {
+  soloOverride: boolean | null;
+  members: MemberLocation[];
+  user: User | null;
+  setSoloOverride: import("react").Dispatch<import("react").SetStateAction<boolean | null>>;
+}) {
+  useMountEffect(() => {
+    if (soloOverride === null) return;
+    const mine = members.find((m) => m.userId === user?.id);
+    if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
+  });
+  return null;
+}
+
+function MemberNotificationPreferencesLoad({ setNotifPrefs, user }: {
+  setNotifPrefs: import("react").Dispatch<import("react").SetStateAction<NotificationPreferences>>;
+  user: User | null;
+}) {
+  const [memberNotificationPreferencesLoadInputs, setMemberNotificationPreferencesLoadInputs] = useState(() => ({ generation: 0, user_id: user?.id }));
+  if (!(Object.is(memberNotificationPreferencesLoadInputs.user_id, user?.id))) {
+    setMemberNotificationPreferencesLoadInputs({ generation: memberNotificationPreferencesLoadInputs.generation + 1, user_id: user?.id });
+  }
+  return createElement(MemberNotificationPreferencesLoadCommit, { key: memberNotificationPreferencesLoadInputs.generation, setNotifPrefs, user });
+}
+
+function MemberNotificationPreferencesLoadCommit({ setNotifPrefs, user }: {
+  setNotifPrefs: import("react").Dispatch<import("react").SetStateAction<NotificationPreferences>>;
+  user: User | null;
+}) {
+  useMountEffect(() => {
+    let alive = true;
+    void getNotificationPreferences()
+      .then((prefs) => {
+        if (alive) setNotifPrefs(prefs);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  });
+  return null;
 }

@@ -49,7 +49,11 @@ function deferred<T>() {
 async function mountHook<I, O>(hook: (input: I) => O, input: I) {
   let value!: O;
   let root!: ReactTestRenderer;
-  function Harness({ input: next }: { input: I }) { value = hook(next); return null; }
+  function Harness({ input: next }: { input: I }) {
+    value = hook(next);
+    return value != null && typeof value === 'object' && 'lifecycle' in value
+      && React.isValidElement(value.lifecycle) ? value.lifecycle : null;
+  }
   await act(async () => { root = create(React.createElement(Harness, { input })); });
   return {
     get value() { return value; },

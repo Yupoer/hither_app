@@ -297,7 +297,7 @@ it('restores the same pending map place to its final pose without replaying its 
   const next: any = { name: 'two', coordinates: { latitude: 2, longitude: 2 } };
   function Card({ place, visible }: any) {
     const entrance = usePendingPlaceEntrance(place, visible, height);
-    return React.createElement('card', entrance);
+    return React.createElement(React.Fragment, null, entrance.lifecycle, React.createElement('card', entrance));
   }
   let root: any;
   await act(async () => { root = create(React.createElement(Card, { place: first, visible: true })); });
@@ -318,6 +318,15 @@ it('restores the same pending map place to its final pose without replaying its 
   await act(async () => { root.update(React.createElement(Card, { place: next, visible: true })); });
   await act(async () => { jest.runOnlyPendingTimers(); });
   expect(mockSprings).toHaveLength(2);
+  await act(async () => { root.update(React.createElement(Card, { place: next, visible: true })); });
+  await act(async () => { jest.runOnlyPendingTimers(); });
+  expect(mockSprings).toHaveLength(2);
+  await act(async () => { root.update(React.createElement(Card, { place: { ...next }, visible: true })); });
+  await act(async () => { jest.runOnlyPendingTimers(); });
+  expect(mockSprings).toHaveLength(3);
+  await act(async () => { root.update(React.createElement(Card, { place: first, visible: true })); });
+  await act(async () => { jest.runOnlyPendingTimers(); });
+  expect(mockSprings).toHaveLength(4);
   await act(async () => { root.update(React.createElement(Card, { place: null, visible: false })); });
   expect(root.root.findByType('card').props.ready).toBe(false);
   expect(root.root.findByType('card').props.progress.value).toBe(0);

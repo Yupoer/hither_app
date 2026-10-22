@@ -314,7 +314,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setArrivalRadiusM,
     setPassiveCompanionMode,
   } = usePreferences();
-  const {
+  const { lifecycle: gatherCardExpansionLifecycle,
     isCardExpanded,
     toggleCard,
     collapseCard,
@@ -851,7 +851,7 @@ export default function MapScreen({ route, navigation }: Props) {
     { latitude: number; longitude: number } | undefined
   >(undefined);
   // Bounce-up entrance animation for the add-gather-point confirm card.
-  const { ready: confirmCardReady, progress: confirmCardAnim } = usePendingPlaceEntrance(pendingPlace, uiVisible, heightSV);
+  const { lifecycle: pendingPlaceEntranceLifecycle, ready: confirmCardReady, progress: confirmCardAnim } = usePendingPlaceEntrance(pendingPlace, uiVisible, heightSV);
   const confirmCardStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(confirmCardAnim.value, [0, 1], [120, 0], Extrapolation.CLAMP) },
@@ -1092,7 +1092,7 @@ export default function MapScreen({ route, navigation }: Props) {
   }, []);
 
   // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
-  const {
+  const { lifecycle: meetTimeEditorLifecycle,
     meetTimeEditor,
     setMeetTimeEditor,
     persistMeetTime,
@@ -1222,7 +1222,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
   // --- Carousel selection ---------------------------------------------------
-  const {
+  const { lifecycle: carouselSelectionLifecycle,
     selectedIndex,
     setSelectedIndex,
     travelMode,
@@ -3654,7 +3654,7 @@ export default function MapScreen({ route, navigation }: Props) {
     voluntaryLeaveRef,
   });
 
-  const { flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId } = useMemberPresence({
+  const { lifecycle: memberPresenceLifecycle, flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId } = useMemberPresence({
     groupId,
     t,
     uiVisible,
@@ -4654,6 +4654,11 @@ export default function MapScreen({ route, navigation }: Props) {
     <>
       {routeDraft.lifecycle}
       {groupRoleLifecycle}
+      {gatherCardExpansionLifecycle}
+      {pendingPlaceEntranceLifecycle}
+      {meetTimeEditorLifecycle}
+      {carouselSelectionLifecycle}
+      {memberPresenceLifecycle}
     <View style={styles.flex}>
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (

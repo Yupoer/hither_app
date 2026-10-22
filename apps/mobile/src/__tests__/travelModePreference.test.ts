@@ -30,11 +30,9 @@ const mapRef = { current: null };
 function Harness() {
   const currentPreferences = usePreferences();
   const currentSelection = useCarouselSelection({ destinations: [], windowWidth: 390, carouselRef, mapRef });
-  React.useLayoutEffect(() => {
-    preferences = currentPreferences;
-    selection = currentSelection;
-  }, [currentPreferences, currentSelection]);
-  return null;
+  preferences = currentPreferences;
+  selection = currentSelection;
+  return currentSelection.lifecycle;
 }
 function app(show = true) {
   return React.createElement(PreferencesProvider, null, show ? React.createElement(Harness) : null);

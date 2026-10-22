@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createElement, Fragment, useCallback, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 
 const AUTO_COLLAPSE_MS = 10_000;
 
@@ -87,14 +88,12 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
     if (!defaultExpanded && overridesRef.current[id] === true) scheduleCollapse(id);
   }, [defaultExpanded, scheduleCollapse]);
 
-  useEffect(() => {
-    clearTimer();
-    replaceOverrides({});
-  }, [clearTimer, defaultExpanded, replaceOverrides]);
+  const gatherCardDefaultsResetLifecycle = createElement(GatherCardDefaultsReset, { clearTimer, replaceOverrides, defaultExpanded });
 
-  useEffect(() => clearTimer, [clearTimer]);
+  const gatherCardTimerLifetimeLifecycle = createElement(GatherCardTimerLifetime, { clearTimer });
 
   return {
+    lifecycle: createElement(Fragment, null, gatherCardDefaultsResetLifecycle, gatherCardTimerLifetimeLifecycle),
     isCardExpanded,
     toggleCard,
     collapseCard,
@@ -103,4 +102,45 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
     pauseAutoCollapse,
     resumeAutoCollapse,
   };
+}
+
+function GatherCardDefaultsReset({ clearTimer, replaceOverrides, defaultExpanded }: {
+  clearTimer: () => void;
+  replaceOverrides: (next: Record<string, boolean>) => void;
+  defaultExpanded: boolean;
+}) {
+  const [gatherCardDefaultsResetInputs, setGatherCardDefaultsResetInputs] = useState(() => ({ generation: 0, clearTimer, defaultExpanded, replaceOverrides }));
+  if (!(Object.is(gatherCardDefaultsResetInputs.clearTimer, clearTimer) && Object.is(gatherCardDefaultsResetInputs.defaultExpanded, defaultExpanded) && Object.is(gatherCardDefaultsResetInputs.replaceOverrides, replaceOverrides))) {
+    setGatherCardDefaultsResetInputs({ generation: gatherCardDefaultsResetInputs.generation + 1, clearTimer, defaultExpanded, replaceOverrides });
+  }
+  return createElement(GatherCardDefaultsResetCommit, { key: gatherCardDefaultsResetInputs.generation, clearTimer, replaceOverrides, defaultExpanded });
+}
+
+function GatherCardDefaultsResetCommit({ clearTimer, replaceOverrides, defaultExpanded }: {
+  clearTimer: () => void;
+  replaceOverrides: (next: Record<string, boolean>) => void;
+  defaultExpanded: boolean;
+}) {
+  useMountEffect(() => {
+    clearTimer();
+    replaceOverrides({});
+  });
+  return null;
+}
+
+function GatherCardTimerLifetime({ clearTimer }: {
+  clearTimer: () => void;
+}) {
+  const [gatherCardTimerLifetimeInputs, setGatherCardTimerLifetimeInputs] = useState(() => ({ generation: 0, clearTimer }));
+  if (!(Object.is(gatherCardTimerLifetimeInputs.clearTimer, clearTimer))) {
+    setGatherCardTimerLifetimeInputs({ generation: gatherCardTimerLifetimeInputs.generation + 1, clearTimer });
+  }
+  return createElement(GatherCardTimerLifetimeCommit, { key: gatherCardTimerLifetimeInputs.generation, clearTimer });
+}
+
+function GatherCardTimerLifetimeCommit({ clearTimer }: {
+  clearTimer: () => void;
+}) {
+  useMountEffect(() => clearTimer);
+  return null;
 }

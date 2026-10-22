@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createElement, Fragment, useCallback, useMemo, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { setDestinationMeetTime } from '../../../api/client';
 import type { TranslationKey } from '../../../i18n';
@@ -61,54 +62,7 @@ export function useMeetTimeEditor({
     );
   }, [destinations]);
 
-  useEffect(() => {
-    if (!nextMeet?.meetAt) return;
-    const meetAt = new Date(nextMeet.meetAt as string);
-    const redMin = nextMeet.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN;
-    const warnAt = new Date(meetAt.getTime() - redMin * 60_000);
-    const ids: string[] = [];
-    let cancelled = false;
-
-    const track = (nid: string | null) => {
-      if (!nid) return;
-      if (cancelled) void notifications.cancelScheduledNotification(nid);
-      else ids.push(nid);
-    };
-
-    // Red-zone warning (e.g. enter 9:59 when threshold is 10 min).
-    if (warnAt.getTime() > Date.now()) {
-      void notifications
-        .scheduleLocalNotificationAt(
-          {
-            title: t('meetTime.warnTitle'),
-            body: t('meetTime.warnBody', { title: nextMeet.title, minutes: redMin }),
-            data: { kind: 'meetTimeWarn', destinationId: nextMeet.id },
-          },
-          warnAt,
-        )
-        .then(track);
-    }
-
-    void notifications
-      .scheduleLocalNotificationAt(
-        {
-          title: t('meetTime.notifyTitle'),
-          body: t('meetTime.notifyBody', { title: nextMeet.title }),
-          data: { kind: 'meetTime', destinationId: nextMeet.id },
-        },
-        meetAt,
-      )
-      .then(track);
-
-    const off = notifications.addForegroundListener((data) => {
-      if (data.kind === 'meetTime' || data.kind === 'meetTimeWarn') alertBuzz();
-    });
-    return () => {
-      cancelled = true;
-      for (const id of ids) void notifications.cancelScheduledNotification(id);
-      off();
-    };
-  }, [nextMeet?.id, nextMeet?.meetAt, nextMeet?.meetRedMinutes, nextMeet?.title, meetRedMin, t]);
+  const meetTimeRemindersLifecycle = createElement(MeetTimeReminders, { nextMeet, meetRedMin, t });
 
   const persistMeetTime = useCallback(
     (destinationId: string, value: Date | null, redMin?: number) => {
@@ -190,5 +144,74 @@ export function useMeetTimeEditor({
     });
   }, [meetTimeEditor]);
 
-  return { meetTimeEditor, setMeetTimeEditor, persistMeetTime, openMeetTimePicker, openAndroidMeetDate };
+  return {
+    lifecycle: createElement(Fragment, null, meetTimeRemindersLifecycle), meetTimeEditor, setMeetTimeEditor, persistMeetTime, openMeetTimePicker, openAndroidMeetDate };
+}
+
+function MeetTimeReminders({ nextMeet, meetRedMin, t }: {
+  nextMeet: Destination;
+  meetRedMin: number;
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+}) {
+  const [meetTimeRemindersInputs, setMeetTimeRemindersInputs] = useState(() => ({ generation: 0, nextMeet_id: nextMeet?.id, nextMeet_meetAt: nextMeet?.meetAt, nextMeet_meetRedMinutes: nextMeet?.meetRedMinutes, nextMeet_title: nextMeet?.title, meetRedMin, t }));
+  if (!(Object.is(meetTimeRemindersInputs.nextMeet_id, nextMeet?.id) && Object.is(meetTimeRemindersInputs.nextMeet_meetAt, nextMeet?.meetAt) && Object.is(meetTimeRemindersInputs.nextMeet_meetRedMinutes, nextMeet?.meetRedMinutes) && Object.is(meetTimeRemindersInputs.nextMeet_title, nextMeet?.title) && Object.is(meetTimeRemindersInputs.meetRedMin, meetRedMin) && Object.is(meetTimeRemindersInputs.t, t))) {
+    setMeetTimeRemindersInputs({ generation: meetTimeRemindersInputs.generation + 1, nextMeet_id: nextMeet?.id, nextMeet_meetAt: nextMeet?.meetAt, nextMeet_meetRedMinutes: nextMeet?.meetRedMinutes, nextMeet_title: nextMeet?.title, meetRedMin, t });
+  }
+  return createElement(MeetTimeRemindersCommit, { key: meetTimeRemindersInputs.generation, nextMeet, meetRedMin, t });
+}
+
+function MeetTimeRemindersCommit({ nextMeet, meetRedMin, t }: {
+  nextMeet: Destination;
+  meetRedMin: number;
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+}) {
+  useMountEffect(() => {
+    if (!nextMeet?.meetAt) return;
+    const meetAt = new Date(nextMeet.meetAt as string);
+    const redMin = nextMeet.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN;
+    const warnAt = new Date(meetAt.getTime() - redMin * 60_000);
+    const ids: string[] = [];
+    let cancelled = false;
+
+    const track = (nid: string | null) => {
+      if (!nid) return;
+      if (cancelled) void notifications.cancelScheduledNotification(nid);
+      else ids.push(nid);
+    };
+
+    // Red-zone warning (e.g. enter 9:59 when threshold is 10 min).
+    if (warnAt.getTime() > Date.now()) {
+      void notifications
+        .scheduleLocalNotificationAt(
+          {
+            title: t('meetTime.warnTitle'),
+            body: t('meetTime.warnBody', { title: nextMeet.title, minutes: redMin }),
+            data: { kind: 'meetTimeWarn', destinationId: nextMeet.id },
+          },
+          warnAt,
+        )
+        .then(track);
+    }
+
+    void notifications
+      .scheduleLocalNotificationAt(
+        {
+          title: t('meetTime.notifyTitle'),
+          body: t('meetTime.notifyBody', { title: nextMeet.title }),
+          data: { kind: 'meetTime', destinationId: nextMeet.id },
+        },
+        meetAt,
+      )
+      .then(track);
+
+    const off = notifications.addForegroundListener((data) => {
+      if (data.kind === 'meetTime' || data.kind === 'meetTimeWarn') alertBuzz();
+    });
+    return () => {
+      cancelled = true;
+      for (const id of ids) void notifications.cancelScheduledNotification(id);
+      off();
+    };
+  });
+  return null;
 }

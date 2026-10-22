@@ -51,7 +51,7 @@ describe('useMeetTimeEditor', () => {
   async function render(props: UseMeetTimeEditorInput) {
     function Harness() {
       editor = useMeetTimeEditor(props);
-      return null;
+      return editor.lifecycle;
     }
     await act(async () => {
       if (renderer) renderer.update(React.createElement(Harness));
@@ -119,4 +119,16 @@ describe('useMeetTimeEditor', () => {
     expect(showOperationFailure).toHaveBeenCalledWith('map.setFailedTitle', expect.any(String));
     expect(refresh).not.toHaveBeenCalled();
   });
+  it('cancels a notification whose native scheduling resolves after unmount', async () => {
+    let resolve!: (value: string) => void;
+    const late = new Promise<string>(done => { resolve = done; });
+    mockSchedule.mockImplementationOnce(() => late);
+    await render(input({ destinations: [stop('late', { meetAt: new Date(Date.now() + 60_000).toISOString() })] }));
+    await act(async () => { renderer?.unmount(); });
+    renderer = undefined;
+    await act(async () => { resolve('late-notification'); });
+    expect(mockCancel).toHaveBeenCalledWith('late-notification');
+    expect(mockOff).toHaveBeenCalled();
+  });
+
 });
