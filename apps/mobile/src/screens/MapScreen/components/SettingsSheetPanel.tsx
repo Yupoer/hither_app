@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import {
   Pressable,
   StyleSheet,
@@ -13,6 +14,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  type SharedValue,
 } from 'react-native-reanimated';
 import BottomSheet from '../../../components/BottomSheet';
 import {
@@ -24,6 +26,38 @@ import SheetHeaderAction from '../../../components/SheetHeaderAction';
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
 const SPRING = { stiffness: 320, damping: 29, mass: 1 } as const;
+
+type SettingsOpeningProps = {
+  visible: boolean;
+  detents: number[];
+  initialIndex: number;
+  sheetHeight: SharedValue<number>;
+  sheetTranslateY: SharedValue<number>;
+  runUnmount: () => void;
+  setMounted: (mounted: boolean) => void;
+  setIndex: (index: number) => void;
+};
+
+function SettingsOpeningSpring({ visible, detents, initialIndex, sheetHeight, sheetTranslateY, setMounted, setIndex }: SettingsOpeningProps) {
+  useMountEffect(() => {
+    if (!visible) return;
+    setMounted(true);
+    setIndex(initialIndex);
+    sheetTranslateY.value = 0;
+    sheetHeight.value = withSpring(detents[initialIndex], SPRING);
+  });
+  return null;
+}
+
+function SettingsPanelOpening(props: SettingsOpeningProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.visible, props.visible) || !Object.is(previous.detents, props.detents)
+    || !Object.is(previous.initialIndex, props.initialIndex) || !Object.is(previous.sheetHeight, props.sheetHeight)
+    || !Object.is(previous.sheetTranslateY, props.sheetTranslateY) || !Object.is(previous.runUnmount, props.runUnmount)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <SettingsOpeningSpring key={previous.generation} {...props} />;
+}
 
 export type SettingsSheetPanelProps = {
   visible: boolean;
@@ -92,19 +126,9 @@ export default function SettingsSheetPanel({
     onDismissCompleteRef.current?.();
   }, []);
 
-  useEffect(() => {
-    if (visible) {
-      setMounted(true);
-      setIndex(initialIndex);
-      sheetTranslateY.value = 0;
-      // Start at zero and spring directly to the selected detent on every open.
-      sheetHeight.value = withSpring(detents[initialIndex], SPRING);
-      return;
-    }
-    if (!mounted) return;
-    // BottomSheet owns the fixed-size translateY exit while content remains mounted.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, detents, initialIndex, sheetHeight, sheetTranslateY, runUnmount]);
+  const opening = <SettingsPanelOpening visible={visible} detents={detents} initialIndex={initialIndex}
+    sheetHeight={sheetHeight} sheetTranslateY={sheetTranslateY} runUnmount={runUnmount}
+    setMounted={setMounted} setIndex={setIndex} />;
 
   const handleDismiss = useCallback(() => onCloseRef.current(), []);
   const scrimStyle = useAnimatedStyle(() => ({
@@ -118,7 +142,7 @@ export default function SettingsSheetPanel({
       ),
   }));
 
-  if (!mounted && !visible) return null;
+  if (!mounted && !visible) return <>{opening}</>;
 
   const header = (
     <View style={styles.header}>
@@ -145,6 +169,8 @@ export default function SettingsSheetPanel({
   );
 
   return (
+    <>
+    {opening}
     <View
       pointerEvents={visible ? 'auto' : 'none'}
       style={[StyleSheet.absoluteFill, { zIndex }]}
@@ -178,6 +204,7 @@ export default function SettingsSheetPanel({
         </View>
       ) : null}
     </View>
+    </>
   );
 }
 

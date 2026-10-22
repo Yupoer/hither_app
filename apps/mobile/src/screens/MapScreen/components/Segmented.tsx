@@ -1,15 +1,62 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { View, Text, Pressable, StyleSheet, ScrollView, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   Easing,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { glass } from '../../../glass';
 import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
 import { tabScrollOffsetForSelection } from '../../../store/sheetPane';
+
+type SegmentMotionProps = {
+  activeIdx: number;
+  segW: number;
+  gap: number;
+  tx: SharedValue<number>;
+  scrollSelectedIntoView: (idx: number, animated: boolean) => void;
+  measuredRef: React.RefObject<boolean>;
+  prevIdxRef: React.RefObject<number>;
+  prevSegWRef: React.RefObject<number>;
+};
+
+function SelectedSegmentMotion({ activeIdx, segW, gap, tx, scrollSelectedIntoView, measuredRef, prevIdxRef, prevSegWRef }: SegmentMotionProps) {
+  useMountEffect(() => {
+    if (segW <= 0) {
+      prevSegWRef.current = 0;
+      return;
+    }
+    const next = activeIdx * (segW + gap);
+    const idxChanged = prevIdxRef.current !== activeIdx;
+    const widthAppeared = prevSegWRef.current <= 0;
+    prevIdxRef.current = activeIdx;
+    prevSegWRef.current = segW;
+    // Resizes and pane reveals snap; only selection changes animate.
+    if (measuredRef.current && idxChanged && !widthAppeared) {
+      tx.value = withTiming(next, { duration: 220, easing: Easing.out(Easing.cubic) });
+      scrollSelectedIntoView(activeIdx, true);
+    } else {
+      tx.value = next;
+      measuredRef.current = true;
+      if (widthAppeared || idxChanged) scrollSelectedIntoView(activeIdx, false);
+    }
+  });
+  return null;
+}
+
+function SegmentSelectionMotion(props: SegmentMotionProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.activeIdx, props.activeIdx) || !Object.is(previous.segW, props.segW)
+    || !Object.is(previous.gap, props.gap) || !Object.is(previous.tx, props.tx)
+    || !Object.is(previous.scrollSelectedIntoView, props.scrollSelectedIntoView)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <SelectedSegmentMotion key={previous.generation} {...props} />;
+}
 
 interface SegmentedProps {
   options: { key: string; label: string }[];
@@ -49,9 +96,11 @@ export const Segmented = React.memo(function Segmented({
   );
   const [localValue, setLocalValue] = useState(value);
 
-  useEffect(() => {
+  const [previousValue, setPreviousValue] = useState(value);
+  if (!Object.is(previousValue, value)) {
+    setPreviousValue(value);
     setLocalValue(value);
-  }, [value]);
+  }
 
   const SEG_PAD = dense ? 3 : 4;
   const SEG_GAP = dense ? 4 : 6;
@@ -88,32 +137,8 @@ export const Segmented = React.memo(function Segmented({
     scrollRef.current?.scrollTo({ x: offset, animated });
   }, [useViewport, segW, SEG_GAP, viewportCount, n]);
 
-  useEffect(() => {
-    if (segW <= 0) {
-      prevSegWRef.current = 0;
-      return;
-    }
-    const next = activeIdx * (segW + SEG_GAP);
-    const idxChanged = prevIdxRef.current !== activeIdx;
-    const widthAppeared = prevSegWRef.current <= 0;
-    prevIdxRef.current = activeIdx;
-    prevSegWRef.current = segW;
-    // Animate only when the user changed the selected segment on a stable track.
-    // Never animate on first measure, remount, pane unhide (0→width), or pure resize.
-    if (measuredRef.current && idxChanged && !widthAppeared) {
-      tx.value = withTiming(next, {
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-      });
-      scrollSelectedIntoView(activeIdx, true);
-    } else {
-      tx.value = next;
-      measuredRef.current = true;
-      if (widthAppeared || idxChanged) {
-        scrollSelectedIntoView(activeIdx, false);
-      }
-    }
-  }, [activeIdx, segW, SEG_GAP, tx, scrollSelectedIntoView]);
+  const selectionMotion = <SegmentSelectionMotion activeIdx={activeIdx} segW={segW} gap={SEG_GAP} tx={tx}
+    scrollSelectedIntoView={scrollSelectedIntoView} measuredRef={measuredRef} prevIdxRef={prevIdxRef} prevSegWRef={prevSegWRef} />;
 
   const highlightStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.value }] }));
   const segMinH = Math.max(36, Math.round((dense ? 34 : 38) * scale));
@@ -189,6 +214,8 @@ export const Segmented = React.memo(function Segmented({
 
   if (useViewport) {
     return (
+      <>
+      {selectionMotion}
       <View
         style={styles.viewportWrap}
         onLayout={(e) => setTrackW(e.nativeEvent.layout.width)}
@@ -207,10 +234,11 @@ export const Segmented = React.memo(function Segmented({
           {row}
         </ScrollView>
       </View>
+      </>
     );
   }
 
-  return row;
+  return <>{selectionMotion}{row}</>;
 });
 
 const makeSegStyles = (scale: number, dense: boolean, boldText: boolean) => {
