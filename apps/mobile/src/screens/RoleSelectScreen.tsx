@@ -55,7 +55,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
   // Paint from in-memory cache immediately; refresh in background without
   // waiting for the full (profiles) path.
-  const { groups: joinedGroups, loading: groupsLoading, error: groupsError, retry } = useJoinedGroups(user?.id ?? null, false);
+  const { groups: joinedGroups, loading: groupsLoading, error: groupsError, retry, lifecycle: joinedGroupsLifecycle } = useJoinedGroups(user?.id ?? null, false);
   useFocusEffect(useCallback(() => {
     if (actorId && getCachedMyJoinedGroups(actorId) === null) retry();
   }, [actorId, retry]));
@@ -87,6 +87,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
   return (
     <View style={styles.fill}>
+      {joinedGroupsLifecycle}
       <MetalforgeBackground active={isFocused} />
       <View style={[styles.leftChrome, { top: insets.top + 8 }]}>
         <LanguagePicker variant="menu" />

@@ -38,7 +38,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
   const { user, setMembership, updateNickname } = useSession();
   const { t } = useTranslation();
 
-  const { groups: joinedGroups, setGroups: setJoinedGroups, loading: isLoading, error: groupsError, retry } = useJoinedGroups(user?.id ?? null);
+  const { groups: joinedGroups, setGroups: setJoinedGroups, loading: isLoading, error: groupsError, retry, lifecycle: joinedGroupsLifecycle } = useJoinedGroups(user?.id ?? null);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
   /**
    * Enter guard across OTA reload / repeated taps / multi-group races.
@@ -150,6 +150,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.fill}>
+      {joinedGroupsLifecycle}
       <MetalforgeBackground active={isFocused} />
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <NativeGlassButton
