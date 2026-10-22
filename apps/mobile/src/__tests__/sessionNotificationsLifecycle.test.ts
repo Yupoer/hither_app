@@ -91,6 +91,11 @@ it('keeps the committed account read alive when a different account render is di
     await act(async () => { React.startTransition(() => tree.update(React.createElement(InviteSurface, { actorId: 'b', suspend: true }))); });
     await act(async () => { resolve([inviteA]); });
     expect(tree.root.findByType(InviteSnapshot).props.ids).toEqual(['invite-a']);
+    mockFetch.mockClear().mockResolvedValue([]);
+    const reload = mockChannel.mock.results[0].value.on.mock.calls[0][2];
+    await act(async () => { reload(); jest.advanceTimersByTime(300); });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(tree.root.findByType(InviteSnapshot).props.ids).toEqual([]);
   } finally {
     await act(async () => { tree?.unmount(); });
     jest.useRealTimers();

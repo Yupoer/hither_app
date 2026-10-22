@@ -101,9 +101,6 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
 
   const foregroundLifecycle = useForegroundReconcile(Boolean(myUserId), load);
 
-  const loadRef = useRef(load);
-  loadRef.current = load;
-
   const [subscriptionIdentity, setSubscriptionIdentity] = useState({ groupId, myUserId, generation: 0 });
   if (!Object.is(subscriptionIdentity.groupId, groupId) || !Object.is(subscriptionIdentity.myUserId, myUserId)) {
     setSubscriptionIdentity({ groupId, myUserId, generation: subscriptionIdentity.generation + 1 });
@@ -137,20 +134,20 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     lifecycle: createElement(Fragment, null,
       createElement(Fragment, { key: 'invite-subscription' }, createElement(SubgroupInviteSubscription, {
         key: `subgroup-invites:${subscriptionIdentity.generation}`, groupId, myUserId, identityRef,
-        setInvites, initializedRef, seenIdsRef, loadRef, debounceRef,
+        setInvites, initializedRef, seenIdsRef, load, debounceRef,
       })),
       createElement(Fragment, { key: 'invite-foreground' }, foregroundLifecycle)),
   };
 }
 
-function SubgroupInviteSubscription({ groupId, myUserId, identityRef, setInvites, initializedRef, seenIdsRef, loadRef, debounceRef }: {
+function SubgroupInviteSubscription({ groupId, myUserId, identityRef, setInvites, initializedRef, seenIdsRef, load, debounceRef }: {
   groupId: string | null;
   myUserId: string | null;
   identityRef: RefObject<InviteIdentity | null>;
   setInvites: Dispatch<SetStateAction<PendingInvite[]>>;
   initializedRef: RefObject<boolean>;
   seenIdsRef: RefObject<Set<string>>;
-  loadRef: RefObject<() => Promise<void>>;
+  load: () => Promise<void>;
   debounceRef: RefObject<ReturnType<typeof setTimeout> | null>;
 }) {
   useMountEffect(() => {
@@ -161,13 +158,13 @@ function SubgroupInviteSubscription({ groupId, myUserId, identityRef, setInvites
     let active = true;
     initializedRef.current = false;
     seenIdsRef.current = new Set();
-    loadRef.current();
+    load();
 
     const scheduleReload = () => {
       if (!active) return;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        loadRef.current();
+        load();
       }, REALTIME_DEBOUNCE_MS);
     };
 
