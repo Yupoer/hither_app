@@ -1,3 +1,4 @@
+import { MapAddPlaceTourResource } from './MapScreen/MapAddPlaceTourResource';
 import { MapArrivalCardsResource } from './MapScreen/MapArrivalCardsResource';
 import { MapForegroundArrivalResource } from './MapScreen/MapForegroundArrivalResource';
 import { MapAccessLossResource, MapRouteOpenResource, MapGatherRequestPagerResource } from './MapScreen/MapScreenChromeResources';
@@ -824,86 +825,12 @@ export default function MapScreen({ route, navigation }: Props) {
   const accountPlacesLifecycle = <MapAccountPlacesResource user={user} setFavoritePlaces={setFavoritePlaces} setAddPlaceTourLocalDone={setAddPlaceTourLocalDone} />;
 
   // Start only after BOTH star and center targets measure non-zero rects.
-  useEffect(() => {
-    const generation = ++addPlaceTourGenerationRef.current;
-    if (!confirmCardReady || !pendingPlace) {
-      setAddPlaceTourStep(null);
-      setAddPlaceTourTargetRect(null);
-      setAddPlaceTourTransitioning(false);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      setAddPlaceTourTransitioning(true);
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, ADD_PLACE_TOUR_SETTLE_MS);
-      });
-      if (cancelled) return;
-      const starRect = await measureTargetWithRetry({
-        measure: measureTourTarget,
-        target: 'addPlaceFavoriteStar',
-      });
-      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
-      const centerRect = await measureTargetWithRetry({
-        measure: measureTourTarget,
-        target: 'addPlaceCenter',
-      });
-      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
-      const targetsReady = areAddPlaceTourTargetsReady({ starRect, centerRect });
-      if (
-        shouldStartAddPlaceTour({
-          pendingPlaceVisible: true,
-          targetsReady,
-          localCompleted: addPlaceTourLocalDone,
-          accountPreferences: user?.preferences ?? null,
-        })
-      ) {
-        setAddPlaceTourStep(0);
-        setAddPlaceTourTargetRect(starRect);
-      }
-      if (generation === addPlaceTourGenerationRef.current) {
-        setAddPlaceTourTransitioning(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    confirmCardReady,
-    pendingPlace,
-    addPlaceTourLocalDone,
-    user?.preferences,
-    measureTourTarget,
-  ]);
+  const addPlaceTourLifecycle = <MapAddPlaceTourResource addPlaceTourGenerationRef={addPlaceTourGenerationRef} confirmCardReady={confirmCardReady} pendingPlace={pendingPlace} setAddPlaceTourStep={setAddPlaceTourStep} setAddPlaceTourTargetRect={setAddPlaceTourTargetRect} setAddPlaceTourTransitioning={setAddPlaceTourTransitioning} measureTourTarget={measureTourTarget} addPlaceTourLocalDone={addPlaceTourLocalDone} user={user} addPlaceTourStep={addPlaceTourStep} confirmKeyboardHeight={confirmKeyboardHeight} />;
 
   // Remeasure highlight when the Add Place tour step advances or keyboard
   // moves the confirm card. Never clobber a good hole with null — only accept
   // non-zero rects. Step 0 always measures star (never Add/center fallback).
-  useEffect(() => {
-    if (addPlaceTourStep == null) {
-      setAddPlaceTourTargetRect(null);
-      return;
-    }
-    const step = ADD_PLACE_TOUR_STEPS[addPlaceTourStep];
-    if (!step) return;
-    let cancelled = false;
-    const generation = ++addPlaceTourGenerationRef.current;
-    setAddPlaceTourTransitioning(true);
-    void (async () => {
-      const rect = await measureTargetWithRetry({
-        measure: measureTourTarget,
-        target: step.target,
-      });
-      if (cancelled || generation !== addPlaceTourGenerationRef.current) return;
-      if (isMeasuredTourRect(rect)) {
-        setAddPlaceTourTargetRect(rect);
-      }
-      setAddPlaceTourTransitioning(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [addPlaceTourStep, measureTourTarget, confirmKeyboardHeight]);
+
 
   const pendingIsFavorite = useMemo(() => {
     if (!pendingPlace) return false;
@@ -4145,6 +4072,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const mapScreenLifecycle = (<>
+    <React.Fragment key="map-owner-add-place-tour">{addPlaceTourLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-arrival-cards">{arrivalCardsLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-foreground-arrival">{foregroundArrivalLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-gather-request-pager">{gatherRequestPagerLifecycle}</React.Fragment>

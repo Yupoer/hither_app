@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Add-place tour resources preserve place/preferences/callback identity and shared start/measurement generation ordering, including reverse async completions and Strict replay.",
+      "testFile": "mapAddPlaceTourResource.test.ts",
+      "testNamePattern": "retains pending-place|publishes the start generation|reverse measurement completions|keeps Strict replay cancellation"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Completed-card resources retain full carousel rank, avoid replaying historical or background closures and clean timer ownership before visibility/context replacement.",
       "testFile": "mapArrivalCardsResource.test.ts",
       "testNamePattern": "seeds historical closures|cancels foreground exit|stable card owner resources"
