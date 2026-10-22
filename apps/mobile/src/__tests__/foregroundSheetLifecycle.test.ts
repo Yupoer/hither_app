@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 const mockListeners = new Set<(state: string) => void>();
 const mockAppState = { currentState: 'active', addEventListener: (_: string, listener: (state: string) => void) => {
   mockListeners.add(listener); return { remove: () => mockListeners.delete(listener) };
@@ -100,7 +101,7 @@ it('cancels mid-dismiss on lock, retains child drafts, and completes the current
   const completed = jest.fn(), mounted = jest.fn();
   function Draft() {
     const [text, setText] = React.useState('');
-    React.useEffect(() => { mounted(); }, []);
+    useMountEffect(() => { mounted(); });
     return React.createElement('draft', { text, setText });
   }
   const sheet = (close: boolean, index = 0) => React.createElement(BottomSheetElement, {
@@ -135,7 +136,7 @@ it('releases native glass underlays while preserving both sibling form drafts ac
   const mounted = jest.fn();
   function Draft() {
     const [text, setText] = React.useState('');
-    React.useEffect(() => { mounted(); }, []);
+    useMountEffect(() => { mounted(); });
     return React.createElement('draft', { text, setText });
   }
   let root: any;
@@ -160,7 +161,7 @@ it('retains an overlay draft and does not repeat its open completion or entrance
   const opened = jest.fn(), mounted = jest.fn();
   function Draft() {
     const [text, setText] = React.useState('');
-    React.useEffect(() => { mounted(); }, []);
+    useMountEffect(() => { mounted(); });
     return React.createElement('draft', { text, setText });
   }
   let root: any;
@@ -204,6 +205,63 @@ it('suspends a committed overlay drag close without closing or clearing its draf
   await act(async () => { resumed.callback({ finished: true }); resumed.callback({ finished: true }); });
   expect(closed).toHaveBeenCalledTimes(1);
   await act(async () => { root.unmount(); });
+});
+
+it('keeps overlay content on close-reopen and fences stale native completions while using latest callbacks', async () => {
+  const opened = jest.fn(), latestOpened = jest.fn(), closed = jest.fn(), done = jest.fn(), mounted = jest.fn();
+  function Draft() {
+    const [text, setText] = React.useState('draft');
+    useMountEffect(() => { mounted(); });
+    return React.createElement('draft', { text, setText });
+  }
+  const props = { visible: true, onClose: closed, onDone: done, onOpenComplete: opened, title: 'edit', accent: '#ffffff' };
+  const sheet = (visible: boolean, onOpenComplete = opened) => React.createElement(OverlaySheetElement,
+    { ...props, visible, onOpenComplete }, React.createElement(Draft));
+  let root: any;
+  await act(async () => { root = create(sheet(true)); });
+  const opening = mockNativeTimings.at(-1);
+  await act(async () => { root.update(sheet(true, latestOpened)); });
+  await act(async () => { opening.callback({ finished: true }); });
+  expect(opened).not.toHaveBeenCalled();
+  expect(latestOpened).toHaveBeenCalledTimes(1);
+  await act(async () => { root.root.findByType('HeaderAction').props.onPress(); });
+  expect(done).toHaveBeenCalledTimes(1);
+  expect(closed).not.toHaveBeenCalled();
+  await act(async () => { root.update(sheet(false)); });
+  const closing = mockNativeTimings.at(-1);
+  await act(async () => { root.update(sheet(true, latestOpened)); });
+  const reopened = mockNativeTimings.at(-1);
+  await act(async () => { closing.callback({ finished: true }); opening.callback({ finished: true }); });
+  expect(root.root.findByType('draft').props.text).toBe('draft');
+  expect(latestOpened).toHaveBeenCalledTimes(1);
+  await act(async () => { reopened.callback({ finished: true }); reopened.callback({ finished: true }); });
+  expect(latestOpened).toHaveBeenCalledTimes(2);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  await act(async () => { root.unmount(); });
+});
+
+it('fences old overlay gesture completion after suspension and unmount with StrictMode replay', async () => {
+  const closed = jest.fn(), opened = jest.fn();
+  let root: any;
+  await act(async () => { root = create(React.createElement(React.StrictMode, null,
+    React.createElement(OverlaySheetElement, { visible: true, onClose: closed, onOpenComplete: opened,
+      title: 'edit', accent: '#ffffff' }, React.createElement('draft')))); });
+  expect(mockNativeTimings).toHaveLength(2);
+  await act(async () => { mockNativeTimings[0].callback({ finished: true }); });
+  expect(opened).not.toHaveBeenCalled();
+  await act(async () => { mockNativeTimings.at(-1).callback({ finished: true }); });
+  expect(opened).toHaveBeenCalledTimes(1);
+  const grabber = root.root.findAllByType('View').find((node: any) => node.props.onPanResponderRelease);
+  await act(async () => { grabber.props.onPanResponderRelease(null, { dy: 100, vy: 1 }); });
+  const original = mockNativeTimings.at(-1);
+  await act(async () => { transition('background'); });
+  await act(async () => { original.callback({ finished: true }); });
+  expect(closed).not.toHaveBeenCalled();
+  await act(async () => { transition('active'); });
+  const resumed = mockNativeTimings.at(-1);
+  await act(async () => { root.unmount(); });
+  await act(async () => { resumed.callback({ finished: true }); });
+  expect(closed).not.toHaveBeenCalled();
 });
 
 it.each([true, false])('retains a committed bottom-sheet gesture close during lock (translate=%s)', async (translate) => {
