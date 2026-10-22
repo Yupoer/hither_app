@@ -1,0 +1,162 @@
+diff --git a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
+index bedb057..98cfd8d 100644
+--- a/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
++++ b/node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/JavaScriptActor.swift
+@@ -30,6 +30,12 @@ public actor JavaScriptActor: GlobalActor {
+     // This will crash if the current context cannot be isolated.
+     checkIsolated()
+ 
++    if #available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, *) {
++      // These runtimes support SerialExecutor.checkIsolated.
++    } else if #available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *) {
++      return runWithLegacyExecutor(operation)
++    }
++
+     // Cast the capture-free runner rather than `operation` itself. `operation` remains nonescaping,
+     // so its captures can stay in the caller's stack frame.
+     let runner = unsafeBitCast(runIsolated as IsolatedRunner, to: NonisolatedRunner.self)
+@@ -59,13 +65,53 @@ public actor JavaScriptActor: GlobalActor {
+     // thread name, not a precise isolation guarantee. Worklet runtimes legitimately run on
+     // the UI thread, which would cause a false-positive crash with `precondition`.
+     assert(
+-      // JavaScript thread name copied from `RCTJSThreadManager.mm`.
+-      Thread.current.name == "com.facebook.react.runtime.JavaScript" || !Thread.isMultiThreaded()
+-        || ProcessInfo.processInfo.processName == "xctest",
+-      "JavaScriptActor operations must be run on the JavaScript thread"
++      isJavaScriptContext,
++      "JavaScriptActor operations must be run on the JavaScript or UI runtime thread"
+     )
+   }
+ 
++  // iOS 17 cannot ask a custom executor to check an externally-owned JS thread.
++  // A real Swift job establishes the executor context without moving the JS work.
++  @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
++  @usableFromInline
++  internal static func runWithLegacyExecutor<T: ~Copyable>(_ operation: @JavaScriptActor () -> T) -> T {
++    let thread = Thread.current
++    let key = "ExpoModulesJSI.JavaScriptActor.legacyContext"
++    if thread.threadDictionary[key] as? Bool == true {
++      typealias IsolatedRunner = @JavaScriptActor (@JavaScriptActor () -> T) -> T
++      typealias NonisolatedRunner = (@JavaScriptActor () -> T) -> T
++      return unsafeBitCast(runIsolated as IsolatedRunner, to: NonisolatedRunner.self)(operation)
++    }
++    return withoutActuallyEscaping(operation) { body in
++      let capture = JavaScriptJobCapture()
++      let executor = JavaScriptExecutor(capture: capture, owner: thread)
++      let bridge = JavaScriptSynchronousActor(executor: executor)
++      let scope = JavaScriptSynchronousOperation(body)
++      // The worker only transfers a job to `capture`. It never reads/calls the JS closure.
++      // The task captures `scope`, whose operation is cleared by the caller-thread job
++      // before withoutActuallyEscaping exits (the task continuation may still be alive).
++      let task = Task {
++        await bridge.run { scope.run() }
++      }
++      capture.ready.wait()
++      guard let job = capture.job else { preconditionFailure("Missing JavaScript executor job") }
++      capture.job = nil
++      thread.threadDictionary[key] = true
++      job.runSynchronously(on: executor.asUnownedSerialExecutor())
++      thread.threadDictionary.removeObject(forKey: key)
++      withExtendedLifetime(task) {}
++      return scope.takeResult()
++    }
++  }
++
++  @usableFromInline
++  internal static var isJavaScriptContext: Bool {
++    // AppContext.prepareUIRuntime installs Expo on the main-thread worklet runtime.
++    // Both runtime entry threads are valid; arbitrary worker threads remain rejected.
++    Thread.isMainThread || Thread.current.name == "com.facebook.react.runtime.JavaScript" || !Thread.isMultiThreaded()
++      || ProcessInfo.processInfo.processName == "xctest"
++  }
++
+   @JavaScriptActor
+   @usableFromInline
+   internal static func runIsolated<T: ~Copyable>(_ operation: @JavaScriptActor () -> T) -> T {
+@@ -76,12 +122,37 @@ public actor JavaScriptActor: GlobalActor {
+ /// Executor for the `JavaScriptActor` that executes given jobs synchronously and immediately.
+ /// - Note: It does not ensure that given jobs are executed on the JavaScript thread; it must be done externally.
+ internal class JavaScriptExecutor: SerialExecutor, @unchecked Sendable {
++  private let capture: JavaScriptJobCapture?
++  private let owner: Thread?
++
++  fileprivate init(capture: JavaScriptJobCapture? = nil, owner: Thread? = nil) {
++    self.capture = capture
++    self.owner = owner
++  }
++
+   func enqueue(_ job: UnownedJob) {
+-    job.runSynchronously(on: self.asUnownedSerialExecutor())
++    if let capture {
++      capture.job = job
++      capture.ready.signal()
++    } else {
++      job.runSynchronously(on: self.asUnownedSerialExecutor())
++    }
++  }
++
++  func isSameExclusiveExecutionContext(other: JavaScriptExecutor) -> Bool {
++    if self === other { return true }
++    // Only base-class bridge/global executors may share a synchronous JS context.
++    // Runtime-specific subclasses must retain their distinct scheduler identity.
++    guard type(of: self) == JavaScriptExecutor.self,
++      type(of: other) == JavaScriptExecutor.self else { return false }
++    return (owner === Thread.current || other.owner === Thread.current) && JavaScriptActor.isJavaScriptContext
+   }
+ 
+   /// Converts the executor to the optimized form of borrowed executor reference.
+   func asUnownedSerialExecutor() -> UnownedSerialExecutor {
++    if #available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *) {
++      return UnownedSerialExecutor(complexEquality: self)
++    }
+     return UnownedSerialExecutor(ordinary: self)
+   }
+ 
+@@ -91,6 +162,11 @@ internal class JavaScriptExecutor: SerialExecutor, @unchecked Sendable {
+   func checkIsolated() {
+     JavaScriptActor.checkIsolated()
+   }
++
++  @available(macOS 26.0, iOS 26.0, tvOS 26.0, watchOS 26.0, *)
++  func isIsolatingCurrentContext() -> Bool? {
++    JavaScriptActor.isJavaScriptContext
++  }
+ }
+ 
+ /// An actor that is dedicated for the specific runtime.
+@@ -126,3 +202,35 @@ internal final class JavaScriptRuntimeExecutor: JavaScriptExecutor, @unchecked S
+     }
+   }
+ }
++
++// Only `enqueue` writes the captured job; semaphore release/acquire publishes it
++// to the waiting JS thread. No JS values are inspected on the producer thread.
++private final class JavaScriptJobCapture: @unchecked Sendable {
++  var job: UnownedJob?
++  let ready = DispatchSemaphore(value: 0)
++}
++
++private actor JavaScriptSynchronousActor {
++  nonisolated let executor: JavaScriptExecutor
++  init(executor: JavaScriptExecutor) { self.executor = executor }
++  nonisolated var unownedExecutor: UnownedSerialExecutor { executor.asUnownedSerialExecutor() }
++  func run(_ operation: @Sendable () -> Void) { operation() }
++}
++
++private final class JavaScriptSynchronousOperation<T: ~Copyable>: @unchecked Sendable {
++  private var operation: (@JavaScriptActor () -> T)?
++  private var result: T?
++
++  init(_ operation: @escaping @JavaScriptActor () -> T) { self.operation = operation }
++
++  func run() {
++    // Taking clears the only escaping storage before invoking the nonescaping body.
++    let body = operation.take()!
++    typealias IsolatedRunner = @JavaScriptActor (@JavaScriptActor () -> T) -> T
++    typealias NonisolatedRunner = (@JavaScriptActor () -> T) -> T
++    let runner = unsafeBitCast(JavaScriptActor.runIsolated as IsolatedRunner, to: NonisolatedRunner.self)
++    result = runner(body)
++  }
++
++  func takeResult() -> T { result.take()! }
++}
