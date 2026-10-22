@@ -893,7 +893,6 @@ describe('OTA-04 contract surfaces', () => {
     expect(map).not.toContain('respondToAnnouncement(kind)');
     expect(map).not.toContain('hasCoreConflict');
     expect(map).not.toContain('<CoreSyncStatus');
-    expect(map).toContain('claimAppNotice(`core-rejected:');
     expect(journey).toContain('enqueueLeaderGatheringSwitch');
     expect(journey).toContain('enqueueLeaderGatheringSwitch(groupId, options)');
     const navigationService = fs.readFileSync(

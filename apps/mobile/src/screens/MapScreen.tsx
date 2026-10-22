@@ -3,7 +3,7 @@ import { foregroundLocationConfiguration, isForegroundLocationState } from '../u
 import WaveLoading from '../components/WaveLoading';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
-import { claimAppNotice, showAppNotice } from '../state/appNotice';
+import { showAppNotice } from '../state/appNotice';
 import { captureLocationAccess } from '../state/locationPrivacy';
 import { prepareNativeBackgroundLocation } from '../native/backgroundLocation';
 import { hydrateLocationSharing, rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
@@ -177,6 +177,7 @@ import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgre
 import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
+import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import {
   GroupFeatureTourOverlay,
   useGroupFeatureTour,
@@ -606,12 +607,8 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
   const powerState = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
-  // The demo flock has no membership row; the tester drives it as leader.
-  const [revokedLeaderContext, setRevokedLeaderContext] = useState<string | null>(null);
-  const roleContext = `${user?.id ?? ''}:${groupId ?? ''}`;
   const [localActionError, setLocalActionError] = useState<{ title: string; message: string; destinationId?: string } | null>(null);
   const showOperationFailure = useCallback((title: string, message: string) => setLocalActionError({ title, message }), []);
-  useEffect(() => { setLocalActionError(null); }, [roleContext]);
 
   const {
     state,
@@ -647,32 +644,42 @@ export default function MapScreen({ route, navigation }: Props) {
   // needs its own leader/subgroup branching to stay scoped correctly.
 
   const me = useMemo(() => members.find((m) => m.userId === user?.id), [members, user?.id]);
-  const isLeader = isDemoGroup(groupId) || (revokedLeaderContext !== roleContext
-    && (me ? me.role === 'leader' : membership?.group.id === groupId && membership.role === 'leader'));
+  const [arrivalOperations, setArrivalOperations] = useState<CoreOperation[]>([]);
   useEffect(() => {
-    if (dataSource !== 'remote' || !me || !group || membership?.group.id !== groupId) return;
-    if (membership.role !== me.role) setMembership({ group, role: me.role });
-    setRevokedLeaderContext(null);
-  }, [dataSource, me, group, groupId, membership?.role, membership?.group.id, setMembership]);
+    let active = true;
+    const reload = async () => {
+      const rows = groupId ? await getCoreOperationOutbox().listByGroup(groupId) : [];
+      if (active) setArrivalOperations(rows.filter(op =>
+        op.operationType === 'record_arrival' || op.operationType === 'leader_correct_arrival'));
+    };
+    void reload().catch(() => undefined);
+    const unsubscribe = subscribeCoreOutboxChanges(() => { void reload().catch(() => undefined); });
+    return () => { active = false; unsubscribe(); };
+  }, [groupId, user?.id]);
+  const {
+    role,
+    isLeader,
+    isMySubgroupLeader,
+    canEditItinerary,
+    roleContext,
+    markLeaderRevoked,
+  } = useGroupRole({
+    groupId,
+    userId: user?.id,
+    me,
+    membership,
+    setMembership,
+    group,
+    subgroups: state?.subgroups ?? [],
+    dataSource,
+    openOperations,
+    arrivalOperations,
+    refresh,
+  });
+  useEffect(() => { setLocalActionError(null); }, [roleContext]);
   const myScopeId = me?.subgroupId;
   // Navigation sessions are one lane per subgroup (plus the main-team lane),
   // so a shared group id is not sufficient once parallel teams are active.
-  const displayedConflicts = useRef(new Set<string>());
-  useEffect(() => {
-    for (const op of openOperations) {
-      if (op.status !== 'conflict' || op.operationType === 'record_arrival'
-        || op.operationType === 'leader_correct_arrival' || displayedConflicts.current.has(op.id)) continue;
-      displayedConflicts.current.add(op.id);
-      if (classifyOperationError(op.conflictResult).kind === 'leader_role_rejected') {
-        setRevokedLeaderContext(roleContext);
-        void refresh().catch(() => undefined);
-      }
-      if (!claimAppNotice(`core-rejected:${user?.id}:${op.id}`)) continue;
-      // Rejected causal descendants share their prerequisite's failure; one alert suffices.
-      if (op.conflictResult?.message === 'prerequisite operation expired') continue;
-      // Retained server receipts reconcile silently; saved local intent remains usable.
-    }
-  }, [openOperations, roleContext, refresh, t, user?.id]);
   const navigationSessionState = useNavigationSession(groupId, myScopeId ?? null, user?.id ?? null);
   const navigationSessionId = navigationSessionState.session?.id ?? null;
   /** Local durable Start id used as a session alias before the server row is visible. */
@@ -755,18 +762,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const mapFocused = useIsFocused();
   const foregroundUi = useVisibleUi();
   const uiVisible = foregroundUi && mapFocused;
-  const [arrivalOperations, setArrivalOperations] = useState<CoreOperation[]>([]);
-  useEffect(() => {
-    let active = true;
-    const reload = async () => {
-      const rows = groupId ? await getCoreOperationOutbox().listByGroup(groupId) : [];
-      if (active) setArrivalOperations(rows.filter(op =>
-        op.operationType === 'record_arrival' || op.operationType === 'leader_correct_arrival'));
-    };
-    void reload().catch(() => undefined);
-    const unsubscribe = subscribeCoreOutboxChanges(() => { void reload().catch(() => undefined); });
-    return () => { active = false; unsubscribe(); };
-  }, [groupId, user?.id]);
   /**
    * Route-sheet draft for daily stays. null = use server snapshot.
    * All stay set/clear while the route overlay is open lands here until flush.
@@ -1012,14 +1007,6 @@ export default function MapScreen({ route, navigation }: Props) {
     () => openDestinationsForReorder(routeEditorBaseDestinations),
     [openDestinationsForReorder, routeEditorBaseDestinations],
   );
-  const isMySubgroupLeader = Boolean(
-    myScopeId
-    && (isDemoGroup(groupId)
-      || (state?.subgroups ?? []).some(
-        (subgroup) => subgroup.id === myScopeId && subgroup.leaderId === user?.id,
-      )),
-  );
-  const canEditItinerary = revokedLeaderContext !== roleContext && Boolean(isLeader || isMySubgroupLeader);
 
   /** Paint durable writes now; remote reconciliation never gates a saved action. */
   const syncFromDatabase = useCallback(async () => {
@@ -2396,10 +2383,6 @@ export default function MapScreen({ route, navigation }: Props) {
     (destination: Destination, opts?: { promptComplete?: boolean }) => void
   >(() => undefined);
 
-  useEffect(() => {
-    if (arrivalOperations.some(op => op.status === 'conflict' && op.payload.actorId === user?.id
-      && classifyOperationError(op.conflictResult).kind === 'leader_role_rejected')) setRevokedLeaderContext(roleContext);
-  }, [arrivalOperations, user?.id, roleContext]);
 
   const arrivalSubmitInFlight = useRef(new Set<string>());
   /** Manual undo suppresses auto-arrival until the member leaves and re-enters. */
@@ -4479,7 +4462,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [codeCopied, setCodeCopied] = useState(false);
   /** Anonymous Leader at 5 members must register before inviting a 6th. */
   const inviteBlockedForAnonymousLeader = anonymousLeaderRequiresRegistration(
-    isAnonymous && membership?.role === 'leader',
+    isAnonymous && role === 'leader',
     members.length,
   );
   const promptAnonymousLeaderRegistration = useCallback(() => {
@@ -5077,7 +5060,7 @@ export default function MapScreen({ route, navigation }: Props) {
           onError: (kind) => {
             logError('route_draft_flush_failed', new Error(kind));
             if (classifyOperationError(localSaveError).kind === 'leader_role_rejected') {
-              setRevokedLeaderContext(roleContext);
+              markLeaderRevoked();
               void refresh().catch(() => undefined);
             }
             Alert.alert(t('map.setFailedTitle'), kind === 'timeout'
@@ -5097,7 +5080,7 @@ export default function MapScreen({ route, navigation }: Props) {
     optimisticDepartureDate,
     serverDailyAccommodations,
     refreshLocalSnapshot,
-    roleContext,
+    markLeaderRevoked,
     routeEditorServerDestinations,
     resolveCurrentNavigationSessionId,
     refresh,
