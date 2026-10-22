@@ -1,5 +1,6 @@
 import { useForegroundReconcile } from './useForegroundReconcile';
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { createElement, Fragment, useCallback, useRef, useState, type ReactElement, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { supabase } from '../api/supabase';
 import { acceptSubgroupInvite, declineSubgroupInvite, fetchMyInvites } from '../api/client';
 import {
@@ -96,14 +97,56 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     }
   }, [groupId, myUserId]);
 
-  const lifecycle = useForegroundReconcile(Boolean(myUserId), load);
+  const foregroundLifecycle = useForegroundReconcile(Boolean(myUserId), load);
   const identityRef = useRef({ groupId, myUserId });
   identityRef.current = { groupId, myUserId };
 
   const loadRef = useRef(load);
   loadRef.current = load;
 
-  useEffect(() => {
+  const [subscriptionIdentity, setSubscriptionIdentity] = useState({ groupId, myUserId, generation: 0 });
+  if (!Object.is(subscriptionIdentity.groupId, groupId) || !Object.is(subscriptionIdentity.myUserId, myUserId)) {
+    setSubscriptionIdentity({ groupId, myUserId, generation: subscriptionIdentity.generation + 1 });
+  }
+
+  const accept = useCallback(
+    async (inviteId: string) => {
+      if (isDemoGroup(groupId)) {
+        demoAcceptSubgroupInvite(inviteId);
+      } else {
+        await acceptSubgroupInvite(inviteId);
+      }
+      load();
+    },
+    [groupId, load],
+  );
+
+  const decline = useCallback(
+    async (inviteId: string) => {
+      if (isDemoGroup(groupId)) {
+        demoDeclineSubgroupInvite(inviteId);
+      } else {
+        await declineSubgroupInvite(inviteId);
+      }
+      load();
+    },
+    [groupId, load],
+  );
+
+  return { invites, accept, decline, refresh: load,
+    lifecycle: createElement(Fragment, { key: 'subgroup-invites-runtime' }, foregroundLifecycle, createElement(SubgroupInviteSubscription, { key: `subgroup-invites:${subscriptionIdentity.generation}`, myUserId, setInvites, initializedRef, seenIdsRef, loadRef, debounceRef })),
+  };
+}
+
+function SubgroupInviteSubscription({ myUserId, setInvites, initializedRef, seenIdsRef, loadRef, debounceRef }: {
+  myUserId: string | null;
+  setInvites: Dispatch<SetStateAction<PendingInvite[]>>;
+  initializedRef: RefObject<boolean>;
+  seenIdsRef: RefObject<Set<string>>;
+  loadRef: RefObject<() => Promise<void>>;
+  debounceRef: RefObject<ReturnType<typeof setTimeout> | null>;
+}) {
+  useMountEffect(() => {
     setInvites([]);
     if (!myUserId) return;
     initializedRef.current = false;
@@ -136,31 +179,6 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [myUserId, groupId]);
-
-  const accept = useCallback(
-    async (inviteId: string) => {
-      if (isDemoGroup(groupId)) {
-        demoAcceptSubgroupInvite(inviteId);
-      } else {
-        await acceptSubgroupInvite(inviteId);
-      }
-      load();
-    },
-    [groupId, load],
-  );
-
-  const decline = useCallback(
-    async (inviteId: string) => {
-      if (isDemoGroup(groupId)) {
-        demoDeclineSubgroupInvite(inviteId);
-      } else {
-        await declineSubgroupInvite(inviteId);
-      }
-      load();
-    },
-    [groupId, load],
-  );
-
-  return { lifecycle, invites, accept, decline, refresh: load };
+  });
+  return null;
 }

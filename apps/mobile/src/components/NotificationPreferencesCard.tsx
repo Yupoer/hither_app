@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import SystemToggle from './SystemToggle';
 import {
@@ -44,7 +45,7 @@ export default function NotificationPreferencesCard({
     DEFAULT_NOTIFICATION_PREFERENCES,
   );
 
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
     void (async () => {
       try {
@@ -57,7 +58,7 @@ export default function NotificationPreferencesCard({
     return () => {
       active = false;
     };
-  }, []);
+  });
 
   async function toggle(key: NotificationCategory, value: boolean) {
     const previous = prefs;

@@ -1,9 +1,9 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import { purgeLocationOutbox } from './locationOutbox';
 import { setLocationAccessContext } from './locationPrivacy';
 import React, {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useCallback,
   useRef,
@@ -222,7 +222,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
   // relaunch shows the same identity.
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
     const deferredHydrations = new Set<ReturnType<typeof setTimeout>>();
     let authEpoch = 0;
@@ -516,18 +516,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       sub.subscription.unsubscribe();
       urlSub.remove();
     };
-  }, []);
+  });
 
   // Once a session exists (any sign-in path — anonymous, email, Google, or a
   // restored launch), push any locally-completed Onboarding answers to the
   // profile exactly once. No-op if onboarding wasn't completed or was
   // already synced; never throws (see onboarding/sync.ts).
-  useEffect(() => {
-    if (user) {
-      void syncOnboardingIfNeeded();
-      flushQueuedEvents().catch(() => {});
-    }
-  }, [user]);
+  const [onboardingUser, setOnboardingUser] = useState({ user, generation: 0 });
+  if (!Object.is(onboardingUser.user, user)) {
+    setOnboardingUser({ user, generation: onboardingUser.generation + 1 });
+  }
 
   const {
     signIn,
@@ -928,8 +926,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+    <SessionContext.Provider value={value}>
+      <OnboardingProfileFlush key={onboardingUser.generation} user={user} />
+      {children}
+    </SessionContext.Provider>
   );
+}
+
+function OnboardingProfileFlush({ user }: { user: User | null }) {
+  useMountEffect(() => {
+    if (user) {
+      void syncOnboardingIfNeeded();
+      flushQueuedEvents().catch(() => {});
+    }
+  });
+  return null;
 }
 
 export function useSession(): SessionContextValue {

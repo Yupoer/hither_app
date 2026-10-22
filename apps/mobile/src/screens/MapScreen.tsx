@@ -566,7 +566,6 @@ export default function MapScreen({ route, navigation }: Props) {
     gatherPointRequests,
     setGatherPointRequests,
     loadGatheringWorkflow,
-    lifecycle: gatheringWorkflowLifecycle,
     patchLocalArrival,
     workflowContext,
     isWorkflowContextCurrent,
@@ -3552,7 +3551,6 @@ export default function MapScreen({ route, navigation }: Props) {
     handleInvite,
     doSelfSplit,
     doSelfMerge,
-    lifecycle: subgroupLifecycle,
   } = useSubgroupActions({
     groupId,
     userName: user?.name,
@@ -4569,21 +4567,32 @@ export default function MapScreen({ route, navigation }: Props) {
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
-  const groupDataLifecycle = <>
+  const groupDataLifecycle = <React.Fragment key="map-screen-resources">
     <React.Fragment key="group-state">{groupStateLifecycle}</React.Fragment>
     <React.Fragment key="location-refresh">{locationRefreshLifecycle}</React.Fragment>
-    <React.Fragment key="gathering-workflow">{gatheringWorkflowLifecycle}</React.Fragment>
     <React.Fragment key="organizer">{organizerLifecycle}</React.Fragment>
+    <React.Fragment key="route-draft">{routeDraft.lifecycle}</React.Fragment>
+    <React.Fragment key="group-role">{groupRoleLifecycle}</React.Fragment>
+    <React.Fragment key="route-tour">{routeReorderTourLifecycle}</React.Fragment>
+    <React.Fragment key="group-tour">{groupFeatureTourLifecycle}</React.Fragment>
+    <React.Fragment key="gathering-workflow">{gatheringWorkflowLifecycle}</React.Fragment>
+    <React.Fragment key="visit-history">{visitHistoryLifecycle}</React.Fragment>
+    <React.Fragment key="straggler-reporting">{stragglerReportingLifecycle}</React.Fragment>
     <React.Fragment key="coordination">{coordination.lifecycle}</React.Fragment>
-    <React.Fragment key="subgroup">{subgroupLifecycle}</React.Fragment>
-  </>;
-
+    <React.Fragment key="gathering-completion">{gatheringCompletionLifecycle}</React.Fragment>
+    <React.Fragment key="subgroup-actions">{subgroupActionsLifecycle}</React.Fragment>
+    <React.Fragment key="store-entitlements">{storeEntitlementsLifecycle}</React.Fragment>
+    <React.Fragment key="gather-card-expansion">{gatherCardExpansionLifecycle}</React.Fragment>
+    <React.Fragment key="pending-place">{pendingPlaceEntranceLifecycle}</React.Fragment>
+    <React.Fragment key="meet-time">{meetTimeEditorLifecycle}</React.Fragment>
+    <React.Fragment key="carousel">{carouselSelectionLifecycle}</React.Fragment>
+    <React.Fragment key="member-presence">{memberPresenceLifecycle}</React.Fragment>
+  </React.Fragment>;
   if (loading && !state) {
     // Passive mode must still offer switch-back during first load.
     if (inPassiveMode) {
-      return (
+      return <>{groupDataLifecycle}{(
         <View style={styles.flex}>
-          {groupDataLifecycle}
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4599,24 +4608,22 @@ export default function MapScreen({ route, navigation }: Props) {
             onConfigureCustom={openCustomQuickCommand}
           />
         </View>
-      );
+      )}</>;
     }
-    return (
+    return <>{groupDataLifecycle}{(
       <View style={styles.loading}>
-        {groupDataLifecycle}
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
-    );
+    )}</>;
   }
 
   // OTA-04: offline cold start with no prior snapshot — clear empty outcome.
   // OTA-07: passive still mounts switch-back so users are never trapped.
   if (!state && (emptyLocalSnapshot || loadError)) {
     if (inPassiveMode) {
-      return (
+      return <>{groupDataLifecycle}{(
         <View style={styles.flex}>
-          {groupDataLifecycle}
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
             {refreshing ? <WaveLoading color={accent} /> : null}
@@ -4644,11 +4651,10 @@ export default function MapScreen({ route, navigation }: Props) {
             onConfigureCustom={openCustomQuickCommand}
           />
         </View>
-      );
+      )}</>;
     }
-    return (
+    return <>{groupDataLifecycle}{(
       <View style={styles.loading}>
-        {groupDataLifecycle}
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4664,29 +4670,12 @@ export default function MapScreen({ route, navigation }: Props) {
           </Text>
         </Pressable>
       </View>
-    );
+    )}</>;
   }
 
-  return (
+  return <>{groupDataLifecycle}{(
     <>
-      {routeDraft.lifecycle}
-      {groupRoleLifecycle}
-      {routeReorderTourLifecycle}
-      {groupFeatureTourLifecycle}
-      {gatheringWorkflowLifecycle}
-      {visitHistoryLifecycle}
-      {stragglerReportingLifecycle}
-      {coordination.lifecycle}
-      {gatheringCompletionLifecycle}
-      {subgroupActionsLifecycle}
-      {storeEntitlementsLifecycle}
-      {gatherCardExpansionLifecycle}
-      {pendingPlaceEntranceLifecycle}
-      {meetTimeEditorLifecycle}
-      {carouselSelectionLifecycle}
-      {memberPresenceLifecycle}
     <View style={styles.flex}>
-      {groupDataLifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
@@ -5324,5 +5313,5 @@ export default function MapScreen({ route, navigation }: Props) {
       />
     </View>
     </>
-  );
+  )}</>;
 }

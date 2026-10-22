@@ -23,16 +23,15 @@ jest.mock('../state/diagnosticConsent', () => ({
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn() }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-let preferences: ReturnType<typeof usePreferences>;
-let selection: ReturnType<typeof useCarouselSelection>;
+type ProbeValue = { preferences: ReturnType<typeof usePreferences>; selection: ReturnType<typeof useCarouselSelection> };
+function PreferenceProbe(_props: ProbeValue) { return null; }
+function readProbe(tree: ReturnType<typeof create>): ProbeValue { const { preferences, selection } = tree.root.findByType(PreferenceProbe).props; return { preferences, selection }; }
 const carouselRef = { current: null };
 const mapRef = { current: null };
 function Harness() {
   const currentPreferences = usePreferences();
   const currentSelection = useCarouselSelection({ destinations: [], windowWidth: 390, carouselRef, mapRef });
-  preferences = currentPreferences;
-  selection = currentSelection;
-  return currentSelection.lifecycle;
+  return React.createElement(React.Fragment, null, currentSelection.lifecycle, React.createElement(PreferenceProbe, { preferences: currentPreferences, selection: currentSelection }));
 }
 function app(show = true) {
   return React.createElement(PreferencesProvider, null, show ? React.createElement(Harness) : null);
@@ -42,16 +41,16 @@ beforeEach(() => { mockStorage.clear(); mockRead = undefined; jest.clearAllMocks
 it.each<TravelMode>(['walk', 'drive', 'transit', 'bicycle'])('persists %s through screen remount and cold provider restart', async mode => {
   let tree!: ReturnType<typeof create>;
   await act(async () => { tree = create(app()); });
-  expect(preferences.ready).toBe(true);
-  await act(async () => selection.setTravelMode(mode));
+  expect(readProbe(tree).preferences.ready).toBe(true);
+  await act(async () => readProbe(tree).selection.setTravelMode(mode));
   expect(AsyncStorage.setItem).toHaveBeenCalledWith('pref.travelMode', mode);
   await act(async () => tree.update(app(false)));
   await act(async () => tree.update(app()));
-  expect(selection.travelMode).toBe(mode);
+  expect(readProbe(tree).selection.travelMode).toBe(mode);
   await act(async () => tree.unmount());
   await act(async () => { tree = create(app()); });
-  expect(preferences.ready).toBe(true);
-  expect(selection.travelMode).toBe(mode);
+  expect(readProbe(tree).preferences.ready).toBe(true);
+  expect(readProbe(tree).selection.travelMode).toBe(mode);
   await act(async () => tree.unmount());
 });
 
@@ -59,8 +58,8 @@ it.each([null, 'bike', 'flying', 'BICYCLE', ''])('defaults unknown legacy stored
   if (stored != null) mockStorage.set('pref.travelMode', stored);
   let tree!: ReturnType<typeof create>;
   await act(async () => { tree = create(app()); });
-  expect(preferences.ready).toBe(true);
-  expect(selection.travelMode).toBe('walk');
+  expect(readProbe(tree).preferences.ready).toBe(true);
+  expect(readProbe(tree).selection.travelMode).toBe('walk');
   // Loading a default must not overwrite storage or trigger a spurious choice.
   expect(AsyncStorage.setItem).not.toHaveBeenCalledWith('pref.travelMode', expect.anything());
   await act(async () => tree.unmount());
@@ -72,16 +71,16 @@ it('keeps user choice when a delayed hydration returns an older stored mode', as
   mockRead = keys => { capturedKeys = keys; return new Promise(done => { resolve = done; }); };
   let tree!: ReturnType<typeof create>;
   await act(async () => { tree = create(app()); });
-  expect(preferences.ready).toBe(false);
-  await act(async () => selection.setTravelMode('bicycle'));
-  expect(selection.travelMode).toBe('bicycle');
+  expect(readProbe(tree).preferences.ready).toBe(false);
+  await act(async () => readProbe(tree).selection.setTravelMode('bicycle'));
+  expect(readProbe(tree).selection.travelMode).toBe('bicycle');
   await act(async () => { resolve(capturedKeys.map(key => [key, key === 'pref.travelMode' ? 'drive' : null])); });
-  expect(preferences.ready).toBe(true);
-  expect(selection.travelMode).toBe('bicycle');
+  expect(readProbe(tree).preferences.ready).toBe(true);
+  expect(readProbe(tree).selection.travelMode).toBe('bicycle');
   expect(mockStorage.get('pref.travelMode')).toBe('bicycle');
-  await act(async () => preferences.setLanguage('en'));
+  await act(async () => readProbe(tree).preferences.setLanguage('en'));
   await act(async () => tree.update(app()));
-  expect(selection.travelMode).toBe('bicycle');
+  expect(readProbe(tree).selection.travelMode).toBe('bicycle');
   await act(async () => tree.unmount());
 });
 
@@ -91,8 +90,8 @@ it('restores an untouched stored choice after async hydration', async () => {
   mockRead = incoming => { keys = incoming; return new Promise(done => { resolve = done; }); };
   let tree!: ReturnType<typeof create>;
   await act(async () => { tree = create(app()); });
-  expect(selection.travelMode).toBe('walk');
+  expect(readProbe(tree).selection.travelMode).toBe('walk');
   await act(async () => { resolve(keys.map(key => [key, key === 'pref.travelMode' ? 'transit' : null])); });
-  expect(selection.travelMode).toBe('transit');
+  expect(readProbe(tree).selection.travelMode).toBe('transit');
   await act(async () => tree.unmount());
 });
