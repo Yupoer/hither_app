@@ -161,6 +161,18 @@ test('PostgreSQL identifiers keep dollar signs and non-ASCII characters out of s
   assert.deepEqual(lex('$標籤$hello$標籤$').map(({ type, value }) => ({ type, value })), [{ type: 'str', value: 'hello' }]);
 });
 
+test('PostgreSQL line comments end at CR or LF before later executable SQL', () => {
+  for (const newline of ['\n', '\r', '\r\n']) {
+    assert.deepEqual(lex('-- ordinary comment' + newline + 'select 1').map((token) => token.value), ['select', 1]);
+    assert.deepEqual(laterCheck('-- ordinary comment' + newline + 'create table public.report(id integer);'), []);
+    const sql = 'do $body$ declare d text; begin -- ordinary comment' + newline +
+      "d := pg_get_functiondef('public.f(uuid,timestamptz)'::regprocedure); " +
+      "execute replace(d, 'return 2', 'return 3'); end; $body$;";
+    assert.match(laterCheck(sql)[0], /redefines a function/);
+  }
+  assert.deepEqual(lex('-- comment through end of input'), []);
+});
+
 test('nested block comments are skipped whole, so a patch after one is still detected', () => {
   assert.deepEqual(lex("/* a /* b */ it's */ select 1").map((t) => t.value), ['select', 1]);
   assert.throws(() => lex('/* a /* b */ c'), /unterminated block comment/);

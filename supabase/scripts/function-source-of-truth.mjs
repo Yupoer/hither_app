@@ -38,8 +38,8 @@ export function lex(src) {
     const c = src[i];
     if (/[ \t\n\r\f\v]/.test(c)) { i += 1; continue; }
     if (src.startsWith('--', i)) {
-      const n = src.indexOf('\n', i);
-      i = n < 0 ? src.length : n;
+      i += 2;
+      while (i < src.length && src[i] !== '\r' && src[i] !== '\n') i += 1;
       continue;
     }
     if (src.startsWith('/*', i)) {
