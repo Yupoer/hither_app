@@ -139,6 +139,15 @@ describe('source-only test ratchet', () => {
     ['a late-imported Jest mock factory', "import { formatDistance } from '../utils/distance';\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));\nimport { jest as testing } from '@jest/globals';"],
     ['a parenthesized mock factory', "import { formatDistance } from '../utils/distance';\n(jest.mock)('../utils/distance', () => ({ actual: formatDistance }));"],
     ['an element-access mock factory', "import { formatDistance } from '../utils/distance';\njest['mock']('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a required Jest mock factory', "import { formatDistance } from '../utils/distance';\nconst { jest: testing } = require('@jest/globals');\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a namespace-imported Jest mock factory', "import * as testing from '@jest/globals';\nimport { formatDistance } from '../utils/distance';\ntesting.jest.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a required Jest namespace mock factory', "import { formatDistance } from '../utils/distance';\nconst testing = require('@jest/globals');\ntesting.jest.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a dynamically imported Jest namespace mock factory', "import { formatDistance } from '../utils/distance';\nconst testing = await import('@jest/globals');\ntesting.jest.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a destructured dynamic Jest import', "import { formatDistance } from '../utils/distance';\nconst { jest: testing } = await import('@jest/globals');\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a computed Jest binding', "import { formatDistance } from '../utils/distance';\nconst { ['jest']: testing } = require('@jest/globals');\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['an aliased mock method', "import { formatDistance } from '../utils/distance';\nconst mock = jest.mock;\nmock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a nested Jest method binding', "import { formatDistance } from '../utils/distance';\nconst { jest: { mock } } = require('@jest/globals');\nmock('../utils/distance', () => ({ actual: formatDistance }));"],
+    ['a late required Jest binding', "import { formatDistance } from '../utils/distance';\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));\nconst { jest: testing } = require('@jest/globals');"],
     ['a shadowed binding', "import { formatDistance } from '../utils/distance';\nfunction mock(formatDistance: (n: number) => string) { return formatDistance(1); }"],
     ['a type-only heritage reference', "import { Distance } from '../utils/distance';\ninterface Options extends Distance {}"],
     ['a regex after a condition', "import { formatDistance } from '../utils/distance';\nif (src) /formatDistance/.test(src);"],
@@ -163,6 +172,10 @@ describe('source-only test ratchet', () => {
     ['a JSX expression after an apostrophe', "import { formatDistance } from '../utils/distance';\nconst node = <Text>It's {formatDistance(1)}</Text>;\nexpect(node.props.children[1]).toBe('1 m');"],
     ['a template expression', "import { formatDistance } from '../utils/distance';\nexpect(`${formatDistance(1)}`).toBe('1 m');"],
     ['a class base value', "import { Distance } from '../utils/distance';\nclass ShortDistance extends Distance {}\nexpect(new ShortDistance()).toBeDefined();"],
+    ['a value outside a required Jest mock', "import { formatDistance } from '../utils/distance';\nconst { jest: testing } = require('@jest/globals');\ntesting.mock('../utils/distance', () => ({ actual: formatDistance }));\nformatDistance(1);"],
+    ['a value outside a namespace Jest mock', "import * as testing from '@jest/globals';\nimport { formatDistance } from '../utils/distance';\ntesting.jest.mock('../utils/distance', () => ({ actual: formatDistance }));\nformatDistance(1);"],
+    ['a shadowed Jest binding', "import { jest as testing } from '@jest/globals';\nimport { formatDistance } from '../utils/distance';\nfunction exercise(testing: { mock: (spec: string, factory: () => string) => void }) { testing.mock('../utils/distance', () => formatDistance(1)); }"],
+    ['a shadowed Jest namespace', "import * as testing from '@jest/globals';\nimport { formatDistance } from '../utils/distance';\nfunction exercise(testing: { jest: { mock: (spec: string, factory: () => string) => void } }) { testing.jest.mock('../utils/distance', () => formatDistance(1)); }"],
   ])('does not flag a source-reading test with %s', (_label, prelude) => {
     writeBaseline([]);
     writeTest(_label.includes('JSX') ? 'probe.test.tsx' : 'probe.test.ts', sourceOnlyWith(prelude));
@@ -191,6 +204,12 @@ describe('source-only test ratchet', () => {
     ['a reader variable alias', "import * as files from 'node:fs';\nconst read = files.readFileSync;", 'read'],
     ['a destructured namespace alias', "import * as files from 'node:fs';\nconst { readFileSync: read } = files;", 'read'],
     ['an element access alias', "import * as files from 'node:fs';\nconst read = files['readFileSync'];", 'read'],
+    ['a literal computed namespace binding', "import * as fs from 'node:fs';\nconst { ['readFileSync']: read } = fs;", 'read'],
+    ['a nested literal computed promises binding', "import * as fs from 'node:fs';\nconst { ['promises']: { ['readFile']: read } } = fs;", 'await read'],
+    ['a computed promises namespace binding', "import * as fs from 'node:fs/promises';\nconst { ['readFile']: read } = fs;", 'await read'],
+    ['a computed require binding', "const { ['readFileSync']: read } = require('node:fs');", 'read'],
+    ['a computed dynamic import binding', "const { ['readFile']: read } = await import('node:fs/promises');", 'await read'],
+    ['a literal template binding', "import * as fs from 'fs';\nconst { [`readFileSync`]: read } = fs;", 'read'],
   ])('detects a source read through %s', (_label, prelude, call) => {
     writeBaseline([]);
     writeTest('probe.test.ts', readingThrough(prelude, call));
