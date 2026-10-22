@@ -437,14 +437,16 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
   ]);
 
   const markerRef = useRef<React.ElementRef<typeof Marker>>(null);
-  const coordinate = useMemberMarkerMotion(markerRef, {
+  const { coordinate, lifecycle: memberMarkerLifecycle } = useMemberMarkerMotion(markerRef, {
     coordinates: { latitude: lat ?? NaN, longitude: lng ?? NaN },
     sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated ?? ''),
   }, appActive && !reduceMotion);
 
-  if (!coordinate) return null;
+  if (!coordinate) return memberMarkerLifecycle;
 
   return (
+    <>
+      {memberMarkerLifecycle}
     <Marker
       ref={markerRef}
       coordinate={coordinate}
@@ -476,6 +478,7 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
         </View>
       </View>
     </Marker>
+    </>
   );
 });
 

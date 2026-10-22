@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Native marker commands retain stable initial coordinates, reject invalid/nonmonotonic samples, clean replaced marker refs to the accepted endpoint, and ignore discarded renders through Strict replay.",
+      "testFile": "memberMarkerMotion.test.ts",
+      "testNamePattern": "never moves|rejects invalid|equal-value samples|suspended uncommitted sample|Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Device lifecycle publishes privacy before synchronous watch callbacks, preserves UI across profile resets, cancels late watch promises, keeps debug local and allDay watchdog sensor-free, and survives Strict replay.",
       "testFile": "deviceLocationLifecycle.test.ts",
       "testNamePattern": "publishes privacy|late watch Promise|real watchdog|debug fixes local|Strict setup"
