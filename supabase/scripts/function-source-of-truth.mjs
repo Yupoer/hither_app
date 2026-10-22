@@ -92,6 +92,7 @@ export function lex(src) {
     }
     if (c === '"') {
       const n = src.indexOf('"', i + 1);
+      if (n === -1) throw new Error(`unterminated quoted identifier at ${start}`);
       push('ident', src.slice(i + 1, n), start, n + 1);
       i = n + 1;
       continue;

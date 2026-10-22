@@ -124,3 +124,18 @@ begin
 end;
 $m$;`), []);
 });
+
+test('ordinary string literals containing a double quote do not stall the check', { timeout: 5000 }, () => {
+  const history = sources(create('\nbegin return 1; end;\n'), patch("'return 1'", "'return 2'"));
+  const canonical = '20260101000009_canonical.sql';
+  const rendered = renderCanonicalMigration(reconstructPatchedFunctions(history).functions);
+  const later = {
+    name: '20260101000010_later.sql',
+    sql: `create or replace function public.strip_quotes(p text)
+returns text
+language sql
+as $$ select replace(p, '"', '') $$;
+select '"'::text;`,
+  };
+  assert.deepEqual(checkMigrations([...history, { name: canonical, sql: rendered }, later], canonical), []);
+});
