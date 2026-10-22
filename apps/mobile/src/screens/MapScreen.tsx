@@ -1316,6 +1316,7 @@ export default function MapScreen({ route, navigation }: Props) {
     refreshDeviceLocation,
     consumeForegroundSample,
     latestLocationSampleRef,
+    lifecycle: deviceLocationLifecycle,
   } = useDeviceLocation({
     groupId: mapFocused || effectiveNavigationActive ? groupId : null,
     highAccuracy: foregroundLocation.highAccuracy,
@@ -4569,7 +4570,8 @@ export default function MapScreen({ route, navigation }: Props) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
-          {mapKitRouteLifecycle}
+          {deviceLocationLifecycle}
+      {mapKitRouteLifecycle}
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4589,7 +4591,8 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        {mapKitRouteLifecycle}
+        {deviceLocationLifecycle}
+          {mapKitRouteLifecycle}
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
@@ -4602,6 +4605,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
+          {deviceLocationLifecycle}
           {mapKitRouteLifecycle}
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
@@ -4634,7 +4638,8 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        {mapKitRouteLifecycle}
+        {deviceLocationLifecycle}
+          {mapKitRouteLifecycle}
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4655,7 +4660,8 @@ export default function MapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.flex}>
-      {mapKitRouteLifecycle}
+      {deviceLocationLifecycle}
+          {mapKitRouteLifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap

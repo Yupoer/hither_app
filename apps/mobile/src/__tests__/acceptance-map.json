@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Device lifecycle publishes privacy before synchronous watch callbacks, preserves UI across profile resets, cancels late watch promises, keeps debug local and allDay watchdog sensor-free, and survives Strict replay.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "publishes privacy|late watch Promise|real watchdog|debug fixes local|Strict setup"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Route committed inputs preserve Object.is reevaluation, same-key pending requests, stale result fences, Strict replay, and no directions from discarded renders.",
       "testFile": "mapKitRoutes.test.ts",
       "testNamePattern": "accepts the in-flight request|equal-value new input|suspended uncommitted|cached result after StrictMode|A to B to A"
