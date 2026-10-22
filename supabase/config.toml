@@ -386,6 +386,11 @@ deno_version = 2
 [functions.google-maps]
 verify_jwt = true
 
+# Database push webhook (extensions.notify_push): sends only the Vault-backed
+# x-hither-webhook-secret header, never a Supabase JWT; verified in-handler.
+[functions.send-push]
+verify_jwt = false
+
 # Google AdMob SSV webhook: no Supabase JWT; ECDSA signature verified in-handler.
 [functions.admob-reward-callback]
 verify_jwt = false

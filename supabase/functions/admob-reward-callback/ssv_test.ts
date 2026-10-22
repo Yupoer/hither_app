@@ -173,6 +173,60 @@ Deno.test("handler credits once after successful verify (injected key + credit)"
   assertEquals(calls, 2);
 });
 
+async function signedQuery(content: string, keyId: number) {
+  const pair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  );
+  const spki = new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey));
+  const p1363 = new Uint8Array(
+    await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      pair.privateKey,
+      new TextEncoder().encode(content),
+    ),
+  );
+  return {
+    qs: content + "&signature=" + bytesToBase64Url(p1363EcdsaSignatureToDer(p1363)) + "&key_id=" + keyId,
+    keys: { keys: [{ keyId, base64: bytesToBase64Url(spki) }] } as SsvKeysPayload,
+  };
+}
+
+const SIGNED_CONTENT = "ad_network=1&ad_unit=" + IOS_UNIT +
+  "&custom_data=sessionref12345678&reward_amount=1&reward_item=hither_token" +
+  "&timestamp=1&transaction_id=txn-signed";
+
+Deno.test("params appended after key_id are rejected even with a valid signature", async () => {
+  const { qs, keys } = await signedQuery(SIGNED_CONTENT, 11);
+  assertEquals((await verifySsvCallback(qs, { keys })).ok, true);
+
+  for (const tail of ["&transaction_id=txn-forged", "&reward_amount=100", "&key_id=12", "&"]) {
+    const result = await verifySsvCallback(qs + tail, { keys });
+    assertEquals(result, { ok: false, error: "malformed_query" }, tail);
+  }
+});
+
+Deno.test("reward fields come only from the signed content", async () => {
+  const content = "xsignature=decoy&" + SIGNED_CONTENT;
+  const { qs, keys } = await signedQuery(content, 13);
+  const result = await verifySsvCallback(qs, { keys });
+  assertEquals(result.ok, true);
+  if (result.ok) {
+    assertEquals(result.parsed.contentToVerify, content);
+    assertEquals(result.parsed.transactionId, "txn-signed");
+    assertEquals(result.parsed.rewardAmount, "1");
+  }
+});
+
+Deno.test("signature and key_id must be the trailing pair in Google's order", () => {
+  assertEquals(parseSsvQueryString("signature=AA&key_id=1"), null);
+  assertEquals(parseSsvQueryString(SIGNED_CONTENT + "&key_id=1&signature=AA"), null);
+  assertEquals(parseSsvQueryString(SIGNED_CONTENT + "&signature=AA&key_id=abc"), null);
+  assertEquals(parseSsvQueryString(SIGNED_CONTENT + "&signature=&key_id=1"), null);
+  assertEquals(parseSsvQueryString(SIGNED_CONTENT + "&signature=AA&key_id=1")?.keyId, 1);
+});
+
 Deno.test("verifySsvCallback rejects unknown key without calling crypto", async () => {
   const keys: SsvKeysPayload = {
     keys: [{ keyId: 1, base64: "AAAA" }],
