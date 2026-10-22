@@ -43,9 +43,16 @@ export function lex(src) {
       continue;
     }
     if (src.startsWith('/*', i)) {
-      const n = src.indexOf('*/', i + 2);
-      if (n < 0) throw new Error('unterminated block comment');
-      i = n + 2;
+      // Postgres block comments nest; every step below advances i by at least 1.
+      let depth = 1;
+      i += 2;
+      while (depth > 0) {
+        const close = src.indexOf('*/', i);
+        if (close < 0) throw new Error('unterminated block comment');
+        const open = src.indexOf('/*', i);
+        if (open >= 0 && open < close) { depth += 1; i = open + 2; }
+        else { depth -= 1; i = close + 2; }
+      }
       continue;
     }
     const start = i;
@@ -587,21 +594,37 @@ export function findCatalogTextPatches(migrations, canonical = CANONICAL_MIGRATI
   return migrations
     .filter(({ name, sql }) => {
       if (name < canonical) return false;
-      const words = splitStatements(sql).flatMap((s) => withNestedTokens(s.tokens))
-        .filter((t) => t.type === 'ident')
-        .map((t) => t.value.toLowerCase());
+      const words = collectWords(splitStatements(sql).flatMap((s) => s.tokens));
+      if (words === null) return true;
       const readsDefinition = words.some((w) => w === 'pg_get_functiondef' || w.endsWith('.pg_get_functiondef'));
       return readsDefinition && words.includes('execute');
     })
     .map(({ name }) => name);
 }
 
-/** Dynamic SQL hides in string literals (DO bodies, execute text), so lex those too. */
-function withNestedTokens(tokens) {
-  return tokens.flatMap((t) => {
-    if (t.type !== 'str') return [t];
-    try { return [t, ...withNestedTokens(lex(t.value))]; } catch { return [t]; }
-  });
+const MAX_STRING_NESTING = 32;
+
+/**
+ * Dynamic SQL hides in string literals (DO bodies, execute text), so lex those
+ * too, iteratively so deep nesting cannot overflow the stack or silently drop
+ * tokens. Returns null when nesting is too deep to inspect, which the caller
+ * treats as a violation.
+ */
+function collectWords(tokens) {
+  const words = [];
+  let level = tokens;
+  for (let depth = 0; level.length; depth += 1) {
+    if (depth > MAX_STRING_NESTING) return null;
+    const next = [];
+    for (const t of level) {
+      if (t.type === 'ident') words.push(t.value.toLowerCase());
+      else if (t.type === 'str') {
+        try { for (const inner of lex(t.value)) next.push(inner); } catch { /* not SQL */ }
+      }
+    }
+    level = next;
+  }
+  return words;
 }
 
 export function checkMigrations(migrations, canonical = CANONICAL_MIGRATION) {
