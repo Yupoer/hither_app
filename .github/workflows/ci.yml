@@ -155,6 +155,13 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node scripts/auth-web-recovery-check.mjs
 
+      - name: SQL function source of truth (replayed catalog patches, no new ones)
+        if: steps.scope.outputs.product == 'true'
+        working-directory: ${{ github.workspace }}
+        run: |
+          node --test supabase/scripts/function-source-of-truth.test.mjs
+          node supabase/scripts/function-source-of-truth.mjs --check
+
       - uses: denoland/setup-deno@v2
         if: steps.scope.outputs.product == 'true'
         with:
@@ -206,6 +213,7 @@ jobs:
           supabase test db --local supabase/tests/security_group_command_import_arrival.test.sql
           supabase test db --local supabase/tests/feedback_limits.test.sql
           supabase test db --local supabase/tests/installation_capabilities.test.sql
+          supabase test db --local supabase/tests/canonical_patched_function_sources.test.sql
           node supabase/tests/promo_redemption_concurrency.mjs
 
   jsi-ui-runtime:
