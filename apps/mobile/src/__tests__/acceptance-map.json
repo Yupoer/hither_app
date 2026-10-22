@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "BottomSheet arbitrates cancellation before close/resume and detent snap, preserves native scroll/gesture identity, and fences stale close completions across reopen, unmount and StrictMode.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "keeps native scroll|orders same-commit|replays bottom-sheet|retains a committed bottom-sheet|cancels mid-dismiss|failed gesture"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Overlay motion keeps drafts mounted through background and close/reopen, preserves commit/cancel callbacks, and fences old native and gesture completions including StrictMode replay.",
       "testFile": "foregroundSheetLifecycle.test.ts",
       "testNamePattern": "retains an overlay draft|committed overlay drag|keeps overlay content|fences old overlay"

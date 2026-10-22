@@ -46,6 +46,11 @@ jest.mock('react-native-reanimated', () => ({ __esModule: true,
   default: { View: 'AnimatedView', createAnimatedComponent: () => 'AnimatedScrollView' },
   useAnimatedRef: () => require('react').useRef(null),
   useSharedValue: (initial: unknown) => require('react').useRef(mockValue(initial)).current,
+  useDerivedValue: (factory: () => unknown) => {
+    const latest = require('react').useRef(factory);
+    latest.current = factory;
+    return require('react').useRef({ get value() { return latest.current(); } }).current;
+  },
   useAnimatedReaction: () => {}, useAnimatedScrollHandler: () => () => {},
   useAnimatedStyle: (factory: () => unknown) => factory(),
   cancelAnimation: (value: any) => value.cancel(),
@@ -417,4 +422,80 @@ it('reconciles a failed gesture to the latest controlled index after foreground 
   expect(height.value).toBe(300);
   expect(changed).not.toHaveBeenCalled();
   await act(async () => { root.unmount(); });
+});
+
+it('keeps native scroll and gesture owners on equal detents and remeasures without restarting controlled close', async () => {
+  const height = mockValue(300), dismissY = mockValue(0), completed = jest.fn(), latestComplete = jest.fn();
+  const props = { height, dismissTranslateY: dismissY, dismissRequested: true, dismissDistance: 800,
+    detents: [300, 600], index: 0, bottomInset: 0, onIndexChange: jest.fn(), onDismissComplete: completed };
+  const sheet = (next = props) => React.createElement(BottomSheetElement, next, React.createElement('draft'));
+  let root: any;
+  await act(async () => { root = create(sheet()); });
+  const scroll = root.root.findByType('AnimatedScrollView');
+  const gesture = mockGestures.at(-1), initialSpring = mockSprings.at(-1);
+  const springCount = mockSprings.length;
+  await act(async () => { root.update(sheet({ ...props, detents: [...props.detents] })); });
+  expect(mockSprings).toHaveLength(springCount);
+  expect(initialSpring.cancelled).toBe(false);
+  expect(mockGestures.at(-1)).toBe(gesture);
+  await act(async () => { root.update(sheet({ ...props, dismissRequested: false })); });
+  const closing = mockTimings.at(-1);
+  const closeCount = mockTimings.length;
+  await act(async () => { root.update(sheet({ ...props, dismissRequested: false, detents: [320, 660], index: 1,
+    dismissDistance: 900, onDismissComplete: latestComplete })); });
+  expect(mockTimings).toHaveLength(closeCount);
+  expect(closing.cancelled).toBe(false);
+  expect(height.value).toBe(660);
+  expect(root.root.findByType('AnimatedScrollView')).toBe(scroll);
+  await act(async () => { closing.callback(true); closing.callback(true); });
+  expect(completed).not.toHaveBeenCalled();
+  expect(latestComplete).toHaveBeenCalledTimes(1);
+  await act(async () => { root.update(sheet({ ...props, dismissDistance: 900 })); });
+  await act(async () => { root.update(sheet({ ...props, dismissRequested: false, dismissDistance: 900 })); });
+  expect(mockTimings.at(-1).target).toBe(900);
+  await act(async () => { root.unmount(); });
+});
+
+it('orders same-commit background close and remeasure before resume and fences reopened close callbacks', async () => {
+  const height = mockValue(300), dismissY = mockValue(0), completed = jest.fn();
+  const props = { height, dismissTranslateY: dismissY, dismissRequested: true, dismissDistance: 800,
+    detents: [300, 600], index: 0, bottomInset: 0, onIndexChange: jest.fn(), onDismissComplete: completed };
+  const sheet = (dismissRequested: boolean, detents = props.detents, index = 0) => React.createElement(BottomSheetElement,
+    { ...props, dismissRequested, detents, index }, React.createElement('draft'));
+  let root: any;
+  await act(async () => { root = create(sheet(true)); });
+  await act(async () => { root.update(sheet(false, [320, 660], 1)); transition('background'); });
+  expect(mockTimings).toHaveLength(0);
+  await act(async () => { transition('active'); });
+  const resumed = mockTimings.at(-1);
+  expect(resumed.target).toBe(800);
+  expect(resumed.cancelled).toBe(false);
+  await act(async () => { root.update(sheet(true, [340, 680], 1)); });
+  expect(resumed.cancelled).toBe(true);
+  await act(async () => { resumed.callback(true); });
+  expect(completed).not.toHaveBeenCalled();
+  expect(dismissY.value).toBe(0);
+  await act(async () => { root.update(sheet(false, [340, 680], 1)); });
+  const current = mockTimings.at(-1);
+  await act(async () => { current.callback(true); });
+  expect(completed).toHaveBeenCalledTimes(1);
+  await act(async () => { root.unmount(); });
+});
+
+it('replays bottom-sheet motion in StrictMode and releases the committed shared-value owner on unmount', async () => {
+  const height = mockValue(300), dismissY = mockValue(0), completed = jest.fn();
+  let root: any;
+  await act(async () => { root = create(React.createElement(React.StrictMode, null,
+    React.createElement(BottomSheetElement, { height, dismissTranslateY: dismissY, dismissRequested: false,
+      detents: [300, 600], index: 0, bottomInset: 0, onIndexChange: jest.fn(), onDismissComplete: completed },
+    React.createElement('draft')))); });
+  expect(mockTimings).toHaveLength(2);
+  expect(mockTimings[0].cancelled).toBe(true);
+  expect(mockTimings[1].cancelled).toBe(false);
+  await act(async () => { mockTimings[0].callback(true); });
+  expect(completed).not.toHaveBeenCalled();
+  await act(async () => { root.unmount(); });
+  expect(mockTimings[1].cancelled).toBe(true);
+  await act(async () => { mockTimings[1].callback(true); });
+  expect(completed).not.toHaveBeenCalled();
 });
