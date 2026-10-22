@@ -161,7 +161,10 @@ export function useMemberPresence({
 
   // Drop the override once the server value catches up, so a later toggle
   // (from this device or another) isn't masked by a stale optimistic flip.
-  const soloOverrideConvergenceLifecycle = createElement(SoloOverrideConvergence, { soloOverride, members, user, setSoloOverride });
+  if (soloOverride !== null) {
+    const mine = members.find((member) => member.userId === user?.id);
+    if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
+  }
 
   // My own subgroup, if any — gates the "invite a teammate" entry on my card.
   const mySubgroupId = myScopeId;
@@ -272,34 +275,7 @@ export function useMemberPresence({
   }, [applyPresenceMacroKind, statusMenuItems, t]);
 
   return {
-    lifecycle: createElement(Fragment, { key: 'member-presence-runtime' }, soloOverrideConvergenceLifecycle, memberNotificationPreferencesLoadLifecycle), flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId };
-}
-
-function SoloOverrideConvergence({ soloOverride, members, user, setSoloOverride }: {
-  soloOverride: boolean | null;
-  members: MemberLocation[];
-  user: User | null;
-  setSoloOverride: import("react").Dispatch<import("react").SetStateAction<boolean | null>>;
-}) {
-  const [soloOverrideConvergenceInputs, setSoloOverrideConvergenceInputs] = useState(() => ({ generation: 0, members, soloOverride, user_id: user?.id }));
-  if (!(Object.is(soloOverrideConvergenceInputs.members, members) && Object.is(soloOverrideConvergenceInputs.soloOverride, soloOverride) && Object.is(soloOverrideConvergenceInputs.user_id, user?.id))) {
-    setSoloOverrideConvergenceInputs({ generation: soloOverrideConvergenceInputs.generation + 1, members, soloOverride, user_id: user?.id });
-  }
-  return createElement(SoloOverrideConvergenceCommit, { key: soloOverrideConvergenceInputs.generation, soloOverride, members, user, setSoloOverride });
-}
-
-function SoloOverrideConvergenceCommit({ soloOverride, members, user, setSoloOverride }: {
-  soloOverride: boolean | null;
-  members: MemberLocation[];
-  user: User | null;
-  setSoloOverride: import("react").Dispatch<import("react").SetStateAction<boolean | null>>;
-}) {
-  useMountEffect(() => {
-    if (soloOverride === null) return;
-    const mine = members.find((m) => m.userId === user?.id);
-    if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
-  });
-  return null;
+    lifecycle: createElement(Fragment, { key: 'member-presence-runtime' }, memberNotificationPreferencesLoadLifecycle), flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId };
 }
 
 function MemberNotificationPreferencesLoad({ setNotifPrefs, user }: {

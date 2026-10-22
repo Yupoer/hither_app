@@ -1,4 +1,4 @@
-import { createElement, Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import { createElement, useCallback, useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { rollbackItinerary, type ItineraryRollback } from '../../../state/itineraryRollback';
 import type { DailyAccommodation, Destination, Group } from '../../../types';
@@ -153,18 +153,19 @@ export function useRouteDraft(input: UseRouteDraftInput) {
     return true;
   }, [setDestinations, setEditorScopeId]);
 
-  const routeDraftConvergenceLifecycle = createElement(RouteDraftConvergence, { destinations, dirtyRef, rawDestinations, setDestinations });
 
   const handledRejections = useRef(new Set<string>());
-  const routeDraftRejectionRollbackLifecycle = createElement(RouteDraftRejectionRollback, { openOperations, handledRejections, dirtyRef, setDestinations, destinationsRef });
 
-  const routeDraftScopeResetLifecycle = createElement(RouteDraftScopeReset, { reset, setEditorScopeId, scopeId });
 
-  const routeTripConvergenceLifecycle = createElement(RouteTripConvergence, { group, draftTripDays, draftDepartureDate, setDraftTripDays, setDraftDepartureDate });
+  if ((draftTripDays !== null || draftDepartureDate !== null) && group
+    && group.tripDays === draftTripDays && group.departureDate === draftDepartureDate) {
+    setDraftTripDays(null);
+    setDraftDepartureDate(null);
+  }
 
   const tripDays = draftTripDays ?? group?.tripDays;
   const departureDate = draftDepartureDate ?? group?.departureDate;
-  const lifecycle = createElement(Fragment, { key: 'route-draft-runtime' }, routeDraftConvergenceLifecycle, routeDraftRejectionRollbackLifecycle, routeDraftScopeResetLifecycle, routeTripConvergenceLifecycle);
+  const lifecycle = createElement(RouteDraftReconciliation, { destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId });
   return useMemo(() => ({
     lifecycle,
     editorScopeId,
@@ -199,54 +200,54 @@ export function useRouteDraft(input: UseRouteDraftInput) {
 
 export type RouteDraft = ReturnType<typeof useRouteDraft>;
 
-function RouteDraftConvergence({ destinations, dirtyRef, rawDestinations, setDestinations }: {
+interface RouteDraftReconciliationGenerations { convergence: number; rejection: number; scope: number; }
+type RouteDraftReconciliationInput = {
   destinations: Destination[] | null;
   dirtyRef: import("react").RefObject<RouteDraftDirty>;
   rawDestinations: Destination[];
   setDestinations: (next: Destination[] | null, options?: { dirty?: boolean; }) => void;
-}) {
+  openOperations: readonly CoreOperation[];
+  handledRejections: import("react").RefObject<Set<string>>;
+  destinationsRef: import("react").RefObject<Destination[] | null>;
+  reset: () => void;
+  setEditorScopeId: (next: string | undefined) => void;
+  scopeId: string | undefined;
+};
+
+function RouteDraftReconciliation({ destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId }: RouteDraftReconciliationInput) {
   const [routeDraftConvergenceInputs, setRouteDraftConvergenceInputs] = useState(() => ({ generation: 0, rawDestinations, destinations, setDestinations }));
   if (!(Object.is(routeDraftConvergenceInputs.rawDestinations, rawDestinations) && Object.is(routeDraftConvergenceInputs.destinations, destinations) && Object.is(routeDraftConvergenceInputs.setDestinations, setDestinations))) {
-    setRouteDraftConvergenceInputs({ generation: routeDraftConvergenceInputs.generation + 1, rawDestinations, destinations, setDestinations });
-  }
-  return createElement(RouteDraftConvergenceCommit, { key: routeDraftConvergenceInputs.generation, destinations, dirtyRef, rawDestinations, setDestinations });
-}
-
-function RouteDraftConvergenceCommit({ destinations, dirtyRef, rawDestinations, setDestinations }: {
-  destinations: Destination[] | null;
-  dirtyRef: import("react").RefObject<RouteDraftDirty>;
-  rawDestinations: Destination[];
-  setDestinations: (next: Destination[] | null, options?: { dirty?: boolean; }) => void;
-}) {
-  useMountEffect(() => {
-    if (!destinations || dirtyRef.current.destinations) return;
-    if (serverMatchesDraft(destinations, rawDestinations)) setDestinations(null);
-  });
-  return null;
-}
-
-function RouteDraftRejectionRollback({ openOperations, handledRejections, dirtyRef, setDestinations, destinationsRef }: {
-  openOperations: readonly CoreOperation[];
-  handledRejections: import("react").RefObject<Set<string>>;
-  dirtyRef: import("react").RefObject<RouteDraftDirty>;
-  setDestinations: (next: Destination[] | null, options?: { dirty?: boolean; }) => void;
-  destinationsRef: import("react").RefObject<Destination[] | null>;
-}) {
+      setRouteDraftConvergenceInputs({ generation: routeDraftConvergenceInputs.generation + 1, rawDestinations, destinations, setDestinations });
+    }
   const [routeDraftRejectionRollbackInputs, setRouteDraftRejectionRollbackInputs] = useState(() => ({ generation: 0, openOperations, setDestinations }));
   if (!(Object.is(routeDraftRejectionRollbackInputs.openOperations, openOperations) && Object.is(routeDraftRejectionRollbackInputs.setDestinations, setDestinations))) {
-    setRouteDraftRejectionRollbackInputs({ generation: routeDraftRejectionRollbackInputs.generation + 1, openOperations, setDestinations });
-  }
-  return createElement(RouteDraftRejectionRollbackCommit, { key: routeDraftRejectionRollbackInputs.generation, openOperations, handledRejections, dirtyRef, setDestinations, destinationsRef });
+      setRouteDraftRejectionRollbackInputs({ generation: routeDraftRejectionRollbackInputs.generation + 1, openOperations, setDestinations });
+    }
+  const [routeDraftScopeResetInputs, setRouteDraftScopeResetInputs] = useState(() => ({ generation: 0, scopeId, reset, setEditorScopeId }));
+  if (!(Object.is(routeDraftScopeResetInputs.scopeId, scopeId) && Object.is(routeDraftScopeResetInputs.reset, reset) && Object.is(routeDraftScopeResetInputs.setEditorScopeId, setEditorScopeId))) {
+      setRouteDraftScopeResetInputs({ generation: routeDraftScopeResetInputs.generation + 1, scopeId, reset, setEditorScopeId });
+    }
+  const [committedInputs, setCommittedInputs] = useState<RouteDraftReconciliationGenerations>({ convergence: -1, rejection: -1, scope: -1 });
+  return createElement(RouteDraftReconciliationCommit, {
+    key: `convergence:${routeDraftConvergenceInputs.generation}/rejection:${routeDraftRejectionRollbackInputs.generation}/scope:${routeDraftScopeResetInputs.generation}`, destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId, observeRouteDraftConvergence: routeDraftConvergenceInputs.generation !== committedInputs.convergence, observeRouteDraftRejectionRollback: routeDraftRejectionRollbackInputs.generation !== committedInputs.rejection, observeRouteDraftScopeReset: routeDraftScopeResetInputs.generation !== committedInputs.scope,
+    committedGenerations: { convergence: routeDraftConvergenceInputs.generation, rejection: routeDraftRejectionRollbackInputs.generation, scope: routeDraftScopeResetInputs.generation }, setCommittedInputs,
+  });
 }
 
-function RouteDraftRejectionRollbackCommit({ openOperations, handledRejections, dirtyRef, setDestinations, destinationsRef }: {
-  openOperations: readonly CoreOperation[];
-  handledRejections: import("react").RefObject<Set<string>>;
-  dirtyRef: import("react").RefObject<RouteDraftDirty>;
-  setDestinations: (next: Destination[] | null, options?: { dirty?: boolean; }) => void;
-  destinationsRef: import("react").RefObject<Destination[] | null>;
+function RouteDraftReconciliationCommit({ destinations, dirtyRef, rawDestinations, setDestinations, openOperations, handledRejections, destinationsRef, reset, setEditorScopeId, scopeId, observeRouteDraftConvergence, observeRouteDraftRejectionRollback, observeRouteDraftScopeReset, committedGenerations, setCommittedInputs }: RouteDraftReconciliationInput & {
+  observeRouteDraftConvergence: boolean;
+  observeRouteDraftRejectionRollback: boolean;
+  observeRouteDraftScopeReset: boolean;
+  committedGenerations: RouteDraftReconciliationGenerations;
+  setCommittedInputs: import('react').Dispatch<import('react').SetStateAction<RouteDraftReconciliationGenerations>>;
 }) {
   useMountEffect(() => {
+    function reconcileDraftAgainstServer() {
+    if (!destinations || dirtyRef.current.destinations) return;
+    if (serverMatchesDraft(destinations, rawDestinations)) setDestinations(null);
+  }
+    if (observeRouteDraftConvergence) reconcileDraftAgainstServer();
+    function rollbackRejectedItinerary() {
     const rejected = openOperations.filter((operation) => operation.entityType === 'itinerary'
       && operation.status === 'conflict' && !handledRejections.current.has(operation.id));
     if (!rejected.length) return;
@@ -262,60 +263,14 @@ function RouteDraftRejectionRollbackCommit({ openOperations, handledRejections, 
       if (undo?.before && undo.after) next = rollbackItinerary(next, undo);
     }
     setDestinations(next);
-  });
-  return null;
-}
-
-function RouteDraftScopeReset({ reset, setEditorScopeId, scopeId }: {
-  reset: () => void;
-  setEditorScopeId: (next: string | undefined) => void;
-  scopeId: string | undefined;
-}) {
-  const [routeDraftScopeResetInputs, setRouteDraftScopeResetInputs] = useState(() => ({ generation: 0, scopeId, reset, setEditorScopeId }));
-  if (!(Object.is(routeDraftScopeResetInputs.scopeId, scopeId) && Object.is(routeDraftScopeResetInputs.reset, reset) && Object.is(routeDraftScopeResetInputs.setEditorScopeId, setEditorScopeId))) {
-    setRouteDraftScopeResetInputs({ generation: routeDraftScopeResetInputs.generation + 1, scopeId, reset, setEditorScopeId });
   }
-  return createElement(RouteDraftScopeResetCommit, { key: routeDraftScopeResetInputs.generation, reset, setEditorScopeId, scopeId });
-}
-
-function RouteDraftScopeResetCommit({ reset, setEditorScopeId, scopeId }: {
-  reset: () => void;
-  setEditorScopeId: (next: string | undefined) => void;
-  scopeId: string | undefined;
-}) {
-  useMountEffect(() => {
+    if (observeRouteDraftRejectionRollback) rollbackRejectedItinerary();
+    function resetDraftScope() {
     reset();
     setEditorScopeId(scopeId);
-  });
-  return null;
-}
-
-function RouteTripConvergence({ group, draftTripDays, draftDepartureDate, setDraftTripDays, setDraftDepartureDate }: {
-  group: Group | null;
-  draftTripDays: number | null;
-  draftDepartureDate: string | null;
-  setDraftTripDays: import("react").Dispatch<import("react").SetStateAction<number | null>>;
-  setDraftDepartureDate: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-}) {
-  const [routeTripConvergenceInputs, setRouteTripConvergenceInputs] = useState(() => ({ generation: 0, group, draftTripDays, draftDepartureDate }));
-  if (!(Object.is(routeTripConvergenceInputs.group, group) && Object.is(routeTripConvergenceInputs.draftTripDays, draftTripDays) && Object.is(routeTripConvergenceInputs.draftDepartureDate, draftDepartureDate))) {
-    setRouteTripConvergenceInputs({ generation: routeTripConvergenceInputs.generation + 1, group, draftTripDays, draftDepartureDate });
   }
-  return createElement(RouteTripConvergenceCommit, { key: routeTripConvergenceInputs.generation, group, draftTripDays, draftDepartureDate, setDraftTripDays, setDraftDepartureDate });
-}
-
-function RouteTripConvergenceCommit({ group, draftTripDays, draftDepartureDate, setDraftTripDays, setDraftDepartureDate }: {
-  group: Group | null;
-  draftTripDays: number | null;
-  draftDepartureDate: string | null;
-  setDraftTripDays: import("react").Dispatch<import("react").SetStateAction<number | null>>;
-  setDraftDepartureDate: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-}) {
-  useMountEffect(() => {
-    if (group && group.tripDays === draftTripDays && group.departureDate === draftDepartureDate) {
-      setDraftTripDays(null);
-      setDraftDepartureDate(null);
-    }
+    if (observeRouteDraftScopeReset) resetDraftScope();
+    setCommittedInputs(committedGenerations);
   });
   return null;
 }

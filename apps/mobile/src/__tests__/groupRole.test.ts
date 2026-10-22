@@ -206,4 +206,14 @@ describe('useGroupRole', () => {
     expect(setMembership).not.toHaveBeenCalled();
   });
 
+  it('replays ordered role publication under StrictMode while handling each rejection once', () => {
+    const setMembership = jest.fn();
+    const refresh = jest.fn(async () => true);
+    const props = input({ dataSource: 'remote', me: { role: 'follower' }, setMembership, refresh,
+      openOperations: [rejection('strict-role')] });
+    act(() => { renderer = create(React.createElement(React.StrictMode, null, React.createElement(Harness, { props }))); });
+    expect(setMembership).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
 });

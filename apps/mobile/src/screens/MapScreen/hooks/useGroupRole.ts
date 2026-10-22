@@ -1,4 +1,4 @@
-import { createElement, Fragment, useCallback, useRef, useState } from 'react';
+import { createElement, useCallback, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { isDemoGroup } from '../../../api/demo';
 import type { Membership } from '../../../state/SessionContext';
@@ -87,18 +87,16 @@ export function useGroupRole(input: UseGroupRoleInput): GroupRole & {
     leaderRevoked: revokedContext === roleContext,
   });
 
-  const remoteMembershipPublicationLifecycle = createElement(RemoteMembershipPublication, { dataSource, me, group, membership, groupId, setMembership, setRevokedContext });
 
   const handledRejections = useRef(new Set<string>());
-  const itineraryRoleRejectionLifecycle = createElement(ItineraryRoleRejection, { openOperations, handledRejections, setRevokedContext, roleContext, refresh });
 
-  const arrivalRoleRejectionLifecycle = createElement(ArrivalRoleRejection, { arrivalOperations, userId, setRevokedContext, roleContext });
 
   const markLeaderRevoked = useCallback(() => setRevokedContext(roleContext), [roleContext]);
-  return { ...role, roleContext, markLeaderRevoked, lifecycle: createElement(Fragment, { key: 'group-role-runtime' }, remoteMembershipPublicationLifecycle, itineraryRoleRejectionLifecycle, arrivalRoleRejectionLifecycle) };
+  return { ...role, roleContext, markLeaderRevoked, lifecycle: createElement(GroupRoleReconciliation, { dataSource, me, group, membership, groupId, setMembership, setRevokedContext, openOperations, handledRejections, roleContext, refresh, arrivalOperations, userId }) };
 }
 
-function RemoteMembershipPublication({ dataSource, me, group, membership, groupId, setMembership, setRevokedContext }: {
+interface GroupRoleReconciliationGenerations { membership: number; itinerary: number; arrival: number; }
+type GroupRoleReconciliationInput = {
   dataSource: GroupStateDataSource;
   me: Pick<MemberLocation, "role" | "subgroupId"> | undefined;
   group: Group | null;
@@ -106,53 +104,49 @@ function RemoteMembershipPublication({ dataSource, me, group, membership, groupI
   groupId: string | null;
   setMembership: (membership: Membership) => void;
   setRevokedContext: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-}) {
+  openOperations: readonly CoreOperation[];
+  handledRejections: import("react").RefObject<Set<string>>;
+  roleContext: string;
+  refresh: () => Promise<unknown>;
+  arrivalOperations: readonly CoreOperation[];
+  userId: string | undefined;
+};
+
+function GroupRoleReconciliation({ dataSource, me, group, membership, groupId, setMembership, setRevokedContext, openOperations, handledRejections, roleContext, refresh, arrivalOperations, userId }: GroupRoleReconciliationInput) {
   const [remoteMembershipPublicationInputs, setRemoteMembershipPublicationInputs] = useState(() => ({ generation: 0, dataSource, me, group, groupId, membership_role: membership?.role, membership_group_id: membership?.group.id, setMembership }));
   if (!(Object.is(remoteMembershipPublicationInputs.dataSource, dataSource) && Object.is(remoteMembershipPublicationInputs.me, me) && Object.is(remoteMembershipPublicationInputs.group, group) && Object.is(remoteMembershipPublicationInputs.groupId, groupId) && Object.is(remoteMembershipPublicationInputs.membership_role, membership?.role) && Object.is(remoteMembershipPublicationInputs.membership_group_id, membership?.group.id) && Object.is(remoteMembershipPublicationInputs.setMembership, setMembership))) {
-    setRemoteMembershipPublicationInputs({ generation: remoteMembershipPublicationInputs.generation + 1, dataSource, me, group, groupId, membership_role: membership?.role, membership_group_id: membership?.group.id, setMembership });
-  }
-  return createElement(RemoteMembershipPublicationCommit, { key: remoteMembershipPublicationInputs.generation, dataSource, me, group, membership, groupId, setMembership, setRevokedContext });
+      setRemoteMembershipPublicationInputs({ generation: remoteMembershipPublicationInputs.generation + 1, dataSource, me, group, groupId, membership_role: membership?.role, membership_group_id: membership?.group.id, setMembership });
+    }
+  const [itineraryRoleRejectionInputs, setItineraryRoleRejectionInputs] = useState(() => ({ generation: 0, openOperations, roleContext, refresh }));
+  if (!(Object.is(itineraryRoleRejectionInputs.openOperations, openOperations) && Object.is(itineraryRoleRejectionInputs.roleContext, roleContext) && Object.is(itineraryRoleRejectionInputs.refresh, refresh))) {
+      setItineraryRoleRejectionInputs({ generation: itineraryRoleRejectionInputs.generation + 1, openOperations, roleContext, refresh });
+    }
+  const [arrivalRoleRejectionInputs, setArrivalRoleRejectionInputs] = useState(() => ({ generation: 0, arrivalOperations, userId, roleContext }));
+  if (!(Object.is(arrivalRoleRejectionInputs.arrivalOperations, arrivalOperations) && Object.is(arrivalRoleRejectionInputs.userId, userId) && Object.is(arrivalRoleRejectionInputs.roleContext, roleContext))) {
+      setArrivalRoleRejectionInputs({ generation: arrivalRoleRejectionInputs.generation + 1, arrivalOperations, userId, roleContext });
+    }
+  const [committedInputs, setCommittedInputs] = useState<GroupRoleReconciliationGenerations>({ membership: -1, itinerary: -1, arrival: -1 });
+  return createElement(GroupRoleReconciliationCommit, {
+    key: `membership:${remoteMembershipPublicationInputs.generation}/itinerary:${itineraryRoleRejectionInputs.generation}/arrival:${arrivalRoleRejectionInputs.generation}`, dataSource, me, group, membership, groupId, setMembership, setRevokedContext, openOperations, handledRejections, roleContext, refresh, arrivalOperations, userId, observeRemoteMembershipPublication: remoteMembershipPublicationInputs.generation !== committedInputs.membership, observeItineraryRoleRejection: itineraryRoleRejectionInputs.generation !== committedInputs.itinerary, observeArrivalRoleRejection: arrivalRoleRejectionInputs.generation !== committedInputs.arrival,
+    committedGenerations: { membership: remoteMembershipPublicationInputs.generation, itinerary: itineraryRoleRejectionInputs.generation, arrival: arrivalRoleRejectionInputs.generation }, setCommittedInputs,
+  });
 }
 
-function RemoteMembershipPublicationCommit({ dataSource, me, group, membership, groupId, setMembership, setRevokedContext }: {
-  dataSource: GroupStateDataSource;
-  me: Pick<MemberLocation, "role" | "subgroupId"> | undefined;
-  group: Group | null;
-  membership: Membership | null;
-  groupId: string | null;
-  setMembership: (membership: Membership) => void;
-  setRevokedContext: import("react").Dispatch<import("react").SetStateAction<string | null>>;
+function GroupRoleReconciliationCommit({ dataSource, me, group, membership, groupId, setMembership, setRevokedContext, openOperations, handledRejections, roleContext, refresh, arrivalOperations, userId, observeRemoteMembershipPublication, observeItineraryRoleRejection, observeArrivalRoleRejection, committedGenerations, setCommittedInputs }: GroupRoleReconciliationInput & {
+  observeRemoteMembershipPublication: boolean;
+  observeItineraryRoleRejection: boolean;
+  observeArrivalRoleRejection: boolean;
+  committedGenerations: GroupRoleReconciliationGenerations;
+  setCommittedInputs: import('react').Dispatch<import('react').SetStateAction<GroupRoleReconciliationGenerations>>;
 }) {
   useMountEffect(() => {
+    function publishRemoteMembership() {
     if (dataSource !== 'remote' || !me || !group || membership?.group.id !== groupId) return;
     if (membership.role !== me.role) setMembership({ group, role: me.role });
     setRevokedContext(null);
-  });
-  return null;
-}
-
-function ItineraryRoleRejection({ openOperations, handledRejections, setRevokedContext, roleContext, refresh }: {
-  openOperations: readonly CoreOperation[];
-  handledRejections: import("react").RefObject<Set<string>>;
-  setRevokedContext: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-  roleContext: string;
-  refresh: () => Promise<unknown>;
-}) {
-  const [itineraryRoleRejectionInputs, setItineraryRoleRejectionInputs] = useState(() => ({ generation: 0, openOperations, roleContext, refresh }));
-  if (!(Object.is(itineraryRoleRejectionInputs.openOperations, openOperations) && Object.is(itineraryRoleRejectionInputs.roleContext, roleContext) && Object.is(itineraryRoleRejectionInputs.refresh, refresh))) {
-    setItineraryRoleRejectionInputs({ generation: itineraryRoleRejectionInputs.generation + 1, openOperations, roleContext, refresh });
   }
-  return createElement(ItineraryRoleRejectionCommit, { key: itineraryRoleRejectionInputs.generation, openOperations, handledRejections, setRevokedContext, roleContext, refresh });
-}
-
-function ItineraryRoleRejectionCommit({ openOperations, handledRejections, setRevokedContext, roleContext, refresh }: {
-  openOperations: readonly CoreOperation[];
-  handledRejections: import("react").RefObject<Set<string>>;
-  setRevokedContext: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-  roleContext: string;
-  refresh: () => Promise<unknown>;
-}) {
-  useMountEffect(() => {
+    if (observeRemoteMembershipPublication) publishRemoteMembership();
+    function reconcileItineraryRoleRejections() {
     let rejected = false;
     for (const operation of openOperations) {
       if (operation.operationType === 'record_arrival' || operation.operationType === 'leader_correct_arrival'
@@ -163,32 +157,14 @@ function ItineraryRoleRejectionCommit({ openOperations, handledRejections, setRe
     if (!rejected) return;
     setRevokedContext(roleContext);
     void refresh().catch(() => undefined);
-  });
-  return null;
-}
-
-function ArrivalRoleRejection({ arrivalOperations, userId, setRevokedContext, roleContext }: {
-  arrivalOperations: readonly CoreOperation[];
-  userId: string | undefined;
-  setRevokedContext: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-  roleContext: string;
-}) {
-  const [arrivalRoleRejectionInputs, setArrivalRoleRejectionInputs] = useState(() => ({ generation: 0, arrivalOperations, userId, roleContext }));
-  if (!(Object.is(arrivalRoleRejectionInputs.arrivalOperations, arrivalOperations) && Object.is(arrivalRoleRejectionInputs.userId, userId) && Object.is(arrivalRoleRejectionInputs.roleContext, roleContext))) {
-    setArrivalRoleRejectionInputs({ generation: arrivalRoleRejectionInputs.generation + 1, arrivalOperations, userId, roleContext });
   }
-  return createElement(ArrivalRoleRejectionCommit, { key: arrivalRoleRejectionInputs.generation, arrivalOperations, userId, setRevokedContext, roleContext });
-}
-
-function ArrivalRoleRejectionCommit({ arrivalOperations, userId, setRevokedContext, roleContext }: {
-  arrivalOperations: readonly CoreOperation[];
-  userId: string | undefined;
-  setRevokedContext: import("react").Dispatch<import("react").SetStateAction<string | null>>;
-  roleContext: string;
-}) {
-  useMountEffect(() => {
+    if (observeItineraryRoleRejection) reconcileItineraryRoleRejections();
+    function reconcileArrivalRoleRejections() {
     if (arrivalOperations.some((operation) => operation.payload.actorId === userId
       && isLeaderRoleRejection(operation))) setRevokedContext(roleContext);
+  }
+    if (observeArrivalRoleRejection) reconcileArrivalRoleRejections();
+    setCommittedInputs(committedGenerations);
   });
   return null;
 }
