@@ -886,7 +886,7 @@ describe('OTA-04 contract surfaces', () => {
     expect(journey).toContain('cancelSession');
     // End navigation must not invoke the complete-stop RPC (MapScreen owns that).
     expect(journey).not.toMatch(/await completeGatheringStop\(/);
-    expect(map).toContain('enqueueJourneyCompletion({');
+    expect(fs.readFileSync(path.join(__dirname, '../screens/MapScreen/hooks/useGatheringCompletion.ts'), 'utf8')).toContain('enqueueJourneyCompletion({');
     expect(map).toContain('applyOptimisticGathering');
     // #175: navigation response banner UI removed from Map root (session API may remain).
     expect(map).not.toContain('navResponse.prompt');

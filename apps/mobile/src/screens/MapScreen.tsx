@@ -1,3 +1,5 @@
+import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
+import { useGatheringCompletion } from './MapScreen/hooks/useGatheringCompletion';
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
 import { foregroundLocationConfiguration, isForegroundLocationState } from '../utils/locationPolicy';
 import WaveLoading from '../components/WaveLoading';
@@ -84,14 +86,7 @@ import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import MapRecenterControl from '../components/MapRecenterControl';
 import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
-import {
-  applyLocalClosedAt,
-  deriveCardNavFlags,
-  deriveScopedArrivalCounts,
-  planCompleteGatheringApply,
-  resolveCompletePrompt,
-  resolveNavCommand,
-} from '../utils/gatherCommand';
+import { deriveCardNavFlags, resolveNavCommand } from '../utils/gatherCommand';
 import {
   shouldFireApproachNotify,
 } from '../utils/approachNotify';
@@ -141,7 +136,7 @@ import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntran
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { FlockRow } from './MapScreen/components/FlockRow';
-import { arrivalErrorMessage, shortEta } from '../utils/mapFormatters';
+import { arrivalErrorMessage } from '../utils/mapFormatters';
 import { MeetTimeSheet } from './MapScreen/components/MeetTimeSheet';
 import { useMeetTimeEditor } from './MapScreen/hooks/useMeetTimeEditor';
 import { InviteTeammateSheet } from './MapScreen/components/InviteTeammateSheet';
@@ -245,47 +240,17 @@ import {
 import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/navigationArrival';
 import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '../utils/synchronizedArrival';
 import { getOperationErrorMessage } from '../utils/operationError';
-import { enqueueJourneyCompletion } from '../state/journeyCompletion';
+
 import { location, notifications, type MapRegion, type PlaceResult } from '../native';
-import {
-  addDestination,
-  addDestinationsBatch,
-  deleteDestination,
-  deleteVisitedWaypoint,
-  recordVisitedWaypoint,
-  setSolo,
-  kickGroupMember,
-  requestGroupLocationRefresh,
-  getGroupLocationRefreshAcknowledgements,
-  resolveGatherPointRequestResilient,
-  sendCommand,
-  correctDestinationArrival,
-  setDestinationArrivalAt,
-  listFavoritePlaces,
-  saveFavoritePlace,
-  unsaveFavoriteByExactMatch,
-  unsaveFavoritePlace,
-  findFavoriteByExactMatch,
-  type FavoritePlace,
-  submitGatherPointRequest,
-  updateGroupAvatar,
-  getKmlImportQuota,
-  getNotificationPreferences,
-  setNotificationPreferences,
-} from '../api/client';
+import { addDestination, addDestinationsBatch, deleteDestination, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, sendCommand, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
 import {
   locationSharingConfirmCopy,
 } from './MapScreen/memberStatusSharing';
-import {
-  applyPresenceMacroWrites,
-  derivePresenceMacro,
-  presenceMacroWrites,
-  type PresenceMacroKind,
-} from '../utils/presenceMacros';
-import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferences } from '../types';
+
+
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
 import type {
@@ -302,7 +267,7 @@ import {
   shouldBlockNewDestination,
 } from '../entitlements';
 import { themes } from '../theme';
-import { glass, memberColor } from '../glass';
+import { glass } from '../glass';
 import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
@@ -813,11 +778,6 @@ export default function MapScreen({ route, navigation }: Props) {
     setEditButtonActive(false);
   }, [myScopeId]);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
-  const [statusApplying, setStatusApplying] = useState(false);
-  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(
-    DEFAULT_NOTIFICATION_PREFERENCES,
-  );
-  const [appliedMacro, setAppliedMacro] = useState<PresenceMacroKind | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
   const {
@@ -3365,212 +3325,33 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
-  /** @returns true after local completion is saved; transport never owns success. */
-  const runCompleteGatheringStop = useCallback(async (destination: Destination, force = true): Promise<boolean> => {
-    // Complete is separate from End navigation: only this path closes the stop
-    // (closed_at → leaves carousel → history). End only pauses flock travel.
-    // Server complete_gathering_stop also cancels any active nav for this stop.
-    if (!groupId || !user?.id || !canEditItinerary) return false;
-    if (pendingLeaderTargetId === destination.id && !resolveCurrentNavigationSessionId(destination)) return false;
-    const completionContext = arrivalContext;
-    const isCurrent = () => mapMountedRef.current && arrivalContextRef.current === completionContext;
-      const alreadyClosed = !!destination.closedAt
-      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
-    const plan = planCompleteGatheringApply({
-      alreadyClosed,
-      rpcInFlight: completingDestIdsRef.current.has(destination.id),
-      remoteAutoCompleted: remoteAutoCompleteDestIdsRef.current.has(destination.id),
-    });
-    const closedAt = destination.closedAt ?? new Date().toISOString();
-    if (completingDestIdsRef.current.has(destination.id)) return false;
-    if (plan.callRpc) {
-      completingDestIdsRef.current.add(destination.id);
-      try {
-        const sessionId = resolveCurrentNavigationSessionId(destination);
-        const operation = await enqueueJourneyCompletion({
-          groupId, destinationId: destination.id, navigationSessionId: sessionId,
-          actorId: user.id, scopeSubgroupId: destination.subgroupId ?? null,
-          leaderId: user.id,
-          navigationMemberIds: sessionEligibleMembers.filter(member => !member.solo
-            && (member.subgroupId ?? null) === (destination.subgroupId ?? null)).map(member => member.userId),
-          arrivedMemberIds: activeDestinationArrivals.filter(arrival => arrival.destinationId === destination.id)
-            .map(arrival => arrival.userId),
-          force, isCurrent,
-        });
-        if (!isCurrent() || (!force && !operation)) {
-          completingDestIdsRef.current.delete(destination.id);
-          return false;
-        }
-        await refreshLocalSnapshot();
-        if (!isCurrent()) return false;
-      } catch (error) {
-        logError('complete_gathering_failed', error, { groupId, destId: destination.id });
-        Alert.alert(
-          t('map.setFailedTitle'),
-          getOperationErrorMessage(error),
-        );
-        return false;
-      } finally {
-        completingDestIdsRef.current.delete(destination.id);
-      }
-    }
-    // The durable completion already closed the stop in the local snapshot;
-    // only an open route draft still holds its own copy of the list.
-    const draft = routeDraft.latestDestinations();
-    if (plan.applyLocalClosedAt && draft) {
-      routeDraft.setDestinations(applyLocalClosedAt(draft, destination.id, closedAt));
-    }
-    if (plan.startCardExit) {
-      const priorIdx = resolveExitIndexAtStart(
-        prevVisibleDestOrderRef.current,
-        destination.id,
-        prevVisibleDestOrderRef.current.length,
-      );
-      startArrivalCardExit({ ...destination, closedAt }, priorIdx);
-    }
-    stopRemovedDestination(destination.id, resolveCurrentNavigationSessionId(destination));
-    if (plan.refreshHistory) void Promise.all([
-      navigationSessionState.refresh(), refresh(), loadGatheringWorkflow(), loadHistory(),
-    ]).catch(() => undefined);
-    return true;
-  }, [
-    allScopedDestinations,
-    activeDestinationArrivals,
-    arrivalContext,
-    sessionEligibleMembers,
-    canEditItinerary,
+  const { promptCompleteAfterArrival } = useGatheringCompletion({
     groupId,
-    members,
-    user?.id,
-    loadGatheringWorkflow,
-    loadHistory,
-    navigationSessionState,
-    resolveCurrentNavigationSessionId,
+    user,
+    canEditItinerary,
     pendingLeaderTargetId,
-    refresh,
+    resolveCurrentNavigationSessionId,
+    arrivalContext,
+    mapMountedRef,
+    arrivalContextRef,
+    allScopedDestinations,
+    completingDestIdsRef,
+    remoteAutoCompleteDestIdsRef,
+    sessionEligibleMembers,
+    activeDestinationArrivals,
     refreshLocalSnapshot,
+    t,
+    routeDraft,
+    prevVisibleDestOrderRef,
     startArrivalCardExit,
     stopRemovedDestination,
-    t,
-  ]);
-
-
-  /** Shared auto-complete: guard + complete RPC + this-device notify (native boundary). */
-  const executeAutoCompleteStop = useCallback(async (destination: Destination) => {
-    const alreadyTracked = remoteAutoCompleteDestIdsRef.current.has(destination.id);
-    remoteAutoCompleteDestIdsRef.current.add(destination.id);
-    const ok = await runCompleteGatheringStop(destination, false);
-    if (!ok) {
-      remoteAutoCompleteDestIdsRef.current.delete(destination.id);
-      return;
-    }
-    if (alreadyTracked) return;
-    // Platform path lives in native/notifications (not MapScreen Platform.OS).
-    void notifications.notifyThisDeviceAutoComplete({
-      title: t('gathering.autoCompleteTitle'),
-      body: t('gathering.autoCompleteBody', { title: destination.title }),
-      data: { kind: 'gathering_auto_complete', destinationId: destination.id },
-    }).catch(() => undefined);
-  }, [runCompleteGatheringStop, t]);
-
-  const promptCompleteAfterArrival = useCallback((destination: Destination, opts?: {
-    /**
-     * Only true after a successful local arrival write.
-     * Manual Complete / remote path must not invent a self arrival (P1).
-     */
-    includeSelf?: boolean;
-  }) => {
-    const arrivedIds = new Set(
-      activeDestinationArrivals
-        .filter((a) => a.destinationId === destination.id)
-        .map((a) => a.userId),
-    );
-    const counts = deriveScopedArrivalCounts({
-      members: sessionEligibleMembers,
-      destinationSubgroupId: destination.subgroupId,
-      arrivedUserIds: arrivedIds,
-      // Opt-in only — default false so failed write cannot force auto-complete.
-      includeUserId: opts?.includeSelf ? user?.id : null,
-      travelerFallback: t('group.travelerFallback'),
-    });
-    const stopAlreadyComplete = !!destination.closedAt
-      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
-    const prompt = resolveCompletePrompt({
-      isLeader: canEditItinerary,
-      missingMemberNames: counts.missingMemberNames,
-      allArrived: counts.allArrived,
-      stopAlreadyComplete: !!stopAlreadyComplete,
-      arrivedCount: counts.arrivedCount,
-      totalCount: counts.totalCount,
-    });
-    if (prompt.kind === 'none') return;
-
-    // All arrived → auto-complete + this-device notification. No confirm dialog.
-    // Already-closed is the same apply path (never a silent no-op).
-    if (prompt.kind === 'auto_complete' || prompt.kind === 'already_complete') {
-      void executeAutoCompleteStop(destination);
-      return;
-    }
-
-    // Manual complete (someone missing) or member notice — i18n only (helper kind/counts).
-    const isMissing = prompt.kind === 'leader_missing_members';
-    const isMemberDone = prompt.kind === 'member_leader_already_done';
-    const title = isMissing
-      ? t('gathering.completeMissingTitle')
-      : isMemberDone
-        ? t('gathering.memberLeaderDoneTitle')
-        : prompt.title;
-    const message = isMissing
-      ? t('gathering.completeMissingMessage', {
-          arrived: String(prompt.arrivedCount ?? 0),
-          total: String(prompt.totalCount ?? 0),
-        })
-      : isMemberDone
-        ? t('gathering.memberLeaderDoneMessage')
-        : prompt.message;
-    const confirmLabel = isMissing
-      ? t('gathering.completeConfirm')
-      : isMemberDone
-        ? t('common.confirm')
-        : prompt.confirmLabel;
-    const cancelLabel = isMissing
-      ? t('common.cancel')
-      : prompt.cancelLabel;
-
-    const buttons: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }> = [];
-    if (cancelLabel) {
-      buttons.push({
-        text: cancelLabel,
-        style: 'cancel',
-      });
-    }
-    buttons.push({
-      text: confirmLabel,
-      style: isMissing ? 'destructive' : undefined,
-      onPress: () => {
-        // Leader RPC only — members already have arrival/history; just refresh.
-        if (isMemberDone) {
-          void refresh();
-          void loadGatheringWorkflow();
-          return;
-        }
-        void runCompleteGatheringStop(destination);
-      },
-    });
-    Alert.alert(title, message, buttons);
-  }, [
-    allScopedDestinations,
-    activeDestinationArrivals,
-    executeAutoCompleteStop,
-    canEditItinerary,
-    loadGatheringWorkflow,
-    members,
+    navigationSessionState,
     refresh,
-    runCompleteGatheringStop,
-    sessionEligibleMembers,
-    t,
-    user?.id,
-  ]);
+    loadGatheringWorkflow,
+    loadHistory,
+    members,
+    navTargetId,
+  });
 
   // Shared arrive feedback: center check animation (1.6s) + haptic.
   // Complete-stop is scheduled only when opts.promptComplete is true — callers
@@ -3609,47 +3390,6 @@ export default function MapScreen({ route, navigation }: Props) {
     // committed event owns the shared app notice; an additional Alert here
     // would overlap that same arrival's Realtime/push presentation.
   };
-
-  // Remote final arrival (Realtime / workflow reload): leader auto-completes when
-  // every *scoped* member has an arrival row — no personal-arrive path required.
-  useEffect(() => {
-    if (!canEditItinerary || !groupId) return;
-    for (const destination of allScopedDestinations) {
-      if (destination.id !== navTargetId) continue;
-      if (destination.closedAt) {
-        remoteAutoCompleteDestIdsRef.current.delete(destination.id);
-        continue;
-      }
-      if (remoteAutoCompleteDestIdsRef.current.has(destination.id)) continue;
-      if (completingDestIdsRef.current.has(destination.id)) continue;
-
-      const arrivedIds = new Set(
-        activeDestinationArrivals
-          .filter((a) => a.destinationId === destination.id)
-          .map((a) => a.userId),
-      );
-      const counts = deriveScopedArrivalCounts({
-        members: sessionEligibleMembers,
-        destinationSubgroupId: destination.subgroupId,
-        arrivedUserIds: arrivedIds,
-        // Remote path: only committed arrivals, never invent self.
-        includeUserId: null,
-        travelerFallback: t('group.travelerFallback'),
-      });
-      if (!counts.allArrived) continue;
-      void executeAutoCompleteStop(destination);
-    }
-  }, [
-    allScopedDestinations,
-    activeDestinationArrivals,
-    executeAutoCompleteStop,
-    navTargetId,
-    sessionEligibleMembers,
-    groupId,
-    canEditItinerary,
-    members,
-    t,
-  ]);
 
   const requestLeaderStart = useCallback((destination: Destination) => {
     if (!groupId || requestingStartDestId) return;
@@ -3788,28 +3528,6 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   });
 
-  // --- Solo mode (global user status — not on member cards) -----------------
-  // Returns false if the RPC failed (caller should not close the status sheet).
-  const toggleSolo = useCallback(async (next: boolean): Promise<boolean> => {
-    if (!groupId) return false;
-    selectionTick();
-    logEvent('solo_toggle', { groupId, next });
-    setSoloOverride(next);
-    try {
-      await setSolo(groupId, next);
-      // memberships is realtime-subscribed (useGroupState); its debounced
-      // reload refreshes `members` and clears the override above once it
-      // matches — no need to force an extra fetch here.
-      return true;
-    } catch (e) {
-      logError('solo_toggle_failed', e, { groupId, next });
-      setSoloOverride(null);
-      Alert.alert(t('solo.failed'), e instanceof Error ? e.message : undefined);
-      return false;
-    }
-  }, [groupId, t]);
-
-
   // --- Subgroups (小隊：邀請制；依 leader_id 判斷小隊隊長) --------------------
   const setRouteDraftDestinations = routeDraft.setDestinations;
   const handleMergedBack = useCallback(() => {
@@ -3931,216 +3649,22 @@ export default function MapScreen({ route, navigation }: Props) {
     voluntaryLeaveRef,
   });
 
-  // --- Derived view models --------------------------------------------------
-  // Optimistic flip for the Solo switch — server round trip + realtime
-  // refetch otherwise take long enough to read as the switch not responding,
-  // especially when you're the only row in the flock. Cleared once `members`
-  // (server truth) confirms it, below.
-  const [soloOverride, setSoloOverride] = useState<boolean | null>(null);
-
-  const flock = useMemo(
-    () =>
-      (uiVisible ? members : []).map((m) => {
-        const isSelf = m.userId === user?.id;
-        // Gathering-point distance still drives the arrived/en-route STATUS.
-        const d =
-          m.coordinates && activePoint
-            ? distanceMeters(m.coordinates, activePoint.coordinates)
-            : null;
-        // Displayed distance/ETA is "how far this member is from ME" — more
-        // useful for keeping the flock together than distance-to-destination.
-        const memberRoute = memberRoutes[m.userId];
-        const displayedDistance = memberRoute?.distanceMeters ?? d;
-        const displayedEta = memberRoute?.expectedTravelTimeSeconds
-          ?? (d != null ? etaSecondsFor(d, travelMode) : null);
-        const point = navTarget ?? activePoint;
-        const arrived = Boolean(point && (m.subgroupId ?? null) === (point.subgroupId ?? null)
-          && activeDestinationArrivals.some(a => a.destinationId === point.id && a.userId === m.userId));
-        const isMemberLeader = m.role === 'leader';
-        // Member status strings that depend on "how recent is lastUpdated" are
-        // resolved in FlockRow (30s local tick) so MapScreen is not on a timer.
-        const solo =
-          m.userId === user?.id && soloOverride !== null ? soloOverride : !!m.solo;
-        return {
-          userId: m.userId,
-          name: (isSelf && user?.name) || m.name || t('group.travelerFallback'),
-          // BUG-08: prefer session profile for self so a just-saved avatar
-          // shows in the flock before realtime memberships refresh.
-          avatar: (isSelf && user?.avatar) || m.avatar,
-          avatarColor: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
-          solo,
-          subgroupId: m.subgroupId,
-          // Prefer the member's chosen avatar background colour; fall back to the
-          // deterministic per-user colour when they haven't picked one.
-          color: (isSelf && user?.avatarColor) || m.avatarColor || memberColor(m.userId),
-          isLeader: isMemberLeader,
-          arrived,
-          // Self row: prefer latest accepted local sample so refresh/push does
-          // not leave「尚無位置更新」when blue-dot already has a valid fix.
-          lastUpdated: m.capturedAt ?? m.lastUpdated,
-          sharingEnabled: m.sharingEnabled,
-          locationTrackingMode: m.locationTrackingMode,
-          locationSource: m.locationSource,
-          locationNavigationSessionId: m.locationNavigationSessionId,
-          // Color grade: secondary by default; green only arrived; warn only solo/straggler-like.
-          statusColor: solo
-            ? glass.warn
-            : arrived
-              ? glass.ok
-              : glass.textSecondary,
-          // "—" for my own row (distance to myself is meaningless); everyone
-          // else shows how far they are from me.
-          eta: displayedEta != null ? shortEta(displayedEta) : '',
-          dist: isSelf
-            ? ''
-            : displayedDistance != null
-              ? formatDistance(displayedDistance)
-              : '',
-        };
-      }),
-    [
-      uiVisible,
-      members,
-      activePoint,
-      navTarget,
-      activeDestinationArrivals,
-      t,
-      user?.id,
-      user?.name,
-      user?.avatar,
-      user?.avatarColor,
-      soloOverride,
-      memberRoutes,
-      travelMode,
-      deviceCoordsAcceptedAtMs,
-    ],
-  );
-
-  // Drop the override once the server value catches up, so a later toggle
-  // (from this device or another) isn't masked by a stale optimistic flip.
-  useEffect(() => {
-    if (soloOverride === null) return;
-    const mine = members.find((m) => m.userId === user?.id);
-    if (mine && !!mine.solo === soloOverride) setSoloOverride(null);
-  }, [members, soloOverride, user?.id]);
-
-  // My own subgroup, if any — gates the "invite a teammate" entry on my card.
-  const mySubgroupId = myScopeId;
-
-  const mySoloActive = useMemo(() => {
-    if (soloOverride !== null) return soloOverride;
-    return !!members.find((m) => m.userId === user?.id)?.solo;
-  }, [soloOverride, members, user?.id]);
-
-  useEffect(() => {
-    let alive = true;
-    void getNotificationPreferences()
-      .then((prefs) => {
-        if (alive) setNotifPrefs(prefs);
-      })
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [user?.id]);
-
-  const derivedMacro = derivePresenceMacro({
-    solo: mySoloActive,
-    locationSharing: sharingEnabled,
-    notifications: notifPrefs,
+  const { flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId } = useMemberPresence({
+    groupId,
+    t,
+    uiVisible,
+    members,
+    user,
+    activePoint,
+    memberRoutes,
+    travelMode,
+    navTarget,
+    activeDestinationArrivals,
+    deviceCoordsAcceptedAtMs,
+    myScopeId,
+    sharingEnabled,
+    handleSharingEnabledChange,
   });
-  const myStatusKind: PresenceMacroKind = appliedMacro ?? derivedMacro;
-
-  const statusMenuItems = useMemo(
-    () => [
-      {
-        id: 'follow' as const,
-        title: t('solo.followTeam'),
-        subtitle: t('solo.followTeamHint'),
-        selected: myStatusKind === 'follow',
-      },
-      {
-        id: 'solo' as const,
-        title: t('solo.switch'),
-        subtitle: t('solo.soloHint'),
-        selected: myStatusKind === 'solo',
-      },
-      {
-        id: 'stealth' as const,
-        title: t('solo.stealth'),
-        subtitle: t('solo.stealthHint'),
-        selected: myStatusKind === 'stealth',
-      },
-    ],
-    [myStatusKind, t],
-  );
-
-  const applyPresenceMacroKind = useCallback(
-    async (next: PresenceMacroKind): Promise<boolean> => {
-      if (statusApplying) return false;
-      lightTap();
-      const current = {
-        solo: mySoloActive,
-        locationSharing: sharingEnabled,
-        notifications: notifPrefs,
-      };
-      const writes = presenceMacroWrites(next, current);
-      setStatusApplying(true);
-      try {
-        const ok = await applyPresenceMacroWrites(writes, current, {
-          setSolo: toggleSolo,
-          applyNotifications: async (nextPrefs) => {
-            setNotifPrefs(nextPrefs);
-            await setNotificationPreferences(nextPrefs);
-          },
-          disableLocationSharing: () =>
-            new Promise<boolean>((resolve) => {
-              const copy = locationSharingConfirmCopy(false);
-              confirmAction({
-                title: t(copy.titleKey),
-                message: t(copy.bodyKey),
-                destructive: copy.destructive,
-              }, () => {
-                void handleSharingEnabledChange(false).then((result) => resolve(result !== false));
-              }, () => resolve(false));
-            }),
-        });
-        if (!ok) return false;
-        setAppliedMacro(next);
-        return true;
-      } catch {
-        return false;
-      } finally {
-        setStatusApplying(false);
-      }
-    },
-    [
-      statusApplying,
-      mySoloActive,
-      sharingEnabled,
-      notifPrefs,
-      toggleSolo,
-      handleSharingEnabledChange,
-      t,
-    ],
-  );
-
-  const openAndroidStatusSheet = useCallback(() => {
-    lightTap();
-    Alert.alert(
-      t('solo.statusTitle'),
-      statusMenuItems.map((item) => `${item.title}\n${item.subtitle}`).join('\n\n'),
-      [
-        ...statusMenuItems.map((item) => ({
-          text: item.selected ? `${item.title} ✓` : item.title,
-          onPress: () => {
-            void applyPresenceMacroKind(item.id);
-          },
-        })),
-        { text: t('common.cancel'), style: 'cancel' as const },
-      ],
-    );
-  }, [applyPresenceMacroKind, statusMenuItems, t]);
 
   // ⋯ next to avatar: open Settings directly (home / leave live in Settings personal).
   const openSettingsFromSheet = useCallback(() => {

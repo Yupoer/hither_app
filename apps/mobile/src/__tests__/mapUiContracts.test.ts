@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGatheringCompletion.ts'), 'utf8');
 const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
 const stragglerReporting = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useStragglerReporting.ts'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');

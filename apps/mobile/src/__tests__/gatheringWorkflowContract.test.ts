@@ -7,7 +7,7 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .map((name) => readFileSync(join(root, 'supabase/migrations', name), 'utf8'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGatheringCompletion.ts'), 'utf8');
 const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const arrivalManageSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/ArrivalManageSheet.tsx'), 'utf8');

@@ -6,7 +6,8 @@ const read = (rel: string) =>
   readFileSync(join(__dirname, '..', rel), 'utf8').replace(/\r\n/g, '\n');
 
 const groupMap = read('components/GroupMap.tsx');
-const mapScreen = read('screens/MapScreen.tsx');
+const memberPresence = read('screens/MapScreen/hooks/useMemberPresence.ts');
+const mapScreen = read('screens/MapScreen.tsx') + '\n' + memberPresence;
 const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
 const flockRow = read('screens/MapScreen/components/FlockRow.tsx');
 const mapStyles = read('screens/MapScreen/styles.ts');
@@ -109,9 +110,9 @@ describe('#220 map / status / settings / paywall contracts', () => {
   });
 
   it('lists Android status titles with subtitle descriptions in the Alert message', () => {
-    const start = mapScreen.indexOf('const openAndroidStatusSheet');
-    const end = mapScreen.indexOf('const openSettingsFromSheet', start);
-    const block = mapScreen.slice(start, end);
+    const start = memberPresence.indexOf('const openAndroidStatusSheet');
+    const end = memberPresence.indexOf('  return {', start);
+    const block = memberPresence.slice(start, end);
     expect(block).toContain('Alert.alert');
     expect(block).toContain('item.subtitle');
     expect(block).toContain('item.title');
