@@ -30,8 +30,50 @@ export function readMigrations(dir = MIGRATIONS_DIR) {
 
 const MULTI_CHAR_OPS = ['::', ':=', '||', '<>', '!=', '<=', '>=', '=>'];
 
+function decodeQuotedEscapes(value, escape, extended) {
+  const chunks = [];
+  let text = '';
+  const flush = () => {
+    if (!text.isWellFormed()) throw new Error('invalid Unicode surrogate pair');
+    chunks.push(Buffer.from(text));
+    text = '';
+  };
+  for (let i = 0; i < value.length;) {
+    if (value[i] !== escape) { text += value[i++]; continue; }
+    i += 1;
+    if (!extended && value[i] === escape) { text += escape; i += 1; continue; }
+    const rest = value.slice(i);
+    const unicode = (extended ? /^(?:u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/ : /^(?:[0-9a-f]{4}|\+[0-9a-f]{6})/i).exec(rest);
+    if (unicode) {
+      const digits = unicode[0].replace(extended ? /^[uU]/ : /^\+/, '');
+      const code = parseInt(digits, 16);
+      if (code === 0 || code > 0x10ffff) throw new Error('invalid Unicode escape value');
+      text += String.fromCodePoint(code);
+      i += unicode[0].length;
+    } else if (extended) {
+      if (/^[uU]/.test(rest)) throw new Error('invalid Unicode escape');
+      const byte = /^(?:[0-7]{1,3}|x[0-9a-fA-F]{1,2})/.exec(rest);
+      if (byte) {
+        flush();
+        chunks.push(Buffer.from([parseInt(byte[0].replace(/^x/i, ''), /^x/i.test(byte[0]) ? 16 : 8)]));
+        i += byte[0].length;
+      } else {
+        if (i === value.length) throw new Error('invalid trailing escape');
+        text += { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }[value[i]] ?? value[i];
+        i += 1;
+      }
+    } else throw new Error('invalid Unicode escape');
+  }
+  flush();
+  // Octal/hex escapes are server-encoding bytes, not individual Unicode characters.
+  const decoded = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks));
+  if (decoded.includes('\0')) throw new Error('invalid zero byte in quoted token');
+  return decoded;
+}
+
 export function lex(src) {
   const tokens = [];
+  const unicodeTokens = [];
   let i = 0;
   const push = (type, value, start, end) => tokens.push({ type, value, start, end });
   while (i < src.length) {
@@ -66,43 +108,29 @@ export function lex(src) {
         continue;
       }
     }
-    if ((c === 'E' || c === 'e') && src[i + 1] === "'") {
+    const extended = (c === 'E' || c === 'e') && src[i + 1] === "'";
+    const unicode = (c === 'U' || c === 'u') && src[i + 1] === '&' && ['"', "'"].includes(src[i + 2]);
+    if (extended || unicode || c === "'" || c === '"') {
+      i += extended ? 1 : unicode ? 2 : 0;
+      const quote = src[i++];
       let value = '';
-      i += 2;
       for (;;) {
-        if (i >= src.length) throw new Error('unterminated E string');
-        const ch = src[i];
-        if (ch === '\\') {
-          const esc = src[i + 1];
-          value += { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' }[esc] ?? esc;
-          i += 2;
-        } else if (ch === "'" && src[i + 1] === "'") { value += "'"; i += 2; }
-        else if (ch === "'") { i += 1; break; }
-        else { value += ch; i += 1; }
-      }
-      push('str', value, start, i);
-      continue;
-    }
-    if (c === "'") {
-      let value = '';
-      i += 1;
-      for (;;) {
-        if (i >= src.length) throw new Error('unterminated string');
-        if (src[i] === "'" && src[i + 1] === "'") { value += "'"; i += 2; }
-        else if (src[i] === "'") { i += 1; break; }
+        if (i >= src.length) throw new Error('unterminated quoted token');
+        if (extended && src[i] === '\\') { value += src.slice(i, i + 2); i += 2; }
+        else if (src[i] === quote && src[i + 1] === quote) { value += quote; i += 2; }
+        else if (src[i] === quote) {
+          i += 1;
+          const continuation = quote === "'" && /^(?:[ \t\f\v]|--[^\r\n]*)*[\r\n](?:[ \t\n\r\f\v]|--[^\r\n]*)*'/.exec(src.slice(i));
+          if (!continuation) break;
+          i += continuation[0].length;
+        }
         else { value += src[i]; i += 1; }
       }
-      push('str', value, start, i);
+      if (unicode) unicodeTokens.push(tokens.length);
+      push(quote === '"' ? 'ident' : 'str', extended ? decodeQuotedEscapes(value, '\\', true) : value, start, i);
       continue;
     }
-    if (c === '"') {
-      const n = src.indexOf('"', i + 1);
-      if (n === -1) throw new Error(`unterminated quoted identifier at ${start}`);
-      push('ident', src.slice(i + 1, n), start, n + 1);
-      i = n + 1;
-      continue;
-    }
-    const word = /[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_$\u0080-\uFFFF]*(?:\.[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_$\u0080-\uFFFF]*)*/y;
+    const word = /[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_$\u0080-\uFFFF]*(?:\.(?![uU]&['"])[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_$\u0080-\uFFFF]*)*/y;
     word.lastIndex = i;
     const w = word.exec(src);
     if (w) { push('ident', w[0].toLowerCase(), start, i + w[0].length); i += w[0].length; continue; }
@@ -113,6 +141,21 @@ export function lex(src) {
     const op = MULTI_CHAR_OPS.find((o) => src.startsWith(o, i)) ?? c;
     push('op', op, start, i + op.length);
     i += op.length;
+  }
+  for (const index of unicodeTokens.reverse()) {
+    const token = tokens[index];
+    let escape = '\\';
+    const clause = tokens[index + 1];
+    if (clause?.type === 'ident' && /^uescape$/i.test(src.slice(clause.start, clause.end))) {
+      const literal = tokens[index + 2];
+      if (literal?.type !== 'str' || Buffer.byteLength(literal.value) !== 1 || /[0-9a-f+'" \t\n\r\f\v]/i.test(literal.value)) {
+        throw new Error('invalid Unicode escape character');
+      }
+      escape = literal.value;
+      token.end = literal.end;
+      tokens.splice(index + 1, 2);
+    }
+    token.value = decodeQuotedEscapes(token.value, escape, false);
   }
   return tokens;
 }
