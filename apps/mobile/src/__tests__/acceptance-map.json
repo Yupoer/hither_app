@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Map access loss deduplicates, route opening fences stale sync completions, and FIFO selection/native pager preserve their stable owners and array identity.",
+      "testFile": "mapScreenChromeResources.test.ts",
+      "testNamePattern": "deduplicates access-loss|syncs each open once|keeps FIFO removal selection"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Map subgroup changes reset only edit/import scope, retain unrelated draft state and correct an unavailable subgroup view.",
       "testFile": "mapScreenScopeControls.test.ts",
       "testNamePattern": "resets only edit and import scope|keeps a valid subgroup view"

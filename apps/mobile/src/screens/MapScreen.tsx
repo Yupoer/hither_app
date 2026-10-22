@@ -1,3 +1,4 @@
+import { MapAccessLossResource, MapRouteOpenResource, MapGatherRequestPagerResource } from './MapScreen/MapScreenChromeResources';
 import { MapArrivalOutboxResource, MapForegroundNavigationResource, MapCardWorkloadResource, MapKmlQuotaResource, MapConfirmKeyboardResource, MapAccountPlacesResource, MapNavigationStartFrameResource, MapSharingHydrationResource, MapNavigationAckResource, MapTrackingModeResource, MapRouteCameraResource, MapProgressDeadlineResource, MapApproachNoticeResource, MapPermissionRecoveryResource, MapRouteScopePreferenceResource } from './MapScreen/MapScreenResources';
 import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
 import { useMapScopeControls } from './MapScreen/hooks/useMapScopeControls';
@@ -469,35 +470,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
   const kickedHandledRef = useRef(false);
   const voluntaryLeaveRef = useRef(false);
-  useEffect(() => {
-    if (!user?.id || !groupId || isDemoGroup(groupId)) return;
-    if (membership?.group.id !== groupId) return;
-    if (isLeader) return;
-    const stillMember = members.some((m) => m.userId === user.id);
-    const accessLost = groupStateError === 'not_member'
-      || (!loading && !!state && state.group?.id === groupId && !stillMember && members.length > 0);
-    if (!accessLost) {
-      if (stillMember) kickedHandledRef.current = false;
-      return;
-    }
-    if (kickedHandledRef.current) return;
-    kickedHandledRef.current = true;
-    leaveGroup();
-    if (!voluntaryLeaveRef.current) Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));
-    navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
-  }, [
-    user?.id,
-    groupId,
-    members,
-    state,
-    loading,
-    groupStateError,
-    membership?.group.id,
-    isLeader,
-    leaveGroup,
-    navigation,
-    t,
-  ]);
+  const accessLossLifecycle = <MapAccessLossResource user={user} groupId={groupId} membership={membership} isLeader={isLeader} members={members} groupStateError={groupStateError} loading={loading} state={state} kickedHandledRef={kickedHandledRef} leaveGroup={leaveGroup} voluntaryLeaveRef={voluntaryLeaveRef} t={t} navigation={navigation} />;
 
   const {
     viewingScope, setViewingScope,
@@ -592,19 +565,7 @@ export default function MapScreen({ route, navigation }: Props) {
     () => sortedGatherRequests.map((r) => r.id),
     [sortedGatherRequests],
   );
-  useEffect(() => {
-    setSelectedGatherRequestId((prev) => {
-      const next = resolveGatherRequestSelection({
-        sortedIds: sortedGatherRequestIds,
-        previousSortedIds: lastGatherRequestIdsRef.current,
-        previousId: prev,
-        removedId: pendingRemovedGatherRequestIdRef.current,
-      });
-      lastGatherRequestIdsRef.current = sortedGatherRequestIds;
-      pendingRemovedGatherRequestIdRef.current = null;
-      return next;
-    });
-  }, [sortedGatherRequestIds]);
+
   const mapDailyAccommodations = useMemo(() => {
     const departure = routeDepartureDate;
     const tripDays = routeTripDays ?? 1;
@@ -1140,22 +1101,7 @@ export default function MapScreen({ route, navigation }: Props) {
     'drag' | 'select' | 'none'
   >('drag');
   const [routeSelectedIds, setRouteSelectedIds] = useState<string[]>([]);
-  useEffect(() => {
-    if (overlay !== 'route') {
-      routeOpenSyncGenerationRef.current += 1;
-      routeOpenSyncSessionRef.current = 'idle';
-      // Reset list chrome when leaving the sheet.
-      setRouteInteractionMode('drag');
-      setRouteSelectedIds([]);
-      return;
-    }
-    if (routeOpenSyncSessionRef.current !== 'idle') return;
-    routeOpenSyncSessionRef.current = 'started';
-    const generation = routeOpenSyncGenerationRef.current;
-    void syncFromDatabase().finally(() => {
-      if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done';
-    });
-  }, [overlay, syncFromDatabase]);
+  const routeOpenLifecycle = <MapRouteOpenResource overlay={overlay} routeOpenSyncGenerationRef={routeOpenSyncGenerationRef} routeOpenSyncSessionRef={routeOpenSyncSessionRef} setRouteInteractionMode={setRouteInteractionMode} setRouteSelectedIds={setRouteSelectedIds} syncFromDatabase={syncFromDatabase} />;
 
   const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
   // --- Carousel selection ---------------------------------------------------
@@ -4188,16 +4134,7 @@ export default function MapScreen({ route, navigation }: Props) {
     toggleRouteScope,
     user?.id,
   ]);
-  useEffect(() => {
-    const page = gatherRequestPageIndex(
-      sortedGatherRequestIds,
-      selectedGatherRequestId,
-    );
-    gatherRequestPagerRef.current?.scrollTo({
-      x: page * gatherRequestPageW,
-      animated: true,
-    });
-  }, [gatherRequestPageW, selectedGatherRequestId, sortedGatherRequestIds]);
+  const gatherRequestPagerLifecycle = <MapGatherRequestPagerResource sortedGatherRequestIds={sortedGatherRequestIds} selectedGatherRequestId={selectedGatherRequestId} setSelectedGatherRequestId={setSelectedGatherRequestId} lastGatherRequestIdsRef={lastGatherRequestIdsRef} pendingRemovedGatherRequestIdRef={pendingRemovedGatherRequestIdRef} gatherRequestPageW={gatherRequestPageW} gatherRequestPagerRef={gatherRequestPagerRef} />;
   const routePaneBody = useMemo(() => (
     <RoutePane
       accent={accent}
@@ -4375,6 +4312,9 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const mapScreenLifecycle = (<>
+    <React.Fragment key="map-owner-gather-request-pager">{gatherRequestPagerLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-accessLossLifecycle">{accessLossLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-routeOpenLifecycle">{routeOpenLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-arrivalOutboxLifecycle">{arrivalOutboxLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-foregroundNavigationLifecycle">{foregroundNavigationLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-cardWorkloadLifecycle">{cardWorkloadLifecycle}</React.Fragment>
