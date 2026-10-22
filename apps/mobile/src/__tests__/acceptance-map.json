@@ -1980,6 +1980,10 @@
     {"parent": 293, "child": 293, "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.", "testFile": "starfieldPauseResume.test.ts", "testNamePattern": "freezes ball identity and phase"},
     {"parent": 293, "child": 293, "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.", "testFile": "liveActivityDisplay.test.ts", "testNamePattern": "persists changed snapshots at 15 seconds"},
     {"parent": 293, "child": 293, "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.", "testFile": "backgroundJourneyCoverage.test.ts", "testNamePattern": "delivers background estimates at 5 seconds"},
-    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"}
+    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"},
+    {"parent": 304, "child": 304, "acceptance": "Profile realtime updates are scoped to current co-members and resubscribe only when the member set changes.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "subscribes to profile updates only for current co-members"},
+    {"parent": 304, "child": 304, "acceptance": "The full group reload polls every 30 s without realtime and every 120 s while the channel is SUBSCRIBED.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "backs off while SUBSCRIBED"},
+    {"parent": 304, "child": 304, "acceptance": "Repeated realtime rejoin failures do not postpone the 30 s fallback poll.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "keeps the 30 s fallback poll running"},
+    {"parent": 304, "child": 304, "acceptance": "A fallback poll never overlaps an in-flight reload.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "never starts a poll while the previous poll load is still in flight"}
   ]
 }
