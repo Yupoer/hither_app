@@ -1001,6 +1001,10 @@ export default function MapScreen({ route, navigation }: Props) {
       ),
     [openDestinations, arrivalExitSnapshots, arrivalExitRecords, arrivalExitContext],
   );
+  const mapDestinations = useMemo(
+    () => [...allScopedDestinations.filter(d => d.day == null && !d.closedAt), ...destinations],
+    [allScopedDestinations, destinations],
+  );
   useEffect(() => energyObservability.mountWorkload({ mountedCardCount: uiVisible ? destinations.length : 0 }), [uiVisible, destinations.length]);
   const destinationIds = useMemo(() => destinations.map((dest) => dest.id), [destinations]);
   /**
@@ -7047,7 +7051,7 @@ export default function MapScreen({ route, navigation }: Props) {
           members={members}
           showsUserLocation={foregroundLocation.owner === 'mapkit'}
           gathering={activePoint}
-          destinations={[...allScopedDestinations.filter(d => d.day == null && !d.closedAt), ...destinations]}
+          destinations={mapDestinations}
           dailyAccommodations={mapDailyAccommodations}
           stayCalloutLabel={t('stay.defaultTitle')}
           pendingPlace={pendingPlace}
