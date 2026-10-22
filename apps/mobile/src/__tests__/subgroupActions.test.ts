@@ -1,10 +1,15 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { MemberLocation, Subgroup } from '../types';
+import { useMountEffect } from '../hooks/useMountEffect';
+const mockInviteMount = jest.fn();
+const mockInviteCleanup = jest.fn();
+function InviteLifecycleProbe() { useMountEffect(() => { mockInviteMount(); return mockInviteCleanup; }); return null; }
 
 const mockStorage = new Map<string, string>();
 const mockAlert = jest.fn();
 const mockInvites = {
+  lifecycle: React.createElement(InviteLifecycleProbe),
   invites: [{ id: 'inv-1' }],
   accept: jest.fn(async () => undefined),
   decline: jest.fn(async () => undefined),
@@ -62,7 +67,7 @@ describe('useSubgroupActions', () => {
     };
     function Harness() {
       actions = useSubgroupActions(props);
-      return null;
+      return actions.lifecycle;
     }
     act(() => { renderer = create(React.createElement(Harness)); });
   }
@@ -78,6 +83,7 @@ describe('useSubgroupActions', () => {
 
   it('hides subgroups that no member is in and loads my pending sent invites', async () => {
     render();
+    expect(mockInviteMount).toHaveBeenCalledTimes(1);
     await act(flush);
     expect(actions?.subgroups.map((subgroup) => subgroup.id)).toEqual(['s1']);
     expect(mockClient.fetchSentInvites).toHaveBeenCalledWith('s1');

@@ -5,7 +5,7 @@
  * Does not gate navigation start.
  */
 import { useForegroundReconcile } from '../../../state/useForegroundReconcile';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   cancelCoordinationRequest,
   createCoordinationRequest,
@@ -37,6 +37,7 @@ export interface UseCoordinationRequestsOptions {
 }
 
 export interface UseCoordinationRequestsResult {
+  lifecycle: ReactElement;
   requests: CoordinationRequestView[];
   openCount: number;
   loading: boolean;
@@ -134,7 +135,7 @@ export function useCoordinationRequests(
     } while (pendingRef.current && groupIdRef.current === gid);
   }, [active]);
 
-  useForegroundReconcile(active, () => load('silent'));
+  const lifecycle = useForegroundReconcile(active, () => load('silent'));
 
   const scheduleReload = useCallback(() => {
     if (reloadTimerRef.current) return;
@@ -271,6 +272,7 @@ export function useCoordinationRequests(
   );
 
   return {
+    lifecycle,
     requests,
     openCount,
     loading,

@@ -121,7 +121,7 @@ function ThemedNavigation() {
   // wherever in the app the user happens to be. MapScreen mounts its own
   // instance too (for the accept/decline UI) — see useSubgroupInvites for
   // how duplicate notifications across the two instances are avoided.
-  useSubgroupInvites();
+  const subgroupInvites = useSubgroupInvites();
 
   useEffect(() => metrics.startRuntimePowerMonitoring(), []);
 
@@ -283,6 +283,8 @@ function ThemedNavigation() {
   // the wrong first screen.
   if (initializing || needsOnboarding === null || !fontsLoaded) {
     return (
+      <>
+      {subgroupInvites.lifecycle}
       <View
         style={{
           flex: 1,
@@ -305,12 +307,14 @@ function ThemedNavigation() {
           <WaveLoading size="large" color={colors.accent} />
         </View>
       </View>
+      </>
     );
   }
 
   if (isPasswordRecovery || passwordRecoverySuccess) {
     return (
       <>
+        {subgroupInvites.lifecycle}
         <PasswordRecoveryScreen />
         <StatusBar style="light" />
       </>
@@ -320,6 +324,7 @@ function ThemedNavigation() {
   if (needsOnboarding) {
     return (
       <>
+        {subgroupInvites.lifecycle}
         <OnboardingScreen onDone={() => setNeedsOnboarding(false)} />
         {/* BUG-04: glass chrome is always dark — force light status icons. */}
         <StatusBar style="light" />
@@ -343,6 +348,8 @@ function ThemedNavigation() {
   };
 
   return (
+    <>
+    {subgroupInvites.lifecycle}
     <NavigationContainer
       ref={navigationRef}
       theme={navTheme}
@@ -368,6 +375,7 @@ function ThemedNavigation() {
       <RootNavigator />
       <StatusBar style="light" />
     </NavigationContainer>
+    </>
   );
 }
 

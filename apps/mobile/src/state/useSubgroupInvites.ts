@@ -1,5 +1,5 @@
 import { useForegroundReconcile } from './useForegroundReconcile';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { supabase } from '../api/supabase';
 import { acceptSubgroupInvite, declineSubgroupInvite, fetchMyInvites } from '../api/client';
 import {
@@ -38,6 +38,7 @@ let channelSeq = 0;
 const notifiedIds = new Set<string>();
 
 interface UseSubgroupInvitesResult {
+  lifecycle: ReactElement;
   invites: PendingInvite[];
   accept: (inviteId: string) => Promise<void>;
   decline: (inviteId: string) => Promise<void>;
@@ -95,7 +96,7 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     }
   }, [groupId, myUserId]);
 
-  useForegroundReconcile(Boolean(myUserId), load);
+  const lifecycle = useForegroundReconcile(Boolean(myUserId), load);
   const identityRef = useRef({ groupId, myUserId });
   identityRef.current = { groupId, myUserId };
 
@@ -161,5 +162,5 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     [groupId, load],
   );
 
-  return { invites, accept, decline, refresh: load };
+  return { lifecycle, invites, accept, decline, refresh: load };
 }

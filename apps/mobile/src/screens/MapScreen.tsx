@@ -385,6 +385,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const {
     state,
+    lifecycle: groupStateLifecycle,
     loading,
     error: groupStateError,
     loadError,
@@ -564,6 +565,7 @@ export default function MapScreen({ route, navigation }: Props) {
     gatherPointRequests,
     setGatherPointRequests,
     loadGatheringWorkflow,
+    lifecycle: gatheringWorkflowLifecycle,
     patchLocalArrival,
     workflowContext,
     isWorkflowContextCurrent,
@@ -728,7 +730,7 @@ export default function MapScreen({ route, navigation }: Props) {
     await reconcileRouteOnOpen(refreshLocalSnapshot, refresh);
   }, [refreshLocalSnapshot, refresh]);
 
-  useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
+  const locationRefreshLifecycle = useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
   const mapMountedRef = useRef(true);
   useEffect(() => {
     mapMountedRef.current = true;
@@ -2450,6 +2452,7 @@ export default function MapScreen({ route, navigation }: Props) {
     openCount: exceptionOpenCount,
     pendingKeys: exceptionPendingKeys,
     markHandled: markExceptionHandled,
+    lifecycle: organizerLifecycle,
   } = useOrganizerExceptions({
     enabled: !!isLeader,
     groupId,
@@ -3549,6 +3552,7 @@ export default function MapScreen({ route, navigation }: Props) {
     handleInvite,
     doSelfSplit,
     doSelfMerge,
+    lifecycle: subgroupLifecycle,
   } = useSubgroupActions({
     groupId,
     userName: user?.name,
@@ -4565,13 +4569,23 @@ export default function MapScreen({ route, navigation }: Props) {
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
+  const groupDataLifecycle = <>
+    <React.Fragment key="group-state">{groupStateLifecycle}</React.Fragment>
+    <React.Fragment key="location-refresh">{locationRefreshLifecycle}</React.Fragment>
+    <React.Fragment key="gathering-workflow">{gatheringWorkflowLifecycle}</React.Fragment>
+    <React.Fragment key="organizer">{organizerLifecycle}</React.Fragment>
+    <React.Fragment key="coordination">{coordination.lifecycle}</React.Fragment>
+    <React.Fragment key="subgroup">{subgroupLifecycle}</React.Fragment>
+  </>;
+
   if (loading && !state) {
     // Passive mode must still offer switch-back during first load.
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
-          {deviceLocationLifecycle}
-          {mapKitRouteLifecycle}
+          <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
+          <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
+          <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4591,8 +4605,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        {deviceLocationLifecycle}
-        {mapKitRouteLifecycle}
+        <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
+        <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
+        <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
@@ -4605,8 +4620,9 @@ export default function MapScreen({ route, navigation }: Props) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
-          {deviceLocationLifecycle}
-          {mapKitRouteLifecycle}
+          <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
+          <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
+          <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
             {refreshing ? <WaveLoading color={accent} /> : null}
@@ -4638,8 +4654,9 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
-        {deviceLocationLifecycle}
-        {mapKitRouteLifecycle}
+        <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
+        <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
+        <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4660,8 +4677,9 @@ export default function MapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.flex}>
-      {deviceLocationLifecycle}
-      {mapKitRouteLifecycle}
+      <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
+      <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
+      <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
