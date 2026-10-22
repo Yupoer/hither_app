@@ -1,5 +1,6 @@
 const { World } = require('../../test/headless/world.cjs');
 const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
+const SUBSCRIBED_GROUP_POLL_MS = 120_000;
 
 describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platform => {
   jest.setTimeout(90000);
@@ -27,7 +28,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
     } finally { await world.close(); }
   });
 
-  it('repairs missed Realtime at the real 30 second poll and restores an offline peer snapshot after restart', async () => {
+  it('repairs missed Realtime at the subscribed 120 second poll and restores an offline peer snapshot after restart', async () => {
     const world = new World();
     try {
       const a = await world.device({ id: 'leader', userId: LEADER, platform });
@@ -40,6 +41,12 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await world.settle();
       const before = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_recovery_snapshot').length;
       await world.advance(29999);
+      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_recovery_snapshot')).toHaveLength(before);
+      await world.advance(1);
+      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_recovery_snapshot')).toHaveLength(before);
+      await world.advance(SUBSCRIBED_GROUP_POLL_MS - 30001);
+      // Keep the missed sample fresh while waiting for the subscribed fallback.
+      await a.gps(25.1, 121.5);
       expect((await b.observe()).group.state.members.find((m: any) => m.userId === LEADER).coordinates).toBeUndefined();
       expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_recovery_snapshot')).toHaveLength(before);
       await world.advance(1);
@@ -301,7 +308,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       expect(restored.journey.targetId).toBeNull();
       expect(restored.durable.snapshot.activeGathering.journeyPhase).toBe('staying');
       a.online = true;
-      await world.advance(30000);
+      await world.advance(SUBSCRIBED_GROUP_POLL_MS);
       await world.advance(300);
       await world.waitFor(a, (value: any) => value.durable.operations.length === 0 && !value.journey.targetId, 'replayed FIFO');
       const peer = await world.waitFor(b, (value: any) => value.group.state?.group.journeyStatus === 'paused' && !value.journey.targetId, 'peer after replay');
