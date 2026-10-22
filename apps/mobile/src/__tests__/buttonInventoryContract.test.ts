@@ -169,7 +169,6 @@ describe('button inventory / high-risk action contract', () => {
 
   it('documents pure-UI handlers that stay as minimal setState (no forced runUiAction)', () => {
     // These are intentionally local state setters — inventory only.
-    expect(mapScreen).toContain('const closeOverlay = useCallback(() => {');
     expect(mapScreen).toContain('setOverlay(null)');
     expect(loginScreen).toContain('onChange={setAuthMode}');
     expect(feedbackSheet).toContain('onPress={() => setCategory(c.key)}');

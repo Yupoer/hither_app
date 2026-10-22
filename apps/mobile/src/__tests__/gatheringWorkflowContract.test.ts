@@ -53,7 +53,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
 
   it('keeps gather-approve UI resilient to network blips', () => {
     expect(mapScreen).toContain('resolveGatherPointRequestResilient');
-    expect(mapScreen).toContain('isNetworkRequestError');
     expect(mapScreen).toContain('gather_request_resolve');
     expect(mapScreen).toContain('resolvingGatherRequestId');
     // Error copy is classified by the shared mapper; it must not hard-code a

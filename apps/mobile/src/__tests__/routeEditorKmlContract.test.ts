@@ -24,7 +24,7 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain('addDestinationsBatch');
     expect(mapScreen).toContain('normalizeImportBatch');
     const start = mapScreen.indexOf('const handleKmlImport = useCallback');
-    const end = mapScreen.indexOf('const openCoordinateSheet', start);
+    const end = mapScreen.indexOf('const handleLongPressCoordinate', start);
     const block = mapScreen.slice(start, end);
     expect(block).toContain('addDestinationsBatch');
     expect(block).not.toMatch(/for \(let i = 0; i < items\.length/);

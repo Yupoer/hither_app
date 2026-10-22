@@ -50,7 +50,6 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import Animated, {
   useSharedValue,
-  cancelAnimation,
   useAnimatedStyle,
   interpolate,
   Extrapolation,
@@ -90,7 +89,6 @@ import MeetCountdown from '../components/MeetCountdown';
 import DestinationReorderList from '../components/DestinationReorderList';
 import MetalforgeStarfield from '../components/MetalforgeStarfield';
 import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
-import NotificationPreferencesCard from '../components/NotificationPreferencesCard';
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import CustomQuickCommandSheet from '../components/CustomQuickCommandSheet';
 import BottomSheet, { sheetBottomOffset } from '../components/BottomSheet';
@@ -100,7 +98,6 @@ import KmlImportSheet from '../components/KmlImportSheet';
 import CoordinateDestinationSheet from '../components/CoordinateDestinationSheet';
 import type { CoordinateDestinationInput } from '../utils/coordinateDestination';
 import FeedbackSheet from '../components/FeedbackSheet';
-import CrookIcon from '../components/CrookIcon';
 import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
 import OverflowMarquee from '../components/OverflowMarquee';
@@ -154,15 +151,14 @@ import {
   ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
   ARRIVAL_RADIUS_MAX_M,
-  type Language,
 } from '../state/PreferencesContext';
 import PrefSlider from '../components/PrefSlider';
 import SystemToggle from '../components/SystemToggle';
-import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
+import { displayMemberAvatar } from '../constants/avatars';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { useIsFocused } from '@react-navigation/native';
 import type { CoreOperation } from '../types/coreData';
-import { getCoreOperationOutbox, subscribeCoreOutboxChanges, flushCoreOperationOutbox } from '../state/coreDataSync';
+import { getCoreOperationOutbox, subscribeCoreOutboxChanges } from '../state/coreDataSync';
 import { enqueueArrival, syncArrival, projectArrivals, projectPersonalArrivals, personalArrivalEvent } from '../state/arrivalSync';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { runUiAction } from '../utils/uiAction';
@@ -245,10 +241,6 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
-import {
-  getLocationSharingEnabled,
-  setLocationSharingEnabled,
-} from '../api/services/NavigationService';
 import { requestPermission as requestLocationPermission } from '../native/location';
 import {
   consumePendingLocationPermission,
@@ -318,7 +310,6 @@ import {
   selfMerge,
   selfSplit,
   setDestinationMeetTime,
-  setJourneyStatus,
   setSolo,
   reportStraggler,
   leaveGroups,
@@ -327,7 +318,6 @@ import {
   getGroupLocationRefreshAcknowledgements,
   resolveGatherPointRequestResilient,
   sendCommand,
-  isNetworkRequestError,
   correctDestinationArrival,
   setDestinationArrivalAt,
   setDailyAccommodation,
@@ -366,7 +356,6 @@ import {
 import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferences } from '../types';
 import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, rigidTap, selectionTick, alertBuzz } from '../utils/haptics';
-import { AVATAR_EMOJI, AVATAR_COLORS } from '../constants/avatars';
 import type {
   Coordinates,
   DailyAccommodation,
@@ -380,20 +369,16 @@ import type {
 import type { KmlPlacemark } from '../utils/kml';
 import { normalizeImportBatch, KmlImportError } from '../utils/kmlBatch';
 import {
-  FREE_LIMITS,
   anonymousLeaderRequiresRegistration,
   countOpenDestinations,
   shouldBlockNewDestination,
 } from '../entitlements';
-import { radius, themes, THEME_ORDER, type ThemeName } from '../theme';
+import { themes } from '../theme';
 import { glass, accentMix, memberColor } from '../glass';
 import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
-// Auto-advance to the next gathering point once the leader is this close —
-// separate from the server's 30 m arrival boundary.
-const AUTO_ADVANCE_RADIUS_M = 50;
 // Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
 const DOTS_MAX_VISIBLE = 5;
 const PASSIVE_ENTER_HEIGHT = 65; // round(162 * 0.4)
@@ -518,7 +503,6 @@ export default function MapScreen({ route, navigation }: Props) {
     isPro,
     premiumProjection,
     refreshEntitlement,
-    upgradeToEmailAccount,
     setMembership,
   } = useSession();
   const {
@@ -1852,8 +1836,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
   const {
     navigationStoppedLocally,
-    journeyStatus,
-    journeyGoing,
     journeyActive,
     navTarget,
     navTargetId,
@@ -3784,11 +3766,6 @@ export default function MapScreen({ route, navigation }: Props) {
     tripDayForAdd,
   ]);
 
-  const openCoordinateSheet = useCallback((coords?: { latitude: number; longitude: number }) => {
-    setCoordSheetInitial(coords);
-    setCoordSheetVisible(true);
-  }, []);
-
   const handleLongPressCoordinate = useCallback(
     (coordinates: { latitude: number; longitude: number }) => {
       mediumTap();
@@ -5650,10 +5627,6 @@ export default function MapScreen({ route, navigation }: Props) {
     styles, t, pendingPlace, user, accent, openProfile, openSettingsFromSheet, flock,
   ]);
 
-  const closeOverlay = useCallback(() => {
-    // Pure UI dismiss — minimal safe handler (no IO / navigation).
-    setOverlay(null);
-  }, []);
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
   }, []);
@@ -7263,7 +7236,6 @@ export default function MapScreen({ route, navigation }: Props) {
                     ? t('nav.a11yCompleteHint')
                     : t('nav.a11yStartHint')
                 : undefined;
-              const leaderActionDisabled = false;
               const commandDisabled = !isLeader && (
                 journeyBusy
                 || navCmd.disabled
@@ -9409,34 +9381,6 @@ const FlockRow = React.memo(function FlockRow({
       ) : null}
     </View>
   );
-});
-
-const segStyles = StyleSheet.create({
-  track: {
-    flexDirection: 'row',
-    gap: 6,
-    backgroundColor: glass.fill,
-    borderRadius: 13,
-    padding: 4,
-    marginBottom: 4,
-  },
-  seg: {
-    flex: 1,
-    height: 38,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  highlight: {
-    position: 'absolute',
-    left: 4,
-    top: 4,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-  },
-  segLocked: { opacity: 0.4 },
-  segText: { fontSize: 15, fontWeight: '600', color: glass.textSecondary },
 });
 
 /**
