@@ -25,7 +25,11 @@ type SegmentMotionProps = {
 };
 
 function SelectedSegmentMotion({ activeIdx, segW, gap, tx, scrollSelectedIntoView, measuredRef, prevIdxRef, prevSegWRef }: SegmentMotionProps) {
+  const issued = useRef(false);
   useMountEffect(() => {
+    // Strict replay must not replace this committed animation command with a snap.
+    if (issued.current) return;
+    issued.current = true;
     if (segW <= 0) {
       prevSegWRef.current = 0;
       return;

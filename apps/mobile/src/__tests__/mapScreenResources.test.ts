@@ -9,6 +9,7 @@ import {
   MapNavigationStartFrameResource,
   MapProgressDeadlineResource,
   MapRouteScopePreferenceResource,
+  MapSharingHydrationResource,
 } from '../screens/MapScreen/MapScreenResources';
 
 const mockOutboxLoads: { group: string; finish: (rows: CoreOperation[]) => void }[] = [];
@@ -24,6 +25,7 @@ const mockAppSubscribe = jest.fn((_event: string, listener: (state: string) => v
   return { remove: () => { mockAppListeners.delete(listener); } };
 });
 const mockGetItem = jest.fn<Promise<string | null>, [string]>();
+const mockSharingLoads: { actor: string; resolve: (value: boolean | null) => void; reject: (error: Error) => void }[] = [];
 const mockLeaseRelease = jest.fn();
 const mockMountWorkload = jest.fn((_input: { mountedCardCount: number }) => mockLeaseRelease);
 
@@ -44,7 +46,11 @@ jest.mock('../state/coreDataSync', () => ({
 jest.mock('../state/energyObservability', () => ({
   energyObservability: { mountWorkload: (...args: Parameters<typeof mockMountWorkload>) => mockMountWorkload(...args), setTrackingMode: jest.fn() },
 }));
-jest.mock('../state/locationSharingSync', () => ({ hydrateLocationSharing: jest.fn() }));
+jest.mock('../state/locationSharingSync', () => ({
+  hydrateLocationSharing: (actor: string) => new Promise<boolean | null>((resolve, reject) => {
+    mockSharingLoads.push({ actor, resolve, reject });
+  }),
+}));
 jest.mock('../state/journeyNotifications', () => ({ notifyJourneyApproach: jest.fn() }));
 jest.mock('../featureTour', () => ({ readAddPlaceTourCompletedLocal: jest.fn(), retryPendingAddPlaceTourAccountSync: jest.fn() }));
 jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationPermission: jest.fn(), recoverPendingLocationRefreshes: jest.fn() }));
@@ -58,6 +64,7 @@ describe('MapScreen named resources', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOutboxLoads.length = 0;
+    mockSharingLoads.length = 0;
     mockOutboxListeners.clear();
     mockAppListeners.clear();
   });
@@ -65,6 +72,56 @@ describe('MapScreen named resources', () => {
     act(() => tree?.unmount());
     tree = undefined;
     jest.useRealTimers();
+  });
+
+  it('applies stored sharing after preferences become ready under Strict replay', async () => {
+    const publish = jest.fn();
+    const claim = { current: null as string | null };
+    const render = (ready: boolean, actor = 'alice') => React.createElement(React.StrictMode, null,
+      React.createElement(MapSharingHydrationResource, {
+        preferencesReady: ready, user: { id: actor }, privacyHydratedUserRef: claim, setSharingEnabled: publish,
+      }));
+    act(() => { tree = create(render(false)); });
+    expect(mockSharingLoads).toHaveLength(0);
+    act(() => tree?.update(render(true)));
+    await act(async () => { for (const load of mockSharingLoads) load.resolve(false); });
+    expect(publish.mock.calls).toEqual([[false]]);
+    const count = mockSharingLoads.length;
+    act(() => tree?.update(render(false)));
+    act(() => tree?.update(render(true)));
+    expect(mockSharingLoads).toHaveLength(count);
+    act(() => tree?.update(render(true, 'bob')));
+    await act(async () => { for (const load of mockSharingLoads.slice(count)) load.resolve(true); });
+    expect(publish.mock.calls).toEqual([[false], [true]]);
+  });
+
+  it('isolates pending sharing hydration across account changes, callback replacement and unmount', async () => {
+    const publish = jest.fn();
+    const replacement = jest.fn();
+    const claim = { current: null as string | null };
+    const render = (actor: string, callback = publish) => React.createElement(MapSharingHydrationResource, {
+      preferencesReady: true, user: { id: actor }, privacyHydratedUserRef: claim, setSharingEnabled: callback,
+    });
+    act(() => { tree = create(render('alice')); });
+    act(() => tree?.update(render('bob')));
+    act(() => tree?.update(render('alice')));
+    await act(async () => {
+      mockSharingLoads[0].reject(new Error('old alice request'));
+      mockSharingLoads[1].resolve(true);
+    });
+    expect(claim.current).toBe('alice');
+    expect(publish).not.toHaveBeenCalled();
+    act(() => tree?.update(render('alice', replacement)));
+    expect(mockSharingLoads.map(load => load.actor)).toEqual(['alice', 'bob', 'alice', 'alice']);
+    await act(async () => { mockSharingLoads[2].resolve(true); mockSharingLoads[3].resolve(false); });
+    expect(publish).not.toHaveBeenCalled();
+    expect(replacement.mock.calls).toEqual([[false]]);
+    act(() => tree?.update(render('bob', replacement)));
+    act(() => tree?.unmount());
+    tree = undefined;
+    expect(claim.current).toBeNull();
+    await act(async () => { mockSharingLoads[4].resolve(true); });
+    expect(replacement.mock.calls).toEqual([[false]]);
   });
 
   it('installs the outbox listener, fences late loads across actor/group replacement and releases subscriptions', async () => {

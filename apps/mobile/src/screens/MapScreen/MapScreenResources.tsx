@@ -254,12 +254,24 @@ function MapSharingHydrationJob({ input }: { input: MapSharingHydrationInput }) 
     }
     privacyHydratedUserRef.current = user.id;
     let cancelled = false;
+    let completed = false;
     void hydrateLocationSharing(user.id)
-      .then((enabled) => { if (!cancelled && enabled != null) setSharingEnabled(enabled); })
+      .then((enabled) => {
+        if (cancelled) return;
+        completed = true;
+        if (enabled != null) setSharingEnabled(enabled);
+      })
       .catch(() => {
-        privacyHydratedUserRef.current = null;
+        if (!cancelled && privacyHydratedUserRef.current === user.id) {
+          privacyHydratedUserRef.current = null;
+        }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (!completed && privacyHydratedUserRef.current === user.id) {
+        privacyHydratedUserRef.current = null;
+      }
+    };
   });
   return null;
 }
