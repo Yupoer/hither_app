@@ -2,7 +2,10 @@ name: Claude Fix
 
 # Trusted maintainer dispatch: the CI workflow may still add `claude-fix` as a triage
 # label, but public issue events must not directly start a write-capable agent. Claude
-# reads the selected issue as untrusted report data and opens a PR for review.
+# reads the selected issue as untrusted report data and only commits locally. The agent
+# job holds a read-only token; a separate publish job imports its commits from a git
+# bundle into a fresh checkout and opens a draft PR, so no agent-controlled code ever
+# runs next to a write credential.
 #
 # REQUIRED SECRET: ANTHROPIC_API_KEY  (Settings > Secrets and variables > Actions).
 # Each run is a billed API call. Dispatch this workflow only after reviewing the issue
@@ -21,15 +24,17 @@ jobs:
     if: inputs.issue_number > 0
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           ref: master
           persist-credentials: false
+
+      - name: Record starting commit
+        run: git rev-parse HEAD > "$RUNNER_TEMP/start-sha"
 
       - uses: anthropics/claude-code-action@4036a180cf690f49529f5d8c79c998855287f590 # v1 tag release commit
         env:
@@ -51,11 +56,45 @@ jobs:
 
             Find the root cause, make the smallest correct fix, run the gates locally, and
             commit it on the current checkout. Do not push, open a PR, or merge, even where
-            AGENTS.md authorizes it; a later workflow step pushes your commits to a dedicated
+            AGENTS.md authorizes it; a separate job publishes your commits to a dedicated
             branch and opens a draft PR for a maintainer to review.
           claude_args: >-
             --allowedTools
             "Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git add *),Bash(git commit *),Bash(gh issue view *),Bash(npm ci*),Bash(npm test*),Bash(npm run *),Bash(npx expo install --check*),Edit,Read,Write,Glob,Grep"
+
+      - name: Bundle agent commits
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fix"
+          start="$(cat "$RUNNER_TEMP/start-sha")"
+          cp "$RUNNER_TEMP/start-sha" "$RUNNER_TEMP/fix/start-sha"
+          if [ "$(git rev-list --count "$start..HEAD")" -gt 0 ]; then
+            git bundle create "$RUNNER_TEMP/fix/fix.bundle" "$start..HEAD"
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: claude-fix
+          path: ${{ runner.temp }}/fix
+          retention-days: 7
+
+  publish:
+    needs: claude
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: master
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: claude-fix
+          path: ${{ runner.temp }}/fix
 
       - name: Publish fix branch and open draft PR
         env:
@@ -64,14 +103,20 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          git fetch --quiet origin master
-          if [ "$(git rev-list --count origin/master..HEAD)" -eq 0 ]; then
+          if [ ! -f "$RUNNER_TEMP/fix/fix.bundle" ]; then
             echo "No commits from the agent; nothing to publish."
             exit 0
           fi
-          git merge-base --is-ancestor origin/master HEAD
-          branch="claude-fix/issue-${ISSUE}-${GITHUB_RUN_ID}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/${branch}"
+          start="$(cat "$RUNNER_TEMP/fix/start-sha")"
+          [[ "$start" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$start" HEAD
+          git bundle verify "$RUNNER_TEMP/fix/fix.bundle"
+          git fetch --no-tags "$RUNNER_TEMP/fix/fix.bundle" "HEAD:refs/claude-fix/incoming"
+          git merge-base --is-ancestor "$start" refs/claude-fix/incoming
+          branch="claude-fix/issue-${ISSUE}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git -c core.hooksPath=/dev/null push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
+            "refs/claude-fix/incoming:refs/heads/${branch}"
+          body="$(printf 'Automated fix proposal for #%s from workflow run %s. Review before merging.\n\n<!-- hither-test-meta parent: %s -->' "$ISSUE" "$GITHUB_RUN_ID" "$ISSUE")"
           gh pr create --repo "$REPO" --draft --base master --head "$branch" \
-            --title "Claude fix for #${ISSUE}" \
-            --body "Automated fix proposal for #${ISSUE} from workflow run ${GITHUB_RUN_ID}. Review before merging."
+            --title "Claude fix for #${ISSUE}" --body "$body"
