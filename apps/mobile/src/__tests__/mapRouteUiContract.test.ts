@@ -33,8 +33,12 @@ describe('MapKit route UI contract', () => {
     expect(mapScreen).toContain('const peekSheetH = detents[0]');
     expect(mapScreen).not.toContain('const halfPeek = peekSheetH / 2');
     expect(mapScreen).not.toContain('detents[detent] ?? detents[0]');
-    expect(groupMap).toContain('// Sheet stage / detent must never re-run this effect.');
-    expect(groupMap).toContain('}, [appActive, fallbackCenter, gathering]);');
+    const cameraOwner = groupMap.slice(groupMap.indexOf('function GroupMapCameraFraming'), groupMap.indexOf('const GroupMap = forwardRef'));
+    expect(cameraOwner).toContain('Object.is(previous.appActive, props.appActive)');
+    expect(cameraOwner).toContain('Object.is(previous.fallbackCenter, props.fallbackCenter)');
+    expect(cameraOwner).toContain('Object.is(previous.gathering, props.gathering)');
+    expect(cameraOwner).not.toContain('props.latOffset');
+    expect(cameraOwner).not.toContain('props.chromeStage');
   });
 
   it('keeps gathering switch separate from completing a point', () => {
