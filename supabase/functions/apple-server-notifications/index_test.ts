@@ -213,6 +213,151 @@ Deno.test('unbound appAccountToken returns 503 without accepting', async () => {
   }
 });
 
+const TRIP_PRODUCT_ID = 'hither.small_trip_pass';
+const tripEnv: Record<string, string> = { ...envValues, PREMIUM_TRIP_PRODUCT_ID: TRIP_PRODUCT_ID };
+const tripTransaction = {
+  bundleId: 'app.hither.mobile',
+  environment: 'Sandbox',
+  productId: TRIP_PRODUCT_ID,
+  type: 'Consumable',
+  inAppOwnershipType: 'PURCHASED',
+  appAccountToken: ACCOUNT_TOKEN,
+  transactionId: '200000000000001',
+  originalTransactionId: '200000000000001',
+  purchaseDate: 1_800_000_000_000,
+  revocationDate: 1_800_000_005_000,
+  signedDate: 1_800_000_006_000,
+};
+
+function tripHandler(
+  notificationType: string,
+  tripRpc: () => { data: unknown; error: unknown } = () => ({
+    data: { ok: true, durable: true, accepted: true, duplicate: false, revoked: true, status: 'refunded' },
+    error: null,
+  }),
+  transaction: Record<string, unknown> = tripTransaction,
+) {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const outer = { ...outerPayload, notificationType };
+  const handler = createNotificationHandler({
+    env: (name) => tripEnv[name],
+    now: () => 1_800_000_010_000,
+    verifyJws: (compactJws) => Promise.resolve({
+      ok: true as const,
+      header: { alg: 'ES256' },
+      payload: (compactJws === 'outer-jws' ? outer : transaction) as never,
+      jwsSha256: `hash-${compactJws}`,
+    }),
+    createAdmin: () => ({
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        calls.push({ name, args });
+        if (name === 'record_storekit_notification') {
+          return { data: { ok: true, duplicate: false, accepted: false }, error: null };
+        }
+        if (name === 'apply_trip_storekit_notification') return tripRpc();
+        throw new Error(`unexpected rpc ${name}`);
+      },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: { user_id: 'user-1' }, error: null }),
+          }),
+        }),
+      }),
+    }) as never,
+  });
+  return { handler, calls };
+}
+
+Deno.test('trip-pass REFUND revokes through the trip ledger RPC', async () => {
+  const { handler, calls } = tripHandler('REFUND');
+  const response = await handler(request());
+  const result = await body(response);
+  if (response.status !== 200 || result.revoked !== true || result.accepted !== true) {
+    throw new Error(`expected durable trip revocation, got ${response.status} ${JSON.stringify(result)}`);
+  }
+  const trip = calls.find((call) => call.name === 'apply_trip_storekit_notification');
+  if (!trip) throw new Error('trip revocation RPC was not called');
+  if (trip.args.p_status !== 'refunded' || trip.args.p_user_id !== 'user-1'
+    || trip.args.p_transaction_id !== tripTransaction.transactionId
+    || trip.args.p_product_id !== TRIP_PRODUCT_ID
+    || trip.args.p_notification_id !== 'notification-1') {
+    throw new Error(`unexpected trip RPC args ${JSON.stringify(trip.args)}`);
+  }
+  if (calls.some((call) => call.name === 'apply_storekit_transaction' || call.name === 'accept_storekit_notification')) {
+    throw new Error('trip notification reached the subscription ledger');
+  }
+});
+
+Deno.test('trip-pass REVOKE maps to revoked; other types only acknowledge', async () => {
+  for (const [type, expected] of [['REVOKE', 'revoked'], ['CONSUMPTION_REQUEST', null], ['REFUND_REVERSED', null]] as const) {
+    const { handler, calls } = tripHandler(type);
+    const response = await handler(request());
+    const trip = calls.find((call) => call.name === 'apply_trip_storekit_notification');
+    if (response.status !== 200 || !trip || trip.args.p_status !== expected) {
+      throw new Error(`${type}: expected p_status ${expected}, got ${response.status} ${trip?.args.p_status}`);
+    }
+  }
+});
+
+Deno.test('trip ledger failures stay retryable and binding mismatches fail closed', async () => {
+  const transient = await tripHandler('REFUND', () => ({ data: null, error: new Error('temporary') }))
+    .handler(request());
+  if (transient.status !== 503) throw new Error(`expected 503, got ${transient.status}`);
+
+  const mismatch = await tripHandler('REFUND', () => ({
+    data: { ok: false, error: 'transaction_binding_mismatch' },
+    error: null,
+  })).handler(request());
+  const result = await body(mismatch);
+  if (mismatch.status !== 422 || result.error !== 'transaction_binding_mismatch') {
+    throw new Error(`expected 422 mismatch, got ${mismatch.status}`);
+  }
+});
+
+Deno.test('trip product with a non-consumable payload is rejected before the ledger', async () => {
+  const { handler, calls } = tripHandler('REFUND', undefined, { ...tripTransaction, type: 'Non-Consumable' });
+  const response = await handler(request());
+  const result = await body(response);
+  if (response.status !== 422 || result.error !== 'transaction_type_mismatch') {
+    throw new Error(`expected 422 type mismatch, got ${response.status} ${result.error}`);
+  }
+  if (calls.length > 0) throw new Error('invalid trip payload reached the database');
+});
+
+Deno.test('TEST notifications without transaction info are acknowledged', async () => {
+  const calls: string[] = [];
+  const handler = createNotificationHandler({
+    env: (name) => envValues[name],
+    verifyJws: () => Promise.resolve({
+      ok: true as const,
+      header: { alg: 'ES256' },
+      payload: {
+        notificationUUID: 'test-notification',
+        notificationType: 'TEST',
+        signedDate: 1_800_000_002_000,
+        data: { environment: 'Sandbox', bundleId: 'app.hither.mobile' },
+      } as never,
+      jwsSha256: 'hash-test',
+    }),
+    createAdmin: () => ({
+      rpc: async (name: string) => {
+        calls.push(name);
+        throw new Error(`unexpected rpc ${name}`);
+      },
+      from: () => {
+        throw new Error('unexpected table read');
+      },
+    }) as never,
+  });
+  const response = await handler(request());
+  const result = await body(response);
+  if (response.status !== 200 || result.test !== true) {
+    throw new Error(`expected TEST ack, got ${response.status} ${JSON.stringify(result)}`);
+  }
+  if (calls.length > 0) throw new Error('TEST notification touched the ledger');
+});
+
 Deno.test('Production notifications verify on a Sandbox-configured deployed function', async () => {
   const productionOuter = {
     ...outerPayload,

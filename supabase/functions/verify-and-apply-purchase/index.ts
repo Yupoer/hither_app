@@ -102,7 +102,11 @@ function defaultUserClient(url: string, anonKey: string, authorization: string):
 
 function applyHttpStatus(error: unknown): number {
   if (error === 'account_token_not_ready') return 409;
-  if (error === 'account_token_mismatch' || error === 'transaction_binding_mismatch') return 422;
+  if (
+    error === 'account_token_mismatch'
+    || error === 'transaction_binding_mismatch'
+    || error === 'transaction_revoked'
+  ) return 422;
   if (error === 'anonymous_upgrade_required') return 403;
   if (error === 'not_authenticated') return 401;
   if (error === 'leader_required' || error === 'group_required' || error === 'not_applicable') return 422;
