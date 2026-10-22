@@ -54,7 +54,7 @@ select is(
         and closed_at is null
     )
   ),
-  1,
+  2,
   'RPC reorder of open rows succeeds from locked slots'
 );
 

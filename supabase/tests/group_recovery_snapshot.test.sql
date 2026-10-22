@@ -12,14 +12,10 @@ insert into auth.users (id, email, is_anonymous) values
   ('b2222222-2222-4222-8222-222222222222', 'snap-anon@example.test', true),
   ('b3333333-3333-4333-8333-333333333333', 'snap-outsider@example.test', false);
 
-insert into public.profiles (id, nickname, anonymous_expires_at) values
-  ('b1111111-1111-4111-8111-111111111111', 'SnapLeader', null),
-  (
-    'b2222222-2222-4222-8222-222222222222',
-    'SnapAnon',
-    now() - interval '1 hour'
-  ),
-  ('b3333333-3333-4333-8333-333333333333', 'SnapOutsider', null);
+insert into public.profiles (id, nickname) values
+  ('b1111111-1111-4111-8111-111111111111', 'SnapLeader'),
+  ('b2222222-2222-4222-8222-222222222222', 'SnapAnon'),
+  ('b3333333-3333-4333-8333-333333333333', 'SnapOutsider');
 
 insert into public.groups (id, name, invite_code, created_by) values (
   'baaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -41,6 +37,11 @@ insert into public.memberships (group_id, user_id, role, created_at) values
     'follower',
     now() - interval '20 days'
   );
+
+select public.allow_anonymous_expiry_write();
+update public.profiles
+set anonymous_expires_at = now() - interval '1 hour'
+where id = 'b2222222-2222-4222-8222-222222222222';
 
 insert into public.itinerary_items (
   id, group_id, title, latitude, longitude, position
