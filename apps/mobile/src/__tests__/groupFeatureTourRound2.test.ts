@@ -272,7 +272,7 @@ describe('R2: hook observable lifecycle', () => {
   }) {
     const snap = useGroupFeatureTour(props.input);
     props.onSnapshot(snap);
-    return null;
+    return snap.lifecycle;
   }
 
   function baseInput(overrides: Partial<Parameters<typeof useGroupFeatureTour>[0]> = {}) {
@@ -380,7 +380,7 @@ describe('R3: reset replay with stale account prefs', () => {
   }) {
     const snap = useGroupFeatureTour(props.input);
     props.onSnapshot(snap);
-    return null;
+    return snap.lifecycle;
   }
 
   function baseInput(overrides: Partial<Parameters<typeof useGroupFeatureTour>[0]> = {}) {
@@ -480,7 +480,7 @@ describe('R3: reset replay with stale account prefs', () => {
   it('MapScreen resetPrefs optimistically patches session tour flag', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
-    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
     expect(map).toContain('groupFeatureTourCompleted: false');
     expect(map).toContain('updateProfile');
     expect(map).toContain('clearGroupFeatureTour');
@@ -567,11 +567,11 @@ describe('REVIEW_FIX #179: remeasure after carousel locks to preferred dest', ()
         personalArriveVisible: true,
         onTourActiveChange,
       });
-      return React.createElement('probe', {
+      return React.createElement(React.Fragment, null, snap.lifecycle, React.createElement('probe', {
         tourActive: snap.tourActive,
         targetRect: snap.targetRect,
         stepId: snap.step?.id ?? null,
-      });
+      }));
     }
 
     let tree: ReturnType<typeof create>;
@@ -597,7 +597,7 @@ describe('R2: MapScreen wires single tour destination + accountId', () => {
   it('source contracts', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
-    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
     expect(map).toContain('pickTourDestinationId');
     expect(map).toContain('tourDestinationId');
     expect(map).toContain('accountId: user?.id');

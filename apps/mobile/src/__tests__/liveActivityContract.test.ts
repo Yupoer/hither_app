@@ -21,7 +21,7 @@ const widgetAttributes = readFileSync(
 );
 const jsBridge = readFileSync(join(__dirname, '../native/liveActivity.ts'), 'utf8');
 const liveHook = readFileSync(join(__dirname, '../state/useLiveActivity.ts'), 'utf8');
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
 const androidModule = readFileSync(
   join(
     __dirname,
@@ -180,7 +180,8 @@ describe('ActivityKit remote push contract', () => {
   it('uses personal initial distance and persisted member status in MapScreen', () => {
     expect(mapScreen).not.toContain('PROGRESS_REF_M');
     expect(mapScreen).toContain('gatedJourneyProgress(');
-    expect(mapScreen).toContain('shouldAnchorInitial(');
+    const progressResource = readFileSync(join(__dirname, '../screens/MapScreen/MapJourneyProgressResources.tsx'), 'utf8');
+    expect(progressResource).toContain('shouldAnchorInitial(');
     expect(mapScreen).not.toContain("m.status === 'arrived'");
     expect(mapScreen).toContain('a.destinationId === navTarget?.id && a.userId === m.userId');
     expect(mapScreen).toContain('memberArrived:');

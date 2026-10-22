@@ -38,10 +38,10 @@ jobs:
     outputs:
       product: ${{ steps.scope.outputs.product }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
 
@@ -74,11 +74,11 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           # Real SQLite transaction tests use node:sqlite (also verified locally on 22.17.1).
           node-version: 22
@@ -99,7 +99,7 @@ jobs:
       # Durable PR marker (not github.base_ref): <!-- hither-test-meta parent: N|pure-chore -->
       - name: Resolve META_PARENT from PR metadata
         id: test_meta
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = /<!--\s*hither-test-meta\s+parent:\s*([A-Za-z0-9_-]+)\s*-->/i;
@@ -111,7 +111,13 @@ jobs:
             }
             let body = '';
             if (context.eventName === 'pull_request') {
-              body = context.payload.pull_request?.body || '';
+              // The event body predates metadata added after the PR was opened.
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+              });
+              body = pr.data.body || '';
             } else {
               const branch = ref.replace(/^refs\/heads\//, '');
               const prs = await github.rest.pulls.list({
@@ -176,12 +182,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
 
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
         with:
           deno-version: v2.x
 
@@ -197,7 +203,7 @@ jobs:
             supabase/functions/sync-app-store-subscription/index_test.ts \
             supabase/functions/admob-reward-callback/ssv_test.ts
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
         with:
           version: 2.109.1
 
@@ -225,8 +231,8 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -256,8 +262,8 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -287,7 +293,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Require every applicable gate
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
@@ -302,7 +308,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: |
             const sha = context.sha.slice(0, 7);

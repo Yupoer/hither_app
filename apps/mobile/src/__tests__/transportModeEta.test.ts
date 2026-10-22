@@ -24,7 +24,7 @@ it('switches both surface ETAs while pending and ignores an out-of-order mode co
       routeEtaSeconds: routes.selfRoute?.expectedTravelTimeSeconds, routeResultGeneration: routes.selfRouteGeneration,
       lastValidDistanceM: 1000, lastValidEtaSeconds: 570, lastValidEtaTravelMode: 'walk',
       lastValidProgress: 0.5, lastRouteDistanceM: 1000, arrivalRadiusM: 50 });
-    return null;
+    return routes.lifecycle;
   }
   let tree: ReturnType<typeof create>;
   await act(async () => { tree = create(React.createElement(Harness, { mode: 'walk' })); });

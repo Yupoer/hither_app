@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+const memberPresence = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useMemberPresence.ts'), 'utf8');
 
 describe('remote location refresh wiring', () => {
   const mapScreen = readFileSync(
@@ -25,7 +26,7 @@ describe('remote location refresh wiring', () => {
     expect(mapScreen).toContain('uploadSelf: () => refreshDeviceLocation({ requireUpload: true })');
     expect(mapScreen).toContain('requestPeers: () => requestGroupLocationRefresh(groupId)');
     expect(mapScreen).toContain('disabled={refreshing}');
-    expect(mapScreen).toContain('lastUpdated: m.capturedAt ?? m.lastUpdated');
+    expect(memberPresence).toContain('lastUpdated: m.capturedAt ?? m.lastUpdated');
     expect(mapScreen).not.toContain('resolveSelfAwareLastUpdated');
   });
 
@@ -42,8 +43,10 @@ describe('remote location refresh wiring', () => {
     expect(task).not.toContain('flushLocationOutbox');
     expect(task).toContain('rememberPendingLocationPermission');
     expect(task).toContain('consumePendingLocationPermission');
-    expect(mapScreen).toContain('consumePendingLocationPermission');
-    expect(mapScreen).toContain('backgroundPermissionDeniedRef.current = null');
+    const permissionResource = readFileSync(join(__dirname, '../screens/MapScreen/MapScreenResources.tsx'), 'utf8');
+    const backgroundResource = readFileSync(join(__dirname, '../screens/MapScreen/MapBackgroundLocationResource.tsx'), 'utf8');
+    expect(permissionResource).toContain('consumePendingLocationPermission');
+    expect(backgroundResource).toContain('backgroundPermissionDeniedRef.current = null');
     expect(entry.indexOf("import './src/state/backgroundLocationRefresh';")).toBeLessThan(
       entry.indexOf("import App from './App';"),
     );

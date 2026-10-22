@@ -6,7 +6,11 @@ const read = (rel: string) =>
   readFileSync(join(__dirname, '..', rel), 'utf8').replace(/\r\n/g, '\n');
 
 const groupMap = read('components/GroupMap.tsx');
-const mapScreen = read('screens/MapScreen.tsx');
+const memberPresence = read('screens/MapScreen/hooks/useMemberPresence.ts');
+const mapScreen = read('screens/MapScreen.tsx') + '\n' + memberPresence;
+const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
+const flockRow = read('screens/MapScreen/components/FlockRow.tsx');
+const mapStyles = read('screens/MapScreen/styles.ts');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
 const notifCard = read('components/NotificationPreferencesCard.tsx');
 const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
@@ -29,17 +33,17 @@ describe('#220 map / status / settings / paywall contracts', () => {
   it('serializes menu subtitle and selected for iOS UIAction checkmarks', () => {
     expect(iosMenu).toContain('subtitle');
     expect(iosMenu).toContain('.on');
-    expect(mapScreen).toContain('NativeMenuHost');
+    expect(membersPane).toContain('NativeMenuHost');
     expect(mapScreen).not.toContain("overlay === 'myStatus'");
     expect(mapScreen).not.toContain('solo.tempLeave');
     expect(mapScreen).toContain('applyPresenceMacroKind');
-    expect(mapScreen).toContain('subgroup.createTeam');
+    expect(flockRow).toContain('subgroup.createTeam');
   });
 
   it('omits iOS switch chrome paint and uses native segmented tabs', () => {
     expect(notifCard).toContain('<SystemToggle');
     expect(notifCard).not.toContain('trackColor={{');
-    expect(mapScreen).toContain('<SystemToggle');
+    expect(membersPane).toContain('<SystemToggle');
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).not.toContain('NativeSwitch');
@@ -48,9 +52,9 @@ describe('#220 map / status / settings / paywall contracts', () => {
   });
 
   it('renders self flock copy as 你 plus role and freshness', () => {
-    expect(mapScreen).toContain('{isMe ? t(\'flock.you\') : name}');
+    expect(flockRow).toContain('{isMe ? t(\'flock.you\') : name}');
     expect(mapScreen).not.toContain('{name}{isMe ? ` · ${t(\'flock.you\')}` : \'\'}');
-    expect(mapScreen).toContain('{!isMe && distOrStatus');
+    expect(flockRow).toContain('{!isMe && distOrStatus');
     expect(mapScreen).toContain('dist: isSelf');
     expect(translations.zh['trip.setDaysAndDate']).toBe('天數與日期');
     expect(reorder).toContain('const ROW_HEIGHT = 52;');
@@ -73,9 +77,9 @@ describe('#220 map / status / settings / paywall contracts', () => {
   });
 
   it('stacks settings above sheetLayer and sibling child hosts above settings', () => {
-    const sheet = /sheetLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapScreen);
+    const sheet = /sheetLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapStyles);
     const settingsRoot = /page:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(settings);
-    const child = /settingsChildLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapScreen);
+    const child = /settingsChildLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapStyles);
     expect(sheet?.[1]).toBeTruthy();
     expect(settingsRoot?.[1]).toBeTruthy();
     expect(child?.[1]).toBeTruthy();
@@ -106,9 +110,9 @@ describe('#220 map / status / settings / paywall contracts', () => {
   });
 
   it('lists Android status titles with subtitle descriptions in the Alert message', () => {
-    const start = mapScreen.indexOf('const openAndroidStatusSheet');
-    const end = mapScreen.indexOf('const openSettingsFromSheet', start);
-    const block = mapScreen.slice(start, end);
+    const start = memberPresence.indexOf('const openAndroidStatusSheet');
+    const end = memberPresence.indexOf('  return {', start);
+    const block = memberPresence.slice(start, end);
     expect(block).toContain('Alert.alert');
     expect(block).toContain('item.subtitle');
     expect(block).toContain('item.title');

@@ -8,11 +8,15 @@ jest.mock('../api/supabase', () => ({
 const mockIsDemoGroup = jest.fn(() => false);
 const mockDemoAddDestination = jest.fn(() => 'demo-destination');
 const mockDemoAddDestinationsBatch = jest.fn();
+const mockDemoDeleteDestination = jest.fn();
+const mockDemoReorderDestinations = jest.fn();
 const mockDemoUpdateDestinationEmoji = jest.fn();
 jest.mock('../api/demo', () => ({
   isDemoGroup: mockIsDemoGroup,
   demoAddDestination: mockDemoAddDestination,
   demoAddDestinationsBatch: mockDemoAddDestinationsBatch,
+  demoDeleteDestination: mockDemoDeleteDestination,
+  demoReorderDestinations: mockDemoReorderDestinations,
   demoUpdateDestinationEmoji: mockDemoUpdateDestinationEmoji,
 }));
 
@@ -132,6 +136,8 @@ describe('DestinationService mapping and durable boundaries', () => {
     await expect(updateDestinationEmojiColor('demo', 'd', { emoji: '📍', markerColor: '#E8543F' })).resolves.toBeUndefined();
     expect(mockDemoAddDestination).toHaveBeenCalled();
     expect(mockDemoAddDestinationsBatch).toHaveBeenCalled();
+    expect(mockDemoDeleteDestination).toHaveBeenCalledWith('d');
+    expect(mockDemoReorderDestinations).toHaveBeenCalledWith([{ id: 'd', position: 0, day: null }]);
     expect(mockDemoUpdateDestinationEmoji).toHaveBeenCalledWith('d', '📍', '#E8543F');
     expect(mockedSupabase.rpc).not.toHaveBeenCalled();
   });

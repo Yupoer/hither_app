@@ -16,6 +16,7 @@ const carousel = readFileSync(
   'utf8',
 );
 const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const carouselDots = readFileSync(join(__dirname, '../screens/MapScreen/components/CarouselDots.tsx'), 'utf8');
 
 function dest(id: string, day: number, order: number): Destination {
   return {
@@ -83,8 +84,8 @@ describe('Start same-day promote + carousel identity (#222)', () => {
   });
 
   it('pagination dots occupy real flex width without an overlay pill', () => {
-    expect(map).toContain('indicatorRowGeometry');
-    expect(map).toContain('flexShrink: 0');
+    expect(carouselDots).toContain('indicatorRowGeometry');
+    expect(carouselDots).toContain('flexShrink: 0');
     expect(map).not.toContain('pillSlot');
     expect(map).not.toMatch(/DOT_PITCH_PX \* Math\.max\(0, displayIndices\.length - 1\) \+ 22/);
   });

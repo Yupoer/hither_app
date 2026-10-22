@@ -1,11 +1,20 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(16);
+select plan(18);
 
 insert into auth.users (id, email, is_anonymous) values
   ('a7111111-1111-4111-8111-111111111111', 'reward-member@example.test', false),
   ('a7222222-2222-4222-8222-222222222222', 'reward-anon@example.test', true);
+
+select ok(
+  not has_function_privilege('authenticated', 'public.credit_rewarded_ad_transaction(text,text,text,text,text,text)', 'EXECUTE'),
+  'clients cannot credit their own rewarded ads'
+);
+select ok(
+  has_function_privilege('service_role', 'public.credit_rewarded_ad_transaction(text,text,text,text,text,text)', 'EXECUTE'),
+  'the SSV callback role can credit rewarded ads'
+);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a7222222-2222-4222-8222-222222222222', true);

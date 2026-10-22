@@ -72,8 +72,8 @@ describe('target marker pulse', () => {
     expect(groupMap).toContain('TARGET_PULSE_INTERVAL_MS');
     expect(groupMap).toContain('shouldPulseDestination');
     expect(groupMap).toContain('gatherMarkerCompleted');
-    // tracksViewChanges is toggled briefly via useTracksViewChanges, not left true.
-    expect(groupMap).toContain('useTracksViewChanges');
+    // The bitmap resource owns the finite tracking window.
+    expect(groupMap).toContain('MarkerBitmapTracking');
     expect(groupMap).toContain('setTracksViewChanges(false)');
   });
 

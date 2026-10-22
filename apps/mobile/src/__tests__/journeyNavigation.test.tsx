@@ -161,7 +161,7 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex: jest.fn(),
         navigationSession: activeSession,
       });
-      return null;
+      return navigation.lifecycle;
     }
     act(() => {
       create(React.createElement(Harness));
@@ -199,7 +199,7 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex: jest.fn(),
         navigationSession: activeSession,
       });
-      return null;
+      return navigation.lifecycle;
     }
     act(() => {
       create(React.createElement(Harness));
@@ -232,7 +232,7 @@ describe('useJourneyNavigation', () => {
         startSession,
         createRequestId: () => 'request-1',
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     let renderer: { update: (nextElement: React.ReactElement) => void };
@@ -290,7 +290,7 @@ describe('useJourneyNavigation', () => {
         startSession,
         createRequestId: () => 'request-switch',
       });
-      return null;
+      return navigation.lifecycle;
     }
     act(() => { create(React.createElement(Harness)); });
     await act(async () => { await navigation?.startNavigation(later, 1); });
@@ -311,7 +311,6 @@ describe('useJourneyNavigation', () => {
       status: 'active',
       destinationId: later.id,
     } as NavigationSession);
-    const reorderForNavigation = jest.fn().mockResolvedValue(true);
     const setSelectedIndex = jest.fn();
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
     function Harness() {
@@ -329,56 +328,17 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex,
         startSession,
         createRequestId: () => 'request-2',
-        reorderForNavigation,
       });
-      return null;
+      return navigation.lifecycle;
     }
     act(() => { create(React.createElement(Harness)); });
     await act(async () => { await navigation?.startNavigation(later, 1); });
 
-    expect(reorderForNavigation).not.toHaveBeenCalled();
     expect(startSession).not.toHaveBeenCalled();
     expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1',
       expect.objectContaining({ activeDestinationId: later.id, operationId: 'request-2' }));
     expect(setSelectedIndex).toHaveBeenCalledWith(1);
     expect(navigation?.navTarget?.id).toBe(later.id);
-  });
-
-  it('does not let the obsolete remote reorder gate block a durable local Start', async () => {
-    const later = { ...destination, id: 'destination-2', order: 1 };
-    const startSession = jest.fn().mockResolvedValue({
-      id: 'session-2',
-      status: 'active',
-      destinationId: later.id,
-    } as NavigationSession);
-    const reorderForNavigation = jest.fn().mockResolvedValue(false);
-    let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
-    function Harness() {
-      navigation = useJourneyNavigation({
-        state: pausedState,
-        groupId: 'group-1',
-        isLeader: true,
-        destinations: [destination, later],
-        selectedDestination: destination,
-        fromCoords: undefined,
-        refresh: jest.fn(),
-        t: (key) => key,
-        mapRef: { current: null },
-        carouselRef: { current: null },
-        setSelectedIndex: jest.fn(),
-        startSession,
-        createRequestId: () => 'request-2',
-        reorderForNavigation,
-      });
-      return null;
-    }
-    act(() => { create(React.createElement(Harness)); });
-    await act(async () => { await navigation?.startNavigation(later, 1); });
-
-    expect(reorderForNavigation).not.toHaveBeenCalled();
-    expect(enqueueLeaderGatheringStart).toHaveBeenCalledWith('group-1', expect.objectContaining({ activeDestinationId: later.id }));
-    expect(startSession).not.toHaveBeenCalled();
-    expect(navigation?.pendingLeaderTargetId).toBeNull();
   });
 
   it('uses the persisted active destination instead of the local carousel selection', () => {
@@ -408,7 +368,7 @@ describe('useJourneyNavigation', () => {
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     act(() => {
@@ -446,7 +406,7 @@ describe('useJourneyNavigation', () => {
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     act(() => {
@@ -468,7 +428,7 @@ describe('useJourneyNavigation', () => {
     } as GroupState;
 
     function Harness() {
-      useJourneyNavigation({
+      return useJourneyNavigation({
         state: goingState,
         groupId: 'group-1',
         isLeader: true,
@@ -480,8 +440,8 @@ describe('useJourneyNavigation', () => {
         mapRef: { current: null },
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
-      });
-      return null;
+      }).lifecycle;
+
     }
 
     act(() => {
@@ -517,7 +477,7 @@ describe('useJourneyNavigation', () => {
         carouselRef: { current: null },
         setSelectedIndex,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     act(() => {
@@ -564,7 +524,7 @@ describe('useJourneyNavigation', () => {
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     let renderer: { update: (nextElement: React.ReactElement) => void };
@@ -621,7 +581,7 @@ describe('useJourneyNavigation', () => {
         cancelSession,
         onOperatorPauseConfirm,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     act(() => {
@@ -665,7 +625,7 @@ describe('useJourneyNavigation', () => {
         createRequestId: () => 'request-offline-1',
         onOptimisticGathering,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     act(() => {
@@ -701,7 +661,7 @@ describe('useJourneyNavigation', () => {
         refresh: jest.fn(), t: key => key, mapRef: { current: null }, carouselRef: { current: null },
         setSelectedIndex: jest.fn(), startSession, navigationSession: session,
         createRequestId: () => 'retry-request', onOperatorStartConfirm });
-      return null;
+      return navigation.lifecycle;
     }
     let tree: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { session: null })); });
@@ -759,7 +719,7 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex: jest.fn(),
         navigationSession: session,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     let tree: { update: (nextElement: React.ReactElement) => void };
@@ -805,7 +765,7 @@ describe('useJourneyNavigation', () => {
         setSelectedIndex: jest.fn(),
         navigationSession: activeSession,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     await act(async () => {

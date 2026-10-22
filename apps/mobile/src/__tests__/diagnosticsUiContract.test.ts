@@ -8,6 +8,7 @@ describe('location privacy and diagnostics UI contract', () => {
   const privacy = read('state/locationPrivacy.ts');
   const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
   const map = read('screens/MapScreen.tsx');
+  const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
   const navigationService = read('api/services/NavigationService.ts');
 
   it('persists the sharing master switch under the stable key and migrates legacy state', () => {
@@ -20,9 +21,9 @@ describe('location privacy and diagnostics UI contract', () => {
   it('shows a location-sharing switch with an explicit local-navigation warning in Tools', () => {
     expect(map).toContain('sharingEnabled');
     expect(map).toContain('handleSharingEnabledChange');
-    expect(map).toContain("t('settings.locationSharing')");
-    expect(map).toContain("t('settings.locationSharingHint')");
-    expect(map).toContain('testID="members-location-sharing"');
+    expect(membersPane).toContain("t('settings.locationSharing')");
+    expect(membersPane).toContain("t('settings.locationSharingHint')");
+    expect(membersPane).toContain('testID="members-location-sharing"');
     expect(settings).not.toContain("t('settings.locationSharing')");
   });
 

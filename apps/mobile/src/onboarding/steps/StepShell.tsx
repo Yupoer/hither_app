@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useMountEffect } from '../../hooks/useMountEffect';
+import React, { useState } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import {
   AccessibilityInfo,
@@ -69,7 +70,7 @@ export default function StepShell({
   const { t } = useTranslation();
   const [reduceMotion, setReduceMotion] = useState(false);
 
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
     void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
       if (active) setReduceMotion(!!v);
@@ -81,7 +82,7 @@ export default function StepShell({
       active = false;
       sub.remove();
     };
-  }, []);
+  });
 
   const { index, total } = stepProgress(step, role);
   // Goal-gradient: the bar is never empty — the first step already reads ~10%.
@@ -91,16 +92,6 @@ export default function StepShell({
   const visuals = useOptionalVisuals();
   const trackW = useSharedValue(0);
 
-  useEffect(() => {
-    cancelAnimation(prog);
-    if (reduceMotion || !visuals) {
-      prog.value = target;
-    } else {
-      prog.value = withTiming(target, { duration: 450, easing: Easing.out(Easing.cubic) });
-    }
-    lastBarPct = target;
-    return () => cancelAnimation(prog);
-  }, [target, prog, reduceMotion, visuals]);
 
   const onTrackLayout = (e: LayoutChangeEvent) => {
     trackW.value = e.nativeEvent.layout.width;
@@ -118,6 +109,7 @@ export default function StepShell({
         { backgroundColor: background ?? colors.background, paddingTop: insets.top + 12 },
       ]}
     >
+      <OnboardingProgressMotion key={`${target}:${reduceMotion}:${visuals}`} target={target} prog={prog} reduceMotion={reduceMotion} visuals={visuals} />
       <View style={styles.header}>
         {onBack ? (
           <Pressable
@@ -220,3 +212,17 @@ const styles = StyleSheet.create({
   bodyContent: { flexGrow: 1, paddingBottom: 8 },
   footer: { paddingTop: 12 },
 });
+
+function OnboardingProgressMotion({ target, prog, reduceMotion, visuals }: { target: number; prog: ReturnType<typeof useSharedValue<number>>; reduceMotion: boolean; visuals: boolean }) {
+  useMountEffect(() => {
+    cancelAnimation(prog);
+    if (reduceMotion || !visuals) {
+      prog.value = target;
+    } else {
+      prog.value = withTiming(target, { duration: 450, easing: Easing.out(Easing.cubic) });
+    }
+    lastBarPct = target;
+    return () => cancelAnimation(prog);
+  });
+  return null;
+}

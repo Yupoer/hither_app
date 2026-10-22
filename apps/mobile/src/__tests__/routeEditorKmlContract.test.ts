@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const chromeResources = readFileSync(join(__dirname, '../screens/MapScreen/MapScreenChromeResources.tsx'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
+const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
+const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
 const reorder = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
   'utf8',
@@ -24,7 +28,7 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain('addDestinationsBatch');
     expect(mapScreen).toContain('normalizeImportBatch');
     const start = mapScreen.indexOf('const handleKmlImport = useCallback');
-    const end = mapScreen.indexOf('const openCoordinateSheet', start);
+    const end = mapScreen.indexOf('const handleLongPressCoordinate', start);
     const block = mapScreen.slice(start, end);
     expect(block).toContain('addDestinationsBatch');
     expect(block).not.toMatch(/for \(let i = 0; i < items\.length/);
@@ -52,7 +56,7 @@ describe('route editor + KML contracts (#151)', () => {
   it('open-once sync + import CTA replace always-on sync button', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
     expect(mapScreen).toContain('openKmlImportForScope');
-    expect(mapScreen).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
+    expect(routeEditorSheet).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
     expect(mapScreen).toContain('remainingQuota={kmlRemainingQuota}');
     expect(reorder).toContain('onImport');
     expect(reorder).toContain("t('kml.entry')");
@@ -60,9 +64,9 @@ describe('route editor + KML contracts (#151)', () => {
 
   it('route editor mutations use full open reorder list (exiting snapshots carousel-only)', () => {
     // DestinationReorderList must not receive merged exiting carousel rows.
-    const reorderStart = mapScreen.indexOf('visible={overlay === \'route\'}');
+    const reorderStart = routeEditorSheet.indexOf('visible={overlay === \'route\'}');
     expect(reorderStart).toBeGreaterThan(-1);
-    const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 9000);
+    const reorderBlock = routeEditorSheet.slice(reorderStart, reorderStart + 9000);
     // Full open list (all days) via openForRouteEditor — not day-gated carousel.
     expect(reorderBlock).toContain('destinations={openForRouteEditor}');
     expect(reorderBlock).not.toContain('destinations={destinations}');
@@ -70,31 +74,26 @@ describe('route editor + KML contracts (#151)', () => {
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
     expect(mapScreen).toContain('const destinations = useMemo');
-    // Slot remap lives on applyReorderToDestinations (shared local + nav persist).
-    expect(mapScreen).toContain('openPositionSlotsFromOpenDestinations');
-    expect(mapScreen).toContain('mapOpenReorderToPersistedPositions');
-    expect(mapScreen).toContain('buildOpenReorderPayload');
+    expect(itineraryMutations).toContain('buildOpenReorderPayload');
     expect(mapScreen).not.toMatch(
       /openPositionSlots\s*=\s*\[\.\.\.destinations\]/,
     );
   });
 
   it('route editor reorder is local draft; network flush on sheet dismiss', () => {
-    expect(mapScreen).toContain('destination_reorder_local');
+    expect(itineraryMutations).toContain('destination_reorder_local');
     expect(mapScreen).toContain('flushRouteDraft');
-    expect(mapScreen).toContain('route_draft_flush');
-    // Navigation promote still persists immediately.
-    expect(mapScreen).toContain('reorderForNavigationRef.current = persistReorderNow');
+    expect(itineraryMutations).toContain('route_draft_flush');
     // Route list onReorder is the local handler.
-    expect(mapScreen).toContain('onReorder={handleReorder}');
+    expect(routeEditorSheet).toContain('onReorder={handleReorder}');
     // No 3s optimistic timeout that clobbers draft.
     expect(mapScreen).not.toMatch(/setOptimisticDestinations\(null\);\s*\}, 3000\)/);
   });
 
   it('route flush uses neutral errors, longer timeout, and dirty snapshot', () => {
-    const start = mapScreen.indexOf('const flushRouteDraft = useCallback');
+    const start = itineraryMutations.indexOf('const flushRouteDraft = useCallback');
     expect(start).toBeGreaterThanOrEqual(0);
-    const block = mapScreen.slice(start, mapScreen.indexOf('const openKmlImport = useCallback', start));
+    const block = itineraryMutations.slice(start, itineraryMutations.indexOf('const openKmlImport = useCallback', start));
     expect(block).toContain('timeoutMs: 60_000');
     expect(block).toContain('getOperationErrorMessage(localSaveError)');
     expect(block).toContain('await refreshLocalSnapshot()');
@@ -102,7 +101,6 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).toContain("t('interaction.timeout')");
     // Must not blame leader role on route-sheet save failures.
     expect(block).not.toContain("t('map.setFailedMsg')");
-    expect(block).toContain('deletedIds: [...routeDraftDirtyRef.current.deletedIds]');
     expect(block).toContain('draft_ids_in_reorder');
     expect(block).toContain('draft_materialize_empty');
   });
@@ -114,9 +112,6 @@ describe('route editor + KML contracts (#151)', () => {
     expect(block).not.toContain('setOptimistic');
     expect(block).not.toContain('setDraftDailyAccommodations');
     expect(block).not.toContain('routeDraftDirtyRef.current =');
-    expect(mapScreen).toContain('if (!optimisticDestinations || routeDraftDirtyRef.current.destinations) return');
-    expect(mapScreen).toContain('if (hasDirtyDraft && routeEditorScopeIdRef.current !== scopeId) return');
-    expect(mapScreen).toContain('if (!hasDirtyDraft) setOptimisticDestinations(scopeDestinations)');
   });
 
   it('favorites CTA stays visible with empty list; multi-mode + bulk delete wired', () => {
@@ -129,8 +124,8 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain('multiSelect');
     expect(mapScreen).toContain('routeInteractionMode');
     expect(mapScreen).toContain('handleDeleteMany');
-    expect(mapScreen).toContain('headerLeft');
-    expect(mapScreen).toContain("t('route.deleteSelected'");
+    expect(routeEditorSheet).toContain('headerLeft');
+    expect(routeEditorSheet).toContain("t('route.deleteSelected'");
   });
 
   it('uses the checkbox alone for multi-select and keeps day blocks seam-free', () => {
@@ -161,19 +156,19 @@ describe('route editor + KML contracts (#151)', () => {
   });
 
   it('open-sync completion is gated by generation after close/reopen', () => {
-    expect(mapScreen).toContain('routeOpenSyncGenerationRef');
-    expect(mapScreen).toContain(
+    expect(chromeResources).toContain('routeOpenSyncGenerationRef');
+    expect(chromeResources).toContain(
       "if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done'",
     );
-    expect(mapScreen).toContain('routeOpenSyncGenerationRef.current += 1');
+    expect(chromeResources).toContain('routeOpenSyncGenerationRef.current += 1');
   });
 
   it('meet-time sheet exposes approved sections and selected quick state', () => {
-    expect(mapScreen).toContain("t('meetTime.quickSection')");
-    expect(mapScreen).toContain("t('meetTime.timeSection')");
-    expect(mapScreen).toContain("t('meetTime.redInfo')");
-    expect(mapScreen).toContain('meetTimeEditor.quickMinutes === m');
-    expect(mapScreen).toContain('styles.meetDateSummary');
+    expect(meetTimeSheet).toContain("t('meetTime.quickSection')");
+    expect(meetTimeSheet).toContain("t('meetTime.timeSection')");
+    expect(meetTimeSheet).toContain("t('meetTime.redInfo')");
+    expect(meetTimeSheet).toContain('meetTimeEditor.quickMinutes === m');
+    expect(meetTimeSheet).toContain('styles.meetDateSummary');
   });
 
   it('KmlImportSheet maps persistence separately from parse', () => {

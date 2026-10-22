@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, type ComponentProps } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useCallback, useState, useRef, type ComponentProps } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -130,12 +131,6 @@ export function AmicroButton({
     releaseBusyAndMaybeReset();
   }, [onAnimationComplete, releaseBusyAndMaybeReset]);
 
-  useEffect(() => {
-    if (!visuals) { cancelAnimation(progress); progress.value = active ? 1 : 0; return; }
-    if (busyRef.current) return;
-    progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
-  }, [active, revertEpoch, progress, reducedMotion, visuals]);
-
   const handlePress = useCallback(() => {
     if (disabled || busyRef.current) return;
     busyRef.current = true;
@@ -192,6 +187,7 @@ export function AmicroButton({
       accessibilityState={{ disabled }}
       testID={testID}
     >
+      <AmicroControlledMotion active={active} revertEpoch={revertEpoch} progress={progress} reducedMotion={reducedMotion} visuals={visuals} busyRef={busyRef} />
       <View style={[styles.iconSlot, centeredLabel && styles.centeredIconSlot]}>
         <Animated.View style={[styles.icon, currentStyle]}>
           <Ionicons name={icon} size={size >= 44 ? 20 : 18} color={color} />
@@ -273,3 +269,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+
+type AmicroMotionInputs = { active: boolean; revertEpoch: number; progress: ReturnType<typeof useSharedValue<number>>; reducedMotion: boolean; visuals: boolean; busyRef: React.RefObject<boolean> };
+function AmicroControlledMotion(props: AmicroMotionInputs) {
+  const { active, revertEpoch, reducedMotion, visuals } = props;
+  const [controlledInput, setControlledInput] = useState({ active, revertEpoch, reducedMotion, visuals, generation: 0 });
+  if (!Object.is(controlledInput.active, active) || !Object.is(controlledInput.revertEpoch, revertEpoch)
+    || !Object.is(controlledInput.reducedMotion, reducedMotion) || !Object.is(controlledInput.visuals, visuals)) {
+    setControlledInput({ active, revertEpoch, reducedMotion, visuals, generation: controlledInput.generation + 1 });
+  }
+  return <AmicroActiveFrame key={controlledInput.generation} {...props} />;
+}
+function AmicroActiveFrame({ active, progress, reducedMotion, visuals, busyRef }: AmicroMotionInputs) {
+  useMountEffect(() => {
+    if (!visuals) { cancelAnimation(progress); progress.value = active ? 1 : 0; return; }
+    if (busyRef.current) return;
+    progress.value = withTiming(active ? 1 : 0, { duration: reducedMotion ? 0 : 100 });
+  });
+  return null;
+}

@@ -54,6 +54,50 @@ it('keeps one search and a fixed centre while GPS updates', async () => {
   expect(mockSearch).toHaveBeenCalledWith('內湖 CQ2', region, { throwOnError: true });
 });
 
+it('captures a new opening bias without remounting the search input or restarting for callback identities', async () => {
+  mockSearch.mockResolvedValue([]);
+  const nativeInput = view.root.findByType('Input' as never);
+  input('first');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  act(() => view.update(render({ ...props, onClose: jest.fn(), onPick: jest.fn() })));
+  await act(async () => { jest.advanceTimersByTime(450); });
+  expect(mockSearch).toHaveBeenCalledTimes(1);
+  act(() => view.update(render({ ...props, visible: false })));
+  const nextRegion = { ...region, latitude: 26 };
+  act(() => view.update(render({ ...props, biasRegion: nextRegion })));
+  expect(nativeInput.props.value).toBe('');
+  expect(view.root.findByType('Input' as never)).toBe(nativeInput);
+  input('next');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  expect(mockSearch).toHaveBeenLastCalledWith('next', nextRegion, { throwOnError: true });
+});
+
+it('fences reversed search responses and cancels the current request lifetime on unmount', async () => {
+  const finishes: ((results: unknown[]) => void)[] = [];
+  mockSearch.mockImplementation(() => new Promise(resolve => { finishes.push(resolve); }));
+  input('old');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  input('new');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  const fresh = { id: 'new', name: 'New', coordinates: { latitude: 25, longitude: 121 } };
+  await act(async () => { finishes[1]([fresh]); finishes[0]([{ id: 'old' }]); });
+  expect(view.root.findByType('List' as never).props.data).toEqual([fresh]);
+  input('last');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  act(() => { view.unmount(); });
+  await act(async () => { finishes[2]([{ id: 'late' }]); jest.advanceTimersByTime(20_000); });
+  expect(mockSearch).toHaveBeenCalledTimes(3);
+});
+
+it('replays StrictMode search setup without leaking duplicate debounce requests', async () => {
+  mockSearch.mockResolvedValue([]);
+  act(() => { view.unmount(); });
+  act(() => { view = create(React.createElement(React.StrictMode, null, render())); });
+  input('strict');
+  await act(async () => { jest.advanceTimersByTime(450); });
+  expect(mockSearch).toHaveBeenCalledTimes(1);
+});
+
 it('invalidates results after clearing or closing and never restarts by itself', async () => {
   let finish!: (results: unknown[]) => void;
   mockSearch.mockImplementation(() => new Promise(resolve => { finish = resolve; }));

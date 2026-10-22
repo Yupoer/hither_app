@@ -1,9 +1,10 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundUi } from '../state/foregroundUi';
 /**
  * Global top toast when an EAS OTA just applied (any screen).
  * Mount once under SafeAreaProvider so insets are correct.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { glass } from '../glass';
@@ -21,7 +22,45 @@ export default function OtaUpdateToast() {
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-12)).current;
 
-  useEffect(() => {
+  const [noticeIdentity, setNoticeIdentity] = useState({ foreground, opacity, translateY, generation: 0 });
+  if (!Object.is(noticeIdentity.foreground, foreground) || !Object.is(noticeIdentity.opacity, opacity) || !Object.is(noticeIdentity.translateY, translateY)) {
+    setNoticeIdentity({ foreground, opacity, translateY, generation: noticeIdentity.generation + 1 });
+  }
+
+  return (
+    <>
+      <OtaAppliedNotice key={noticeIdentity.generation} foreground={foreground} opacity={opacity} translateY={translateY} setVisible={setVisible} />
+      {visible ? <View
+      pointerEvents="none"
+      style={[styles.host, { paddingTop: Math.max(insets.top, 8) + 4 }]}
+    >
+      <Animated.View
+        style={[
+          styles.pill,
+          {
+            opacity,
+            transform: [{ translateY }],
+          },
+        ]}
+        accessibilityLiveRegion="polite"
+        accessibilityRole="text"
+      >
+        <Text style={styles.text} numberOfLines={1}>
+          {t('ota.appliedToast')}
+        </Text>
+      </Animated.View>
+    </View> : null}
+    </>
+  );
+}
+
+function OtaAppliedNotice({ foreground, opacity, translateY, setVisible }: {
+  foreground: boolean;
+  opacity: Animated.Value;
+  translateY: Animated.Value;
+  setVisible: (visible: boolean) => void;
+}) {
+  useMountEffect(() => {
     if (!foreground) { opacity.stopAnimation(); translateY.stopAnimation(); setVisible(false); return; }
     let cancelled = false;
     let hideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -66,32 +105,8 @@ export default function OtaUpdateToast() {
       if (hideTimer) clearTimeout(hideTimer);
       opacity.stopAnimation(); translateY.stopAnimation();
     };
-  }, [foreground, opacity, translateY]);
-
-  if (!visible) return null;
-
-  return (
-    <View
-      pointerEvents="none"
-      style={[styles.host, { paddingTop: Math.max(insets.top, 8) + 4 }]}
-    >
-      <Animated.View
-        style={[
-          styles.pill,
-          {
-            opacity,
-            transform: [{ translateY }],
-          },
-        ]}
-        accessibilityLiveRegion="polite"
-        accessibilityRole="text"
-      >
-        <Text style={styles.text} numberOfLines={1}>
-          {t('ota.appliedToast')}
-        </Text>
-      </Animated.View>
-    </View>
-  );
+  });
+  return null;
 }
 
 const styles = StyleSheet.create({

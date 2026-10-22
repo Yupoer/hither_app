@@ -18,11 +18,17 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(appRoot, '../..');
-const testsRoot = path.join(appRoot, 'src', '__tests__');
+const testsRoot = process.env.META_TESTS_ROOT
+  ? path.resolve(process.env.META_TESTS_ROOT)
+  : path.join(appRoot, 'src', '__tests__');
+const sourceOnlyBaselinePath = process.env.META_SOURCE_ONLY_BASELINE
+  ? path.resolve(process.env.META_SOURCE_ONLY_BASELINE)
+  : path.join(appRoot, 'scripts', 'source-only-tests-baseline.json');
 const mapPath = path.join(testsRoot, 'acceptance-map.json');
 
 const FAKE_PATTERNS = [
@@ -109,50 +115,240 @@ function checkL2(files) {
         }
       }
     }
-
-    // Implementation-detail-only: has readFileSync + toMatch/regex assert, no non-fs production import.
-    const hasReadFile = /readFileSync\s*\(/.test(text);
-    const hasRegexAssert = /\.toMatch\s*\(/.test(text) || /\.toMatchObject\s*\(/.test(text);
-    const hasProdImport =
-      /from\s+['"]\.\.\/(?!__tests__)[^'"]+['"]/.test(text) ||
-      /from\s+['"]\.\.\/\.\.\/(?!__tests__)[^'"]+['"]/.test(text) ||
-      /from\s+['"]@\//.test(text) ||
-      /require\s*\(\s*['"]\.\.\//.test(text);
-    // Contract tests that only read repo files are allowed if they also assert on structured exports
-    // or package.json — flag only when the file is tiny and exclusively readFileSync-driven.
-    if (hasReadFile && hasRegexAssert && !hasProdImport) {
-      const nonComment = lines.filter((l) => {
-        const t = l.trim();
-        return t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('import');
-      });
-      const onlyFsStyle = nonComment.every(
-        (l) =>
-          /readFileSync|writeFileSync|existsSync|readdirSync|path\.|fs\.|expect\(|describe\(|it\(|test\(|toMatch|toContain|toEqual|toBe|JSON\.|Buffer|utf-?8|join\(|resolve\(/.test(
-            l,
-          ) || l === '}' || l === '{' || l.startsWith('const ') || l.startsWith('let '),
-      );
-      // Many existing *Contract* tests are file-based by design — only fail when NOT named Contract
-      // and not under an allowlist pattern.
-      const base = path.basename(file);
-      const allowed =
-        /Contract\.test\./.test(base) ||
-        /Inventory\.test\./.test(base) ||
-        /Migration\.test\./.test(base) ||
-        /Parity\.test\./.test(base) ||
-        /Config\.test\./.test(base) ||
-        /Versions\.test\./.test(base);
-      if (!allowed && onlyFsStyle) {
-        findings.push({
-          level: 'L2',
-          file: path.relative(appRoot, file).replace(/\\/g, '/'),
-          line: 1,
-          id: 'readfilesync-only',
-          msg: 'test appears to only read files + regex without importing production modules (rename to *Contract* if intentional)',
-        });
-      }
-    }
   }
   return findings;
+}
+
+const PRODUCTION_SOURCE_PATH = /\.(?:tsx?|jsx?|swift|mm?|h|kt|java)$/;
+const FS_MODULES = new Set(['fs', 'node:fs', 'fs/promises', 'node:fs/promises']);
+
+function isTestPath(p) {
+  return /(^|[\\/])__tests__([\\/]|$)|\.test\.[jt]sx?$/.test(p);
+}
+
+function isProductionSpec(spec, file) {
+  if (spec.startsWith('@/')) return true;
+  return spec.startsWith('.') && !isTestPath(path.resolve(path.dirname(file), spec));
+}
+
+function unwrap(node) {
+  while (ts.isParenthesizedExpression(node) || ts.isAwaitExpression(node) ||
+    ts.isAsExpression(node) || ts.isNonNullExpression(node) || ts.isSatisfiesExpression(node)) {
+    node = node.expression;
+  }
+  return node;
+}
+
+function memberName(node) {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) {
+    return node.argumentExpression.text;
+  }
+  return undefined;
+}
+
+function bindingName(node) {
+  if (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) return node.text;
+  if (ts.isComputedPropertyName(node) && ts.isStringLiteralLike(node.expression)) return node.expression.text;
+  return undefined;
+}
+
+function bindingEntries(name, at = []) {
+  if (ts.isIdentifier(name)) return [{ node: name, path: at }];
+  return name.elements.flatMap((element, index) => {
+    if (!ts.isBindingElement(element) || element.dotDotDotToken) return [];
+    const key = ts.isObjectBindingPattern(name)
+      ? bindingName(element.propertyName ?? element.name) : String(index);
+    return key === undefined ? [] : bindingEntries(element.name, [...at, key]);
+  });
+}
+
+function importEntries(clause) {
+  if (!clause || clause.isTypeOnly) return [];
+  const entries = clause.name ? [{ node: clause.name, path: [] }] : [];
+  if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+    entries.push({ node: clause.namedBindings.name, path: [] });
+  } else if (clause.namedBindings) {
+    for (const specifier of clause.namedBindings.elements) {
+      const key = (specifier.propertyName ?? specifier.name).text;
+      if (!specifier.isTypeOnly) entries.push({ node: specifier.name, path: key === 'default' ? [] : [key] });
+    }
+  }
+  return entries;
+}
+
+/** Parse one test without resolving imports or loading application files. */
+function classifyTestSource(text, file) {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const options = { noLib: true, noResolve: true, target: ts.ScriptTarget.Latest };
+  const host = ts.createCompilerHost(options);
+  host.getSourceFile = (name) => path.resolve(name) === path.resolve(file) ? source : undefined;
+  const checker = ts.createProgram([file], options, host).getTypeChecker();
+  const productionBindings = new Set();
+  const moduleBindings = new Map();
+  const variables = [];
+  const references = [];
+  const calls = [];
+  let namesProductionSource = false;
+  let importsProduction = false;
+  const isGlobal = (node, name) => ts.isIdentifier(node) && node.text === name &&
+    !checker.getSymbolAtLocation(node)?.declarations?.length;
+  const isJestCall = (node, methods) => {
+    if (!ts.isCallExpression(node)) return false;
+    const binding = modulePath(node.expression);
+    return binding?.spec === '@jest/globals' && binding.path.length === 2 &&
+      binding.path[0] === 'jest' && methods.includes(binding.path[1]);
+  };
+  const moduleSpec = (node) => {
+    if (!ts.isCallExpression(node) || !node.arguments[0] || !ts.isStringLiteralLike(node.arguments[0])) return undefined;
+    if (node.expression.kind === ts.SyntaxKind.ImportKeyword || isGlobal(node.expression, 'require') ||
+      isJestCall(node, ['requireActual'])) return node.arguments[0].text;
+    return undefined;
+  };
+  const modulePath = (expression) => {
+    const node = unwrap(expression);
+    if (isGlobal(node, 'jest')) return { spec: '@jest/globals', path: ['jest'] };
+    if (ts.isIdentifier(node)) return moduleBindings.get(checker.getSymbolAtLocation(node));
+    const member = memberName(node);
+    if (member !== undefined) {
+      const root = modulePath(node.expression);
+      return root && { spec: root.spec, path: [...root.path, member] };
+    }
+    const spec = moduleSpec(node);
+    if (FS_MODULES.has(spec) || spec === '@jest/globals') {
+      return { spec, path: spec.endsWith('/promises') ? ['promises'] : [] };
+    }
+    return undefined;
+  };
+  const addBindings = (entries, spec) => {
+    for (const entry of entries) {
+      const symbol = checker.getSymbolAtLocation(entry.node);
+      if (!symbol) continue;
+      if (FS_MODULES.has(spec) || spec === '@jest/globals') {
+        moduleBindings.set(symbol, { spec, path: [...(spec.endsWith('/promises') ? ['promises'] : []), ...entry.path] });
+      } else if (isProductionSpec(spec, file)) productionBindings.add(symbol);
+    }
+  };
+  for (const statement of source.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteralLike(statement.moduleSpecifier)) {
+      addBindings(importEntries(statement.importClause), statement.moduleSpecifier.text);
+    }
+  }
+  function collectVariables(node) {
+    if (ts.isVariableDeclaration(node) && node.initializer) variables.push(node);
+    ts.forEachChild(node, collectVariables);
+  }
+  collectVariables(source);
+  // Resolve module aliases before excluding mock factories, preserving shadowed symbols.
+  let added;
+  do {
+    added = false;
+    for (const variable of variables) {
+      const root = modulePath(variable.initializer);
+      if (!root) continue;
+      for (const entry of bindingEntries(variable.name)) {
+        const symbol = checker.getSymbolAtLocation(entry.node);
+        if (symbol && !moduleBindings.has(symbol)) {
+          moduleBindings.set(symbol, { spec: root.spec, path: [...root.path, ...entry.path] });
+          added = true;
+        }
+      }
+    }
+  } while (added);
+  function visit(node) {
+    if (ts.isExpressionWithTypeArguments(node) &&
+      node.parent.token === ts.SyntaxKind.ExtendsKeyword && ts.isClassLike(node.parent.parent)) {
+      visit(node.expression);
+      return;
+    }
+    if (ts.isTypeNode(node) || ts.isExportDeclaration(node) ||
+      isJestCall(node, ['mock', 'doMock', 'setMock', 'unmock', 'dontMock'])) return;
+    if (ts.isImportDeclaration(node)) return;
+    if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+      namesProductionSource ||= PRODUCTION_SOURCE_PATH.test(node.text) && !isTestPath(node.text);
+    }
+    if (ts.isIdentifier(node)) references.push(node);
+    if (ts.isCallExpression(node)) {
+      calls.push(node);
+      const spec = moduleSpec(node);
+      if (spec !== undefined && isProductionSpec(spec, file)) {
+        let consumer = node;
+        while (consumer.parent && (
+          ((ts.isPropertyAccessExpression(consumer.parent) || ts.isElementAccessExpression(consumer.parent)) && consumer.parent.expression === consumer) ||
+          ((ts.isParenthesizedExpression(consumer.parent) || ts.isAwaitExpression(consumer.parent) || ts.isAsExpression(consumer.parent) ||
+            ts.isNonNullExpression(consumer.parent) || ts.isSatisfiesExpression(consumer.parent)) && consumer.parent.expression === consumer)
+        )) consumer = consumer.parent;
+        if (ts.isVariableDeclaration(consumer.parent) && consumer.parent.initializer === consumer) {
+          addBindings(bindingEntries(consumer.parent.name), spec);
+        } else if (!ts.isExpressionStatement(consumer.parent) || unwrap(consumer) !== node) importsProduction = true;
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  importsProduction ||= references.some((node) => {
+    const parent = node.parent;
+    if ((parent.name === node && !ts.isShorthandPropertyAssignment(parent)) ||
+      (ts.isBindingElement(parent) && parent.propertyName === node) ||
+      (ts.isBinaryExpression(parent) && parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken) ||
+      ts.isLabeledStatement(parent) || ts.isBreakOrContinueStatement(parent)) return false;
+    const symbol = ts.isShorthandPropertyAssignment(parent)
+      ? checker.getShorthandAssignmentValueSymbol(parent) : checker.getSymbolAtLocation(node);
+    return productionBindings.has(symbol);
+  });
+  return {
+    readsProductionSource: namesProductionSource && calls.some((node) => {
+      const binding = modulePath(node.expression);
+      return binding && FS_MODULES.has(binding.spec) &&
+        ['readFileSync', 'readFile', 'promises.readFile'].includes(binding.path.join('.'));
+    }),
+    importsProduction,
+  };
+}
+
+function sourceOnlyTests(files, root) {
+  return files
+    .filter((file) => {
+      const c = classifyTestSource(fs.readFileSync(file, 'utf8'), file);
+      return c.readsProductionSource && !c.importsProduction;
+    })
+    .map((file) => path.relative(root, file).replace(/\\/g, '/'))
+    .sort();
+}
+
+/**
+ * Ratchet: the set of tests that string-match production source without
+ * exercising it may only shrink.
+ */
+function checkSourceOnlyRatchet(files, baselinePath) {
+  const current = sourceOnlyTests(files, testsRoot);
+  if (process.env.META_WRITE_SOURCE_ONLY_BASELINE === '1') {
+    fs.writeFileSync(baselinePath, `${JSON.stringify({ files: current }, null, 2)}
+`);
+    console.log(`[test:meta] wrote ${current.length} source-only test(s) to ${path.basename(baselinePath)}`);
+    return [];
+  }
+  const baseline = fs.existsSync(baselinePath)
+    ? JSON.parse(fs.readFileSync(baselinePath, 'utf8')).files
+    : [];
+  const baselineSet = new Set(baseline);
+  const currentSet = new Set(current);
+  const added = current.filter((f) => !baselineSet.has(f));
+  const removed = baseline.filter((f) => !currentSet.has(f));
+  const rel = path.basename(baselinePath);
+  if (removed.length) {
+    console.log(
+      `[test:meta] source-only ratchet: ${removed.length} file(s) left the set; shrink ${rel} by removing:\n` +
+        removed.map((f) => `  - ${f}`).join('\n'),
+    );
+  }
+  return added.map((f) => ({
+    level: 'L2',
+    file: f,
+    line: 1,
+    id: 'source-only-test',
+    msg: `reads production source with readFileSync but imports no production module; test behavior through the module instead (baseline: ${rel})`,
+  }));
 }
 
 /**
@@ -306,7 +502,11 @@ function main() {
     }
   }
 
-  const findings = [...checkL1(), ...checkL2(l2Files)];
+  const findings = [
+    ...checkL1(),
+    ...checkL2(l2Files),
+    ...checkSourceOnlyRatchet(walkTests(testsRoot), sourceOnlyBaselinePath),
+  ];
 
   if (findings.length === 0) {
     console.log('[test:meta] PASS (L1 map + L2 anti-fake)');

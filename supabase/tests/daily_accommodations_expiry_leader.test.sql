@@ -52,10 +52,14 @@ insert into auth.users (id, email, is_anonymous) values
   ('d2222222-2222-4222-8222-222222222222', 'daily-anon-leader@example.test', true),
   ('d3333333-3333-4333-8333-333333333333', 'daily-leader-b@example.test', false);
 
-insert into public.profiles (id, nickname) values
-  ('d1111111-1111-4111-8111-111111111111', 'DailyLeader'),
-  ('d2222222-2222-4222-8222-222222222222', 'DailyAnonLeader'),
-  ('d3333333-3333-4333-8333-333333333333', 'DailyLeaderB');
+insert into public.profiles (id, nickname, anonymous_expires_at) values
+  ('d1111111-1111-4111-8111-111111111111', 'DailyLeader', null),
+  (
+    'd2222222-2222-4222-8222-222222222222',
+    'DailyAnonLeader',
+    now() - interval '1 hour'
+  ),
+  ('d3333333-3333-4333-8333-333333333333', 'DailyLeaderB', null);
 
 insert into public.groups (id, name, invite_code, created_by, accommodation_auto_add) values
 (
@@ -119,12 +123,14 @@ insert into public.memberships (group_id, user_id, role, created_at) values
     now() - interval '2 days'
   );
 
--- Expired anonymous leader: memberships.role=leader but is_member false → denied.
+-- Membership setup stamps a fresh anonymous window; move it past expiry
+-- through the internal write gate.
 select public.allow_anonymous_expiry_write();
 update public.profiles
 set anonymous_expires_at = now() - interval '1 hour'
 where id = 'd2222222-2222-4222-8222-222222222222';
 
+-- Expired anonymous leader: memberships.role=leader but is_member false → denied.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'd2222222-2222-4222-8222-222222222222', true);
 select set_config('request.jwt.claim.role', 'authenticated', true);
@@ -394,7 +400,6 @@ select lives_ok(
     v_r1 text;
     v_r2 text;
   begin
-    -- shortcut: local Supabase uses postgres/postgres; inject credentials if this suite targets another database.
     v_conninfo := format(
       'hostaddr=%s port=%s dbname=%s user=%s password=postgres',
       inet_server_addr(),
@@ -482,7 +487,7 @@ select is(
       and kind = 'accommodation'
       and coalesce(day, 1) = 1),
   2,
-  'concurrent none→some auto-adds exactly two accommodation cards (no double)'
+  'concurrent setters retain exactly two accommodation cards (no double auto-add)'
 );
 
 select is(
@@ -492,7 +497,7 @@ select is(
       and stay_anchor = true
       and coalesce(day, 1) = 1),
   0,
-  'serialized second set downgrades both stay_anchor cards'
+  'serialized some→some setter downgrades both accommodation anchors'
 );
 
 -- Cleanup committed fixtures (no outer rollback after concurrent section).

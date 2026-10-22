@@ -21,7 +21,8 @@ it('keeps quick adds first through demo editing without switching the active tar
   expect(state.group.activeDestinationId).toBe(old.id);
   demoUpdateDestinationEmoji(second, '⭐', '#ffcc00');
   expect(getDemoState().destinations.find(item => item.id === second)).toMatchObject({ emoji: '⭐', markerColor: '#ffcc00' });
-  demoReorderDestinations([first,second,...state.destinations.filter(item => item.id !== first && item.id !== second).map(item => item.id)]);
+  demoReorderDestinations([first,second,...state.destinations.filter(item => item.id !== first && item.id !== second).map(item => item.id)]
+    .map((id, position) => ({ id, position, day: state.destinations.find(item => item.id === id)?.day ?? null })));
   expect(getDemoState().destinations.slice(0,2).map(item => item.id)).toEqual([first,second]);
   demoDeleteDestination(second);
   expect(getDemoState().destinations.some(item => item.id === second)).toBe(false);

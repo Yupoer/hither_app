@@ -1,5 +1,6 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import WaveLoading from '../components/WaveLoading';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import AuthField from '../components/AuthField';
 import SafePressable from '../components/SafePressable';
@@ -24,15 +25,15 @@ export default function PasswordRecoveryScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (!passwordRecoverySuccess) return;
-    const timer = setTimeout(clearPasswordRecovery, 1200);
-    return () => clearTimeout(timer);
-  }, [clearPasswordRecovery, passwordRecoverySuccess]);
+  const [recoveryIdentity, setRecoveryIdentity] = useState({ clearPasswordRecovery, passwordRecoverySuccess, generation: 0 });
+  if (!Object.is(recoveryIdentity.clearPasswordRecovery, clearPasswordRecovery) || !Object.is(recoveryIdentity.passwordRecoverySuccess, passwordRecoverySuccess)) {
+    setRecoveryIdentity({ clearPasswordRecovery, passwordRecoverySuccess, generation: recoveryIdentity.generation + 1 });
+  }
 
   if (passwordRecoverySuccess) {
     return (
       <View style={styles.screen}>
+        <PasswordRecoveryDismissal key={recoveryIdentity.generation} clearPasswordRecovery={clearPasswordRecovery} />
         <CrookIcon size={64} color={colors.accent} glow />
         <Text style={styles.title}>{t('login.recoveryComplete')}</Text>
       </View>
@@ -117,6 +118,14 @@ export default function PasswordRecoveryScreen() {
       </SafePressable>
     </View>
   );
+}
+
+function PasswordRecoveryDismissal({ clearPasswordRecovery }: { clearPasswordRecovery: () => void }) {
+  useMountEffect(() => {
+    const timer = setTimeout(clearPasswordRecovery, 1200);
+    return () => clearTimeout(timer);
+  });
+  return null;
 }
 
 const styles = StyleSheet.create({

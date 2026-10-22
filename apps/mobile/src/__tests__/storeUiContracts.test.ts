@@ -9,6 +9,8 @@ const read = (rel: string) =>
   readFileSync(join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 
 const mapScreen = read('screens/MapScreen.tsx');
+const toolsPane = read('screens/MapScreen/components/ToolsPane.tsx');
+const routePane = read('screens/MapScreen/components/RoutePane.tsx');
 const segmented = read('screens/MapScreen/components/Segmented.tsx');
 const storePane = read('screens/MapScreen/components/StorePane.tsx');
 const reorderList = read('components/DestinationReorderList.tsx');
@@ -207,7 +209,7 @@ describe('four-pane store navigation contracts', () => {
   });
 
   it('tools pane locks Live Activity without entitlement and opens paywall', () => {
-    expect(mapScreen).toContain('tools-live-activity-toggle');
+    expect(toolsPane).toContain('tools-live-activity-toggle');
     expect(mapScreen).toContain('liveActivityAllowed');
     expect(mapScreen).toContain('liveActivityEffective');
     expect(mapScreen).toContain('openPaywallForLiveActivity');
@@ -218,7 +220,7 @@ describe('four-pane store navigation contracts', () => {
   });
 
   it('route pane shows extra credits only when > 0', () => {
-    expect(mapScreen).toContain('extraPointCredits > 0');
-    expect(mapScreen).toContain('route-extra-point-credits');
+    expect(routePane).toContain('extraPointCredits > 0');
+    expect(routePane).toContain('route-extra-point-credits');
   });
 });

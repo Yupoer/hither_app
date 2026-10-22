@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { createElement, useState, type ReactElement } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { Coordinates } from '../../../types';
 import { cachedRouteRequest, type RouteCacheEntry } from '../../../utils/routeRequestCache';
 import {
@@ -115,7 +116,7 @@ export function membersRouteSignature(
     .join(';');
 }
 
-export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
+export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState & { lifecycle: ReactElement } {
   const {
     selfCoordinates,
     gathering,
@@ -134,58 +135,95 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     memberRoutes: {},
     selfRouteGeneration: 0,
   });
-  // Keep bounded recent geometry and in-flight dedupe for this map session.
-  const cacheRef = useRef(new Map<string, RouteCacheEntry>());
-  const selfRouteGateRef = useRef<LocationGateState>({
-    lastCoords: null,
-    lastAtMs: 0,
+  const [owner] = useState<MapKitRouteOwner>(() => ({
+    cache: new Map(), selfRouteGate: { lastCoords: null, lastAtMs: 0 },
+    routedSelf: undefined, lastEffectKey: '', requestGeneration: 0,
+    selfRouteGeneration: 0, setState,
+  }));
+  const lifecycle = createElement(MapKitRouteLifecycle, { owner,
+    selfCoordinates, gathering, travelMode, highAccuracy, targetKey });
+  if (state.targetKey !== targetKey) {
+    return { selfRoute: null, memberRoutes: {},
+      selfRouteGeneration: state.selfRouteGeneration, lifecycle };
+  }
+  return { ...state, lifecycle };
+}
+
+type CommittedRouteInput = Pick<MapKitRouteInputs,
+  'selfCoordinates' | 'gathering' | 'travelMode'> & {
+  highAccuracy: boolean; targetKey: string; generation: number;
+};
+interface MapKitRouteOwner {
+  cache: Map<string, RouteCacheEntry>;
+  selfRouteGate: LocationGateState;
+  routedSelf: Coordinates | undefined;
+  lastEffectKey: string;
+  requestGeneration: number;
+  selfRouteGeneration: number;
+  setState: (state: MapKitRoutesState & { targetKey: string }) => void;
+}
+
+function MapKitRouteLifecycle({ owner, selfCoordinates, gathering, travelMode, highAccuracy, targetKey }: {
+  owner: MapKitRouteOwner;
+} & Omit<CommittedRouteInput, 'generation'>): ReactElement {
+  const [routeInput, setRouteInput] = useState(() => ({
+    selfCoordinates, gathering, travelMode, highAccuracy, targetKey, generation: 0,
+  }));
+  if (!Object.is(routeInput.selfCoordinates, selfCoordinates)
+    || !Object.is(routeInput.gathering, gathering)
+    || !Object.is(routeInput.travelMode, travelMode)
+    || !Object.is(routeInput.highAccuracy, highAccuracy)
+    || !Object.is(routeInput.targetKey, targetKey)) {
+    setRouteInput({ selfCoordinates, gathering, travelMode, highAccuracy, targetKey,
+      generation: routeInput.generation + 1 });
+  }
+  useMountEffect(() => () => {
+    owner.requestGeneration += 1;
+    // Strict replay reattaches to the cached pending request after invalidation.
+    owner.lastEffectKey = '';
   });
-  const routedSelfRef = useRef<Coordinates | undefined>(undefined);
-  const lastEffectKeyRef = useRef<string>('');
-  const requestGenerationRef = useRef(0);
-  const selfRouteGenerationRef = useRef(0);
+  return createElement(MapKitRouteRequest, { key: routeInput.generation, owner, input: routeInput });
+}
 
-  useEffect(() => () => {
-    requestGenerationRef.current += 1;
-    // StrictMode replays setup after cleanup. Let it re-attach to a cached
-    // pending request rather than leaving that request permanently invalid.
-    lastEffectKeyRef.current = '';
-  }, []);
-
-  useEffect(() => {
+/** Reevaluation owns no cancellation. Only a meaningful route key supersedes a request. */
+function MapKitRouteRequest({ owner, input }: {
+  owner: MapKitRouteOwner; input: CommittedRouteInput;
+}): null {
+  useMountEffect(() => {
+    const { selfCoordinates, gathering, travelMode, highAccuracy, targetKey } = input;
     const policy = locationPolicy(highAccuracy);
     const now = Date.now();
     const decimals = policy.routeCoordDecimals;
 
     // Stabilize self coords: skip tiny GPS jitter for MapKit.
-    let routedSelf = routedSelfRef.current;
+    let routedSelf = owner.routedSelf;
     if (selfCoordinates) {
       if (
         shouldRecomputeRoute(
           selfCoordinates,
           now,
-          selfRouteGateRef.current,
+          owner.selfRouteGate,
           policy,
         )
       ) {
-        selfRouteGateRef.current = {
+        owner.selfRouteGate = {
           lastCoords: selfCoordinates,
           lastAtMs: now,
         };
         routedSelf = selfCoordinates;
-        routedSelfRef.current = selfCoordinates;
+        owner.routedSelf = selfCoordinates;
       } else if (!routedSelf) {
         routedSelf = selfCoordinates;
-        routedSelfRef.current = selfCoordinates;
-        selfRouteGateRef.current = {
+        owner.routedSelf = selfCoordinates;
+        owner.selfRouteGate = {
           lastCoords: selfCoordinates,
           lastAtMs: now,
         };
       }
     } else {
       routedSelf = undefined;
-      routedSelfRef.current = undefined;
-      selfRouteGateRef.current = { lastCoords: null, lastAtMs: 0 };
+      owner.routedSelf = undefined;
+      owner.selfRouteGate = { lastCoords: null, lastAtMs: 0 };
     }
 
     // Member positions no longer trigger MapKit (haversine flock ETA) — omit
@@ -201,29 +239,29 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
     ].join('#');
 
     // Identical quantized inputs: do not re-hit MapKit.
-    if (effectKey === lastEffectKeyRef.current) {
+    if (effectKey === owner.lastEffectKey) {
       return;
     }
-    lastEffectKeyRef.current = effectKey;
+    owner.lastEffectKey = effectKey;
 
     // Only a meaningful request change invalidates the previous completion.
     // Raw GPS/target object rerenders with the same key keep it eligible.
-    const requestGeneration = ++requestGenerationRef.current;
+    const requestGeneration = ++owner.requestGeneration;
     const cachedGetRoute: RouteGetter = (from, to, mode) => {
       // Origin quantization avoids jitter requests; a changed destination must
       // not reuse another stop's geometry even within the same GPS bucket.
       const key = [routeCacheKey(from, to, mode, decimals), to.latitude, to.longitude].join('|');
-      return cachedRouteRequest(cacheRef.current, key, () => getDirections(from, to, mode));
+      return cachedRouteRequest(owner.cache, key, () => getDirections(from, to, mode));
     };
 
     // No target → clear polylines (nav stopped / arrived / next stop not set).
     if (!gathering) {
-      selfRouteGenerationRef.current += 1;
-      setState({
+      owner.selfRouteGeneration += 1;
+      owner.setState({
         targetKey,
         selfRoute: null,
         memberRoutes: {},
-        selfRouteGeneration: selfRouteGenerationRef.current,
+        selfRouteGeneration: owner.selfRouteGeneration,
       });
       return;
     }
@@ -238,33 +276,19 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState {
       },
       cachedGetRoute,
     ).then((next) => {
-      if (requestGeneration !== requestGenerationRef.current) return;
+      if (requestGeneration !== owner.requestGeneration) return;
       // Fail-closed: empty/failed directions clear the previous polyline so
       // UI falls back to haversine distance + local 估算 ETA (never a stale path).
       // Out-of-order responses are ignored when the request generation changes.
       // Always bump generation so equal-distance results still re-anchor (#145).
-      selfRouteGenerationRef.current += 1;
-      setState({
+      owner.selfRouteGeneration += 1;
+      owner.setState({
         targetKey,
         selfRoute: next.selfRoute,
         memberRoutes: next.memberRoutes,
-        selfRouteGeneration: selfRouteGenerationRef.current,
+        selfRouteGeneration: owner.selfRouteGeneration,
       });
     });
-  }, [
-    selfCoordinates,
-    gathering,
-    travelMode,
-    highAccuracy,
-    targetKey,
-  ]);
-
-  if (state.targetKey !== targetKey) {
-    return {
-      selfRoute: null,
-      memberRoutes: {},
-      selfRouteGeneration: state.selfRouteGeneration,
-    };
-  }
-  return state;
+  });
+  return null;
 }

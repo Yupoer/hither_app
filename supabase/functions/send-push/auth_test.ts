@@ -1,5 +1,15 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { commandSenderIsAuthorized } from "./auth.ts";
+import { commandSenderIsAuthorized, webhookAuthorization } from "./auth.ts";
+
+Deno.test("webhook gate rejects missing or wrong secrets and fails closed when unset", () => {
+  assertEquals(webhookAuthorization("s3cret", "s3cret"), "ok");
+  assertEquals(webhookAuthorization("s3cret", null), "unauthorized");
+  assertEquals(webhookAuthorization("s3cret", ""), "unauthorized");
+  assertEquals(webhookAuthorization("s3cret", "s3cre"), "unauthorized");
+  assertEquals(webhookAuthorization("s3cret", "s3cret "), "unauthorized");
+  assertEquals(webhookAuthorization(undefined, ""), "not_configured");
+  assertEquals(webhookAuthorization("", ""), "not_configured");
+});
 
 Deno.test("followers cannot fan out leader commands; role-dependent custom and requests stay valid", () => {
   for (const type of ["gather", "find_gathering", "depart", "rest", "be_careful", "go_left", "go_right", "stop", "hurry_up", "custom"]) {

@@ -19,7 +19,7 @@ describe('account-scoped joined groups recovery', () => {
     const a = [{ group: { id: 'a' } }];
     mockLoad.mockResolvedValueOnce(a);
     let api!: ReturnType<typeof useJoinedGroups>;
-    function Harness({ actor }: { actor: string }) { api = useJoinedGroups(actor); return null; }
+    function Harness({ actor }: { actor: string }) { api = useJoinedGroups(actor); return api.lifecycle; }
     let root: any;
     await act(async () => { root = create(React.createElement(Harness, { actor: 'a' })); });
     expect(api.groups).toEqual(a);
@@ -44,7 +44,7 @@ describe('account-scoped joined groups recovery', () => {
     mockLoad.mockResolvedValue([{ group: { id: 'g' } }]);
     const screens: Record<string, ReturnType<typeof useJoinedGroups>> = {};
     function Harness({ id, actor }: { id: string; actor: string }) {
-      screens[id] = useJoinedGroups(actor); return null;
+      screens[id] = useJoinedGroups(actor); return screens[id].lifecycle;
     }
     let root: any;
     await act(async () => { root = create(React.createElement(React.Fragment, null,

@@ -20,7 +20,7 @@ import {useNavigationSession} from '../state/useNavigationSession';
 
 test('old terminal and active events cannot replace a newer target; background unsubscribes and resume refreshes',async()=>{
  let hook!:ReturnType<typeof useNavigationSession>;
- function Probe(){hook=useNavigationSession('g');return null;}
+ function Probe(){hook=useNavigationSession('g');return hook.lifecycle;}
  let tree!:ReactTestRenderer;
  await act(async()=>{tree=create(React.createElement(Probe));});
  const a={id:'a',groupId:'g',destinationId:'one',startedAt:'2026-09-14T00:00:00Z',expiresAt:'2026-09-14T08:00:00Z',status:'active',version:1} as NavigationSession;

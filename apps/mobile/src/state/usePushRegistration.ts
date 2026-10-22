@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { createElement, type ReactElement } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { Platform } from 'react-native';
 import { notifications } from '../native';
 import { savePushToken } from '../api/client';
@@ -17,11 +18,15 @@ export type PushPlatform = 'ios' | 'android';
  * Keyed on the user id so a fresh sign-in re-registers; one-shot per user.
  * Logout revokes this installation before its authenticated session is removed.
  */
-export function usePushRegistration(): void {
+export function usePushRegistration(): ReactElement {
   const { user } = useSession();
   const userId = user?.id ?? null;
 
-  useEffect(() => {
+  return createElement(PushRegistration, { key: userId, userId });
+}
+
+function PushRegistration({ userId }: { userId: string | null }) {
+  useMountEffect(() => {
     if (!userId) return;
     let active = true;
     void (async () => {
@@ -38,5 +43,6 @@ export function usePushRegistration(): void {
     return () => {
       active = false;
     };
-  }, [userId]);
+  });
+  return null;
 }

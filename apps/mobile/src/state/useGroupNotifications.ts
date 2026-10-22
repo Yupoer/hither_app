@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { createElement, useRef, useState, type ReactElement, type RefObject } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { supabase } from '../api/supabase';
 import { getNotificationPreferences } from '../api/client';
 import { notifications } from '../native';
@@ -72,7 +73,7 @@ export function resolveCommandNotificationClass(
   });
 }
 
-export function useGroupNotifications(): void {
+export function useGroupNotifications(): ReactElement {
   const { user, membership } = useSession();
   const { t } = useTranslation();
 
@@ -87,7 +88,21 @@ export function useGroupNotifications(): void {
   const identityRef = useRef({ groupId, myUserId });
   identityRef.current = { groupId, myUserId };
 
-  useEffect(() => {
+  const [notificationIdentity, setNotificationIdentity] = useState({ groupId, myUserId, generation: 0 });
+  if (!Object.is(notificationIdentity.groupId, groupId) || !Object.is(notificationIdentity.myUserId, myUserId)) {
+    setNotificationIdentity({ groupId, myUserId, generation: notificationIdentity.generation + 1 });
+  }
+  return createElement(GroupNotificationSubscription, { key: `group-notifications:${notificationIdentity.generation}`, groupId, myUserId, tRef, isLeaderRef, identityRef });
+}
+
+function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, identityRef }: {
+  groupId: string | null;
+  myUserId: string | null;
+  tRef: RefObject<ReturnType<typeof useTranslation>['t']>;
+  isLeaderRef: RefObject<boolean>;
+  identityRef: RefObject<{ groupId: string | null; myUserId: string | null }>;
+}) {
+  useMountEffect(() => {
     if (!groupId || !myUserId) return;
     let active = true;
     const isCurrent = () => active && identityRef.current.groupId === groupId && identityRef.current.myUserId === myUserId;
@@ -443,5 +458,6 @@ export function useGroupNotifications(): void {
       unsubPush();
       supabase.removeChannel(channel);
     };
-  }, [groupId, myUserId]);
+  });
+  return null;
 }
