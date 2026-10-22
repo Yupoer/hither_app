@@ -4569,6 +4569,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
+          {navigationSessionState.lifecycle}
           <View style={styles.loading}>
             <WaveLoading color={accent} size="large" />
             <Text style={styles.loadingText}>{t('map.loading')}</Text>
@@ -4588,6 +4589,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
+        {navigationSessionState.lifecycle}
         <WaveLoading color={accent} size="large" />
         <Text style={styles.loadingText}>{t('map.loading')}</Text>
       </View>
@@ -4600,6 +4602,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (inPassiveMode) {
       return (
         <View style={styles.flex}>
+          {navigationSessionState.lifecycle}
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
             {refreshing ? <WaveLoading color={accent} /> : null}
@@ -4631,6 +4634,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     return (
       <View style={styles.loading}>
+        {navigationSessionState.lifecycle}
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
         {refreshing ? <WaveLoading color={accent} /> : null}
         <Pressable
@@ -4651,6 +4655,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.flex}>
+      {navigationSessionState.lifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
