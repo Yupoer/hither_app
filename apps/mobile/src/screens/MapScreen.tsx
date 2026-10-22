@@ -121,12 +121,9 @@ import { useSession } from '../state/SessionContext';
 import {
   usePreferences,
   useTheme,
-  ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
   ARRIVAL_RADIUS_MAX_M,
 } from '../state/PreferencesContext';
-import PrefSlider from '../components/PrefSlider';
-import SystemToggle from '../components/SystemToggle';
 import { displayMemberAvatar } from '../constants/avatars';
 import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { useIsFocused } from '@react-navigation/native';
@@ -145,7 +142,6 @@ import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgre
 import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
-import { RefreshLocationsButton } from './MapScreen/components/RefreshLocationsButton';
 import { FlockRow } from './MapScreen/components/FlockRow';
 import { arrivalErrorMessage, shortEta } from '../utils/mapFormatters';
 import { MeetTimeSheet } from './MapScreen/components/MeetTimeSheet';
@@ -159,6 +155,9 @@ import { InviteMembersOverlay } from './MapScreen/components/InviteMembersOverla
 import { RouteEditorSheet } from './MapScreen/components/RouteEditorSheet';
 import { GatheringCarousel } from './MapScreen/components/GatheringCarousel';
 import { AddPlaceConfirmCard } from './MapScreen/components/AddPlaceConfirmCard';
+import { ToolsPane } from './MapScreen/components/ToolsPane';
+import { RoutePane } from './MapScreen/components/RoutePane';
+import { MembersPane } from './MapScreen/components/MembersPane';
 import { useGatheringWorkflow } from './MapScreen/hooks/useGatheringWorkflow';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import { useSubgroupActions } from './MapScreen/hooks/useSubgroupActions';
@@ -201,7 +200,6 @@ import {
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
-import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { SheetPaneTabs } from './MapScreen/components/SheetPaneTabs';
 import type { SheetPaneTabOption } from './MapScreen/components/SheetPaneTabs';
 import { StorePane } from './MapScreen/components/StorePane';
@@ -305,9 +303,7 @@ import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
 import {
   locationSharingConfirmCopy,
-  statusIconForKind,
 } from './MapScreen/memberStatusSharing';
-import { NativeMenuHost } from '../native/menu';
 import {
   applyPresenceMacroWrites,
   derivePresenceMacro,
@@ -332,7 +328,7 @@ import {
   shouldBlockNewDestination,
 } from '../entitlements';
 import { themes } from '../theme';
-import { glass, accentMix, memberColor } from '../glass';
+import { glass, memberColor } from '../glass';
 import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChromeLayout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
@@ -5305,183 +5301,35 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
-    <>
-      {/* My status + refresh on one row (stage 1+ body) */}
-      <View style={styles.myStatusBar}>
-        <View style={styles.myStatusCluster}>
-          {Platform.OS === 'ios' ? (
-            <NativeMenuHost
-              items={statusMenuItems}
-              onSelect={(id) => {
-                if (id === 'follow' || id === 'solo' || id === 'stealth') {
-                  void applyPresenceMacroKind(id);
-                }
-              }}
-              accessibilityLabel={t('solo.statusTitle')}
-              style={styles.myStatusTrigger}
-            >
-              <View style={styles.myStatusTriggerInner} pointerEvents="none">
-                <Ionicons
-                  name={statusIconForKind(myStatusKind)}
-                  size={20}
-                  color={glass.textSecondary}
-                />
-                <Text style={styles.myStatusName} numberOfLines={1}>
-                  {myStatusKind === 'stealth'
-                    ? t('solo.stealth')
-                    : myStatusKind === 'solo'
-                      ? t('solo.switch')
-                      : t('solo.followTeam')}
-                </Text>
-              </View>
-            </NativeMenuHost>
-          ) : (
-            <Pressable
-              style={styles.myStatusTrigger}
-              onPress={openAndroidStatusSheet}
-              accessibilityRole="button"
-              accessibilityLabel={t('solo.statusTitle')}
-            >
-              <View style={styles.myStatusTriggerInner} pointerEvents="none">
-                <Ionicons
-                  name={statusIconForKind(myStatusKind)}
-                  size={20}
-                  color={glass.textSecondary}
-                />
-                <Text style={styles.myStatusName} numberOfLines={1}>
-                  {myStatusKind === 'stealth'
-                    ? t('solo.stealth')
-                    : myStatusKind === 'solo'
-                      ? t('solo.switch')
-                      : t('solo.followTeam')}
-                </Text>
-              </View>
-            </Pressable>
-          )}
-          <Pressable
-            style={({ pressed }) => [
-              styles.locationSharingButton,
-              pressed && styles.locationSharingButtonPressed,
-            ]}
-            disabled={sharingApplying}
-            accessibilityRole="button"
-            accessibilityLabel={t('settings.locationSharing')}
-            accessibilityHint={t('settings.locationSharingHint')}
-            accessibilityState={{ disabled: sharingApplying, busy: sharingApplying }}
-            testID="members-location-sharing"
-            onPress={() => {
-              mediumTap();
-              handleSharingEnabledChangeAnimated();
-            }}
-            >
-            {sharingApplying ? (
-              <WaveLoading size="small" color={sharingEnabled ? accent : glass.danger} />
-            ) : (
-              <Ionicons
-                name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}
-                size={22}
-                color={sharingEnabled ? accent : glass.danger}
-              />
-            )}
-          </Pressable>
-        </View>
-        <RefreshLocationsButton
-          refreshing={refreshingLocations}
-          cooldownUntil={refreshCooldownUntil}
-          accent={accent}
-          styles={styles}
-          t={t}
-          onPress={refreshAllLocations}
-        />
-      </View>
-      {subgroups.length === 0 && (
-        <View style={styles.list}>
-          {topFlockMemo.map((f, i) => renderFlockRow(f, i === topFlockMemo.length - 1, i))}
-        </View>
-      )}
-      <SubgroupSection
-        subgroups={subgroups}
-        flock={flock}
-        mySubgroupId={mySubgroupId}
-        sentInvites={sentInvites}
-        accent={accent}
-        setInviteSheetOpen={setInviteSheetOpen}
-        renderFlockRow={renderFlockRow}
-        styles={styles}
-      />
-      {pendingInvites.length > 0 && (
-        <View style={styles.list}>
-          {pendingInvites.map((inv, i) => {
-            const isRequest = inv.kind === 'request';
-            const inviteStacked = fontBucket === 'large' || fontBucket === 'xl';
-            return (
-              <View
-                key={`inv-${inv.id}-${i}`}
-                style={[
-                  styles.flockRow,
-                  i === pendingInvites.length - 1 && styles.flockRowLast,
-                  inviteStacked && styles.inviteRowStacked,
-                ]}
-              >
-                <Text style={[styles.flockName, inviteStacked && styles.invitePromptFull]}>
-                  {t(isRequest ? 'subgroup.requestPrompt' : 'subgroup.invitePrompt', {
-                    name: inv.inviterName,
-                    team: inv.subgroupName,
-                  })}
-                </Text>
-                <View style={[styles.splitActions, inviteStacked && styles.inviteActionsRow]}>
-                  <Pressable
-                    style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                    onPress={() => void handleAcceptInvite(inv.id)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>
-                      {t(isRequest ? 'subgroup.approve' : 'subgroup.accept')}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.chipGhost}
-                    onPress={() => void handleDeclineInvite(inv.id)}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      <View style={styles.listGroup}>
-        <Pressable
-          style={[styles.listRow, styles.listRowLast]}
-          onPress={() => {
-            lightTap();
-            setOverlay('invite');
-          }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.listRowTitle}>{t('map.inviteMembers')}</Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-      </View>
-
-      {/* 精準定位 — 成員欄最下方 */}
-      <View style={[styles.accuracyRow, styles.accuracyRowLast]}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>
-            {t('settings.preciseLocation')}
-          </Text>
-          <Text style={styles.accuracyBattery}>{t('settings.preciseLocationHint')}</Text>
-        </View>
-        <SystemToggle
-          value={highAccuracy}
-          onValueChange={setHighAccuracy}
-          accessibilityLabel={t('settings.preciseLocation')}
-        />
-      </View>
-    </>
+    <MembersPane
+      accent={accent}
+      applyPresenceMacroKind={applyPresenceMacroKind}
+      flock={flock}
+      fontBucket={fontBucket}
+      handleAcceptInvite={handleAcceptInvite}
+      handleDeclineInvite={handleDeclineInvite}
+      handleSharingEnabledChangeAnimated={handleSharingEnabledChangeAnimated}
+      highAccuracy={highAccuracy}
+      myStatusKind={myStatusKind}
+      mySubgroupId={mySubgroupId}
+      openAndroidStatusSheet={openAndroidStatusSheet}
+      pendingInvites={pendingInvites}
+      refreshAllLocations={refreshAllLocations}
+      refreshCooldownUntil={refreshCooldownUntil}
+      refreshingLocations={refreshingLocations}
+      renderFlockRow={renderFlockRow}
+      sentInvites={sentInvites}
+      setHighAccuracy={setHighAccuracy}
+      setInviteSheetOpen={setInviteSheetOpen}
+      setOverlay={setOverlay}
+      sharingApplying={sharingApplying}
+      sharingEnabled={sharingEnabled}
+      statusMenuItems={statusMenuItems}
+      styles={styles}
+      subgroups={subgroups}
+      t={t}
+      topFlockMemo={topFlockMemo}
+    />
   ), [
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
@@ -5675,208 +5523,35 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [gatherRequestPageW, selectedGatherRequestId, sortedGatherRequestIds]);
   const routePaneBody = useMemo(() => (
-    <>
-      {/* #173: leader pending gather requests — FIFO horizontal cards at Route top. */}
-      {canEditItinerary && sortedGatherRequests.length > 0 ? (
-        <View testID="route-gather-request-inbox" style={{ marginBottom: 12 }}>
-          <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
-            {t('gatherRequest.pending')}
-          </Text>
-          <ScrollView
-            ref={gatherRequestPagerRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            style={{ marginHorizontal: -4 }}
-            onMomentumScrollEnd={(e) => {
-              const page = Math.round(
-                e.nativeEvent.contentOffset.x / Math.max(1, gatherRequestPageW),
-              );
-              const id = sortedGatherRequestIds[page];
-              if (id) setSelectedGatherRequestId(id);
-            }}
-            onLayout={() => {
-              const page = gatherRequestPageIndex(
-                sortedGatherRequestIds,
-                selectedGatherRequestId,
-              );
-              gatherRequestPagerRef.current?.scrollTo({
-                x: page * gatherRequestPageW,
-                animated: false,
-              });
-            }}
-          >
-            {sortedGatherRequests.map((request) => (
-              <View
-                key={request.id}
-                style={{
-                  width: gatherRequestPageW,
-                  paddingHorizontal: 4,
-                }}
-              >
-                <View style={[styles.tripSummaryCard, { marginBottom: 0 }]}>
-                  <Text style={styles.tripCardKicker} numberOfLines={1}>
-                    {members.find((member) => member.userId === request.requesterId)?.name
-                      ?? t('map.memberFallback')}
-                  </Text>
-                  <Text style={styles.tripCardTitle} numberOfLines={2}>
-                    {request.items.map((item) => item.title).join('、')}
-                  </Text>
-                  <Text style={styles.tripCardMeta} numberOfLines={1}>
-                    {t('gatherRequest.target', {
-                      team: request.subgroupId
-                        ? subgroups.find((item) => item.id === request.subgroupId)?.name
-                          ?? t('gatherRequest.unknownTeam')
-                        : t('gatherRequest.mainTeam'),
-                    })}
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                    <Pressable
-                      style={[
-                        styles.chip,
-                        { flex: 1, minHeight: 44 },
-                        resolvingGatherRequestId === request.id ? { opacity: 0.5 } : null,
-                      ]}
-                      onPress={() => void handleGatherPointRequest(request.id, false)}
-                      disabled={!!resolvingGatherRequestId}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('gatherRequest.reject')}
-                      testID={`gather-request-reject-${request.id}`}
-                    >
-                      <Text style={styles.chipText}>{t('gatherRequest.reject')}</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.chip,
-                        {
-                          flex: 1,
-                          minHeight: 44,
-                          backgroundColor: accentMix(accent, 24),
-                        },
-                        resolvingGatherRequestId === request.id ? { opacity: 0.5 } : null,
-                      ]}
-                      onPress={() => void handleGatherPointRequest(request.id, true)}
-                      disabled={!!resolvingGatherRequestId}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('gatherRequest.approve')}
-                      testID={`gather-request-approve-${request.id}`}
-                    >
-                      <Text style={styles.chipText}>{t('gatherRequest.approve')}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-          {sortedGatherRequests.length > 1 ? (
-            <View
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'center',
-                gap: 6,
-                marginTop: 8,
-              }}
-              accessibilityRole="adjustable"
-            >
-              {sortedGatherRequestIds.map((id) => (
-                <View
-                  key={id}
-                  style={{
-                    width: id === selectedGatherRequestId ? 14 : 6,
-                    height: 6,
-                    borderRadius: 3,
-                    backgroundColor:
-                      id === selectedGatherRequestId ? accent : glass.textTertiary,
-                  }}
-                />
-              ))}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-      <Text
-        style={[
-          styles.sheetHeading,
-          !(canEditItinerary && sortedGatherRequests.length > 0) && styles.sheetHeadingFirst,
-        ]}
-      >
-        {t('map.gatheringPoints')}
-      </Text>
-      {extraPointCredits > 0 ? (
-        <Text
-          style={styles.extraCreditsHint}
-          testID="route-extra-point-credits"
-          accessibilityRole="text"
-          accessibilityLabel={t('store.extraCreditsRemaining', { count: extraPointCredits })}
-        >
-          {t('store.extraCreditsRemaining', { count: extraPointCredits })}
-        </Text>
-      ) : null}
-      {/* 下一站 — 唯一完整卡片；底部只顯示距離 */}
-      {nextStopTitle ? (
-        <View style={styles.tripSummaryCard}>
-          <Text style={styles.tripCardKicker}>{t('map.nextTag')}</Text>
-          <Text style={styles.tripCardTitle} numberOfLines={2}>{nextStopTitle}</Text>
-          {nextStopDistLabel ? (
-            <Text style={styles.tripCardMeta}>{nextStopDistLabel}</Text>
-          ) : null}
-        </View>
-      ) : null}
-      {renderRouteScope({
-        scopeKey: 'main',
-        title: t('map.mainTeamLabel'),
-        destinations: routeMainDestinations,
-        canEdit: isLeader,
-      })}
-      {myScopeId
-        ? renderRouteScope({
-            scopeKey: 'subgroup',
-            title: subgroups.find((subgroup) => subgroup.id === myScopeId)?.name
-              ?? t('map.subgroupLabel'),
-            destinations: routeSubgroupDestinations,
-            canEdit: isMySubgroupLeader,
-            scopeId: myScopeId,
-          })
-        : null}
-      {/* 導航入口 = 普通 List Row，無圖示色塊 */}
-      <View style={styles.listGroup}>
-        {canEditItinerary && destinations.length > 0 ? (
-          <Pressable
-            style={styles.listRow}
-            onPress={() => { lightTap(); setOverlay('arrivalManage'); }}
-            accessibilityRole="button"
-            accessibilityLabel={t('arrival.manage')}
-          >
-            <Text style={styles.listRowTitle}>{t('arrival.manage')}</Text>
-            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-          </Pressable>
-        ) : null}
-        <Pressable
-          style={styles.listRow}
-          onPress={() => { lightTap(); setOverlay('ops'); }}
-          accessibilityRole="button"
-          accessibilityLabel={t('map.opsCenter')}
-          testID="map-open-ops"
-        >
-          <Text style={styles.listRowTitle}>{t('map.opsCenter')}</Text>
-          {opsOpenCount > 0 ? (
-            <Text style={[styles.listRowTrailing, { color: glass.warn }]}>
-              {t('map.opsOpenCount', { count: opsOpenCount })}
-            </Text>
-          ) : null}
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-        <Pressable
-          style={[styles.listRow, styles.listRowLast]}
-          onPress={() => { lightTap(); openHistoryOverlay(); }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.listRowTitle}>{t('history.title')}</Text>
-          <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
-        </Pressable>
-      </View>
-    </>
+    <RoutePane
+      accent={accent}
+      canEditItinerary={canEditItinerary}
+      destinations={destinations}
+      extraPointCredits={extraPointCredits}
+      gatherRequestPageW={gatherRequestPageW}
+      gatherRequestPagerRef={gatherRequestPagerRef}
+      handleGatherPointRequest={handleGatherPointRequest}
+      isLeader={isLeader}
+      isMySubgroupLeader={isMySubgroupLeader}
+      members={members}
+      myScopeId={myScopeId}
+      nextStopDistLabel={nextStopDistLabel}
+      nextStopTitle={nextStopTitle}
+      openHistoryOverlay={openHistoryOverlay}
+      opsOpenCount={opsOpenCount}
+      renderRouteScope={renderRouteScope}
+      resolvingGatherRequestId={resolvingGatherRequestId}
+      routeMainDestinations={routeMainDestinations}
+      routeSubgroupDestinations={routeSubgroupDestinations}
+      selectedGatherRequestId={selectedGatherRequestId}
+      setOverlay={setOverlay}
+      setSelectedGatherRequestId={setSelectedGatherRequestId}
+      sortedGatherRequestIds={sortedGatherRequestIds}
+      sortedGatherRequests={sortedGatherRequests}
+      styles={styles}
+      subgroups={subgroups}
+      t={t}
+    />
   ), [
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
     openHistoryOverlay, isLeader, canEditItinerary, openForRouteEditor,
@@ -5904,75 +5579,22 @@ export default function MapScreen({ route, navigation }: Props) {
     void setLiveActivityEnabled(true);
   }, [liveActivityUnlocked, openPaywallForLiveActivity, setLiveActivityEnabled]);
   const toolsPaneBody = useMemo(() => (
-    <>
-      <View style={styles.passiveEnterBlock}>
-      <Pressable
-        style={({ pressed }) => [
-          styles.passiveEnterButton,
-          pressed && styles.passiveEnterButtonPressed,
-        ]}
-        onPress={() => {
-          mediumTap();
-          setPassiveCompanionMode(true);
-        }}
-        accessibilityLabel={t('passive.enter')}
-        accessibilityRole="button"
-        testID="tools-enter-passive"
-      >
-        <View style={styles.passiveEnterContent} pointerEvents="none">
-          <Ionicons name="leaf-outline" size={28} color={glass.textPrimary} />
-          <Text style={styles.passiveEnterLabel}>{t('passive.enter')}</Text>
-        </View>
-      </Pressable>
-      </View>
-
-      <View style={styles.accuracyRow} testID="tools-live-activity-row">
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>{t('settings.liveActivity')}</Text>
-          <Text style={styles.accuracySubhint}>{t('settings.liveActivityHint')}</Text>
-        </View>
-        <SystemToggle
-          value={liveActivityUnlocked && liveActivityEnabled}
-          onValueChange={handleToolsLiveActivityChange}
-          accessibilityLabel={t('settings.liveActivity')}
-          testID="tools-live-activity-toggle"
-        />
-      </View>
-
-      <Text style={styles.sheetHeading}>{t('arrival.radiusSection')}</Text>
-      <View style={styles.accuracyRow}>
-        <View style={styles.accuracyCopy}>
-          <Text style={styles.accuracyLabel}>
-            {t('arrival.radiusValue', { meters: String(arrivalRadiusM) })}
-          </Text>
-          <Text style={styles.accuracySubhint}>{t('arrival.radiusHint')}</Text>
-        </View>
-      </View>
-      <View style={styles.marqueeSpeedBlock}>
-        <PrefSlider
-          value={arrivalRadiusM}
-          values={ARRIVAL_RADIUS_OPTIONS}
-          onChange={setArrivalRadiusM}
-          accent={accent}
-          accessibilityLabel={t('arrival.radiusSection')}
-        />
-      </View>
-
-      <Text style={styles.sheetHeading}>{t('map.cmdTitle')}</Text>
-      {groupId ? (
-        <QuickCommandsCard
-          groupId={groupId}
-          isLeader={!!isLeader}
-          colors={dark}
-          onConfigureCustom={openCustomQuickCommand}
-          variant="preview"
-          onOpenAll={() => {
-            lightTap();
-            setOverlay('commands');
-          }}
-        />
-      ) : null}
-    </>
+    <ToolsPane
+      accent={accent}
+      arrivalRadiusM={arrivalRadiusM}
+      dark={dark}
+      groupId={groupId}
+      handleToolsLiveActivityChange={handleToolsLiveActivityChange}
+      isLeader={isLeader}
+      liveActivityEnabled={liveActivityEnabled}
+      liveActivityUnlocked={liveActivityUnlocked}
+      openCustomQuickCommand={openCustomQuickCommand}
+      setArrivalRadiusM={setArrivalRadiusM}
+      setOverlay={setOverlay}
+      setPassiveCompanionMode={setPassiveCompanionMode}
+      styles={styles}
+      t={t}
+    />
   ), [
     styles, t, groupId, isLeader, dark, openCustomQuickCommand, accent,
     arrivalRadiusM, setArrivalRadiusM, setPassiveCompanionMode,

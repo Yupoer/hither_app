@@ -19,6 +19,8 @@ const sheetHeaderActionContent = readFileSync(join(root, 'components/SheetHeader
 const premiumBanner = readFileSync(join(root, 'components/PremiumBanner.tsx'), 'utf8');
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const toolsPane = readFileSync(join(root, 'screens/MapScreen/components/ToolsPane.tsx'), 'utf8');
+const membersPane = readFileSync(join(root, 'screens/MapScreen/components/MembersPane.tsx'), 'utf8');
 const opsCenterSheet = readFileSync(join(root, 'screens/MapScreen/components/OpsCenterSheet.tsx'), 'utf8');
 const inviteMembersOverlay = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersOverlay.tsx'), 'utf8');
 const routeEditorSheet = readFileSync(join(root, 'screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
@@ -193,13 +195,13 @@ describe('iOS native UI contracts', () => {
   it('uses native glass controls for map chrome and limits haptics to Premium', () => {
     expect(mapScreen).toContain('group?.avatar');
     expect(mapScreen).toContain('<MapRecenterControl');
-    expect(mapScreen).toContain('testID="members-location-sharing"');
+    expect(membersPane).toContain('testID="members-location-sharing"');
     expect(premiumBanner).toContain('lightTap();');
     expect(settings).not.toMatch(/(?:lightTap|mediumTap|selectionTick|rigidTap|alertBuzz)\s*\(/);
   });
 
   it('keeps tools and add-place controls at their requested dimensions', () => {
-    expect(mapScreen).toContain('testID="tools-enter-passive"');
+    expect(toolsPane).toContain('testID="tools-enter-passive"');
     expect(mapStyles).toContain('PASSIVE_ENTER_HEIGHT = 65');
     expect(mapStyles).toContain('height: PASSIVE_ENTER_HEIGHT');
     expect(mapStyles).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');

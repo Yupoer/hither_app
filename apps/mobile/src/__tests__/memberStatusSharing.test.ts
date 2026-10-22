@@ -10,6 +10,7 @@ import {
 import { translations } from '../i18n';
 
 const mapScreen = readFileSync(join(__dirname, '..', 'screens', 'MapScreen.tsx'), 'utf8');
+const membersPane = readFileSync(join(__dirname, '..', 'screens', 'MapScreen', 'components', 'MembersPane.tsx'), 'utf8');
 const mapStyles = readFileSync(join(__dirname, '..', 'screens', 'MapScreen', 'styles.ts'), 'utf8');
 
 jest.mock('react-native', () => ({
@@ -72,9 +73,9 @@ describe('member status + location sharing seam', () => {
   });
 
   it('keeps the members share button red when off and confirms before toggle', () => {
-    const barStart = mapScreen.indexOf('styles.myStatusBar');
-    const barEnd = mapScreen.indexOf('RefreshLocationsButton', barStart);
-    const bar = mapScreen.slice(barStart, barEnd);
+    const barStart = membersPane.indexOf('styles.myStatusBar');
+    const barEnd = membersPane.indexOf('RefreshLocationsButton', barStart);
+    const bar = membersPane.slice(barStart, barEnd);
     expect(bar).toContain('testID="members-location-sharing"');
     // Follow and share controls each own one surface; no nested GlassView
     // should darken the row or create a second hit target.

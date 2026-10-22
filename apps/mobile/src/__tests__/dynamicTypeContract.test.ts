@@ -13,6 +13,7 @@ import {
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const membersPane = readFileSync(join(root, 'screens/MapScreen/components/MembersPane.tsx'), 'utf8');
 const carousel = readFileSync(join(root, 'screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const meetTimeChip = readFileSync(join(root, 'screens/MapScreen/components/MeetTimeChip.tsx'), 'utf8');
 const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
@@ -51,8 +52,8 @@ describe('Dynamic Type contract', () => {
   it('marks MapScreen commandRow single-row density branches', () => {
     expect(mapScreen).toContain('a11y-layout:commandRow');
     expect(mapScreen).toContain('a11y-layout:narrowScreen');
-    expect(mapScreen).toContain("fontBucket === 'large'");
-    expect(mapScreen).toContain("fontBucket === 'xl'");
+    expect(membersPane).toContain("fontBucket === 'large'");
+    expect(membersPane).toContain("fontBucket === 'xl'");
     expect(mapScreen).toContain('narrowScreen');
     // Always one row — no multi-row stack styles in the gather card.
     expect(mapScreen).not.toContain('commandCol');
@@ -133,7 +134,7 @@ describe('Dynamic Type contract', () => {
 
   it('marks invite-row stacked layout for large Dynamic Type', () => {
     expect(mapStyles).toContain('a11y-layout:inviteRow');
-    expect(mapScreen).toContain('inviteRowStacked');
+    expect(membersPane).toContain('inviteRowStacked');
   });
 
   it('stacks gathering cards above capsules and below the sheet layer', () => {

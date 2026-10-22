@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const toolsPane = readFileSync(join(__dirname, '../screens/MapScreen/components/ToolsPane.tsx'), 'utf8');
+const membersPane = readFileSync(join(__dirname, '../screens/MapScreen/components/MembersPane.tsx'), 'utf8');
+const routePaneSource = readFileSync(join(__dirname, '../screens/MapScreen/components/RoutePane.tsx'), 'utf8');
 const historySheet = readFileSync(join(__dirname, '../screens/MapScreen/components/HistorySheet.tsx'), 'utf8');
 const opsCenterSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/OpsCenterSheet.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
@@ -156,7 +159,7 @@ describe('map UI placement contracts', () => {
     expect(useGroupState).toContain('scheduleReload');
   });
   it('renders arrival radius hint with tertiary subhint style', () => {
-    expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
+    expect(toolsPane).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
     expect(mapStyles).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
   });
 
@@ -174,9 +177,10 @@ describe('map UI placement contracts', () => {
 
   it('keeps history on the route pane; reorder overlay wires import CTA (#151/#154)', () => {
     // Route sheet pane body (not the full-screen reorder overlay).
-    const routePane = mapScreen.indexOf('// ─── 路線');
-    const toolsPane = mapScreen.indexOf('// ─── 工具', routePane);
-    const routeBlock = mapScreen.slice(routePane, toolsPane > 0 ? toolsPane : routePane + 2500);
+    const routeBlock = routePaneSource + mapScreen.slice(
+      mapScreen.indexOf('const renderRouteScope'),
+      mapScreen.indexOf('const routePaneBody'),
+    );
 
     expect(routeBlock).toContain('renderRouteScope({');
     expect(routeBlock).toContain('canEdit: isLeader');
@@ -204,17 +208,17 @@ describe('map UI placement contracts', () => {
   it('groups high accuracy with the refreshed member controls', () => {
     // Members pane: status bar + refresh, then precise-location at the bottom.
     // Refresh control is isolated as RefreshLocationsButton (1 Hz clock stays local).
-    const statusBar = mapScreen.indexOf('styles.myStatusBar');
-    const refresh = mapScreen.indexOf('RefreshLocationsButton', statusBar);
-    const accuracy = mapScreen.indexOf('styles.accuracyRow', refresh);
+    const statusBar = membersPane.indexOf('styles.myStatusBar');
+    const refresh = membersPane.indexOf('RefreshLocationsButton', statusBar);
+    const accuracy = membersPane.indexOf('styles.accuracyRow', refresh);
 
     expect(statusBar).toBeGreaterThanOrEqual(0);
     expect(refresh).toBeGreaterThan(statusBar);
     expect(accuracy).toBeGreaterThan(refresh);
-    expect(mapScreen).toContain("t('settings.preciseLocation')");
-    expect(mapScreen).toContain("t('settings.preciseLocationHint')");
+    expect(membersPane).toContain("t('settings.preciseLocation')");
+    expect(membersPane).toContain("t('settings.preciseLocationHint')");
     expect(refreshButton).toContain('styles.refreshLocationsButton');
-    const statusBarBlock = mapScreen.slice(statusBar, refresh);
+    const statusBarBlock = membersPane.slice(statusBar, refresh);
     expect(statusBarBlock).toContain('styles.myStatusCluster');
     expect(statusBarBlock).toContain('statusIconForKind(myStatusKind)');
     expect(statusBarBlock).not.toContain("t('solo.statusCurrent'");
@@ -280,9 +284,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps Tools lean and parks map/journey chrome prefs in Settings', () => {
-    const toolsStart = mapScreen.indexOf('// ─── 工具');
-    const toolsEnd = mapScreen.indexOf('const sheetChildren');
-    const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
+    const toolsBlock = toolsPane;
 
     const passive = toolsBlock.indexOf("t('passive.enter')");
     const sharing = toolsBlock.indexOf("t('settings.locationSharing')");
@@ -304,7 +306,9 @@ describe('map UI placement contracts', () => {
     expect(toolsBlock).not.toContain("t('settings.gatherCardDefaultExpanded')");
     expect(toolsBlock).not.toContain("t('settings.gatherCardTitleMarquee')");
     expect(toolsBlock).toContain('tools-live-activity-toggle');
-    expect(toolsBlock).toContain('setLiveActivityEnabled');
+    expect(toolsBlock).toContain('handleToolsLiveActivityChange');
+    expect(mapScreen.slice(mapScreen.indexOf('const handleToolsLiveActivityChange'), mapScreen.indexOf('const toolsPaneBody')))
+      .toContain('setLiveActivityEnabled');
 
     expect(settingsOverlay).toContain("t('settings.sectionMapJourney')");
     expect(settingsOverlay).toContain("t('settings.obliqueLocate')");
@@ -638,7 +642,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('cardExpanded || showArrivalControl');
     expect(carousel).toContain('{cardExpanded && (');
     expect(carousel).toContain('{showArrivalControl ? (');
-    expect(mapScreen).toContain('testID="members-location-sharing"');
+    expect(membersPane).toContain('testID="members-location-sharing"');
     expect(historySheet).toContain('color={glass.danger}');
     expect(mapScreen).toContain('locationSharingConfirmCopy');
     expect(mapScreen).toContain('confirmAction({');

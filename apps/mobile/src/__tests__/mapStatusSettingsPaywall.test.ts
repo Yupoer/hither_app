@@ -7,6 +7,7 @@ const read = (rel: string) =>
 
 const groupMap = read('components/GroupMap.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
+const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
 const flockRow = read('screens/MapScreen/components/FlockRow.tsx');
 const mapStyles = read('screens/MapScreen/styles.ts');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
@@ -31,7 +32,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
   it('serializes menu subtitle and selected for iOS UIAction checkmarks', () => {
     expect(iosMenu).toContain('subtitle');
     expect(iosMenu).toContain('.on');
-    expect(mapScreen).toContain('NativeMenuHost');
+    expect(membersPane).toContain('NativeMenuHost');
     expect(mapScreen).not.toContain("overlay === 'myStatus'");
     expect(mapScreen).not.toContain('solo.tempLeave');
     expect(mapScreen).toContain('applyPresenceMacroKind');
@@ -41,7 +42,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
   it('omits iOS switch chrome paint and uses native segmented tabs', () => {
     expect(notifCard).toContain('<SystemToggle');
     expect(notifCard).not.toContain('trackColor={{');
-    expect(mapScreen).toContain('<SystemToggle');
+    expect(membersPane).toContain('<SystemToggle');
     expect(tabs).toContain('testID="sheet-pane-tabs"');
     expect(tabs).toContain('@expo/ui/community/segmented-control');
     expect(tabs).not.toContain('NativeSwitch');

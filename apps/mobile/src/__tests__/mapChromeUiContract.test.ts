@@ -23,11 +23,12 @@ describe('map chrome native surface contract', () => {
   it('keeps iOS map cards neutral and Android fallbacks tokenized', () => {
     const mapStyles = read('screens/MapScreen/styles.ts');
     const map = read('screens/MapScreen.tsx');
+    const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
     const addPlaceCard = read('screens/MapScreen/components/AddPlaceConfirmCard.tsx');
     expect(map).toContain("Platform.OS === 'android'");
     expect(addPlaceCard).toContain('tintColor={Platform.OS === \'android\'');
-    expect(map).toContain('styles.locationSharingButton');
-    expect(map).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
+    expect(membersPane).toContain('styles.locationSharingButton');
+    expect(membersPane).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
     expect(mapStyles).toContain('width: 44');
     expect(mapStyles).toContain('height: 44');
     expect(map).toContain('<SwiftUIGlassSurface');

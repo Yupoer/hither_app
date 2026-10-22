@@ -15,6 +15,7 @@ const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
 
 const preferences = read('state/PreferencesContext.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
+const toolsPane = read('screens/MapScreen/components/ToolsPane.tsx');
 const panel = read('screens/MapScreen/components/PassiveCompanionPanel.tsx');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
 const i18n = [read('i18n/locales/zh.ts'), read('i18n/locales/en.ts')].join('\n');
@@ -32,8 +33,8 @@ describe('OTA-07 full/passive presentation contract', () => {
   });
 
   it('enters passive mode from Tools and restores after relaunch via preference', () => {
-    expect(mapScreen).toContain("t('passive.enter')");
-    expect(mapScreen).toContain('testID="tools-enter-passive"');
+    expect(toolsPane).toContain("t('passive.enter')");
+    expect(toolsPane).toContain('testID="tools-enter-passive"');
     expect(mapScreen).toContain('setPassiveCompanionMode');
     expect(mapScreen).toContain('passiveCompanionMode');
     expect(mapScreen).toContain('PassiveCompanionPanel');

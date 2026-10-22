@@ -7,6 +7,7 @@ describe('Amicro native animation contracts', () => {
   const button = read('components/AmicroButton.tsx');
   const wave = read('components/WaveLoading.tsx');
   const map = read('screens/MapScreen.tsx');
+  const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
   const inviteMembersOverlay = read('screens/MapScreen/components/InviteMembersOverlay.tsx');
   const routeEditorSheet = read('screens/MapScreen/components/RouteEditorSheet.tsx');
   const carousel = read('screens/MapScreen/components/GatheringCarousel.tsx');
@@ -31,7 +32,7 @@ describe('Amicro native animation contracts', () => {
     ]) {
       expect(map + passive + refreshButton + carousel + routeEditorSheet + inviteMembersOverlay).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
-    expect(map).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
+    expect(membersPane).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
     expect(mapStyles).toContain('width: 44');
     expect(mapStyles).toContain('height: 44');
     expect(map).not.toContain('activeIcon="pause"');

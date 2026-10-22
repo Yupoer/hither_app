@@ -10,6 +10,7 @@ import {
 } from '../utils/gatherRequestInbox';
 
 const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const routePane = readFileSync(join(__dirname, '../screens/MapScreen/components/RoutePane.tsx'), 'utf8');
 
 describe('gather request inbox FIFO (#173)', () => {
   it('sorts by created_at then id', () => {
@@ -108,7 +109,7 @@ describe('gather request inbox FIFO (#173)', () => {
   });
 
   it('shows requests on Route pane for leader and not in route editor overlay', () => {
-    expect(map).toContain('testID="route-gather-request-inbox"');
+    expect(routePane).toContain('testID="route-gather-request-inbox"');
     expect(map).toContain('sortGatherRequestsFifo');
     // Editor overlay block must not map gatherPointRequests for approval.
     const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
