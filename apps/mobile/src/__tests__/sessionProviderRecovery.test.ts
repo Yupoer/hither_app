@@ -164,6 +164,36 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     expect(mockFlush.mock.calls.length).toBe(mockOnboarding.mock.calls.length);
     expect([...mockListeners]).toEqual(listeners);
   });
+  it('fences an in-flight entitlement across A to B to A and rejects stale actor callbacks', async () => {
+    await mount();
+    const previousRefresh = readSnapshot().refreshEntitlement;
+    let resolve!: (trip: unknown) => void;
+    mockTripEntitlement.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    let pending!: ReturnType<typeof previousRefresh>;
+    await act(async () => { pending = previousRefresh('group-a'); await drain(); });
+    const next = { ...stored, user: { ...stored.user, id: 'account-b' } };
+    await act(async () => { emit('SIGNED_IN', next); jest.runOnlyPendingTimers(); await drain(); });
+    const calls = mockTripEntitlement.mock.calls.length;
+    await act(async () => { expect(await previousRefresh('group-a')).toBeNull(); });
+    expect(mockTripEntitlement).toHaveBeenCalledTimes(calls);
+    await act(async () => { emit('SIGNED_IN', stored); jest.runOnlyPendingTimers(); await drain(); });
+    await act(async () => { resolve({ groupId: 'group-a', premium: true }); await pending; });
+    expect(readSnapshot().user?.id).toBe('account-a');
+    expect(readSnapshot().tripEntitlement).toBeNull();
+    expect(readSnapshot().isPro).toBe(false);
+  });
+  it('a late profile refresh cannot enrich a switched account', async () => {
+    await mount();
+    let resolve!: (profile: unknown) => void;
+    mockProfile.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    let pending!: Promise<void>;
+    await act(async () => { pending = readSnapshot().refreshProfile(); await drain(); });
+    const next = { ...stored, user: { ...stored.user, id: 'account-b' } };
+    await act(async () => { emit('SIGNED_IN', next); jest.runOnlyPendingTimers(); await drain(); });
+    await act(async () => { resolve({ data: { nickname: 'Old account name' }, error: null }); await pending; });
+    expect(readSnapshot().user?.id).toBe('account-b');
+    expect(readSnapshot().user?.name).toBe('Server name');
+  });
   it('a late old profile response cannot resurrect the logged-out account', async () => {
     let resolve!: (result: unknown) => void;
     mockProfile.mockImplementation(() => new Promise(next => { resolve = next; }));
