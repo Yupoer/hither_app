@@ -1,3 +1,4 @@
+import { MapArrivalCardsResource } from './MapScreen/MapArrivalCardsResource';
 import { MapForegroundArrivalResource } from './MapScreen/MapForegroundArrivalResource';
 import { MapAccessLossResource, MapRouteOpenResource, MapGatherRequestPagerResource } from './MapScreen/MapScreenChromeResources';
 import { MapArrivalOutboxResource, MapForegroundNavigationResource, MapCardWorkloadResource, MapKmlQuotaResource, MapConfirmKeyboardResource, MapAccountPlacesResource, MapNavigationStartFrameResource, MapSharingHydrationResource, MapNavigationAckResource, MapTrackingModeResource, MapRouteCameraResource, MapProgressDeadlineResource, MapApproachNoticeResource, MapPermissionRecoveryResource, MapRouteScopePreferenceResource } from './MapScreen/MapScreenResources';
@@ -1447,94 +1448,9 @@ export default function MapScreen({ route, navigation }: Props) {
    * Full visible carousel order (open + hold/exit). Open-only ranks collide when
    * a second card closes while the first is still exiting (#149 Sol r3).
    */
-  useEffect(() => {
-    const closedNow = allScopedDestinations.filter((d) => d.closedAt != null);
-    if (arrivalExitContextRef.current !== arrivalExitContext) {
-      arrivalExitContextRef.current = arrivalExitContext;
-      for (const timers of arrivalExitTimersRef.current.values()) for (const timer of timers) clearTimeout(timer);
-      arrivalExitTimersRef.current.clear();
-      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
-      setArrivalExitRecords(new Map());
-      setArrivalExitSnapshots(new Map());
-      setArrivalCelebrateDestId(null);
-      knownClosedDestIdsRef.current = null;
-      remoteAutoCompleteDestIdsRef.current.clear();
-    }
-    if (!state || state.group.id !== groupId || loading) {
-      knownClosedDestIdsRef.current = null;
-      prevVisibleDestOrderRef.current = [];
-      return;
-    }
-    if (!uiVisible) {
-      knownClosedDestIdsRef.current = new Set(closedNow.map(d => d.id));
-      prevVisibleDestOrderRef.current = openDestinations.map(d => d.id);
-      return;
-    }
-    if (knownClosedDestIdsRef.current == null) {
-      // First paint: seed known closed so past history does not animate out.
-      knownClosedDestIdsRef.current = new Set(closedNow.map((d) => d.id));
-      prevVisibleDestOrderRef.current = openDestinations.map((d) => d.id);
-      return;
-    }
-    for (const id of knownClosedDestIdsRef.current) {
-      if (closedNow.some(d => d.id === id)) continue;
-      knownClosedDestIdsRef.current.delete(id);
-      for (const timer of arrivalExitTimersRef.current.get(id) ?? []) clearTimeout(timer);
-      arrivalExitTimersRef.current.delete(id);
-      cancelCelebrateClearTimer(celebrateClearTimersRef.current, id);
-      setArrivalCelebrateDestId(cur => cur === id ? null : cur);
-      setArrivalExitRecords(prev => { const next = new Map(prev); next.delete(id); return next; });
-      setArrivalExitSnapshots(prev => { const next = new Map(prev); next.delete(id); return next; });
-    }
-    const newlyStarted: string[] = [];
-    for (const dest of newlyCompletedVisibleCards(closedNow, knownClosedDestIdsRef.current,
-      prevVisibleDestOrderRef.current, true)) {
-      knownClosedDestIdsRef.current.add(dest.id);
-      const priorIdx = resolveExitIndexAtStart(
-        prevVisibleDestOrderRef.current,
-        dest.id,
-        prevVisibleDestOrderRef.current.length,
-      );
-      startArrivalCardExit(dest, priorIdx);
-      newlyStarted.push(dest.id);
-    }
-    knownClosedDestIdsRef.current = new Set(closedNow.map(destination => destination.id));
-    const exitingIds = new Set<string>([
-      ...arrivalExitRecords.keys(),
-      ...newlyStarted,
-    ]);
-    // Keep exiting cards ranked until their record is removed (exit complete).
-    prevVisibleDestOrderRef.current = nextVisibleCarouselOrder(
-      prevVisibleDestOrderRef.current,
-      openDestinations.map((d) => d.id),
-      [...exitingIds],
-    );
-  }, [
-    uiVisible,
-    allScopedDestinations,
-    openDestinations,
-    startArrivalCardExit,
-    arrivalExitRecords,
-    arrivalExitContext,
-    groupId,
-    loading,
-    state,
-  ]);
+  const arrivalCardsLifecycle = <MapArrivalCardsResource allScopedDestinations={allScopedDestinations} arrivalExitContextRef={arrivalExitContextRef} arrivalExitContext={arrivalExitContext} arrivalExitTimersRef={arrivalExitTimersRef} celebrateClearTimersRef={celebrateClearTimersRef} setArrivalExitRecords={setArrivalExitRecords} setArrivalExitSnapshots={setArrivalExitSnapshots} setArrivalCelebrateDestId={setArrivalCelebrateDestId} knownClosedDestIdsRef={knownClosedDestIdsRef} remoteAutoCompleteDestIdsRef={remoteAutoCompleteDestIdsRef} state={state} groupId={groupId} loading={loading} prevVisibleDestOrderRef={prevVisibleDestOrderRef} uiVisible={uiVisible} openDestinations={openDestinations} startArrivalCardExit={startArrivalCardExit} arrivalExitRecords={arrivalExitRecords} />;
 
-  useEffect(() => {
-    if (!uiVisible) {
-      setArrivalExitRecords(new Map());
-      setArrivalExitSnapshots(new Map());
-      setArrivalCelebrateDestId(null);
-    }
-    return () => {
-      for (const timers of arrivalExitTimersRef.current.values()) {
-        for (const t of timers) clearTimeout(t);
-      }
-      arrivalExitTimersRef.current.clear();
-      clearAllCelebrateClearTimers(celebrateClearTimersRef.current);
-    };
-  }, [uiVisible]);
+
 
   // Wired after promptCompleteAfterArrival is defined (see below).
   const afterPersonalArrivalRef = useRef<
@@ -1587,8 +1503,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // Include the destination separately from arrivalContext: a local route
   // can change cards before a server session id exists.
   const foregroundUndoHydrationKey = `${arrivalContext}:${navTarget?.id ?? ''}:${currentArrivalNavigationSessionId ?? ''}`;
-  
-  
+
+
   const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string, automatic = false) => {
     if (!groupId || !user?.id) return;
     // The route can paint the tap before SQLite saves its Start. Wait for the
@@ -4229,6 +4145,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const mapScreenLifecycle = (<>
+    <React.Fragment key="map-owner-arrival-cards">{arrivalCardsLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-foreground-arrival">{foregroundArrivalLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-gather-request-pager">{gatherRequestPagerLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-accessLossLifecycle">{accessLossLifecycle}</React.Fragment>

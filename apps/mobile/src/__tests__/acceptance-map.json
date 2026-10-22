@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Completed-card resources retain full carousel rank, avoid replaying historical or background closures and clean timer ownership before visibility/context replacement.",
+      "testFile": "mapArrivalCardsResource.test.ts",
+      "testNamePattern": "seeds historical closures|cancels foreground exit|stable card owner resources"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Foreground arrival resets and hydrates undo ownership before evaluation, preserves array/callback identities and ignores old or superseded asynchronous reads including Strict replay.",
       "testFile": "mapForegroundArrivalResource.test.ts",
       "testNamePattern": "resets and starts undo hydration|retains every outbox array identity|newer foreground undo mutation|fences Strict replay"
