@@ -43,16 +43,14 @@ export function lex(src) {
       continue;
     }
     if (src.startsWith('/*', i)) {
-      // Postgres block comments nest; every step below advances i by at least 1.
       let depth = 1;
       i += 2;
-      while (depth > 0) {
-        const close = src.indexOf('*/', i);
-        if (close < 0) throw new Error('unterminated block comment');
-        const open = src.indexOf('/*', i);
-        if (open >= 0 && open < close) { depth += 1; i = open + 2; }
-        else { depth -= 1; i = close + 2; }
+      while (i < src.length && depth > 0) {
+        if (src.startsWith('/*', i)) { depth += 1; i += 2; }
+        else if (src.startsWith('*/', i)) { depth -= 1; i += 2; }
+        else i += 1;
       }
+      if (depth > 0) throw new Error('unterminated block comment');
       continue;
     }
     const start = i;

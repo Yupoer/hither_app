@@ -143,22 +143,20 @@ select '"'::text;`,
 });
 
 const laterCheck = (sql) => {
-  const history = sources(create('
-begin return 1; end;
-'), patch("'return 1'", "'return 2'"));
+  const history = sources(create('\nbegin return 1; end;\n'), patch("'return 1'", "'return 2'"));
   const canonical = '20260101000009_canonical.sql';
   const rendered = renderCanonicalMigration(reconstructPatchedFunctions(history).functions);
   return checkMigrations([...history, { name: canonical, sql: rendered }, { name: '20260101000010_later.sql', sql }], canonical);
 };
 
 test('nested block comments are skipped whole, so a patch after one is still detected', () => {
-  assert.deepEqual(lex('/* a /* b */ it's */ select 1').map((t) => t.value), ['select', 1]);
+  assert.deepEqual(lex("/* a /* b */ it's */ select 1").map((t) => t.value), ['select', 1]);
   assert.throws(() => lex('/* a /* b */ c'), /unterminated block comment/);
-  assert.deepEqual(laterCheck("/* outer
+  assert.deepEqual(laterCheck(`/* outer
  /* inner */
  It's an example.
 */
-select 1;"), []);
+select 1;`), []);
   assert.match(laterCheck(`do $m$
 declare d text;
 begin
@@ -175,10 +173,13 @@ $m$;`)[0], /redefines a function/);
 test('hostile lexer inputs terminate promptly and deep string nesting is reported', () => {
   const nest = (n, inner) => { let s = inner; for (let k = 0; k < n; k += 1) s = `$t${k}$ ${s} $t${k}$`; return s; };
   const script = `
+    import assert from 'node:assert/strict';
     import { lex } from ${JSON.stringify(new URL('./function-source-of-truth.mjs', import.meta.url).href)};
-    for (const src of ['"', "'", '/*', '/* /* */', "e'", '$$', '$a$ x', '/*'.repeat(50000), '"a'.repeat(50000), '/* '.repeat(50000) + '*/ '.repeat(50000)]) {
+    for (const src of ['"', "'", '/*', '/* /* */', "e'", '$$', '$a$ x', '"a'.repeat(50000)]) {
       try { lex(src); } catch {}
-    }`;
+    }
+    assert.throws(() => lex('/*'.repeat(50000)), /unterminated block comment/);
+    assert.deepEqual(lex('/* '.repeat(50000) + '*/ '.repeat(50000)), []);`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { timeout: 5000 });
   assert.equal(r.status, 0, String(r.error ?? r.stderr));
   const problems = laterCheck(`${nest(200, 'execute pg_get_functiondef')};`);
