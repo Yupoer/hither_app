@@ -56,13 +56,13 @@ describe('navigation terminal idempotency migration', () => {
   });
 
   it('extends pgTAP with replay, opposite-terminal, and stale-active coverage', () => {
-    expect(pgtap).toContain('select plan(37);');
+    expect(pgtap).toContain('select plan(38);');
     const assertionCount = (
       pgtap.match(
         /^select\s+(?:has_table|is|lives_ok|throws_ok)\s*\(/gim,
       ) ?? []
     ).length;
-    expect(assertionCount).toBe(37);
+    expect(assertionCount).toBe(38);
 
     // Stale-active fixture must use an open stop (bbb3 after cancel), not a closed one.
     const staleStart = pgtap.indexOf('create temporary table active_stale_session');

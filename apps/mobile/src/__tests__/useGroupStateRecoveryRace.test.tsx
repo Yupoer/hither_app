@@ -9,8 +9,8 @@ const mockHydrateVersions = jest.fn();
 const mockFlushOutbox = jest.fn();
 const mockSubscribeOutbox = jest.fn();
 
-jest.mock('react-native', () => ({
-  AppState: {
+jest.mock('react-native', () => Object.defineProperty(Object.create('expo' in globalThis ? jest.requireActual('react-native') : null), 'AppState', {
+  value: {
     currentState: 'active',
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },

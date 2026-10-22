@@ -10,6 +10,8 @@ const mockRefreshProfile = jest.fn();
 const mockCreateGroup = jest.fn();
 const mockJoinGroup = jest.fn();
 
+jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
+
 jest.mock('../state/SessionContext', () => ({
   useSession: () => ({
     signIn: mockSignIn,

@@ -9,6 +9,8 @@ const mockResendConfirmation = jest.fn();
 const mockRequestPasswordReset = jest.fn();
 const mockSignInWithGoogle = jest.fn();
 
+jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
+
 jest.mock('../state/SessionContext', () => ({
   useSession: () => ({
     signInWithEmail: mockSignInWithEmail,
@@ -264,7 +266,7 @@ describe('LoginScreen email flows', () => {
     const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
     fireEvent.changeText(getByTestId('login-email'), 'reset@example.com');
     fireEvent.press(getByTestId('login-forgot-password'));
-    expect(getByText('login.resetHint')).toBeTruthy();
+    expect(getByText(/請輸入你的註冊電子信箱/)).toBeTruthy();
     await act(async () => {
       fireEvent.press(getByTestId('login-reset-submit'));
     });
@@ -285,7 +287,7 @@ describe('LoginScreen email flows', () => {
     jest.useRealTimers();
   });
 
-  it('keeps reset mode email-only and exposes back plus legal links', () => {
+  it('keeps reset mode email-only and exposes legal links after returning to sign-up', () => {
     const { getByTestId, queryByTestId, getByText } = render(
       <LoginScreen navigation={navigation as never} route={{} as never} />,
     );
@@ -296,6 +298,8 @@ describe('LoginScreen email flows', () => {
     expect(getByTestId('login-reset-submit')).toBeTruthy();
     expect(queryByTestId('login-back-to-sign-in')).toBeNull();
     expect(queryByTestId('login-reset-google')).toBeNull();
+    fireEvent.press(getByTestId('login-reset-back'));
+    fireEvent.press(getByTestId('login-tab-signup'));
     expect(getByText('login.privacy')).toBeTruthy();
     expect(getByText('login.terms')).toBeTruthy();
   });

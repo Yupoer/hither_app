@@ -4,6 +4,8 @@ import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { promoteDestinationWithinDay } from '../utils/tripDay';
 import type { Destination, GroupState } from '../types';
 import type { NavigationSession } from '../types/navigation';
+import { enqueueLeaderGatheringStart } from '../state/coreDataSync';
+import { deriveActiveGatheringFromGroupState } from '../utils/activeGatheringState';
 
 const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => void | Promise<void>;
@@ -19,6 +21,12 @@ jest.mock('../api/client', () => ({
   reorderDestinations: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'request-generated') }));
+jest.mock('../state/coreDataSync', () => ({
+  readLocalJourneyProjection: jest.fn().mockResolvedValue(null),
+  enqueueLeaderGatheringStart: jest.fn(),
+  flushCoreOperationOutbox: jest.fn().mockResolvedValue(undefined),
+  getCoreOperationOutbox: () => ({ getOperation: jest.fn().mockResolvedValue(null) }),
+}));
 
 const localDestination = {
   id: 'local-destination',
@@ -57,12 +65,13 @@ const session = {
 } satisfies NavigationSession;
 
 describe('Navigation Session UI integration', () => {
-  it('reuses the leader request UUID after failure until start succeeds', async () => {
-    const startSession = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce(session);
-    const createRequestId = jest.fn(() => 'stable-request');
+  it('retries a failed local Start with a new durable command and keeps legacy RPC idle', async () => {
+    const startSession = jest.fn();
+    const createRequestId = jest.fn().mockReturnValueOnce('failed-request').mockReturnValueOnce('retry-request');
+    const gathering = deriveActiveGatheringFromGroupState(state, 0);
+    jest.mocked(enqueueLeaderGatheringStart)
+      .mockRejectedValueOnce(new Error('local save failed'))
+      .mockResolvedValueOnce({ local: gathering, base: gathering, operationId: 'retry-request' });
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
 
     function Harness() {
@@ -89,23 +98,28 @@ describe('Navigation Session UI integration', () => {
     await act(async () => { await navigation?.startNavigation(sharedDestination, 1); });
     await act(async () => { await navigation?.startNavigation(sharedDestination, 1); });
 
-    expect(createRequestId).toHaveBeenCalledTimes(1);
-    expect(startSession.mock.calls.map((call) => call[1])).toEqual([
-      'stable-request',
-      'stable-request',
+    expect(createRequestId).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(enqueueLeaderGatheringStart).mock.calls.map((call) => call[1]?.operationId)).toEqual([
+      'failed-request',
+      'retry-request',
     ]);
+    expect(startSession).not.toHaveBeenCalled();
+    expect(navigation?.navTargetId).toBe(sharedDestination.id);
   });
 
-  it('centres a follower once and restores its independent local route after terminal session', () => {
+  it('follows a promoted session once and resumes its local route after an explicit Start', () => {
     const centerOn = jest.fn();
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
 
-    function Harness({ navigationSession }: { navigationSession: NavigationSession | null }) {
+    function Harness({ navigationSession, terminalSession }: { navigationSession: NavigationSession | null; terminalSession?: NavigationSession }) {
+      const destinations = navigationSession
+        ? [{ ...sharedDestination, order: 0 }, { ...localDestination, order: 1 }]
+        : [localDestination, sharedDestination];
       navigation = useJourneyNavigation({
         state,
         groupId: 'group-1',
         isLeader: false,
-        destinations: [localDestination, sharedDestination],
+        destinations,
         selectedDestination: localDestination,
         fromCoords: undefined,
         refresh: jest.fn(),
@@ -114,6 +128,7 @@ describe('Navigation Session UI integration', () => {
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
         navigationSession,
+        terminalSession,
       });
       return null;
     }
@@ -132,11 +147,16 @@ describe('Navigation Session UI integration', () => {
       renderer.update(React.createElement(Harness, { navigationSession: session }));
     });
     expect(navigation?.navTargetId).toBe(sharedDestination.id);
-    expect(centerOn).toHaveBeenCalledTimes(2); // local selection + first shared session only
+    expect(centerOn).toHaveBeenCalledTimes(2);
+    expect(centerOn).toHaveBeenNthCalledWith(1, localDestination.coordinates, { animated: false });
+    expect(centerOn).toHaveBeenNthCalledWith(2, sharedDestination.coordinates, { animated: false });
 
     act(() => {
-      renderer.update(React.createElement(Harness, { navigationSession: null }));
+      renderer.update(React.createElement(Harness, { navigationSession: null, terminalSession: { ...session, status: 'cancelled' } }));
     });
+    expect(navigation?.navTargetId).toBeNull();
+    expect(navigation?.localTargetId).toBe(localDestination.id);
+    act(() => { void navigation?.startNavigation(localDestination, 0); });
     expect(navigation?.navTargetId).toBe(localDestination.id);
   });
 

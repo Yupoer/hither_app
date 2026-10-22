@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(13);
+select plan(15);
 
 insert into auth.users (id, email) values
   ('11111111-1111-4111-8111-111111111111', 'leader-ser@example.test'),
@@ -136,6 +136,11 @@ select is(
 );
 
 -- Non-leader (group follower, not subgroup) cannot reorder group itinerary.
+create temporary table reorder_before_denial as
+select jsonb_agg(to_jsonb(i) order by i.id) as rows
+from public.itinerary_items i
+where i.group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
 select throws_ok(
   $$ select public.reorder_itinerary_items(
@@ -148,9 +153,16 @@ select throws_ok(
       where group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and title = 'A'
     )
   ) $$,
-  '42501',
-  'permission denied',
+  'P0002',
+  'group not found',
   'non-leader rejected for group-level rows'
+);
+select is(
+  (select jsonb_agg(to_jsonb(i) order by i.id)
+   from public.itinerary_items i
+   where i.group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+  (select rows from reorder_before_denial),
+  'denied group reorder leaves itinerary unchanged'
 );
 
 -- Mixed-scope: subgroup member cannot include group-level id in batch.
@@ -168,6 +180,13 @@ select lives_ok(
   'seed subgroup stop'
 );
 
+update reorder_before_denial
+set rows = (
+  select jsonb_agg(to_jsonb(i) order by i.id)
+  from public.itinerary_items i
+  where i.group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+);
+
 select set_config('request.jwt.claim.sub', '33333333-3333-4333-8333-333333333333', true);
 select throws_ok(
   $$ select public.reorder_itinerary_items(
@@ -182,9 +201,16 @@ select throws_ok(
         and title in ('A', 'SubS')
     )
   ) $$,
-  '42501',
-  'permission denied',
+  'P0002',
+  'group not found',
   'mixed-scope batch rejected for non-leader'
+);
+select is(
+  (select jsonb_agg(to_jsonb(i) order by i.id)
+   from public.itinerary_items i
+   where i.group_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+  (select rows from reorder_before_denial),
+  'denied mixed-scope reorder leaves itinerary unchanged'
 );
 
 -- Duplicate IDs rejected.
