@@ -1,6 +1,8 @@
-# Claude Code working directories (git worktrees, local agent state)
+# Agent working directories and local tool state
 .claude/
 .worktrees/
+.superpowers/
+mcps/
 
 # Node
 node_modules/
