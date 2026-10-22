@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import {
   ScrollView,
   StyleSheet,
@@ -32,6 +33,20 @@ const STAGE_TWO_RATIO = 0.8;
 
 type SettingsChildSheetProps = SettingsSheetPanelProps;
 
+function NativeSettingsPresentationReset({ visible, closeStartedRef, dismissCompleteRef }: {
+  visible: boolean;
+  closeStartedRef: React.RefObject<boolean>;
+  dismissCompleteRef: React.RefObject<boolean>;
+}) {
+  useMountEffect(() => {
+    if (visible) {
+      closeStartedRef.current = false;
+      dismissCompleteRef.current = false;
+    }
+  });
+  return null;
+}
+
 /** Main settings uses RN for exact edge-to-edge geometry; child pages stay native. */
 export default function SettingsChildSheet(props: SettingsChildSheetProps) {
   if (props.singleStage) return <SettingsSheetPanel {...props} />;
@@ -63,12 +78,6 @@ function NativeSettingsChildSheet({
   const dismissCompleteRef = useRef(false);
   const onDismissCompleteRef = useRef(onDismissComplete);
   onDismissCompleteRef.current = onDismissComplete;
-  useEffect(() => {
-    if (visible) {
-      closeStartedRef.current = false;
-      dismissCompleteRef.current = false;
-    }
-  }, [visible]);
   const closeOnce = useCallback(() => {
     if (closeStartedRef.current) return;
     closeStartedRef.current = true;
@@ -88,6 +97,8 @@ function NativeSettingsChildSheet({
   }, [closeOnce, visible]);
 
   return (
+    <>
+    <NativeSettingsPresentationReset key={String(visible)} visible={visible} closeStartedRef={closeStartedRef} dismissCompleteRef={dismissCompleteRef} />
     <Host
       style={styles.host}
       colorScheme="dark"
@@ -164,6 +175,7 @@ function NativeSettingsChildSheet({
         </Group>
       </BottomSheet>
     </Host>
+    </>
   );
 }
 
