@@ -91,3 +91,36 @@ test('the canonical migration must match the replay and later migrations may not
   const fullRedefinition = { name: '20260101000010_later.sql', sql: create('\nbegin return 3; end;\n') };
   assert.deepEqual(checkMigrations([...history, { name: canonical, sql: rendered }, fullRedefinition], canonical), []);
 });
+
+test('the ban covers any execution of catalog definition text and allows read-only inspection', () => {
+  const history = sources(create('\nbegin return 1; end;\n'), patch("'return 1'", "'return 2'"));
+  const canonical = '20260101000009_canonical.sql';
+  const rendered = renderCanonicalMigration(reconstructPatchedFunctions(history).functions);
+  const base = [...history, { name: canonical, sql: rendered }];
+  const later = (sql) => checkMigrations([...base, { name: '20260101000010_later.sql', sql }], canonical);
+
+  assert.match(later(`do $m$
+declare d text;
+begin
+  d := pg_catalog.pg_get_functiondef('public.f(uuid,timestamptz)'::regprocedure);
+  execute pg_catalog.replace(d, 'return 1', 'return 2');
+end;
+$m$;`)[0], /20260101000010_later\.sql: redefines a function/);
+
+  assert.match(later(`create temp table defs as select pg_get_functiondef('public.f(uuid,timestamptz)'::regprocedure) as d;
+do $m$
+declare d text;
+begin
+  select defs.d into d from defs;
+  execute overlay(d placing 'return 2' from position('return 1' in d) for 8);
+end;
+$m$;`)[0], /20260101000010_later\.sql: redefines a function/);
+
+  assert.deepEqual(later(`do $m$
+declare d text;
+begin
+  d := replace(pg_get_functiondef('public.f(uuid,timestamptz)'::regprocedure), E'\\n', ' ');
+  raise notice '%', d;
+end;
+$m$;`), []);
+});

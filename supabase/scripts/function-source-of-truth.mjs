@@ -576,11 +576,22 @@ export function renderCanonicalMigration(functions) {
   return lines.join('\n');
 }
 
-/** Migrations at or after the canonical one must not patch function text from the catalog. */
+/**
+ * Migrations at or after the canonical one must not execute SQL derived from
+ * catalog definition text. The rule is file-wide (catalog text can travel
+ * through temp tables or variables across statements) and keyed on EXECUTE,
+ * so read-only inspection of a definition stays allowed.
+ */
 export function findCatalogTextPatches(migrations, canonical = CANONICAL_MIGRATION) {
   return migrations
-    .filter(({ name, sql }) => name >= canonical
-      && splitStatements(sql).some((s) => usesCatalogTextPatch(withNestedTokens(s.tokens))))
+    .filter(({ name, sql }) => {
+      if (name < canonical) return false;
+      const words = splitStatements(sql).flatMap((s) => withNestedTokens(s.tokens))
+        .filter((t) => t.type === 'ident')
+        .map((t) => t.value.toLowerCase());
+      const readsDefinition = words.some((w) => w === 'pg_get_functiondef' || w.endsWith('.pg_get_functiondef'));
+      return readsDefinition && words.includes('execute');
+    })
     .map(({ name }) => name);
 }
 
