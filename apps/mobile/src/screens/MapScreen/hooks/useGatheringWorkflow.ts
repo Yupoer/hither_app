@@ -111,7 +111,7 @@ export function useGatheringWorkflow({
     } while (isCurrent() && workflowPendingRef.current);
   }, [groupId, workflowContext]);
 
-  useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
+  const foregroundLifecycle = useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
 
   /** Optimistic arrival row so N/M progress updates before reload finishes. */
   const patchLocalArrival = useCallback((
@@ -159,7 +159,7 @@ export function useGatheringWorkflow({
   const gatheringWorkflowChannelLifecycle = createElement(GatheringWorkflowChannel, { setDestinationArrivals, setGatherPointRequests, groupId, workflowLastLoadAtRef, loadGatheringWorkflow, workflowChannelSeqRef, scheduleWorkflowReload, isMainLeaderRef, isSubgroupLeaderRef, myScopeIdRef, isScopeLeaderRef, userIdRef, tRef, workflowReloadRef, workflowInFlightRef, workflowPendingRef, mountedRef });
 
   return {
-    lifecycle: createElement(Fragment, { key: 'gathering-workflow-runtime' }, arrivalReceiptCompactionLifecycle, gatheringWorkflowChannelLifecycle),
+    lifecycle: createElement(Fragment, { key: 'gathering-workflow-runtime' }, foregroundLifecycle, arrivalReceiptCompactionLifecycle, gatheringWorkflowChannelLifecycle),
     remoteArrivals,
     gatherPointRequests,
     setGatherPointRequests,

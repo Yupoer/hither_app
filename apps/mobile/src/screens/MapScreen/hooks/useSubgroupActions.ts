@@ -42,6 +42,7 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
     accept: acceptInvite,
     decline: declineInvite,
     refresh: refreshInvites,
+    lifecycle: invitesLifecycle,
   } = useSubgroupInvites();
 
   // Invites I've sent for my subgroup that are still pending — shown on the
@@ -172,7 +173,7 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
   }, [groupId, onMergedBack, refresh, t]);
 
   return {
-    lifecycle: createElement(Fragment, { key: 'subgroup-actions-runtime' }, sentSubgroupInvitesLoadLifecycle, sentSubgroupInvitesPollLifecycle),
+    lifecycle: createElement(Fragment, { key: 'subgroup-actions-runtime' }, invitesLifecycle, sentSubgroupInvitesLoadLifecycle, sentSubgroupInvitesPollLifecycle),
     subgroups,
     pendingInvites,
     sentInvites,

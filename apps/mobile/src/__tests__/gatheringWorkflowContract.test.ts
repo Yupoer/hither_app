@@ -156,7 +156,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).not.toContain('routeSyncFailed');
     expect(mapScreen).not.toContain('syncFromDatabaseAndUploadLogs');
     const syncStart = mapScreen.indexOf('const syncFromDatabase = useCallback');
-    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes)', syncStart));
+    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('const locationRefreshLifecycle', syncStart));
     expect(syncBlock).toContain('await reconcileRouteOnOpen(refreshLocalSnapshot, refresh)');
     expect(syncBlock).not.toContain('setOptimisticDestinations(null)');
     expect(syncBlock).not.toContain('throw');

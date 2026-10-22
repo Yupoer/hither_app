@@ -40,7 +40,7 @@ jest.mock('../api/supabase', () => ({
 jest.mock('../state/coreDataSync', () => ({
   getCoreOperationOutbox: () => ({ removeArrival: mockRemoveArrival }),
 }));
-jest.mock('../state/useForegroundReconcile', () => ({ useForegroundReconcile: jest.fn() }));
+jest.mock('../state/useForegroundReconcile', () => ({ useForegroundReconcile: jest.fn(() => null) }));
 
 import { useGatheringWorkflow, type UseGatheringWorkflowInput } from '../screens/MapScreen/hooks/useGatheringWorkflow';
 

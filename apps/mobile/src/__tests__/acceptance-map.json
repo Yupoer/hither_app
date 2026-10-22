@@ -5,6 +5,27 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Mounted organizer resources preserve observations across identity changes, clean late async subscriptions and reject retired navigation callbacks.",
+      "testFile": "foregroundRecoveryHooks.test.ts",
+      "testNamePattern": "organizer recovery|late subscription|continuous firstSeen|abandoned straggler"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Group resources preserve realtime cadence, separate instance channels, stale callback fencing, committed visible seed leases and abandoned render privacy.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "polls every|fallback poll|two hook instances|Strict replay|suspended render"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Foreground repair uses the committed latest callback without restarting its deadline and releases native listeners across enabled, interval, unmount and Strict replay.",
+      "testFile": "foregroundReconcileLifecycle.test.ts",
+      "testNamePattern": "commits the latest|replaces only enabled|Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
       "testFile": "useMountEffect.test.ts",
       "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"

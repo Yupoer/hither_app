@@ -136,7 +136,7 @@ export function useCoordinationRequests(
     } while (pendingRef.current && groupIdRef.current === gid);
   }, [active]);
 
-  useForegroundReconcile(active, () => load('silent'));
+  const foregroundLifecycle = useForegroundReconcile(active, () => load('silent'));
 
   const scheduleReload = useCallback(() => {
     if (reloadTimerRef.current) return;
@@ -234,7 +234,7 @@ export function useCoordinationRequests(
   );
 
   return {
-    lifecycle: createElement(Fragment, { key: 'coordination-requests-runtime' }, coordinationRequestsChannelLifecycle),
+    lifecycle: createElement(Fragment, { key: 'coordination-requests-runtime' }, foregroundLifecycle, coordinationRequestsChannelLifecycle),
     requests,
     openCount,
     loading,

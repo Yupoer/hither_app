@@ -1,5 +1,6 @@
 import React from 'react';
 import type { GroupState } from '../types';
+import { getVisibleGroupSeed } from '../state/visibleGroupSeed';
 
 const mockRecovery = jest.fn();
 
@@ -65,7 +66,7 @@ jest.mock('../state/energyObservability', () => ({
 
 const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => Promise<void>;
-  create: (element: React.ReactElement) => { unmount: () => void };
+  create: (element: React.ReactElement) => { unmount: () => void; update: (element: React.ReactElement) => void };
 };
 const {
   useGroupState,
@@ -109,7 +110,7 @@ const liveProfileChannel = () => profileChannels().find(c => !c.removed);
 
 async function mount() {
   let api!: ReturnType<typeof useGroupState>;
-  function Harness() { api = useGroupState('group-1', { myUserId: 'me' }); return null; }
+  function Harness() { api = useGroupState('group-1', { myUserId: 'me' }); return api.lifecycle; }
   let root!: { unmount: () => void };
   await act(async () => {
     root = create(React.createElement(Harness));
@@ -216,5 +217,66 @@ describe('useGroupState realtime cadence', () => {
     await advance(GROUP_POLL_INTERVAL_MS * 3);
     expect(mockRecovery.mock.calls.length).toBe(calls + 1);
     await act(async () => root.unmount());
+  });
+
+  it('keeps two hook instances on distinct channels and releases only its committed seed lease', async () => {
+    function Observer() { return useGroupState('group-1', { myUserId: 'me' }).lifecycle; }
+    const tree = (first: boolean) => React.createElement(React.Fragment, null,
+      first && React.createElement(Observer, { key: 'first' }), React.createElement(Observer, { key: 'second' }));
+    let root!: ReturnType<typeof create>;
+    await act(async () => { root = create(tree(true)); await flush(); });
+    const groups = mockChannels.filter(c => c.topic.startsWith('group:') && !c.removed);
+    expect(groups).toHaveLength(2);
+    expect(new Set(groups.map(c => c.topic)).size).toBe(2);
+    const committed = getVisibleGroupSeed('me', 'group-1');
+    expect(committed).not.toBeNull();
+    await act(async () => { root.update(tree(false)); await flush(); });
+    expect(getVisibleGroupSeed('me', 'group-1')).toBe(committed);
+    expect(groups.filter(c => !c.removed)).toHaveLength(1);
+    await act(async () => root.unmount());
+    expect(getVisibleGroupSeed('me', 'group-1')).toBeNull();
+    expect(mockChannels.every(c => c.removed)).toBe(true);
+  });
+
+  it('fences retired channel callbacks after a group change and Strict replay keeps one live channel', async () => {
+    function Observer({ groupId }: { groupId: string }) { return useGroupState(groupId, { myUserId: 'me' }).lifecycle; }
+    let root!: ReturnType<typeof create>;
+    await act(async () => { root = create(React.createElement(React.StrictMode, null,
+      React.createElement(Observer, { groupId: 'group-1' }))); await flush(); });
+    expect(mockChannels.filter(c => c.topic.startsWith('group:') && !c.removed)).toHaveLength(1);
+    const retired = groupChannel();
+    await act(async () => { root.update(React.createElement(React.StrictMode, null,
+      React.createElement(Observer, { groupId: 'group-2' }))); await flush(); });
+    expect(retired.removed).toBe(true);
+    const calls = mockRecovery.mock.calls.length;
+    await act(async () => {
+      retired.status?.('SUBSCRIBED');
+      retired.bindings.find(b => b.filter.table === 'memberships')!.callback({});
+      retired.bindings.find(b => b.filter.table === 'member_locations')!.callback({ new: { user_id: 'peer-b' } });
+      jest.advanceTimersByTime(300); await flush();
+    });
+    expect(mockRecovery.mock.calls.length).toBe(calls);
+    await act(async () => root.unmount());
+    expect(mockChannels.every(c => c.removed)).toBe(true);
+  });
+
+  it('does not publish a new actor seed from a suspended render', async () => {
+    const never = new Promise<void>(() => undefined);
+    function Observer({ actor, suspend }: { actor: string; suspend: boolean }) {
+      const group = useGroupState('group-1', { myUserId: actor });
+      if (suspend) throw never;
+      return group.lifecycle;
+    }
+    const tree = (actor: string, suspend: boolean) => React.createElement(React.Suspense, { fallback: null },
+      React.createElement(Observer, { actor, suspend }));
+    let root!: ReturnType<typeof create>;
+    await act(async () => { root = create(tree('me', false)); await flush(); });
+    const committed = getVisibleGroupSeed('me', 'group-1');
+    expect(committed).not.toBeNull();
+    await act(async () => { root.update(tree('uncommitted', true)); await flush(); });
+    expect(getVisibleGroupSeed('uncommitted', 'group-1')).toBeNull();
+    expect(getVisibleGroupSeed('me', 'group-1')).toBe(committed);
+    await act(async () => root.unmount());
+    expect(getVisibleGroupSeed('me', 'group-1')).toBeNull();
   });
 });
