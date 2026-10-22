@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const source = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapStyles = readFileSync(join(__dirname, '../screens/MapScreen/styles.ts'), 'utf8');
 
 describe('foreground arrival feedback', () => {
   it('uses accuracy-aware reduceArrival as sole auto-arrive authority (no bare OR)', () => {
@@ -73,13 +74,13 @@ describe('foreground arrival feedback', () => {
     expect(pressableIdx).toBeGreaterThan(dimIdx);
     expect(carouselCard).toContain('styles.cardInner');
     // Full-surface fill (not padded content box only).
-    expect(source).toMatch(/arrivalDimOverlay:\s*\{[\s\S]*?absoluteFill/);
-    expect(source).toMatch(/arrivalCenterCheckLayer:\s*\{[\s\S]*?absoluteFill/);
+    expect(mapStyles).toMatch(/arrivalDimOverlay:\s*\{[\s\S]*?absoluteFill/);
+    expect(mapStyles).toMatch(/arrivalCenterCheckLayer:\s*\{[\s\S]*?absoluteFill/);
     // Padding is on cardInner so dim can cover the whole shell.
-    expect(source).toMatch(/cardInner:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
-    const cardStyleBlock = source.slice(
-      source.indexOf('// Gathering-point card shell'),
-      source.indexOf('cardActiveBorder:'),
+    expect(mapStyles).toMatch(/cardInner:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
+    const cardStyleBlock = mapStyles.slice(
+      mapStyles.indexOf('// Gathering-point card shell'),
+      mapStyles.indexOf('cardActiveBorder:'),
     );
     expect(cardStyleBlock).toContain('card: {');
     expect(cardStyleBlock).toContain('cardInner: {');

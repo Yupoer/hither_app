@@ -19,6 +19,7 @@ const sheetHeaderActionContent = readFileSync(join(root, 'components/SheetHeader
 const premiumBanner = readFileSync(join(root, 'components/PremiumBanner.tsx'), 'utf8');
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const inviteSheetIos = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.ios.tsx'), 'utf8');
 const inviteSheet = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.tsx'), 'utf8');
 const mapSheetChrome = readFileSync(join(root, 'components/mapSheetChrome.ts'), 'utf8');
@@ -198,17 +199,17 @@ describe('iOS native UI contracts', () => {
 
   it('keeps tools and add-place controls at their requested dimensions', () => {
     expect(mapScreen).toContain('testID="tools-enter-passive"');
-    expect(mapScreen).toContain('PASSIVE_ENTER_HEIGHT = 65');
-    expect(mapScreen).toContain('height: PASSIVE_ENTER_HEIGHT');
-    expect(mapScreen).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
-    expect(mapScreen).toContain("width: '100%'");
+    expect(mapStyles).toContain('PASSIVE_ENTER_HEIGHT = 65');
+    expect(mapStyles).toContain('height: PASSIVE_ENTER_HEIGHT');
+    expect(mapStyles).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
+    expect(mapStyles).toContain("width: '100%'");
     expect(mapScreen).toContain('styles.confirmControl');
-    expect(mapScreen).toContain('width: 60');
-    expect(mapScreen).toContain('height: 60');
-    expect(mapScreen).toContain('paddingTop: 10');
+    expect(mapStyles).toContain('width: 60');
+    expect(mapStyles).toContain('height: 60');
+    expect(mapStyles).toContain('paddingTop: 10');
     expect(mapScreen).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('height={96}');
-    expect(mapScreen).toContain('marginTop: 6');
+    expect(mapStyles).toContain('marginTop: 6');
   });
 
   it('forces dark mode at the RN and SwiftUI boundaries', () => {

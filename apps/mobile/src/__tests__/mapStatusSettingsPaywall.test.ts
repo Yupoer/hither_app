@@ -7,6 +7,7 @@ const read = (rel: string) =>
 
 const groupMap = read('components/GroupMap.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
+const mapStyles = read('screens/MapScreen/styles.ts');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
 const notifCard = read('components/NotificationPreferencesCard.tsx');
 const tabs = read('screens/MapScreen/components/SheetPaneTabs.tsx');
@@ -73,9 +74,9 @@ describe('#220 map / status / settings / paywall contracts', () => {
   });
 
   it('stacks settings above sheetLayer and sibling child hosts above settings', () => {
-    const sheet = /sheetLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapScreen);
+    const sheet = /sheetLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapStyles);
     const settingsRoot = /page:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(settings);
-    const child = /settingsChildLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapScreen);
+    const child = /settingsChildLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapStyles);
     expect(sheet?.[1]).toBeTruthy();
     expect(settingsRoot?.[1]).toBeTruthy();
     expect(child?.[1]).toBeTruthy();

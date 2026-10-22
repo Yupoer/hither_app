@@ -10,6 +10,7 @@ import {
 import { translations } from '../i18n';
 
 const mapScreen = readFileSync(join(__dirname, '..', 'screens', 'MapScreen.tsx'), 'utf8');
+const mapStyles = readFileSync(join(__dirname, '..', 'screens', 'MapScreen', 'styles.ts'), 'utf8');
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -82,12 +83,12 @@ describe('member status + location sharing seam', () => {
     expect(bar).toContain('color={sharingEnabled ? accent : glass.danger}');
     expect(bar).toContain('locationSharingButton');
     expect(bar).toContain('NativeMenuHost');
-    expect(mapScreen).toContain('backgroundColor: glass.fill');
-    expect(mapScreen).toContain('width: 44');
-    expect(mapScreen).toContain('height: 44');
-    expect(mapScreen).toContain('marginTop: 4');
-    expect(mapScreen).toContain('marginBottom: 8');
-    expect(mapScreen).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
+    expect(mapStyles).toContain('backgroundColor: glass.fill');
+    expect(mapStyles).toContain('width: 44');
+    expect(mapStyles).toContain('height: 44');
+    expect(mapStyles).toContain('marginTop: 4');
+    expect(mapStyles).toContain('marginBottom: 8');
+    expect(mapStyles).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
     const handlerStart = mapScreen.indexOf('const handleSharingEnabledChangeAnimated');
     const handler = mapScreen.slice(handlerStart, handlerStart + 700);
     expect(handler).toContain('confirmAction');
@@ -97,9 +98,9 @@ describe('member status + location sharing seam', () => {
   });
 
   it('keeps passive mode full width with a 65pt capsule', () => {
-    expect(mapScreen).toContain('PASSIVE_ENTER_HEIGHT = 65');
-    expect(mapScreen).toContain('height: PASSIVE_ENTER_HEIGHT');
-    expect(mapScreen).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
-    expect(mapScreen).toContain("width: '100%'");
+    expect(mapStyles).toContain('PASSIVE_ENTER_HEIGHT = 65');
+    expect(mapStyles).toContain('height: PASSIVE_ENTER_HEIGHT');
+    expect(mapStyles).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
+    expect(mapStyles).toContain("width: '100%'");
   });
 });

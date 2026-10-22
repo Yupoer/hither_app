@@ -13,6 +13,7 @@ import {
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const quickCommands = readFileSync(join(root, 'components/QuickCommandsCard.tsx'), 'utf8');
 const groupMap = readFileSync(join(root, 'components/GroupMap.tsx'), 'utf8');
 const myTeams = readFileSync(join(root, 'screens/MyTeamsScreen.tsx'), 'utf8');
@@ -54,7 +55,7 @@ describe('Dynamic Type contract', () => {
     // Always one row — no multi-row stack styles in the gather card.
     expect(mapScreen).not.toContain('commandCol');
     expect(mapScreen).not.toContain('commandSecondaryRow');
-    expect(mapScreen).toContain('flexWrap: \'nowrap\'');
+    expect(mapStyles).toContain('flexWrap: \'nowrap\'');
   });
 
   it('marks QuickCommandsCard bucket-aware grid', () => {
@@ -69,13 +70,13 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('fontLayout.scale');
     expect(mapScreen).toContain('fontLayout.boldText');
     expect(mapScreen).toContain('windowWidth < 400');
-    expect(mapScreen).toContain('applyAppTextScale');
-    expect(mapScreen).toContain('applyBoldTextWeights');
+    expect(mapStyles).toContain('applyAppTextScale');
+    expect(mapStyles).toContain('applyBoldTextWeights');
   });
 
   it('clips avatar shells and freezes map/header emoji glyphs', () => {
-    expect(mapScreen).toMatch(/headerAvatar:\s*\{[\s\S]*?overflow:\s*'hidden'/);
-    expect(mapScreen).toMatch(/peekStackAv:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(mapStyles).toMatch(/headerAvatar:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(mapStyles).toMatch(/peekStackAv:\s*\{[\s\S]*?overflow:\s*'hidden'/);
     expect(mapScreen).toContain("typeRole=\"emoji\"");
     expect(groupMap).toContain("typeRole=\"emoji\"");
     expect(groupMap).toMatch(/memberPin:\s*\{[\s\S]*?overflow:\s*'hidden'/);
@@ -121,15 +122,15 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('mapsChip');
     expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openExternalNavigation/);
     // Card padding is scale/density-aware (horizontal pad + top/bottom).
-    expect(mapScreen).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
-    expect(mapScreen).toMatch(/card:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
+    expect(mapStyles).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
+    expect(mapStyles).toMatch(/card:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
     expect(mapScreen).toContain('cardKickerRow');
     // Logo removed.
     expect(mapScreen).not.toMatch(/styles\.cardIcon/);
   });
 
   it('marks invite-row stacked layout for large Dynamic Type', () => {
-    expect(mapScreen).toContain('a11y-layout:inviteRow');
+    expect(mapStyles).toContain('a11y-layout:inviteRow');
     expect(mapScreen).toContain('inviteRowStacked');
   });
 
@@ -138,10 +139,10 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain('carouselMaxHeight');
     expect(mapScreen).toContain('CAPSULE_CLEARANCE');
     // cards (58) > capsules (50); sheet wrapper sibling must beat carousel.
-    expect(mapScreen).toMatch(/carouselWrap:\s*\{[\s\S]*?zIndex:\s*58/);
-    expect(mapScreen).toMatch(/recenter:\s*\{[^}]*zIndex:\s*50/);
-    expect(mapScreen).toMatch(/teamCapsuleWrap:\s*\{[\s\S]*?zIndex:\s*50/);
-    expect(mapScreen).toMatch(/sheetLayer:\s*\{[\s\S]*?zIndex:\s*70/);
+    expect(mapStyles).toMatch(/carouselWrap:\s*\{[\s\S]*?zIndex:\s*58/);
+    expect(mapStyles).toMatch(/recenter:\s*\{[^}]*zIndex:\s*50/);
+    expect(mapStyles).toMatch(/teamCapsuleWrap:\s*\{[\s\S]*?zIndex:\s*50/);
+    expect(mapStyles).toMatch(/sheetLayer:\s*\{[\s\S]*?zIndex:\s*70/);
     // No permanent black fog strip under the carousel.
     expect(mapScreen).not.toContain('carouselFog');
     // Command row density follows device/font — never multi-row / never detent.
@@ -151,17 +152,17 @@ describe('Dynamic Type contract', () => {
   });
 
   it('lets meet countdown grow instead of clipping under large Dynamic Type', () => {
-    expect(mapScreen).toMatch(/meetBtn:\s*\{[\s\S]*?minHeight:\s*cmdSize/);
-    expect(mapScreen).toMatch(/meetBtn:\s*\{[\s\S]*?overflow:\s*'visible'/);
+    expect(mapStyles).toMatch(/meetBtn:\s*\{[\s\S]*?minHeight:\s*cmdSize/);
+    expect(mapStyles).toMatch(/meetBtn:\s*\{[\s\S]*?overflow:\s*'visible'/);
     // Fixed height would clip 集合倒數 under bold/large type.
     expect(mapScreen).not.toMatch(/meetBtn:\s*\{[\s\S]*?height:\s*cmdSize/);
-    expect(mapScreen).toContain('metricNumSize');
+    expect(mapStyles).toContain('metricNumSize');
     expect(mapScreen).toContain('adjustsFontSizeToFit');
     // Metric values must not shrink to unreadable; captions wrap + floor size.
     expect(mapScreen).toContain('minimumFontScale={0.85}');
     expect(mapScreen).not.toContain('minimumFontScale={0.65}');
     expect(mapScreen).toMatch(/metricCaption[\s\S]{0,80}numberOfLines=\{2\}/);
-    expect(mapScreen).toMatch(/const metricCaptionSize = tight \? 11/);
+    expect(mapStyles).toMatch(/const metricCaptionSize = tight \? 11/);
   });
 
   it('clamps font scale for layout and maps buckets under the global cap', () => {
@@ -202,6 +203,6 @@ describe('Dynamic Type contract', () => {
     expect(fontHook).toContain('boldTextChanged');
     expect(fontHook).toContain('boldText');
     expect(mapScreen).toContain('fontLayout.boldText');
-    expect(mapScreen).toContain('applyBoldTextWeights');
+    expect(mapStyles).toContain('applyBoldTextWeights');
   });
 });

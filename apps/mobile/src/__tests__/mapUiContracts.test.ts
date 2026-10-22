@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const mapStyles = readFileSync(join(__dirname, '../screens/MapScreen/styles.ts'), 'utf8');
 const bottomSheet = readFileSync(join(__dirname, '../components/BottomSheet.tsx'), 'utf8');
 const overlaySheet = readFileSync(join(__dirname, '../components/OverlaySheet.tsx'), 'utf8');
 const settingsChildSheet = readFileSync(
@@ -90,14 +91,14 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps add-place secondary controls bright, transparent, and evenly spaced', () => {
-    expect(mapScreen).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, flexShrink: 0 }');
-    expect(mapScreen).toContain('confirmBtnRow: {');
-    expect(mapScreen).toContain('gap: 12');
-    expect(mapScreen).toContain('paddingHorizontal: 20');
-    expect(mapScreen).toContain('backgroundColor: glass.fillStrong');
-    expect(mapScreen).toContain('confirmArrow: {');
-    expect(mapScreen).toContain('width: 60');
-    expect(mapScreen).toContain('height: 60');
+    expect(mapStyles).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, flexShrink: 0 }');
+    expect(mapStyles).toContain('confirmBtnRow: {');
+    expect(mapStyles).toContain('gap: 12');
+    expect(mapStyles).toContain('paddingHorizontal: 20');
+    expect(mapStyles).toContain('backgroundColor: glass.fillStrong');
+    expect(mapStyles).toContain('confirmArrow: {');
+    expect(mapStyles).toContain('width: 60');
+    expect(mapStyles).toContain('height: 60');
   });
 
   it('keeps reorder actions on one row with readable text', () => {
@@ -109,7 +110,7 @@ describe('map UI placement contracts', () => {
   it('keeps route scopes role-aware and uses equal horizontal/bottom insets', () => {
     expect(mapScreen).toContain('const expanded = canEdit');
     expect(mapScreen).toContain('styles.routeScopeContent');
-    expect(mapScreen).toContain('paddingHorizontal: 10');
+    expect(mapStyles).toContain('paddingHorizontal: 10');
     expect(mapScreen).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('routeOverlayBody');
     expect(mapScreen).toContain("await refresh('membership_change')");
@@ -147,7 +148,7 @@ describe('map UI placement contracts', () => {
   });
   it('renders arrival radius hint with tertiary subhint style', () => {
     expect(mapScreen).toContain("styles.accuracySubhint}>{t('arrival.radiusHint')}");
-    expect(mapScreen).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
+    expect(mapStyles).toMatch(/accuracySubhint:\s*\{[\s\S]*?color:\s*glass\.textTertiary/);
   });
 
   it('scopes itinerary to current open scope for everyone including leaders (#154)', () => {
@@ -213,9 +214,9 @@ describe('map UI placement contracts', () => {
     expect(statusBarBlock).toContain('statusIconForKind(myStatusKind)');
     expect(statusBarBlock).not.toContain("t('solo.statusCurrent'");
     expect(statusBarBlock).not.toContain('chevron-down');
-    expect(mapScreen).toContain('marginLeft: \'auto\'');
-    expect(mapScreen).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
-    expect(mapScreen).toMatch(/myStatusBar:[\s\S]{0,180}flexDirection:\s*'row'/);
+    expect(mapStyles).toContain('marginLeft: \'auto\'');
+    expect(mapStyles).toContain('gap: STATUS_SHARE_CLUSTER_GAP');
+    expect(mapStyles).toMatch(/myStatusBar:[\s\S]{0,180}flexDirection:\s*'row'/);
     expect(mapScreen).not.toMatch(/myStatusBar:[\s\S]{0,180}justifyContent:\s*'space-between'/);
   });
 
@@ -424,7 +425,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toMatch(
       /arrivalCenterCheckLayer[\s\S]{0,400}ZoomIn\.duration\([^)]+\)\.springify/,
     );
-    expect(mapScreen).toContain('backgroundColor: glass.ok');
+    expect(mapStyles).toContain('backgroundColor: glass.ok');
     expect(mapScreen).not.toContain('arrivalCheckBadge');
   });
 
@@ -455,8 +456,8 @@ describe('map UI placement contracts', () => {
     expect(tabs).toContain('const selectedIndex =');
     expect(tabs).toContain('const labels = useMemo');
     expect(tabs).not.toContain('<Pressable');
-    const statusTriggerStart = mapScreen.indexOf('myStatusTriggerInner:');
-    const statusTriggerBlock = mapScreen.slice(statusTriggerStart, statusTriggerStart + 180);
+    const statusTriggerStart = mapStyles.indexOf('myStatusTriggerInner:');
+    const statusTriggerBlock = mapStyles.slice(statusTriggerStart, statusTriggerStart + 180);
     expect(statusTriggerStart).toBeGreaterThanOrEqual(0);
     expect(statusTriggerBlock).toContain("flexDirection: 'row'");
     expect(statusTriggerBlock).not.toContain("flexDirection: 'column'");
@@ -564,14 +565,14 @@ describe('map UI placement contracts', () => {
   it('keeps the selector out of Peek and compacts only the map chrome', () => {
     expect(mapScreen).toContain('const [sheetHeaderH, setSheetHeaderH] = useState(68);');
     expect(mapScreen).not.toContain('sheetBodyVisibilityStyle');
-    expect(mapScreen).toContain("sheetBodyHidden: { display: 'none' }");
+    expect(mapStyles).toContain("sheetBodyHidden: { display: 'none' }");
     expect(mapScreen).not.toContain('[detents[0], detents[0] + 16]');
     expect(mapScreen).toContain("pointerEvents={detent === 0 ? 'none' : 'auto'}");
     expect(mapScreen).toContain('accessibilityElementsHidden={detent === 0}');
     expect(mapScreen).toContain("importantForAccessibility={detent === 0 ? 'no-hide-descendants' : 'auto'}");
     expect(mapScreen).toContain('compactGrabberSpacing');
-    expect(mapScreen).toContain('paddingTop: 2');
-    expect(mapScreen).toContain('paddingBottom: 11');
+    expect(mapStyles).toContain('paddingTop: 2');
+    expect(mapStyles).toContain('paddingBottom: 11');
     expect(bottomSheet).toContain('compactGrabberSpacing = false');
     expect(bottomSheet).toContain('grabZoneCompact');
     expect(bottomSheet).toContain('paddingTop: 3');
@@ -590,7 +591,7 @@ describe('map UI placement contracts', () => {
   it('keeps persistent Liquid Glass surfaces out of detent opacity ancestors', () => {
     expect(mapScreen).not.toContain('chromeOpacityStyle');
     expect(mapScreen).not.toContain('sheetHidden: { opacity: 0 }');
-    expect(mapScreen).toContain("sheetHidden: { display: 'none' }");
+    expect(mapStyles).toContain("sheetHidden: { display: 'none' }");
     expect(mapScreen).toContain('showDenseChrome && !confirmCardReady && !atFull');
     expect(bottomSheet).not.toContain('opacity: interpolate');
   });

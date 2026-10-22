@@ -7,6 +7,7 @@ describe('Amicro native animation contracts', () => {
   const button = read('components/AmicroButton.tsx');
   const wave = read('components/WaveLoading.tsx');
   const map = read('screens/MapScreen.tsx');
+  const mapStyles = read('screens/MapScreen/styles.ts');
   const passive = read('screens/MapScreen/components/PassiveCompanionPanel.tsx');
   const app = read('../App.tsx');
 
@@ -27,8 +28,8 @@ describe('Amicro native animation contracts', () => {
       expect(map + passive).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
     expect(map).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
-    expect(map).toContain('width: 44');
-    expect(map).toContain('height: 44');
+    expect(mapStyles).toContain('width: 44');
+    expect(mapStyles).toContain('height: 44');
     expect(map).not.toContain('activeIcon="pause"');
     expect(map).toContain('style={styles.headerIconBtn}');
     // Search holds complete frame until OverlaySheet onOpenComplete (not rAF×2).
@@ -67,7 +68,7 @@ describe('Amicro native animation contracts', () => {
     expect(map).toContain("label={t('map.copy')}");
     expect(map).toContain('durationMs={420}');
     expect(map).toContain('style={styles.inviteActionButton}');
-    expect(map).toContain('fontSize: 32');
+    expect(mapStyles).toContain('fontSize: 32');
     expect(map).toContain('adjustsFontSizeToFit');
     expect(map).toContain('minimumFontScale={0.7}');
     // Share awaits system share settle before Amicro reset.
