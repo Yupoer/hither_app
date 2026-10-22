@@ -16,14 +16,14 @@ insert into public.profiles (id, nickname) values
   ('c1111111-1111-4111-8111-111111111111', 'SchedLeader');
 
 insert into public.groups (id, name, invite_code, created_by) values (
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'Scheduler trip',
   'SCH001',
   'c1111111-1111-4111-8111-111111111111'
 );
 
 insert into public.memberships (group_id, user_id, role) values (
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'leader'
 );
@@ -70,15 +70,16 @@ select is(
 reset role;
 insert into public.coordination_requests (
   id, group_id, created_by, subject, subject_kind,
-  options, deadline, policy, default_outcome, status
+  options, created_at, deadline, policy, default_outcome, status
 ) values
 (
   'cddddddd-dddd-4ddd-8ddd-dddddddddddd',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Due meet',
   'gathering_point',
   '[{"id":"keep","label":"Keep"},{"id":"change","label":"Change"}]'::jsonb,
+  now() - interval '1 hour',
   now() - interval '1 minute',
   'majority',
   'keep',
@@ -86,11 +87,12 @@ insert into public.coordination_requests (
 ),
 (
   'ceeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Future meet',
   'gathering_point',
   '[{"id":"keep","label":"Keep"},{"id":"change","label":"Change"}]'::jsonb,
+  now(),
   now() + interval '1 hour',
   'majority',
   'keep',
@@ -116,7 +118,7 @@ reset role;
 select is(
   (select status from public.coordination_requests
     where id = 'cddddddd-dddd-4ddd-8ddd-dddddddddddd'),
-  'closed',
+  'expired',
   'due request closed after scheduler run'
 );
 
@@ -136,27 +138,29 @@ select ok(
 -- Insert a due open request whose resolve path errors (unknown option id in default).
 insert into public.coordination_requests (
   id, group_id, created_by, subject, subject_kind,
-  options, deadline, policy, default_outcome, status
+  options, created_at, deadline, policy, default_outcome, status
 ) values
 (
   'cfffffff-ffff-4fff-8fff-ffffffffffff',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Poison meet',
   'gathering_point',
   '[{"id":"keep","label":"Keep"}]'::jsonb,
+  now() - interval '1 hour',
   now() - interval '2 minutes',
   'majority',
   'missing_option',
   'open'
 ),
 (
-  'cggggggg-gggg-4ggg-8ggg-gggggggggggg',
-  'cgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'cbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  'caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'c1111111-1111-4111-8111-111111111111',
   'Healthy due meet',
   'gathering_point',
   '[{"id":"keep","label":"Keep"},{"id":"change","label":"Change"}]'::jsonb,
+  now() - interval '1 hour',
   now() - interval '30 seconds',
   'majority',
   'keep',

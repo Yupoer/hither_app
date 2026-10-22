@@ -8,28 +8,28 @@ set search_path = extensions, public, auth;
 
 select plan(27);
 
-insert into auth.users (id, email) values
-  ('f1111111-1111-4111-8111-111111111111', 'refresh-leader@example.test'),
-  ('f2222222-2222-4222-8222-222222222222', 'refresh-follower@example.test'),
-  ('f3333333-3333-4333-8333-333333333333', 'refresh-offline@example.test'),
-  ('f4444444-4444-4444-8444-444444444444', 'refresh-outsider@example.test'),
+insert into auth.users (id, email, is_anonymous) values
+  ('f1111111-1111-4111-8111-111111111111', 'refresh-leader@example.test', false),
+  ('f2222222-2222-4222-8222-222222222222', 'refresh-follower@example.test', false),
+  ('f3333333-3333-4333-8333-333333333333', 'refresh-offline@example.test', false),
+  ('f4444444-4444-4444-8444-444444444444', 'refresh-outsider@example.test', false),
   ('f5555555-5555-4555-8555-555555555555', 'refresh-expired-anon@example.test', true);
 
 insert into public.profiles (id, nickname, anonymous_expires_at) values
   ('f5555555-5555-4555-8555-555555555555', 'Expired anon', now() + interval '1 hour');
 
 insert into public.groups (id, name, invite_code, created_by) values (
-  'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'Refresh contract trip',
   'REFRESH1',
   'f1111111-1111-4111-8111-111111111111'
 );
 
 insert into public.memberships (group_id, user_id, role, status) values
-  ('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f1111111-1111-4111-8111-111111111111', 'leader', 'active'),
-  ('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f2222222-2222-4222-8222-222222222222', 'follower', 'active'),
-  ('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f3333333-3333-4333-8333-333333333333', 'follower', 'offline'),
-  ('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f5555555-5555-4555-8555-555555555555', 'follower', 'active');
+  ('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f1111111-1111-4111-8111-111111111111', 'leader', 'active'),
+  ('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f2222222-2222-4222-8222-222222222222', 'follower', 'active'),
+  ('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f3333333-3333-4333-8333-333333333333', 'follower', 'offline'),
+  ('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f5555555-5555-4555-8555-555555555555', 'follower', 'active');
 
 update public.profiles
    set anonymous_expires_at = now() - interval '1 hour'
@@ -44,6 +44,9 @@ create temporary table location_refresh_pending_test_latest (
 create temporary table location_refresh_request_test_result (
   result jsonb not null
 );
+
+grant select, insert on location_refresh_pending_test_versions,
+  location_refresh_pending_test_latest, location_refresh_request_test_result to authenticated;
 
 select has_table(
   'public',
@@ -60,7 +63,7 @@ select ok(
      where n.nspname = 'public'
        and r.relname = 'location_refresh_pending'
        and c.contype = 'p'
-       and position('PRIMARY KEY (group_id, user_id)' in upper(pg_get_constraintdef(c.oid))) > 0
+       and position('PRIMARY KEY (GROUP_ID, USER_ID)' in upper(pg_get_constraintdef(c.oid))) > 0
   ),
   'pending table primary key is group_id plus user_id'
 );
@@ -142,7 +145,7 @@ select set_config('request.jwt.claim.sub', 'f1111111-1111-4111-8111-111111111111
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
 insert into location_refresh_request_test_result (result)
-select public.request_group_location_refresh('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+select public.request_group_location_refresh('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
 
 select is(
   ((select result from location_refresh_request_test_result)->>'accepted'),
@@ -159,20 +162,20 @@ reset role;
 insert into location_refresh_pending_test_versions (requested_at)
 select requested_at
   from public.location_refresh_pending
- where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
    and user_id = 'f2222222-2222-4222-8222-222222222222';
 
 select is(
   (select count(*)::int
      from public.location_refresh_pending
-    where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+    where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
   1,
   'only the active, non-expired recipient receives a pending row'
 );
 select is(
   (select count(*)::int
      from public.location_refresh_pending
-    where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and user_id = 'f5555555-5555-4555-8555-555555555555'),
   0,
   'an expired anonymous membership receives no pending row'
@@ -181,7 +184,7 @@ select is(
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'f1111111-1111-4111-8111-111111111111', true);
 select is(
-  (public.request_group_location_refresh('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'accepted'),
+  (public.request_group_location_refresh('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'accepted'),
   'false',
   'the 60 second cooldown rejects a duplicate request'
 );
@@ -195,14 +198,20 @@ select is(
 );
 
 reset role;
+-- now() is fixed within this transaction, so age the previous refresh wave together.
+update location_refresh_pending_test_versions
+   set requested_at = requested_at - interval '61 seconds';
+update public.location_refresh_pending
+   set requested_at = requested_at - interval '61 seconds'
+ where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 update public.location_refresh_requests
    set requested_at = now() - interval '61 seconds'
- where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'f1111111-1111-4111-8111-111111111111', true);
 select is(
-  (public.request_group_location_refresh('fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'accepted'),
+  (public.request_group_location_refresh('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'accepted'),
   'true',
   'an expired cooldown accepts a new request'
 );
@@ -211,7 +220,7 @@ reset role;
 select ok(
   (select requested_at
      from public.location_refresh_pending
-    where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and user_id = 'f2222222-2222-4222-8222-222222222222')
   > (select requested_at from location_refresh_pending_test_versions),
   'a new request versions the recipient ledger row'
@@ -219,14 +228,14 @@ select ok(
 insert into location_refresh_pending_test_latest (requested_at)
 select requested_at
   from public.location_refresh_pending
- where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
    and user_id = 'f2222222-2222-4222-8222-222222222222';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'f2222222-2222-4222-8222-222222222222', true);
 select is(
   public.ack_my_location_refresh(
-    'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     (select requested_at from location_refresh_pending_test_versions)
   ),
   false,
@@ -239,13 +248,13 @@ select is(
 );
 reset role;
 delete from public.memberships
- where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
    and user_id = 'f2222222-2222-4222-8222-222222222222';
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'f2222222-2222-4222-8222-222222222222', true);
 select is(
   public.ack_my_location_refresh(
-    'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     (select requested_at from location_refresh_pending_test_latest)
   ),
   false,
@@ -255,14 +264,14 @@ reset role;
 select is(
   (select count(*)::int
      from public.location_refresh_pending
-    where group_id = 'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    where group_id = 'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
       and user_id = 'f2222222-2222-4222-8222-222222222222'),
   1,
   'a denied ACK cannot delete the newer pending row'
 );
 insert into public.memberships (group_id, user_id, role, status)
 values (
-  'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'f2222222-2222-4222-8222-222222222222',
   'follower',
   'active'
@@ -271,7 +280,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'f2222222-2222-4222-8222-222222222222', true);
 select is(
   public.ack_my_location_refresh(
-    'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     (select requested_at from location_refresh_pending_test_latest)
   ),
   true,
@@ -291,7 +300,7 @@ select is(
 );
 select is(
   public.ack_my_location_refresh(
-    'fgaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     now()
   ),
   false,
