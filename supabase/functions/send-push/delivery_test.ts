@@ -6,6 +6,7 @@ import {
   emptyReport,
   mergeReports,
   summarizeDelivery,
+  withControlDelivery,
 } from "./delivery.ts";
 
 const ok = (token: string) => Promise.resolve({ token, status: 200, dead: false });
@@ -61,4 +62,25 @@ Deno.test("skipped recipients and empty batches never call the provider", async 
   assertEquals(prepared, 0);
   assertEquals(empty, emptyReport());
   assertEquals(skipped, emptyReport());
+});
+
+Deno.test("navigation: a delivered control push keeps 200 when the activity provider fails", async () => {
+  const control = await deliverProvider("fcm", ["android-1"], async () => ok);
+  const activity = await deliverProvider("apns", ["activity-1"], () => Promise.reject(new Error("APNs key missing")));
+
+  assertEquals(withControlDelivery(control, activity), {
+    controlSent: 1,
+    providerFailures: [{ provider: "apns", recipients: 1, error: "APNs key missing" }],
+    status: 200,
+  });
+});
+
+Deno.test("navigation: a failed control push with no activity answers 500 and reports it", async () => {
+  const control = await deliverProvider("fcm", ["android-1"], () => Promise.reject(new Error("FCM oauth 500")));
+
+  assertEquals(withControlDelivery(control, emptyReport()), {
+    controlSent: 0,
+    providerFailures: [{ provider: "fcm", recipients: 1, error: "FCM oauth 500" }],
+    status: 500,
+  });
 });

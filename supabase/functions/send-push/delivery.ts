@@ -91,3 +91,16 @@ export function summarizeDelivery(report: DeliveryReport) {
 export function deliveryStatus(report: DeliveryReport): 200 | 500 {
   return report.results.length === 0 && report.failures.length > 0 ? 500 : 200;
 }
+
+/**
+ * Navigation control pushes keep their own counter, but they are deliveries
+ * like any other: they decide the batch status and report provider failures.
+ */
+export function withControlDelivery(control: DeliveryReport, deliveries: DeliveryReport) {
+  const all = mergeReports(control, deliveries);
+  return {
+    controlSent: summarizeDelivery(control).sent,
+    providerFailures: all.failures,
+    status: deliveryStatus(all),
+  };
+}

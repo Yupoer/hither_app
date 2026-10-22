@@ -33,6 +33,7 @@ import {
   emptyReport,
   mergeReports,
   summarizeDelivery,
+  withControlDelivery,
   type DeliveryReport,
 } from "./delivery.ts";
 import {
@@ -603,7 +604,10 @@ async function handleNavigationSession(
     }
     const fallbackSummary = summarizeDelivery(fallbackReport);
     const activitySummary = summarizeDelivery(mergeReports(existingReport, startReport));
-    const allDeliveries = mergeReports(existingReport, startReport, fallbackReport);
+    const delivery = withControlDelivery(
+      controlReport,
+      mergeReports(existingReport, startReport, fallbackReport),
+    );
     return json({
       sent: fallbackSummary.sent,
       apnsSent: fallbackSummary.apnsSent + activitySummary.sent,
@@ -614,9 +618,11 @@ async function handleNavigationSession(
       fallbackTotal: fallbackUserIds.length,
       liveActivityTotal: startRows.length,
       total: fallbackTokenRows.length + startRows.length,
+      controlSent: delivery.controlSent,
+      controlTotal: controlTokens.length,
       pruned: deadStartTokens.length + deadFallbackTokens.length,
-      providerFailures: allDeliveries.failures,
-    }, deliveryStatus(allDeliveries));
+      providerFailures: delivery.providerFailures,
+    }, delivery.status);
   }
 
   const sessions = await loadLiveSessions(payload, members, sender);
@@ -633,6 +639,7 @@ async function handleNavigationSession(
       .eq("destination_id", payload.destination_id);
   }
   const activitySummary = summarizeDelivery(activityReport);
+  const delivery = withControlDelivery(controlReport, activityReport);
   return json({
     sent: 0,
     apnsSent: activitySummary.sent,
@@ -642,9 +649,11 @@ async function handleNavigationSession(
     liveActivitySent: activitySummary.sent,
     liveActivityTotal: sessions.length,
     total: sessions.length,
+    controlSent: delivery.controlSent,
+    controlTotal: controlTokens.length,
     pruned: deadActivityTokens.length,
-    providerFailures: activityReport.failures,
-  }, deliveryStatus(activityReport));
+    providerFailures: delivery.providerFailures,
+  }, delivery.status);
 }
 
 async function filterNotificationPreferences(
