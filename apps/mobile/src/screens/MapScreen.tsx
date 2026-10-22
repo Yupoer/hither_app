@@ -3,6 +3,7 @@ import { useGatheringCompletion } from './MapScreen/hooks/useGatheringCompletion
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
 import { foregroundLocationConfiguration, isForegroundLocationState } from '../utils/locationPolicy';
 import WaveLoading from '../components/WaveLoading';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
 import { showAppNotice } from '../state/appNotice';
@@ -730,10 +731,10 @@ export default function MapScreen({ route, navigation }: Props) {
 
   useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
   const mapMountedRef = useRef(true);
-  useEffect(() => {
+  useMountEffect(() => {
     mapMountedRef.current = true;
     return () => { mapMountedRef.current = false; };
-  }, []);
+  });
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -2393,7 +2394,7 @@ export default function MapScreen({ route, navigation }: Props) {
     lastRouteDistanceM,
   ]);
 
-  useEffect(() => () => void stopBackgroundJourney(), []);
+  useMountEffect(() => () => void stopBackgroundJourney());
 
   useEffect(() => {
     energyObservability.setTrackingMode(!sharingEnabled ? 'hidden'
@@ -2826,7 +2827,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [refreshingLocations, setRefreshingLocations] = useState(false);
   const [refreshCooldownUntil, setRefreshCooldownUntil] = useState(0);
 
-  useEffect(() => {
+  useMountEffect(() => {
     const remove = notifications.addForegroundListener((data) => {
       if (data.category !== 'location_refresh') return;
       // The server ledger is the source of truth. Recover all pending groups
@@ -2834,7 +2835,7 @@ export default function MapScreen({ route, navigation }: Props) {
       void recoverPendingLocationRefreshes();
     });
     return remove;
-  }, []);
+  });
 
   useEffect(() => {
     if (appState !== 'active') return;
@@ -4086,7 +4087,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const [tourReduceMotion, setTourReduceMotion] = useState(false);
-  useEffect(() => {
+  useMountEffect(() => {
     let mounted = true;
     void AccessibilityInfo.isReduceMotionEnabled?.().then((enabled) => {
       if (mounted) setTourReduceMotion(Boolean(enabled));
@@ -4102,7 +4103,7 @@ export default function MapScreen({ route, navigation }: Props) {
         (sub as { remove: () => void }).remove();
       }
     };
-  }, []);
+  });
 
   const onTourActiveChange = useCallback(
     (active: boolean, destinationId: string | null) => {
