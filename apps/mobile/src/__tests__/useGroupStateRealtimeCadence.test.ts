@@ -193,6 +193,20 @@ describe('useGroupState realtime cadence', () => {
     expect(mockRecovery.mock.calls.length).toBe(calls);
   });
 
+  it('keeps the 30 s fallback poll running while realtime fails to rejoin every 10 s', async () => {
+    const { root } = await mount();
+    await act(async () => { groupChannel().status?.('SUBSCRIBED'); await flush(); });
+    const calls = mockRecovery.mock.calls.length;
+
+    for (let i = 0; i < 60; i += 1) {
+      await act(async () => { groupChannel().status?.('CHANNEL_ERROR'); await flush(); });
+      await advance(10_000);
+    }
+
+    expect(mockRecovery.mock.calls.length - calls).toBe(20);
+    await act(async () => root.unmount());
+  });
+
   it('never starts a poll while the previous poll load is still in flight', async () => {
     const { root } = await mount();
     mockRecovery.mockImplementation(() => new Promise(() => undefined));

@@ -659,16 +659,26 @@ export function useGroupState(
 
     let stopped = false;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
-    // Re-arms on every channel status change so a dropped channel falls back
-    // to the fast cadence immediately instead of after the slow wait.
+    let pollDueAt = Infinity;
     const schedulePoll = () => {
       clearTimeout(pollTimer);
       if (stopped) return;
+      const delay = groupPollIntervalMs(realtimeReadyRef.current);
+      pollDueAt = Date.now() + delay;
       pollTimer = setTimeout(async () => {
+        pollDueAt = Infinity;
         if (stopped) return;
         await loadRef.current('poll_manual_refresh');
         schedulePoll();
-      }, groupPollIntervalMs(realtimeReadyRef.current));
+      }, delay);
+    };
+    // Rejoin failures repeat every few seconds while disconnected, so only a
+    // readiness change may move the deadline; otherwise each error would push
+    // the fallback poll out forever.
+    const setRealtimeReady = (ready: boolean) => {
+      if (realtimeReadyRef.current === ready) return;
+      realtimeReadyRef.current = ready;
+      if (ready || pollDueAt > Date.now() + groupPollIntervalMs(false)) schedulePoll();
     };
 
     const filter = `group_id=eq.${groupId}`;
@@ -723,8 +733,7 @@ export function useGroupState(
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          realtimeReadyRef.current = true;
-          schedulePoll();
+          setRealtimeReady(true);
           // A new member can subscribe after the leader has already written
           // itinerary rows. Hydrate once after the channel is ready instead
           // of relying on an event that happened before this subscription.
@@ -732,8 +741,7 @@ export function useGroupState(
           return;
         }
         if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          realtimeReadyRef.current = false;
-          schedulePoll();
+          setRealtimeReady(false);
         }
       });
     scheduleReloadRef.current = scheduleReload;
