@@ -73,190 +73,163 @@
       "testNamePattern": "rejects an old team store response|does not fetch store entitlements|renders projected local arrivals|blocks anonymous leader invite|returns home without leaving|clears Live Activities|reports each newly flagged"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "The production Live Activity travel_mode constraint accepts bicycle and existing modes and rejects unsupported values.",
       "testFile": "supabase/tests/live_activity_bicycle_mode.test.sql",
       "testNamePattern": "production Live Activity constraint accepts bicycle"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "A delayed older Start snapshot cannot move the card away from the newly confirmed destination.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "keeps selection on confirmed B"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Durable same-day promotion preserves omitted meeting time and accommodation anchor fields, while explicit null still clears its field.",
       "testFile": "supabase/tests/durable_reorder_optional_fields.test.sql",
       "testNamePattern": "durable promotion preserves omitted fields"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Transport preference survives screen remount and cold startup, while delayed hydration preserves a newer choice.",
       "testFile": "travelModePreference.test.ts",
       "testNamePattern": "persists|keeps user choice"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Transport changes recompute card and Live Activity ETA without stale mode responses or lost progress.",
       "testFile": "transportModeEta.test.ts",
       "testNamePattern": "switches both surface ETAs|recalculates stale sticky ETA|rebases a stale deadline"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Existing journeys require named confirmation, and stale terminal rows cannot cancel a pending Start.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "names the active and requested stops|prompts for a suppressed prior server target|protects a new Start|keeps a same-target restart"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Start frames the device and destination together, including when GPS becomes available later.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "frames the device and destination once"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Start and same-day promotion commit atomically, persist across restart, replay in order, and roll back together on rejection.",
       "testFile": "coreSQLiteStorage.test.ts",
       "testNamePattern": "commits Start and same-day promotion atomically|rejects the dependent promotion and restores order"
     },
     {
-      "parent": 298,
-      "child": 298,
+      "parent": 298, "child": 298,
       "acceptance": "Bicycle directions preserve the selected transport in provider requests and external navigation URLs.",
       "testFile": "mapsDirections.test.ts",
       "testNamePattern": "bicycle"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Premium import preview matches the server batch ceiling without an upgrade promise.",
       "testFile": "kmlImportPreview.test.ts",
       "testNamePattern": "previews and submits only 100 Premium points"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Browser recovery clears callback secrets before network access and never exchanges native PKCE codes.",
       "testFile": "scripts/auth-web-recovery-check.mjs",
       "testNamePattern": "URL cleared before requests"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Server atomically revokes installation push capabilities without affecting other accounts or devices, rejects late registration, and permits a fresh login.",
       "testFile": "supabase/tests/installation_capabilities.test.sql",
       "testNamePattern": "logout revokes in one transaction|late push registration|other account retained|fresh authentication"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Auth callbacks require an exact HTTPS route and a one-time pending PKCE transaction.",
       "testFile": "authCallbackSecurity.test.ts",
       "testNamePattern": "accepts a locally initiated recovery|rejects unsolicited links|rejects expired state|deduplicates simultaneous"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Logout drains and revokes installation capabilities before losing authentication and fences late account writes.",
       "testFile": "installationCapabilities.test.ts",
       "testNamePattern": "drains an in-flight registration|reports revocation failure|rejects an old account registration"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Server enforces text feedback size, rate, and retained-row limits and removes screenshot allocation.",
       "testFile": "supabase/tests/feedback_limits.test.sql",
       "testNamePattern": "oversized text rejected|hourly limit|retained row limit|screenshot upload policy removed"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Promo redemption serializes concurrent distinct accounts against a single remaining use.",
       "testFile": "supabase/tests/promo_redemption_concurrency.mjs",
       "testNamePattern": "two simultaneous redeemers produce one success"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Actual SQL denies removed-member reads and arrivals, unauthorized commands, exhausted promo and excessive imports.",
       "testFile": "supabase/tests/security_group_command_import_arrival.test.sql",
       "testNamePattern": "unauthorized|already_used|101|follower"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "StoreKit authentic fixtures pass while cryptographically valid wrong-purpose certificate chains are rejected before privileged reads.",
       "testFile": "supabase/functions/_shared/storekit_certificate_test.ts",
       "testNamePattern": "Deno.test"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "Feedback accepts text only through the bounded authenticated RPC.",
       "testFile": "feedback.test.ts",
       "testNamePattern": "submits only category and trimmed text|propagates server rejection"
     },
     {
-      "parent": 285,
-      "child": 285,
+      "parent": 285, "child": 285,
       "acceptance": "KMZ rejects excessive directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
       "testFile": "kmlLoad.test.ts",
       "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|parses KML inside KMZ"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "GPS enter then exit in one locked-screen batch records local arrival before ACK.",
       "testFile": "backgroundJourneyCoverage.test.ts",
       "testNamePattern": "processes an out-of-order enter/exit batch"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "Starting inside the radius accepts the first fresh accurate fix.",
       "testFile": "backgroundJourneyCoverage.test.ts",
       "testNamePattern": "accepts the first fresh accurate fix"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "Solo and all-arrived teams use original-session completion; leader force requires no arrivals.",
       "testFile": "journeyCompletion.test.ts",
       "testNamePattern": "explicit leader force completion"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "Failed queue head blocks all later same actor/group actions while other groups proceed.",
       "testFile": "coreOperationOutboxDurable.test.ts",
       "testNamePattern": "enforces FIFO per actor/group"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "Saved journey End remains successful with silent automatic backend retries.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "keeps a saved End successful and silent"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "Trip dates and stays save durably offline, without prerequisite network writes.",
       "testFile": "durableTripAccommodation.test.ts",
       "testNamePattern": "durably saves trip and stay edits offline"
     },
     {
-      "parent": 282,
-      "child": 282,
+      "parent": 282, "child": 282,
       "acceptance": "Historical completed cards never reinsert during hydration or map reentry.",
       "testFile": "localFirstJourneyBoundary.test.ts",
       "testNamePattern": "does not reinsert completed history"
@@ -2026,123 +1999,61 @@
       "testNamePattern": "UI runtime main-thread/nested/typed-throw=PASS"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "particles",
+      "parent": "foreground-navigation-20261006", "child": "particles",
       "acceptance": "Particle identity, positions and lifecycle resume from active time after a long background interval.",
       "testFile": "starfieldPauseResume.test.ts",
       "testNamePattern": "freezes ball identity and phase through background time"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "eta",
+      "parent": "foreground-navigation-20261006", "child": "eta",
       "acceptance": "Identical estimates, foreground resumes and GPS gaps retain their original countdown deadline.",
       "testFile": "liveActivityEta.test.ts",
       "testNamePattern": "keeps the original deadline through identical estimates"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "arrival",
+      "parent": "foreground-navigation-20261006", "child": "arrival",
       "acceptance": "A durable personal receipt survives a terminal backend rejection and worker restart without duplicate transport or team completion.",
       "testFile": "personalArrivalReceipt.test.ts",
       "testNamePattern": "retains a rejected receipt across worker restart"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "location",
+      "parent": "foreground-navigation-20261006", "child": "location",
       "acceptance": "iOS keeps the native MapKit user location when paused or covered by system UI; only true background hands GPS off, and sharing-off stops acquisition.",
       "testFile": "pausedLocationOwnership.test.ts",
       "testNamePattern": "keeps MapKit for paused and navigating iOS, preserves inactive fixes"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "session",
+      "parent": "foreground-navigation-20261006", "child": "session",
       "acceptance": "Cold startup and every actual foreground edge refresh a healthy session while temporary failures retain local identity.",
       "testFile": "sessionProviderRecovery.test.ts",
       "testNamePattern": "force-refreshes a healthy JWT at startup and each real foreground edge|restores local identity through offline refresh"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "terminal-session",
+      "parent": "foreground-navigation-20261006", "child": "terminal-session",
       "acceptance": "Confirmed terminal refresh clears identity, membership and native runtime while preserving durable drafts.",
       "testFile": "sessionProviderRecovery.test.ts",
       "testNamePattern": "clears identity/membership and stops native runtime on confirmed unrecoverable refresh"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "account-switch",
+      "parent": "foreground-navigation-20261006", "child": "account-switch",
       "acceptance": "Switching actors clears the prior account UI before profile enrichment, and successful reauthentication restarts foreground SDK renewal.",
       "testFile": "sessionProviderRecovery.test.ts",
       "testNamePattern": "clears the prior actor ownership before a switched account profile can fail|restarts SDK auto refresh after terminal recovery"
     },
     {
-      "parent": "foreground-navigation-20261006",
-      "child": "route-sync",
+      "parent": "foreground-navigation-20261006", "child": "route-sync",
       "acceptance": "Route-open reconciliation reads local state first, never waits for remote reads, ignores retired generations and handles advisory failures silently.",
       "testFile": "routeOpenSync.test.ts",
       "testNamePattern": "starts remote work after local completion|swallows advisory local and remote reconciliation failures"
     },
-    {
-      "parent": 293,
-      "child": 293,
-      "acceptance": "Particles enter from the right at 1.25 speed with 0.8 radius and independent slow twinkling.",
-      "testFile": "metalforgeStarfield.test.ts",
-      "testNamePattern": "moves 1.25 times the previous speed"
-    },
-    {
-      "parent": 293,
-      "child": 293,
-      "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.",
-      "testFile": "starfieldPauseResume.test.ts",
-      "testNamePattern": "freezes ball identity and phase"
-    },
-    {
-      "parent": 293,
-      "child": 293,
-      "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.",
-      "testFile": "liveActivityDisplay.test.ts",
-      "testNamePattern": "persists changed snapshots at 15 seconds"
-    },
-    {
-      "parent": 293,
-      "child": 293,
-      "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.",
-      "testFile": "backgroundJourneyCoverage.test.ts",
-      "testNamePattern": "delivers background estimates at 5 seconds"
-    },
-    {
-      "parent": 293,
-      "child": 293,
-      "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "uses native glass with a material fallback"
-    },
-    {
-      "parent": 304,
-      "child": 304,
-      "acceptance": "Profile realtime updates are scoped to current co-members and resubscribe only when the member set changes.",
-      "testFile": "useGroupStateRealtimeCadence.test.ts",
-      "testNamePattern": "subscribes to profile updates only for current co-members"
-    },
-    {
-      "parent": 304,
-      "child": 304,
-      "acceptance": "The full group reload polls every 30 s without realtime and every 120 s while the channel is SUBSCRIBED.",
-      "testFile": "useGroupStateRealtimeCadence.test.ts",
-      "testNamePattern": "backs off while SUBSCRIBED"
-    },
-    {
-      "parent": 304,
-      "child": 304,
-      "acceptance": "Repeated realtime rejoin failures do not postpone the 30 s fallback poll.",
-      "testFile": "useGroupStateRealtimeCadence.test.ts",
-      "testNamePattern": "keeps the 30 s fallback poll running"
-    },
-    {
-      "parent": 304,
-      "child": 304,
-      "acceptance": "A fallback poll never overlaps an in-flight reload.",
-      "testFile": "useGroupStateRealtimeCadence.test.ts",
-      "testNamePattern": "never starts a poll while the previous poll load is still in flight"
-    }
+    {"parent": 293, "child": 293, "acceptance": "Particles enter from the right at 1.25 speed with 0.8 radius and independent slow twinkling.", "testFile": "metalforgeStarfield.test.ts", "testNamePattern": "moves 1.25 times the previous speed"},
+    {"parent": 293, "child": 293, "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.", "testFile": "starfieldPauseResume.test.ts", "testNamePattern": "freezes ball identity and phase"},
+    {"parent": 293, "child": 293, "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.", "testFile": "liveActivityDisplay.test.ts", "testNamePattern": "persists changed snapshots at 15 seconds"},
+    {"parent": 293, "child": 293, "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.", "testFile": "backgroundJourneyCoverage.test.ts", "testNamePattern": "delivers background estimates at 5 seconds"},
+    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"},
+    {"parent": 304, "child": 304, "acceptance": "Profile realtime updates are scoped to current co-members and resubscribe only when the member set changes.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "subscribes to profile updates only for current co-members"},
+    {"parent": 304, "child": 304, "acceptance": "The full group reload polls every 30 s without realtime and every 120 s while the channel is SUBSCRIBED.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "backs off while SUBSCRIBED"},
+    {"parent": 304, "child": 304, "acceptance": "Repeated realtime rejoin failures do not postpone the 30 s fallback poll.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "keeps the 30 s fallback poll running"},
+    {"parent": 304, "child": 304, "acceptance": "A fallback poll never overlaps an in-flight reload.", "testFile": "useGroupStateRealtimeCadence.test.ts", "testNamePattern": "never starts a poll while the previous poll load is still in flight"}
   ]
 }

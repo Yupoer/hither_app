@@ -35,14 +35,14 @@ const sample = (latitude = 25): LocationSample => ({
   coordinates: { latitude, longitude: 121 }, timestamp: Date.now(), accuracy: 5,
 });
 function createLocationProbe() {
-let feed!: ReturnType<typeof useDeviceLocation>;
-function Probe({ group = 'group-a', sharing = true, nativeMap = false, passive = false,
-  highAccuracy = false, incoming }: { group?: string; sharing?: boolean; nativeMap?: boolean;
-  passive?: boolean; highAccuracy?: boolean; incoming?: (sample: LocationSample, now: number) => void }) {
-  feed = useDeviceLocation({ groupId: group, highAccuracy, powerMode: passive ? 'allDay' : 'journey',
-    nativeMapLocationEnabled: nativeMap, sharingEnabled: sharing, hasMembership: true, onIncomingSample: incoming });
-  return feed.lifecycle;
-}
+  let feed!: ReturnType<typeof useDeviceLocation>;
+  function Probe({ group = 'group-a', sharing = true, nativeMap = false, passive = false,
+    highAccuracy = false, incoming }: { group?: string; sharing?: boolean; nativeMap?: boolean;
+    passive?: boolean; highAccuracy?: boolean; incoming?: (sample: LocationSample, now: number) => void }) {
+    feed = useDeviceLocation({ groupId: group, highAccuracy, powerMode: passive ? 'allDay' : 'journey',
+      nativeMapLocationEnabled: nativeMap, sharingEnabled: sharing, hasMembership: true, onIncomingSample: incoming });
+    return feed.lifecycle;
+  }
   return { Probe, get feed() { return feed; } };
 }
 let tree: ReactTestRenderer | undefined;
