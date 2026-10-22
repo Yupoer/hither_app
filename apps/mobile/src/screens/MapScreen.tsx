@@ -175,6 +175,7 @@ import { GatheringCardPressable } from './MapScreen/components/GatheringCardPres
 import { RefreshLocationsButton } from './MapScreen/components/RefreshLocationsButton';
 import { FlockRow } from './MapScreen/components/FlockRow';
 import { arrivalErrorMessage, shortEta, splitDistanceParts, splitEtaParts, formatTripDayLine, navCommandDisplayLabel } from '../utils/mapFormatters';
+import { useGatheringWorkflow } from './MapScreen/hooks/useGatheringWorkflow';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import { useSubgroupActions } from './MapScreen/hooks/useSubgroupActions';
 import { makeStyles } from './MapScreen/styles';
@@ -298,8 +299,6 @@ import {
   deleteDestination,
   fetchVisitedWaypoints,
   deleteVisitedWaypoint,
-  fetchDestinationArrivals,
-  fetchPendingGatherPointRequests,
   recordVisitedWaypoint,
   reorderDestinations,
   saveOnboardingProfile,
@@ -330,7 +329,6 @@ import {
   getNotificationPreferences,
   setNotificationPreferences,
 } from '../api/client';
-import { supabase } from '../api/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { isDemoGroup } from '../api/demo';
@@ -353,8 +351,6 @@ import type {
   Coordinates,
   DailyAccommodation,
   Destination,
-  DestinationArrival,
-  GatherPointRequest,
   GatherPointRequestItem,
   MemberLocation,
   VisitedWaypoint,
@@ -649,8 +645,6 @@ export default function MapScreen({ route, navigation }: Props) {
     departureDate: routeDepartureDate,
   } = routeDraft;
   const allScopedDestinations = routeDraft.destinations ?? rawDestinations;
-  const [remoteArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
-  const destinationArrivals = useMemo(() => projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? ''), [remoteArrivals, arrivalOperations, user?.id]);
   const arrivalSessionScope = useMemo(
     // A newly queued Start is the authoritative local session immediately;
     // do not keep the previous server session in the active projection while
@@ -663,6 +657,27 @@ export default function MapScreen({ route, navigation }: Props) {
         : [],
     [localNavigationSessionId, navigationSessionId],
   );
+  const {
+    remoteArrivals,
+    gatherPointRequests,
+    setGatherPointRequests,
+    loadGatheringWorkflow,
+    patchLocalArrival,
+    workflowContext,
+    isWorkflowContextCurrent,
+  } = useGatheringWorkflow({
+    groupId,
+    userId: user?.id,
+    myScopeId,
+    isMainLeader: isLeader,
+    isSubgroupLeader: isMySubgroupLeader,
+    canEditItinerary,
+    t,
+    arrivalOperations,
+    arrivalSessionScope,
+    rawDestinations,
+  });
+  const destinationArrivals = useMemo(() => projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? ''), [remoteArrivals, arrivalOperations, user?.id]);
   const activeDestinationArrivals = useMemo(
     () => arrivalSessionScope.length > 0
       ? projectArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope)
@@ -672,7 +687,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const personalDestinationArrivals = useMemo(() => arrivalSessionScope.length > 0
     ? projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope) : [],
     [remoteArrivals, arrivalOperations, user?.id, arrivalSessionScope]);
-  const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
   /** Selected request id for Route pane horizontal FIFO inbox (#173). */
   const [selectedGatherRequestId, setSelectedGatherRequestId] = useState<string | null>(null);
@@ -701,7 +715,6 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, [sortedGatherRequestIds]);
   const routeFlushInFlightRef = useRef(false);
-  const workflowReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapDailyAccommodations = useMemo(() => {
     const departure = routeDepartureDate;
     const tripDays = routeTripDays ?? 1;
@@ -810,220 +823,12 @@ export default function MapScreen({ route, navigation }: Props) {
     await reconcileRouteOnOpen(refreshLocalSnapshot, refresh);
   }, [refreshLocalSnapshot, refresh]);
 
-  // Keep translator out of effect deps — unstable `t` historically re-subscribed
-  // gathering Realtime and hammered destination_arrivals (~5–6 SELECT/s).
-  const tRef = useRef(t);
-  tRef.current = t;
-  const isMainLeaderRef = useRef(isLeader);
-  isMainLeaderRef.current = isLeader;
-  const isSubgroupLeaderRef = useRef(isMySubgroupLeader);
-  isSubgroupLeaderRef.current = isMySubgroupLeader;
-  const myScopeIdRef = useRef(myScopeId);
-  myScopeIdRef.current = myScopeId;
-  const isScopeLeaderRef = useRef(canEditItinerary);
-  isScopeLeaderRef.current = canEditItinerary;
-  const userIdRef = useRef(user?.id);
-  userIdRef.current = user?.id;
-  const workflowGroupRef = useRef(groupId);
-  workflowGroupRef.current = groupId;
-  const workflowInFlightRef = useRef<Promise<void> | null>(null);
-  /** Set while a load is in flight so a concurrent request re-runs after. */
-  const workflowPendingRef = useRef(false);
-  const workflowLastLoadAtRef = useRef(0);
-  const workflowChannelSeqRef = useRef(0);
-  const WORKFLOW_MIN_INTERVAL_MS = 2_500;
-  const workflowContext = `${groupId ?? ''}:${user?.id ?? ''}:${myScopeId ?? 'main'}`;
+  useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
   const mapMountedRef = useRef(true);
   useEffect(() => {
     mapMountedRef.current = true;
     return () => { mapMountedRef.current = false; };
   }, []);
-  const workflowContextRef = useRef(workflowContext);
-  workflowContextRef.current = workflowContext;
-  useEffect(() => {
-    workflowInFlightRef.current = null;
-    workflowPendingRef.current = false;
-    workflowLastLoadAtRef.current = 0;
-    setDestinationArrivals([]);
-    setGatherPointRequests([]);
-  }, [workflowContext]);
-
-  const loadGatheringWorkflow = useCallback(async () => {
-    const isCurrent = () => mapMountedRef.current && workflowContextRef.current === workflowContext;
-    if (!groupId || isDemoGroup(groupId) || !isCurrent()) return;
-    // Single-flight with pending re-run: a second caller during an in-flight
-    // fetch must not return stale arrivals (e.g. mark then realtime overlap).
-    if (workflowInFlightRef.current) {
-      workflowPendingRef.current = true;
-      await workflowInFlightRef.current;
-      if (!isCurrent()) return;
-      if (!workflowPendingRef.current) return;
-    }
-    do {
-      workflowPendingRef.current = false;
-      const run = (async () => {
-        const [arrivals, requests] = await Promise.all([
-          fetchDestinationArrivals(groupId),
-          isScopeLeaderRef.current
-            ? fetchPendingGatherPointRequests(groupId)
-            : Promise.resolve([]),
-        ]);
-        if (!isCurrent()) return;
-        setDestinationArrivals(arrivals);
-        const scopedRequests = isSubgroupLeaderRef.current
-          ? requests.filter((request) => request.subgroupId === myScopeIdRef.current)
-          : requests.filter((request) => request.subgroupId == null);
-        setGatherPointRequests(scopedRequests);
-        workflowLastLoadAtRef.current = Date.now();
-      })();
-      const tracked = run.finally(() => {
-        if (workflowInFlightRef.current === tracked) workflowInFlightRef.current = null;
-      });
-      workflowInFlightRef.current = tracked;
-      await tracked;
-    } while (isCurrent() && workflowPendingRef.current);
-  }, [groupId, workflowContext]);
-
-  useForegroundReconcile(Boolean(groupId), loadGatheringWorkflow);
-  useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes);
-
-  /** Optimistic arrival row so N/M progress updates before reload finishes. */
-  const patchLocalArrival = useCallback((
-    destinationId: string,
-    targetUserId: string,
-    arrived: boolean,
-    arrivedAt?: string | null,
-    navigationSessionId?: string | null,
-  ) => {
-    setDestinationArrivals((prev) => {
-      const without = prev.filter(
-        (row) => !(row.destinationId === destinationId && row.userId === targetUserId),
-      );
-      if (!arrived) return without;
-      if (prev.some((row) => row.destinationId === destinationId && row.userId === targetUserId)) {
-        return prev;
-      }
-      return [
-        ...without,
-        {
-          id: `local-${destinationId}-${targetUserId}`,
-          groupId: groupId ?? '',
-          destinationId,
-          userId: targetUserId,
-          arrivedAt: arrivedAt === undefined ? new Date().toISOString() : arrivedAt,
-          source: 'leader_correction' as const,
-          markedBy: user?.id ?? targetUserId,
-          ...(navigationSessionId ? { navigationSessionId } : {}),
-        },
-      ];
-    });
-  }, [groupId, user?.id]);
-
-  useEffect(() => {
-    const eventOrder = (op: CoreOperation) => {
-      const occurredAt = typeof op.payload.occurredAt === 'string'
-        ? Date.parse(op.payload.occurredAt)
-        : Number.NaN;
-      return Number.isFinite(occurredAt) ? occurredAt : (op.sequence ?? op.createdAt);
-    };
-    const keyFor = (op: CoreOperation) => `${op.entityId}:${String(
-      op.payload.targetUserId ?? op.payload.userId ?? ''
-    )}:${String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '')}`;
-    const latestByKey = new Map<string, CoreOperation>();
-    for (const op of arrivalOperations) {
-      if (op.status === 'conflict' || op.payload.actorId !== user?.id) continue;
-      const key = keyFor(op);
-      const previous = latestByKey.get(key);
-      if (!previous || eventOrder(previous) <= eventOrder(op)) latestByKey.set(key, op);
-    }
-    for (const op of arrivalOperations) {
-      if (op.status !== 'acked' || op.payload.actorId !== user?.id) continue;
-      const opSessionId = typeof (op.payload.navigationSessionId ?? op.payload.sessionId) === 'string'
-        ? String(op.payload.navigationSessionId ?? op.payload.sessionId)
-        : null;
-      // Keep the latest active-session undo as a tombstone until the member
-      // leaves the geofence.  Background can start after ACK/compaction and
-      // still suppress the old arrival for this exact session.
-      const activeUndoTombstone = op.operationType === 'record_arrival'
-        && op.payload.arrived === false
-        && op.payload.userId === user?.id
-        && opSessionId != null
-        && arrivalSessionScope.includes(opSessionId);
-      if (activeUndoTombstone) continue;
-      // Once a newer acked intent is reflected, older receipts are safe to
-      // compact too. Otherwise an old leader correction can re-project after
-      // the newer undo/correction receipt is removed.
-      const latest = latestByKey.get(keyFor(op));
-      if (latest && latest.id !== op.id && latest.status === 'acked') {
-        void getCoreOperationOutbox().removeArrival(op.id);
-        continue;
-      }
-      const targetUserId = String(op.payload.targetUserId ?? op.payload.userId ?? '');
-      const sessionId = opSessionId;
-      const matching = remoteArrivals.find(a => a.destinationId === op.entityId
-        && a.userId === targetUserId
-        && (sessionId == null || a.navigationSessionId === sessionId));
-      const isCorrection = op.operationType === 'leader_correct_arrival'
-        || op.payload.source === 'leader_correction';
-      const closed = !op.payload.completeSolo || rawDestinations.some(d => d.id === op.entityId && d.closedAt);
-      const reflected = isCorrection
-        ? op.payload.arrived === false
-          ? !matching
-          : Boolean(matching && matching.source === 'leader_correction'
-            && matching.arrivedAt === null && matching.markedBy === op.actorId)
-        : op.payload.arrived === false ? !matching : Boolean(matching && closed);
-      if (reflected) void getCoreOperationOutbox().removeArrival(op.id);
-    }
-  }, [arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, user?.id]);
-
-  const scheduleWorkflowReload = useCallback(() => {
-    if (workflowReloadRef.current) return;
-    workflowReloadRef.current = setTimeout(() => {
-      workflowReloadRef.current = null;
-      // Preserve the last event while coalescing bursts.
-      void loadGatheringWorkflow().catch(() => undefined);
-    }, Math.max(300, WORKFLOW_MIN_INTERVAL_MS - (Date.now() - workflowLastLoadAtRef.current)));
-  }, [loadGatheringWorkflow]);
-
-  useEffect(() => {
-    setDestinationArrivals([]);
-    setGatherPointRequests([]);
-    if (!groupId || isDemoGroup(groupId)) return;
-    // Mount / group change only — not on every render or translator identity.
-    workflowLastLoadAtRef.current = 0;
-    void loadGatheringWorkflow().catch(() => undefined);
-    const channel = supabase
-      .channel(`gathering-workflow:${groupId}:${++workflowChannelSeqRef.current}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'destination_arrivals', filter: `group_id=eq.${groupId}`,
-      }, scheduleWorkflowReload)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'gather_point_requests', filter: `group_id=eq.${groupId}`,
-      }, (payload) => {
-        scheduleWorkflowReload();
-        const request = payload.new as { requester_id?: string; subgroup_id?: string | null } | null;
-        const isOwnScopeRequest = request?.subgroup_id == null
-          ? isMainLeaderRef.current
-          : isSubgroupLeaderRef.current && request.subgroup_id === myScopeIdRef.current;
-        if (
-          isScopeLeaderRef.current
-          && isOwnScopeRequest
-          && payload.eventType === 'INSERT'
-          && request?.requester_id !== userIdRef.current
-        ) {
-          Alert.alert(
-            tRef.current('gatherRequest.newTitle'),
-            tRef.current('gatherRequest.newBody'),
-          );
-        }
-      })
-      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleWorkflowReload(); });
-    return () => {
-      if (workflowReloadRef.current) clearTimeout(workflowReloadRef.current);
-      workflowReloadRef.current = null;
-      supabase.removeChannel(channel);
-    };
-  }, [groupId, loadGatheringWorkflow, scheduleWorkflowReload]);
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -4671,7 +4476,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const persistRouteDeletions = useCallback(async (ids: string[]) => {
     if (!groupId || !canEditItinerary) return;
     const context = workflowContext;
-    const isCurrent = () => mapMountedRef.current && workflowContextRef.current === context;
+    const isCurrent = () => isWorkflowContextCurrent(context);
     try {
       for (const id of ids) {
         if (!isCurrent()) return;
@@ -4692,7 +4497,7 @@ export default function MapScreen({ route, navigation }: Props) {
       if (isCurrent()) Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause));
     }
   }, [canEditItinerary, groupId, resolveCurrentNavigationSessionId, routeEditorServerDestinations,
-    refreshLocalSnapshot, stopRemovedDestination, t, workflowContext]);
+    refreshLocalSnapshot, stopRemovedDestination, t, workflowContext, isWorkflowContextCurrent]);
 
   const handleDelete = useCallback(
     (id: string) => {

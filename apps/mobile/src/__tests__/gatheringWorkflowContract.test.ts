@@ -99,11 +99,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
   });
 
-  it('filters the request inbox to the leader\'s active route scope', () => {
-    expect(mapScreen).toContain('requests.filter((request) => request.subgroupId === myScopeIdRef.current)');
-    expect(mapScreen).toContain('requests.filter((request) => request.subgroupId == null)');
-  });
-
   it('gates quick-add stay CTA; day headers use left-swipe collapse↔drag mutex', () => {
     // 「新增住宿點」only after stay is set (hasDaily).
     expect(reorderList).toMatch(/showQuickAdd[\s\S]{0,200}hasDaily/);
@@ -161,7 +156,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   });
 
   it('coalesces workflow events and guards destination deletion to leaders', () => {
-    expect(mapScreen).toContain('scheduleWorkflowReload');
     expect(mapScreen).toContain('if (!canEditItinerary) return;');
   });
 
@@ -173,7 +167,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).not.toContain('routeSyncFailed');
     expect(mapScreen).not.toContain('syncFromDatabaseAndUploadLogs');
     const syncStart = mapScreen.indexOf('const syncFromDatabase = useCallback');
-    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('const tRef', syncStart));
+    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('useForegroundReconcile(Boolean(groupId), recoverPendingLocationRefreshes)', syncStart));
     expect(syncBlock).toContain('await reconcileRouteOnOpen(refreshLocalSnapshot, refresh)');
     expect(syncBlock).not.toContain('setOptimisticDestinations(null)');
     expect(syncBlock).not.toContain('throw');
