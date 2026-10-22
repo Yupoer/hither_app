@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Loading and onboarding button motion cancel and resume without remounting their UI or shared phase owners.",
+      "testFile": "motionResourceLifecycle.test.ts",
+      "testNamePattern": "retains loading phase|changes disabled color|keeps mascot content"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
       "testFile": "useMountEffect.test.ts",
       "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"
