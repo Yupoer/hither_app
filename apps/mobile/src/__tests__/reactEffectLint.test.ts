@@ -33,6 +33,14 @@ const denied = [
   ['satisfies namespace layout', "import R from 'react'; const Q = R satisfies unknown; Q.useLayoutEffect(() => {}, []);"],
   ['default namespace binding', "import * as R from 'react'; const { default: Q = R } = R; Q.useEffect(() => {}, []);"],
   ['default nested binding', "import * as R from 'react'; const { default: { useLayoutEffect: mount } = R } = R; mount(() => {}, []);"],
+  ['internal namespace import alias', "import * as R from 'react'; import Q = R; Q.useEffect(() => {}, []);"],
+  ['internal effect import alias', "import * as R from 'react'; import mount = R.useEffect; mount(() => {}, []);"],
+  ['internal layout import alias', "import * as R from 'react'; import mount = R.useLayoutEffect; mount(() => {}, []);"],
+  ['nested internal namespace alias', "import * as R from 'react'; import Q = R; import mount = Q.useEffect; mount(() => {}, []);"],
+  ['optional namespace effect', "import R from 'react'; const Q = R?.default; Q.useEffect(() => {}, []);"],
+  ['optional namespace layout', "import R from 'react'; const Q = R?.default; Q.useLayoutEffect(() => {}, []);"],
+  ['optional namespace destructure', "import R from 'react'; const { useEffect: mount } = R?.default; mount(() => {}, []);"],
+  ['asserted namespace', "import R from 'react'; const Q = <typeof R>R; Q.useEffect(() => {}, []);"],
 ] as const;
 
 const allowed = [
@@ -56,6 +64,11 @@ const allowed = [
   ['unrelated satisfies namespace', "const R = { useEffect() {} }; const Q = R satisfies unknown; Q.useEffect();"],
   ['unrelated default namespace binding', "const R = { default: { useEffect() {} } }; const { default: Q = R.default } = R; Q.useEffect();"],
   ['type-only satisfies namespace', "import type R from 'react'; type Q = typeof R.useEffect;"],
+  ['type-source internal alias', "import type * as R from 'react'; import Q = R; type T = typeof Q.useEffect;"],
+  ['unrelated internal import alias', "import * as R from 'domain'; import Q = R; Q.useEffect();"],
+  ['unrelated optional namespace', "const R = { default: { useEffect() {} } }; const Q = R?.default; Q.useEffect();"],
+  ['shadowed optional namespace', "import R from 'react'; function work(R) { const Q = R?.default; Q.useEffect(); }"],
+  ['unrelated asserted namespace', "const R = { useEffect() {} }; const Q = <typeof R>R; Q.useEffect();"],
 ] as const;
 
 const paths = ['src/effectGateFixture.ts', 'src/__tests__/effectGateFixture.test.ts'];
