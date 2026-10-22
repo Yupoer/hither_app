@@ -1,5 +1,5 @@
 import WaveLoading from './WaveLoading';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -46,23 +46,22 @@ export default React.memo(function CoordinateDestinationSheet({
   const { t } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [title, setTitle] = useState('');
-  const [latText, setLatText] = useState('');
-  const [lngText, setLngText] = useState('');
+  const [latText, setLatText] = useState(visible && initialCoordinates != null ? String(initialCoordinates.latitude) : '');
+  const [lngText, setLngText] = useState(visible && initialCoordinates != null ? String(initialCoordinates.longitude) : '');
   const [error, setError] = useState<CoordinateValidationError | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!visible) return;
-    setTitle('');
-    setLatText(
-      initialCoordinates != null ? String(initialCoordinates.latitude) : '',
-    );
-    setLngText(
-      initialCoordinates != null ? String(initialCoordinates.longitude) : '',
-    );
-    setError(null);
-    setSubmitting(false);
-  }, [visible, initialCoordinates]);
+  const [formIdentity, setFormIdentity] = useState({ visible, initialCoordinates });
+  if (!Object.is(formIdentity.visible, visible) || !Object.is(formIdentity.initialCoordinates, initialCoordinates)) {
+    setFormIdentity({ visible, initialCoordinates });
+    if (visible) {
+      setTitle('');
+      setLatText(initialCoordinates != null ? String(initialCoordinates.latitude) : '');
+      setLngText(initialCoordinates != null ? String(initialCoordinates.longitude) : '');
+      setError(null);
+      setSubmitting(false);
+    }
+  }
 
   async function handleSubmit() {
     if (submitting) return;

@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Coordinate and quick-command forms retain native input and scroll instances while preserving Object.is reset semantics and feedback close-timer cleanup.",
+      "testFile": "sheetFormIdentity.test.ts",
+      "testNamePattern": "resets coordinates|resets only quick-command|clears the feedback"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
       "testFile": "useMountEffect.test.ts",
       "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"
