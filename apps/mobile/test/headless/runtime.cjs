@@ -261,7 +261,8 @@ exports.run = async function run(jest) {
       refreshNavigationSession: app.navigation.refresh,
       onOptimisticGathering: app.group.applyOptimisticGathering,
     });
-    return null;
+    return React.createElement(React.Fragment, null,
+      app.group.lifecycle, app.navigation.lifecycle, app.journey.lifecycle, app.location.lifecycle);
   }
   let root;
   app.render = async () => { root.update(React.createElement(Probe)); };
