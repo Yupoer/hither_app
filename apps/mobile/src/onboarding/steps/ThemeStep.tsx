@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import { useMountEffect } from '../../hooks/useMountEffect';
+import React from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import { PixelRatio, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -85,23 +86,6 @@ function ThemePreviewCard({
   // (card-level scale + overflow:hidden rasterizes soft / low-res on iOS).
   const pulse = useSharedValue(1);
   const visuals = useOptionalVisuals();
-  useEffect(() => {
-    cancelAnimation(pulse);
-    if (!visuals) { pulse.value = 1; return; }
-    if (selected) {
-      pulse.value = withRepeat(
-        withSequence(
-          withTiming(1.06, { duration: 1300 }),
-          withTiming(1, { duration: 1300 }),
-        ),
-        -1,
-        false,
-      );
-    } else {
-      pulse.value = withTiming(1, { duration: 200 });
-    }
-    return () => cancelAnimation(pulse);
-  }, [selected, pulse, visuals]);
 
   const ringPulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
@@ -123,6 +107,7 @@ function ThemePreviewCard({
         !selected && !pressed && { opacity: 0.94 },
       ]}
     >
+      <ThemeBeaconPulse key={`${selected}:${visuals}`} selected={selected} pulse={pulse} visuals={visuals} />
       {/* In-flow scaffold: absolute-only kids collapse to 0 height in Yoga. */}
       <View style={styles.cardScaffold} pointerEvents="none" collapsable={false} />
 
@@ -421,3 +406,24 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
 });
+
+function ThemeBeaconPulse({ selected, pulse, visuals }: { selected: boolean; pulse: ReturnType<typeof useSharedValue<number>>; visuals: boolean }) {
+  useMountEffect(() => {
+    cancelAnimation(pulse);
+    if (!visuals) { pulse.value = 1; return; }
+    if (selected) {
+      pulse.value = withRepeat(
+        withSequence(
+          withTiming(1.06, { duration: 1300 }),
+          withTiming(1, { duration: 1300 }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      pulse.value = withTiming(1, { duration: 200 });
+    }
+    return () => cancelAnimation(pulse);
+  });
+  return null;
+}

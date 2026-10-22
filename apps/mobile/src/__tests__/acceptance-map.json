@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Onboarding progress, reduce-motion subscriptions, confetti and theme pulses retain content and shared-value owners through type scaling, selection and suspension.",
+      "testFile": "onboardingMotionLifecycle.test.ts",
+      "testNamePattern": "updates progress|keeps the intro|retains celebration|applies theme selection"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Loading and onboarding button motion cancel and resume without remounting their UI or shared phase owners.",
       "testFile": "motionResourceLifecycle.test.ts",
       "testNamePattern": "retains loading phase|changes disabled color|keeps mascot content"

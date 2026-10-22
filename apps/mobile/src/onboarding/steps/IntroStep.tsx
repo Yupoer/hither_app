@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useMountEffect } from '../../hooks/useMountEffect';
+import React, { useState } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import { AccessibilityInfo, Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import Animated, {
@@ -61,26 +62,6 @@ function MemberDot({
   const progress = useSharedValue(reduceMotion ? 1 : 0);
   const opacity = useSharedValue(reduceMotion ? 1 : 0.35);
 
-  useEffect(() => {
-    cancelAnimation(progress); cancelAnimation(opacity);
-    if (reduceMotion || !visuals || progress.value === 1) {
-      progress.value = 1;
-      opacity.value = 1;
-      return;
-    }
-    // Scatter visible → gather spring (staggered). Members freeze at settle.
-    opacity.value = withTiming(0.55, { duration: 400, easing: Easing.out(Easing.cubic) });
-    progress.value = withDelay(
-      900 + index * 70,
-      withSpring(1, { stiffness: 180, damping: 16 }),
-    );
-    opacity.value = withDelay(
-      900 + index * 70,
-      withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { cancelAnimation(progress); cancelAnimation(opacity); };
-  }, [reduceMotion, visuals, progress, opacity, index]);
 
   const style = useAnimatedStyle(() => {
     const t = progress.value;
@@ -94,6 +75,7 @@ function MemberDot({
 
   return (
     <Animated.View style={[styles.member, { backgroundColor: color }, style]}>
+      <MemberGatherMotion key={`${reduceMotion}:${visuals}:${index}`} reduceMotion={reduceMotion} visuals={visuals} progress={progress} opacity={opacity} index={index} />
       <Image source={icon} style={styles.memberIcon} resizeMode="contain" accessibilityIgnoresInvertColors />
     </Animated.View>
   );
@@ -117,38 +99,6 @@ function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
   const beaconOpacity = useSharedValue(reduceMotion ? 1 : 0);
   const beaconScale = useSharedValue(reduceMotion ? 1 : 0.85);
 
-  useEffect(() => {
-    cancelAnimation(beaconScale); cancelAnimation(beaconOpacity);
-    if (reduceMotion || !visuals) {
-      beaconScale.value = 1;
-      beaconOpacity.value = 1;
-      return;
-    }
-    // Call 400–900ms, then after settle (~2.2s) slow breath — no scatter loop.
-    beaconScale.value = withDelay(
-      400,
-      withSpring(1, { stiffness: 160, damping: 14 }),
-    );
-    beaconOpacity.value = withDelay(
-      400,
-      withSequence(
-        withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
-        withDelay(
-          1300,
-          withRepeat(
-            withSequence(
-              withTiming(0.85, { duration: 1250 }),
-              withTiming(1, { duration: 1250 }),
-            ),
-            -1,
-            false,
-          ),
-        ),
-      ),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => { cancelAnimation(beaconScale); cancelAnimation(beaconOpacity); };
-  }, [reduceMotion, visuals, beaconScale, beaconOpacity]);
 
   const beaconStyle = useAnimatedStyle(() => ({
     opacity: beaconOpacity.value,
@@ -157,6 +107,7 @@ function GatherStage({ reduceMotion }: { reduceMotion: boolean }) {
 
   return (
     <View style={[styles.stage, { minHeight: stageH, width: STAGE_W }]}>
+      <GatherBeaconMotion key={`${reduceMotion}:${visuals}`} reduceMotion={reduceMotion} visuals={visuals} beaconScale={beaconScale} beaconOpacity={beaconOpacity} />
       <View style={[styles.glow, { backgroundColor: accentGlow(colors.accent) }]} />
       <Animated.View style={[styles.beacon, beaconStyle]}>
         <View style={[styles.beaconCore, { backgroundColor: colors.accent }]}>
@@ -187,7 +138,7 @@ export default function IntroStep({ onAnswer, onSkip }: StepProps) {
   const { t } = useTranslation();
   const [reduceMotion, setReduceMotion] = useState(false);
 
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
     void AccessibilityInfo.isReduceMotionEnabled().then((v) => {
       if (active) setReduceMotion(!!v);
@@ -199,7 +150,7 @@ export default function IntroStep({ onAnswer, onSkip }: StepProps) {
       active = false;
       sub.remove();
     };
-  }, []);
+  });
 
   return (
     <StepShell
@@ -272,3 +223,61 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+function MemberGatherMotion({ reduceMotion, visuals, progress, opacity, index }: { reduceMotion: boolean; visuals: boolean; progress: ReturnType<typeof useSharedValue<number>>; opacity: ReturnType<typeof useSharedValue<number>>; index: number }) {
+  useMountEffect(() => {
+    cancelAnimation(progress); cancelAnimation(opacity);
+    if (reduceMotion || !visuals || progress.value === 1) {
+      progress.value = 1;
+      opacity.value = 1;
+      return;
+    }
+    // Scatter visible → gather spring (staggered). Members freeze at settle.
+    opacity.value = withTiming(0.55, { duration: 400, easing: Easing.out(Easing.cubic) });
+    progress.value = withDelay(
+      900 + index * 70,
+      withSpring(1, { stiffness: 180, damping: 16 }),
+    );
+    opacity.value = withDelay(
+      900 + index * 70,
+      withTiming(1, { duration: 400, easing: Easing.out(Easing.cubic) }),
+    );
+    return () => { cancelAnimation(progress); cancelAnimation(opacity); };
+  });
+  return null;
+}
+
+function GatherBeaconMotion({ reduceMotion, visuals, beaconScale, beaconOpacity }: { reduceMotion: boolean; visuals: boolean; beaconScale: ReturnType<typeof useSharedValue<number>>; beaconOpacity: ReturnType<typeof useSharedValue<number>> }) {
+  useMountEffect(() => {
+    cancelAnimation(beaconScale); cancelAnimation(beaconOpacity);
+    if (reduceMotion || !visuals) {
+      beaconScale.value = 1;
+      beaconOpacity.value = 1;
+      return;
+    }
+    // Call 400–900ms, then after settle (~2.2s) slow breath — no scatter loop.
+    beaconScale.value = withDelay(
+      400,
+      withSpring(1, { stiffness: 160, damping: 14 }),
+    );
+    beaconOpacity.value = withDelay(
+      400,
+      withSequence(
+        withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }),
+        withDelay(
+          1300,
+          withRepeat(
+            withSequence(
+              withTiming(0.85, { duration: 1250 }),
+              withTiming(1, { duration: 1250 }),
+            ),
+            -1,
+            false,
+          ),
+        ),
+      ),
+    );
+    return () => { cancelAnimation(beaconScale); cancelAnimation(beaconOpacity); };
+  });
+  return null;
+}
