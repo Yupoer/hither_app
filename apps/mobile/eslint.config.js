@@ -35,8 +35,10 @@ const noReactEffects = {
     };
     const resolve = (node, seen = new Set()) => {
       if (!node) return undefined;
-      if (node.type === 'TSAsExpression' || node.type === 'TSNonNullExpression' ||
-          node.type === 'TSSatisfiesExpression') return resolve(node.expression, seen);
+      if (['ChainExpression', 'TSAsExpression', 'TSNonNullExpression', 'TSSatisfiesExpression',
+        'TSTypeAssertion'].includes(node.type)) return resolve(node.expression, seen);
+      if (node.type === 'TSExternalModuleReference') return node.expression.value === 'react' ? 'react' : undefined;
+      if (node.type === 'TSQualifiedName') return select(resolve(node.left, seen), key(node.right));
       if (node.type === 'MemberExpression') return select(resolve(node.object, seen), staticKey(node.property, node.computed));
       if (node.type === 'CallExpression' && node.callee.type === 'Identifier' &&
           node.callee.name === 'require' && node.arguments[0]?.value === 'react') {
@@ -58,8 +60,7 @@ const noReactEffects = {
         if (def.type === 'ImportBinding' &&
             def.parent.importKind !== 'type' && def.node.importKind !== 'type') {
           if (def.parent.type === 'TSImportEqualsDeclaration') {
-            return def.parent.moduleReference.type === 'TSExternalModuleReference' &&
-              def.parent.moduleReference.expression.value === 'react' ? 'react' : undefined;
+            return resolve(def.parent.moduleReference, nextSeen);
           }
           if (def.parent.type === 'ImportDeclaration' && def.parent.source.value === 'react') {
             return def.node.type === 'ImportSpecifier' ? select('react', key(def.node.imported)) : 'react';
@@ -88,6 +89,9 @@ const noReactEffects = {
         for (const specifier of node.specifiers) {
           if (specifier.type === 'ImportSpecifier' && specifier.importKind !== 'type') report(specifier, key(specifier.imported));
         }
+      },
+      TSImportEqualsDeclaration(node) {
+        if (node.importKind !== 'type') report(node, resolve(node.moduleReference));
       },
       MemberExpression(node) { report(node, resolve(node)); },
       VariableDeclarator(node) { checkPattern(node.id, resolve(node.init)); },
