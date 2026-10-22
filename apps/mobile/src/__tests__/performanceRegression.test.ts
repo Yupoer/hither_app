@@ -67,7 +67,7 @@ describe('measured performance regressions', () => {
     expect(mapScreen).toContain('const [mapInitialCenter, setMapInitialCenter]');
     expect(mapScreen).toContain('initialCenter={mapInitialCenter ?? undefined}');
     expect(mapScreen).not.toContain('initialCenter={fromCoords}');
-    expect(mapScreen).toContain('setMapInitialCenter((current) => current ?? fromCoords)');
+    expect(mapScreen).toContain('if (mapInitialCenter == null && fromCoords != null) setMapInitialCenter(fromCoords)');
   });
 
   it('keeps heading native and avoids rebuilding map stay markers in JSX', () => {

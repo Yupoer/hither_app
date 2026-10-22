@@ -129,7 +129,7 @@ describe('map UI placement contracts', () => {
     expect(mapStyles).toContain('paddingHorizontal: 10');
     expect(opsCenterSheet).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('routeOverlayBody');
-    expect(mapScreen).toContain('setKmlScopeId(myScopeId);');
+    expect(mapScreen).toContain('useMapScopeControls(myScopeId)');
   });
 
   it('haptics the add-place confirmation and omits root settings subtitles', () => {

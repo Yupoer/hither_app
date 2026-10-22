@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Map subgroup changes reset only edit/import scope, retain unrelated draft state and correct an unavailable subgroup view.",
+      "testFile": "mapScreenScopeControls.test.ts",
+      "testNamePattern": "resets only edit and import scope|keeps a valid subgroup view"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "MapScreen named resources preserve exact callback and coordinate identity, stable owner drafts, subscription disposal, stale async fencing and one stale deadline.",
       "testFile": "mapScreenResources.test.ts",
       "testNamePattern": "installs the outbox listener|callback identity|preserves Object.is|card count|old stale deadline|reversed storage"

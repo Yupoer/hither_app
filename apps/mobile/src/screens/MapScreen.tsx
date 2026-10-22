@@ -1,5 +1,6 @@
 import { MapArrivalOutboxResource, MapForegroundNavigationResource, MapCardWorkloadResource, MapKmlQuotaResource, MapConfirmKeyboardResource, MapAccountPlacesResource, MapNavigationStartFrameResource, MapSharingHydrationResource, MapNavigationAckResource, MapTrackingModeResource, MapRouteCameraResource, MapProgressDeadlineResource, MapApproachNoticeResource, MapPermissionRecoveryResource, MapRouteScopePreferenceResource } from './MapScreen/MapScreenResources';
 import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
+import { useMapScopeControls } from './MapScreen/hooks/useMapScopeControls';
 import { useGatheringCompletion } from './MapScreen/hooks/useGatheringCompletion';
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
 import { foregroundLocationConfiguration, isForegroundLocationState } from '../utils/locationPolicy';
@@ -441,7 +442,11 @@ export default function MapScreen({ route, navigation }: Props) {
     arrivalOperations,
     refresh,
   });
-  useEffect(() => { setLocalActionError(null); }, [roleContext]);
+  const [actionErrorRoleContext, setActionErrorRoleContext] = useState(roleContext);
+  if (!Object.is(actionErrorRoleContext, roleContext)) {
+    setActionErrorRoleContext(roleContext);
+    setLocalActionError(null);
+  }
   const myScopeId = me?.subgroupId;
   // Navigation sessions are one lane per subgroup (plus the main-team lane),
   // so a shared group id is not sufficient once parallel teams are active.
@@ -494,11 +499,11 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
-  const [viewingScope, setViewingScope] = useState<'main' | 'sub'>('main');
-  // Leave a subgroup → force main scope so we never filter against a stale id.
-  useEffect(() => {
-    if (!myScopeId && viewingScope === 'sub') setViewingScope('main');
-  }, [myScopeId, viewingScope]);
+  const {
+    viewingScope, setViewingScope,
+    editButtonActive, setEditButtonActive,
+    kmlScopeId, setKmlScopeId,
+  } = useMapScopeControls(myScopeId);
 
   // Subgroup / 暫時離隊: only that subgroup's itinerary (usually empty → hide
   // main gathering-point cards). Main flock: only main-team destinations.
@@ -761,10 +766,6 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'arrival'
     | 'ops'
   >(null);
-  const [editButtonActive, setEditButtonActive] = useState(false);
-  useEffect(() => {
-    setEditButtonActive(false);
-  }, [myScopeId]);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
@@ -818,10 +819,6 @@ export default function MapScreen({ route, navigation }: Props) {
   /** Keyboard height while confirm card is up — lifts card with 12pt gap. */
   const [confirmKeyboardHeight, setConfirmKeyboardHeight] = useState(0);
   const [kmlVisible, setKmlVisible] = useState(false);
-  const [kmlScopeId, setKmlScopeId] = useState<string | undefined>(myScopeId);
-  useEffect(() => {
-    setKmlScopeId(myScopeId);
-  }, [myScopeId]);
   const [kmlRemainingQuota, setKmlRemainingQuota] = useState<number | undefined>();
   const kmlScopedDestinations = useMemo(
     () => (state?.destinations ?? []).filter((destination) => (
@@ -1285,10 +1282,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [mapInitialCenter, setMapInitialCenter] = useState<Coordinates | null>(
     fromCoords ?? null,
   );
-  useEffect(() => {
-    if (!fromCoords) return;
-    setMapInitialCenter((current) => current ?? fromCoords);
-  }, [fromCoords]);
+  if (mapInitialCenter == null && fromCoords != null) setMapInitialCenter(fromCoords);
 
   // OTA-01: single authoritative team gathering projection for map / broadcast /
   // notification / passive surfaces. Personal ETA/mode/progress never write here.
