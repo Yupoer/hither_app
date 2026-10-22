@@ -22,7 +22,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(appRoot, '../..');
-const testsRoot = path.join(appRoot, 'src', '__tests__');
+const testsRoot = process.env.META_TESTS_ROOT
+  ? path.resolve(process.env.META_TESTS_ROOT)
+  : path.join(appRoot, 'src', '__tests__');
+const sourceOnlyBaselinePath = process.env.META_SOURCE_ONLY_BASELINE
+  ? path.resolve(process.env.META_SOURCE_ONLY_BASELINE)
+  : path.join(appRoot, 'scripts', 'source-only-tests-baseline.json');
 const mapPath = path.join(testsRoot, 'acceptance-map.json');
 
 const FAKE_PATTERNS = [
@@ -109,50 +114,81 @@ function checkL2(files) {
         }
       }
     }
-
-    // Implementation-detail-only: has readFileSync + toMatch/regex assert, no non-fs production import.
-    const hasReadFile = /readFileSync\s*\(/.test(text);
-    const hasRegexAssert = /\.toMatch\s*\(/.test(text) || /\.toMatchObject\s*\(/.test(text);
-    const hasProdImport =
-      /from\s+['"]\.\.\/(?!__tests__)[^'"]+['"]/.test(text) ||
-      /from\s+['"]\.\.\/\.\.\/(?!__tests__)[^'"]+['"]/.test(text) ||
-      /from\s+['"]@\//.test(text) ||
-      /require\s*\(\s*['"]\.\.\//.test(text);
-    // Contract tests that only read repo files are allowed if they also assert on structured exports
-    // or package.json — flag only when the file is tiny and exclusively readFileSync-driven.
-    if (hasReadFile && hasRegexAssert && !hasProdImport) {
-      const nonComment = lines.filter((l) => {
-        const t = l.trim();
-        return t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('import');
-      });
-      const onlyFsStyle = nonComment.every(
-        (l) =>
-          /readFileSync|writeFileSync|existsSync|readdirSync|path\.|fs\.|expect\(|describe\(|it\(|test\(|toMatch|toContain|toEqual|toBe|JSON\.|Buffer|utf-?8|join\(|resolve\(/.test(
-            l,
-          ) || l === '}' || l === '{' || l.startsWith('const ') || l.startsWith('let '),
-      );
-      // Many existing *Contract* tests are file-based by design — only fail when NOT named Contract
-      // and not under an allowlist pattern.
-      const base = path.basename(file);
-      const allowed =
-        /Contract\.test\./.test(base) ||
-        /Inventory\.test\./.test(base) ||
-        /Migration\.test\./.test(base) ||
-        /Parity\.test\./.test(base) ||
-        /Config\.test\./.test(base) ||
-        /Versions\.test\./.test(base);
-      if (!allowed && onlyFsStyle) {
-        findings.push({
-          level: 'L2',
-          file: path.relative(appRoot, file).replace(/\\/g, '/'),
-          line: 1,
-          id: 'readfilesync-only',
-          msg: 'test appears to only read files + regex without importing production modules (rename to *Contract* if intentional)',
-        });
-      }
-    }
   }
   return findings;
+}
+
+const PRODUCTION_SOURCE_LITERAL =
+  /['"`][^'"`\n]*\.(?:tsx?|jsx?|swift|mm?|h|kt|java)['"`]/g;
+// Statement-anchored so source snippets asserted inside string literals do not count.
+const MODULE_SPECIFIER =
+  /^\s*(?:(?:import|export)\b[^'"\n]*?\bfrom\s+|\}\s*from\s+|import\s+|(?:const|let|var)\s+[^=\n]+=\s*(?:require|jest\.requireActual)\s*\(\s*|(?:await\s+)?import\s*\(\s*|jest\.(?:mock|doMock|requireActual)\s*\(\s*)['"]([^'"]+)['"]/gm;
+
+function isTestPath(p) {
+  return /(^|[\\/])__tests__([\\/]|$)|\.test\.[jt]sx?$/.test(p);
+}
+
+/**
+ * A test "reads production source" when it calls readFileSync and names a
+ * non-test source file; it "imports production" when any relative or `@/`
+ * module specifier resolves outside a __tests__ directory.
+ */
+function classifyTestSource(text, file) {
+  const readsFile = /\breadFileSync\s*\(/.test(text);
+  const namesProductionSource = [...text.matchAll(PRODUCTION_SOURCE_LITERAL)].some(
+    ([literal]) => !isTestPath(literal.slice(1, -1)),
+  );
+  const importsProduction = [...text.matchAll(MODULE_SPECIFIER)].some(([, spec]) => {
+    if (spec.startsWith('@/')) return true;
+    if (!spec.startsWith('.')) return false;
+    return !isTestPath(path.resolve(path.dirname(file), spec));
+  });
+  return { readsProductionSource: readsFile && namesProductionSource, importsProduction };
+}
+
+function sourceOnlyTests(files, root) {
+  return files
+    .filter((file) => {
+      const c = classifyTestSource(fs.readFileSync(file, 'utf8'), file);
+      return c.readsProductionSource && !c.importsProduction;
+    })
+    .map((file) => path.relative(root, file).replace(/\\/g, '/'))
+    .sort();
+}
+
+/**
+ * Ratchet: the set of tests that string-match production source without
+ * exercising it may only shrink.
+ */
+function checkSourceOnlyRatchet(files, baselinePath) {
+  const current = sourceOnlyTests(files, testsRoot);
+  if (process.env.META_WRITE_SOURCE_ONLY_BASELINE === '1') {
+    fs.writeFileSync(baselinePath, `${JSON.stringify({ files: current }, null, 2)}
+`);
+    console.log(`[test:meta] wrote ${current.length} source-only test(s) to ${path.basename(baselinePath)}`);
+    return [];
+  }
+  const baseline = fs.existsSync(baselinePath)
+    ? JSON.parse(fs.readFileSync(baselinePath, 'utf8')).files
+    : [];
+  const baselineSet = new Set(baseline);
+  const currentSet = new Set(current);
+  const added = current.filter((f) => !baselineSet.has(f));
+  const removed = baseline.filter((f) => !currentSet.has(f));
+  const rel = path.basename(baselinePath);
+  if (removed.length) {
+    console.log(
+      `[test:meta] source-only ratchet: ${removed.length} file(s) left the set; shrink ${rel} by removing:\n` +
+        removed.map((f) => `  - ${f}`).join('\n'),
+    );
+  }
+  return added.map((f) => ({
+    level: 'L2',
+    file: f,
+    line: 1,
+    id: 'source-only-test',
+    msg: `reads production source with readFileSync but imports no production module; test behavior through the module instead (baseline: ${rel})`,
+  }));
 }
 
 /**
@@ -306,7 +342,11 @@ function main() {
     }
   }
 
-  const findings = [...checkL1(), ...checkL2(l2Files)];
+  const findings = [
+    ...checkL1(),
+    ...checkL2(l2Files),
+    ...checkSourceOnlyRatchet(walkTests(testsRoot), sourceOnlyBaselinePath),
+  ];
 
   if (findings.length === 0) {
     console.log('[test:meta] PASS (L1 map + L2 anti-fake)');
