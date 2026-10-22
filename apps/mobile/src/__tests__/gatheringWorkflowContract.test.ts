@@ -8,6 +8,7 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const arrivalManageSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/ArrivalManageSheet.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const groupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
@@ -158,7 +159,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
   });
 
   it('coalesces workflow events and guards destination deletion to leaders', () => {
-    expect(mapScreen).toContain('if (!groupId || !canEditItinerary) return;');
+    expect(itineraryMutations).toContain('if (!groupId || !canEditItinerary) return;');
   });
 
   it('reconciles silently while keeping durable personal receipts and route drafts visible', () => {

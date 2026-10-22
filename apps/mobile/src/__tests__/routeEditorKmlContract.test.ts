@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
 const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
 const reorder = readFileSync(
@@ -72,16 +73,16 @@ describe('route editor + KML contracts (#151)', () => {
     // Merged exiting list still exists for carousel presentation.
     expect(mapScreen).toContain('mergeExitingDestinations');
     expect(mapScreen).toContain('const destinations = useMemo');
-    expect(mapScreen).toContain('buildOpenReorderPayload');
+    expect(itineraryMutations).toContain('buildOpenReorderPayload');
     expect(mapScreen).not.toMatch(
       /openPositionSlots\s*=\s*\[\.\.\.destinations\]/,
     );
   });
 
   it('route editor reorder is local draft; network flush on sheet dismiss', () => {
-    expect(mapScreen).toContain('destination_reorder_local');
+    expect(itineraryMutations).toContain('destination_reorder_local');
     expect(mapScreen).toContain('flushRouteDraft');
-    expect(mapScreen).toContain('route_draft_flush');
+    expect(itineraryMutations).toContain('route_draft_flush');
     // Route list onReorder is the local handler.
     expect(routeEditorSheet).toContain('onReorder={handleReorder}');
     // No 3s optimistic timeout that clobbers draft.
@@ -89,9 +90,9 @@ describe('route editor + KML contracts (#151)', () => {
   });
 
   it('route flush uses neutral errors, longer timeout, and dirty snapshot', () => {
-    const start = mapScreen.indexOf('const flushRouteDraft = useCallback');
+    const start = itineraryMutations.indexOf('const flushRouteDraft = useCallback');
     expect(start).toBeGreaterThanOrEqual(0);
-    const block = mapScreen.slice(start, mapScreen.indexOf('const openKmlImport = useCallback', start));
+    const block = itineraryMutations.slice(start, itineraryMutations.indexOf('const openKmlImport = useCallback', start));
     expect(block).toContain('timeoutMs: 60_000');
     expect(block).toContain('getOperationErrorMessage(localSaveError)');
     expect(block).toContain('await refreshLocalSnapshot()');

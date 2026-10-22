@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const toolsPane = readFileSync(join(__dirname, '../screens/MapScreen/components/ToolsPane.tsx'), 'utf8');
 const membersPane = readFileSync(join(__dirname, '../screens/MapScreen/components/MembersPane.tsx'), 'utf8');
 const routePaneSource = readFileSync(join(__dirname, '../screens/MapScreen/components/RoutePane.tsx'), 'utf8');
@@ -669,7 +670,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain("t('map.stopsReorder', { count })");
     // Flush reorder must use full open list (not day-gated carousel filter).
     expect(mapScreen).toContain('openDestinationsForReorder');
-    expect(mapScreen).toContain('buildOpenReorderPayload');
+    expect(itineraryMutations).toContain('buildOpenReorderPayload');
     expect(mapScreen).toContain('dailyAccommodations={');
   });
 
@@ -766,7 +767,7 @@ describe('map UI placement contracts', () => {
   it('returns from account details to settings and keeps the reorder sheet under KML', () => {
     expect(mapScreen).toContain('visible={settingsOpen}');
     expect(mapScreen).toContain("onClose={() => setOverlay(null)}");
-    expect(mapScreen).toContain("setKmlVisible(true)");
+    expect(itineraryMutations).toContain("setKmlVisible(true)");
     expect(settingsOverlay).not.toContain("t('account.section')");
     // Feedback lives under 支援 as a nav row (not a standalone report button).
     expect(settingsOverlay).toContain("t('feedback.title')");

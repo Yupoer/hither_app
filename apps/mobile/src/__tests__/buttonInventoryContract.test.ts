@@ -6,6 +6,7 @@ import { join } from 'node:path';
  * Pure setState buttons are listed as pure-UI (minimal safe handlers).
  */
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const authScreen = readFileSync(join(__dirname, '../screens/AuthScreen.tsx'), 'utf8');
 const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
@@ -86,9 +87,9 @@ describe('button inventory / high-risk action contract', () => {
     expect(mapScreen).toContain("'map.destination_add'");
     expect(mapScreen).toContain("'map.destination_add_coords'");
     // Route-editor mutations are local draft; network write is map.route_draft_flush.
-    expect(mapScreen).toContain("'map.route_draft_flush'");
+    expect(itineraryMutations).toContain("'map.route_draft_flush'");
     // Navigation promote still persists reorder immediately.
-    expect(mapScreen).toContain("'map.destination_reorder'");
+    expect(itineraryMutations).toContain("'map.destination_reorder'");
     expect(mapScreen).toContain("'map.destination_suggest'");
     expect(addPlaceCard).toContain("'map.confirm_add_destination'");
     expect(mapScreen).toContain("'map.fit_all_members'");
@@ -156,6 +157,7 @@ describe('button inventory / high-risk action contract', () => {
     const corpus = [
       mapScreen,
       addPlaceCard,
+      itineraryMutations,
       authScreen,
       roleSelect,
       myTeams,
