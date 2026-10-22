@@ -43,13 +43,27 @@ import {
 } from './coreDataSync';
 import type { ActiveGatheringState, CoreOperation } from '../types/coreData';
 
-/**
- * Slow reconciliation interval. Realtime is still the fast path, but the
- * poll also repairs silent/missed events after a member joins or a stop is
- * added while the channel reports SUBSCRIBED.
- */
-// ponytail: 30s is the fallback ceiling; Realtime handles normal propagation.
+/** Full-reload poll while the group realtime channel is not SUBSCRIBED. */
 export const GROUP_POLL_INTERVAL_MS = 30_000;
+/**
+ * Full-reload poll while realtime is SUBSCRIBED. Realtime is the fast path;
+ * this slower poll only repairs events the channel silently missed.
+ */
+export const GROUP_POLL_SUBSCRIBED_INTERVAL_MS = 120_000;
+
+export function groupPollIntervalMs(realtimeSubscribed: boolean): number {
+  return realtimeSubscribed ? GROUP_POLL_SUBSCRIBED_INTERVAL_MS : GROUP_POLL_INTERVAL_MS;
+}
+
+/**
+ * Stable key of the co-member ids whose `profiles` rows this group watches.
+ * Location patches replace `members` often; the key changes only when the
+ * id set does, so the profiles channel does not resubscribe per patch.
+ */
+export function profileWatchKey(members: readonly { userId: string }[] | undefined): string {
+  if (!members?.length) return '';
+  return Array.from(new Set(members.map(member => member.userId))).sort().join(',');
+}
 
 /** Coalesce bursts of non-location realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
@@ -146,6 +160,11 @@ export function useGroupState(
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeReadyRef = useRef(false);
+  const scheduleReloadRef = useRef<((
+    reason: GroupReloadReason,
+    payload?: { commit_timestamp?: string },
+  ) => void) | null>(null);
+  const memberIdsKey = useMemo(() => profileWatchKey(state?.members), [state?.members]);
   const pendingPatchesRef = useRef(new Map<string, MemberLocationPatch>());
   const myUserIdRef = useRef(myUserId);
   myUserIdRef.current = myUserId;
@@ -197,7 +216,7 @@ export function useGroupState(
         openOperationsRef.current = own;
         setOpenOperations(own);
         // Accepted/conflicted intent must converge to authoritative data, not
-        // wait five minutes for the fallback poll or retain a local draft.
+        // wait for the fallback poll or retain a local draft.
         const remainingIds = new Set(own.filter(op => op.status !== 'conflict').map(op => op.id));
         if (previous.some(op => op.status !== 'conflict' && !remainingIds.has(op.id))) {
           void loadRef.current('itinerary_mutation');
@@ -638,6 +657,20 @@ export function useGroupState(
       locationDebounceRef.current = setTimeout(flushLocationPatches, 250);
     };
 
+    let stopped = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    // Re-arms on every channel status change so a dropped channel falls back
+    // to the fast cadence immediately instead of after the slow wait.
+    const schedulePoll = () => {
+      clearTimeout(pollTimer);
+      if (stopped) return;
+      pollTimer = setTimeout(async () => {
+        if (stopped) return;
+        await loadRef.current('poll_manual_refresh');
+        schedulePoll();
+      }, groupPollIntervalMs(realtimeReadyRef.current));
+    };
+
     const filter = `group_id=eq.${groupId}`;
     // groups PK is `id`, not group_id — journey_status / active_destination_id live here.
     const groupRowFilter = `id=eq.${groupId}`;
@@ -681,21 +714,17 @@ export function useGroupState(
         (payload) => scheduleReload('accommodation_change', payload as { commit_timestamp?: string }),
       )
       // Leader start/stop nav writes groups.journey_status + active_destination_id.
-      // Without this, followers only learn via the 5-minute poll and never show
+      // Without this, followers only learn via the fallback poll and never show
       // the planned route polyline / multi-mode alts / Live Activity in time.
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'groups', filter: groupRowFilter },
         (payload) => scheduleReload('group_update', payload as { commit_timestamp?: string }),
       )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        (payload) => scheduleReload('profile_update', payload as { commit_timestamp?: string }),
-      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeReadyRef.current = true;
+          schedulePoll();
           // A new member can subscribe after the leader has already written
           // itinerary rows. Hydrate once after the channel is ready instead
           // of relying on an event that happened before this subscription.
@@ -704,29 +733,41 @@ export function useGroupState(
         }
         if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
           realtimeReadyRef.current = false;
+          schedulePoll();
         }
       });
-
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const schedule = () => {
-      timer = setTimeout(async () => {
-        if (stopped) return;
-        await loadRef.current('poll_manual_refresh');
-        if (!stopped) schedule();
-      }, GROUP_POLL_INTERVAL_MS);
-    };
-    schedule();
+    scheduleReloadRef.current = scheduleReload;
+    schedulePoll();
 
     return () => {
       realtimeReadyRef.current = false;
+      scheduleReloadRef.current = null;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
       stopped = true;
-      clearTimeout(timer);
+      clearTimeout(pollTimer);
       supabase.removeChannel(channel);
     };
   }, [groupId, appState, isOlderRevision]);
+
+  // Profile edits (name / avatar) only matter for co-members, so the channel
+  // is filtered to the current member ids and kept separate from the group
+  // channel: a membership change resubscribes this one without dropping the
+  // group channel's SUBSCRIBED state.
+  useEffect(() => {
+    if (!groupId || appState !== 'active' || !memberIdsKey) return;
+    const channel = supabase
+      .channel(`group-profiles:${groupId}:${++channelSeq}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=in.(${memberIdsKey})` },
+        (payload) => scheduleReloadRef.current?.('profile_update', payload as { commit_timestamp?: string }),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [groupId, appState, memberIdsKey]);
 
   const refresh = useCallback(async (reason: GroupReloadReason = 'poll_manual_refresh') => {
     const actorId = myUserId;

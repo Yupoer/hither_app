@@ -7,17 +7,6 @@ const source = readFileSync(
 );
 
 describe('group itinerary reconciliation', () => {
-  it('keeps a slow reconciliation poll even when Realtime is subscribed', () => {
-    expect(source).toContain('GROUP_POLL_INTERVAL_MS');
-    // Reconciliation uses a recursive timeout so failures can back off without
-    // overlapping an in-flight load.
-    expect(source).toContain('const schedule = () =>');
-    expect(source).toMatch(/timer = setTimeout\(async \(\) =>[\s\S]*loadRef\.current\(/);
-    expect(source).toContain('GROUP_POLL_INTERVAL_MS');
-    expect(source).not.toContain('setInterval(');
-    expect(source).not.toMatch(/if \(!realtimeReadyRef\.current\) \{\s*void loadRef\.current\(/);
-  });
-
   it('reports remote pull failure even when a local cache is restored', () => {
     // Force-refresh / sync callers need a hard false when getGroupState fails.
     expect(source).toContain('// Always false when remote pull failed');

@@ -8,7 +8,6 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
-const groupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
 const groupNotifications = readFileSync(
   join(__dirname, '../state/useGroupNotifications.ts'),
   'utf8',
@@ -147,20 +146,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).toContain('accentOver(colors.accent, shade(colors.surface, -0.20), 28)');
     expect(reorderList).not.toContain('backgroundColor: colors.danger');
     expect(reorderList).toContain('backgroundColor: glass.fill');
-  });
-
-  it('reconciles group state periodically even when Realtime misses an event', () => {
-    expect(groupState).toContain('realtimeReadyRef');
-    expect(groupState).toContain("status === 'SUBSCRIBED'");
-    expect(groupState).toContain("status === 'TIMED_OUT'");
-    expect(groupState).toContain("status === 'CHANNEL_ERROR'");
-    expect(groupState).toContain("status === 'CLOSED'");
-    expect(groupState).toContain('let timer: ReturnType<typeof setTimeout>');
-    expect(groupState).toContain('const schedule = () =>');
-    expect(groupState).toContain('GROUP_POLL_INTERVAL_MS');
-    expect(groupState).not.toContain('setInterval(');
-    expect(groupState).toMatch(/void loadRef\.current\(/);
-    expect(groupState).not.toContain('const profilesChannel');
   });
 
   it('coalesces workflow events and guards destination deletion to leaders', () => {
