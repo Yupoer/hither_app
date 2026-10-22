@@ -5,6 +5,20 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Journey baseline publication precedes sticky/departure updates regardless of sibling mount order and preserves coordinate/route-generation identity and locked anchors.",
+      "testFile": "mapJourneyProgressResources.test.ts",
+      "testNamePattern": "publishes the baseline|reevaluates new coordinate references|arbitrates baseline before departure"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map background GPS handoff accepts the committed journey baseline and native intent first, preserves original object/callback reevaluation and permission flight ownership, and adds no per-input GPS stop.",
+      "testFile": "mapBackgroundLocationResource.test.ts",
+      "testNamePattern": "publishes the latest locked baseline|retains object and callback|keeps permission flight ownership|preserves native intent dependency boundaries"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Add-place tour resources preserve place/preferences/callback identity and shared start/measurement generation ordering, including reverse async completions and Strict replay.",
       "testFile": "mapAddPlaceTourResource.test.ts",
       "testNamePattern": "retains pending-place|publishes the start generation|reverse measurement completions|keeps Strict replay cancellation"

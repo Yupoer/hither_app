@@ -345,7 +345,8 @@ describe('background journey native wiring', () => {
     const mapScreen = readFileSync(
       join(__dirname, '../screens/MapScreen.tsx'),
       'utf8',
-    );
+    ) + readFileSync(join(__dirname, '../screens/MapScreen/MapBackgroundLocationResource.tsx'), 'utf8')
+      + readFileSync(join(__dirname, '../screens/MapScreen/MapJourneyProgressResources.tsx'), 'utf8');
     const session = readFileSync(
       join(__dirname, '../state/SessionContext.tsx'),
       'utf8',

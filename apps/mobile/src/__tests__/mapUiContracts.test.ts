@@ -5,7 +5,9 @@ const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf
   + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapScreenChromeResources.tsx'), 'utf8')
   + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapForegroundArrivalResource.tsx'), 'utf8')
   + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapArrivalCardsResource.tsx'), 'utf8')
-  + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapAddPlaceTourResource.tsx'), 'utf8');
+  + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapAddPlaceTourResource.tsx'), 'utf8')
+  + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapJourneyProgressResources.tsx'), 'utf8')
+  + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/MapBackgroundLocationResource.tsx'), 'utf8');
 const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
 const stragglerReporting = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useStragglerReporting.ts'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
