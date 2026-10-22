@@ -1,3 +1,4 @@
+import { MapForegroundArrivalResource } from './MapScreen/MapForegroundArrivalResource';
 import { MapAccessLossResource, MapRouteOpenResource, MapGatherRequestPagerResource } from './MapScreen/MapScreenChromeResources';
 import { MapArrivalOutboxResource, MapForegroundNavigationResource, MapCardWorkloadResource, MapKmlQuotaResource, MapConfirmKeyboardResource, MapAccountPlacesResource, MapNavigationStartFrameResource, MapSharingHydrationResource, MapNavigationAckResource, MapTrackingModeResource, MapRouteCameraResource, MapProgressDeadlineResource, MapApproachNoticeResource, MapPermissionRecoveryResource, MapRouteScopePreferenceResource } from './MapScreen/MapScreenResources';
 import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
@@ -1586,92 +1587,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // Include the destination separately from arrivalContext: a local route
   // can change cards before a server session id exists.
   const foregroundUndoHydrationKey = `${arrivalContext}:${navTarget?.id ?? ''}:${currentArrivalNavigationSessionId ?? ''}`;
-  useEffect(() => {
-    foregroundArrivalRef.current = null;
-    foregroundAckRef.current = null;
-    autoArrivalMarkedRef.current = null;
-    automaticArrivalRetryAt.current = 0;
-    arrivalFeedbackShownRef.current = null;
-    manualUndoSuppressedRef.current.clear();
-    foregroundUndoHydrationRef.current = {
-      key: foregroundUndoHydrationKey,
-      pending: Boolean(groupId && user?.id && navTarget?.id && currentArrivalNavigationSessionId),
-    };
-    setArrivalCelebrateDestId(null);
-  }, [arrivalContext, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
-  useEffect(() => {
-    const actorId = user?.id;
-    const destinationId = navTarget?.id;
-    const sessionId = currentArrivalNavigationSessionId;
-    const hydrationKey = foregroundUndoHydrationKey;
-    const suppressionKey = `${arrivalSessionKey}:${destinationId ?? ''}:${actorId ?? ''}`;
-    const generation = ++foregroundUndoHydrationSequenceRef.current;
-    const mutationAtStart = foregroundUndoMutationSequenceRef.current;
-    if (!groupId || !actorId || !destinationId || !sessionId) {
-      foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
-      return;
-    }
-    foregroundUndoHydrationRef.current = { key: hydrationKey, pending: true };
-    let cancelled = false;
-    const finishHydration = (marker: BackgroundManualUndoMarker | null) => {
-      if (cancelled
-        || generation !== foregroundUndoHydrationSequenceRef.current
-        || foregroundUndoHydrationRef.current.key !== hydrationKey) return;
-      // A tap can create or release an undo while the AsyncStorage read is
-      // in flight. Never let that older read overwrite the newer in-memory
-      // intent; the next outbox/store update will hydrate it again.
-      const hasNewerForegroundMutation = foregroundUndoMutationSequenceRef.current !== mutationAtStart;
-      if (hasNewerForegroundMutation) {
-        foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
-        incomingArrivalHandlerRef.current();
-        return;
-      }
-      if (marker) {
-        // Keep released markers too: they are the shared session state, but
-        // only a suppressed marker gates the next in-radius fix.
-        manualUndoSuppressedRef.current.set(suppressionKey, marker);
-      } else {
-        // Storage can be unavailable while the durable undo operation is
-        // already in the outbox. Retain that active tombstone as a fallback.
-        const fallback = arrivalOperations
-          .filter(op => op.operationType === 'record_arrival'
-            && op.entityId === destinationId
-            && (op.actorId ?? op.payload.actorId) === actorId
-            && op.payload.actorId === actorId
-            && op.payload.userId === actorId
-            && String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '') === sessionId
-            && op.payload.arrived === false)
-          .sort((a, b) => {
-            const aTime = typeof a.payload.occurredAt === 'string' ? Date.parse(a.payload.occurredAt) : Number.NaN;
-            const bTime = typeof b.payload.occurredAt === 'string' ? Date.parse(b.payload.occurredAt) : Number.NaN;
-            return (Number.isFinite(aTime) ? aTime : a.createdAt)
-              - (Number.isFinite(bTime) ? bTime : b.createdAt);
-          })
-          .at(-1);
-        if (fallback) {
-          manualUndoSuppressedRef.current.set(suppressionKey, {
-            actorId,
-            groupId,
-            destinationId,
-            navigationSessionId: sessionId,
-            operationId: fallback.id,
-            occurredAt: typeof fallback.payload.occurredAt === 'string'
-              ? fallback.payload.occurredAt
-              : new Date(fallback.createdAt).toISOString(),
-            suppressed: true,
-          });
-        }
-      }
-      foregroundUndoHydrationRef.current = { key: hydrationKey, pending: false };
-      // A fix may have arrived while hydration was pending. Re-evaluate it
-      // now that suppression (including a released marker) is known.
-      incomingArrivalHandlerRef.current();
-    };
-    void loadBackgroundManualUndo(actorId, groupId, destinationId, sessionId)
-      .then(finishHydration)
-      .catch(() => finishHydration(null));
-    return () => { cancelled = true; };
-  }, [arrivalOperations, arrivalSessionKey, currentArrivalNavigationSessionId, foregroundUndoHydrationKey, groupId, navTarget?.id, user?.id]);
+  
+  
   const commitPersonalArrival = useCallback(async (destination: Destination, targetUserId: string, arrivedAt: string, automatic = false) => {
     if (!groupId || !user?.id) return;
     // The route can paint the tap before SQLite saves its Start. Wait for the
@@ -1871,7 +1788,7 @@ export default function MapScreen({ route, navigation }: Props) {
     user?.id,
   ]);
   incomingArrivalHandlerRef.current = evaluateForegroundArrival;
-  useEffect(evaluateForegroundArrival, [evaluateForegroundArrival]);
+  const foregroundArrivalLifecycle = <MapForegroundArrivalResource foregroundArrivalRef={foregroundArrivalRef} foregroundAckRef={foregroundAckRef} autoArrivalMarkedRef={autoArrivalMarkedRef} automaticArrivalRetryAt={automaticArrivalRetryAt} arrivalFeedbackShownRef={arrivalFeedbackShownRef} manualUndoSuppressedRef={manualUndoSuppressedRef} foregroundUndoHydrationRef={foregroundUndoHydrationRef} foregroundUndoHydrationKey={foregroundUndoHydrationKey} groupId={groupId} user={user} navTarget={navTarget} currentArrivalNavigationSessionId={currentArrivalNavigationSessionId} setArrivalCelebrateDestId={setArrivalCelebrateDestId} arrivalContext={arrivalContext} arrivalSessionKey={arrivalSessionKey} foregroundUndoHydrationSequenceRef={foregroundUndoHydrationSequenceRef} foregroundUndoMutationSequenceRef={foregroundUndoMutationSequenceRef} incomingArrivalHandlerRef={incomingArrivalHandlerRef} arrivalOperations={arrivalOperations} evaluateForegroundArrival={evaluateForegroundArrival} />;
   const initialJourneyRef = useRef<{
     key: string;
     distanceM: number;
@@ -4312,6 +4229,7 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const mapScreenLifecycle = (<>
+    <React.Fragment key="map-owner-foreground-arrival">{foregroundArrivalLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-gather-request-pager">{gatherRequestPagerLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-accessLossLifecycle">{accessLossLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-routeOpenLifecycle">{routeOpenLifecycle}</React.Fragment>

@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Foreground arrival resets and hydrates undo ownership before evaluation, preserves array/callback identities and ignores old or superseded asynchronous reads including Strict replay.",
+      "testFile": "mapForegroundArrivalResource.test.ts",
+      "testNamePattern": "resets and starts undo hydration|retains every outbox array identity|newer foreground undo mutation|fences Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Map access loss deduplicates, route opening fences stale sync completions, and FIFO selection/native pager preserve their stable owners and array identity.",
       "testFile": "mapScreenChromeResources.test.ts",
       "testNamePattern": "deduplicates access-loss|syncs each open once|keeps FIFO removal selection"
