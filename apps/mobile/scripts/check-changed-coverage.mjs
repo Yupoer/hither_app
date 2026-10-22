@@ -6,7 +6,6 @@
  *   COVERAGE_THRESHOLD  0–100 (default: 85)
  *
  * Skips (exit 0): no qualifying changed source files.
- * Excludes UI-heavy / non-node-jest surfaces (screens, components, etc.).
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,9 +16,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(appRoot, '../..');
 const threshold = Number(process.env.COVERAGE_THRESHOLD || 85);
+if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+  console.error('[coverage:changed] threshold must be finite and between 0 and 100');
+  process.exit(2);
+}
 
 const EXCLUDE_DIR_RE =
-  /(?:^|\/)(screens|components|assets|__tests__|__mocks__|types|constants|i18n|theme|styles)(?:\/|$)/i;
+  /(?:^|\/)(assets|__tests__|__mocks__|types|constants|i18n|theme|styles)(?:\/|$)/i;
 const EXCLUDE_FILE_RE = /\.(d\.ts|styles?\.ts|styles?\.tsx)$/i;
 
 function resolveBase() {
@@ -132,6 +135,10 @@ function main() {
   });
   if (r.stdout) process.stdout.write(r.stdout);
   if (r.stderr) process.stderr.write(r.stderr);
+  if (r.error || r.signal || r.status !== 0) {
+    console.error('[coverage:changed] Jest failed:', r.error?.message || r.signal || r.status);
+    process.exit(Number.isInteger(r.status) && r.status > 0 ? r.status : 1);
+  }
 
   const summaryPath = path.join(coverageDir, 'coverage-summary.json');
   if (!fs.existsSync(summaryPath)) {
@@ -143,17 +150,13 @@ function main() {
   const pct = summary.total?.functions?.pct;
   console.log(`[coverage:changed] functions=${pct}% (need ≥${threshold})`);
 
-  if (typeof pct !== 'number' || Number.isNaN(pct)) {
+  if (typeof pct !== 'number' || !Number.isFinite(pct)) {
     console.error('[coverage:changed] could not read functions pct — fail');
     process.exit(1);
   }
   if (pct < threshold) {
     console.error('[coverage:changed] FAIL below threshold');
     process.exit(1);
-  }
-  if (r.status !== 0 && r.status !== null) {
-    // jest coverageThreshold already failed
-    process.exit(r.status);
   }
   console.log('[coverage:changed] PASS');
   process.exit(0);

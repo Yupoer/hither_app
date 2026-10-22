@@ -1,14 +1,14 @@
 name: CI
 
 # Hither CI — gates required before store/TestFlight release:
-#   1. Logic regressions                     -> jest (incl. nativeModuleVersions guard)
+#   1. Logic and component regressions       -> jest + jest-expo
 #   2. Test meta (acceptance map L1 + anti-fake L2)
 #   3. Changed-function coverage ≥85%        -> test:coverage:changed
 #   4. TypeScript regressions                -> tsc --noEmit
 #   5. iOS runtime / OTA alignment           -> verify:runtime
 #   6. Expo dependency version drift         -> expo install --check
 #   7. Expo doctor                           -> expo-doctor (blocking)
-#   8. Kick RPC authorization matrix         -> supabase test db (pgTAP)
+#   8. All SQL regressions + promo race      -> supabase test db (pgTAP)
 #
 # Store/TestFlight release must pass runtime alignment so incompatible native
 # binaries cannot load an OTA built for a different engine/RN/Hermes set.
@@ -24,27 +24,33 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verify:
+  scope:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       product: ${{ steps.scope.outputs.product }}
-    defaults:
-      run:
-        working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Verify workflow tooling
         working-directory: ${{ github.workspace }}
         run: |
           python3 scripts/test_workflow_scope.py
+          python3 scripts/test_ci_required.py
+          node --test apps/mobile/scripts/check-changed-coverage.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
@@ -56,8 +62,23 @@ jobs:
         run: python3 scripts/check-workflow-scope.py
         working-directory: ${{ github.workspace }}
 
+  verify:
+    needs: scope
+    if: needs.scope.outputs.product == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/setup-node@v4
-        if: steps.scope.outputs.product == 'true'
         with:
           # Real SQLite transaction tests use node:sqlite (also verified locally on 22.17.1).
           node-version: 22
@@ -65,16 +86,16 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
 
       - name: Install
-        if: steps.scope.outputs.product == 'true'
         run: npm ci
 
       - name: Test (jest)
-        if: steps.scope.outputs.product == 'true'
         run: npm test --silent
+
+      - name: Component tests (jest-expo)
+        run: npm test -- --config jest.config.components.js --runInBand --silent
 
       # Durable PR marker (not github.base_ref): <!-- hither-test-meta parent: N|pure-chore -->
       - name: Resolve META_PARENT from PR metadata
-        if: steps.scope.outputs.product == 'true'
         id: test_meta
         uses: actions/github-script@v7
         with:
@@ -117,51 +138,52 @@ jobs:
             core.info(`Resolved META_PARENT=${m[1]}`);
 
       - name: Test meta (L1 map + L2 anti-fake)
-        if: steps.scope.outputs.product == 'true'
         run: npm run test:meta
         env:
           META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
       - name: Coverage changed functions ≥85%
-        if: steps.scope.outputs.product == 'true'
         run: npm run test:coverage:changed
         env:
-          COVERAGE_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || github.event.before || 'HEAD^' }}
+          COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
 
       - name: Lint (eslint — full tree; featureTour at error severity)
-        if: steps.scope.outputs.product == 'true'
         run: npm run lint
 
       - name: Typecheck (tsc)
-        if: steps.scope.outputs.product == 'true'
         run: npm run typecheck
 
       - name: Verify iOS runtime alignment
-        if: steps.scope.outputs.product == 'true'
         run: npm run verify:runtime
 
       - name: Expo dependency check (version drift = Expo Go crashes)
-        if: steps.scope.outputs.product == 'true'
         run: npx --yes expo install --check
 
       - name: Expo doctor
-        if: steps.scope.outputs.product == 'true'
         # SDK 57 includes the Hermes fix; keep the current advisory check enabled.
         run: npx --yes expo-doctor@1.20.4
 
       - name: HTTPS recovery browser behavior
-        if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: node scripts/auth-web-recovery-check.mjs
 
+  backend:
+    needs: scope
+    if: needs.scope.outputs.product == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - uses: denoland/setup-deno@v2
-        if: steps.scope.outputs.product == 'true'
         with:
           deno-version: v2.x
 
       - name: Deno Edge fixture tests
-        if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: |
           deno test --no-check --allow-env --allow-net --allow-read --allow-import \
@@ -174,45 +196,29 @@ jobs:
             supabase/functions/admob-reward-callback/ssv_test.ts
 
       - uses: supabase/setup-cli@v1
-        if: steps.scope.outputs.product == 'true'
         with:
           version: 2.109.1
 
       - name: Strip migration BOM for local supabase CLI
-        if: steps.scope.outputs.product == 'true'
         working-directory: ${{ github.workspace }}
         run: node supabase/scripts/strip-migration-bom.mjs
 
-      - name: Supabase SQL kick authorization (pgTAP)
-        if: steps.scope.outputs.product == 'true'
+      - name: All Supabase SQL regressions (pgTAP)
+        shell: bash
         working-directory: ${{ github.workspace }}
         run: |
           supabase db start
-          supabase test db --local supabase/tests/kick_group_member.test.sql
-          supabase test db --local supabase/tests/delete_account.test.sql
-          supabase test db --local supabase/tests/storekit_purchase_ledger.test.sql
-          supabase test db --local supabase/tests/premium_projection.test.sql
-          supabase test db --local supabase/tests/premium_anonymous_cleanup_skip.test.sql
-          supabase test db --local supabase/tests/database_security_role_matrix.test.sql
-          supabase test db --local supabase/tests/anonymous_expiry_is_member.test.sql
-          supabase test db --local supabase/tests/core_operation_gathering_validation.test.sql
-          supabase test db --local supabase/tests/core_operation_outbox_durable.test.sql
-          supabase test db --local supabase/tests/quick_add_first_stop.test.sql
-          supabase test db --local supabase/tests/durable_trip_daily_accommodation.test.sql
-          supabase test db --local supabase/tests/durable_solo_refresh_receipts.test.sql
-          supabase test db --local supabase/tests/durable_reorder_optional_fields.test.sql
-          supabase test db --local supabase/tests/live_activity_bicycle_mode.test.sql
-          supabase test db --local supabase/tests/reconcile_replaced_stay_cards.test.sql
-          supabase test db --local supabase/tests/security_group_command_import_arrival.test.sql
-          supabase test db --local supabase/tests/feedback_limits.test.sql
-          supabase test db --local supabase/tests/installation_capabilities.test.sql
+          mapfile -d '' tests < <(find supabase/tests -type f -name '*.test.sql' -print0 | sort -z)
+          test "${#tests[@]}" -gt 0
+          supabase test db --local "${tests[@]}"
           node supabase/tests/promo_redemption_concurrency.mjs
 
   jsi-ui-runtime:
-    needs: verify
-    if: always() && needs.verify.outputs.product == 'true'
+    needs: scope
+    if: needs.scope.outputs.product == 'true'
     # Swift's isIsolatingCurrentContext runtime hook requires macOS 26.
     runs-on: macos-26
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/mobile
@@ -240,8 +246,8 @@ jobs:
           grep -E 'data race detected|JavaScriptActor operations must be run' "$RUNNER_TEMP/hither-jsi-wrong.log"
 
   jsi-ios27-runtime:
-    needs: verify
-    if: always() && needs.verify.outputs.product == 'true'
+    needs: scope
+    if: needs.scope.outputs.product == 'true'
     runs-on: xcode-27
     timeout-minutes: 15
     defaults:
@@ -273,9 +279,22 @@ jobs:
       - name: Verify iOS 27 UI regression and background-thread rejection
         run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27" --standalone --runtime-build "$JSI_RUNTIME_BUILD"
 
+  ci-required:
+    needs: [scope, verify, backend, jsi-ui-runtime, jsi-ios27-runtime]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every applicable gate
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/check-ci-required.py
+
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:
-    needs: [verify, jsi-ui-runtime, jsi-ios27-runtime]
+    timeout-minutes: 5
+    needs: [ci-required]
     if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
