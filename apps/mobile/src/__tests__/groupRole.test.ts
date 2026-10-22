@@ -194,4 +194,16 @@ describe('useGroupRole', () => {
     expect(current?.canEditItinerary).toBe(true);
   });
 
+  it('does not publish membership from an abandoned suspended render', () => {
+    const setMembership = jest.fn();
+    const pending = new Promise<void>(() => {});
+    const props = input({ dataSource: 'remote', me: { role: 'follower' }, setMembership });
+    function Suspended(): React.ReactElement {
+      useGroupRole(props);
+      throw pending;
+    }
+    act(() => { renderer = create(React.createElement(React.Suspense, { fallback: null }, React.createElement(Suspended))); });
+    expect(setMembership).not.toHaveBeenCalled();
+  });
+
 });

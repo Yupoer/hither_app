@@ -1,5 +1,6 @@
 import { useForegroundUi } from '../state/foregroundUi';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import {
   AccessibilityInfo,
   Animated,
@@ -84,12 +85,12 @@ export function GroupFeatureTourOverlay({
   const fontLayout = useFontLayout();
   const [keyboardTop, setKeyboardTop] = useState<number | null>(() => Keyboard?.metrics?.()?.screenY ?? null);
   const viewportHeight = Math.min(winH, keyboardTop ?? winH);
-  useEffect(() => {
+  useMountEffect(() => {
     const show = Keyboard?.addListener('keyboardDidShow', (event) => setKeyboardTop(event.endCoordinates.screenY));
     const change = Keyboard?.addListener('keyboardDidChangeFrame', (event) => setKeyboardTop(event.endCoordinates.height > 0 ? event.endCoordinates.screenY : null));
     const hide = Keyboard?.addListener('keyboardDidHide', () => setKeyboardTop(null));
     return () => { show?.remove(); change?.remove(); hide?.remove(); };
-  }, []);
+  });
   const ctaRef = useRef<View>(null);
   // Animated.Value is stable; useState avoids ref.current during render (compiler).
   const [opacity] = useState(() => new Animated.Value(reduceMotion ? 1 : 0));
@@ -115,96 +116,14 @@ export function GroupFeatureTourOverlay({
   });
   const cardHeight = cardLayout.key === contentKey ? cardLayout.height : null;
 
-  useEffect(() => {
-    if (!visible || Platform.OS !== 'android') return undefined;
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
-    return () => sub.remove();
-  }, [visible]);
+  const tourOverlayAndroidBackLifecycle = <TourOverlayAndroidBack visible={visible} />;
 
   // Fade the whole chrome (dim + hole + ring + card) together on copy change.
   // Never require `finished` — a superseded timing would leave opacity at 0.
-  useEffect(() => {
-    if (!foreground) { ++fadeGenRef.current; opacity.stopAnimation?.(); return; }
-    if (!visible) {
-      fadeGenRef.current += 1;
-      opacity.setValue(0);
-      return;
-    }
-    const nextShown: DisplayedTourSnapshot = {
-      key: stepKey,
-      title,
-      body,
-      ctaLabel,
-      targetRect,
-      placementRect,
-      targetKind,
-    };
-    if (reduceMotion) {
-      const gen = ++fadeGenRef.current;
-      shownKeyRef.current = stepKey;
-      opacity.setValue(1);
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 0,
-        useNativeDriver: true,
-      }).start(() => {
-        if (gen !== fadeGenRef.current) return;
-        setShown(nextShown);
-      });
-      return;
-    }
-    if (shownKeyRef.current === stepKey) {
-      const gen = ++fadeGenRef.current;
-      opacity.stopAnimation?.();
-      setShown(nextShown);
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: FADE_IN_MS,
-        useNativeDriver: true,
-      }).start(() => {
-        if (gen !== fadeGenRef.current) return;
-      });
-      return;
-    }
-    const gen = ++fadeGenRef.current;
-    Animated.timing(opacity, {
-      toValue: 0,
-      duration: FADE_OUT_MS,
-      useNativeDriver: true,
-    }).start(() => {
-      if (gen !== fadeGenRef.current) return;
-      shownKeyRef.current = stepKey;
-      setShown(nextShown);
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: FADE_IN_MS,
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [
-    foreground,
-    visible,
-    stepKey,
-    title,
-    body,
-    ctaLabel,
-    targetRect,
-    placementRect,
-    targetKind,
-    reduceMotion,
-    opacity,
-  ]);
+  const tourOverlaySnapshotFadeLifecycle = <TourOverlaySnapshotFade foreground={foreground} fadeGenRef={fadeGenRef} opacity={opacity} visible={visible} stepKey={stepKey} reduceMotion={reduceMotion} shownKeyRef={shownKeyRef} setShown={setShown} title={title} body={body} ctaLabel={ctaLabel} targetRect={targetRect} placementRect={placementRect} targetKind={targetKind} />;
 
   // Move screen-reader focus to the step card / CTA when the step changes.
-  useEffect(() => {
-    if (!foreground || !visible) return;
-    const handle = findNodeHandle(ctaRef.current);
-    if (handle == null) return;
-    const timer = setTimeout(() => {
-      AccessibilityInfo.setAccessibilityFocus?.(handle);
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [foreground, visible, title, ctaLabel]);
+  const tourOverlayAccessibilityFocusLifecycle = <TourOverlayAccessibilityFocus foreground={foreground} visible={visible} ctaRef={ctaRef} title={title} ctaLabel={ctaLabel} />;
 
   const hole = useMemo(
     () => (shown.targetRect ? paddedHole(shown.targetRect) : null),
@@ -243,9 +162,12 @@ export function GroupFeatureTourOverlay({
     });
   };
 
-  if (!visible) return null;
+  const lifecycle = <Fragment key={'tour-overlay-runtime'}>{tourOverlayAndroidBackLifecycle}{tourOverlaySnapshotFadeLifecycle}{tourOverlayAccessibilityFocusLifecycle}</Fragment>;
+  if (!visible) return lifecycle;
 
   return (
+    <>
+      {lifecycle}
     <View
       style={styles.root}
       pointerEvents="auto"
@@ -343,6 +265,7 @@ export function GroupFeatureTourOverlay({
         />
       </Animated.View>
     </View>
+    </>
   );
 }
 
@@ -369,3 +292,158 @@ const styles = StyleSheet.create({
 });
 
 export default GroupFeatureTourOverlay;
+
+function TourOverlayAndroidBack({ visible }: {
+  visible: boolean;
+}) {
+  const [tourOverlayAndroidBackInputs, setTourOverlayAndroidBackInputs] = useState(() => ({ generation: 0, visible }));
+  if (!(Object.is(tourOverlayAndroidBackInputs.visible, visible))) {
+    setTourOverlayAndroidBackInputs({ generation: tourOverlayAndroidBackInputs.generation + 1, visible });
+  }
+  return <TourOverlayAndroidBackCommit key={tourOverlayAndroidBackInputs.generation} visible={visible} />;
+}
+
+function TourOverlayAndroidBackCommit({ visible }: {
+  visible: boolean;
+}) {
+  useMountEffect(() => {
+    if (!visible || Platform.OS !== 'android') return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  });
+  return null;
+}
+
+function TourOverlaySnapshotFade({ foreground, fadeGenRef, opacity, visible, stepKey, reduceMotion, shownKeyRef, setShown, title, body, ctaLabel, targetRect, placementRect, targetKind }: {
+  foreground: boolean;
+  fadeGenRef: React.RefObject<number>;
+  opacity: Animated.Value;
+  visible: boolean;
+  stepKey: string;
+  reduceMotion: boolean;
+  shownKeyRef: React.RefObject<string>;
+  setShown: React.Dispatch<React.SetStateAction<DisplayedTourSnapshot>>;
+  title: string;
+  body: string;
+  ctaLabel: string;
+  targetRect: LayoutRectangle | null;
+  placementRect: LayoutRectangle | null;
+  targetKind: OverlayHoleKind;
+}) {
+  const [tourOverlaySnapshotFadeInputs, setTourOverlaySnapshotFadeInputs] = useState(() => ({ generation: 0, foreground, visible, stepKey, title, body, ctaLabel, targetRect, placementRect, targetKind, reduceMotion, opacity }));
+  if (!(Object.is(tourOverlaySnapshotFadeInputs.foreground, foreground) && Object.is(tourOverlaySnapshotFadeInputs.visible, visible) && Object.is(tourOverlaySnapshotFadeInputs.stepKey, stepKey) && Object.is(tourOverlaySnapshotFadeInputs.title, title) && Object.is(tourOverlaySnapshotFadeInputs.body, body) && Object.is(tourOverlaySnapshotFadeInputs.ctaLabel, ctaLabel) && Object.is(tourOverlaySnapshotFadeInputs.targetRect, targetRect) && Object.is(tourOverlaySnapshotFadeInputs.placementRect, placementRect) && Object.is(tourOverlaySnapshotFadeInputs.targetKind, targetKind) && Object.is(tourOverlaySnapshotFadeInputs.reduceMotion, reduceMotion) && Object.is(tourOverlaySnapshotFadeInputs.opacity, opacity))) {
+    setTourOverlaySnapshotFadeInputs({ generation: tourOverlaySnapshotFadeInputs.generation + 1, foreground, visible, stepKey, title, body, ctaLabel, targetRect, placementRect, targetKind, reduceMotion, opacity });
+  }
+  return <TourOverlaySnapshotFadeCommit key={tourOverlaySnapshotFadeInputs.generation} foreground={foreground} fadeGenRef={fadeGenRef} opacity={opacity} visible={visible} stepKey={stepKey} reduceMotion={reduceMotion} shownKeyRef={shownKeyRef} setShown={setShown} title={title} body={body} ctaLabel={ctaLabel} targetRect={targetRect} placementRect={placementRect} targetKind={targetKind} />;
+}
+
+function TourOverlaySnapshotFadeCommit({ foreground, fadeGenRef, opacity, visible, stepKey, reduceMotion, shownKeyRef, setShown, title, body, ctaLabel, targetRect, placementRect, targetKind }: {
+  foreground: boolean;
+  fadeGenRef: React.RefObject<number>;
+  opacity: Animated.Value;
+  visible: boolean;
+  stepKey: string;
+  reduceMotion: boolean;
+  shownKeyRef: React.RefObject<string>;
+  setShown: React.Dispatch<React.SetStateAction<DisplayedTourSnapshot>>;
+  title: string;
+  body: string;
+  ctaLabel: string;
+  targetRect: LayoutRectangle | null;
+  placementRect: LayoutRectangle | null;
+  targetKind: OverlayHoleKind;
+}) {
+  useMountEffect(() => {
+    if (!foreground) { ++fadeGenRef.current; opacity.stopAnimation?.(); return; }
+    if (!visible) {
+      fadeGenRef.current += 1;
+      opacity.setValue(0);
+      return;
+    }
+    const nextShown: DisplayedTourSnapshot = {
+      key: stepKey,
+      title,
+      body,
+      ctaLabel,
+      targetRect,
+      placementRect,
+      targetKind,
+    };
+    if (reduceMotion) {
+      const gen = ++fadeGenRef.current;
+      shownKeyRef.current = stepKey;
+      opacity.setValue(1);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 0,
+        useNativeDriver: true,
+      }).start(() => {
+        if (gen !== fadeGenRef.current) return;
+        setShown(nextShown);
+      });
+      return;
+    }
+    if (shownKeyRef.current === stepKey) {
+      const gen = ++fadeGenRef.current;
+      opacity.stopAnimation?.();
+      setShown(nextShown);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: FADE_IN_MS,
+        useNativeDriver: true,
+      }).start(() => {
+        if (gen !== fadeGenRef.current) return;
+      });
+      return;
+    }
+    const gen = ++fadeGenRef.current;
+    Animated.timing(opacity, {
+      toValue: 0,
+      duration: FADE_OUT_MS,
+      useNativeDriver: true,
+    }).start(() => {
+      if (gen !== fadeGenRef.current) return;
+      shownKeyRef.current = stepKey;
+      setShown(nextShown);
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: FADE_IN_MS,
+        useNativeDriver: true,
+      }).start();
+    });
+  });
+  return null;
+}
+
+function TourOverlayAccessibilityFocus({ foreground, visible, ctaRef, title, ctaLabel }: {
+  foreground: boolean;
+  visible: boolean;
+  ctaRef: React.RefObject<View | null>;
+  title: string;
+  ctaLabel: string;
+}) {
+  const [tourOverlayAccessibilityFocusInputs, setTourOverlayAccessibilityFocusInputs] = useState(() => ({ generation: 0, foreground, visible, title, ctaLabel }));
+  if (!(Object.is(tourOverlayAccessibilityFocusInputs.foreground, foreground) && Object.is(tourOverlayAccessibilityFocusInputs.visible, visible) && Object.is(tourOverlayAccessibilityFocusInputs.title, title) && Object.is(tourOverlayAccessibilityFocusInputs.ctaLabel, ctaLabel))) {
+    setTourOverlayAccessibilityFocusInputs({ generation: tourOverlayAccessibilityFocusInputs.generation + 1, foreground, visible, title, ctaLabel });
+  }
+  return <TourOverlayAccessibilityFocusCommit key={tourOverlayAccessibilityFocusInputs.generation} foreground={foreground} visible={visible} ctaRef={ctaRef} title={title} ctaLabel={ctaLabel} />;
+}
+
+function TourOverlayAccessibilityFocusCommit({ foreground, visible, ctaRef, title, ctaLabel }: {
+  foreground: boolean;
+  visible: boolean;
+  ctaRef: React.RefObject<View | null>;
+  title: string;
+  ctaLabel: string;
+}) {
+  useMountEffect(() => {
+    if (!foreground || !visible) return;
+    const handle = findNodeHandle(ctaRef.current);
+    if (handle == null) return;
+    const timer = setTimeout(() => {
+      AccessibilityInfo.setAccessibilityFocus?.(handle);
+    }, 100);
+    return () => clearTimeout(timer);
+  });
+  return null;
+}

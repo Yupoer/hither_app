@@ -1173,7 +1173,7 @@ export default function MapScreen({ route, navigation }: Props) {
       await settleRouteScroll();
     }
   }, []);
-  const {
+  const { lifecycle: routeReorderTourLifecycle,
     tourActive: routeTourActive,
     step: routeTourStep,
     targetRect: routeTourTargetRect,
@@ -4121,7 +4121,7 @@ export default function MapScreen({ route, navigation }: Props) {
     [destinations, selectedIndex, setSelectedIndex, windowWidth],
   );
 
-  const {
+  const { lifecycle: groupFeatureTourLifecycle,
     tourActive,
     step: tourStep,
     targetRect: tourTargetRect,
@@ -4654,6 +4654,8 @@ export default function MapScreen({ route, navigation }: Props) {
     <>
       {routeDraft.lifecycle}
       {groupRoleLifecycle}
+      {routeReorderTourLifecycle}
+      {groupFeatureTourLifecycle}
       {gatheringWorkflowLifecycle}
       {visitHistoryLifecycle}
       {stragglerReportingLifecycle}
