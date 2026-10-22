@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Canvas, Path, Skia, type SkPath } from '@shopify/react-native-skia';
 import { type DerivedValue, useDerivedValue, useFrameCallback, useReducedMotion, useSharedValue } from 'react-native-reanimated';
@@ -34,21 +35,7 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
   const appActive = useForegroundUi();
   const visible = active && appActive && windows.length > 0;
   const policy = getMetalforgeStarfieldAnimationPolicy({ active: active && windows.length > 0, appActive, reducedMotion, lowPowerMode, thermalState });
-  useEffect(() => {
-    const at = now.value;
-    setWindows(current => changeChargeEmission(current, emitting, at));
-  }, [emitting, now]);
-  useEffect(() => { emissions.value = windows; }, [windows, emissions]);
-  useEffect(() => {
-    if (!policy.shouldAnimate) return;
-    const stopped = windows.filter(window => window.stoppedAt != null);
-    if (!stopped.length) return;
-    const deadline = Math.min(...stopped.map(window => window.stoppedAt! + CHARGE_BALL_MAX_TRAVEL_MS));
-    const timer = setTimeout(() => {
-      setWindows(current => current.filter(window => window.stoppedAt == null || now.value < window.stoppedAt + CHARGE_BALL_MAX_TRAVEL_MS));
-    }, Math.max(1, deadline - now.value));
-    return () => clearTimeout(timer);
-  }, [windows, policy.shouldAnimate, now]);
+
   const frame = useFrameCallback(({ timestamp }) => {
     if (!policy.shouldAnimate) return;
     if (lastFrameAt.value < 0) { lastFrameAt.value = timestamp; return; }
@@ -58,12 +45,7 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
     lastFrameAt.value = timestamp;
     now.value += Math.min(delta, 100);
   }, false);
-  useEffect(() => {
-    lastFrameAt.value = -1;
-    frame.setActive(policy.shouldAnimate);
-    return () => frame.setActive(false);
-  }, [policy.shouldAnimate, frame, lastFrameAt, now]);
-  useEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: policy.shouldAnimate ? 1 : 0 }), [visible, policy.shouldAnimate]);
+
   const paths = useDerivedValue(() => {
     const layers = Array.from({ length: CHARGE_BALL_OPACITY_LEVELS }, () => Skia.Path.Make());
     for (const ball of chargeBallsAt(now.value, width, emissions.value)) {
@@ -75,6 +57,10 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
     CHARGE_BALL_MIN_OPACITY + (CHARGE_BALL_MAX_OPACITY - CHARGE_BALL_MIN_OPACITY) * index / (CHARGE_BALL_OPACITY_LEVELS - 1)), []);
   return <View onLayout={({ nativeEvent }) => setWidth(current => current === nativeEvent.layout.width ? current : nativeEvent.layout.width)}
     pointerEvents="none" accessibilityElementsHidden style={[StyleSheet.absoluteFill, styles.container, style]}>
+    <ChargeEmissionIntent key={String(emitting)} emitting={emitting} now={now} setWindows={setWindows} />
+    <ChargeWindowResources emissions={emissions} windows={windows} shouldAnimate={policy.shouldAnimate} now={now} setWindows={setWindows} />
+    <ChargeFrameMotion shouldAnimate={policy.shouldAnimate} frame={frame} lastFrameAt={lastFrameAt} />
+    <StarfieldWorkload key={`${visible}:${policy.shouldAnimate}`} visible={visible} shouldAnimate={policy.shouldAnimate} />
     {visible && <Canvas style={StyleSheet.absoluteFill}>
       {shades.map((opacity, index) => <ChargeBallLayer key={index} paths={paths} index={index} opacity={opacity} color={color} />)}
     </Canvas>}
@@ -86,4 +72,64 @@ function ChargeBallLayer({ paths, index, opacity, color }: {
 }) {
   const path = useDerivedValue(() => paths.value[index]);
   return <Path path={path} color={color} opacity={opacity} />;
+}
+
+function ChargeEmissionIntent({ emitting, now, setWindows }: { emitting: boolean; now: ReturnType<typeof useSharedValue<number>>; setWindows: React.Dispatch<React.SetStateAction<ChargeEmission[]>> }) {
+  useMountEffect(() => {
+    const at = now.value;
+    setWindows(current => changeChargeEmission(current, emitting, at));
+  });
+  return null;
+}
+
+function ChargeEmissionPublication({ emissions, windows }: { emissions: ReturnType<typeof useSharedValue<ChargeEmission[]>>; windows: ChargeEmission[] }) {
+  useMountEffect(() => { emissions.value = windows; });
+  return null;
+}
+
+function ChargeDrainDeadline({ windows, shouldAnimate, now, setWindows }: { windows: ChargeEmission[]; shouldAnimate: boolean; now: ReturnType<typeof useSharedValue<number>>; setWindows: React.Dispatch<React.SetStateAction<ChargeEmission[]>> }) {
+  useMountEffect(() => {
+    if (!shouldAnimate) return;
+    const stopped = windows.filter(window => window.stoppedAt != null);
+    if (!stopped.length) return;
+    const deadline = Math.min(...stopped.map(window => window.stoppedAt! + CHARGE_BALL_MAX_TRAVEL_MS));
+    const timer = setTimeout(() => {
+      setWindows(current => current.filter(window => window.stoppedAt == null || now.value < window.stoppedAt + CHARGE_BALL_MAX_TRAVEL_MS));
+    }, Math.max(1, deadline - now.value));
+    return () => clearTimeout(timer);
+  });
+  return null;
+}
+
+function ChargeFrameActivation({ shouldAnimate, frame, lastFrameAt }: { shouldAnimate: boolean; frame: ReturnType<typeof useFrameCallback>; lastFrameAt: ReturnType<typeof useSharedValue<number>> }) {
+  useMountEffect(() => {
+    lastFrameAt.value = -1;
+    frame.setActive(shouldAnimate);
+    return () => frame.setActive(false);
+  });
+  return null;
+}
+
+function StarfieldWorkload({ visible, shouldAnimate }: { visible: boolean; shouldAnimate: boolean }) {
+  useMountEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: shouldAnimate ? 1 : 0 }));
+  return null;
+}
+
+function ChargeWindowResources({ emissions, windows, shouldAnimate, now, setWindows }: React.ComponentProps<typeof ChargeDrainDeadline> & Pick<React.ComponentProps<typeof ChargeEmissionPublication>, 'emissions'>) {
+  const [emissionInput, setEmissionInput] = useState({ windows, generation: 0 });
+  if (!Object.is(emissionInput.windows, windows)) {
+    setEmissionInput({ windows, generation: emissionInput.generation + 1 });
+  }
+  return <>
+    <ChargeEmissionPublication key={`emissions-${emissionInput.generation}`} emissions={emissions} windows={windows} />
+    <ChargeDrainDeadline key={`drain-${emissionInput.generation}:${shouldAnimate}`} windows={windows} shouldAnimate={shouldAnimate} now={now} setWindows={setWindows} />
+  </>;
+}
+function ChargeFrameMotion(props: React.ComponentProps<typeof ChargeFrameActivation>) {
+  const { frame, shouldAnimate } = props;
+  const [frameInput, setFrameInput] = useState({ frame, shouldAnimate, generation: 0 });
+  if (!Object.is(frameInput.frame, frame) || !Object.is(frameInput.shouldAnimate, shouldAnimate)) {
+    setFrameInput({ frame, shouldAnimate, generation: frameInput.generation + 1 });
+  }
+  return <ChargeFrameActivation key={frameInput.generation} {...props} />;
 }

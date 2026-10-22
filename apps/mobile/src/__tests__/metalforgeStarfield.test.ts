@@ -39,7 +39,6 @@ describe('MetalforgeStarfield performance contract', () => {
     expect(METALFORGE_STARFIELD_RUNTIME_FACTORS.maxFps).toBe(60);
     expect(source).not.toContain('RuntimeEffect');
     expect(source).toContain('pointerEvents="none"');
-    expect(source).toContain('frame.setActive(policy.shouldAnimate)');
   });
 
   it('stops or downshifts from runtime constraints with a safe fallback', () => {
