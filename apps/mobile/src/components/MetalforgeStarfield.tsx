@@ -46,15 +46,6 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
     now.value += Math.min(delta, 100);
   }, false);
 
-  const [emissionInput, setEmissionInput] = useState({ windows, generation: 0 });
-  if (!Object.is(emissionInput.windows, windows)) {
-    setEmissionInput({ windows, generation: emissionInput.generation + 1 });
-  }
-  const [frameInput, setFrameInput] = useState({ frame, shouldAnimate: policy.shouldAnimate, generation: 0 });
-  if (!Object.is(frameInput.frame, frame) || !Object.is(frameInput.shouldAnimate, policy.shouldAnimate)) {
-    setFrameInput({ frame, shouldAnimate: policy.shouldAnimate, generation: frameInput.generation + 1 });
-  }
-
   const paths = useDerivedValue(() => {
     const layers = Array.from({ length: CHARGE_BALL_OPACITY_LEVELS }, () => Skia.Path.Make());
     for (const ball of chargeBallsAt(now.value, width, emissions.value)) {
@@ -67,9 +58,8 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
   return <View onLayout={({ nativeEvent }) => setWidth(current => current === nativeEvent.layout.width ? current : nativeEvent.layout.width)}
     pointerEvents="none" accessibilityElementsHidden style={[StyleSheet.absoluteFill, styles.container, style]}>
     <ChargeEmissionIntent key={String(emitting)} emitting={emitting} now={now} setWindows={setWindows} />
-    <ChargeEmissionPublication key={emissionInput.generation} emissions={emissions} windows={windows} />
-    <ChargeDrainDeadline key={`${emissionInput.generation}:${policy.shouldAnimate}`} windows={windows} shouldAnimate={policy.shouldAnimate} now={now} setWindows={setWindows} />
-    <ChargeFrameActivation key={frameInput.generation} shouldAnimate={policy.shouldAnimate} frame={frame} lastFrameAt={lastFrameAt} />
+    <ChargeWindowResources emissions={emissions} windows={windows} shouldAnimate={policy.shouldAnimate} now={now} setWindows={setWindows} />
+    <ChargeFrameMotion shouldAnimate={policy.shouldAnimate} frame={frame} lastFrameAt={lastFrameAt} />
     <StarfieldWorkload key={`${visible}:${policy.shouldAnimate}`} visible={visible} shouldAnimate={policy.shouldAnimate} />
     {visible && <Canvas style={StyleSheet.absoluteFill}>
       {shades.map((opacity, index) => <ChargeBallLayer key={index} paths={paths} index={index} opacity={opacity} color={color} />)}
@@ -123,4 +113,23 @@ function ChargeFrameActivation({ shouldAnimate, frame, lastFrameAt }: { shouldAn
 function StarfieldWorkload({ visible, shouldAnimate }: { visible: boolean; shouldAnimate: boolean }) {
   useMountEffect(() => energyObservability.mountWorkload({ starfieldCanvasCount: visible ? 1 : 0, animatedCanvasCount: shouldAnimate ? 1 : 0 }));
   return null;
+}
+
+function ChargeWindowResources({ emissions, windows, shouldAnimate, now, setWindows }: React.ComponentProps<typeof ChargeDrainDeadline> & Pick<React.ComponentProps<typeof ChargeEmissionPublication>, 'emissions'>) {
+  const [emissionInput, setEmissionInput] = useState({ windows, generation: 0 });
+  if (!Object.is(emissionInput.windows, windows)) {
+    setEmissionInput({ windows, generation: emissionInput.generation + 1 });
+  }
+  return <>
+    <ChargeEmissionPublication key={`emissions-${emissionInput.generation}`} emissions={emissions} windows={windows} />
+    <ChargeDrainDeadline key={`drain-${emissionInput.generation}:${shouldAnimate}`} windows={windows} shouldAnimate={shouldAnimate} now={now} setWindows={setWindows} />
+  </>;
+}
+function ChargeFrameMotion(props: React.ComponentProps<typeof ChargeFrameActivation>) {
+  const { frame, shouldAnimate } = props;
+  const [frameInput, setFrameInput] = useState({ frame, shouldAnimate, generation: 0 });
+  if (!Object.is(frameInput.frame, frame) || !Object.is(frameInput.shouldAnimate, shouldAnimate)) {
+    setFrameInput({ frame, shouldAnimate, generation: frameInput.generation + 1 });
+  }
+  return <ChargeFrameActivation key={frameInput.generation} {...props} />;
 }

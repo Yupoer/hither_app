@@ -55,10 +55,6 @@ const CONFETTI = [
 function Confetti({ spec }: { spec: (typeof CONFETTI)[number] }) {
   const visuals = useOptionalVisuals();
   const v = useSharedValue(0);
-  const [fallInput, setFallInput] = useState({ spec, visuals, generation: 0 });
-  if (!Object.is(fallInput.spec, spec) || !Object.is(fallInput.visuals, visuals)) {
-    setFallInput({ spec, visuals, generation: fallInput.generation + 1 });
-  }
 
   const style = useAnimatedStyle(() => ({
     transform: [{ translateY: v.value * 360 }, { rotate: `${v.value * 240}deg` }],
@@ -79,7 +75,7 @@ function Confetti({ spec }: { spec: (typeof CONFETTI)[number] }) {
         style,
       ]}
     >
-      <ConfettiFallMotion key={fallInput.generation} visuals={visuals} v={v} spec={spec} />
+      <ConfettiFall visuals={visuals} v={v} spec={spec} />
     </Animated.View>
   );
 }
@@ -225,4 +221,13 @@ function CelebrationPopMotion({ visuals, pop }: { visuals: boolean; pop: ReturnT
     return () => cancelAnimation(pop);
   });
   return null;
+}
+
+function ConfettiFall(props: React.ComponentProps<typeof ConfettiFallMotion>) {
+  const { spec, visuals } = props;
+  const [fallInput, setFallInput] = useState({ spec, visuals, generation: 0 });
+  if (!Object.is(fallInput.spec, spec) || !Object.is(fallInput.visuals, visuals)) {
+    setFallInput({ spec, visuals, generation: fallInput.generation + 1 });
+  }
+  return <ConfettiFallMotion key={fallInput.generation} {...props} />;
 }

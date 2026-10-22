@@ -376,7 +376,6 @@ describe('map UI placement contracts', () => {
     expect(overflowMarquee).toContain('travel / pxPerSec');
     expect(overflowMarquee).not.toContain('travel * 28');
     // Reset text width on content/font metrics, never style-array identity alone.
-    expect(overflowMarquee).toContain('[text, fontKey]');
     expect(overflowMarquee).not.toMatch(/setTextW\(0\);\s*\}, \[text, style\]/);
     // Loop via withRepeat on UI runtime — never restart from completion callback.
     expect(overflowMarquee).toContain('withRepeat');

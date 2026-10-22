@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Marquee timers, measurement identity and speed changes preserve UI and cancel old work; countdown notifications honor callback identity and never publish discarded renders.",
+      "testFile": "marqueeCountdownLifecycle.test.ts",
+      "testNamePattern": "preserves marquee measurement|cancels old activation|notifies due changes|does not publish a due callback"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Shader and starfield jobs preserve active-only animation time, native registration ordering, visibility, drain timers and balanced workload leases through suspension and Strict replay.",
       "testFile": "metalforgeBackgroundLifecycle.test.ts",
       "testNamePattern": "installs activation|disables hidden|caps active|retains the same frozen"

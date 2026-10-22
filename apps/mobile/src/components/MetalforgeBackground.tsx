@@ -169,11 +169,6 @@ export default function MetalforgeBackground({ active = true, allowInactive = fa
     }
   }, false);
 
-  const [clockInput, setClockInput] = useState({ animationClock, isActive, generation: 0 });
-  if (!Object.is(clockInput.animationClock, animationClock) || !Object.is(clockInput.isActive, isActive)) {
-    setClockInput({ animationClock, isActive, generation: clockInput.generation + 1 });
-  }
-
   const uniforms = useDerivedValue(() => ({
     size: [width, height],
     time: frozen.value,
@@ -195,7 +190,7 @@ export default function MetalforgeBackground({ active = true, allowInactive = fa
   return (
     <>
       <ShaderWorkload key={`${visible}:${isActive}`} visible={visible} isActive={isActive} />
-      <ShaderClockActivation key={clockInput.generation} animationClock={animationClock} isActive={isActive} lastFrameAt={lastFrameAt} lastTimestamp={lastTimestamp} />
+      <ShaderClockMotion animationClock={animationClock} isActive={isActive} lastFrameAt={lastFrameAt} lastTimestamp={lastTimestamp} />
       <ShaderReducedMotionFrame key={String(reducedMotion)} frozen={frozen} reducedMotion={reducedMotion} />
       {visible && <View style={[StyleSheet.absoluteFill, styles.container]} pointerEvents="none" accessibilityElementsHidden>
         <Canvas style={StyleSheet.absoluteFill}>
@@ -239,4 +234,13 @@ function ShaderReducedMotionFrame({ frozen, reducedMotion }: { frozen: ReturnTyp
     }
   });
   return null;
+}
+
+function ShaderClockMotion(props: React.ComponentProps<typeof ShaderClockActivation>) {
+  const { animationClock, isActive } = props;
+  const [clockInput, setClockInput] = useState({ animationClock, isActive, generation: 0 });
+  if (!Object.is(clockInput.animationClock, animationClock) || !Object.is(clockInput.isActive, isActive)) {
+    setClockInput({ animationClock, isActive, generation: clockInput.generation + 1 });
+  }
+  return <ShaderClockActivation key={clockInput.generation} {...props} />;
 }
