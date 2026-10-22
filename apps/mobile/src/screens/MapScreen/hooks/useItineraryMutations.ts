@@ -1,4 +1,5 @@
 import { reorderDestinations, updateGroupTripDetails, deleteDestination, addDestination, clearDailyAccommodation, setDailyAccommodation, updateDestinationEmojiColor } from '../../../api/client';
+import { isDemoGroup } from '../../../api/demo';
 import { resolveDailyAccommodationSourceId } from '../../../api/services/DailyAccommodationService';
 import { type TranslationKey } from '../../../i18n';
 import type { Destination } from '../../../types';
@@ -366,7 +367,8 @@ export function useItineraryMutations({
         const sessionId = original ? resolveCurrentNavigationSessionId(original) : null;
         if (!id.startsWith('draft-')) await deleteDestination(groupId, id, sessionId);
         if (!isCurrent()) return;
-        await refreshLocalSnapshot();
+        if (isDemoGroup(groupId)) await refresh();
+        else await refreshLocalSnapshot();
         if (!isCurrent()) return;
         stopRemovedDestination(id, sessionId);
         const draft = routeDraft.latestDestinations();
@@ -379,7 +381,7 @@ export function useItineraryMutations({
       if (isCurrent()) Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause));
     }
   }, [canEditItinerary, groupId, resolveCurrentNavigationSessionId, routeEditorServerDestinations, routeDraft, setRouteSelectedIds,
-    refreshLocalSnapshot, stopRemovedDestination, t, workflowContext, isWorkflowContextCurrent]);
+    refresh, refreshLocalSnapshot, stopRemovedDestination, t, workflowContext, isWorkflowContextCurrent]);
 
   const handleDelete = useCallback(
     (id: string) => {

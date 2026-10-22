@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Actual demo services preserve reorder metadata and untouched stops, and a clean route editor displays saved delete/reorder results without durable or cloud writes.",
+      "testFile": "demoItineraryMutations.test.ts",
+      "testNamePattern": "deletes from the actual demo|reorders and patches demo metadata|renders b after confirming|renders b,a after a saved reorder"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Extracted style scaling preserves emoji glyphs and layout, leaves original style objects intact, and handles system Bold Text and invalid scales.",
       "testFile": "styleScaling.test.ts",
       "testNamePattern": "scales text without changing emoji|keeps style identity|reduces heavy text weights"
