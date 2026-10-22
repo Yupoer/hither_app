@@ -41,7 +41,7 @@ export function useJoinedGroups(actorId: string | null, includeProfiles = true) 
     loading: result.actorId === actorId ? result.loading : !!actorId,
     error: result.actorId === actorId ? result.error : null,
     retry, setGroups,
-    lifecycle: createElement(JoinedGroupsLoad, { key: loadIdentity.generation, actorId, includeProfiles, actorRef, flight, setResult }),
+    lifecycle: createElement(JoinedGroupsLoad, { key: `joined-groups:${loadIdentity.generation}`, actorId, includeProfiles, actorRef, flight, setResult }),
   };
 }
 

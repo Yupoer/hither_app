@@ -3548,6 +3548,7 @@ export default function MapScreen({ route, navigation }: Props) {
     handleInvite,
     doSelfSplit,
     doSelfMerge,
+    lifecycle: subgroupInvitesLifecycle,
   } = useSubgroupActions({
     groupId,
     userName: user?.name,
@@ -4651,6 +4652,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.flex}>
+      {subgroupInvitesLifecycle}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap

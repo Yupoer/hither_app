@@ -5,6 +5,7 @@ import type { MemberLocation, Subgroup } from '../types';
 const mockStorage = new Map<string, string>();
 const mockAlert = jest.fn();
 const mockInvites = {
+  lifecycle: React.createElement(React.Fragment),
   invites: [{ id: 'inv-1' }],
   accept: jest.fn(async () => undefined),
   decline: jest.fn(async () => undefined),
@@ -62,7 +63,7 @@ describe('useSubgroupActions', () => {
     };
     function Harness() {
       actions = useSubgroupActions(props);
-      return null;
+      return actions.lifecycle;
     }
     act(() => { renderer = create(React.createElement(Harness)); });
   }

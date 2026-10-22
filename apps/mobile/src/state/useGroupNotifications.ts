@@ -92,7 +92,7 @@ export function useGroupNotifications(): ReactElement {
   if (!Object.is(notificationIdentity.groupId, groupId) || !Object.is(notificationIdentity.myUserId, myUserId)) {
     setNotificationIdentity({ groupId, myUserId, generation: notificationIdentity.generation + 1 });
   }
-  return createElement(GroupNotificationSubscription, { key: notificationIdentity.generation, groupId, myUserId, tRef, isLeaderRef, identityRef });
+  return createElement(GroupNotificationSubscription, { key: `group-notifications:${notificationIdentity.generation}`, groupId, myUserId, tRef, isLeaderRef, identityRef });
 }
 
 function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, identityRef }: {

@@ -82,7 +82,7 @@ test('invite recovery keeps cached rows on failure, deduplicates notices and rej
   mockSession.user = { id: 'me' }; mockSession.membership = { group: { id: 'g' } };
   mockInvites.mockResolvedValue([{ id: 'initial', inviterName: 'Leader', subgroupName: 'Team' }]);
   let api!: ReturnType<typeof useSubgroupInvites>;
-  function Harness() { api = useSubgroupInvites(); return null; }
+  function Harness() { api = useSubgroupInvites(); return api.lifecycle; }
   let root!: ReactTestRenderer;
   await act(async () => { root = create(React.createElement(Harness)); });
   expect(api.invites.map(row => row.id)).toEqual(['initial']); expect(mockNotify).not.toHaveBeenCalled();

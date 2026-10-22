@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Real notification consumers install exactly one push, group and invite lifetime through screen branches, replace account resources and dispose all listeners.",
+      "testFile": "sessionNotificationsLifecycle.test.ts",
+      "testNamePattern": "keeps one installed notification lifetime"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
       "testFile": "useMountEffect.test.ts",
       "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"

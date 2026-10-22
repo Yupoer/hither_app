@@ -35,9 +35,7 @@ import CrookIcon from './src/components/CrookIcon';
 import WaveLoading from './src/components/WaveLoading';
 import { installGlobalErrorLogger } from './src/utils/activityLog';
 import { SessionProvider, useSession } from './src/state/SessionContext';
-import { usePushRegistration } from './src/state/usePushRegistration';
-import { useGroupNotifications } from './src/state/useGroupNotifications';
-import { useSubgroupInvites } from './src/state/useSubgroupInvites';
+import { SessionNotifications } from './src/state/SessionNotifications';
 import {
   PreferencesProvider,
   usePreferences,
@@ -102,13 +100,6 @@ textInputDefaults.defaultProps = {
  * Navigation theme + status bar follow the active palette, so the header and
  * screen backgrounds restyle when the user switches theme in Settings.
  */
-function SessionNotifications() {
-  const pushRegistration = usePushRegistration();
-  const groupNotifications = useGroupNotifications();
-  useSubgroupInvites();
-  return <>{pushRegistration}{groupNotifications}</>;
-}
-
 function ThemedNavigation() {
 
   const { colors } = useTheme();
