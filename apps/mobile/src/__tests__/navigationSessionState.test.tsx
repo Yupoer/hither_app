@@ -90,7 +90,7 @@ describe('useNavigationSession', () => {
     let value: ReturnType<typeof useNavigationSession> | undefined;
     function Harness() {
       value = useNavigationSession('group-1');
-      return null;
+      return value.lifecycle;
     }
 
     await act(async () => {
@@ -109,7 +109,7 @@ describe('useNavigationSession', () => {
     let value: ReturnType<typeof useNavigationSession> | undefined;
     function Harness() {
       value = useNavigationSession('group-1');
-      return null;
+      return value.lifecycle;
     }
     await act(async () => {
       create(React.createElement(Harness));
@@ -138,7 +138,7 @@ describe('useNavigationSession', () => {
     let value: ReturnType<typeof useNavigationSession> | undefined;
     function Harness() {
       value = useNavigationSession('group-1');
-      return null;
+      return value.lifecycle;
     }
     await act(async () => {
       create(React.createElement(Harness));
@@ -172,7 +172,7 @@ describe('useNavigationSession', () => {
     let value: ReturnType<typeof useNavigationSession> | undefined;
     function Harness() {
       value = useNavigationSession('group-1');
-      return null;
+      return value.lifecycle;
     }
     await act(async () => {
       create(React.createElement(Harness));

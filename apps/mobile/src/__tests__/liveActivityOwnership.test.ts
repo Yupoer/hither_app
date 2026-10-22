@@ -20,11 +20,14 @@ jest.mock('../api/services/LiveActivityService', () => ({
 jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: null }) }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: { write: jest.fn(async () => {}) } }));
 jest.mock('../utils/liveActivityTokenGate', () => ({ getSharedLiveActivityTokenGate: jest.fn() }));
-import { useLiveActivity } from '../state/useLiveActivity';
+import { LiveActivityRuntime } from '../state/useLiveActivity';
 
 function Harness({ active }: { active: boolean | undefined }) {
-  useLiveActivity(active, { groupName: 'Team' }, { groupId: 'team', navigationSessionId: 'nav-1', destinationId: 'stop', initialDistanceM: 100, travelMode: 'walk' });
-  return null;
+  return React.createElement(LiveActivityRuntime, {
+    active: active,
+    state: { groupName: 'Team' },
+    session: { groupId: 'team', navigationSessionId: 'nav-1', destinationId: 'stop', initialDistanceM: 100, travelMode: 'walk' },
+  });
 }
 
 it('preserves on unmount/hydration, adopts on return, and ends on an explicit stop', async () => {
@@ -50,9 +53,12 @@ it('the real hook replaces the native owner when only the session changes at the
   mockNative.listGroupActivities.mockResolvedValue([]);
   mockNative.startGroupActivity.mockResolvedValueOnce({ activityId: 'A' }).mockResolvedValueOnce({ activityId: 'B' });
   function ScopedHarness({ sessionId }: { sessionId: string }) {
-    useLiveActivity(true, { groupName: 'Team' },
-      { groupId: 'team', destinationId: 'stop', navigationSessionId: sessionId, initialDistanceM: 100, travelMode: 'walk' });
-    return null;
+    return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: { groupName: 'Team' },
+    session: { groupId: 'team', destinationId: 'stop', navigationSessionId: sessionId, initialDistanceM: 100, travelMode: 'walk' },
+  });
+
   }
   let view!: ReactTestRenderer;
   await act(async () => { view = create(React.createElement(ScopedHarness, { sessionId: 'session-A' })); });
