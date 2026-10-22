@@ -45,8 +45,8 @@ function ForegroundReconcile({ enabled, reload, intervalMs }: ForegroundRepairIn
     setReloadInput({ reload, generation: reloadInput.generation + 1 });
   }
   return createElement(Fragment, null,
-    createElement(CommittedForegroundReload, { key: reloadInput.generation, reload, callback }),
-    createElement(ForegroundRepairTimer, { key: repairInput.generation, enabled, intervalMs, reload, callback }),
+    createElement(CommittedForegroundReload, { key: 'reload:' + reloadInput.generation, reload, callback }),
+    createElement(ForegroundRepairTimer, { key: 'repair:' + repairInput.generation, enabled, intervalMs, reload, callback }),
   );
 }
 

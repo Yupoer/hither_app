@@ -19,8 +19,15 @@ function RepairProbe({ reload, enabled = true, intervalMs = 30_000 }: {
 }) { return useForegroundReconcile(enabled, reload, intervalMs); }
 
 let root: ReactTestRenderer;
-beforeEach(() => { jest.useFakeTimers(); jest.clearAllMocks(); mockListeners.clear(); mockApp.currentState = 'active'; });
-afterEach(async () => { if (root) await act(async () => root.unmount()); jest.useRealTimers(); });
+let diagnostics: jest.SpyInstance;
+beforeEach(() => { diagnostics = jest.spyOn(console, 'error'); jest.useFakeTimers(); jest.clearAllMocks(); mockListeners.clear(); mockApp.currentState = 'active'; });
+afterEach(async () => {
+  if (root) await act(async () => root.unmount());
+  const errors = diagnostics.mock.calls.map(call => call.join(' ')).join('\n');
+  diagnostics.mockRestore();
+  jest.useRealTimers();
+  expect(errors).not.toContain('same key');
+});
 
 test('commits the latest callback without restarting the existing repair deadline', async () => {
   const first = jest.fn(); const second = jest.fn();

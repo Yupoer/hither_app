@@ -17,6 +17,7 @@ const mockSupabase = { from: () => {
 const mockNavRows = jest.fn(async (): Promise<any[]> => []);
 let mockNavCallback: any, mockNavHandlers: any;
 const mockUnsubscribe = jest.fn();
+const mockSubscribe = jest.fn(async (_session: string, callback: any, handlers: any): Promise<() => void> => { mockNavCallback = callback; mockNavHandlers = handlers; return mockUnsubscribe; });
 const mockSession: any = { user: { id: 'me' }, membership: { group: { id: 'g' } } };
 const mockInvites = jest.fn(async (): Promise<any[]> => []);
 const mockAccept = jest.fn(async () => {}), mockDecline = jest.fn(async () => {});
@@ -24,7 +25,7 @@ const mockNotify = jest.fn(async () => {});
 jest.mock('react-native', () => ({ AppState: mockApp }));
 jest.mock('../api/supabase', () => ({ supabase: mockSupabase }));
 jest.mock('../api/services/NavigationService', () => ({ listNavigationMemberStates: (...args: any[]) => (mockNavRows as any)(...args),
-  subscribeSessionMemberStates: async (_: string, callback: any, handlers: any) => { mockNavCallback = callback; mockNavHandlers = handlers; return mockUnsubscribe; } }));
+  subscribeSessionMemberStates: (session: string, callback: any, handlers: any) => mockSubscribe(session, callback, handlers) }));
 jest.mock('../api/client', () => ({ fetchMyInvites: (...args: any[]) => (mockInvites as any)(...args), acceptSubgroupInvite: mockAccept, declineSubgroupInvite: mockDecline }));
 jest.mock('../api/demo', () => ({ isDemoGroup: () => false }));
 jest.mock('../state/SessionContext', () => ({ useSession: () => mockSession }));
@@ -33,8 +34,9 @@ jest.mock('../i18n', () => ({ useTranslation: () => ({ t: (key: string) => key }
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: async () => null, setItem: async () => {} }));
 import { useOrganizerExceptions } from '../state/useOrganizerExceptions';
 import { useSubgroupInvites } from '../state/useSubgroupInvites';
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-30T00:10:00Z')); jest.clearAllMocks(); mockChannels.length = 0; mockListeners.clear(); mockApp.currentState = 'active'; });
+beforeEach(() => { mockNavRows.mockReset(); mockNavRows.mockResolvedValue([]); mockSubscribe.mockClear(); jest.useFakeTimers(); jest.setSystemTime(new Date('2026-09-30T00:10:00Z')); jest.clearAllMocks(); mockChannels.length = 0; mockListeners.clear(); mockApp.currentState = 'active'; });
 afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
 async function appState(state: string) { await act(async () => { mockApp.currentState = state; for (const listener of mockListeners) listener(state); }); }
 
@@ -104,5 +106,101 @@ test('invite recovery keeps cached rows on failure, deduplicates notices and rej
   mockSession.user = null;
   await act(async () => { root.update(React.createElement(Harness)); });
   expect(api.invites).toEqual([]);
+  await act(async () => root.unmount());
+});
+
+test('organizer releases a late subscription and rejects old session reads, ready and remove callbacks', async () => {
+  let finishSubscription!: (cleanup: () => void) => void;
+  let finishRows!: (rows: any[]) => void;
+  let oldCallback!: (row: any) => void;
+  let oldHandlers: any;
+  const lateCleanup = jest.fn();
+  mockSubscribe.mockImplementationOnce((_session, callback, handlers) => {
+    oldCallback = callback; oldHandlers = handlers;
+    return new Promise(resolve => { finishSubscription = resolve; });
+  });
+  mockNavRows.mockImplementationOnce(() => new Promise(resolve => { finishRows = resolve; }));
+  let options: any = { groupId: 'g', groupState: { group: { id: 'g' }, members: [
+    { userId: 'B', name: 'B', role: 'follower', status: 'active' },
+  ] }, navigationSessionId: 'old', stragglers: [], nowMs: Date.now() };
+  let api!: ReturnType<typeof useOrganizerExceptions>;
+  function Probe() { api = useOrganizerExceptions(options); return api.lifecycle; }
+  let root!: ReactTestRenderer;
+  await act(async () => { root = create(React.createElement(Probe)); });
+  options = { ...options, navigationSessionId: 'new' };
+  await act(async () => { root.update(React.createElement(Probe)); });
+  await act(async () => {
+    mockNavCallback({ userId: 'B', localStatus: 'permission_denied', updatedAt: new Date().toISOString() });
+  });
+  expect(api.exceptions.length).toBeGreaterThan(0);
+  const reads = mockNavRows.mock.calls.length;
+  await act(async () => {
+    finishSubscription(lateCleanup);
+    finishRows([{ userId: 'B', localStatus: 'tracking' }]);
+    oldCallback({ userId: 'B', localStatus: 'tracking' });
+    oldHandlers.onReady(); oldHandlers.onRemove('B');
+  });
+  expect(lateCleanup).toHaveBeenCalledTimes(1);
+  expect(mockNavRows).toHaveBeenCalledTimes(reads);
+  expect(api.exceptions.length).toBeGreaterThan(0);
+  options = { ...options, enabled: false, navigationSessionId: null };
+  await act(async () => { root.update(React.createElement(Probe)); });
+  expect(api.exceptions).toEqual([]);
+  expect(mockUnsubscribe).toHaveBeenCalled();
+  await act(async () => root.unmount());
+  expect(mockListeners.size).toBe(0);
+});
+
+test('organizer preserves continuous firstSeen across same and equal new inputs and starts a new episode after leave', async () => {
+  const startedAt = Date.now();
+  let options: any = { groupId: 'g-observation', groupState: { group: { id: 'g-observation' }, members: [
+    { userId: 'B', name: 'B', role: 'follower', status: 'active' },
+  ] }, stragglers: [{ userId: 'B', name: 'B', distanceM: 1000 }], nowMs: startedAt };
+  let api!: ReturnType<typeof useOrganizerExceptions>;
+  function Probe() { api = useOrganizerExceptions(options); return api.lifecycle; }
+  let root!: ReactTestRenderer;
+  await act(async () => { root = create(React.createElement(React.StrictMode, null, React.createElement(Probe))); });
+  expect(api.exceptions).toHaveLength(1);
+  const original = api.exceptions[0].firstSeenAt;
+  await act(async () => { root.update(React.createElement(React.StrictMode, null, React.createElement(Probe))); });
+  expect(api.exceptions[0].firstSeenAt).toBe(original);
+  options = { ...options, stragglers: options.stragglers.map((item: object) => ({ ...item })), nowMs: startedAt + 30_000 };
+  await act(async () => { root.update(React.createElement(React.StrictMode, null, React.createElement(Probe))); });
+  expect(api.exceptions[0].firstSeenAt).toBe(original);
+  options = { ...options, stragglers: [], nowMs: startedAt + 60_000 };
+  await act(async () => { root.update(React.createElement(React.StrictMode, null, React.createElement(Probe))); });
+  options = { ...options, stragglers: [{ userId: 'B', name: 'B', distanceM: 1000 }], nowMs: startedAt + 90_000 };
+  await act(async () => { root.update(React.createElement(React.StrictMode, null, React.createElement(Probe))); });
+  expect(api.exceptions).toHaveLength(1);
+  expect(api.exceptions[0].firstSeenAt).toBe(new Date(startedAt + 90_000).toISOString());
+  await act(async () => root.unmount());
+  expect(mockListeners.size).toBe(0);
+});
+
+test('organizer does not publish abandoned straggler observations', async () => {
+  const startedAt = Date.now();
+  const stragglers = [{ userId: 'B', name: 'B', distanceM: 1000 }];
+  let options: any = { groupId: 'g-abandoned', groupState: { group: { id: 'g-abandoned' }, members: [
+    { userId: 'B', name: 'B', role: 'follower', status: 'active' },
+  ] }, stragglers, nowMs: startedAt };
+  let suspend = false;
+  const never = new Promise<void>(() => undefined);
+  let api!: ReturnType<typeof useOrganizerExceptions>;
+  function Probe() {
+    api = useOrganizerExceptions(options);
+    if (suspend) throw never;
+    return api.lifecycle;
+  }
+  const tree = () => React.createElement(React.Suspense, { fallback: null }, React.createElement(Probe));
+  let root!: ReactTestRenderer;
+  await act(async () => { root = create(tree()); });
+  const firstSeen = api.exceptions[0].firstSeenAt;
+  suspend = true;
+  options = { ...options, stragglers: [], nowMs: startedAt + 30_000 };
+  await act(async () => { root.update(tree()); });
+  suspend = false;
+  options = { ...options, stragglers, nowMs: startedAt + 60_000 };
+  await act(async () => { root.update(tree()); });
+  expect(api.exceptions[0].firstSeenAt).toBe(firstSeen);
   await act(async () => root.unmount());
 });

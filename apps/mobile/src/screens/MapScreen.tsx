@@ -4569,12 +4569,12 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   const groupDataLifecycle = <>
-    {groupStateLifecycle}
-    {locationRefreshLifecycle}
-    {gatheringWorkflowLifecycle}
-    {organizerLifecycle}
-    {coordination.lifecycle}
-    {subgroupLifecycle}
+    <React.Fragment key="group-state">{groupStateLifecycle}</React.Fragment>
+    <React.Fragment key="location-refresh">{locationRefreshLifecycle}</React.Fragment>
+    <React.Fragment key="gathering-workflow">{gatheringWorkflowLifecycle}</React.Fragment>
+    <React.Fragment key="organizer">{organizerLifecycle}</React.Fragment>
+    <React.Fragment key="coordination">{coordination.lifecycle}</React.Fragment>
+    <React.Fragment key="subgroup">{subgroupLifecycle}</React.Fragment>
   </>;
 
   if (loading && !state) {
