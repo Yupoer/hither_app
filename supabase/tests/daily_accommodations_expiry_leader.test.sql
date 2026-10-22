@@ -8,7 +8,7 @@ create extension if not exists pgtap with schema extensions;
 create extension if not exists dblink;
 
 set search_path = extensions, public, auth;
-select plan(27);
+select plan(28);
 
 -- ============================================================
 -- Single-session block (transactional auth + fixtures)
@@ -483,10 +483,19 @@ select is(
   (select count(*)::int from public.itinerary_items
     where group_id = 'dccccccc-cccc-4ccc-8ccc-cccccccccccc'
       and kind = 'accommodation'
-      and stay_anchor = true
       and coalesce(day, 1) = 1),
   2,
-  'concurrent none→some auto-adds exactly two stay_anchor cards (no double)'
+  'concurrent setters retain exactly two accommodation cards (no double auto-add)'
+);
+
+select is(
+  (select count(*)::int from public.itinerary_items
+    where group_id = 'dccccccc-cccc-4ccc-8ccc-cccccccccccc'
+      and kind = 'accommodation'
+      and stay_anchor = true
+      and coalesce(day, 1) = 1),
+  0,
+  'serialized some→some setter downgrades both accommodation anchors'
 );
 
 -- Cleanup committed fixtures (no outer rollback after concurrent section).

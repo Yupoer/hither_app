@@ -147,12 +147,18 @@ function memberName(node) {
   return undefined;
 }
 
+function bindingName(node) {
+  if (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) return node.text;
+  if (ts.isComputedPropertyName(node) && ts.isStringLiteralLike(node.expression)) return node.expression.text;
+  return undefined;
+}
+
 function bindingEntries(name, at = []) {
   if (ts.isIdentifier(name)) return [{ node: name, path: at }];
   return name.elements.flatMap((element, index) => {
     if (!ts.isBindingElement(element) || element.dotDotDotToken) return [];
     const key = ts.isObjectBindingPattern(name)
-      ? (element.propertyName ?? element.name).text : String(index);
+      ? bindingName(element.propertyName ?? element.name) : String(index);
     return key === undefined ? [] : bindingEntries(element.name, [...at, key]);
   });
 }
@@ -179,8 +185,7 @@ function classifyTestSource(text, file) {
   host.getSourceFile = (name) => path.resolve(name) === path.resolve(file) ? source : undefined;
   const checker = ts.createProgram([file], options, host).getTypeChecker();
   const productionBindings = new Set();
-  const fsBindings = new Map();
-  const jestBindings = new Set();
+  const moduleBindings = new Map();
   const variables = [];
   const references = [];
   const calls = [];
@@ -190,10 +195,9 @@ function classifyTestSource(text, file) {
     !checker.getSymbolAtLocation(node)?.declarations?.length;
   const isJestCall = (node, methods) => {
     if (!ts.isCallExpression(node)) return false;
-    const expression = unwrap(node.expression);
-    if (!methods.includes(memberName(expression))) return false;
-    const receiver = unwrap(expression.expression);
-    return isGlobal(receiver, 'jest') || jestBindings.has(checker.getSymbolAtLocation(receiver));
+    const binding = modulePath(node.expression);
+    return binding?.spec === '@jest/globals' && binding.path.length === 2 &&
+      binding.path[0] === 'jest' && methods.includes(binding.path[1]);
   };
   const moduleSpec = (node) => {
     if (!ts.isCallExpression(node) || !node.arguments[0] || !ts.isStringLiteralLike(node.arguments[0])) return undefined;
@@ -201,14 +205,27 @@ function classifyTestSource(text, file) {
       isJestCall(node, ['requireActual'])) return node.arguments[0].text;
     return undefined;
   };
+  const modulePath = (expression) => {
+    const node = unwrap(expression);
+    if (isGlobal(node, 'jest')) return { spec: '@jest/globals', path: ['jest'] };
+    if (ts.isIdentifier(node)) return moduleBindings.get(checker.getSymbolAtLocation(node));
+    const member = memberName(node);
+    if (member !== undefined) {
+      const root = modulePath(node.expression);
+      return root && { spec: root.spec, path: [...root.path, member] };
+    }
+    const spec = moduleSpec(node);
+    if (FS_MODULES.has(spec) || spec === '@jest/globals') {
+      return { spec, path: spec.endsWith('/promises') ? ['promises'] : [] };
+    }
+    return undefined;
+  };
   const addBindings = (entries, spec) => {
     for (const entry of entries) {
       const symbol = checker.getSymbolAtLocation(entry.node);
       if (!symbol) continue;
-      if (FS_MODULES.has(spec)) {
-        fsBindings.set(symbol, [...(spec.endsWith('/promises') ? ['promises'] : []), ...entry.path]);
-      } else if (spec === '@jest/globals' && entry.path[0] === 'jest') {
-        jestBindings.add(symbol);
+      if (FS_MODULES.has(spec) || spec === '@jest/globals') {
+        moduleBindings.set(symbol, { spec, path: [...(spec.endsWith('/promises') ? ['promises'] : []), ...entry.path] });
       } else if (isProductionSpec(spec, file)) productionBindings.add(symbol);
     }
   };
@@ -217,6 +234,27 @@ function classifyTestSource(text, file) {
       addBindings(importEntries(statement.importClause), statement.moduleSpecifier.text);
     }
   }
+  function collectVariables(node) {
+    if (ts.isVariableDeclaration(node) && node.initializer) variables.push(node);
+    ts.forEachChild(node, collectVariables);
+  }
+  collectVariables(source);
+  // Resolve module aliases before excluding mock factories, preserving shadowed symbols.
+  let added;
+  do {
+    added = false;
+    for (const variable of variables) {
+      const root = modulePath(variable.initializer);
+      if (!root) continue;
+      for (const entry of bindingEntries(variable.name)) {
+        const symbol = checker.getSymbolAtLocation(entry.node);
+        if (symbol && !moduleBindings.has(symbol)) {
+          moduleBindings.set(symbol, { spec: root.spec, path: [...root.path, ...entry.path] });
+          added = true;
+        }
+      }
+    }
+  } while (added);
   function visit(node) {
     if (ts.isExpressionWithTypeArguments(node) &&
       node.parent.token === ts.SyntaxKind.ExtendsKeyword && ts.isClassLike(node.parent.parent)) {
@@ -229,7 +267,6 @@ function classifyTestSource(text, file) {
     if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       namesProductionSource ||= PRODUCTION_SOURCE_PATH.test(node.text) && !isTestPath(node.text);
     }
-    if (ts.isVariableDeclaration(node) && node.initializer) variables.push(node);
     if (ts.isIdentifier(node)) references.push(node);
     if (ts.isCallExpression(node)) {
       calls.push(node);
@@ -249,34 +286,6 @@ function classifyTestSource(text, file) {
     ts.forEachChild(node, visit);
   }
   visit(source);
-  const fsPath = (expression) => {
-    const node = unwrap(expression);
-    if (ts.isIdentifier(node)) return fsBindings.get(checker.getSymbolAtLocation(node));
-    const member = memberName(node);
-    if (member !== undefined) {
-      const root = fsPath(node.expression);
-      return root && [...root, member];
-    }
-    const spec = moduleSpec(node);
-    if (FS_MODULES.has(spec)) return spec.endsWith('/promises') ? ['promises'] : [];
-    return undefined;
-  };
-  // Resolve aliases by symbol without crossing shadowed bindings.
-  let added;
-  do {
-    added = false;
-    for (const variable of variables) {
-      const root = fsPath(variable.initializer);
-      if (!root) continue;
-      for (const entry of bindingEntries(variable.name)) {
-        const symbol = checker.getSymbolAtLocation(entry.node);
-        if (symbol && !fsBindings.has(symbol)) {
-          fsBindings.set(symbol, [...root, ...entry.path]);
-          added = true;
-        }
-      }
-    }
-  } while (added);
   importsProduction ||= references.some((node) => {
     const parent = node.parent;
     if ((parent.name === node && !ts.isShorthandPropertyAssignment(parent)) ||
@@ -288,8 +297,11 @@ function classifyTestSource(text, file) {
     return productionBindings.has(symbol);
   });
   return {
-    readsProductionSource: namesProductionSource && calls.some((node) =>
-      ['readFileSync', 'readFile', 'promises.readFile'].includes(fsPath(node.expression)?.join('.'))),
+    readsProductionSource: namesProductionSource && calls.some((node) => {
+      const binding = modulePath(node.expression);
+      return binding && FS_MODULES.has(binding.spec) &&
+        ['readFileSync', 'readFile', 'promises.readFile'].includes(binding.path.join('.'));
+    }),
     importsProduction,
   };
 }
