@@ -6,6 +6,7 @@ import { join } from 'node:path';
  * Pure setState buttons are listed as pure-UI (minimal safe handlers).
  */
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const authScreen = readFileSync(join(__dirname, '../screens/AuthScreen.tsx'), 'utf8');
 const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
 const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
@@ -89,7 +90,7 @@ describe('button inventory / high-risk action contract', () => {
     // Navigation promote still persists reorder immediately.
     expect(mapScreen).toContain("'map.destination_reorder'");
     expect(mapScreen).toContain("'map.destination_suggest'");
-    expect(mapScreen).toContain("'map.confirm_add_destination'");
+    expect(addPlaceCard).toContain("'map.confirm_add_destination'");
     expect(mapScreen).toContain("'map.fit_all_members'");
     expect(mapScreen).toContain("'map.locate_me'");
     expect(mapScreen).toContain("'map.open_feedback'");
@@ -154,6 +155,7 @@ describe('button inventory / high-risk action contract', () => {
   it('locks the high-risk actionId inventory so new handlers are not silent', () => {
     const corpus = [
       mapScreen,
+      addPlaceCard,
       authScreen,
       roleSelect,
       myTeams,

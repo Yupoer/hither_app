@@ -318,10 +318,11 @@ describe('route reorder tour (#189)', () => {
       join(__dirname, '../components/DestinationReorderList.tsx'),
       'utf8',
     );
-    expect(mapScreen).toContain('onOpenComplete={() => {');
-    expect(mapScreen).toContain('setRouteOverlayOpenComplete(true)');
-    expect(mapScreen).toContain('onTourTargetRef={setTourTargetRef}');
-    expect(mapScreen).toContain("setTourTargetRef('routeMode'");
+    const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
+    expect(routeEditorSheet).toContain('onOpenComplete={() => {');
+    expect(routeEditorSheet).toContain('setRouteOverlayOpenComplete(true)');
+    expect(routeEditorSheet).toContain('onTourTargetRef={setTourTargetRef}');
+    expect(routeEditorSheet).toContain("setTourTargetRef('routeMode'");
     expect(mapScreen).toContain("target === 'routeAccommodation'");
     expect(mapScreen).toContain('measureInWindow');
     expect(mapScreen).toContain('routeTourScrollOffset');

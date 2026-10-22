@@ -13,6 +13,7 @@ import {
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const carousel = readFileSync(join(root, 'screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const meetTimeChip = readFileSync(join(root, 'screens/MapScreen/components/MeetTimeChip.tsx'), 'utf8');
 const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const quickCommands = readFileSync(join(root, 'components/QuickCommandsCard.tsx'), 'utf8');
@@ -104,28 +105,28 @@ describe('Dynamic Type contract', () => {
   });
 
   it('scales gathering-point card chrome and shows day + date when expanded', () => {
-    expect(mapScreen).toContain('formatTripDayLine');
-    expect(mapScreen).toContain('cardDayLine');
+    expect(carousel).toContain('formatTripDayLine');
+    expect(carousel).toContain('cardDayLine');
     // Expanded mock layout: day + people chip, metrics row (dist | eta | map).
-    expect(mapScreen).toContain('cardSubRow');
-    expect(mapScreen).toContain('arrivalPeopleChip');
-    expect(mapScreen).toContain('metricsRow');
-    expect(mapScreen).toContain('metricValue');
-    expect(mapScreen).toContain("map.distanceToGather");
-    expect(mapScreen).toContain("map.routeEstimate");
-    expect(mapScreen).toContain("map.localEstimate");
-    expect(mapScreen).toContain("map.meetCountdown");
-    expect(mapScreen).toContain("subgroup.itineraryBadge");
-    expect(mapScreen).toContain('a11y-layout:commandRowCompact');
-    expect(mapScreen).toContain('meetBtn');
+    expect(carousel).toContain('cardSubRow');
+    expect(carousel).toContain('arrivalPeopleChip');
+    expect(carousel).toContain('metricsRow');
+    expect(carousel).toContain('metricValue');
+    expect(carousel).toContain("map.distanceToGather");
+    expect(carousel).toContain("map.routeEstimate");
+    expect(carousel).toContain("map.localEstimate");
+    expect(carousel).toContain("map.meetCountdown");
+    expect(carousel).toContain("subgroup.itineraryBadge");
+    expect(carousel).toContain('a11y-layout:commandRowCompact');
+    expect(carousel).toContain('meetBtn');
     expect(meetTimeChip).toContain('meetBtnStack');
     // Apple Maps only after expand, in metrics row (not in the command row).
-    expect(mapScreen).toContain('mapsChip');
-    expect(mapScreen).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openExternalNavigation/);
+    expect(carousel).toContain('mapsChip');
+    expect(carousel).toMatch(/cardExpanded\s*\?\s*\([\s\S]*?openExternalNavigation/);
     // Card padding is scale/density-aware (horizontal pad + top/bottom).
     expect(mapStyles).toMatch(/cardPad\s*=\s*compact\s*\?\s*s\(/);
     expect(mapStyles).toMatch(/card:\s*\{[\s\S]*?paddingHorizontal:\s*cardPad/);
-    expect(mapScreen).toContain('cardKickerRow');
+    expect(carousel).toContain('cardKickerRow');
     // Logo removed.
     expect(mapScreen).not.toMatch(/styles\.cardIcon/);
   });
@@ -136,7 +137,7 @@ describe('Dynamic Type contract', () => {
   });
 
   it('stacks gathering cards above capsules and below the sheet layer', () => {
-    expect(mapScreen).toContain('a11y-layout:carouselCapsuleClearance');
+    expect(carousel).toContain('a11y-layout:carouselCapsuleClearance');
     expect(mapScreen).toContain('carouselMaxHeight');
     expect(mapScreen).toContain('CAPSULE_CLEARANCE');
     // cards (58) > capsules (50); sheet wrapper sibling must beat carousel.
@@ -147,7 +148,7 @@ describe('Dynamic Type contract', () => {
     // No permanent black fog strip under the carousel.
     expect(mapScreen).not.toContain('carouselFog');
     // Command row density follows device/font — never multi-row / never detent.
-    expect(mapScreen).toContain('a11y-layout:commandRowCompact');
+    expect(carousel).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).not.toMatch(/stacked\s*=/);
     expect(mapScreen).not.toMatch(/detent\s*>\s*0\s*&&/);
   });
@@ -158,11 +159,11 @@ describe('Dynamic Type contract', () => {
     // Fixed height would clip 集合倒數 under bold/large type.
     expect(mapScreen).not.toMatch(/meetBtn:\s*\{[\s\S]*?height:\s*cmdSize/);
     expect(mapStyles).toContain('metricNumSize');
-    expect(mapScreen).toContain('adjustsFontSizeToFit');
+    expect(carousel).toContain('adjustsFontSizeToFit');
     // Metric values must not shrink to unreadable; captions wrap + floor size.
-    expect(mapScreen).toContain('minimumFontScale={0.85}');
+    expect(carousel).toContain('minimumFontScale={0.85}');
     expect(mapScreen).not.toContain('minimumFontScale={0.65}');
-    expect(mapScreen).toMatch(/metricCaption[\s\S]{0,80}numberOfLines=\{2\}/);
+    expect(carousel).toMatch(/metricCaption[\s\S]{0,80}numberOfLines=\{2\}/);
     expect(mapStyles).toMatch(/const metricCaptionSize = tight \? 11/);
   });
 

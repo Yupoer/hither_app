@@ -7,6 +7,9 @@ describe('Amicro native animation contracts', () => {
   const button = read('components/AmicroButton.tsx');
   const wave = read('components/WaveLoading.tsx');
   const map = read('screens/MapScreen.tsx');
+  const inviteMembersOverlay = read('screens/MapScreen/components/InviteMembersOverlay.tsx');
+  const routeEditorSheet = read('screens/MapScreen/components/RouteEditorSheet.tsx');
+  const carousel = read('screens/MapScreen/components/GatheringCarousel.tsx');
   const mapStyles = read('screens/MapScreen/styles.ts');
   const passive = read('screens/MapScreen/components/PassiveCompanionPanel.tsx');
   const refreshButton = read('screens/MapScreen/components/RefreshLocationsButton.tsx');
@@ -26,7 +29,7 @@ describe('Amicro native animation contracts', () => {
       'search', 'close', 'pencil-outline', 'expand-outline', 'contract-outline',
       'refresh',
     ]) {
-      expect(map + passive + refreshButton).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
+      expect(map + passive + refreshButton + carousel + routeEditorSheet + inviteMembersOverlay).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
     }
     expect(map).toContain("name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}");
     expect(mapStyles).toContain('width: 44');
@@ -48,9 +51,9 @@ describe('Amicro native animation contracts', () => {
     expect(map).toContain('active={editButtonActive}');
     expect(map).toContain('resetAfterComplete={false}');
     expect(map).toContain('setEditButtonActive(false)');
-    expect(map).toContain('setRouteScrollEnabled(true)');
+    expect(routeEditorSheet).toContain('setRouteScrollEnabled(true)');
     // Dismiss commits draft then closes (local UI first, network flush async).
-    expect(map).toMatch(/setEditButtonActive\(false\);\s+setOverlay\(null\);/);
+    expect(routeEditorSheet).toMatch(/setEditButtonActive\(false\);\s+setOverlay\(null\);/);
     expect(map).toContain('flushRouteDraft');
   });
 
@@ -65,15 +68,15 @@ describe('Amicro native animation contracts', () => {
   });
 
   it('keeps invite actions labeled, framed, and makes sharing longer', () => {
-    expect(map).toContain("label={t('map.share')}");
-    expect(map).toContain("label={t('map.copy')}");
-    expect(map).toContain('durationMs={420}');
-    expect(map).toContain('style={styles.inviteActionButton}');
+    expect(inviteMembersOverlay).toContain("label={t('map.share')}");
+    expect(inviteMembersOverlay).toContain("label={t('map.copy')}");
+    expect(inviteMembersOverlay).toContain('durationMs={420}');
+    expect(inviteMembersOverlay).toContain('style={styles.inviteActionButton}');
     expect(mapStyles).toContain('fontSize: 32');
-    expect(map).toContain('adjustsFontSizeToFit');
-    expect(map).toContain('minimumFontScale={0.7}');
+    expect(carousel).toContain('adjustsFontSizeToFit');
+    expect(inviteMembersOverlay).toContain('minimumFontScale={0.7}');
     // Share awaits system share settle before Amicro reset.
-    expect(map).toMatch(/onAnimationComplete=\{async\s*\(\)\s*=>\s*\{[\s\S]*await shareCode\(\)/);
+    expect(inviteMembersOverlay).toMatch(/onAnimationComplete=\{async\s*\(\)\s*=>\s*\{[\s\S]*await shareCode\(\)/);
   });
 
   it('supports external Promise settle in Amicro finish path', () => {

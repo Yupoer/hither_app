@@ -70,6 +70,7 @@ const { act, create } = require('react-test-renderer') as {
 const { GroupFeatureTourOverlay } = require('../featureTour/GroupFeatureTourOverlay') as typeof import('../featureTour/GroupFeatureTourOverlay');
 
 const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const overlaySrc = readFileSync(join(__dirname, '../featureTour/GroupFeatureTourOverlay.tsx'), 'utf8');
 const hookSrc = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.ts'), 'utf8');
 
@@ -195,10 +196,10 @@ describe('Stage Two tab Y snap (peek-layout measure → live mid chrome)', () =>
 
 describe('MapScreen highlight owners (#182)', () => {
   it('pins arrival progress to the people chip, not the metrics row', () => {
-    expect(map).toMatch(/setTourTargetRef\('arrivalProgress'/);
+    expect(carousel).toMatch(/setTourTargetRef\('arrivalProgress'/);
     expect(map).not.toMatch(/Arrival progress chip is the people count control above; alias for tour/);
-    const chipIdx = map.indexOf('styles.arrivalPeopleChip');
-    const arrivalRefIdx = map.indexOf("setTourTargetRef('arrivalProgress'");
+    const chipIdx = carousel.indexOf('styles.arrivalPeopleChip');
+    const arrivalRefIdx = carousel.indexOf("setTourTargetRef('arrivalProgress'");
     expect(arrivalRefIdx).toBeGreaterThan(-1);
     expect(Math.abs(arrivalRefIdx - chipIdx)).toBeLessThan(400);
   });

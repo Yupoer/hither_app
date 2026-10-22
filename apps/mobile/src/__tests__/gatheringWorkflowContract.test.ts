@@ -8,6 +8,8 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const arrivalManageSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/ArrivalManageSheet.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const groupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
 const groupNotifications = readFileSync(
   join(__dirname, '../state/useGroupNotifications.ts'),
@@ -85,11 +87,11 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('setDestinationArrival');
     expect(client).toContain('setDestinationArrivalAt');
     expect(mapScreen).toContain('destinationArrivals');
-    expect(mapScreen).toContain("t('arrival.mark')");
+    expect(carousel).toContain("t('arrival.mark')");
     expect(mapScreen).toContain("t('common.confirm')");
     expect(mapScreen).toContain('arrivalErrorMessage');
-    expect(mapScreen).toContain('arrivalMemberRow');
-    expect(mapScreen).toContain('checkmark-circle');
+    expect(arrivalManageSheet).toContain('arrivalMemberRow');
+    expect(carousel).toContain('checkmark-circle');
     expect(i18n).toContain("'arrival.errFuture'");
     expect(i18n).toContain("'arrival.failedTitle'");
   });
@@ -198,7 +200,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('completeGatheringStop');
     expect(mapScreen).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('enqueueJourneyCompletion');
-    expect(mapScreen).toContain('leader_mark_complete');
+    expect(carousel).toContain('leader_mark_complete');
     expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(pushMessages).toContain('gathering_completed');
     expect(pushMessages).toMatch(/nameOr\(p\.sender_name/);

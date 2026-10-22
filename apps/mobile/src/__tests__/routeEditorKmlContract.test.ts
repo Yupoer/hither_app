@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
 const meetTimeSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MeetTimeSheet.tsx'), 'utf8');
 const reorder = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
@@ -53,7 +54,7 @@ describe('route editor + KML contracts (#151)', () => {
   it('open-once sync + import CTA replace always-on sync button', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
     expect(mapScreen).toContain('openKmlImportForScope');
-    expect(mapScreen).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
+    expect(routeEditorSheet).toContain('onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}');
     expect(mapScreen).toContain('remainingQuota={kmlRemainingQuota}');
     expect(reorder).toContain('onImport');
     expect(reorder).toContain("t('kml.entry')");
@@ -61,9 +62,9 @@ describe('route editor + KML contracts (#151)', () => {
 
   it('route editor mutations use full open reorder list (exiting snapshots carousel-only)', () => {
     // DestinationReorderList must not receive merged exiting carousel rows.
-    const reorderStart = mapScreen.indexOf('visible={overlay === \'route\'}');
+    const reorderStart = routeEditorSheet.indexOf('visible={overlay === \'route\'}');
     expect(reorderStart).toBeGreaterThan(-1);
-    const reorderBlock = mapScreen.slice(reorderStart, reorderStart + 9000);
+    const reorderBlock = routeEditorSheet.slice(reorderStart, reorderStart + 9000);
     // Full open list (all days) via openForRouteEditor — not day-gated carousel.
     expect(reorderBlock).toContain('destinations={openForRouteEditor}');
     expect(reorderBlock).not.toContain('destinations={destinations}');
@@ -82,7 +83,7 @@ describe('route editor + KML contracts (#151)', () => {
     expect(mapScreen).toContain('flushRouteDraft');
     expect(mapScreen).toContain('route_draft_flush');
     // Route list onReorder is the local handler.
-    expect(mapScreen).toContain('onReorder={handleReorder}');
+    expect(routeEditorSheet).toContain('onReorder={handleReorder}');
     // No 3s optimistic timeout that clobbers draft.
     expect(mapScreen).not.toMatch(/setOptimisticDestinations\(null\);\s*\}, 3000\)/);
   });
@@ -121,8 +122,8 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain('multiSelect');
     expect(mapScreen).toContain('routeInteractionMode');
     expect(mapScreen).toContain('handleDeleteMany');
-    expect(mapScreen).toContain('headerLeft');
-    expect(mapScreen).toContain("t('route.deleteSelected'");
+    expect(routeEditorSheet).toContain('headerLeft');
+    expect(routeEditorSheet).toContain("t('route.deleteSelected'");
   });
 
   it('uses the checkbox alone for multi-select and keeps day blocks seam-free', () => {

@@ -111,10 +111,11 @@ describe('gather request inbox FIFO (#173)', () => {
     expect(map).toContain('testID="route-gather-request-inbox"');
     expect(map).toContain('sortGatherRequestsFifo');
     // Editor overlay block must not map gatherPointRequests for approval.
-    const editorStart = map.indexOf("visible={overlay === 'route'}");
+    const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
+    const editorStart = routeEditorSheet.indexOf("visible={overlay === 'route'}");
     expect(editorStart).toBeGreaterThan(-1);
-    const editorEnd = map.indexOf('DestinationReorderList', editorStart);
-    const editorBlock = map.slice(editorStart, editorEnd);
+    const editorEnd = routeEditorSheet.indexOf('DestinationReorderList', editorStart);
+    const editorBlock = routeEditorSheet.slice(editorStart, editorEnd);
     expect(editorBlock).not.toContain('gatherPointRequests.map');
     expect(editorBlock).not.toContain('handleGatherPointRequest');
     expect(map).toContain('previousSortedIds');

@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 
 describe('MapKit chrome layout', () => {
   it.each([
@@ -95,6 +96,6 @@ describe('MapKit chrome layout', () => {
   it('derives carousel height from the same compass coordinate', () => {
     expect(mapScreen).toContain('const compassTop = mapKitChromeLayout({');
     expect(mapScreen).toContain('compassTop - (insets.top + 8) - 8');
-    expect(mapScreen).toContain('maxHeight: carouselMaxHeight');
+    expect(carousel).toContain('maxHeight: carouselMaxHeight');
   });
 });

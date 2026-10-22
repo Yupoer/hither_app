@@ -7,6 +7,7 @@ import {
 } from '../utils/keyboardSurface';
 
 const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const account = readFileSync(join(__dirname, '../components/AccountSheet.tsx'), 'utf8');
 const addPlaceTour = readFileSync(join(__dirname, '../featureTour/addPlaceTour.ts'), 'utf8');
 
@@ -34,13 +35,13 @@ describe('keyboard surface + inline rename (#172)', () => {
   });
 
   it('confirm card uses inline TextInput and no rename Modal', () => {
-    expect(map).toContain('testID="confirm-place-name"');
-    expect(map).toContain('keyboardAvoidBottomOffset');
+    expect(addPlaceCard).toContain('testID="confirm-place-name"');
+    expect(addPlaceCard).toContain('keyboardAvoidBottomOffset');
     // Inline title input owns pendingPlaceTitle (no separate rename draft Modal).
-    const nameIdx = map.indexOf('testID="confirm-place-name"');
+    const nameIdx = addPlaceCard.indexOf('testID="confirm-place-name"');
     expect(nameIdx).toBeGreaterThan(-1);
-    expect(map.slice(Math.max(0, nameIdx - 900), nameIdx + 40)).toMatch(/TextInput/);
-    expect(map).toContain('onChangeText={setPendingPlaceTitle}');
+    expect(addPlaceCard.slice(Math.max(0, nameIdx - 900), nameIdx + 40)).toMatch(/TextInput/);
+    expect(addPlaceCard).toContain('onChangeText={setPendingPlaceTitle}');
     expect(map).not.toContain('renameModalVisible');
     expect(map).not.toContain('testID="confirm-rename-modal"');
     expect(map).not.toContain('openRenameModal');

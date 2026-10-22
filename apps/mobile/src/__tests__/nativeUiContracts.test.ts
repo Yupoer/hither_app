@@ -19,6 +19,10 @@ const sheetHeaderActionContent = readFileSync(join(root, 'components/SheetHeader
 const premiumBanner = readFileSync(join(root, 'components/PremiumBanner.tsx'), 'utf8');
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
+const opsCenterSheet = readFileSync(join(root, 'screens/MapScreen/components/OpsCenterSheet.tsx'), 'utf8');
+const inviteMembersOverlay = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersOverlay.tsx'), 'utf8');
+const routeEditorSheet = readFileSync(join(root, 'screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
+const addPlaceCard = readFileSync(join(root, 'screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const inviteSheetIos = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.ios.tsx'), 'utf8');
 const inviteSheet = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.tsx'), 'utf8');
@@ -139,10 +143,7 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain("material?: 'default' | 'mapSheet'");
     expect(overlaySheet).toContain("material === 'mapSheet'");
     expect(overlaySheet).toContain('glass.sheet');
-    const routeOverlay = mapScreen.slice(
-      mapScreen.indexOf("visible={overlay === 'route'}"),
-      mapScreen.indexOf('<GroupFeatureTourOverlay', mapScreen.indexOf("visible={overlay === 'route'}")),
-    );
+    const routeOverlay = routeEditorSheet.slice(routeEditorSheet.indexOf("visible={overlay === 'route'}"));
     expect(routeOverlay).toContain('material="mapSheet"');
   });
 
@@ -176,12 +177,12 @@ describe('iOS native UI contracts', () => {
     expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_ICON_SIZE = 24');
     expect(mapSheetChrome).toContain('MAP_SHEET_CORNER_RADIUS = 44');
     expect(paywallSheet).toContain('action="close"');
-    expect(mapScreen).toContain('doneSystemImage="checkmark"');
+    expect(routeEditorSheet).toContain('doneSystemImage="checkmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
   });
 
   it('opens the iOS invite sheet at Stage 1 while preserving Android fallback', () => {
-    expect(mapScreen).toContain('<InviteMembersSheet');
+    expect(inviteMembersOverlay).toContain('<InviteMembersSheet');
     expect(inviteSheetIos).toContain('<SettingsChildSheet');
     expect(inviteSheetIos).toContain('initialStage={0}');
     expect(inviteSheetIos).toContain('stageTwoRatio={0.8}');
@@ -203,11 +204,11 @@ describe('iOS native UI contracts', () => {
     expect(mapStyles).toContain('height: PASSIVE_ENTER_HEIGHT');
     expect(mapStyles).toContain('borderRadius: PASSIVE_ENTER_HEIGHT / 2');
     expect(mapStyles).toContain("width: '100%'");
-    expect(mapScreen).toContain('styles.confirmControl');
+    expect(addPlaceCard).toContain('styles.confirmControl');
     expect(mapStyles).toContain('width: 60');
     expect(mapStyles).toContain('height: 60');
     expect(mapStyles).toContain('paddingTop: 10');
-    expect(mapScreen).toContain('paddingBottom: 10');
+    expect(opsCenterSheet).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('height={96}');
     expect(mapStyles).toContain('marginTop: 6');
   });

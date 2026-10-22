@@ -9,6 +9,7 @@ const root = join(__dirname, '..');
 const read = (rel: string) => readFileSync(join(root, rel), 'utf8');
 
 const mapScreen = read('screens/MapScreen.tsx');
+const opsCenterSheet = read('screens/MapScreen/components/OpsCenterSheet.tsx');
 const panel = read('screens/MapScreen/components/CoordinationRequestsPanel.tsx');
 const hook = read('screens/MapScreen/hooks/useCoordinationRequests.ts');
 const journeyNav = read('screens/MapScreen/hooks/useJourneyNavigation.ts');
@@ -19,11 +20,11 @@ describe('OTA-09 coordination UI wiring contracts', () => {
   it('exposes a MapScreen entry point on the route pane', () => {
     expect(mapScreen).toContain("setOverlay('ops')");
     expect(mapScreen).toContain("| 'ops'");
-    expect(mapScreen).toContain('CoordinationRequestsPanel');
+    expect(opsCenterSheet).toContain('CoordinationRequestsPanel');
     expect(mapScreen).toContain('useCoordinationRequests');
     expect(mapScreen).toContain('testID="map-open-ops"');
     expect(mapScreen).toContain("t('map.opsCenter')");
-    expect(mapScreen).toContain("t('coordination.title')");
+    expect(opsCenterSheet).toContain("t('coordination.title')");
     expect(i18n).toContain("'coordination.title'");
     expect(i18n).toContain("'map.opsCenter'");
   });

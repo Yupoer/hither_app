@@ -22,15 +22,12 @@ import {
   Keyboard,
   LayoutAnimation,
   Linking,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
   Share,
   StyleSheet,
   Text,
-  TextInput,
   UIManager,
   useWindowDimensions,
   View,
@@ -51,12 +48,6 @@ import Animated, {
   interpolate,
   Extrapolation,
   withSpring,
-  FadeIn,
-  FadeInRight,
-  FadeOut,
-  FadeOutRight,
-  ZoomIn,
-  ZoomOut,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,7 +63,6 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { notifyJourneyOperator, notifyJourneyApproach } from '../state/journeyNotifications';
-import { keyboardAvoidBottomOffset } from '../utils/keyboardSurface';
 import {
   gatherRequestPageIndex,
   recoverGatherRequestAfterFailedResolve,
@@ -81,7 +71,6 @@ import {
 } from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
 import DestinationReorderList from '../components/DestinationReorderList';
-import MetalforgeStarfield from '../components/MetalforgeStarfield';
 import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
 import QuickCommandsCard from '../components/QuickCommandsCard';
 import CustomQuickCommandSheet from '../components/CustomQuickCommandSheet';
@@ -94,12 +83,10 @@ import type { CoordinateDestinationInput } from '../utils/coordinateDestination'
 import FeedbackSheet from '../components/FeedbackSheet';
 import { AmicroButton } from '../components/AmicroButton';
 import { HitherText } from '../components/HitherText';
-import OverflowMarquee from '../components/OverflowMarquee';
 import MapRecenterControl from '../components/MapRecenterControl';
 import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
 import {
   applyLocalClosedAt,
-  arrivalControlJustSplit,
   deriveCardNavFlags,
   deriveScopedArrivalCounts,
   planCompleteGatheringApply,
@@ -110,10 +97,6 @@ import {
 import {
   shouldFireApproachNotify,
 } from '../utils/approachNotify';
-import {
-  ARRIVED_FADE_MS,
-  ARRIVED_SPLIT_MS,
-} from '../utils/gatherCommandLayout';
 import {
   ARRIVAL_CARD_EXIT_MS,
   ARRIVAL_EFFECT_HOLD_MS,
@@ -138,7 +121,6 @@ import { useSession } from '../state/SessionContext';
 import {
   usePreferences,
   useTheme,
-  DEFAULT_MEET_RED_MIN,
   ARRIVAL_RADIUS_OPTIONS,
   ARRIVAL_RADIUS_MIN_M,
   ARRIVAL_RADIUS_MAX_M,
@@ -153,7 +135,6 @@ import { getCoreOperationOutbox, subscribeCoreOutboxChanges } from '../state/cor
 import { enqueueArrival, syncArrival, projectArrivals, projectPersonalArrivals, personalArrivalEvent } from '../state/arrivalSync';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { runUiAction } from '../utils/uiAction';
-import NativeGlassButton from '../components/NativeGlassButton';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { PassiveCompanionPanel } from './MapScreen/components/PassiveCompanionPanel';
 import { useDeviceLocation } from './MapScreen/hooks/useDeviceLocation';
@@ -164,23 +145,26 @@ import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgre
 import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
 import { energyObservability } from '../state/energyObservability';
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
-import { ArrivalCardExitShell } from './MapScreen/components/ArrivalCardExitShell';
-import { MeetTimeChip } from './MapScreen/components/MeetTimeChip';
-import { CarouselDots } from './MapScreen/components/CarouselDots';
-import { GatheringCardPressable } from './MapScreen/components/GatheringCardPressable';
 import { RefreshLocationsButton } from './MapScreen/components/RefreshLocationsButton';
 import { FlockRow } from './MapScreen/components/FlockRow';
-import { arrivalErrorMessage, shortEta, splitDistanceParts, splitEtaParts, formatTripDayLine, navCommandDisplayLabel } from '../utils/mapFormatters';
+import { arrivalErrorMessage, shortEta } from '../utils/mapFormatters';
 import { MeetTimeSheet } from './MapScreen/components/MeetTimeSheet';
 import { useMeetTimeEditor } from './MapScreen/hooks/useMeetTimeEditor';
+import { InviteTeammateSheet } from './MapScreen/components/InviteTeammateSheet';
+import { HistorySheet } from './MapScreen/components/HistorySheet';
+import { ArrivalTimeSheet } from './MapScreen/components/ArrivalTimeSheet';
+import { ArrivalManageSheet } from './MapScreen/components/ArrivalManageSheet';
+import { OpsCenterSheet } from './MapScreen/components/OpsCenterSheet';
+import { InviteMembersOverlay } from './MapScreen/components/InviteMembersOverlay';
+import { RouteEditorSheet } from './MapScreen/components/RouteEditorSheet';
+import { GatheringCarousel } from './MapScreen/components/GatheringCarousel';
+import { AddPlaceConfirmCard } from './MapScreen/components/AddPlaceConfirmCard';
 import { useGatheringWorkflow } from './MapScreen/hooks/useGatheringWorkflow';
 import { useGroupRole } from './MapScreen/hooks/useGroupRole';
 import { useSubgroupActions } from './MapScreen/hooks/useSubgroupActions';
 import { makeStyles } from './MapScreen/styles';
 import {
   hasDraftWork,
-  insertDraftDestination,
-  nextOrderInDay,
   useRouteDraft,
 } from './MapScreen/hooks/useRouteDraft';
 import {
@@ -217,12 +201,10 @@ import {
 import { useCoordinationRequests } from './MapScreen/hooks/useCoordinationRequests';
 import { SettingsOverlay } from './MapScreen/components/SettingsOverlay';
 import { ProfileOverlay } from './MapScreen/components/ProfileOverlay';
-import InviteMembersSheet from './MapScreen/components/InviteMembersSheet';
 import { SubgroupSection } from './MapScreen/components/SubgroupSection';
 import { SheetPaneTabs } from './MapScreen/components/SheetPaneTabs';
 import type { SheetPaneTabOption } from './MapScreen/components/SheetPaneTabs';
 import { StorePane } from './MapScreen/components/StorePane';
-import { CoordinationRequestsPanel } from './MapScreen/components/CoordinationRequestsPanel';
 import type { SheetPaneKey } from '../store/types';
 import { getStoreSnapshot } from '../api/services/StoreService';
 import AccountSheet from '../components/AccountSheet';
@@ -259,12 +241,8 @@ import {
   distanceMeters,
   etaSecondsFor,
   formatDistance,
-  walkingEtaSeconds,
   type TravelMode,
 } from '../utils/geo';
-import {
-  minutesUntil,
-} from '../utils/meetTime';
 import { buildOpenReorderPayload } from '../utils/openReorderSlots';
 import {
   groupHistoryByDay,
@@ -284,7 +262,7 @@ import { createArrivalState, reduceArrival, type ArrivalState } from '../utils/n
 import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '../utils/synchronizedArrival';
 import { getOperationErrorMessage, classifyOperationError } from '../utils/operationError';
 import { enqueueJourneyCompletion } from '../state/journeyCompletion';
-import { liquidGlass, location, notifications, type MapRegion, type PlaceResult } from '../native';
+import { location, notifications, type MapRegion, type PlaceResult } from '../native';
 import { resolveDailyAccommodationSourceId } from '../api/services/DailyAccommodationService';
 import {
   addDestination,
@@ -341,7 +319,6 @@ import { logEvent, logError } from '../utils/activityLog';
 import { lightTap, mediumTap, selectionTick, alertBuzz } from '../utils/haptics';
 import type {
   Coordinates,
-  DailyAccommodation,
   Destination,
   GatherPointRequestItem,
   MemberLocation,
@@ -360,8 +337,6 @@ import { gatherCardHorizontalInset, mapKitChromeLayout } from '../utils/mapChrom
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
-// Cap on gathering-point pagination dots shown at once (see utils/pagination.ts).
-const DOTS_MAX_VISIBLE = 5;
 const EMPTY_DESTINATIONS: Destination[] = [];
 
 /**
@@ -6295,180 +6270,32 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Add-gather-point confirm card — a bottom sheet-style card shown after
           picking a search result. Cancel sits above the title and place controls. */}
-      {confirmCardReady && pendingPlace && (() => {
-        // Walking time + distance from me to the picked place — the follower-nav
-        // card layout (arrow · N min · distance) applied to the add-confirm step.
-        const pDist = fromCoords
-          ? distanceMeters(fromCoords, pendingPlace.coordinates)
-          : null;
-        const pMin = pDist != null ? shortEta(walkingEtaSeconds(pDist)) : null;
-        const confirmAddPlace = async (placement?: 'firstStop') => {
-          if (confirmPlaceBusyRef.current) return;
-          confirmPlaceBusyRef.current = true;
-          setConfirmPlaceBusy(true);
-          lightTap();
-          try {
-            const place = { ...pendingPlace, name: pendingPlaceTitle.trim() || pendingPlace.name };
-            // Keep confirm card until success so failures do not wipe UI state.
-            await runUiAction(
-              'map.confirm_add_destination',
-              async (token) => {
-                const ok = await handlePickDestination(place, placement);
-                if (ok && token.isCurrent()) dismissConfirmCard();
-              },
-              { screen: 'Map' },
-            );
-          } finally {
-            confirmPlaceBusyRef.current = false;
-            setConfirmPlaceBusy(false);
-          }
-        };
-        const confirmBottom = keyboardAvoidBottomOffset({
-          baseBottom: insets.bottom + 24,
-          keyboardHeight: confirmKeyboardHeight,
-        });
-        return (
-          // Sits above the hidden sheet; lifts with keyboard (12pt gap).
-          <Animated.View
-            style={[styles.confirmCard, { bottom: confirmBottom }, confirmCardStyle]}
-            pointerEvents="box-none"
-          >
-            <liquidGlass.GlassView
-              glassStyle="regular"
-              tintColor={Platform.OS === 'android' ? glass.cardActive : undefined}
-              style={styles.confirmCardInner}
-            >
-              <Pressable style={styles.confirmCloseTarget} disabled={confirmPlaceBusy}
-                accessibilityRole="button" accessibilityLabel={t('common.cancel')}
-                testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }}>
-                <View pointerEvents="none" accessible={false}>
-                  <NativeGlassButton systemImage="xmark" shape="circle" size={36.3}
-                    imageSize={14.85} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')} />
-                </View>
-              </Pressable>
-              <View style={styles.confirmTitleRow}>
-                <View style={styles.confirmTextCol}>
-                  {/* Inline rename — single draft; no separate Modal. */}
-                  <TextInput
-                    value={pendingPlaceTitle}
-                    onChangeText={setPendingPlaceTitle}
-                    style={styles.confirmTitleInput}
-                    placeholder={pendingPlace.name || t('map.droppedPin')}
-                    placeholderTextColor={glass.textTertiary}
-                    maxLength={120}
-                    returnKeyType="done"
-                    blurOnSubmit
-                    onSubmitEditing={() => Keyboard.dismiss()}
-                    accessibilityLabel={t('map.renameTitle')}
-                    accessibilityHint={t('map.droppedPinHint')}
-                    testID="confirm-place-name"
-                  />
-                  <Text style={styles.confirmNameHint} numberOfLines={1}>
-                    {t('map.droppedPinHint')}
-                  </Text>
-                </View>
-                <View style={styles.confirmControlRow}>
-                  <View
-                    ref={(node) => setTourTargetRef('addPlaceFavoriteStar', node as View | null)}
-                    style={styles.confirmArrow}
-                  >
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.confirmControl,
-                        pressed && styles.confirmControlPressed,
-                      ]}
-                      testID="add-place-favorite-star"
-                      onPress={() => {
-                        // Tour is explanation-only: block real action while active.
-                        if (addPlaceTourStep != null) return;
-                        void togglePendingFavorite();
-                      }}
-                      disabled={favoriteBusy || !user?.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        pendingIsFavorite
-                          ? t('stay.unfavoriteA11y')
-                          : t('stay.favoriteA11y')
-                      }
-                      accessibilityState={{
-                        disabled: favoriteBusy || !user?.id,
-                        selected: pendingIsFavorite,
-                        busy: favoriteBusy,
-                      }}
-                    >
-                      {favoriteBusy ? (
-                        <WaveLoading size="small" color={accent} />
-                      ) : (
-                        <Ionicons
-                          name={pendingIsFavorite ? 'star' : 'star-outline'}
-                          size={31.5}
-                          color={accent}
-                        />
-                      )}
-                    </Pressable>
-                  </View>
-                  <View
-                    ref={(node) => setTourTargetRef('addPlaceCenter', node as View | null)}
-                    style={styles.confirmArrow}
-                  >
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.confirmControl,
-                        pressed && styles.confirmControlPressed,
-                      ]}
-                      testID="add-place-center-btn"
-                      onPress={() => {
-                        if (addPlaceTourStep != null) return;
-                        if (obliqueLocate) {
-                          mapRef.current?.focusOblique(pendingPlace.coordinates);
-                        } else {
-                          mapRef.current?.centerOn(pendingPlace.coordinates);
-                        }
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('stay.centerPlaceA11y')}
-                    >
-                      <Ionicons name="navigate" size={31.5} color={accent} />
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-              <View style={styles.confirmTopRow}>
-                <View style={styles.confirmEtaRow}>
-                  <Text style={[styles.confirmMin, { color: accent }]} numberOfLines={1}>
-                    {pMin ?? '—'}
-                  </Text>
-                  {pDist != null ? (
-                    <Text style={styles.confirmDist} numberOfLines={1}>
-                      · {formatDistance(pDist)}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-              <View style={styles.confirmBtnRow}>
-                <View style={styles.confirmBtnSlot}>
-                  <Pressable style={({ pressed }) => [styles.confirmPool, pressed && styles.confirmControlPressed]}
-                    disabled={confirmPlaceBusy} accessibilityRole="button"
-                    accessibilityState={{ disabled: confirmPlaceBusy, busy: confirmPlaceBusy }}
-                    accessibilityLabel={t('confirmGather.addPool')} testID="confirm-place-pool"
-                    onPress={() => { void confirmAddPlace().catch(() => undefined); }}>
-                    <Text style={styles.confirmPoolText}>{t('confirmGather.addPool')}</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.confirmBtnSlot}>
-                  <Pressable style={({ pressed }) => [styles.confirmAdd, pressed && styles.confirmControlPressed]}
-                    disabled={confirmPlaceBusy} accessibilityRole="button"
-                    accessibilityState={{ disabled: confirmPlaceBusy, busy: confirmPlaceBusy }}
-                    accessibilityLabel={t('confirmGather.quickAdd')} testID="confirm-place-quick-add"
-                    onPress={() => { void confirmAddPlace('firstStop').catch(() => undefined); }}>
-                    <Text style={styles.confirmAddText}>{t('confirmGather.quickAdd')}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </liquidGlass.GlassView>
-          </Animated.View>
-        );
-      })()}
+      <AddPlaceConfirmCard
+        accent={accent}
+        addPlaceTourStep={addPlaceTourStep}
+        confirmCardReady={confirmCardReady}
+        confirmCardStyle={confirmCardStyle}
+        confirmKeyboardHeight={confirmKeyboardHeight}
+        confirmPlaceBusy={confirmPlaceBusy}
+        confirmPlaceBusyRef={confirmPlaceBusyRef}
+        dismissConfirmCard={dismissConfirmCard}
+        favoriteBusy={favoriteBusy}
+        fromCoords={fromCoords}
+        handlePickDestination={handlePickDestination}
+        insets={insets}
+        mapRef={mapRef}
+        obliqueLocate={obliqueLocate}
+        pendingIsFavorite={pendingIsFavorite}
+        pendingPlace={pendingPlace}
+        pendingPlaceTitle={pendingPlaceTitle}
+        setConfirmPlaceBusy={setConfirmPlaceBusy}
+        setPendingPlaceTitle={setPendingPlaceTitle}
+        setTourTargetRef={setTourTargetRef}
+        styles={styles}
+        t={t}
+        togglePendingFavorite={togglePendingFavorite}
+        user={user}
+      />
 
       {/* Add Place contextual tour — measured targets + full-screen blocker. */}
       <GroupFeatureTourOverlay
@@ -6524,694 +6351,76 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
-      {uiVisible && showDenseChrome && destinations.length > 0 && !atFull && (
-        <Animated.View
-          // a11y-layout:carouselCapsuleClearance
-          style={[
-            styles.carouselWrap,
-            { top: insets.top + 8, maxHeight: carouselMaxHeight },
-          ]}
-          pointerEvents={atFull ? 'none' : 'box-none'}
-          onLayout={(e) => {
-            const h = e.nativeEvent.layout.height;
-            if (h > 0) setCarouselHeight(h);
-          }}
-        >
-          <ScrollView
-            ref={carouselRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScrollBeginDrag={handleScrollBeginDrag}
-            onMomentumScrollEnd={handleMomentumEnd}
-            scrollEventThrottle={16}
-          >
-            {destinations.map((dest, index) => {
-              const active = index === selectedIndex;
-              const routeForDestination = activePoint?.id === dest.id ? selfRoute : null;
-              // Active nav target: shared personal progress (local GPS, no backend wait).
-              // Other cards: one-shot straight/route distance from last known fix.
-              const d = (navTarget?.id === dest.id && personalDistanceM != null)
-                ? personalDistanceM
-                : routeForDestination?.distanceMeters
-                  ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
-              // Shared navigation is distinct from any member-only route preview.
-              const { flockNavigatingThis } = deriveCardNavFlags({
-                destId: dest.id,
-                isLeader,
-                sharedTargetId,
-                pendingLeaderTargetId,
-                journeyBusy,
-              });
-              // Live countdown UI is MeetCountdown (own 1s timer). a11y uses
-              // a one-shot label on each parent render — no MapScreen clock.
-              const meetLabel = dest.meetAt
-                ? (() => {
-                    const mins = minutesUntil(dest.meetAt as string, new Date());
-                    if (mins >= 0) {
-                      return t('meetTime.countdown', { minutes: mins });
-                    }
-                    const clock = new Date(dest.meetAt as string).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false,
-                    });
-                    // a11y: "{time} 集合"
-                    return t('map.meetAtClock', { time: clock });
-                  })()
-                : null;
-              // Team arrival toward THIS stop — scoped to destination subgroup.
-              const cardArrival = deriveScopedArrivalCounts({
-                members: dest.id === navTargetId ? sessionEligibleMembers : members,
-                destinationSubgroupId: dest.subgroupId,
-                arrivedUserIds: activeDestinationArrivals
-                  .filter((arrival) => arrival.destinationId === dest.id)
-                  .map((arrival) => arrival.userId),
-              });
-              const arrivedHere = cardArrival.arrivedCount;
-              const totalMembers = cardArrival.totalCount;
-              const modeIconName =
-                travelMode === 'walk'
-                  ? 'walk-outline'
-                  : travelMode === 'drive'
-                    ? 'car-outline'
-                    : travelMode === 'bicycle'
-                      ? 'bicycle-outline'
-                      : 'bus-outline';
-              // Route ETA/distance — always visible; expand only scales layout.
-              const etaSeconds = (navTarget?.id === dest.id && personalEtaSeconds != null)
-                ? personalEtaSeconds
-                : routeForDestination
-                  ? routeForDestination.expectedTravelTimeSeconds
-                  : d != null
-                    ? etaSecondsFor(d, travelMode)
-                    : null;
-              const etaLabel = etaSeconds != null ? shortEta(etaSeconds) : '—';
-              // Retain the last useful distance/ETA without a generic stale
-              // warning; freshness still drives internal navigation safety.
-              const distLabel = d != null ? formatDistance(d) : '';
-              const distParts = splitDistanceParts(d);
-              const etaParts = splitEtaParts(etaSeconds);
-              const cardExpanded = isCardExpanded(dest.id);
-              // Progressive density (single row always):
-              // - compact: narrow phone OR large Dynamic Type → smaller squares
-              // - tight: xl OR (narrow + large) → nav icon-only, smaller countdown
-              // Never multi-row. Not tied to sheet stage.
-              // a11y-layout:commandRowCompact
-              const chromeCompact =
-                narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
-              const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
-              // Use active itinerary (carousel list), not raw history-inclusive
-              // scope — past-day open rows must not hide the arrive control.
-              const canMarkArrival = canMarkDestinationArrival({
-                destId: dest.id,
-                destOrder: dest.order,
-                destSubgroupId: dest.subgroupId,
-                scopedDestinations: destinations,
-                myArrivedDestinationIds: myCompletedDestinationIds,
-      activeDestinationId: sharedTargetId,
-              });
-              // Product: only show 「已抵達」while this card's team nav is active.
-              // Pre-start: Start occupies the arrived slot (3 controls).
-              // Post-start: Arrived splits out. Post-end: Start swallows it again.
-              const showArrivalControl =
-                Boolean(user?.id)
-                && canMarkArrival
-                && !dest.closedAt
-                && flockNavigatingThis;
-              const arrivalJustSplit = arrivalControlJustSplit(
-                dest.id,
-                showArrivalControl,
-                arrivalSplitSeenRef.current,
-              );
-              // #176: icon-only Start only when Arrived is also present under tight
-              // density. When Arrived is absent, Start fills that slot (not square).
-              const navIconOnly = chromeTight && showArrivalControl;
-              const personallyArrived = myCompletedDestinationIds.has(dest.id);
-              const navCmd = resolveNavCommand({
-                isLeader,
-                personallyArrived,
-                flockNavigatingThis,
-                isNextTeamPending: true,
-                teamStartBlocked: false,
-              });
-              const navLabel = navCommandDisplayLabel(navCmd.kind, t);
-              const startAccessibilityHint = isLeader
-                ? navCmd.kind === 'leader_stop'
-                  ? t('nav.a11yEndHint')
-                  : navCmd.kind === 'leader_mark_complete'
-                    ? t('nav.a11yCompleteHint')
-                    : t('nav.a11yStartHint')
-                : undefined;
-              const commandDisabled = !isLeader && (
-                journeyBusy
-                || navCmd.disabled
-                || Boolean(requestingStartDestId)
-              );
-              const exitPhase = arrivalExitRecords.get(dest.id)?.phase ?? null;
-              return (
-                <View
-                  key={`carousel-dest-${dest.id}`}
-                  style={{ width: windowWidth, paddingHorizontal: narrowScreen ? 10 : 14 }}
-                >
-                  <View
-                    ref={active ? (n) => setTourTargetRef('gatherCard', n) : undefined}
-                    collapsable={false}
-                  >
-                  <ArrivalCardExitShell exiting={exitPhase === 'exit'}>
-                  <SwiftUIGlassSurface
-                    shape="roundedRectangle"
-                    cornerRadius={gatherCardRadius}
-                    fallbackTintColor={Platform.OS === 'android'
-                      ? active ? glass.cardActive : glass.card
-                      : undefined}
-                    style={[
-                      styles.card,
-                      // Active state uses fill only — no theme-color rim
-                      // (Android hairline + accent reads as a harsh outline).
-                      active ? styles.cardActiveBorder : null,
-                    ]}
-                  >
-                    {/* Celebrate flash only (1.6s): full-card dim + center check.
-                        Must NOT key off personallyArrived or dim stays forever.
-                        Siblings of padded content so absolute fill covers padding
-                        + expanded command row (expanded and collapsed). */}
-                    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: gatherCardRadius, overflow: 'hidden', zIndex: 0 }]}>
-                      <MetalforgeStarfield emitting={journeyActive && navTarget?.id === dest.id}
-                        active={active && mapFocused && appState === 'active'} color="#FFFFFF"
-                        lowPowerMode={powerState.lowPowerMode} thermalState={powerState.thermalState} />
-                    </View>
-                    {arrivalCelebrateDestId === dest.id ? (
-                      <View pointerEvents="none" style={styles.arrivalDimOverlay} />
-                    ) : null}
-                    {arrivalCelebrateDestId === dest.id ? (
-                      <Animated.View
-                        pointerEvents="none"
-                        entering={FadeIn.duration(220)}
-                        exiting={FadeOut.duration(220)}
-                        style={styles.arrivalCenterCheckLayer}
-                      >
-                        <Animated.View
-                          // No springify — ease-in only, no bounce/overshoot.
-                          entering={ZoomIn.duration(240)}
-                          exiting={ZoomOut.duration(200)}
-                          style={[
-                            styles.arrivalCenterCheckBox,
-                            cardExpanded
-                              ? styles.arrivalCenterCheckBoxExpanded
-                              : styles.arrivalCenterCheckBoxCollapsed,
-                          ]}
-                        >
-                          <Ionicons
-                            name="checkmark"
-                            size={cardExpanded ? 32 : 20}
-                            color="#fff"
-                          />
-                        </Animated.View>
-                      </Animated.View>
-                    ) : null}
-                    <View style={[styles.cardInner, { zIndex: 1 }]}>
-                    {localActionError && (!localActionError.destinationId || localActionError.destinationId === dest.id) ? (
-                      <Text testID="local-arrival-write-error" accessibilityLiveRegion="polite" style={{ color: glass.danger, marginBottom: 8 }}>
-                        {localActionError.title}{'：'}{localActionError.message}
-                      </Text>
-                    ) : null}
-                    <GatheringCardPressable
-                      onToggle={() => toggleGatheringCard(dest.id)}
-                      accessibilityLabel={dest.title}
-                      accessibilityHint={
-                        cardExpanded ? t('gather.cardCollapseHint') : t('gather.cardExpandHint')
-                      }
-                    >
-                    {/* Layout (expanded):
-                        kicker · dots
-                        title full-width
-                        day line ····· people N/M
-                        小隊行程 badge (subgroup only)
-                        📍 dist | 🚗 eta | map
-                        [導航] [移動] [抵達?] [交通] [集合倒數]
-                       Collapsed: title marquee + compact ETA·dist only. */}
-                    <View style={styles.cardHead}>
-                      <View style={styles.grow}>
-                        <View style={styles.cardKickerRow}>
-                          <Text
-                            style={[styles.cardKicker, { color: accent }]}
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                          >
-                            {(() => {
-                              // Counter is day-scoped: "stop N of M" among that day's stops only.
-                              const dayNum = dest.day || 1;
-                              let dayIndex = 0;
-                              let dayTotal = 0;
-                              for (const d of destinations) {
-                                if ((d.day || 1) !== dayNum) continue;
-                                dayTotal += 1;
-                                if (d.id === dest.id) dayIndex = dayTotal;
-                              }
-                              return t('map.destinationCounter', {
-                                index: dayIndex || 1,
-                                total: dayTotal || 1,
-                              });
-                            })()}
-                          </Text>
-                          {destinations.length > 1 && (
-                            <CarouselDots
-                              total={destinations.length}
-                              active={selectedIndex}
-                              maxVisible={DOTS_MAX_VISIBLE}
-                              destinationIds={destinationIds}
-                              styles={styles}
-                              reduceMotion={tourReduceMotion}
-                            />
-                          )}
-                        </View>
-                        {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
-                        {cardExpanded ? (
-                          <View>
-                            <Text
-                              style={[styles.cardTitle, styles.cardTitleExpanded]}
-                              numberOfLines={3}
-                              ellipsizeMode="tail"
-                            >
-                              {dest.title}
-                            </Text>
-                            <View style={styles.cardSubRow}>
-                              <Text style={styles.cardDayLine} numberOfLines={1}>
-                                {formatTripDayLine(
-                                  dest.day || 1,
-                                  routeDepartureDate,
-                                  t,
-                                )}
-                              </Text>
-                              <Pressable
-                                ref={active ? (n) => setTourTargetRef('arrivalProgress', n) : undefined}
-                                collapsable={false}
-                                style={styles.arrivalPeopleChip}
-                                disabled={!isLeader || !flockNavigatingThis}
-                                onPress={(event) => {
-                                  event.stopPropagation();
-                                  registerCardActivity(dest.id);
-                                  setArrivalDestination(dest);
-                                  setOverlay('arrival');
-                                }}
-                                accessibilityRole="button"
-                                accessibilityLabel={`${t('map.arrivalProgress')} ${arrivedHere}/${totalMembers}`}
-                              >
-                                <Ionicons name="people-outline" size={16} color={accent} />
-                                <Text style={[styles.arrivalPeopleValue, { color: accent }]}>
-                                  {flockNavigatingThis ? <>{arrivedHere}/{totalMembers}</> : '—'}
-                                </Text>
-                              </Pressable>
-                            </View>
-                            {myScopeId != null && (
-                              <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
-                            )}
-                            <View style={styles.metricsRow}>
-                              <View style={styles.metricCol}>
-                                <View style={styles.metricValueRow}>
-                                  <Ionicons name="location" size={chromeCompact ? 16 : 18} color={accent} />
-                                  <View style={styles.metricNumUnit}>
-                                    <Text
-                                      style={[styles.metricValue, { color: accent }]}
-                                      numberOfLines={1}
-                                      adjustsFontSizeToFit
-                                      minimumFontScale={0.85}
-                                      maxFontSizeMultiplier={1.15}
-                                    >
-                                      {distParts.value}
-                                    </Text>
-                                    {distParts.unit ? (
-                                      <Text
-                                        style={[styles.metricUnit, { color: accent }]}
-                                        numberOfLines={1}
-                                        maxFontSizeMultiplier={1.15}
-                                      >
-                                        {distParts.unit}
-                                      </Text>
-                                    ) : null}
-                                  </View>
-                                </View>
-                                <Text
-                                  style={styles.metricCaption}
-                                  numberOfLines={2}
-                                  maxFontSizeMultiplier={1.15}
-                                >
-                                  {t('map.distanceToGather')}
-                                </Text>
-                              </View>
-                              <View style={styles.metricDivider} />
-                              <View style={styles.metricCol}>
-                                <View style={styles.metricValueRow}>
-                                  <Ionicons
-                                    name={
-                                      travelMode === 'walk'
-                                        ? 'walk'
-                                        : travelMode === 'drive'
-                                          ? 'car'
-                                          : travelMode === 'bicycle'
-                                            ? 'bicycle'
-                                            : 'bus'
-                                    }
-                                    size={chromeCompact ? 14 : 16}
-                                    color={accent}
-                                  />
-                                  <View style={styles.metricNumUnit}>
-                                    <Text
-                                      style={[styles.metricValue, { color: accent }]}
-                                      numberOfLines={1}
-                                      adjustsFontSizeToFit
-                                      minimumFontScale={0.85}
-                                      maxFontSizeMultiplier={1.15}
-                                    >
-                                      {etaParts.value}
-                                    </Text>
-                                    {etaParts.unit ? (
-                                      <Text
-                                        style={[styles.metricUnit, { color: accent }]}
-                                        numberOfLines={1}
-                                        maxFontSizeMultiplier={1.15}
-                                      >
-                                        {etaParts.unit}
-                                      </Text>
-                                    ) : null}
-                                  </View>
-                                </View>
-                                <Text
-                                  style={styles.metricCaption}
-                                  numberOfLines={2}
-                                  maxFontSizeMultiplier={1.15}
-                                >
-                                  {routeForDestination
-                                    ? t('map.routeEstimate')
-                                    : t('map.localEstimate')}
-                                </Text>
-                              </View>
-                              <View style={styles.metricDivider} />
-                              <Pressable
-                                ref={active ? (n) => setTourTargetRef('externalMaps', n) : undefined}
-                                collapsable={false}
-                                style={styles.mapsChip}
-                                onPress={(event) => {
-                                  event.stopPropagation();
-                                  registerCardActivity(dest.id);
-                                  openExternalNavigation(dest);
-                                }}
-                                accessibilityRole="button"
-                                accessibilityLabel={t('map.openExternalNavigation')}
-                              >
-                                <Ionicons name="map" size={22} color="#fff" />
-                              </Pressable>
-                            </View>
-                          </View>
-                        ) : (
-                          <View style={styles.cardDenseBody}>
-                            <OverflowMarquee
-                              text={dest.title}
-                              enabled={gatherCardTitleMarquee}
-                              active={active}
-                              activationDelayMs={1600}
-                              pixelsPerSecond={gatherCardMarqueeSpeed}
-                              startPauseMs={1000}
-                              endPauseMs={1500}
-                              // Single stable style object (not an inline array) so
-                              // MapScreen re-renders do not thrash marquee measure.
-                              style={styles.cardTitleCollapsed}
-                            />
-                            <View style={styles.cardCollapsedMetrics}>
-                              {etaLabel ? (
-                                <Text
-                                  style={[styles.cardRouteMetaEta, { color: glass.textSecondary }]}
-                                  numberOfLines={1}
-                                >
-                                  {etaLabel}
-                                </Text>
-                              ) : null}
-                              {etaLabel && distLabel ? (
-                                <Text style={styles.cardRouteMetaDotExpanded}>·</Text>
-                              ) : null}
-                              {distLabel ? (
-                                <Text
-                                  style={[styles.cardRouteMetaDist, { color: accent }]}
-                                  numberOfLines={1}
-                                >
-                                  {distLabel}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-
-                    </GatheringCardPressable>
-                    {/* a11y-layout:commandRow — always one row.
-                        Order (#148): [Start/End | Arrived] [Countdown] [Transport]
-                        Outside expand Pressable so Start never toggles the card.
-                        Density tracks narrow + Dynamic Type. */}
-                    {cardExpanded && (
-                    <View style={styles.commandRow} pointerEvents="box-none">
-                      {cardExpanded && navCmd.kind !== 'hidden' ? (
-                        <Pressable
-                          ref={active ? (n) => setTourTargetRef('navCommand', n) : undefined}
-                          collapsable={false}
-                          style={[
-                            styles.navBtn,
-                            navCmd.kind === 'member_waiting_complete'
-                              || navCmd.kind === 'member_request_start'
-                              ? styles.navBtnWide
-                              : navIconOnly
-                                ? styles.navBtnIconOnly
-                                : null,
-                            navCmd.kind === 'leader_stop'
-                              ? styles.navBtnEnd
-                              : commandDisabled
-                                ? styles.navBtnDisabled
-                                : { backgroundColor: accent },
-                          ]}
-                          hitSlop={8}
-                          testID={`gather-nav-${dest.id}`}
-                          onPress={() => {
-                            registerCardActivity(dest.id);
-                            mediumTap();
-                            if (navCmd.action === 'start_nav') {
-                              void startNavigation(dest, index);
-                            } else if (navCmd.action === 'request_start') {
-                              requestLeaderStart(dest);
-                            } else if (navCmd.action === 'end_point') {
-                              void requestTeamEnd(dest, index);
-                            } else if (navCmd.action === 'mark_complete') {
-                              // Leader manual complete while personally arrived
-                              // (someone still missing → confirm; all arrived → auto).
-                              promptCompleteAfterArrival(dest);
-                            } else if (navCmd.disabled) {
-                              logEvent('nav_command_ignored', {
-                                reason: navCmd.kind,
-                                destId: dest.id,
-                              });
-                            }
-                          }}
-                          disabled={commandDisabled}
-                          accessibilityRole="button"
-                          accessibilityLabel={navLabel}
-                          accessibilityHint={startAccessibilityHint}
-                          accessibilityState={{ disabled: commandDisabled }}
-                        >
-                          <Ionicons
-                            name={
-                              navCmd.kind === 'leader_stop'
-                                ? 'stop'
-                                : navCmd.kind === 'leader_mark_complete'
-                                  ? 'checkmark-done'
-                                  : navCmd.kind === 'member_waiting_complete'
-                                    ? 'hourglass-outline'
-                                    : navCmd.kind === 'member_navigating'
-                                      ? 'navigate'
-                                      : navCmd.kind === 'member_request_start'
-                                        ? 'paper-plane-outline'
-                                      : isLeader
-                                        ? 'play'
-                                        : 'navigate'
-                            }
-                            size={chromeCompact ? 16 : 15}
-                            color={
-                              navCmd.kind === 'leader_stop'
-                                ? glass.danger
-                                : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
-                                  ? glass.textSecondary
-                                  : isLeader
-                                    ? colors.accentText
-                                    : '#0c1a12'
-                            }
-                          />
-                          {navCmd.kind === 'member_waiting_complete'
-                            || navCmd.kind === 'member_request_start'
-                            || !navIconOnly ? (
-                            <Text
-                              style={[
-                                styles.navBtnText,
-                                {
-                                  color:
-                                    navCmd.kind === 'leader_stop'
-                                      ? glass.danger
-                                      : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
-                                        ? glass.textSecondary
-                                        : isLeader
-                                          ? colors.accentText
-                                          : '#0c1a12',
-                                  flexShrink: 1,
-                                },
-                              ]}
-                              numberOfLines={
-                                navCmd.kind === 'member_waiting_complete'
-                                  || navCmd.kind === 'member_request_start'
-                                  ? 2
-                                  : 1
-                              }
-                              ellipsizeMode="tail"
-                              adjustsFontSizeToFit
-                              minimumFontScale={0.75}
-                            >
-                              {navLabel}
-                            </Text>
-                          ) : null}
-                        </Pressable>
-                      ) : null}
-
-                      {/* Personal check-in splits from Start/End right (#148). */}
-                      {showArrivalControl ? (
-                        <Animated.View
-                          entering={
-                            arrivalJustSplit
-                              ? (tourReduceMotion
-                                ? FadeIn.duration(ARRIVED_FADE_MS)
-                                : FadeInRight.duration(ARRIVED_SPLIT_MS))
-                              : undefined
-                          }
-                          exiting={
-                            tourReduceMotion
-                              ? FadeOut.duration(ARRIVED_FADE_MS)
-                              : FadeOutRight.duration(ARRIVED_SPLIT_MS)
-                          }
-                          collapsable={false}
-                        >
-                          {personallyArrived ? (
-                            <Pressable
-                              ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
-                              collapsable={false}
-                              style={[
-                                styles.cmdSquare,
-                                styles.arrivalCmdSquare,
-                                styles.arrivalCmdArrived,
-                              ]}
-                              onPress={() => {
-                                registerCardActivity(dest.id);
-                                lightTap();
-                                if (user?.id) handleArrival(dest, user.id, false);
-                              }}
-                              accessibilityRole="button"
-                              accessibilityLabel={t('arrival.undo')}
-                            >
-                              <Ionicons
-                                name="checkmark-circle"
-                                size={chromeTight ? 18 : 20}
-                                color={glass.ok}
-                              />
-                            </Pressable>
-                          ) : (
-                            <Pressable
-                              ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
-                              collapsable={false}
-                              style={[
-                                styles.cmdSquare,
-                                styles.arrivalCmdSquare,
-                              ]}
-                              onPress={() => {
-                                registerCardActivity(dest.id);
-                                lightTap();
-                                if (user?.id) handleSelfArrival(dest, user.id);
-                              }}
-                              accessibilityRole="button"
-                              accessibilityLabel={t('arrival.mark')}
-                            >
-                              <Ionicons
-                                name="checkmark-circle-outline"
-                                size={chromeTight ? 18 : 20}
-                                color={accent}
-                              />
-                            </Pressable>
-                          )}
-                        </Animated.View>
-                      ) : null}
-
-                      {/* Transport before meet countdown (product: swap order). */}
-                      {cardExpanded ? (
-                      <>
-                      <Pressable
-                        ref={active ? (n) => setTourTargetRef('transport', n) : undefined}
-                        collapsable={false}
-                        style={styles.cmdSquare}
-                        onPress={() => {
-                          registerCardActivity(dest.id);
-                          lightTap();
-                          const order = ['walk', 'bicycle', 'transit', 'drive'] as const;
-                          setTravelMode(order[(order.indexOf(travelMode) + 1) % order.length]);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
-                      >
-                        <Ionicons
-                          name={modeIconName}
-                          size={chromeTight ? 18 : 20}
-                          color={accent}
-                        />
-                      </Pressable>
-
-                      <View
-                        ref={active ? (n) => setTourTargetRef('meetTime', n) : undefined}
-                        collapsable={false}
-                        style={styles.meetBtnSlot}
-                      >
-                      <MeetTimeChip
-                        meetAtIso={dest.meetAt as string | null | undefined}
-                        meetRedMinutes={
-                          dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
-                        }
-                        accent={accent}
-                        chromeTight={chromeTight}
-                        chromeCompact={chromeCompact}
-                        expanded={!showArrivalControl}
-                        styles={styles}
-                        canEdit={canEditItinerary}
-                        a11yLabel={
-                          meetLabel
-                            ? `${t('meetTime.set')} ${meetLabel}`
-                            : t('meetTime.set')
-                        }
-                        onPress={() => {
-                          registerCardActivity(dest.id);
-                          openMeetTimePicker(dest);
-                        }}
-                        formatMinutes={(minutes) => t('map.meetMinutes', { minutes })}
-                        formatDue={(time) => t('map.meetAtClock', { time })}
-                        captionLive={t('map.meetCountdown')}
-                        captionDue={t('map.meetTimeCaption')}
-                      />
-                      </View>
-                      </>
-                      ) : null}
-                    </View>
-                    )}
-                    </View>
-                  </SwiftUIGlassSurface>
-                  </ArrivalCardExitShell>
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        </Animated.View>
-      )}
+      <GatheringCarousel
+        accent={accent}
+        activeDestinationArrivals={activeDestinationArrivals}
+        activePoint={activePoint}
+        appState={appState}
+        arrivalCelebrateDestId={arrivalCelebrateDestId}
+        arrivalExitRecords={arrivalExitRecords}
+        arrivalSplitSeenRef={arrivalSplitSeenRef}
+        atFull={atFull}
+        canEditItinerary={canEditItinerary}
+        carouselMaxHeight={carouselMaxHeight}
+        carouselRef={carouselRef}
+        colors={colors}
+        destinationIds={destinationIds}
+        destinations={destinations}
+        fontBucket={fontBucket}
+        fromCoords={fromCoords}
+        gatherCardMarqueeSpeed={gatherCardMarqueeSpeed}
+        gatherCardRadius={gatherCardRadius}
+        gatherCardTitleMarquee={gatherCardTitleMarquee}
+        handleArrival={handleArrival}
+        handleMomentumEnd={handleMomentumEnd}
+        handleScrollBeginDrag={handleScrollBeginDrag}
+        handleSelfArrival={handleSelfArrival}
+        insets={insets}
+        isCardExpanded={isCardExpanded}
+        isLeader={isLeader}
+        journeyActive={journeyActive}
+        journeyBusy={journeyBusy}
+        localActionError={localActionError}
+        mapFocused={mapFocused}
+        meetRedMin={meetRedMin}
+        members={members}
+        myCompletedDestinationIds={myCompletedDestinationIds}
+        myScopeId={myScopeId}
+        narrowScreen={narrowScreen}
+        navTarget={navTarget}
+        navTargetId={navTargetId}
+        openExternalNavigation={openExternalNavigation}
+        openMeetTimePicker={openMeetTimePicker}
+        pendingLeaderTargetId={pendingLeaderTargetId}
+        personalDistanceM={personalDistanceM}
+        personalEtaSeconds={personalEtaSeconds}
+        powerState={powerState}
+        promptCompleteAfterArrival={promptCompleteAfterArrival}
+        registerCardActivity={registerCardActivity}
+        requestLeaderStart={requestLeaderStart}
+        requestTeamEnd={requestTeamEnd}
+        requestingStartDestId={requestingStartDestId}
+        routeDepartureDate={routeDepartureDate}
+        selectedIndex={selectedIndex}
+        selfRoute={selfRoute}
+        sessionEligibleMembers={sessionEligibleMembers}
+        setArrivalDestination={setArrivalDestination}
+        setCarouselHeight={setCarouselHeight}
+        setOverlay={setOverlay}
+        setTourTargetRef={setTourTargetRef}
+        setTravelMode={setTravelMode}
+        sharedTargetId={sharedTargetId}
+        showDenseChrome={showDenseChrome}
+        startNavigation={startNavigation}
+        styles={styles}
+        t={t}
+        toggleGatheringCard={toggleGatheringCard}
+        tourReduceMotion={tourReduceMotion}
+        travelMode={travelMode}
+        uiVisible={uiVisible}
+        user={user}
+        windowWidth={windowWidth}
+      />
 
       {/* Straggler alerts fire as a native OS notification (see the effect
           above) — no in-app banner, so they don't cover the map. */}
@@ -7255,268 +6464,51 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
 
       {/* Route overlay: reorder gathering points (local draft until dismiss). */}
-      <OverlaySheet
-        visible={overlay === 'route'}
-        onClose={() => {
-          // 完成 and swipe-dismiss both commit: unlock scroll, close, flush.
-          lightTap();
-          setRouteScrollEnabled(true);
-          setRouteOverlayOpenComplete(false);
-          setEditButtonActive(false);
-          setOverlay(null);
-          void flushRouteDraft();
-        }}
-        onOpenComplete={() => {
-          setEditButtonActive(false);
-          setRouteScrollEnabled(true);
-          setRouteOverlayOpenComplete(true);
-        }}
-        floatingContent={routeDragPreview}
-        title={t('map.gatheringPoints')}
+      <RouteEditorSheet
         accent={accent}
-        doneLabel={t('map.done')}
-        doneSystemImage="checkmark"
-        material="mapSheet"
-        edgeToEdge
-        headerLeft={
-          canEditItinerary ? (
-            routeSelectedIds.length > 0 ? (
-              <Pressable
-                ref={(node) => setTourTargetRef('routeMode', node as View | null)}
-                onPress={() => {
-                  lightTap();
-                  handleDeleteMany(routeSelectedIds);
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={t('route.deleteSelectedA11y')}
-                hitSlop={8}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-              >
-                <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
-                <Text style={{ color: '#FF453A', fontSize: 14, fontWeight: '800' }}>
-                  {t('route.deleteSelected', { count: routeSelectedIds.length })}
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                ref={(node) => setTourTargetRef('routeMode', node as View | null)}
-                onPress={() => {
-                  lightTap();
-                  setRouteSelectedIds([]);
-                  setRouteInteractionMode((prev) =>
-                    prev === 'drag' ? 'select' : prev === 'select' ? 'none' : 'drag',
-                  );
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  routeInteractionMode === 'drag'
-                    ? t('route.modeDragA11y')
-                    : routeInteractionMode === 'select'
-                      ? t('route.modeSelectA11y')
-                      : t('route.modeHiddenA11y')
-                }
-                hitSlop={8}
-                style={{ paddingVertical: 2, paddingHorizontal: 2 }}
-              >
-                <Ionicons
-                  name={
-                    routeInteractionMode === 'drag'
-                      ? 'reorder-three-outline'
-                      : routeInteractionMode === 'select'
-                        ? 'checkbox-outline'
-                        : 'lock-closed-outline'
-                  }
-                  size={22}
-                  color={accent}
-                />
-              </Pressable>
-            )
-          ) : undefined
-        }
-      >
-        <ScrollView
-          ref={routeScrollRef}
-          contentContainerStyle={styles.overlayBody}
-          scrollEnabled={routeScrollEnabled}
-          onLayout={(event) => {
-            routeScrollViewportHeightRef.current = event.nativeEvent.layout.height;
-          }}
-          onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
-            routeScrollYRef.current = event.nativeEvent.contentOffset.y;
-          }}
-          scrollEventThrottle={16}
-        >
-          <Text style={styles.overlayHint}>{t('map.routeHint')}</Text>
-          {localActionError ? <Text accessibilityLiveRegion="polite" style={{ color: glass.danger }}>{localActionError.title}{'：'}{localActionError.message}</Text> : null}
-          <DestinationReorderList
-            groupId={groupId ?? undefined}
-            destinations={openForRouteEditor}
-            canReorder={canEditItinerary}
-            showTripDetails={routeEditorScopeId == null}
-            tripDays={routeTripDays}
-            departureDate={routeDepartureDate}
-            onUpdateTripDetails={handleUpdateTripDetails}
-            onReorder={handleReorder}
-            activeDestinationId={navTargetId ?? undefined}
-            onDelete={canEditItinerary ? handleDelete : undefined}
-            onUpdateEmojiColor={canEditItinerary ? handleUpdateEmojiColor : undefined}
-            onImport={() => { void openKmlImportForScope(routeEditorScopeId); }}
-            colors={dark}
-            emptyLabel={t('settings.noDestinations')}
-            interactionMode={routeInteractionMode}
-            selectedIds={routeSelectedIds}
-            onSelectedIdsChange={setRouteSelectedIds}
-            onDragActiveChange={(active) => {
-              // Defensive: never leave scroll locked after drag ends.
-              setRouteScrollEnabled(!active);
-              if (!active) setRouteScrollEnabled(true);
-            }}
-            onDragPreviewChange={setRouteDragPreview}
-            onDragAutoScroll={handleRouteDragAutoScroll}
-            onTourTargetRef={setTourTargetRef}
-            accountId={user?.id}
-            dailyByDate={Object.fromEntries(
-              dailyAccommodations.map((d) => [
-                d.stayDate,
-                {
-                  id: d.id,
-                  stayDate: d.stayDate,
-                  title: d.title,
-                  coordinates: d.coordinates,
-                },
-              ]),
-            )}
-            favoritePlaces={favoritePlaces}
-            onDeleteFavorite={
-              user?.id
-                ? (fav) => {
-                    lightTap();
-                    const snapshot = favoritePlaces;
-                    setFavoritePlaces((prev) => prev.filter((f) => f.id !== fav.id));
-                    void unsaveFavoritePlace(fav.id).catch(() => {
-                      setFavoritePlaces(snapshot);
-                    });
-                  }
-                : undefined
-            }
-            onClearDailyAccommodation={
-              canEditItinerary && groupId
-                ? (stayDate, _day) => {
-                    // Local draft only — flush on sheet dismiss.
-                    routeDraft.editDaily((base) => base.filter((d) => d.stayDate !== stayDate));
-                  }
-                : undefined
-            }
-            onSetDailyFromDestination={
-              canEditItinerary && groupId
-                ? (destinationId, day) => {
-                    const baseDests = routeDraft.latestDestinations() ?? routeEditorServerDestinations;
-                    const dest =
-                      baseDests.find((d) => d.id === destinationId)
-                      ?? destinations.find((d) => d.id === destinationId);
-                    if (!dest) return;
-                    const departure = routeDepartureDate;
-                    const date = dateForTripDay(departure, day);
-                    if (!date) {
-                      Alert.alert(
-                        t('interaction.error'),
-                        t('stay.needDepartureDate'),
-                      );
-                      return;
-                    }
-                    const stayDate = localDayKey(date);
-                    const next: DailyAccommodation = {
-                      id: `draft-daily-${stayDate}`,
-                      groupId,
-                      stayDate,
-                      title: dest.title,
-                      address: dest.address,
-                      coordinates: dest.coordinates,
-                      // Snapshot only (no FK); source stop is discarded below.
-                      sourceDestinationId: dest.id,
-                    };
-                    routeDraft.editDaily((base) => [...base.filter((d) => d.stayDate !== stayDate), next]);
-                    // Setting stay from a gathering point discards that stop;
-                    // only the daily accommodation setting remains.
-                    routeDraft.setDestinations(baseDests.filter((d) => d.id !== destinationId), { dirty: true });
-                    if (!destinationId.startsWith('draft-')) routeDraft.markDeleted(destinationId);
-                  }
-                : undefined
-            }
-            onQuickAddAccommodation={
-              canEditItinerary && groupId
-                ? (day) => {
-                    // Local draft card — only days with existing stops show this CTA.
-                    // Use full open route-editor list (not day-gated carousel).
-                    const daily = dailyAccommodations.find((d) => {
-                      const date = dateForTripDay(
-                        routeDepartureDate,
-                        day,
-                      );
-                      return date ? d.stayDate === localDayKey(date) : false;
-                    });
-                    const dayStops = openForRouteEditor
-                      .filter((d) => (d.day || 1) === day)
-                      .sort((a, b) => a.order - b.order);
-                    if (dayStops.length === 0) return;
-                    const allSorted = openForRouteEditor.slice().sort((a, b) => {
-                      if ((a.day ?? 0) !== (b.day ?? 0)) {
-                        return (a.day ?? 0) - (b.day ?? 0);
-                      }
-                      return a.order - b.order;
-                    });
-                    const fallbackStop =
-                      dayStops[dayStops.length - 1]
-                      ?? allSorted[allSorted.length - 1];
-                    const title = daily?.title ?? t('stay.defaultTitle');
-                    const address = daily?.address ?? fallbackStop?.address;
-                    const coords = daily?.coordinates
-                      ?? fallbackStop?.coordinates
-                      ?? {
-                        latitude: 0,
-                        longitude: 0,
-                      };
-                    const base = routeDraft.latestDestinations() ?? routeEditorServerDestinations;
-                    const insertOrder = nextOrderInDay(base, day, (fallbackStop?.order ?? 0) + 1);
-                    const draftCard: Destination = {
-                      id: routeDraft.nextDraftId('draft-acc'),
-                      title,
-                      address,
-                      coordinates: coords,
-                      order: insertOrder,
-                      day,
-                      kind: 'accommodation',
-                      stayAnchor: false,
-                      subgroupId: routeEditorScopeId,
-                    };
-                    routeDraft.setDestinations(insertDraftDestination(base, draftCard), { dirty: true });
-                  }
-                : undefined
-            }
-            onPickFavorite={
-              canEditItinerary && groupId
-                ? (fav, _day) => {
-                    const day = null;
-                    // Local draft stop from favorites — flush on dismiss.
-                    const base = routeDraft.latestDestinations() ?? routeEditorServerDestinations;
-                    const insertOrder = nextOrderInDay(base, day, 0);
-                    const draftStop: Destination = {
-                      id: routeDraft.nextDraftId('draft-fav'),
-                      title: fav.title,
-                      address: fav.address,
-                      coordinates: fav.coordinates,
-                      order: insertOrder,
-                      day,
-                      kind: 'stop',
-                      subgroupId: routeEditorScopeId,
-                    };
-                    routeDraft.setDestinations(insertDraftDestination(base, draftStop), { dirty: true });
-                  }
-                : undefined
-            }
-          />
-        </ScrollView>
-      </OverlaySheet>
+        canEditItinerary={canEditItinerary}
+        dailyAccommodations={dailyAccommodations}
+        dark={dark}
+        destinations={destinations}
+        favoritePlaces={favoritePlaces}
+        flushRouteDraft={flushRouteDraft}
+        groupId={groupId}
+        handleDelete={handleDelete}
+        handleDeleteMany={handleDeleteMany}
+        handleReorder={handleReorder}
+        handleRouteDragAutoScroll={handleRouteDragAutoScroll}
+        handleUpdateEmojiColor={handleUpdateEmojiColor}
+        handleUpdateTripDetails={handleUpdateTripDetails}
+        localActionError={localActionError}
+        navTargetId={navTargetId}
+        openForRouteEditor={openForRouteEditor}
+        openKmlImportForScope={openKmlImportForScope}
+        overlay={overlay}
+        routeDepartureDate={routeDepartureDate}
+        routeDraft={routeDraft}
+        routeDragPreview={routeDragPreview}
+        routeEditorScopeId={routeEditorScopeId}
+        routeEditorServerDestinations={routeEditorServerDestinations}
+        routeInteractionMode={routeInteractionMode}
+        routeScrollEnabled={routeScrollEnabled}
+        routeScrollRef={routeScrollRef}
+        routeScrollViewportHeightRef={routeScrollViewportHeightRef}
+        routeScrollYRef={routeScrollYRef}
+        routeSelectedIds={routeSelectedIds}
+        routeTripDays={routeTripDays}
+        setEditButtonActive={setEditButtonActive}
+        setFavoritePlaces={setFavoritePlaces}
+        setOverlay={setOverlay}
+        setRouteDragPreview={setRouteDragPreview}
+        setRouteInteractionMode={setRouteInteractionMode}
+        setRouteOverlayOpenComplete={setRouteOverlayOpenComplete}
+        setRouteScrollEnabled={setRouteScrollEnabled}
+        setRouteSelectedIds={setRouteSelectedIds}
+        setTourTargetRef={setTourTargetRef}
+        styles={styles}
+        t={t}
+        user={user}
+      />
 
       <SettingsOverlay
         visible={settingsOpen}
@@ -7546,212 +6538,33 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* 邀請成員 — independent share sheet (code / share / copy). */}
-      <InviteMembersSheet
-        visible={overlay === 'invite'}
-        onClose={() => setOverlay(null)}
-        title={t('map.inviteMembers')}
+      <InviteMembersOverlay
         accent={accent}
-        doneLabel={t('map.done')}
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={styles.overlayHint}>
-            {inviteBlockedForAnonymousLeader
-              ? t('anon.registrationRequiredBody')
-              : t('map.inviteMembersHint')}
-          </Text>
-          {!inviteBlockedForAnonymousLeader && (
-            <View
-              style={styles.inviteCodeBoxes}
-              accessible
-              accessibilityRole="text"
-              accessibilityLabel={group?.inviteCode ?? ''}
-            >
-              {Array.from({ length: 6 }, (_, index) => (
-                <React.Fragment key={index}>
-                  {index === 3 ? <Text style={styles.inviteCodeDash}>-</Text> : null}
-                  <View style={styles.inviteCodeCell}>
-                    <Text
-                      style={styles.inviteCodeChar}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.7}
-                      numberOfLines={1}
-                    >
-                      {group?.inviteCode?.[index] ?? ''}
-                    </Text>
-                  </View>
-                </React.Fragment>
-              ))}
-            </View>
-          )}
-          {inviteBlockedForAnonymousLeader ? (
-            <Pressable
-              style={[styles.settingsButton, { marginBottom: 10 }]}
-              onPress={promptAnonymousLeaderRegistration}
-              accessibilityRole="button"
-            >
-              <Ionicons name="person-add-outline" size={20} color="#fff" />
-              <Text style={styles.settingsText}>{t('anon.registrationRequiredCta')}</Text>
-            </Pressable>
-          ) : (
-            <View style={styles.inviteActions}>
-              <AmicroButton
-                icon="link-outline"
-                activeIcon="send-outline"
-                color="#fff"
-                label={t('map.share')}
-                centeredLabel
-                durationMs={420}
-                style={styles.inviteActionButton}
-                accessibilityLabel={t('map.shareInviteLink')}
-                onPress={lightTap}
-                onAnimationComplete={async () => {
-                  try {
-                    await shareCode();
-                  } catch {
-                    // Existing error path; always release busy via Amicro finally.
-                  }
-                }}
-              />
-              <AmicroButton
-                icon="copy-outline"
-                activeIcon="checkmark"
-                active={codeCopied}
-                activeOnPress
-                resetAfterComplete={false}
-                color="#fff"
-                activeColor={glass.ok}
-                label={t('map.copy')}
-                centeredLabel
-                style={styles.inviteActionButton}
-                accessibilityLabel={codeCopied ? t('group.copied') : t('map.copyGroupCode')}
-                onPress={lightTap}
-                onAnimationComplete={() => { void copyCode(); }}
-              />
-            </View>
-          )}
-        </ScrollView>
-      </InviteMembersSheet>
+        codeCopied={codeCopied}
+        copyCode={copyCode}
+        group={group}
+        inviteBlockedForAnonymousLeader={inviteBlockedForAnonymousLeader}
+        overlay={overlay}
+        promptAnonymousLeaderRegistration={promptAnonymousLeaderRegistration}
+        setOverlay={setOverlay}
+        shareCode={shareCode}
+        styles={styles}
+        t={t}
+      />
 
       {/* Exceptions + coordination — single full-bleed ops center. */}
-      <OverlaySheet
-        visible={overlay === 'ops'}
-        onClose={() => setOverlay(null)}
-        title={t('map.opsCenter')}
+      <OpsCenterSheet
         accent={accent}
-        doneLabel={t('map.done')}
-        material="mapSheet"
-        edgeToEdge
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
-            {t('exception.centerTitle')}
-          </Text>
-          {organizerExceptions.length === 0 ? (
-            <Text style={styles.overlayHint}>{t('exception.centerEmpty')}</Text>
-          ) : (
-            organizerExceptions.map((item) => {
-              const typeKey = `exception.type.${item.type}` as TranslationKey;
-              const statusKey = `exception.status.${item.status}` as TranslationKey;
-              const typeLabel = t(typeKey);
-              const statusLabel = t(statusKey);
-              const lastSeenLabel = (() => {
-                const ms = Date.parse(item.lastSeenAt);
-                if (!Number.isFinite(ms)) return item.lastSeenAt;
-                return new Date(ms).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
-              })();
-              const busy = exceptionPendingKeys.has(item.rootCauseKey);
-              const muted = item.status === 'resolved';
-              return (
-                <View
-                  key={item.id}
-                  style={[styles.listGroup, muted && { opacity: 0.55 }]}
-                >
-                  <View style={styles.listRow}>
-                    <View style={styles.grow}>
-                      <Text style={styles.listRowTitle} numberOfLines={1}>
-                        {item.memberName} · {typeLabel}
-                      </Text>
-                      <Text style={styles.overlayHint} numberOfLines={3}>
-                        {item.gatheringPointTitle
-                          ? `${t('exception.gathering', { title: item.gatheringPointTitle })} · `
-                          : ''}
-                        {statusLabel}
-                        {` · ${t('exception.lastSeen', { time: lastSeenLabel })}`}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={[styles.splitActions, { paddingHorizontal: 12, paddingBottom: 10 }]}>
-                    {item.availableActions.includes('acknowledge') ? (
-                      <Pressable
-                        style={[
-                          styles.chip,
-                          { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) },
-                          busy && { opacity: 0.5 },
-                        ]}
-                        onPress={() => {
-                          if (busy) return;
-                          void markExceptionHandled(item.rootCauseKey, 'acknowledge');
-                        }}
-                        disabled={busy}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.acknowledge')}`}
-                        accessibilityState={{ disabled: busy }}
-                      >
-                        <Text style={styles.chipText}>{t('exception.acknowledge')}</Text>
-                      </Pressable>
-                    ) : null}
-                    {item.availableActions.includes('resolve') ? (
-                      <Pressable
-                        style={[
-                          styles.chip,
-                          { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) },
-                          busy && { opacity: 0.5 },
-                        ]}
-                        onPress={() => {
-                          if (busy) return;
-                          void markExceptionHandled(item.rootCauseKey, 'resolve');
-                        }}
-                        disabled={busy}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.resolve')}`}
-                        accessibilityState={{ disabled: busy }}
-                      >
-                        <Text style={styles.chipText}>{t('exception.resolve')}</Text>
-                      </Pressable>
-                    ) : null}
-                    {item.availableActions.includes('reopen') ? (
-                      <Pressable
-                        style={[styles.chipGhost, busy && { opacity: 0.5 }]}
-                        onPress={() => {
-                          if (busy) return;
-                          void markExceptionHandled(item.rootCauseKey, 'reopen');
-                        }}
-                        disabled={busy}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.reopen')}`}
-                        accessibilityState={{ disabled: busy }}
-                      >
-                        <Text style={styles.chipText}>{t('exception.reopen')}</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })
-          )}
-
-          <Text style={styles.sheetHeading}>{t('coordination.title')}</Text>
-          <CoordinationRequestsPanel
-            accent={accent}
-            isLeader={!!isLeader}
-            styles={styles}
-            coordination={coordination}
-          />
-        </ScrollView>
-      </OverlaySheet>
+        coordination={coordination}
+        exceptionPendingKeys={exceptionPendingKeys}
+        isLeader={isLeader}
+        markExceptionHandled={markExceptionHandled}
+        organizerExceptions={organizerExceptions}
+        overlay={overlay}
+        setOverlay={setOverlay}
+        styles={styles}
+        t={t}
+      />
 
       {/* 全部快捷指令 */}
       <OverlaySheet
@@ -7797,222 +6610,46 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* Arrival management — one page: every stop + member mark/undo on the right. */}
-      <OverlaySheet
-        visible={overlay === 'arrivalManage'}
-        onClose={() => setOverlay(null)}
-        title={t('arrival.manage')}
+      <ArrivalManageSheet
         accent={accent}
-        doneLabel={t('map.done')}
-        doneSystemImage="checkmark"
-        material="mapSheet"
-        edgeToEdge
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          {allScopedDestinations.length === 0 ? (
-            <Text style={styles.overlayHint}>{t('settings.noDestinations')}</Text>
-          ) : (
-            allScopedDestinations.map((destination) => {
-              const scopedMembers = members.filter(
-                (member) => member.subgroupId === destination.subgroupId,
-              );
-              const canCorrectHistory = isLeader
-                && destination.subgroupId == null
-                && destination.closedAt != null;
-              const arrivedCount = destinationArrivals.filter(
-                (entry) => entry.destinationId === destination.id,
-              ).length;
-              return (
-                <View key={`arrival-manage-${destination.id}`} style={styles.listGroup}>
-                  <View style={styles.listRow}>
-                    <Text style={[styles.listRowTitle, styles.grow]} numberOfLines={2}>
-                      {destination.title}
-                    </Text>
-                    <Text style={styles.listRowTrailing}>
-                      {arrivedCount}/{scopedMembers.length}
-                    </Text>
-                  </View>
-                  {scopedMembers.map((member, index) => {
-                    const arrived = destinationArrivals.some(
-                      (entry) =>
-                        entry.destinationId === destination.id && entry.userId === member.userId,
-                    );
-                    const memberStateKey = arrived
-                      ? 'memberStatus.arrived'
-                      : destination.closedAt
-                        ? 'memberStatus.missed'
-                        : 'memberStatus.pending';
-                    return (
-                      <View
-                        key={`${destination.id}-${member.userId}`}
-                        style={[
-                          styles.flockRow,
-                          styles.arrivalMemberRow,
-                          index === scopedMembers.length - 1 && styles.flockRowLast,
-                        ]}
-                      >
-                        <View style={styles.grow}>
-                          <Text style={styles.flockName} numberOfLines={1}>{member.name}</Text>
-                          <Text style={styles.overlayHint}>{t(memberStateKey)}</Text>
-                        </View>
-                        {canCorrectHistory ? (
-                          <Pressable
-                            style={styles.arrivalToggleBtn}
-                            onPress={() => handleArrival(destination, member.userId, !arrived)}
-                            accessibilityRole="button"
-                            accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
-                            accessibilityState={{ checked: arrived }}
-                          >
-                            <Ionicons
-                              name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                              size={36}
-                              color={arrived ? glass.ok : glass.textTertiary}
-                            />
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-      </OverlaySheet>
+        allScopedDestinations={allScopedDestinations}
+        destinationArrivals={destinationArrivals}
+        handleArrival={handleArrival}
+        isLeader={isLeader}
+        members={members}
+        overlay={overlay}
+        setOverlay={setOverlay}
+        styles={styles}
+        t={t}
+      />
 
       {/* Single-destination arrival (gathering-card shortcut only). */}
-      <OverlaySheet
-        visible={overlay === 'arrival'}
-        onClose={() => {
-          setArrivalDestination(null);
-          setOverlay(null);
-        }}
-        title={arrivalDestination?.title ?? t('map.arrivalProgress')}
+      <ArrivalTimeSheet
         accent={accent}
-        doneLabel={t('map.done')}
-        doneSystemImage="checkmark"
-        material="mapSheet"
-        edgeToEdge
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          {arrivalDestination ? members
-            .filter((member) => member.subgroupId === arrivalDestination.subgroupId)
-            .map((member) => {
-              const arrived = activeDestinationArrivals.some(
-                (entry) => entry.destinationId === arrivalDestination.id && entry.userId === member.userId,
-              );
-              const memberStateKey = arrived
-                ? 'memberStatus.arrived'
-                : arrivalDestination.closedAt
-                  ? 'memberStatus.missed'
-                  : 'memberStatus.pending';
-              return (
-                <View key={member.userId} style={[styles.flockRow, styles.arrivalMemberRow]}>
-                  <View style={styles.grow}>
-                    <Text style={styles.flockName} numberOfLines={1}>{member.name}</Text>
-                    <Text style={styles.overlayHint}>{t(memberStateKey)}</Text>
-                  </View>
-                  {isLeader && arrivalDestination.subgroupId == null && arrivalDestination.closedAt != null ? (
-                    <Pressable
-                      style={styles.arrivalToggleBtn}
-                      onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
-                      accessibilityRole="button"
-                      accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
-                      accessibilityState={{ checked: arrived }}
-                    >
-                      <Ionicons
-                        name={arrived ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                        size={36}
-                        color={arrived ? glass.ok : glass.textTertiary}
-                      />
-                    </Pressable>
-                  ) : null}
-                </View>
-              );
-            }) : null}
-        </ScrollView>
-      </OverlaySheet>
+        activeDestinationArrivals={activeDestinationArrivals}
+        arrivalDestination={arrivalDestination}
+        handleArrival={handleArrival}
+        isLeader={isLeader}
+        members={members}
+        overlay={overlay}
+        setArrivalDestination={setArrivalDestination}
+        setOverlay={setOverlay}
+        styles={styles}
+        t={t}
+      />
 
       {/* History overlay: gathering points actually reached, grouped by day. */}
-      <OverlaySheet
-        visible={overlay === 'history'}
-        onClose={() => setOverlay(null)}
-        title={t('history.title')}
+      <HistorySheet
         accent={accent}
-        doneLabel={t('map.done')}
-        material="mapSheet"
-        edgeToEdge
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          {historyGroups.length === 0 ? (
-            <Text style={styles.overlayHint}>{t('history.empty')}</Text>
-          ) : (
-            historyGroups.map((group) => {
-              const [y, m, dNum] = group.day.split('-').map(Number);
-              const dayLabel = group.day === 'unknown'
-                ? t('history.timeUnknown')
-                : new Date(y, m - 1, dNum).toLocaleDateString();
-              return (
-                <View key={group.day} style={styles.historyDayBlock}>
-                  <Text style={styles.sectionLabel}>{dayLabel}</Text>
-                  <View style={styles.list}>
-                    {group.items.map((item, i) => {
-                      const status = item.status ?? 'arrived';
-                      const statusLabel =
-                        status === 'missed'
-                          ? t('history.statusMissed')
-                          : status === 'incomplete'
-                            ? t('history.statusIncomplete')
-                            : null;
-                      return (
-                      <View
-                        key={item.id}
-                        style={[
-                          styles.flockRow,
-                          i === group.items.length - 1 && styles.flockRowLast,
-                        ]}
-                      >
-                        <View style={styles.flockRowMain}>
-                          <View style={styles.grow}>
-                            <Text style={styles.flockName}>{item.name}</Text>
-                            {item.userName ? (
-                              <Text style={styles.overlayHint}>{item.userName}</Text>
-                            ) : null}
-                          </View>
-                          {item.pendingSync ? <Text style={styles.historyTime}>{t('history.pendingSync')}</Text> : statusLabel ? (
-                            <Text style={[styles.historyTime, { color: glass.textTertiary }]}>
-                              {statusLabel}
-                            </Text>
-                          ) : item.timeUnknown || !item.arrivedAt ? (
-                            <Text style={styles.historyTime}>{t('history.timeUnknown')}</Text>
-                          ) : (
-                            <Text style={styles.historyTime}>
-                              {new Date(item.arrivedAt).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </Text>
-                          )}
-                          {!item.synthetic && !item.pendingSync && (item.userId === user?.id || isLeader) ? (
-                            <Pressable
-                              style={styles.cmdSquare}
-                              onPress={() => handleDeleteHistory(item)}
-                              accessibilityRole="button"
-                              accessibilityLabel={t('common.delete')}
-                            >
-                              <Ionicons name="trash-outline" size={18} color={glass.danger} />
-                            </Pressable>
-                          ) : null}
-                        </View>
-                      </View>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-      </OverlaySheet>
+        handleDeleteHistory={handleDeleteHistory}
+        historyGroups={historyGroups}
+        isLeader={isLeader}
+        overlay={overlay}
+        setOverlay={setOverlay}
+        styles={styles}
+        t={t}
+        user={user}
+      />
 
       {/* Report-a-problem stacks over settings; dismissing it reveals settings. */}
       <View
@@ -8032,47 +6669,16 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       {/* Invite-a-teammate picker, opened from my own subgroup card. */}
-      <OverlaySheet
-        visible={inviteSheetOpen}
-        onClose={() => setInviteSheetOpen(false)}
-        title={t('subgroup.inviteTitle')}
+      <InviteTeammateSheet
         accent={accent}
-        doneLabel={t('map.done')}
-        edgeToEdge
-      >
-        <ScrollView contentContainerStyle={styles.overlayBody}>
-          {invitable.length === 0 ? (
-            <Text style={styles.overlayHint}>{t('subgroup.inviteEmpty')}</Text>
-          ) : (
-            <View style={styles.list}>
-              {invitable.map((f, i) => (
-                <View
-                  key={f.userId}
-                  style={[styles.flockRow, i === invitable.length - 1 && styles.flockRowLast]}
-                >
-                  <View style={styles.flockRowMain}>
-                    <View style={[styles.flockAvatar, { backgroundColor: f.color, borderColor: 'transparent' }]}>
-                      <HitherText typeRole="emoji" style={styles.flockEmoji}>
-                        {displayMemberAvatar(f.avatar, f.userId).emoji}
-                      </HitherText>
-                    </View>
-                    <View style={styles.grow}>
-                      <Text style={styles.flockName}>{f.name}</Text>
-                    </View>
-                    <Pressable
-                      style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
-                      onPress={() => mySubgroupId && void handleInvite(mySubgroupId, f.userId)}
-                      accessibilityRole="button"
-                    >
-                      <Text style={styles.chipText}>{t('subgroup.inviteAction')}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      </OverlaySheet>
+        handleInvite={handleInvite}
+        invitable={invitable}
+        inviteSheetOpen={inviteSheetOpen}
+        mySubgroupId={mySubgroupId}
+        setInviteSheetOpen={setInviteSheetOpen}
+        styles={styles}
+        t={t}
+      />
 
       <DestinationSearch
         visible={searchVisible}

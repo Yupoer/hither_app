@@ -23,8 +23,9 @@ describe('map chrome native surface contract', () => {
   it('keeps iOS map cards neutral and Android fallbacks tokenized', () => {
     const mapStyles = read('screens/MapScreen/styles.ts');
     const map = read('screens/MapScreen.tsx');
+    const addPlaceCard = read('screens/MapScreen/components/AddPlaceConfirmCard.tsx');
     expect(map).toContain("Platform.OS === 'android'");
-    expect(map).toContain('tintColor={Platform.OS === \'android\'');
+    expect(addPlaceCard).toContain('tintColor={Platform.OS === \'android\'');
     expect(map).toContain('styles.locationSharingButton');
     expect(map).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
     expect(mapStyles).toContain('width: 44');
@@ -42,6 +43,8 @@ describe('map chrome native surface contract', () => {
     expect(mapStyles).toContain('height: 60');
     expect(map).not.toContain('size={80}');
     expect(map).not.toContain('height={96}');
-    expect((map.match(/size=\{36\}/g) ?? [])).toHaveLength(2);
+    const arrivalSheets = read('screens/MapScreen/components/ArrivalManageSheet.tsx')
+      + read('screens/MapScreen/components/ArrivalTimeSheet.tsx');
+    expect((arrivalSheets.match(/size=\{36\}/g) ?? [])).toHaveLength(2);
   });
 });
