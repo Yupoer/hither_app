@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(15);
+select plan(16);
 
 insert into auth.users (id, email, is_anonymous) values
   ('a7111111-1111-4111-8111-111111111111', 'reward-member@example.test', false),
@@ -59,8 +59,12 @@ select is((select count(*)::int from public.token_ledger where external_ref = 'g
   1, 'replay leaves one durable ledger entry');
 
 set local role authenticated;
-select is((select balance from public.token_wallets where user_id = 'a7111111-1111-4111-8111-111111111111'),
-  1, 'member can read its own credited wallet');
+select throws_ok(
+  $$select balance from public.token_wallets where user_id = 'a7111111-1111-4111-8111-111111111111'$$,
+  '42501', null, 'member cannot bypass the store RPC to read wallets'
+);
+select is(public.get_store_snapshot()->>'balance',
+  '1', 'member can read its own credited wallet through the store RPC');
 select is(public.create_reward_session('ios')->>'ok', 'true',
   'credited session frees the slot for the next reward');
 
