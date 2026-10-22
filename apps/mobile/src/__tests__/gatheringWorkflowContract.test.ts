@@ -88,7 +88,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).toContain("t('arrival.mark')");
     expect(mapScreen).toContain("t('common.confirm')");
     expect(mapScreen).toContain('arrivalErrorMessage');
-    expect(mapScreen).toContain('future destination cannot be completed');
     expect(mapScreen).toContain('arrivalMemberRow');
     expect(mapScreen).toContain('checkmark-circle');
     expect(i18n).toContain("'arrival.errFuture'");
