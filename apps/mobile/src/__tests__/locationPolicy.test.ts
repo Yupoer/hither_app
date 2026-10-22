@@ -292,6 +292,12 @@ describe('shouldAcceptUiSample', () => {
       shouldAcceptUiSample(moved(1), 1_000 + policy.uiMinIntervalMs + 100, atOrigin(1_000), policy),
     ).toBe(false);
   });
+
+  it('accepts moves from 40% of uiMinDistanceM once the interval has passed', () => {
+    const later = 1_000 + policy.uiMinIntervalMs + 100;
+    expect(shouldAcceptUiSample(moved(policy.uiMinDistanceM * 0.5), later, atOrigin(1_000), policy)).toBe(true);
+    expect(shouldAcceptUiSample(moved(policy.uiMinDistanceM * 0.3), later, atOrigin(1_000), policy)).toBe(false);
+  });
 });
 
 describe('shouldUploadSample', () => {

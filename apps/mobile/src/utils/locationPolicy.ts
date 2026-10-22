@@ -289,12 +289,17 @@ export function shouldAcceptUiSample(
 ): boolean {
   if (!last.lastCoords) return true;
   if (nowMs - last.lastAtMs < policy.uiMinIntervalMs) return false;
-  const moved = distanceMeters(last.lastCoords, sample);
-  if (moved >= policy.uiMinDistanceM) return true;
-  if (moved >= policy.uiMinDistanceM * 0.4) {
-    return true;
-  }
-  return false;
+  return distanceMeters(last.lastCoords, sample) >= policy.uiMinDistanceM * 0.4;
+}
+
+export type ForegroundUploadDelivery = 'immediate' | 'batched';
+
+/**
+ * During a journey peers watch this member live, so each accepted foreground
+ * fix is flushed at once. Otherwise fixes join the coalesced outbox flush.
+ */
+export function foregroundUploadDelivery(powerMode: LocationPowerMode): ForegroundUploadDelivery {
+  return powerMode === 'journey' ? 'immediate' : 'batched';
 }
 
 /**

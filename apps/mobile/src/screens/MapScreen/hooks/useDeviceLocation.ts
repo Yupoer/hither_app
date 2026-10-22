@@ -16,6 +16,7 @@ import {
 } from '../../../state/locationOutbox';
 import {
   createMotionState,
+  foregroundUploadDelivery,
   locationPolicy,
   isForegroundLocationState,
   reduceMotionState,
@@ -250,7 +251,7 @@ export function useDeviceLocation({
         void enqueueUpload(
           sample,
           now,
-          { immediate: true },
+          { immediate: foregroundUploadDelivery(powerModeRef.current) === 'immediate' },
           requestedGroup,
         ).catch(() => undefined);
       }
