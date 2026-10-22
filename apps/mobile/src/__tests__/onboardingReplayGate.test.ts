@@ -33,7 +33,7 @@ function isOnboardingCompleteForTourGate(input: {
 }
 
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
-const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const map = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
 const sync = readFileSync(join(__dirname, '../onboarding/sync.ts'), 'utf8');
 
 describe('onboarding + tour replay gate (#171)', () => {

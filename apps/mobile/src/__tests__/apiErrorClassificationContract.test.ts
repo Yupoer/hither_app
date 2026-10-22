@@ -258,7 +258,7 @@ describe('source contracts — soft-fail / fallback preserved', () => {
     'utf8',
   );
   const mapsProxy = readFileSync(join(__dirname, '../native/googleMapsProxy.ts'), 'utf8');
-  const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+  const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useStragglerReporting.ts'), 'utf8');
   const performance = readFileSync(join(__dirname, '../state/performance.ts'), 'utf8');
 
   it('Live Activity soft-handles duplicate-key without throwing to UI', () => {

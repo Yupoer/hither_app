@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
+const stragglerReporting = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useStragglerReporting.ts'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const toolsPane = readFileSync(join(__dirname, '../screens/MapScreen/components/ToolsPane.tsx'), 'utf8');
 const membersPane = readFileSync(join(__dirname, '../screens/MapScreen/components/MembersPane.tsx'), 'utf8');
@@ -413,7 +415,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('activePoint?.title ?? destinations[0]?.title');
     expect(mapScreen).toContain('filterActiveDestinations');
     expect(mapScreen).toContain('resolveAddDay');
-    expect(mapScreen).toContain('mergeHistoryWithPastStops');
+    expect(visitHistory).toContain('mergeHistoryWithPastStops');
   });
 
   it('avoids Zoom enter/exit on gathering-card body (no shrink-then-pop)', () => {
@@ -504,10 +506,10 @@ describe('map UI placement contracts', () => {
     const toolsBlock = mapScreen.slice(toolsStart, toolsEnd > 0 ? toolsEnd : toolsStart + 5000);
     expect(toolsBlock).not.toContain("t('straggler.section')");
     // Detection + APNs fan-out stay on group fields.
-    expect(mapScreen).toContain('useStragglerAlerts');
-    expect(mapScreen).toContain('alertsEnabled: group?.stragglerAlerts ?? true');
-    expect(mapScreen).toContain('thresholdM: group?.stragglerThresholdM ?? 500');
-    expect(mapScreen).toContain('reportStraggler');
+    expect(stragglerReporting).toContain('useStragglerAlerts');
+    expect(stragglerReporting).toContain('alertsEnabled: group?.stragglerAlerts ?? true');
+    expect(stragglerReporting).toContain('thresholdM: group?.stragglerThresholdM ?? 500');
+    expect(stragglerReporting).toContain('reportStraggler');
   });
 
   it('keeps peek/mid sheet width stable so tab Segmented does not scale between stages', () => {

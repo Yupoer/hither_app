@@ -3,6 +3,13 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "MapScreen hook extraction preserves stale entitlement response guards, offline local arrival history, anonymous invite limits, home navigation, leave cleanup, and straggler deduplication.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "rejects an old team store response|does not fetch store entitlements|renders projected local arrivals|blocks anonymous leader invite|returns home without leaving|clears Live Activities|reports each newly flagged"
+    },
+    {
       "parent": 298, "child": 298,
       "acceptance": "The production Live Activity travel_mode constraint accepts bicycle and existing modes and rejects unsupported values.",
       "testFile": "supabase/tests/live_activity_bicycle_mode.test.sql",

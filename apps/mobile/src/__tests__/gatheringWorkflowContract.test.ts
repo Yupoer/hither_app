@@ -8,6 +8,7 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const arrivalManageSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/ArrivalManageSheet.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
@@ -199,7 +200,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('complete_gathering_stop');
     expect(migrations).toContain('insert into public.visited_waypoints');
     expect(client).toContain('completeGatheringStop');
-    expect(mapScreen).toContain('projectHistoryForViewer');
+    expect(visitHistory).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('enqueueJourneyCompletion');
     expect(carousel).toContain('leader_mark_complete');
     expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');

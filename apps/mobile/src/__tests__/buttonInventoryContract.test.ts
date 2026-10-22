@@ -6,6 +6,8 @@ import { join } from 'node:path';
  * Pure setState buttons are listed as pure-UI (minimal safe handlers).
  */
 const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const groupActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGroupActions.ts'), 'utf8');
+const accountActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const authScreen = readFileSync(join(__dirname, '../screens/AuthScreen.tsx'), 'utf8');
@@ -75,10 +77,10 @@ describe('button inventory / high-risk action contract', () => {
 
   it('wires Map navigation/session actions through runUiAction', () => {
     expect(mapScreen).toContain('runUiAction(');
-    expect(mapScreen).toContain("'map.go_home_create_or_join'");
+    expect(groupActions).toContain("'map.go_home_create_or_join'");
     expect(mapScreen).not.toContain("'map.switch_group'");
-    expect(mapScreen).toContain("'map.leave_group'");
-    expect(mapScreen).toContain("'map.sign_out'");
+    expect(accountActions).toContain("'map.leave_group'");
+    expect(accountActions).toContain("'map.sign_out'");
     expect(mapScreen).toContain("'map.open_settings'");
     expect(mapScreen).not.toContain("'map.open_group_menu'");
   });
@@ -158,6 +160,8 @@ describe('button inventory / high-risk action contract', () => {
       mapScreen,
       addPlaceCard,
       itineraryMutations,
+      groupActions,
+      accountActions,
       authScreen,
       roleSelect,
       myTeams,
