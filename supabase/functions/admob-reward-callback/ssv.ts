@@ -101,37 +101,35 @@ export async function getGoogleSsvKeysCached(
   }
 }
 
+// Google always sends signature and key_id as the last two params, in that
+// order. Anchoring on the tail rejects anything appended after key_id and
+// takes the last "&signature=", so no unsigned param can reach the fields.
+const SIGNED_TAIL = /^(.+)&signature=([^&]+)&key_id=(\d+)$/;
+
 /**
- * Parse SSV query. Signature and key_id must be the last two params
- * (signature then key_id) per Google docs; we still locate them safely.
+ * Parse an SSV query. Every reward field is read from the signed content
+ * only, so a param added outside the signature cannot change the credit.
  */
 export function parseSsvQueryString(queryString: string): ParsedSsvQuery | null {
   const qs = queryString.startsWith("?") ? queryString.slice(1) : queryString;
-  if (!qs) return null;
+  const match = SIGNED_TAIL.exec(qs);
+  if (!match) return null;
+  const [, contentToVerify, signatureRaw, keyRaw] = match;
 
-  // Google: content = query substring before "&signature=" (exclude the &).
-  const sigMarker = "signature=";
-  const sigIdx = qs.indexOf(sigMarker);
-  if (sigIdx <= 0) return null;
-  const contentToVerify = qs.slice(0, sigIdx - 1); // drop trailing &
-
-  const afterSig = qs.slice(sigIdx + sigMarker.length);
-  const amp = afterSig.indexOf("&");
-  const signatureBase64 = amp === -1 ? afterSig : afterSig.slice(0, amp);
-  if (!signatureBase64) return null;
-
-  const keyMarker = "key_id=";
-  const keyIdx = qs.indexOf(keyMarker);
-  if (keyIdx === -1) return null;
-  const keyRaw = qs.slice(keyIdx + keyMarker.length).split("&")[0] ?? "";
+  let signatureBase64: string;
+  try {
+    signatureBase64 = decodeURIComponent(signatureRaw);
+  } catch {
+    return null;
+  }
   const keyId = Number(keyRaw);
-  if (!Number.isFinite(keyId)) return null;
+  if (!Number.isSafeInteger(keyId)) return null;
 
-  const params = new URLSearchParams(qs);
+  const params = new URLSearchParams(contentToVerify);
   return {
     queryString: qs,
     contentToVerify,
-    signatureBase64: decodeURIComponent(signatureBase64),
+    signatureBase64,
     keyId,
     adUnit: params.get("ad_unit"),
     customData: params.get("custom_data"),
