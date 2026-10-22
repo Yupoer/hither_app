@@ -3,7 +3,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(33);
+select plan(49);
 
 insert into auth.users (id, email) values
   ('d1111111-1111-4111-8111-111111111111', 'trip-refund-leader@example.test'),
@@ -191,21 +191,44 @@ select is(
   'the blocked reversal leaves both passes unchanged'
 );
 
--- Reversal of a refunded pass restores it inside its original window.
+-- Freeing the slot must recover an already accepted, blocked reversal.
 select is(
   public.test_trip_notify('trip-refund-b', 'REFUND', 'trip-tx-b', now() - interval '30 minutes')->>'outcome',
   'revoked',
   'the third pass is refunded'
 );
 select is(
+  (select status from public.trip_entitlements where transaction_id = 'trip-tx-a'),
+  'active',
+  'the blocked reversal recovers immediately when the blocking pass is refunded'
+);
+select is(
+  public.test_trip_notify('trip-reverse-a', 'REFUND_REVERSED', 'trip-tx-a', now() - interval '40 minutes')->>'duplicate',
+  'true',
+  'the recovered reversal remains accepted on replay'
+);
+select is(
+  public.test_trip_grant('daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'trip-tx-a')->>'status',
+  'active',
+  'purchase verification returns the recovered pass'
+);
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'd1111111-1111-4111-8111-111111111111', true);
+select is(
+  public.restore_entitlements('daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')->>'is_premium',
+  'true',
+  'restore recovers premium without another Apple event'
+);
+set local role service_role;
+select is(
   public.test_trip_notify('trip-reverse-b', 'REFUND_REVERSED', 'trip-tx-b', now() - interval '20 minutes')->>'outcome',
-  'reinstated',
-  'a refund reversal reinstates the refunded pass'
+  'reinstatement_blocked',
+  'the second reversal waits while the recovered pass occupies the slot'
 );
 select is(
   (select status || '/' || (started_at = now() - interval '2 hours')::text
           || '/' || (expires_at = now() - interval '2 hours' + interval '10 days')::text
-     from public.trip_entitlements where transaction_id = 'trip-tx-b'),
+     from public.trip_entitlements where transaction_id = 'trip-tx-a'),
   'active/true/true',
   'the reinstated pass keeps its original validity window'
 );
@@ -219,6 +242,18 @@ select is(
   public.test_trip_notify('trip-reverse-b', 'REFUND_REVERSED', 'trip-tx-b', now() - interval '20 minutes')->>'duplicate',
   'true',
   'replaying the reversal is idempotent'
+);
+select is(
+  public.revoke_trip_entitlement(
+    (select id from public.trip_entitlements where transaction_id = 'trip-tx-a'), 'revoked'
+  )->>'ok',
+  'true',
+  'the recovered pass can be revoked normally'
+);
+select is(
+  (select status from public.trip_entitlements where transaction_id = 'trip-tx-b'),
+  'active',
+  'direct revocation releases the slot for the next accepted reversal'
 );
 
 -- Refund before the first grant, then a reversal: the grant goes through.
@@ -267,6 +302,66 @@ select is(
   (select status from public.trip_entitlements where transaction_id = 'trip-tx-ooo'),
   'active',
   'the out-of-order pair converges to an active pass'
+);
+
+select is(
+  public.test_trip_notify('trip-refund-ooo-3', 'REFUND', 'trip-tx-ooo', now() + interval '4 minutes')->>'status',
+  'refunded',
+  'a newer refund revokes the out-of-order pass'
+);
+select is(
+  public.test_trip_grant('dccccccc-cccc-4ccc-8ccc-cccccccccccc', 'trip-tx-expiring')->>'status',
+  'active',
+  'another pass occupies the slot before lazy expiry'
+);
+select is(
+  public.test_trip_notify('trip-reverse-ooo-3', 'REFUND_REVERSED', 'trip-tx-ooo', now() + interval '5 minutes')->>'outcome',
+  'reinstatement_blocked',
+  'the expiring blocker defers the reversal'
+);
+set local role postgres;
+update public.trip_entitlements set expires_at = now() - interval '1 second'
+ where transaction_id = 'trip-tx-expiring';
+set local role authenticated;
+select is(
+  public.get_trip_entitlement('dccccccc-cccc-4ccc-8ccc-cccccccccccc')->>'is_premium',
+  'true',
+  'entitlement read recovers the reversal after lazy expiry'
+);
+select is(
+  public.restore_entitlements('dccccccc-cccc-4ccc-8ccc-cccccccccccc')->>'is_premium',
+  'true',
+  'restore remains premium after lazy recovery'
+);
+set local role service_role;
+select is(
+  (select status from public.trip_entitlements where transaction_id = 'trip-tx-expiring'),
+  'expired',
+  'the blocking pass is expired before recovery'
+);
+select is(
+  public.test_trip_notify('trip-refund-early-2', 'REFUND', 'trip-tx-early', now() + interval '2 minutes')->>'status',
+  'refunded',
+  'the early pass can be refunded after its first grant'
+);
+set local role postgres;
+update public.trip_entitlements set expires_at = now() - interval '1 second'
+ where transaction_id = 'trip-tx-early';
+set local role service_role;
+select is(
+  public.test_trip_notify('trip-reverse-expired', 'REFUND_REVERSED', 'trip-tx-early', now() + interval '3 minutes')->>'status',
+  'expired',
+  'a reversal of an elapsed pass cannot start another validity window'
+);
+select is(
+  public.test_trip_grant('dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'trip-tx-early')->>'status',
+  'expired',
+  'verification cannot extend the expired reversed pass'
+);
+set local role postgres;
+select ok(
+  not public.group_has_active_premium('dbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
+  'an expired reversal grants no group access'
 );
 
 set local role authenticated;

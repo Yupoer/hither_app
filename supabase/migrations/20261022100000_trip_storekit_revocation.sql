@@ -53,6 +53,141 @@ $$;
 revoke all on function public.trip_store_revocation_status(text)
   from public, anon, authenticated, service_role;
 
+create or replace function public.expire_stale_entitlements(p_group_id uuid default null)
+returns void
+language plpgsql
+security definer
+volatile
+set search_path = ''
+as $$
+declare
+  v_group_id uuid;
+  v_candidate uuid;
+begin
+  -- Group before entitlement, including standalone expiry and read/restore.
+  for v_group_id in
+    select g.id from public.groups g
+     where (p_group_id is null or g.id = p_group_id)
+       and exists (select 1 from public.trip_entitlements e where e.group_id = g.id)
+     order by g.id
+     for update
+  loop
+    update public.trip_entitlements
+       set status = 'expired', updated_at = now()
+     where group_id = v_group_id and status = 'active'
+       and expires_at is not null and expires_at <= now();
+
+    -- Accepted reversals remain recoverable while another pass holds the slot.
+    update public.trip_entitlements e
+       set status = 'expired', updated_at = now()
+     where e.group_id = v_group_id and e.status = 'refunded'
+       and e.source = 'purchase' and e.plan_code = 'small_trip_pass'
+       and e.expires_at <= now()
+       and exists (
+         select 1 from public.premium_store_notifications n
+          where n.transaction_id = e.transaction_id and n.accepted
+            and n.notification_type = 'REFUND'
+       )
+       and public.trip_store_revocation_status(e.transaction_id) is null;
+
+    if not exists (
+      select 1 from public.trip_entitlements e
+       where e.group_id = v_group_id and e.plan_code = 'small_trip_pass'
+         and e.status = 'active'
+    ) then
+      select e.id into v_candidate
+        from public.trip_entitlements e
+       where e.group_id = v_group_id and e.status = 'refunded'
+         and e.source = 'purchase' and e.plan_code = 'small_trip_pass'
+         and e.expires_at > now()
+         and exists (
+           select 1 from public.premium_store_notifications n
+            where n.transaction_id = e.transaction_id and n.accepted
+              and n.notification_type = 'REFUND'
+         )
+         and public.trip_store_revocation_status(e.transaction_id) is null
+       order by e.expires_at desc, e.id
+       limit 1;
+      update public.trip_entitlements
+         set status = 'active', updated_at = now()
+       where id = v_candidate;
+    end if;
+  end loop;
+
+  -- Clear denormalized lifetime rows that somehow gained an expiry and lapsed.
+  -- Trip-scoped passes do not write profiles.pro (see apply/redeem).
+  perform public.allow_entitlement_profile_write();
+  update public.profiles
+  set pro = false
+  where pro = true
+    and pro_expires_at is not null
+    and pro_expires_at < now();
+end;
+$$;
+
+create or replace function public.revoke_trip_entitlement(
+  p_entitlement_id uuid,
+  p_reason text default 'revoked'
+)
+returns json
+language plpgsql
+security definer
+volatile
+set search_path = ''
+as $$
+declare
+  v_uid uuid;
+  v_row public.trip_entitlements%rowtype;
+  v_status text;
+  v_role text;
+begin
+  v_uid := (select auth.uid());
+  v_role := coalesce(
+    current_setting('request.jwt.claims', true)::json->>'role',
+    ''
+  );
+
+  select * into v_row
+  from public.trip_entitlements
+  where id = p_entitlement_id;
+
+  if not found then
+    return json_build_object('ok', false, 'error', 'invalid');
+  end if;
+
+  -- Owner or service_role (refund webhook).
+  if v_role is distinct from 'service_role'
+     and (v_uid is null or v_row.owner_user_id <> v_uid)
+  then
+    return json_build_object('ok', false, 'error', 'not_applicable');
+  end if;
+
+  perform 1 from public.groups where id = v_row.group_id for update;
+  select * into v_row from public.trip_entitlements where id = p_entitlement_id for update;
+  if not found then
+    return json_build_object('ok', false, 'error', 'invalid');
+  end if;
+
+  if v_row.status <> 'active' then
+    return json_build_object('ok', false, 'error', v_row.status, 'status', v_row.status);
+  end if;
+
+  v_status := case
+    when p_reason = 'refunded' then 'refunded'
+    when p_reason = 'invalid' then 'invalid'
+    else 'revoked'
+  end;
+
+  update public.trip_entitlements
+  set status = v_status, updated_at = now()
+  where id = p_entitlement_id;
+
+  perform public.expire_stale_entitlements(v_row.group_id);
+
+  return json_build_object('ok', true, 'status', v_status, 'entitlement_id', p_entitlement_id);
+end;
+$$;
+
 create or replace function public.lock_trip_storekit_transaction(p_original_transaction_id text)
 returns void
 language sql
@@ -88,6 +223,7 @@ declare
   v_entitlement public.trip_entitlements%rowtype;
   v_token uuid;
   v_store_status text;
+  v_was_refunded boolean;
   v_outcome text := 'acknowledged';
 begin
   if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role'
@@ -164,37 +300,20 @@ begin
         returning * into v_entitlement;
         v_outcome := 'revoked';
       end if;
-    elsif v_entitlement.status = 'refunded'
-      and exists (
-        select 1
-          from public.premium_store_notifications n
-         where n.transaction_id = trim(p_transaction_id)
-           and n.accepted
-           and n.notification_type = 'REFUND'
-      ) then
-      -- Reinstate within the original window; started_at/expires_at stay put.
-      perform public.expire_stale_entitlements(v_entitlement.group_id);
-      if v_entitlement.expires_at is not null and v_entitlement.expires_at <= now() then
-        update public.trip_entitlements
-           set status = 'expired', updated_at = now()
-         where id = v_entitlement.id
-        returning * into v_entitlement;
+    end if;
+
+    v_was_refunded := v_entitlement.status = 'refunded';
+    perform public.expire_stale_entitlements(v_entitlement.group_id);
+    select * into v_entitlement from public.trip_entitlements where id = v_entitlement.id;
+    if v_was_refunded and v_store_status is null and exists (
+      select 1 from public.premium_store_notifications n
+       where n.transaction_id = trim(p_transaction_id) and n.accepted
+         and n.notification_type = 'REFUND'
+    ) then
+      if v_entitlement.status in ('active', 'expired') then
         v_outcome := 'reinstated';
-      elsif exists (
-        select 1
-          from public.trip_entitlements other
-         where other.group_id = v_entitlement.group_id
-           and other.id <> v_entitlement.id
-           and other.plan_code = 'small_trip_pass'
-           and other.status = 'active'
-      ) then
+      elsif v_entitlement.status = 'refunded' then
         v_outcome := 'reinstatement_blocked';
-      else
-        update public.trip_entitlements
-           set status = 'active', updated_at = now()
-         where id = v_entitlement.id
-        returning * into v_entitlement;
-        v_outcome := 'reinstated';
       end if;
     end if;
   end if;
@@ -286,6 +405,9 @@ begin
     return json_build_object('ok', false, 'error', 'account_token_mismatch');
   end if;
 
+  perform 1 from public.groups where id = p_group_id for update;
+  perform public.expire_stale_entitlements(p_group_id);
+
   select * into v_existing
   from public.trip_entitlements e
   where e.transaction_id = trim(p_transaction_id)
@@ -311,9 +433,6 @@ begin
   if public.trip_store_revocation_status(trim(p_transaction_id)) is not null then
     return json_build_object('ok', false, 'error', 'transaction_revoked');
   end if;
-
-  perform 1 from public.groups where id = p_group_id for update;
-  perform public.expire_stale_entitlements(p_group_id);
 
   select m.user_id into v_leader
   from public.memberships m
