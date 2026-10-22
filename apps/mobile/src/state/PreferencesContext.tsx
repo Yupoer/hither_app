@@ -1,8 +1,8 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useRef,
   useState,
@@ -192,7 +192,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [textScale, setTextScaleState] = useState<TextScalePref>(DEFAULT_TEXT_SCALE);
   const [highAccuracy, setHighAccuracyState] = useState(false);
   const [sharingEnabled, setSharingEnabledState] = useState(true);
-  useEffect(() => subscribeLocationSharingConsent(setSharingEnabledState), []);
+  useMountEffect(() => subscribeLocationSharingConsent(setSharingEnabledState));
   // Default on: locate-me tilts to 30° unless the user opts out in Settings.
   const [obliqueLocate, setObliqueLocateState] = useState(true);
   // Default on: Live Activity during journey unless the user opts out.
@@ -210,7 +210,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [ready, setReady] = useState(false);
 
   // Restore persisted preferences on launch.
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
     (async () => {
       try {
@@ -317,7 +317,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return () => {
       active = false;
     };
-  }, []);
+  });
 
   const setTravelMode = useCallback((mode: TravelMode) => {
     const next = isTravelMode(mode) ? mode : 'walk';

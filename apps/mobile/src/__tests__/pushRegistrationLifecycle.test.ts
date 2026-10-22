@@ -10,7 +10,7 @@ jest.mock('../native', () => ({ notifications: { requestPermission: (...args: un
 jest.mock('../api/client', () => ({ savePushToken: (...args: unknown[]) => mockSave(...args) }));
 import { usePushRegistration } from '../state/usePushRegistration';
 const { act, create } = require('react-test-renderer') as typeof import('react-test-renderer');
-function Harness() { usePushRegistration(); return null; }
+function Harness() { return usePushRegistration(); }
 describe('push registration account lifecycle', () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

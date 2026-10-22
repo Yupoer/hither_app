@@ -2227,6 +2227,48 @@
       "acceptance": "Loading and onboarding button motion cancel and resume without remounting their UI or shared phase owners.",
       "testFile": "motionResourceLifecycle.test.ts",
       "testNamePattern": "retains loading phase|changes disabled color|keeps mascot content"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Authentication screen jobs preserve drafts, full User identity navigation, callback-sensitive recovery timers, account scroll ownership and foreground OTA cancellation.",
+      "testFile": "identityAuthScreenLifecycle.test.ts",
+      "testNamePattern": "keeps login drafts|restarts recovery dismissal|keeps the account scroll|cancels late OTA"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Purchase recovery preserves whole User and callback identities and rejects valid late purchase, cache and projection results after account replacement.",
+      "testFile": "premiumRecoveryLifecycle.test.ts",
+      "testNamePattern": "preserves full User|rejects a late"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Foreground clocks retain their state, install one timer per lifetime and release timers across interval, enabled and Strict replay transitions.",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "replaces only the clock timer"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Session recovery ignores old entitlement results across A to B to A, old profile refreshes, and preserves full User object flush triggers.",
+      "testFile": "sessionProviderRecovery.test.ts",
+      "testNamePattern": "fences an in-flight entitlement|a late profile refresh|flushes again for a new same-account"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Real notification consumers install exactly one push, group and invite lifetime through screen branches, replace account resources and dispose all listeners.",
+      "testFile": "sessionNotificationsLifecycle.test.ts",
+      "testNamePattern": "keeps one installed notification lifetime"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Invite loads use committed identity leases: abandoned account renders preserve the current response, while A to B to A rejects the retired request.",
+      "testFile": "sessionNotificationsLifecycle.test.ts",
+      "testNamePattern": "uncommitted|retired"
     }
   ]
 }

@@ -1,25 +1,58 @@
-import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
+import { createElement, useCallback, useRef, useState, type SetStateAction, type Dispatch, type RefObject } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { getCachedMyJoinedGroups, getMyJoinedGroups, subscribeMyJoinedGroups, type JoinedGroupInfo } from '../api/services/GroupService';
 import { classifyOperationError, type OperationErrorClassification } from '../utils/operationError';
 
+type JoinedGroupsState = {
+  actorId: string | null;
+  groups: JoinedGroupInfo[];
+  loading: boolean;
+  error: OperationErrorClassification | null;
+};
+
 /** Account-scoped list; a failed refresh never means that memberships vanished. */
 export function useJoinedGroups(actorId: string | null, includeProfiles = true) {
-  const [result, setResult] = useState<{
-    actorId: string | null;
-    groups: JoinedGroupInfo[];
-    loading: boolean;
-    error: OperationErrorClassification | null;
-  }>(() => ({ actorId, groups: getCachedMyJoinedGroups(actorId) ?? [], loading: !!actorId, error: null }));
+  const [result, setResult] = useState<JoinedGroupsState>(() => ({ actorId, groups: getCachedMyJoinedGroups(actorId) ?? [], loading: !!actorId, error: null }));
   const [attempt, setAttempt] = useState(0);
   const actorRef = useRef(actorId);
   actorRef.current = actorId;
   const flight = useRef(false);
-  useEffect(() => subscribeMyJoinedGroups((changedActor, groups) => {
+  useMountEffect(() => subscribeMyJoinedGroups((changedActor, groups) => {
     if (changedActor !== actorRef.current) return;
     setResult(previous => previous.actorId === changedActor
       ? { ...previous, groups, error: null } : previous);
-  }), []);
-  useEffect(() => {
+  }));
+  const [loadIdentity, setLoadIdentity] = useState({ actorId, includeProfiles, attempt, generation: 0 });
+  if (!Object.is(loadIdentity.actorId, actorId) || !Object.is(loadIdentity.includeProfiles, includeProfiles) || !Object.is(loadIdentity.attempt, attempt)) {
+    setLoadIdentity({ actorId, includeProfiles, attempt, generation: loadIdentity.generation + 1 });
+  }
+  const retry = useCallback(() => {
+    if (flight.current || !actorRef.current) return;
+    flight.current = true;
+    setAttempt(value => value + 1);
+  }, []);
+  const setGroups = useCallback((update: SetStateAction<JoinedGroupInfo[]>) => {
+    setResult(previous => previous.actorId !== actorId ? previous : {
+      ...previous, groups: typeof update === 'function' ? update(previous.groups) : update,
+    });
+  }, [actorId]);
+  return {
+    groups: result.actorId === actorId ? result.groups : getCachedMyJoinedGroups(actorId) ?? [],
+    loading: result.actorId === actorId ? result.loading : !!actorId,
+    error: result.actorId === actorId ? result.error : null,
+    retry, setGroups,
+    lifecycle: createElement(JoinedGroupsLoad, { key: `joined-groups:${loadIdentity.generation}`, actorId, includeProfiles, actorRef, flight, setResult }),
+  };
+}
+
+function JoinedGroupsLoad({ actorId, includeProfiles, actorRef, flight, setResult }: {
+  actorId: string | null;
+  includeProfiles: boolean;
+  actorRef: RefObject<string | null>;
+  flight: RefObject<boolean>;
+  setResult: Dispatch<SetStateAction<JoinedGroupsState>>;
+}) {
+  useMountEffect(() => {
     let cancelled = false;
     flight.current = !!actorId;
     setResult(previous => ({
@@ -36,21 +69,6 @@ export function useJoinedGroups(actorId: string | null, includeProfiles = true) 
       if (current()) setResult(previous => ({ ...previous, loading: false, error: classifyOperationError(cause) }));
     }).finally(() => { if (current()) flight.current = false; });
     return () => { cancelled = true; };
-  }, [actorId, includeProfiles, attempt]);
-  const retry = useCallback(() => {
-    if (flight.current || !actorRef.current) return;
-    flight.current = true;
-    setAttempt(value => value + 1);
-  }, []);
-  const setGroups = useCallback((update: SetStateAction<JoinedGroupInfo[]>) => {
-    setResult(previous => previous.actorId !== actorId ? previous : {
-      ...previous, groups: typeof update === 'function' ? update(previous.groups) : update,
-    });
-  }, [actorId]);
-  return {
-    groups: result.actorId === actorId ? result.groups : getCachedMyJoinedGroups(actorId) ?? [],
-    loading: result.actorId === actorId ? result.loading : !!actorId,
-    error: result.actorId === actorId ? result.error : null,
-    retry, setGroups,
-  };
+  });
+  return null;
 }

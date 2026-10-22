@@ -53,7 +53,7 @@ export default React.memo(function MeetCountdown({
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
 }) {
-  const now = useForegroundClock(1000);
+  const { now, lifecycle: clockLifecycle } = useForegroundClock(1000);
 
   const remainingSec = Math.round((new Date(meetAtIso).getTime() - now) / 1000);
   const due = remainingSec <= 0;
@@ -77,6 +77,7 @@ export default React.memo(function MeetCountdown({
 
   return (
     <>
+      <React.Fragment key="countdown-clock">{clockLifecycle}</React.Fragment>
       <MeetDueNotification due={due} onDueChange={onDueChange} />
       <Text
         style={[baseStyle, red ? { color: redColor } : null]}

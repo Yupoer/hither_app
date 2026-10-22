@@ -1,5 +1,6 @@
 import { useForegroundReconcile } from './useForegroundReconcile';
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { createElement, Fragment, useCallback, useRef, useState, type ReactElement, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { supabase } from '../api/supabase';
 import { acceptSubgroupInvite, declineSubgroupInvite, fetchMyInvites } from '../api/client';
 import {
@@ -44,6 +45,7 @@ interface UseSubgroupInvitesResult {
   decline: (inviteId: string) => Promise<void>;
   refresh: () => void;
 }
+interface InviteIdentity { groupId: string | null; myUserId: string | null }
 
 export function useSubgroupInvites(): UseSubgroupInvitesResult {
   const { user, membership } = useSession();
@@ -59,15 +61,16 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tRef = useRef(t);
   tRef.current = t;
-
+  const identityRef = useRef<InviteIdentity | null>(null);
 
   const load = useCallback(async () => {
-    if (!myUserId) return;
+    const identity = identityRef.current;
+    if (!myUserId || !identity || identity.groupId !== groupId || identity.myUserId !== myUserId) return;
     try {
       const next = isDemoGroup(groupId)
         ? demoFetchMyInvites(myUserId)
         : await fetchMyInvites(myUserId);
-      if (identityRef.current.groupId !== groupId || identityRef.current.myUserId !== myUserId) return;
+      if (identityRef.current !== identity) return;
       if (initializedRef.current) {
         const newOnes = next.filter(
           (i) => !seenIdsRef.current.has(i.id) && !notifiedIds.has(i.id),
@@ -96,47 +99,15 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     }
   }, [groupId, myUserId]);
 
-  const lifecycle = useForegroundReconcile(Boolean(myUserId), load);
-  const identityRef = useRef({ groupId, myUserId });
-  identityRef.current = { groupId, myUserId };
+  const foregroundLifecycle = useForegroundReconcile(Boolean(myUserId), load);
 
   const loadRef = useRef(load);
   loadRef.current = load;
 
-  useEffect(() => {
-    setInvites([]);
-    if (!myUserId) return;
-    initializedRef.current = false;
-    seenIdsRef.current = new Set();
-    loadRef.current();
-
-    const scheduleReload = () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        loadRef.current();
-      }, REALTIME_DEBOUNCE_MS);
-    };
-
-    const subId = ++channelSeq;
-    const channel = supabase
-      .channel(`subgroup-invites:${myUserId}:${subId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'subgroup_invites',
-          filter: `invitee_id=eq.${myUserId}`,
-        },
-        scheduleReload,
-      )
-      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleReload(); });
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      supabase.removeChannel(channel);
-    };
-  }, [myUserId, groupId]);
+  const [subscriptionIdentity, setSubscriptionIdentity] = useState({ groupId, myUserId, generation: 0 });
+  if (!Object.is(subscriptionIdentity.groupId, groupId) || !Object.is(subscriptionIdentity.myUserId, myUserId)) {
+    setSubscriptionIdentity({ groupId, myUserId, generation: subscriptionIdentity.generation + 1 });
+  }
 
   const accept = useCallback(
     async (inviteId: string) => {
@@ -162,5 +133,65 @@ export function useSubgroupInvites(): UseSubgroupInvitesResult {
     [groupId, load],
   );
 
-  return { lifecycle, invites, accept, decline, refresh: load };
+  return { invites, accept, decline, refresh: load,
+    lifecycle: createElement(Fragment, null,
+      createElement(Fragment, { key: 'invite-subscription' }, createElement(SubgroupInviteSubscription, {
+        key: `subgroup-invites:${subscriptionIdentity.generation}`, groupId, myUserId, identityRef,
+        setInvites, initializedRef, seenIdsRef, loadRef, debounceRef,
+      })),
+      createElement(Fragment, { key: 'invite-foreground' }, foregroundLifecycle)),
+  };
+}
+
+function SubgroupInviteSubscription({ groupId, myUserId, identityRef, setInvites, initializedRef, seenIdsRef, loadRef, debounceRef }: {
+  groupId: string | null;
+  myUserId: string | null;
+  identityRef: RefObject<InviteIdentity | null>;
+  setInvites: Dispatch<SetStateAction<PendingInvite[]>>;
+  initializedRef: RefObject<boolean>;
+  seenIdsRef: RefObject<Set<string>>;
+  loadRef: RefObject<() => Promise<void>>;
+  debounceRef: RefObject<ReturnType<typeof setTimeout> | null>;
+}) {
+  useMountEffect(() => {
+    setInvites([]);
+    if (!myUserId) { identityRef.current = null; return; }
+    const identity = { groupId, myUserId };
+    identityRef.current = identity;
+    let active = true;
+    initializedRef.current = false;
+    seenIdsRef.current = new Set();
+    loadRef.current();
+
+    const scheduleReload = () => {
+      if (!active) return;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        loadRef.current();
+      }, REALTIME_DEBOUNCE_MS);
+    };
+
+    const subId = ++channelSeq;
+    const channel = supabase
+      .channel(`subgroup-invites:${myUserId}:${subId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'subgroup_invites',
+          filter: `invitee_id=eq.${myUserId}`,
+        },
+        scheduleReload,
+      )
+      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleReload(); });
+
+    return () => {
+      active = false;
+      if (identityRef.current === identity) identityRef.current = null;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  });
+  return null;
 }

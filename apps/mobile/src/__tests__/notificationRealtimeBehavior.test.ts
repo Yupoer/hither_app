@@ -94,12 +94,11 @@ jest.mock('../utils/notificationDeliveryPolicy', () => ({
 const { useGroupNotifications } = require('../state/useGroupNotifications') as typeof import('../state/useGroupNotifications');
 const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => Promise<void>;
-  create: (element: React.ReactElement) => { unmount: () => void };
+  create: (element: React.ReactElement) => import('react-test-renderer').ReactTestRenderer;
 };
 
 function Probe() {
-  useGroupNotifications();
-  return null;
+  return useGroupNotifications();
 }
 
 async function mountNotifications(): Promise<{ unmount: () => void }> {
@@ -128,6 +127,8 @@ describe('Realtime notification semantics', () => {
     mockSubscriptions.length = 0;
     mockSeen.clear();
     mockSession.membership.role = 'leader';
+    mockSession.user = { id: 'me' };
+    mockSession.membership.group.id = 'group-1';
   });
 
   it('uses nickname/title/message semantics for commands, gathering, and arrival', async () => {
@@ -190,6 +191,30 @@ describe('Realtime notification semantics', () => {
     }));
     followerRoot.unmount();
   });
+  it('installs once per identity, refreshes role without resubscribing, and rejects stale completion', async () => {
+    let root!: import('react-test-renderer').ReactTestRenderer;
+    await act(async () => { root = create(React.createElement(Probe)); });
+    const released = mockUnsubscribe.mock.calls.length;
+    const removed = mockSupabase.removeChannel.mock.calls.length;
+    expect(mockSupabase.channel).toHaveBeenCalledTimes(1);
+    expect(mockNotifications.addForegroundListener).toHaveBeenCalledTimes(1);
+    mockSession.user = { id: 'me' };
+    mockSession.membership.role = 'follower';
+    await act(async () => { root.update(React.createElement(Probe)); });
+    expect(mockSupabase.channel).toHaveBeenCalledTimes(1);
+    let resolve!: (prefs: Awaited<ReturnType<typeof mockGetPreferences>>) => void;
+    mockGetPreferences.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    await emit('commands', { new: { id: 'late', sender_id: 'other', type: 'custom', message: 'late' } });
+    mockSession.user = { id: 'account-b' };
+    await act(async () => { root.update(React.createElement(Probe)); });
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(released + 1);
+    expect(mockSupabase.removeChannel).toHaveBeenCalledTimes(removed + 1);
+    await act(async () => { resolve({ leaderCommands: true, followerRequests: true, addGathering: true, journey: true, arrival: true }); });
+    expect(mockSchedule).not.toHaveBeenCalled();
+    await act(async () => { root.unmount(); });
+    expect(mockUnsubscribe).toHaveBeenCalledTimes(released + 2);
+  });
+
   it('notifies a follower of their own arrival and honors the separate arrival switch', async () => {
     mockSession.membership.role = 'follower';
     const root = await mountNotifications();

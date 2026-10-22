@@ -65,7 +65,7 @@ export const FlockRow = React.memo(function FlockRow({
   onSelfSplit: () => void | Promise<unknown>;
   onKick?: () => void;
 }) {
-  const nowMs = useForegroundClock(30_000);
+  const { now: nowMs, lifecycle: clockLifecycle } = useForegroundClock(30_000);
 
   const movingRecently = isLocationSampleFresh(lastUpdated, {
     locationTrackingMode, locationSource, locationNavigationSessionId,
@@ -91,6 +91,7 @@ export const FlockRow = React.memo(function FlockRow({
 
   return (
     <View style={[styles.flockRow, last && styles.flockRowLast]}>
+      {clockLifecycle}
       <View style={styles.flockRowMain}>
         <View
           style={[

@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import React, { useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { AppState } from 'react-native';
 import { useSession } from '../state/SessionContext';
 import {
@@ -18,31 +19,47 @@ import {
 export default function PremiumPurchaseRecovery() {
   const { initializing, user, membership, refreshEntitlement } = useSession();
 
-  useEffect(() => {
+  const groupId = membership?.group.id;
+  const [recoveryIdentity, setRecoveryIdentity] = useState({ initializing, user, groupId, refreshEntitlement, generation: 0 });
+  if (!Object.is(recoveryIdentity.initializing, initializing) || !Object.is(recoveryIdentity.user, user) || !Object.is(recoveryIdentity.groupId, groupId) || !Object.is(recoveryIdentity.refreshEntitlement, refreshEntitlement)) {
+    setRecoveryIdentity({ initializing, user, groupId, refreshEntitlement, generation: recoveryIdentity.generation + 1 });
+  }
+  return <PremiumRecoverySession key={recoveryIdentity.generation} initializing={initializing} user={user} groupId={groupId} refreshEntitlement={refreshEntitlement} />;
+}
+
+function PremiumRecoverySession({ initializing, user, groupId, refreshEntitlement }: {
+  initializing: boolean;
+  user: ReturnType<typeof useSession>['user'];
+  groupId: string | undefined;
+  refreshEntitlement: ReturnType<typeof useSession>['refreshEntitlement'];
+}) {
+  useMountEffect(() => {
     if (initializing || !user) return;
     let cancelled = false;
     let running: Promise<void> | null = null;
 
     const reconcile = () => {
+      if (cancelled) return Promise.resolve();
       if (running) return running;
       running = (async () => {
         const result = await reconcileUnfinishedPremiumPurchases({
           userId: user.id,
-          groupId: membership?.group.id ?? null,
+          groupId: groupId ?? null,
         });
         if (cancelled) return;
         if (result.settled > 0) {
-          await refreshEntitlement(membership?.group.id ?? null);
+          await refreshEntitlement(groupId ?? null);
           return;
         }
         const cached = await readPremiumProjectionCache(user.id);
+        if (cancelled) return;
         if (needsBackgroundPremiumRefresh(cached)) {
           await refreshPremiumProjection({
-            groupId: membership?.group.id ?? null,
+            groupId: groupId ?? null,
             userId: user.id,
             syncStoreKitIfMissing: true,
           });
-          if (!cancelled) await refreshEntitlement(membership?.group.id ?? null);
+          if (!cancelled) await refreshEntitlement(groupId ?? null);
         }
       })()
         .catch(() => undefined)
@@ -60,7 +77,7 @@ export default function PremiumPurchaseRecovery() {
       cancelled = true;
       subscription.remove();
     };
-  }, [initializing, user, membership?.group.id, refreshEntitlement]);
+  });
 
   return null;
 }

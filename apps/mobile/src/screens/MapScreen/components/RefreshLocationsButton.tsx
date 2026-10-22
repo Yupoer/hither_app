@@ -25,18 +25,17 @@ export const RefreshLocationsButton = React.memo(function RefreshLocationsButton
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
   onPress: () => void;
 }) {
-  const now = useForegroundClock(1000, cooldownUntil > Date.now());
+  const { now, lifecycle: clockLifecycle } = useForegroundClock(1000, cooldownUntil > Date.now());
   const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const cooling = remaining > 0;
 
-  if (refreshing) {
-    return (
+  return <>
+    {clockLifecycle}
+    {refreshing ? (
       <View style={styles.refreshLocationsButton} accessibilityLabel={t('map.refreshLocationsA11y')}>
         <WaveLoading size="small" color={accent} />
       </View>
-    );
-  }
-  return (
+    ) : (
     <AmicroButton
       icon="refresh"
       mode="rotate"
@@ -45,9 +44,8 @@ export const RefreshLocationsButton = React.memo(function RefreshLocationsButton
       onPress={() => { lightTap(); onPress(); }}
       disabled={refreshing}
       accessibilityLabel={t('map.refreshLocationsA11y')}
-      accessibilityHint={
-        cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
-      }
+      accessibilityHint={cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined}
     />
-  );
+    )}
+  </>;
 });
