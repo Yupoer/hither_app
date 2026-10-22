@@ -23,7 +23,6 @@ __tests__/
 src/__tests__/
 docs/
 README.md
-generate_report.js
 jest.config.js
 jest.config.components.js
 jest.setup.components.js
