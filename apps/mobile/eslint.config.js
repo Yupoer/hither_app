@@ -14,26 +14,30 @@ const noReactEffects = {
     const key = (node) => node?.type === 'Identifier' ? node.name :
       node?.type === 'Literal' ? node.value :
         node?.type === 'TemplateLiteral' && node.expressions.length === 0 ? node.quasis[0].value.cooked : undefined;
-    const memberKey = (node) => !node.computed || node.property.type !== 'Identifier' ? key(node.property) : undefined;
+    const staticKey = (node, computed) => !computed || node.type !== 'Identifier' ? key(node) : undefined;
     const report = (node, name) => {
       if (forbidden(name)) context.report({ node, messageId: 'forbidden', data: { name } });
     };
     const select = (root, name) => root === 'react' ?
       (name === 'default' ? 'react' : name) : undefined;
     const patternPath = (pattern, name, path = []) => {
+      if (pattern.type === 'AssignmentPattern') return patternPath(pattern.left, name, path);
       if (pattern.type === 'Identifier') return pattern.name === name ? path : undefined;
       if (pattern.type !== 'ObjectPattern') return undefined;
       for (const property of pattern.properties) {
-        if (property.type !== 'Property' || (property.computed && property.key.type !== 'Literal')) continue;
-        const found = patternPath(property.value, name, [...path, key(property.key)]);
+        if (property.type !== 'Property') continue;
+        const nameKey = staticKey(property.key, property.computed);
+        if (nameKey === undefined) continue;
+        const found = patternPath(property.value, name, [...path, nameKey]);
         if (found) return found;
       }
       return undefined;
     };
     const resolve = (node, seen = new Set()) => {
       if (!node) return undefined;
-      if (node.type === 'TSAsExpression' || node.type === 'TSNonNullExpression') return resolve(node.expression, seen);
-      if (node.type === 'MemberExpression') return select(resolve(node.object, seen), memberKey(node));
+      if (node.type === 'TSAsExpression' || node.type === 'TSNonNullExpression' ||
+          node.type === 'TSSatisfiesExpression') return resolve(node.expression, seen);
+      if (node.type === 'MemberExpression') return select(resolve(node.object, seen), staticKey(node.property, node.computed));
       if (node.type === 'CallExpression' && node.callee.type === 'Identifier' &&
           node.callee.name === 'require' && node.arguments[0]?.value === 'react') {
         let scope = source.getScope(node);
@@ -51,9 +55,15 @@ const noReactEffects = {
       if (!variable || seen.has(variable)) return undefined;
       const nextSeen = new Set([...seen, variable]);
       for (const def of variable.defs) {
-        if (def.type === 'ImportBinding' && def.parent.source.value === 'react' &&
+        if (def.type === 'ImportBinding' &&
             def.parent.importKind !== 'type' && def.node.importKind !== 'type') {
-          return def.node.type === 'ImportSpecifier' ? select('react', key(def.node.imported)) : 'react';
+          if (def.parent.type === 'TSImportEqualsDeclaration') {
+            return def.parent.moduleReference.type === 'TSExternalModuleReference' &&
+              def.parent.moduleReference.expression.value === 'react' ? 'react' : undefined;
+          }
+          if (def.parent.type === 'ImportDeclaration' && def.parent.source.value === 'react') {
+            return def.node.type === 'ImportSpecifier' ? select('react', key(def.node.imported)) : 'react';
+          }
         }
         if (def.type === 'Variable') {
           const path = patternPath(def.node.id, node.name);
@@ -63,10 +73,11 @@ const noReactEffects = {
       return undefined;
     };
     const checkPattern = (node, root) => {
+      if (node.type === 'AssignmentPattern') return checkPattern(node.left, root);
       if (node.type !== 'ObjectPattern') return;
       for (const property of node.properties) {
-        if (property.type !== 'Property' || (property.computed && property.key.type !== 'Literal')) continue;
-        const value = select(root, key(property.key));
+        if (property.type !== 'Property') continue;
+        const value = select(root, staticKey(property.key, property.computed));
         report(property, value);
         checkPattern(property.value, value);
       }
