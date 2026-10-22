@@ -560,7 +560,7 @@ export default function MapScreen({ route, navigation }: Props) {
         : [],
     [localNavigationSessionId, navigationSessionId],
   );
-  const {
+  const { lifecycle: gatheringWorkflowLifecycle,
     remoteArrivals,
     gatherPointRequests,
     setGatherPointRequests,
@@ -785,7 +785,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
   const [customSlot, setCustomSlot] = useState(0);
-  const {
+  const { lifecycle: visitHistoryLifecycle,
     historyGroups,
     loadHistory,
   } = useVisitHistory({
@@ -2415,7 +2415,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     if (!key) lastFittedRouteRef.current = null;
   }, [activePoint, selfRoute, travelMode, deviceCoords]);
-  const {
+  const { lifecycle: stragglerReportingLifecycle,
     stragglers,
   } = useStragglerReporting({
     fromCoords,
@@ -3330,7 +3330,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   ]);
 
-  const { promptCompleteAfterArrival } = useGatheringCompletion({
+  const { lifecycle: gatheringCompletionLifecycle, promptCompleteAfterArrival } = useGatheringCompletion({
     groupId,
     user,
     canEditItinerary,
@@ -3540,7 +3540,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setRouteDraftDestinations(null);
     setViewingScope('main');
   }, [setRouteDraftDestinations]);
-  const {
+  const { lifecycle: subgroupActionsLifecycle,
     subgroups,
     pendingInvites,
     sentInvites,
@@ -4151,7 +4151,7 @@ export default function MapScreen({ route, navigation }: Props) {
     personalArriveVisible: tourControlAvailability.personalArriveVisible,
     onTourActiveChange,
   });
-  const {
+  const { lifecycle: storeEntitlementsLifecycle,
     handleEntitlementActivated,
     openPaywallForLiveActivity,
     refreshStoreEntitlements,
@@ -4654,6 +4654,13 @@ export default function MapScreen({ route, navigation }: Props) {
     <>
       {routeDraft.lifecycle}
       {groupRoleLifecycle}
+      {gatheringWorkflowLifecycle}
+      {visitHistoryLifecycle}
+      {stragglerReportingLifecycle}
+      {coordination.lifecycle}
+      {gatheringCompletionLifecycle}
+      {subgroupActionsLifecycle}
+      {storeEntitlementsLifecycle}
       {gatherCardExpansionLifecycle}
       {pendingPlaceEntranceLifecycle}
       {meetTimeEditorLifecycle}

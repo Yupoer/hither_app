@@ -14,7 +14,7 @@ export function usePendingPlaceEntrance(
   const shownPlace = useRef<PlaceResult | null>(null);
   const pendingPlaceMotionLifecycle = createElement(PendingPlaceMotion, { visible, progress, sheetHeight, pendingPlace, shownPlace, setReady });
   return {
-    lifecycle: createElement(Fragment, null, pendingPlaceMotionLifecycle), ready: ready && pendingPlace != null, progress };
+    lifecycle: createElement(Fragment, { key: 'pending-place-entrance-runtime' }, pendingPlaceMotionLifecycle), ready: ready && pendingPlace != null, progress };
 }
 
 function PendingPlaceMotion({ visible, progress, sheetHeight, pendingPlace, shownPlace, setReady }: {

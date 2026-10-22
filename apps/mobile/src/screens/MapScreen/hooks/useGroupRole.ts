@@ -95,7 +95,7 @@ export function useGroupRole(input: UseGroupRoleInput): GroupRole & {
   const arrivalRoleRejectionLifecycle = createElement(ArrivalRoleRejection, { arrivalOperations, userId, setRevokedContext, roleContext });
 
   const markLeaderRevoked = useCallback(() => setRevokedContext(roleContext), [roleContext]);
-  return { ...role, roleContext, markLeaderRevoked, lifecycle: createElement(Fragment, null, remoteMembershipPublicationLifecycle, itineraryRoleRejectionLifecycle, arrivalRoleRejectionLifecycle) };
+  return { ...role, roleContext, markLeaderRevoked, lifecycle: createElement(Fragment, { key: 'group-role-runtime' }, remoteMembershipPublicationLifecycle, itineraryRoleRejectionLifecycle, arrivalRoleRejectionLifecycle) };
 }
 
 function RemoteMembershipPublication({ dataSource, me, group, membership, groupId, setMembership, setRevokedContext }: {

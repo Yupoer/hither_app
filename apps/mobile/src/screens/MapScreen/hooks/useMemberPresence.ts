@@ -272,7 +272,7 @@ export function useMemberPresence({
   }, [applyPresenceMacroKind, statusMenuItems, t]);
 
   return {
-    lifecycle: createElement(Fragment, null, soloOverrideConvergenceLifecycle, memberNotificationPreferencesLoadLifecycle), flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId };
+    lifecycle: createElement(Fragment, { key: 'member-presence-runtime' }, soloOverrideConvergenceLifecycle, memberNotificationPreferencesLoadLifecycle), flock, mySoloActive, myStatusKind, statusMenuItems, applyPresenceMacroKind, openAndroidStatusSheet, mySubgroupId };
 }
 
 function SoloOverrideConvergence({ soloOverride, members, user, setSoloOverride }: {

@@ -82,7 +82,7 @@ export function useCarouselSelection({
   );
 
   return {
-    lifecycle: createElement(Fragment, null, carouselBoundsScrollLifecycle, carouselSelectionScrollLifecycle),
+    lifecycle: createElement(Fragment, { key: 'carousel-selection-runtime' }, carouselBoundsScrollLifecycle, carouselSelectionScrollLifecycle),
     selectedIndex,
     setSelectedIndex,
     travelMode,

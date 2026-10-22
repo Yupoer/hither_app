@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { createElement, Fragment, useState, useCallback, } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { Alert } from 'react-native';
 import type { TranslationKey } from '../../../i18n';
 import type { Destination, DestinationArrival, MemberLocation, User } from '../../../types';
@@ -276,7 +277,46 @@ export function useGatheringCompletion({
 
   // Remote final arrival (Realtime / workflow reload): leader auto-completes when
   // every *scoped* member has an arrival row — no personal-arrive path required.
-  useEffect(() => {
+  const committedGatheringCompletionLifecycle = createElement(CommittedGatheringCompletion, { canEditItinerary, groupId, allScopedDestinations, navTargetId, remoteAutoCompleteDestIdsRef, completingDestIdsRef, activeDestinationArrivals, sessionEligibleMembers, t, executeAutoCompleteStop, members });
+
+  return {
+    lifecycle: createElement(Fragment, { key: 'gathering-completion-runtime' }, committedGatheringCompletionLifecycle), runCompleteGatheringStop, promptCompleteAfterArrival };
+}
+
+function CommittedGatheringCompletion({ canEditItinerary, groupId, allScopedDestinations, navTargetId, remoteAutoCompleteDestIdsRef, completingDestIdsRef, activeDestinationArrivals, sessionEligibleMembers, t, executeAutoCompleteStop, members }: {
+  canEditItinerary: boolean;
+  groupId: string | null;
+  allScopedDestinations: Destination[];
+  navTargetId: string | null;
+  remoteAutoCompleteDestIdsRef: React.RefObject<Set<string>>;
+  completingDestIdsRef: React.RefObject<Set<string>>;
+  activeDestinationArrivals: DestinationArrival[];
+  sessionEligibleMembers: MemberLocation[];
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+  executeAutoCompleteStop: (destination: Destination) => Promise<void>;
+  members: MemberLocation[];
+}) {
+  const [committedGatheringCompletionInputs, setCommittedGatheringCompletionInputs] = useState(() => ({ generation: 0, allScopedDestinations, activeDestinationArrivals, executeAutoCompleteStop, navTargetId, sessionEligibleMembers, groupId, canEditItinerary, members, t }));
+  if (!(Object.is(committedGatheringCompletionInputs.allScopedDestinations, allScopedDestinations) && Object.is(committedGatheringCompletionInputs.activeDestinationArrivals, activeDestinationArrivals) && Object.is(committedGatheringCompletionInputs.executeAutoCompleteStop, executeAutoCompleteStop) && Object.is(committedGatheringCompletionInputs.navTargetId, navTargetId) && Object.is(committedGatheringCompletionInputs.sessionEligibleMembers, sessionEligibleMembers) && Object.is(committedGatheringCompletionInputs.groupId, groupId) && Object.is(committedGatheringCompletionInputs.canEditItinerary, canEditItinerary) && Object.is(committedGatheringCompletionInputs.members, members) && Object.is(committedGatheringCompletionInputs.t, t))) {
+    setCommittedGatheringCompletionInputs({ generation: committedGatheringCompletionInputs.generation + 1, allScopedDestinations, activeDestinationArrivals, executeAutoCompleteStop, navTargetId, sessionEligibleMembers, groupId, canEditItinerary, members, t });
+  }
+  return createElement(CommittedGatheringCompletionCommit, { key: committedGatheringCompletionInputs.generation, canEditItinerary, groupId, allScopedDestinations, navTargetId, remoteAutoCompleteDestIdsRef, completingDestIdsRef, activeDestinationArrivals, sessionEligibleMembers, t, executeAutoCompleteStop, members });
+}
+
+function CommittedGatheringCompletionCommit({ canEditItinerary, groupId, allScopedDestinations, navTargetId, remoteAutoCompleteDestIdsRef, completingDestIdsRef, activeDestinationArrivals, sessionEligibleMembers, t, executeAutoCompleteStop, members }: {
+  canEditItinerary: boolean;
+  groupId: string | null;
+  allScopedDestinations: Destination[];
+  navTargetId: string | null;
+  remoteAutoCompleteDestIdsRef: React.RefObject<Set<string>>;
+  completingDestIdsRef: React.RefObject<Set<string>>;
+  activeDestinationArrivals: DestinationArrival[];
+  sessionEligibleMembers: MemberLocation[];
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string;
+  executeAutoCompleteStop: (destination: Destination) => Promise<void>;
+  members: MemberLocation[];
+}) {
+  useMountEffect(() => {
     if (!canEditItinerary || !groupId) return;
     for (const destination of allScopedDestinations) {
       if (destination.id !== navTargetId) continue;
@@ -303,17 +343,6 @@ export function useGatheringCompletion({
       if (!counts.allArrived) continue;
       void executeAutoCompleteStop(destination);
     }
-  }, [
-    allScopedDestinations,
-    activeDestinationArrivals,
-    executeAutoCompleteStop,
-    navTargetId,
-    sessionEligibleMembers,
-    groupId,
-    canEditItinerary,
-    members,
-    t,
-  ]);
-
-  return { runCompleteGatheringStop, promptCompleteAfterArrival };
+  });
+  return null;
 }

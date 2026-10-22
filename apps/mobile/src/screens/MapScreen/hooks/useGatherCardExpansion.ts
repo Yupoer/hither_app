@@ -93,7 +93,7 @@ export function useGatherCardExpansion(defaultExpanded: boolean) {
   const gatherCardTimerLifetimeLifecycle = createElement(GatherCardTimerLifetime, { clearTimer });
 
   return {
-    lifecycle: createElement(Fragment, null, gatherCardDefaultsResetLifecycle, gatherCardTimerLifetimeLifecycle),
+    lifecycle: createElement(Fragment, { key: 'gather-card-expansion-runtime' }, gatherCardDefaultsResetLifecycle, gatherCardTimerLifetimeLifecycle),
     isCardExpanded,
     toggleCard,
     collapseCard,

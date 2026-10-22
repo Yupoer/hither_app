@@ -164,7 +164,7 @@ export function useRouteDraft(input: UseRouteDraftInput) {
 
   const tripDays = draftTripDays ?? group?.tripDays;
   const departureDate = draftDepartureDate ?? group?.departureDate;
-  const lifecycle = createElement(Fragment, null, routeDraftConvergenceLifecycle, routeDraftRejectionRollbackLifecycle, routeDraftScopeResetLifecycle, routeTripConvergenceLifecycle);
+  const lifecycle = createElement(Fragment, { key: 'route-draft-runtime' }, routeDraftConvergenceLifecycle, routeDraftRejectionRollbackLifecycle, routeDraftScopeResetLifecycle, routeTripConvergenceLifecycle);
   return useMemo(() => ({
     lifecycle,
     editorScopeId,

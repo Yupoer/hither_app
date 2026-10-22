@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createElement, Fragment, useCallback, useMemo, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchSentInvites, inviteToSubgroup, selfMerge, selfSplit } from '../../../api/client';
@@ -58,19 +59,11 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
       // best-effort
     }
   }, []);
-  useEffect(() => {
-    void refreshSentInvites(mySubgroupId);
-  }, [mySubgroupId, refreshSentInvites]);
+  const sentSubgroupInvitesLoadLifecycle = createElement(SentSubgroupInvitesLoad, { refreshSentInvites, mySubgroupId });
   // BUG-22: when invitee accepts/declines, inviter's pending list must drop
   // the row without a manual refresh — poll only while invites are outstanding
   // (membership realtime already covers accept → members.length change).
-  useEffect(() => {
-    if (!mySubgroupId || sentInvites.length === 0) return;
-    const id = setInterval(() => {
-      void refreshSentInvites(mySubgroupId);
-    }, SENT_INVITES_POLL_MS);
-    return () => clearInterval(id);
-  }, [mySubgroupId, refreshSentInvites, sentInvites.length, members.length]);
+  const sentSubgroupInvitesPollLifecycle = createElement(SentSubgroupInvitesPoll, { mySubgroupId, sentInvites, refreshSentInvites, members });
 
   // Leaving the main "組隊伍" (by creating or joining a subteam) hides the
   // shared gathering-point cards. Warn once per action unless the user has
@@ -179,6 +172,7 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
   }, [groupId, onMergedBack, refresh, t]);
 
   return {
+    lifecycle: createElement(Fragment, { key: 'subgroup-actions-runtime' }, sentSubgroupInvitesLoadLifecycle, sentSubgroupInvitesPollLifecycle),
     subgroups,
     pendingInvites,
     sentInvites,
@@ -188,4 +182,54 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
     doSelfSplit,
     doSelfMerge,
   };
+}
+
+function SentSubgroupInvitesLoad({ refreshSentInvites, mySubgroupId }: {
+  refreshSentInvites: (subgroupId: string | undefined) => Promise<void>;
+  mySubgroupId: string | undefined;
+}) {
+  const [sentSubgroupInvitesLoadInputs, setSentSubgroupInvitesLoadInputs] = useState(() => ({ generation: 0, mySubgroupId, refreshSentInvites }));
+  if (!(Object.is(sentSubgroupInvitesLoadInputs.mySubgroupId, mySubgroupId) && Object.is(sentSubgroupInvitesLoadInputs.refreshSentInvites, refreshSentInvites))) {
+    setSentSubgroupInvitesLoadInputs({ generation: sentSubgroupInvitesLoadInputs.generation + 1, mySubgroupId, refreshSentInvites });
+  }
+  return createElement(SentSubgroupInvitesLoadCommit, { key: sentSubgroupInvitesLoadInputs.generation, refreshSentInvites, mySubgroupId });
+}
+
+function SentSubgroupInvitesLoadCommit({ refreshSentInvites, mySubgroupId }: {
+  refreshSentInvites: (subgroupId: string | undefined) => Promise<void>;
+  mySubgroupId: string | undefined;
+}) {
+  useMountEffect(() => {
+    void refreshSentInvites(mySubgroupId);
+  });
+  return null;
+}
+
+function SentSubgroupInvitesPoll({ mySubgroupId, sentInvites, refreshSentInvites, members }: {
+  mySubgroupId: string | undefined;
+  sentInvites: { id: string; inviteeName: string; }[];
+  refreshSentInvites: (subgroupId: string | undefined) => Promise<void>;
+  members: MemberLocation[];
+}) {
+  const [sentSubgroupInvitesPollInputs, setSentSubgroupInvitesPollInputs] = useState(() => ({ generation: 0, mySubgroupId, refreshSentInvites, sentInvites_length: sentInvites.length, members_length: members.length }));
+  if (!(Object.is(sentSubgroupInvitesPollInputs.mySubgroupId, mySubgroupId) && Object.is(sentSubgroupInvitesPollInputs.refreshSentInvites, refreshSentInvites) && Object.is(sentSubgroupInvitesPollInputs.sentInvites_length, sentInvites.length) && Object.is(sentSubgroupInvitesPollInputs.members_length, members.length))) {
+    setSentSubgroupInvitesPollInputs({ generation: sentSubgroupInvitesPollInputs.generation + 1, mySubgroupId, refreshSentInvites, sentInvites_length: sentInvites.length, members_length: members.length });
+  }
+  return createElement(SentSubgroupInvitesPollCommit, { key: sentSubgroupInvitesPollInputs.generation, mySubgroupId, sentInvites, refreshSentInvites, members });
+}
+
+function SentSubgroupInvitesPollCommit({ mySubgroupId, sentInvites, refreshSentInvites, members }: {
+  mySubgroupId: string | undefined;
+  sentInvites: { id: string; inviteeName: string; }[];
+  refreshSentInvites: (subgroupId: string | undefined) => Promise<void>;
+  members: MemberLocation[];
+}) {
+  useMountEffect(() => {
+    if (!mySubgroupId || sentInvites.length === 0) return;
+    const id = setInterval(() => {
+      void refreshSentInvites(mySubgroupId);
+    }, SENT_INVITES_POLL_MS);
+    return () => clearInterval(id);
+  });
+  return null;
 }

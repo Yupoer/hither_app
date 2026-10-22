@@ -783,7 +783,7 @@ describe('map UI placement contracts', () => {
     expect(toolsBlock).not.toContain("t('map.overlaySettings')");
 
     const openStart = mapScreen.indexOf('const openSettingsFromSheet');
-    const openEnd = mapScreen.indexOf('useEffect(() => {\n    void refreshSentInvites', openStart);
+    const openEnd = mapScreen.indexOf('\n  const ', openStart + 6);
     const openBlock = mapScreen.slice(openStart, openEnd > 0 ? openEnd : openStart + 600);
     expect(openBlock).toContain("'map.open_settings'");
     expect(openBlock).toContain('setSettingsOpen(true)');

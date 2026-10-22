@@ -69,7 +69,7 @@ describe('useGatheringWorkflow', () => {
   }
   function Harness({ props }: { props: UseGatheringWorkflowInput }) {
     workflow = useGatheringWorkflow(props);
-    return null;
+    return workflow.lifecycle;
   }
   async function render(props: UseGatheringWorkflowInput) {
     await act(async () => {

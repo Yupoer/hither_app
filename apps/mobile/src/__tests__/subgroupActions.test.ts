@@ -62,7 +62,7 @@ describe('useSubgroupActions', () => {
     };
     function Harness() {
       actions = useSubgroupActions(props);
-      return null;
+      return actions.lifecycle;
     }
     act(() => { renderer = create(React.createElement(Harness)); });
   }

@@ -145,7 +145,7 @@ export function useMeetTimeEditor({
   }, [meetTimeEditor]);
 
   return {
-    lifecycle: createElement(Fragment, null, meetTimeRemindersLifecycle), meetTimeEditor, setMeetTimeEditor, persistMeetTime, openMeetTimePicker, openAndroidMeetDate };
+    lifecycle: createElement(Fragment, { key: 'meet-time-editor-runtime' }, meetTimeRemindersLifecycle), meetTimeEditor, setMeetTimeEditor, persistMeetTime, openMeetTimePicker, openAndroidMeetDate };
 }
 
 function MeetTimeReminders({ nextMeet, meetRedMin, t }: {
