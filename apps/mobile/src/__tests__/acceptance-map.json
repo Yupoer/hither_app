@@ -5,6 +5,13 @@
     {
       "parent": 311,
       "child": 311,
+      "acceptance": "Real MapScreen installs external resources in all five return branches and preserves native map ownership and its first accepted camera center through location updates.",
+      "testFile": "mapScreenResourceInstallation.test.ts",
+      "testNamePattern": "mounts real resources through every MapScreen return"
+    },
+    {
+      "parent": 311,
+      "child": 311,
       "acceptance": "Journey baseline publication precedes sticky/departure updates regardless of sibling mount order and preserves coordinate/route-generation identity and locked anchors.",
       "testFile": "mapJourneyProgressResources.test.ts",
       "testNamePattern": "publishes the baseline|reevaluates new coordinate references|arbitrates baseline before departure"
