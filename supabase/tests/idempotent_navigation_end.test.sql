@@ -1,5 +1,8 @@
 -- Transactional integration test; all fixtures and operation receipts are rolled back.
 begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = extensions, public, auth;
+select plan(1);
 insert into auth.users(id, email) values
  ('a1111111-1111-4111-8111-111111111111', 'compat-leader@example.test'),
  ('a3333333-3333-4333-8333-333333333333', 'compat-subleader@example.test');
@@ -26,6 +29,7 @@ insert into public.itinerary_items(id, group_id, subgroup_id, title, latitude,
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a1111111-1111-4111-8111-111111111111', true);
+select lives_ok($test$
 do $$
 declare
   g uuid := 'aeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -78,4 +82,6 @@ begin
   assert (select status = 'cancelled' from public.navigation_sessions where id = next_session), 'legacy identity did not close session';
 end;
 $$;
+$test$, 'navigation end preserves session identity and idempotency');
+select * from finish();
 rollback;

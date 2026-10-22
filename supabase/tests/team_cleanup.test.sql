@@ -1,5 +1,9 @@
 -- Run on a local/isolated database; all fixtures roll back.
 begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = extensions, public, auth;
+select plan(1);
+select lives_ok($test$
 do $$
 declare
   leader uuid := gen_random_uuid();
@@ -49,5 +53,6 @@ begin
   end if;
 end;
 $$;
-select 'PASS: authenticated clear-all, last-member cascade, departed location and other-user isolation' as result;
+$test$, 'authenticated clear-all preserves other users and occupied groups');
+select * from finish();
 rollback;

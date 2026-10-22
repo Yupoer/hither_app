@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const migration = readFileSync(
@@ -58,10 +58,13 @@ describe('kick_group_member (#168)', () => {
     expect(sqlTest).toContain('expired anonymous leader cannot kick');
   });
 
-  it('CI verify job runs the kick SQL authorization as a required gate', () => {
-    expect(ciWorkflow).toContain('supabase test db');
-    expect(ciWorkflow).toContain('supabase/tests/kick_group_member.test.sql');
-    expect(ciWorkflow).toMatch(/\n  verify:\n/);
+  it('CI discovers the kick SQL authorization in the required backend gate', () => {
+    const sqlFiles = readdirSync(join(__dirname, '../../../../supabase/tests')).filter(name => name.endsWith('.test.sql'));
+    expect(sqlFiles).toContain('kick_group_member.test.sql');
+    expect(ciWorkflow).toContain("find supabase/tests -type f -name '*.test.sql' -print0");
+    expect(ciWorkflow).toContain('supabase test db --local "${tests[@]}"');
+    expect(ciWorkflow).toMatch(/\n  backend:\n/);
+    expect(ciWorkflow).toContain('needs: [scope, verify, backend, jsi-ui-runtime, jsi-ios27-runtime]');
   });
 
   it('wires client RPC and leader kick surface', () => {

@@ -1,7 +1,8 @@
 diff --git a/node_modules/expo-modules-core/ios/Core/Events/EventEmitter.swift b/node_modules/expo-modules-core/ios/Core/Events/EventEmitter.swift
+index 3046568..af9140e 100644
 --- a/node_modules/expo-modules-core/ios/Core/Events/EventEmitter.swift
 +++ b/node_modules/expo-modules-core/ios/Core/Events/EventEmitter.swift
-@@ -42,14 +42,14 @@
+@@ -42,14 +42,14 @@ public extension EventEmitter {
        return
      }
      // The emitter is not necessarily `Sendable` - some modules hold non-sendable state — so we can't let
@@ -19,7 +20,7 @@ diff --git a/node_modules/expo-modules-core/ios/Core/Events/EventEmitter.swift b
          return
        }
        let dispatched = emitter.withEventTarget { target in
-@@ -70,13 +70,13 @@
+@@ -70,13 +70,13 @@ public extension EventEmitter {
        log.warn("Trying to send event '\(event)' to \(type(of: self)), but the JS runtime has been lost")
        return
      }

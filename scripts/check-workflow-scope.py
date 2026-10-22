@@ -4,14 +4,7 @@ import subprocess
 from pathlib import Path
 
 def product_required(paths):
-    automation = {
-        ".github/workflows/ci.yml",
-        "old_list.tsx",
-        "scripts/check-workflow-scope.py",
-        "scripts/test_workflow_scope.py", "scripts/install-git-hooks.sh",
-        "scripts/ota-auto-ship.sh", "scripts/task-end-ship.sh",
-    }
-    return any(not (p.endswith(".md") or p in automation) for p in paths)
+    return any(not p.endswith(".md") for p in paths)
 
 if __name__ == "__main__":
     if os.environ.get("EVENT_NAME") in {"pull_request", "push"} and os.environ.get("BASE_SHA", "").strip("0"):
