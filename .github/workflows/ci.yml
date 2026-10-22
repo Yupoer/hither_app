@@ -34,6 +34,9 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       product: ${{ steps.scope.outputs.product }}
     defaults:
@@ -48,6 +51,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           python3 scripts/test_workflow_scope.py
+          node scripts/test-ci-meta.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
@@ -91,7 +95,13 @@ jobs:
             }
             let body = '';
             if (context.eventName === 'pull_request') {
-              body = context.payload.pull_request?.body || '';
+              // The event body predates metadata added after the PR was opened.
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+              });
+              body = pr.data.body || '';
             } else {
               const branch = ref.replace(/^refs\/heads\//, '');
               const prs = await github.rest.pulls.list({
