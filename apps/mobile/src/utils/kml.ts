@@ -12,13 +12,28 @@ const PLACEMARK_RE = /<Placemark\b[^>]*>([\s\S]*?)<\/Placemark>/g;
 const NAME_RE = /<name>([\s\S]*?)<\/name>/;
 const CDATA_RE = /<!\[CDATA\[([\s\S]*?)\]\]>/;
 const COORDINATES_RE = /<coordinates>([\s\S]*?)<\/coordinates>/;
+const NAME_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+function decodeNameEntities(value: string): string {
+  return value.replace(/&(#x[\da-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (entity, code: string) => {
+    if (!code.startsWith('#')) return NAME_ENTITIES[code];
+    const hex = code.startsWith('#x');
+    const point = Number.parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10);
+    return point === 9 || point === 10 || point === 13
+      || point >= 0x20 && point <= 0xD7FF
+      || point >= 0xE000 && point <= 0xFFFD
+      || point >= 0x10000 && point <= 0x10FFFF
+      ? String.fromCodePoint(point)
+      : entity;
+  });
+}
 
 function extractName(block: string, fallbackIndex: number): string {
   const match = NAME_RE.exec(block);
   if (!match) return `Unnamed ${fallbackIndex}`;
   const raw = match[1].trim();
   const cdata = CDATA_RE.exec(raw);
-  const text = (cdata ? cdata[1] : raw).trim();
+  const text = (cdata ? cdata[1] : decodeNameEntities(raw)).trim();
   return text.length > 0 ? text : `Unnamed ${fallbackIndex}`;
 }
 
