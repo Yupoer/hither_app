@@ -158,6 +158,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
           width={45}
           height={45}
           variant="glass"
+          testID="teams-back"
           onPress={() => { lightTap(); navigation.goBack(); }}
           accessibilityLabel={t('common.back')}
           imageSize={19.2}
@@ -169,6 +170,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
           label={t('teams.clear')}
           shape="capsule"
           variant="glass"
+          testID="teams-clear"
           onPress={handleClearAllGroups}
           disabled={isLoading || joinedGroups.length === 0}
           accessibilityLabel={t('teams.clear')}
@@ -278,6 +280,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
                     <View style={styles.expandedButtonsRow}>
                       <NativeGlassButton
                         label={t('teams.enterMap')}
+                        testID="team-enter"
                         onPress={() => handleEnterGroup(info)}
                         accessibilityLabel={t('teams.enterMap')}
                         shape="capsule"
@@ -293,6 +296,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
 
                       <NativeGlassButton
                         label={t('teams.leave')}
+                        testID="team-leave"
                         onPress={() => handleLeaveGroup(info.group.id)}
                         accessibilityLabel={t('teams.leave')}
                         shape="capsule"

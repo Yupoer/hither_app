@@ -226,7 +226,7 @@ export default function OverlaySheet({
   return (
     <View style={[StyleSheet.absoluteFill, !foreground && { display: 'none' }]} pointerEvents={visible ? 'auto' : 'none'}>
       <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable testID="overlay-close" style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
 
       <Animated.View

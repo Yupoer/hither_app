@@ -121,6 +121,7 @@ export default function StepShell({
       <View style={styles.header}>
         {onBack ? (
           <Pressable
+            testID="onboarding-back"
             onPress={onBack}
             accessibilityRole="button"
             hitSlop={8}
@@ -148,7 +149,7 @@ export default function StepShell({
             </Animated.View>
           </View>
         )}
-        <Pressable onPress={onSkip} accessibilityRole="button" hitSlop={8}>
+        <Pressable testID="onboarding-skip" onPress={onSkip} accessibilityRole="button" hitSlop={8}>
           <HitherText typeRole="footnote" style={[styles.skip, { color: colors.textSecondary }]}>
             {t('onboarding.skip')}
           </HitherText>

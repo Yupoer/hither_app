@@ -38,6 +38,7 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
           <Pressable
             accessibilityRole="button"
             disabled={days <= MIN_DAYS}
+            testID="onboarding-days-decrease"
             onPress={() => change(-1)}
             style={[styles.stepBtn, { borderColor: colors.border, opacity: days <= MIN_DAYS ? 0.4 : 1 }]}
           >
@@ -49,6 +50,7 @@ export default function L2DaysStep({ answers, onAnswer, onSkip, onBack }: StepPr
           <Pressable
             accessibilityRole="button"
             disabled={days >= MAX_DAYS}
+            testID="onboarding-days-increase"
             onPress={() => change(1)}
             style={[styles.stepBtn, { borderColor: colors.border, opacity: days >= MAX_DAYS ? 0.4 : 1 }]}
           >

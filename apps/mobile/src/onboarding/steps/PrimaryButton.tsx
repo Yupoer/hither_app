@@ -41,6 +41,7 @@ export default function PrimaryButton({
   }));
   return (
     <AnimatedPressable
+      testID="onboarding-continue"
       accessibilityRole="button"
       disabled={disabled}
       onPress={() => {

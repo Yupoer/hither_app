@@ -66,6 +66,7 @@ export default function OptionCard({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={title}
       accessibilityState={{ selected }}
       onPress={() => {
         selectionTick();

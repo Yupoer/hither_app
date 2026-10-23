@@ -136,6 +136,7 @@ export function ProfileOverlay({
             <Pressable
               key={c}
               disabled={saving}
+              testID={`profile-color-${c}`}
               onPress={() => { selectionTick(); setProfileColor(c); }}
               accessibilityRole="button"
               accessibilityState={{ selected: profileColor === c, disabled: saving }}
@@ -156,6 +157,7 @@ export function ProfileOverlay({
         <View style={styles.profileRow}>
           <TextInput
             style={styles.profileInput}
+            testID="profile-name"
             value={profileName}
             onChangeText={setProfileName}
             editable={!saving}
@@ -174,6 +176,7 @@ export function ProfileOverlay({
             <Pressable
               key={e}
               disabled={saving}
+              testID={`profile-avatar-${e}`}
               onPress={() => setProfileAvatar(e)}
               accessibilityRole="button"
               accessibilityState={{ selected: profileAvatar === e, disabled: saving }}
