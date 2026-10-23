@@ -1,12 +1,12 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
-const { catalog, gaps, inventoryEntries } = require('./actions.cjs');
+const { catalog, gaps, inventoryEntries, exclusions } = require('./actions.cjs');
 if (process.argv.includes('--list')) {
   const actions = catalog();
   console.log(JSON.stringify({ count: actions.length, actions, unsupported: gaps }, null, 2));
 } else if (process.argv.includes('--inventory')) {
-  const result = require('./inventory.cjs').audit(inventoryEntries());
+  const result = require('./inventory.cjs').audit(inventoryEntries(), exclusions());
   console.log(JSON.stringify(result, null, 2));
   process.exitCode = result.errors.length || result.missing.length ? 1 : 0;
 } else {

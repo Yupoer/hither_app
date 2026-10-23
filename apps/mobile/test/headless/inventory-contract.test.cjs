@@ -16,6 +16,10 @@ try {
   assert(audit([{...action, inventory:['invented']}], [], directory).errors.some(error => error.includes('unknown inventory')));
   assert(audit([{...action, sources:[{file:'screen.ts',symbol:'deletedHandler'}]}], [], directory).errors.some(error => error.includes('source anchor')));
   assert(audit([], [{id:'A01',kind:'unsupported',reason:'No fixture',source:action.sources[0]}], directory).errors.length);
+  assert(audit([{...action, level:'lifecycle'}], [], directory).errors.some(error => error.includes('trigger')));
+  const dead = audit([], [{id:'A01',kind:'unreachable',reason:'No production caller after source review',source:action.sources[0]}], directory);
+  assert(!dead.missing.includes('A01'));
+  assert.equal(dead.mapped, 0);
   assert(audit([], [{id:'A01',kind:'presentationOnly',reason:'Example only',source:{file:'../screen.ts',symbol:'submitEmail'}}], directory).errors.length);
   console.log('Inventory detects missing operations, duplicate entries, deleted source anchors and invalid exclusions');
 } finally {

@@ -18,6 +18,7 @@ function audit(actions, exclusions = [], root = path.resolve(__dirname, '../..')
     names.add(action.name);
     if (!action.inventory?.length && !action.support) errors.push(`${action.name}: no source inventory mapping`);
     if (!action.sources?.length || !action.sources.every(source)) errors.push(`${action.name}: invalid production source anchor`);
+    if (action.level === 'lifecycle' && (!action.trigger || !action.scenarios?.length)) errors.push(`${action.name}: lifecycle needs a trigger and scenario references`);
     for (const id of action.inventory ?? []) {
       if (!families.has(id)) errors.push(`${action.name}: unknown inventory ${id}`);
       else coverage.get(id).push(action.name);
@@ -25,7 +26,7 @@ function audit(actions, exclusions = [], root = path.resolve(__dirname, '../..')
   }
   const exempt = new Map();
   for (const entry of exclusions) {
-    if (!families.has(entry.id) || exempt.has(entry.id) || entry.kind !== 'presentationOnly' || !entry.reason || !source(entry.source)) {
+    if (!families.has(entry.id) || exempt.has(entry.id) || !['presentationOnly', 'unreachable'].includes(entry.kind) || !entry.reason || !source(entry.source)) {
       errors.push(`Invalid presentation exclusion ${entry.id}`);
     } else exempt.set(entry.id, entry);
   }
@@ -33,7 +34,7 @@ function audit(actions, exclusions = [], root = path.resolve(__dirname, '../..')
   return { actions: actions.filter(entry => entry.level !== 'lifecycle').length,
     automaticEntries: actions.filter(entry => entry.level === 'lifecycle').length,
     families: families.size, mapped: families.size - missing.length - exempt.size,
-    presentationOnly: [...exempt.values()], missing, errors,
+    exclusions: [...exempt.values()], missing, errors,
     entries: [...families.values()].map(entry => ({ ...entry, actions: coverage.get(entry.id), exclusion: exempt.get(entry.id) ?? null })) };
 }
 
