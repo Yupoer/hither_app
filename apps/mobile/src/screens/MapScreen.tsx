@@ -5797,6 +5797,7 @@ export default function MapScreen({ route, navigation }: Props) {
             size={46}
             style={styles.headerIconBtn}
             accessibilityLabel={t('map.searchA11y')}
+            testID="map-search"
             onPress={lightTap}
             onAnimationComplete={async () => {
               // Ticket 05: animation complete → sheet open complete → reset.
@@ -5823,6 +5824,7 @@ export default function MapScreen({ route, navigation }: Props) {
           size={46}
           style={styles.headerIconBtn}
           accessibilityLabel={t('map.overlaySettings')}
+          testID="map-settings"
           onPress={lightTap}
           onAnimationComplete={openSettingsFromSheet}
         />
@@ -6189,6 +6191,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 }
               }}
               accessibilityLabel={t('solo.statusTitle')}
+              testID="map-presence"
               style={styles.myStatusTrigger}
             >
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
@@ -6212,6 +6215,7 @@ export default function MapScreen({ route, navigation }: Props) {
               onPress={openAndroidStatusSheet}
               accessibilityRole="button"
               accessibilityLabel={t('solo.statusTitle')}
+              testID="map-presence"
             >
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
                 <Ionicons
@@ -6304,6 +6308,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Pressable
                     style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
                     onPress={() => void handleAcceptInvite(inv.id)}
+                    testID={`subgroup-invite-accept-${inv.id}`}
                     accessibilityRole="button"
                   >
                     <Text style={styles.chipText}>
@@ -6313,6 +6318,7 @@ export default function MapScreen({ route, navigation }: Props) {
                   <Pressable
                     style={styles.chipGhost}
                     onPress={() => void handleDeclineInvite(inv.id)}
+                    testID={`subgroup-invite-decline-${inv.id}`}
                     accessibilityRole="button"
                   >
                     <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
@@ -6327,6 +6333,7 @@ export default function MapScreen({ route, navigation }: Props) {
       <View style={styles.listGroup}>
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
+          testID="map-invite-members"
           onPress={() => {
             lightTap();
             setOverlay('invite');
@@ -6722,6 +6729,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onPress={() => { lightTap(); setOverlay('arrivalManage'); }}
             accessibilityRole="button"
             accessibilityLabel={t('arrival.manage')}
+            testID="map-arrival-manage"
           >
             <Text style={styles.listRowTitle}>{t('arrival.manage')}</Text>
             <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
@@ -6745,6 +6753,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
           onPress={() => { lightTap(); openHistoryOverlay(); }}
+          testID="map-history"
           accessibilityRole="button"
         >
           <Text style={styles.listRowTitle}>{t('history.title')}</Text>
@@ -7394,6 +7403,7 @@ export default function MapScreen({ route, navigation }: Props) {
             showsHorizontalScrollIndicator={false}
             onScrollBeginDrag={handleScrollBeginDrag}
             onMomentumScrollEnd={handleMomentumEnd}
+            testID="map-carousel"
             scrollEventThrottle={16}
           >
             {destinations.map((dest, index) => {
@@ -7770,6 +7780,7 @@ export default function MapScreen({ route, navigation }: Props) {
                                 }}
                                 accessibilityRole="button"
                                 accessibilityLabel={t('map.openExternalNavigation')}
+                                testID={`gather-external-${dest.id}`}
                               >
                                 <Ionicons name="map" size={22} color="#fff" />
                               </Pressable>
@@ -7962,6 +7973,7 @@ export default function MapScreen({ route, navigation }: Props) {
                               }}
                               accessibilityRole="button"
                               accessibilityLabel={t('arrival.undo')}
+                              testID={`gather-arrival-undo-${dest.id}`}
                             >
                               <Ionicons
                                 name="checkmark-circle"
@@ -7984,6 +7996,7 @@ export default function MapScreen({ route, navigation }: Props) {
                               }}
                               accessibilityRole="button"
                               accessibilityLabel={t('arrival.mark')}
+                              testID={`gather-arrival-${dest.id}`}
                             >
                               <Ionicons
                                 name="checkmark-circle-outline"
@@ -8010,6 +8023,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         }}
                         accessibilityRole="button"
                         accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                        testID={`gather-travel-mode-${dest.id}`}
                       >
                         <Ionicons
                           name={modeIconName}
@@ -8024,6 +8038,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         style={styles.meetBtnSlot}
                       >
                       <MeetTimeChip
+                        testID={`gather-meet-time-${dest.id}`}
                         meetAtIso={dest.meetAt as string | null | undefined}
                         meetRedMinutes={
                           dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN
@@ -8507,6 +8522,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 durationMs={420}
                 style={styles.inviteActionButton}
                 accessibilityLabel={t('map.shareInviteLink')}
+                testID="map-share-code"
                 onPress={lightTap}
                 onAnimationComplete={async () => {
                   try {
@@ -8528,6 +8544,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 centeredLabel
                 style={styles.inviteActionButton}
                 accessibilityLabel={codeCopied ? t('group.copied') : t('map.copyGroupCode')}
+                testID="map-copy-code"
                 onPress={lightTap}
                 onAnimationComplete={() => { void copyCode(); }}
               />
@@ -8602,6 +8619,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         disabled={busy}
                         accessibilityRole="button"
                         accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.acknowledge')}`}
+                        testID={`map-exception-acknowledge-${item.rootCauseKey}`}
                         accessibilityState={{ disabled: busy }}
                       >
                         <Text style={styles.chipText}>{t('exception.acknowledge')}</Text>
@@ -8621,6 +8639,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         disabled={busy}
                         accessibilityRole="button"
                         accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.resolve')}`}
+                        testID={`map-exception-resolve-${item.rootCauseKey}`}
                         accessibilityState={{ disabled: busy }}
                       >
                         <Text style={styles.chipText}>{t('exception.resolve')}</Text>
@@ -8636,6 +8655,7 @@ export default function MapScreen({ route, navigation }: Props) {
                         disabled={busy}
                         accessibilityRole="button"
                         accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.reopen')}`}
+                        testID={`map-exception-reopen-${item.rootCauseKey}`}
                         accessibilityState={{ disabled: busy }}
                       >
                         <Text style={styles.chipText}>{t('exception.reopen')}</Text>
@@ -8762,6 +8782,7 @@ export default function MapScreen({ route, navigation }: Props) {
                           <Pressable
                             style={styles.arrivalToggleBtn}
                             onPress={() => handleArrival(destination, member.userId, !arrived)}
+                            testID={`history-arrival-${destination.id}-${member.userId}`}
                             accessibilityRole="button"
                             accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
                             accessibilityState={{ checked: arrived }}
@@ -8819,6 +8840,7 @@ export default function MapScreen({ route, navigation }: Props) {
                     <Pressable
                       style={styles.arrivalToggleBtn}
                       onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
+                      testID={`history-arrival-${arrivalDestination.id}-${member.userId}`}
                       accessibilityRole="button"
                       accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
                       accessibilityState={{ checked: arrived }}
@@ -8900,6 +8922,7 @@ export default function MapScreen({ route, navigation }: Props) {
                             <Pressable
                               style={styles.cmdSquare}
                               onPress={() => handleDeleteHistory(item)}
+                              testID={`history-delete-${item.id}`}
                               accessibilityRole="button"
                               accessibilityLabel={t('common.delete')}
                             >
@@ -9056,6 +9079,7 @@ export default function MapScreen({ route, navigation }: Props) {
               {[10, 30, 60].map((m) => (
                 <Pressable
                   key={m}
+                  testID={`meet-time-plus-${m}`}
                   style={[
                     styles.meetQuickBtn,
                     meetTimeEditor.quickMinutes === m && {
@@ -9113,6 +9137,7 @@ export default function MapScreen({ route, navigation }: Props) {
               }
               accessibilityRole={Platform.OS === 'android' ? 'button' : undefined}
               accessibilityLabel={t('meetTime.pickDateTime')}
+              testID="meet-time-date"
             >
               <Ionicons name="calendar-outline" size={20} color={accent} />
               <Text style={styles.meetSelectedClock}>
@@ -9134,6 +9159,7 @@ export default function MapScreen({ route, navigation }: Props) {
             {Platform.OS !== 'android' && (
               <View style={styles.meetPickerWrap}>
                 <DateTimePicker
+                  testID="meet-time-picker"
                   value={meetTimeEditor.value}
                   mode="datetime"
                   display="spinner"
@@ -9193,6 +9219,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 styles.meetSetBtn,
                 { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
               ]}
+              testID="meet-time-save"
               onPress={() => {
                 persistMeetTime(
                   meetTimeEditor.id,
@@ -9207,6 +9234,7 @@ export default function MapScreen({ route, navigation }: Props) {
             </Pressable>
             <Pressable
               style={styles.meetClearBtn}
+              testID="meet-time-clear"
               onPress={() => {
                 persistMeetTime(meetTimeEditor.id, null);
                 setMeetTimeEditor(null);
@@ -9321,6 +9349,7 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
   formatDue,
   captionLive,
   captionDue,
+  testID,
 }: {
   meetAtIso: string | null | undefined;
   meetRedMinutes: number;
@@ -9336,6 +9365,7 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
   formatDue: (time: string) => string;
   captionLive: string;
   captionDue: string;
+  testID?: string;
 }) {
   const [due, setDue] = useState(() => {
     if (!meetAtIso) return false;
@@ -9361,6 +9391,7 @@ const MeetTimeChip = React.memo(function MeetTimeChip({
       disabled={!canEdit}
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
+      testID={testID}
     >
       <View style={styles.meetBtnStack}>
         <View style={styles.meetBtnTimeRow}>
@@ -9547,6 +9578,7 @@ const RefreshLocationsButton = React.memo(function RefreshLocationsButton({
       onPress={() => { lightTap(); onPress(); }}
       disabled={refreshing}
       accessibilityLabel={t('map.refreshLocationsA11y')}
+      testID="map-refresh-locations"
       accessibilityHint={
         cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined
       }
@@ -9673,6 +9705,7 @@ const FlockRow = React.memo(function FlockRow({
           {subgroupId ? (
             <Pressable
               onPress={() => void onSelfMerge()}
+              testID="map-subgroup-merge"
               hitSlop={8}
               accessibilityRole="button"
               style={({ pressed }) => pressed && styles.rowActionPressed}
@@ -9684,6 +9717,7 @@ const FlockRow = React.memo(function FlockRow({
           ) : (
             <Pressable
               onPress={() => void onSelfSplit()}
+              testID="map-subgroup-split"
               hitSlop={8}
               accessibilityRole="button"
               style={({ pressed }) => pressed && styles.rowActionPressed}
@@ -9699,6 +9733,7 @@ const FlockRow = React.memo(function FlockRow({
         <View style={styles.selfControls}>
           <Pressable
             onPress={onKick}
+            testID={`map-kick-${userId}`}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t('group.kick')}

@@ -19,6 +19,7 @@ export default function MapRecenterControl({
       <Pressable
         style={styles.button}
         onPress={onFitAll}
+        testID="map-fit-all"
         accessibilityRole="button"
         accessibilityLabel={fitAllLabel}
       >
@@ -28,6 +29,7 @@ export default function MapRecenterControl({
       <Pressable
         style={styles.button}
         onPress={onLocate}
+        testID="map-locate-me"
         accessibilityRole="button"
         accessibilityLabel={locateLabel}
       >

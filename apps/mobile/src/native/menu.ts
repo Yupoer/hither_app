@@ -30,6 +30,7 @@ const HitherMenu = requireOptionalNativeModule('HitherMenu');
 let NativeMenuView: React.ComponentType<{
   items: Array<Record<string, string>>;
   onSelect?: (event: { nativeEvent?: { id?: string } }) => void;
+  testID?: string;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
 }> | null = null;
@@ -52,12 +53,14 @@ export function NativeMenuHost({
   style,
   children,
   accessibilityLabel,
+  testID,
 }: {
   items: NativeMenuItem[];
   onSelect: (id: string) => void;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
   accessibilityLabel?: string;
+  testID?: string;
 }): React.ReactElement {
   if (!NativeMenuView) {
     return React.createElement(
@@ -66,6 +69,7 @@ export function NativeMenuHost({
         style,
         accessibilityRole: 'button',
         accessibilityLabel,
+        testID,
         accessibilityState: { disabled: true },
       },
       children,
@@ -75,6 +79,7 @@ export function NativeMenuHost({
     NativeMenuView,
     {
       items: serializeNativeMenuItems(items),
+      testID,
       onSelect: (event: { nativeEvent?: { id?: string } }) => {
         const id = event?.nativeEvent?.id;
         if (id) onSelect(id);

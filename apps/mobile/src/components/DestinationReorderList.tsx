@@ -808,6 +808,7 @@ export default function DestinationReorderList({
       {(canReorder || onImport) && (
         <View style={styles.topActions}>
           {canReorder && showTripDetails && <Pressable
+            testID="route-trip-details"
             ref={(node) => onTourTargetRef?.('routeTripDetails', node)}
             style={[styles.setDaysBtn, { flex: 1.2 }]}
             onPress={() => {
@@ -829,6 +830,7 @@ export default function DestinationReorderList({
               }}
               accessibilityRole="button"
               accessibilityLabel={t('stay.favorites')}
+              testID="route-favorites"
             >
               <Ionicons name="star-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
               <Text style={styles.setDaysText} numberOfLines={1}>{t('stay.favorites')}</Text>
@@ -843,6 +845,7 @@ export default function DestinationReorderList({
             }}
             accessibilityRole="button"
             accessibilityLabel={t('kml.entry')}
+            testID="route-kml"
           >
             <Ionicons name="cloud-upload-outline" size={Math.round(16 * REORDER_VISUAL_SCALE)} color={colors.accent} style={{ marginRight: 6 }} />
             <Text style={styles.setDaysText} numberOfLines={1}>{t('kml.entry')}</Text>
@@ -1258,6 +1261,7 @@ export default function DestinationReorderList({
                         }}
                         accessibilityRole="button"
                         accessibilityLabel={t('stay.quickAdd')}
+                        testID={`route-quick-stay-${item.day}`}
                       >
                         <Text style={[styles.dashedBtnText, { color: colors.accent }]}>
                           {t('stay.quickAdd')}
@@ -1310,6 +1314,7 @@ export default function DestinationReorderList({
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={fav.title}
+                    testID={`route-favorite-${fav.id}`}
                   >
                     <Ionicons name="star" size={favoriteIconSize} color={colors.accent} />
                     <Text style={styles.favoriteTitle}>{fav.title}</Text>
@@ -1322,6 +1327,7 @@ export default function DestinationReorderList({
                       }}
                       accessibilityRole="button"
                       accessibilityLabel={t('stay.unfavoriteA11y')}
+                      testID={`route-unfavorite-${fav.id}`}
                       hitSlop={8}
                       style={styles.favoriteDeleteBtn}
                     >
@@ -1339,6 +1345,7 @@ export default function DestinationReorderList({
         <View style={styles.childSheetBody}>
           {[null, ...Array.from({ length: Math.max(1, tripDays ?? 1) }, (_, i) => i + 1)].map(day => (
             <Pressable key={day ?? 'pool'} style={styles.favRow} accessibilityRole="button"
+              testID={`route-move-day-${day ?? 'pool'}`}
               disabled={day == null && moveDestinationId === activeDestinationId}
               onPress={() => {
                 if (moveDestinationId) moveToDay(moveDestinationId, day);
@@ -1363,7 +1370,7 @@ export default function DestinationReorderList({
                <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>{t('trip.departureDate')}</Text>
                   {Platform.OS === 'android' ? (
-                    <Pressable onPress={openAndroidDatePicker} style={styles.datePickerButton}>
+                    <Pressable testID="route-trip-date" onPress={openAndroidDatePicker} style={styles.datePickerButton}>
                       <Ionicons name="calendar-outline" size={18} color={colors.accent} />
                       <Text style={styles.datePickerText}>
                         {editDate.toLocaleDateString()}
@@ -1371,6 +1378,7 @@ export default function DestinationReorderList({
                     </Pressable>
                   ) : (
                     <DateTimePicker
+                       testID="route-trip-date-picker"
                        value={editDate}
                        mode="date"
                        display="default"
@@ -1384,11 +1392,11 @@ export default function DestinationReorderList({
                <View style={styles.modalRow}>
                   <Text style={styles.modalLabel}>{t('trip.totalDays')}</Text>
                   <liquidGlass.GlassView glassStyle="regular" style={styles.daysControls}>
-                     <Pressable onPress={() => setEditDays(Math.max(1, editDays - 1))} style={styles.daysBtn}>
+                     <Pressable testID="route-days-decrease" onPress={() => setEditDays(Math.max(1, editDays - 1))} style={styles.daysBtn}>
                         <Text style={styles.daysBtnText}>-</Text>
                      </Pressable>
                      <Text style={styles.daysValue}>{editDays}</Text>
-                     <Pressable onPress={() => setEditDays(editDays + 1)} style={styles.daysBtn}>
+                     <Pressable testID="route-days-increase" onPress={() => setEditDays(editDays + 1)} style={styles.daysBtn}>
                         <Text style={styles.daysBtnText}>+</Text>
                      </Pressable>
                   </liquidGlass.GlassView>
@@ -1409,6 +1417,7 @@ export default function DestinationReorderList({
                   {DAY_COLORS.map(c => (
                      <Pressable
                         key={c}
+                        testID={`route-day-color-${c}`}
                         onPress={() => { setDayColor(colorPickerDay!, c); setColorPickerDay(null); }}
                         style={[styles.colorPickerDot, { backgroundColor: c }]}
                      />
@@ -1772,6 +1781,7 @@ const HeaderRow = memo(function HeaderRow({
                     setStayActive && { backgroundColor: accent, borderColor: 'transparent' },
                   ]}
                   onPress={onToggleSetStay}
+                  testID={`route-set-stay-${item.day}`}
                   accessibilityRole="button"
                   accessibilityState={{ selected: !!setStayActive }}
                   accessibilityLabel={setStayLabel}
@@ -1795,6 +1805,7 @@ const HeaderRow = memo(function HeaderRow({
                   <Pressable
                     style={styles.headerCancelStayBtn}
                     onPress={onCancelSetStay}
+                    testID={`route-cancel-stay-${item.day}`}
                     accessibilityRole="button"
                     accessibilityLabel={setStayCancelLabel}
                   >
@@ -1838,6 +1849,7 @@ const HeaderRow = memo(function HeaderRow({
           {onRemoveDaily ? (
             <Pressable
               onPress={onRemoveDaily}
+              testID={`route-remove-stay-${item.day}`}
               accessibilityRole="button"
               accessibilityLabel={t('stay.remove')}
               hitSlop={8}
@@ -2019,6 +2031,7 @@ const Row = memo(function Row({
         {showSelect ? (
           <Pressable
             onPress={onSelectAsStay}
+            testID={`route-select-stay-${item.id}`}
             accessibilityRole="radio"
             accessibilityState={{ selected: !!selectSelected }}
             style={styles.selectRadio}
@@ -2033,6 +2046,7 @@ const Row = memo(function Row({
         ) : multiSelect ? (
           <Pressable
             onPress={onToggleMultiSelect}
+            testID={`route-select-${item.id}`}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: !!multiSelected }}
             style={styles.selectRadio}
@@ -2056,6 +2070,7 @@ const Row = memo(function Row({
           disabled={!onEmojiPress && !multiSelect}
           accessibilityRole={onEmojiPress || multiSelect ? 'button' : undefined}
           accessibilityLabel={onEmojiPress ? 'dest emoji' : undefined}
+          testID={`route-emoji-${item.id}`}
           style={[
             styles.emojiBadge,
             // Stay cards: muted bed badge (not high-sat day red).
@@ -2070,6 +2085,7 @@ const Row = memo(function Row({
         </Pressable>
         <Pressable
           style={styles.rowBody}
+          testID={`route-move-${item.id}`}
           onPress={
             multiSelect && onToggleMultiSelect
               ? onToggleMultiSelect

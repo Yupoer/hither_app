@@ -890,6 +890,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     >
     <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="box-none">
     <MapView
+      testID="group-map-native"
       // Remount when the theme's light/dark changes so Apple Maps picks up the
       // new `userInterfaceStyle` from a fresh mount (the prop alone is not
       // re-applied to an already-rendered map under the new architecture).

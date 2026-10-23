@@ -179,6 +179,7 @@ export default React.memo(function DestinationSearch({
             autoFocus
             returnKeyType="search"
             accessibilityLabel={t('search.placeholder')}
+            testID="place-search-query"
           />
         </View>
 
@@ -203,6 +204,8 @@ export default React.memo(function DestinationSearch({
                 pressed && styles.resultPressed,
               ]}
               onPress={() => handlePick(item)}
+              testID={`place-search-result-${placeSearchResultKey(item)}`}
+              accessibilityLabel={item.name}
               disabled={searching || submittingId !== null}
               accessibilityState={{ disabled: searching || submittingId !== null }}
               accessibilityRole="button"

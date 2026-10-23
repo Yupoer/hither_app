@@ -176,6 +176,7 @@ export default React.memo(function KmlImportSheet({
             <Pressable
               style={[styles.cta, { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) }]}
               onPress={pickFile}
+              testID="kml-pick-file"
               accessibilityRole="button"
             >
               <Text style={styles.ctaText}>{t('kml.pick')}</Text>
@@ -189,6 +190,7 @@ export default React.memo(function KmlImportSheet({
             <Pressable
               style={[styles.cta, { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) }]}
               onPress={reset}
+              testID="kml-retry"
               accessibilityRole="button"
             >
               <Text style={styles.ctaText}>{t('kml.retry')}</Text>
@@ -231,6 +233,7 @@ export default React.memo(function KmlImportSheet({
                     allowed === 0 && styles.ctaDisabled,
                   ]}
                   onPress={() => runImport(step.items.slice(0, allowed))}
+                  testID="kml-import-confirm"
                   disabled={allowed === 0}
                   accessibilityRole="button"
                 >
