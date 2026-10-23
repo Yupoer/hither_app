@@ -190,6 +190,8 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
   it('MAP-DEST-11 MAP-DEST-12 MAP-STAY-03 MAP-ROUTE-06 actual favorite and quick hotel remain drafts until Done and retry restores failed favorite deletion', async () => {
     const world = new World();
     try {
+      world.backend.tables.daily_accommodations.push({ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', group_id: GROUP_ID,
+        stay_date: '2026-10-22', title: 'Night stay', latitude: 25.03, longitude: 121.55, source_destination_id: null });
       const device = await map(world);
       await drop(device, 'Favorite stop');
       await run(device, 'map.place.favorite');
@@ -209,7 +211,13 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary).toHaveLength(1);
       await done(world, device);
       expect(world.backend.itinerary.filter((row: { title: string }) => row.title === 'Favorite stop')).toEqual([expect.objectContaining({ day: null })]);
-      expect(world.backend.itinerary.filter((row: { kind: string }) => row.kind === 'accommodation')).toEqual([expect.objectContaining({ day: 1, stay_anchor: false, latitude: 25.04, longitude: 121.53 })]);
+      expect(world.backend.itinerary.filter((row: { kind: string }) => row.kind === 'accommodation')).toEqual([expect.objectContaining({ title: 'Night stay', day: 1, stay_anchor: false, latitude: 25.03, longitude: 121.55 })]);
+      await route(world, device);
+      await run(device, 'map.route.stay.remove', { day: 1 });
+      expect(world.backend.tables.daily_accommodations).toHaveLength(1);
+      await done(world, device);
+      expect(world.backend.tables.daily_accommodations).toEqual([]);
+      expect(world.backend.itinerary.some((row: { kind: string }) => row.kind === 'accommodation')).toBe(true);
       expect((await device.observe()).durable.operations).toEqual([]);
     } finally { await world.close(); }
   });
@@ -231,7 +239,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary.filter((row: { title: string }) => ['North & South', 'East'].includes(row.title))).toEqual(expect.arrayContaining([
         expect.objectContaining({ title: 'North & South', day: null }), expect.objectContaining({ title: 'East', day: null }),
       ]));
-      expect(world.backend.trace.filter((call: { name: string; args?: { p_operation_type: string } }) => call.name === 'apply_core_operation_v3' && call.args?.p_operation_type === 'import_itinerary_batch')).toHaveLength(1);
+      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'import_itinerary_batch')).toHaveLength(1);
       expect((await device.observe()).durable.operations).toEqual([]);
       await world.advance(1000);
       expect(has(await device.observe(), 'kml-import-confirm')).toBe(false);
@@ -249,7 +257,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await run(device, 'map.route.emoji.preset', { emoji: '☕' });
       await run(device, 'map.route.emoji.save');
       await world.settle();
-      expect(world.backend.itinerary[0]).toMatchObject({ emoji: '☕', marker_color: '#A56A43' });
+      expect(world.backend.itinerary[0]).toMatchObject({ emoji: '☕', marker_color: null });
       await run(device, 'map.route.trip.open');
       await run(device, 'map.route.trip.more-days');
       await run(device, 'map.overlay.done', { label: 'commit' });
@@ -345,6 +353,83 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
         payload: expect.objectContaining({ type: 'request_start', groupId: GROUP_ID }) })]);
       expect(world.backend.sessions.size).toBe(0);
       expect(world.backend.itinerary[0].closed_at).toBeNull();
+    } finally { await world.close(); }
+  });
+
+  it('MAP-NAV-02 MAP-NAV-05 actual held Start then End keeps terminal intent authoritative across ACK and restart', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      world.hold('apply_core_operation_v3', { phase: 'delivery' });
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 1, 'durable Start before ACK');
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      const ended = await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 2, 'durable End follows Start');
+      expect(ended.durable.operations.map((row: { operationType: string }) => row.operationType)).toEqual(['start_gathering', 'end_gathering']);
+      expect(ended.durable.operations[1].dependencyIds).toContain(ended.durable.operations[0].id);
+      expect(field(ended, `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      await world.release('apply_core_operation_v3');
+      await world.advance(300);
+      await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 0, 'terminal intents accepted');
+      expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({ status: 'cancelled' })]);
+      await device.restart();
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-card-${DESTINATION}`), 'Map restarted');
+      await run(device, 'map.card.toggle', { destinationId: DESTINATION });
+      expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      expect(has(await device.observe(), `gather-arrival-${DESTINATION}`)).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-ROUTE-04 MAP-NAV-02 actual switch confirmation preserves old session on cancel and promotes the accepted target within its day', async () => {
+    const world = new World();
+    const secondId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    try {
+      world.backend.itinerary.push({ ...world.backend.itinerary[0], id: secondId, title: 'Second stop', position: 1, latitude: 25.06 });
+      const device = await map(world);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.settle();
+      await run(device, 'map.carousel.begin');
+      await run(device, 'map.carousel.end', { x: 390 });
+      await run(device, 'map.card.toggle', { destinationId: secondId });
+      await run(device, 'map.journey.command', { destinationId: secondId });
+      await device.input({ kind: 'alert', index: 0 });
+      expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(DESTINATION);
+      await run(device, 'map.journey.command', { destinationId: secondId });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.settle();
+      expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(secondId);
+      expect(world.backend.itinerary.find((row: { id: string }) => row.id === secondId).position).toBeLessThan(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION).position);
+      expect(world.backend.itinerary.every((row: { closed_at: string | null }) => row.closed_at === null)).toBe(true);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-ARRIVAL-02 MAP-ARRIVAL-03 MAP-ARRIVAL-05 actual GPS arrival ignores poor fixes and manual undo suppresses inside-radius reentry until exit', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.settle();
+      const sample = async (latitude: number, accuracy: number) => {
+        await world.advance(1000);
+        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy, timestamp: world.now });
+        else await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy, timestamp: world.now });
+        await world.settle();
+      };
+      await sample(25.04, 200);
+      expect(world.backend.tables.destination_arrivals).toEqual([]);
+      await sample(25.04, 5);
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'automatic personal arrival');
+      expect(world.backend.tables.destination_arrivals).toHaveLength(1);
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      await run(device, 'map.arrival.undo', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.settle();
+      await sample(25.04, 5);
+      expect(world.backend.tables.destination_arrivals).toEqual([]);
+      await sample(25.05, 5);
+      await sample(25.04, 5);
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'reentry after leaving radius');
+      expect(world.backend.tables.destination_arrivals).toHaveLength(1);
     } finally { await world.close(); }
   });
 
