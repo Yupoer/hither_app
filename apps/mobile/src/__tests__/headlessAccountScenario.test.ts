@@ -262,7 +262,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await device.perform('home.join');
       expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower' } });
       await device.perform('team.back');
-      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'leader' } });
+      expect((await device.observe()).presentation.route).toMatchObject({ route: 'RoleSelect' });
       await device.host.mount({ name: 'RoleSelect' });
       await device.perform('home.teams');
       await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`), 'joined team full profile projection');

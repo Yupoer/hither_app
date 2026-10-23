@@ -25,7 +25,9 @@ function scan(root, ts = require('typescript')) {
       const exported = node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword);
       if (exported && (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node))) add('export', node.name?.text ?? 'default', node);
       if (exported && ts.isVariableStatement(node)) for (const declaration of node.declarationList.declarations) {
-        if (declaration.initializer && (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer))) {
+        let initializer = declaration.initializer;
+        while (initializer && (ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer) || ts.isParenthesizedExpression(initializer))) initializer = initializer.expression;
+        if (initializer && (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer) || ts.isObjectLiteralExpression(initializer))) {
           add('export', declaration.name.getText(source), declaration);
         }
       }

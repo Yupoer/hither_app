@@ -22,6 +22,11 @@ try {
   assert(scan(directory, ts).some(entry => entry.kind === 'export-alias'));
   fs.writeFileSync(path.join(directory, 'src/service.ts'), 'function Screen() { useMountEffect(start); }');
   assert(scan(directory, ts).some(entry => entry.kind === 'lifecycle' && entry.name === 'useMountEffect'));
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export const adapter = { start() { return 1; } } satisfies Adapter;');
+  const objectBaseline = scan(directory, ts);
+  assert(objectBaseline.some(entry => entry.kind === 'export' && entry.name === 'adapter'));
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export const adapter = { start() { return 2; }, stop: () => 3 } satisfies Adapter;');
+  assert(compare(objectBaseline, scan(directory, ts)).added.some(entry => entry.name === 'adapter'));
   console.log('Source inventory detects new callbacks, changed service bodies and exported aliases');
 } finally {
   assert(path.resolve(directory).startsWith(`${path.resolve(os.tmpdir())}${path.sep}hither-source-inventory-`));
