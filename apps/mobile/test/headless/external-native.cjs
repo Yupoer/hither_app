@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 
 exports.createExternalNative = function createExternalNative({ platform, strict = (_name, value) => value, record = () => {}, profile = {} }) {
   assert(['ios', 'android'].includes(platform));
+  const boundary = (name, value) => strict(name, Object.fromEntries(Object.entries(value).map(([key, child]) =>
+    [key, child && typeof child === 'object' && !Array.isArray(child) ? boundary(`${name}.${key}`, child) : child])));
   const receipts = [];
   const effect = (method, value) => {
     const receipt = { method, ...(value === undefined ? {} : { value: structuredClone(value) }) };
@@ -35,7 +37,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     products: [], availablePurchases: [], pendingTransactions: [], introEligible: false,
     initError: null, fetchError: null, requestError: null, finishError: null, restoreError: null,
   };
-  const iapModule = strict('expo-iap', {
+  const iapModule = boundary('expo-iap', {
     initConnection: async () => { effect('iap.initConnection'); fail(iap, 'initError'); return true; },
     purchaseUpdatedListener: (listener, options) => {
       assert.deepEqual(options, { dedupeTransactionIOS: true });
@@ -93,7 +95,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   const mobileAdsFactory = () => ({ initialize: async () => {
     effect('ads.initialize'); fail(ads, 'initializeError'); return [];
   } });
-  const adsModule = strict('react-native-google-mobile-ads', {
+  const adsModule = boundary('react-native-google-mobile-ads', {
     MobileAds: mobileAdsFactory, mobileAds: mobileAdsFactory, default: mobileAdsFactory,
     AdsConsent: {
       requestInfoUpdate: async () => {
@@ -117,14 +119,14 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
         const events = listeners(['loaded', 'earned', 'closed', 'error']);
         adInstances.set(id, { events, unitId, options: structuredClone(options) });
         effect('ads.createForAdRequest', { id, unitId, options });
-        return {
+        return boundary('RewardedAd.instance', {
           addAdEventListener: (event, listener) => {
             const subscription = listen(events, event, listener);
             return subscription.remove;
           },
           load: () => { effect('ads.load', { id }); fail(ads, 'loadError'); },
           show: async () => { effect('ads.show', { id }); fail(ads, 'showError'); },
-        };
+        });
       },
     },
   });
@@ -132,10 +134,16 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   const notificationEvents = listeners(['received']);
   const notifications = { permission: 'granted', nativeToken: `fixture-${platform}-native-push`, expoToken: `fixture-${platform}-expo-push`, nativeTokenError: null, tokenError: null, scheduleError: null, cancelError: null };
   let notificationHandler;
+  const notificationTasks = new Set();
   let nextNotification = 0;
   const scheduled = new Map();
-  const notificationsModule = strict('expo-notifications', {
+  const notificationsModule = boundary('expo-notifications', {
     SchedulableTriggerInputTypes: { DATE: 'date' },
+    registerTaskAsync: async taskName => {
+      assert.equal(typeof taskName, 'string');
+      notificationTasks.add(taskName);
+      effect('notifications.registerTaskAsync', taskName);
+    },
     setNotificationHandler: handler => {
       assert.equal(typeof handler.handleNotification, 'function');
       notificationHandler = handler;
@@ -166,7 +174,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   const live = { startError: null, updateError: null, endError: null, listError: null, startResult: undefined };
   const activities = new Map();
   let nextActivity = 0;
-  const liveModule = strict('HitherLiveActivity', {
+  const liveModule = boundary('HitherLiveActivity', {
     addListener: (name, listener) => listen(liveEvents, name, listener),
     startPushToStartTokenObservation: async () => { effect('live.startPushToStartTokenObservation'); },
     observeExistingActivities: async () => { effect('live.observeExistingActivities'); },
@@ -199,7 +207,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     },
   });
   const nativeModules = {
-    HitherNotifications: profile.notifications === false ? null : strict('HitherNotifications', {
+    HitherNotifications: profile.notifications === false ? null : boundary('HitherNotifications', {
       getDevicePushToken: async () => {
         effect('nativeNotifications.getDevicePushToken'); fail(notifications, 'nativeTokenError');
         return notifications.nativeToken;
@@ -212,6 +220,8 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   if (profile.ads !== false) modules['react-native-google-mobile-ads'] = adsModule;
   return {
     modules, nativeModules,
+    handles: kind => ['iapConfigure', 'iapPurchase', 'iapError', 'adsConfigure', 'adEvent', 'notificationsConfigure',
+      'notification', 'liveConfigure', 'liveExisting', 'livePushToken', 'livePushToStart'].includes(kind),
     async input(input) {
       switch (input.kind) {
         case 'iapConfigure': settings(iap, input.patch); return;
@@ -242,12 +252,13 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
         default: throw new Error(`Unsupported native fixture input ${input.kind}`);
       }
     },
-    observe: () => ({ receipts: structuredClone(receipts), scheduled: [...scheduled].map(([id, input]) => ({ id, input: structuredClone(input) })),
+    observe: () => ({ receipts: structuredClone(receipts), notificationTasks: [...notificationTasks], scheduled: [...scheduled].map(([id, input]) => ({ id, input: structuredClone(input) })),
       activities: [...activities.values()].map(activity => structuredClone(activity)),
       ads: [...adInstances].map(([id, ad]) => ({ id, unitId: ad.unitId, options: structuredClone(ad.options), listeners: [...ad.events.values()].reduce((sum, set) => sum + set.size, 0) })),
       listeners: { iap: [...iapEvents.values()].reduce((sum, set) => sum + set.size, 0), notification: notificationEvents.get('received').size, live: [...liveEvents.values()].reduce((sum, set) => sum + set.size, 0) } }),
-    dispose: () => {
-      for (const events of [iapEvents, notificationEvents, liveEvents, ...[...adInstances.values()].map(ad => ad.events)]) for (const set of events.values()) set.clear();
-    },
+    dispose: () => ({ iapProcessListeners: [...iapEvents.values()].reduce((sum, set) => sum + set.size, 0),
+      notification: notificationEvents.get('received').size,
+      live: [...liveEvents.values()].reduce((sum, set) => sum + set.size, 0),
+      ads: [...adInstances.values()].reduce((sum, ad) => sum + [...ad.events.values()].reduce((count, set) => count + set.size, 0), 0) }),
   };
 };

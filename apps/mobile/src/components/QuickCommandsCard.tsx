@@ -172,6 +172,7 @@ export default function QuickCommandsCard({
     return (
       <Pressable
         key={key}
+        testID={`quick-command-${type}`}
         style={[
           compact ? styles.previewBtn : styles.btn,
           sendingKey === key && styles.btnSending,
@@ -205,6 +206,7 @@ export default function QuickCommandsCard({
         </View>
         <Pressable
           style={styles.allBtn}
+          testID="quick-commands-all"
           onPress={() => {
             mediumTap();
             onOpenAll?.();
@@ -302,6 +304,7 @@ export default function QuickCommandsCard({
               return (
                 <Pressable
                   key={key}
+                  testID={`quick-command-custom-${item.slot}`}
                   style={[
                     styles.btn,
                     sendingKey === key && styles.btnSending,
