@@ -297,6 +297,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const leader = await map(world, LEADER, 'leader');
       await expand(world, leader);
       await run(leader, 'map.tab', { index: 1 });
+      await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-approve-${request.id}`), 'actual leader inbox');
       await run(leader, 'map.suggestion.approve', { requestId: request.id });
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-approve-${request.id}`), 'approved request leaves inbox');
@@ -304,6 +305,13 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Suggested KML')).toMatchObject({ day: null });
       await world.advance(300);
       expect((await follower.observe()).durable.snapshot.destinations.some((row: { title: string }) => row.title === 'Suggested KML')).toBe(true);
+      const rejected = await run(follower, 'map.service.gathering.suggest', { args: [GROUP_ID, null, [{ title: 'Rejected suggestion', coordinates: { latitude: 25.06, longitude: 121.57 } }]] });
+      await world.advance(2500);
+      await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-reject-${rejected}`), 'next coalesced inbox request');
+      await run(leader, 'map.suggestion.reject', { requestId: rejected });
+      await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-reject-${rejected}`), 'rejected request leaves inbox');
+      expect(world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status).toBe('rejected');
+      expect(world.backend.itinerary.some((row: { title: string }) => row.title === 'Rejected suggestion')).toBe(false);
     } finally { await world.close(); }
   });
 
@@ -419,6 +427,23 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(request.status).toBe('resolved');
       expect(request.resolved_outcome).toBe('opt_a');
       expect(has(await device.observe(), 'coordination-option-opt_b')).toBe(false);
+      await run(device, 'map.coordination.back');
+      await run(device, 'map.coordination.create.open');
+      await run(device, 'map.coordination.subject', { value: 'Cancel me' });
+      await run(device, 'map.coordination.option-a', { value: 'One' });
+      await run(device, 'map.coordination.option-b', { value: 'Two' });
+      await run(device, 'map.coordination.create.submit');
+      await world.waitFor(device, (value: MapObservation) => has(value, 'coordination-cancel'), 'second actual request detail');
+      const cancellable = world.backend.tables.coordination_requests.find((row: { subject: string }) => row.subject === 'Cancel me');
+      device.online = false;
+      await run(device, 'map.coordination.cancel');
+      await world.settle();
+      expect(cancellable.status).toBe('open');
+      expect(has(await device.observe(), 'coordination-detail')).toBe(true);
+      device.online = true;
+      await run(device, 'map.coordination.cancel');
+      await world.waitFor(device, (value: MapObservation) => !has(value, 'coordination-detail'), 'successful cancel leaves detail');
+      expect(cancellable.status).toBe('cancelled');
     } finally { await world.close(); }
   });
 
