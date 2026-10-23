@@ -1833,6 +1833,7 @@ const HeaderRow = memo(function HeaderRow({
           <View style={styles.headerLeft}>
             <Pressable
               onPress={() => onColorPress(item.day)}
+              testID={`route-day-color-open-${item.day}`}
               disabled={!canEditColors}
               accessibilityRole={canEditColors ? 'button' : undefined}
               accessibilityLabel={canEditColors ? 'change day color' : undefined}
@@ -2203,6 +2204,7 @@ const Row = memo(function Row({
     >
       {floating ? rowContent : <ReanimatedSwipeable
         ref={swipeableRef}
+        testID={`route-swipe-${item.id}`}
         enabled={canSwipe && !active}
         friction={1}
         rightThreshold={38}

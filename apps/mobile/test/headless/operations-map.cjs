@@ -106,6 +106,11 @@ button('map.route.trip.fewer-days', ['MAP-ROUTE-10'], 'setEditDays', 'route-days
 operation('map.route.day-color', ['MAP-ROUTE-12'], component('DestinationReorderList'), 'setDayColor',
   '{ color: string }', 'Real day color selection persists through existing account/group storage key.',
   (app, { color }) => press(app, `route-day-color-${color}`));
+identifiedButton('map.route.day-color.open', ['MAP-ROUTE-12'], 'onColorPress', 'route-day-color-open-', 'day',
+  'Actual editable day flag opens its real palette without changing the persisted color.', component('DestinationReorderList'));
+operation('map.route.swipe.open', ['MAP-ROUTE-08'], component('DestinationReorderList'), 'handleSwipeableOpen', '{ destinationId: string }',
+  'External swipe-open event exposes the actual renderRightActions callback; deletion still requires its real press and confirmation.',
+  (app, { destinationId }) => app.host.call({ kind: 'nativeEvent', testId: `route-swipe-${destinationId}`, value: { event: 'onSwipeableOpen' } }));
 for (const [name, prefix, symbol, ids, completion] of [
   ['set', 'route-set-stay-', 'onToggleSetStay', ['MAP-ROUTE-12'], 'Actual day header enters stay selection.'],
   ['cancel', 'route-cancel-stay-', 'onCancelSetStay', ['MAP-ROUTE-12'], 'Actual stay selection cancels without draft mutation.'],

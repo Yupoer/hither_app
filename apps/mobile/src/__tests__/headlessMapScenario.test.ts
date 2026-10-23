@@ -80,6 +80,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     try {
       const device = await map(world);
       await drop(device, 'Canceled');
+      await run(device, 'map.place.center');
       await run(device, 'map.place.cancel');
       expect((await device.observe()).durable.snapshot.destinations).toHaveLength(1);
       expect(world.backend.trace.filter((call: { name: string }) => call.name === 'apply_core_operation_v3')).toEqual([]);
@@ -93,6 +94,17 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.release('apply_core_operation_v3');
       expect(world.backend.itinerary.filter((row: { title: string }) => row.title === 'Local pool stop')).toHaveLength(1);
       expect((await device.observe()).durable.operations).toEqual([]);
+      const addedId = world.backend.itinerary.find((row: { title: string }) => row.title === 'Local pool stop').id;
+      await route(world, device);
+      await run(device, 'map.route.swipe.open', { destinationId: addedId });
+      await run(device, 'map.route.delete', { destinationId: addedId });
+      await device.input({ kind: 'alert', index: 0 });
+      expect(world.backend.itinerary.some((row: { id: string }) => row.id === addedId)).toBe(true);
+      await run(device, 'map.route.swipe.open', { destinationId: addedId });
+      await run(device, 'map.route.delete', { destinationId: addedId });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.waitFor(device, (value: MapObservation) => !value.durable.snapshot.destinations.some(row => row.id === addedId), 'confirmed single-row deletion');
+      expect(world.backend.itinerary).toHaveLength(1);
     } finally { await world.close(); }
   });
 
@@ -132,6 +144,9 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     try {
       const device = await map(world);
       await route(world, device);
+      await run(device, 'map.route.stay.set', { day: 1 });
+      await run(device, 'map.route.stay.cancel', { day: 1 });
+      expect(has(await device.observe(), `route-select-stay-${DESTINATION}`)).toBe(false);
       await run(device, 'map.route.stay.set', { day: 1 });
       await run(device, 'map.route.stay.select', { destinationId: DESTINATION });
       await run(device, 'map.route.stay.set', { day: 1 });
@@ -258,7 +273,13 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await run(device, 'map.route.emoji.save');
       await world.settle();
       expect(world.backend.itinerary[0]).toMatchObject({ emoji: '☕', marker_color: null });
+      await run(device, 'map.route.day-color.open', { day: 1 });
+      await run(device, 'map.route.day-color', { color: '#FF5A5F' });
+      expect((await device.observe()).presentation.preferences.dayColors['1']).toBe('#FF5A5F');
       await run(device, 'map.route.trip.open');
+      await run(device, 'map.route.trip.more-days');
+      await run(device, 'map.route.trip.fewer-days');
+      await run(device, 'map.route.trip.fewer-days');
       await run(device, 'map.route.trip.more-days');
       await run(device, 'map.overlay.done', { label: 'commit' });
       expect(world.backend.groups.get(GROUP_ID).trip_days).toBe(1);
