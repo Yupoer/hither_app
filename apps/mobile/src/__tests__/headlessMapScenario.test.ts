@@ -4,7 +4,7 @@ const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/bac
 type Host = { testId?: string; label?: string; text?: string; value?: unknown; disabled?: boolean };
 type Presentation = { hosts: Host[]; receipts: { host: string; method: string; args?: unknown[] }[];
   preferences: { sharingEnabled: boolean; passiveCompanionMode: boolean; travelMode: string; dayColors: Record<string, string> } };
-type MapObservation = { presentation: Presentation; external: { alerts: number; watches: number };
+type MapObservation = { presentation: Presentation; external: { alerts: number; watches: number; alertDetails: { title: string; message?: string; buttons: string[] }[] };
   durable: { snapshot: { destinations: { id: string; title: string; day: number | null; closedAt?: string; kind?: string }[];
     dailyAccommodations: { title: string; sourceDestinationId?: string | null; stayDate: string }[] };
     locations: unknown[]; operations: { operationType: string; entityId: string }[] } };
@@ -357,7 +357,11 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.waitFor(follower, () => world.backend.tables.gather_point_requests.some((row: { id: string }) => row.id === rejected), 'next suggestion accepted by transport');
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-reject-${rejected}`), 'next coalesced inbox request');
-      if ((await leader.observe()).external.alerts) await leader.input({ kind: 'alert', index: 0 });
+      expect((await leader.observe()).external.alertDetails).toEqual([{
+        title: '新的集合點請求', message: '有隊員送出集合點，請前往集合點頁審批。', buttons: [],
+      }]);
+      await leader.input({ kind: 'alert', index: 0 });
+      expect((await leader.observe()).external.alertDetails).toEqual([]);
       await run(leader, 'map.suggestion.reject', { requestId: rejected });
       await world.waitFor(leader, () => world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status === 'rejected', 'request rejection accepted by transport');
       await world.advance(2500);
