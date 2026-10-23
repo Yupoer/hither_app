@@ -4,6 +4,8 @@ const clone = value => structuredClone(value);
 const ok = data => ({ data: clone(data), error: null });
 const fail = (message, code = 'invalid_credentials', status = 400) => ({ data: null, error: { message, code, status } });
 const providerIdentity = (id, provider, email) => ({ id: `${id}:${provider}`, user_id: id, provider, identity_data: { sub: id, ...(email ? { email } : {}) } });
+const methods = ['fixtureSession', 'getUser', 'refreshSession', 'signInWithPassword', 'signUp', 'signInAnonymously', 'signInWithIdToken',
+  'signInWithOAuth', 'linkIdentity', 'updateUser', 'resetPasswordForEmail', 'resend', 'signOut', 'exchangeCodeForSession'];
 
 function putAccount(b, account) {
   assert(typeof account.id === 'string' && account.id, 'Auth fixture id required');
@@ -20,14 +22,14 @@ function putAccount(b, account) {
 
 exports.initialize = (b, { LEADER, PEER }) => {
   b.authUsers = new Map(); b.authAccounts = new Map(); b.authCodes = new Map(); b.authTokens = new Map();
-  b.authIdTokens = new Map(); b.authErrors = {}; b.authSequence = 0; b.authSignupConfirmation = false; b.authEmailConfirmation = false;
+  b.authIdTokens = new Map(); b.authErrors = {}; b.authResponses = {}; b.authSequence = 0; b.authSignupConfirmation = false; b.authEmailConfirmation = false;
   putAccount(b, { id: LEADER, email: 'leader@headless.test', password: 'Headless123!' });
   putAccount(b, { id: PEER, email: 'peer@headless.test', password: 'Headless123!' });
 };
 
 exports.configure = (b, fixtures) => {
   assert(fixtures && typeof fixtures === 'object');
-  for (const key of Object.keys(fixtures)) assert(['accounts', 'codes', 'idTokens', 'errors', 'signUpConfirmation', 'emailConfirmation'].includes(key), `Unknown auth fixture ${key}`);
+  for (const key of Object.keys(fixtures)) assert(['accounts', 'codes', 'idTokens', 'errors', 'responses', 'signUpConfirmation', 'emailConfirmation'].includes(key), `Unknown auth fixture ${key}`);
   for (const account of fixtures.accounts ?? []) putAccount(b, account);
   for (const fixture of fixtures.codes ?? []) {
     assert(['signin', 'recovery', 'link', 'signup'].includes(fixture.type));
@@ -39,7 +41,10 @@ exports.configure = (b, fixtures) => {
     assert(b.authUsers.has(fixture.userId), 'ID token fixture requires known user');
     b.authIdTokens.set(fixture.token, clone(fixture));
   }
-  if (fixtures.errors) b.authErrors = clone(fixtures.errors);
+  for (const key of ['errors', 'responses']) if (fixtures[key]) {
+    for (const method of Object.keys(fixtures[key])) assert(methods.includes(method), `Unsupported auth fixture method ${method}`);
+    b[key === 'errors' ? 'authErrors' : 'authResponses'] = clone(fixtures[key]);
+  }
   if ('signUpConfirmation' in fixtures) b.authSignupConfirmation = fixtures.signUpConfirmation;
   if ('emailConfirmation' in fixtures) b.authEmailConfirmation = fixtures.emailConfirmation;
 };
@@ -68,10 +73,9 @@ exports.execute = (b, operation) => {
   const { name, args = [], userId, steps } = operation;
   assert.deepEqual(steps, [], 'Auth operations cannot use query builder steps');
   assert(Array.isArray(args), 'Auth arguments must be positional');
-  const known = ['fixtureSession', 'getUser', 'refreshSession', 'signInWithPassword', 'signUp', 'signInAnonymously', 'signInWithIdToken',
-    'signInWithOAuth', 'linkIdentity', 'updateUser', 'resetPasswordForEmail', 'resend', 'signOut', 'exchangeCodeForSession'];
-  assert(known.includes(name), `Unsupported backend auth.${name}`);
+  assert(methods.includes(name), `Unsupported backend auth.${name}`);
   if (b.authErrors[name]) return { data: null, error: clone(b.authErrors[name]) };
+  if (Object.hasOwn(b.authResponses, name)) return clone(b.authResponses[name]);
   const input = args[0];
   const current = b.authUsers.get(userId);
   const accountByEmail = email => [...b.authUsers.values()].find(user => user.email.toLowerCase() === String(email).toLowerCase());

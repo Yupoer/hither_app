@@ -44,6 +44,9 @@ async function main() {
   const signup = await auth.signUp({ email: 'new@headless.test', password: 'Headless123!' });
   assert.equal(signup.data.session, null); assert.equal(signup.data.user.identities.length, 1);
   assert.equal((await auth.signUp({ email: 'new@headless.test', password: 'Headless123!' })).data.user.identities.length, 0);
+  backendAuth.configure(backend, { responses: { signUp: { data: { user: null, session: null }, error: null } } });
+  assert.equal((await auth.signUp({ email: 'missing@headless.test', password: 'Headless123!' })).data.user, null);
+  backendAuth.configure(backend, { responses: {} });
   const anonymous = await auth.signInAnonymously();
   assert.equal(anonymous.data.user.is_anonymous, true);
   const anonId = anonymous.data.user.id;
