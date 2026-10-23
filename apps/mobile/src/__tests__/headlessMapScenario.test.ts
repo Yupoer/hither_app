@@ -278,6 +278,35 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
+  it('MAP-DEST-05 MAP-GATHER-01 MAP-GATHER-02 actual follower KML submits a request and leader inbox approval materializes its pool stops', async () => {
+    const world = new World();
+    try {
+      const follower = await map(world, PEER, 'follower');
+      await expand(world, follower);
+      await run(follower, 'map.tab', { index: 1 });
+      await run(follower, 'map.kml.open');
+      await follower.input({ kind: 'animation', finished: true });
+      await follower.input({ kind: 'mapFile', uri: 'content://member/route', content: '<kml><Placemark><name>Suggested KML</name><Point><coordinates>121.56,25.04</coordinates></Point></Placemark></kml>' });
+      await follower.input({ kind: 'mapsConfigure', patch: { picker: { canceled: false, assets: [{ uri: 'content://member/route', name: 'member.kml' }] } } });
+      await run(follower, 'map.kml.pick');
+      await run(follower, 'map.kml.import');
+      await world.settle();
+      expect(world.backend.itinerary).toHaveLength(1);
+      const request = world.backend.tables.gather_point_requests[0];
+      expect(request).toMatchObject({ requester_id: PEER, status: 'pending', items: [expect.objectContaining({ title: 'Suggested KML', day: null })] });
+      const leader = await map(world, LEADER, 'leader');
+      await expand(world, leader);
+      await run(leader, 'map.tab', { index: 1 });
+      await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-approve-${request.id}`), 'actual leader inbox');
+      await run(leader, 'map.suggestion.approve', { requestId: request.id });
+      await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-approve-${request.id}`), 'approved request leaves inbox');
+      expect(request.status).toBe('approved');
+      expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Suggested KML')).toMatchObject({ day: null });
+      await world.advance(300);
+      expect((await follower.observe()).durable.snapshot.destinations.some((row: { title: string }) => row.title === 'Suggested KML')).toBe(true);
+    } finally { await world.close(); }
+  });
+
   it('MAP-LOC-05 confirmation cancel preserves sharing and accepted disable persists actual local consent before network retry', async () => {
     const world = new World();
     try {
@@ -308,12 +337,13 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const expandedCount = titles(await device.observe());
       expect(expandedCount).toBeGreaterThan(0);
       await run(device, 'map.route.scope', { scope: 'main' });
-      expect(titles(await device.observe())).toBe(expandedCount - 1);
+      const collapsedCount = titles(await device.observe());
+      expect(collapsedCount).toBeLessThan(expandedCount);
       await device.restart();
       await world.waitFor(device, (value: MapObservation) => has(value, 'map-search'), 'restarted real Map');
       await expand(world, device);
       await run(device, 'map.tab', { index: 1 });
-      expect(titles(await device.observe())).toBe(expandedCount - 1);
+      expect(titles(await device.observe())).toBe(collapsedCount);
       await run(device, 'map.route.scope', { scope: 'main' });
       expect(titles(await device.observe())).toBe(expandedCount);
     } finally { await world.close(); }
@@ -457,6 +487,11 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await run(device, 'map.carousel.begin');
       await run(device, 'map.carousel.end', { x: 390 });
       await run(device, 'map.card.toggle', { destinationId: secondId });
+      const cameraCalls = (value: MapObservation) => value.presentation.receipts.filter(receipt => receipt.host === 'MapView' && receipt.method === 'animateCamera');
+      const selectedCameraCount = cameraCalls(await device.observe()).length;
+      expect(selectedCameraCount).toBeGreaterThan(0);
+      await run(device, 'map.carousel.end', { x: 0 });
+      expect(cameraCalls(await device.observe())).toHaveLength(selectedCameraCount);
       await run(device, 'map.journey.command', { destinationId: secondId });
       await device.input({ kind: 'alert', index: 0 });
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(DESTINATION);

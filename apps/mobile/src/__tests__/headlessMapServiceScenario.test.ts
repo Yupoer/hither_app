@@ -28,11 +28,16 @@ describe.each(['ios', 'android'])('real Map callable service contracts on %s', p
       expect(state.destinations.find((row: { id: string }) => row.id === stayId)).toMatchObject({ day: 1, kind: 'accommodation', stayAnchor: false });
       expect(state.destinations.find((row: { id: string }) => row.id === firstId).order).toBeLessThan(state.destinations.find((row: { id: string }) => row.id === DESTINATION).order);
       await service(actor, 'destination.marker', GROUP_ID, poolId, { emoji: '📍', markerColor: '#5E6C84' });
+      await service(actor, 'destination.meet-time', poolId, '2026-10-22T02:00:00.000Z', 10, GROUP_ID);
+      await world.settle();
+      expect(world.backend.itinerary.find((row: { id: string }) => row.id === poolId)).toMatchObject({ meet_at: '2026-10-22T02:00:00.000Z', meet_red_minutes: 10 });
+      await service(actor, 'destination.meet-time', poolId, null, null, GROUP_ID);
       await service(actor, 'destination.reorder', GROUP_ID, [
         { id: firstId, position: 0, day: 1 }, { id: DESTINATION, position: 1, day: 1 }, { id: stayId, position: 2, day: 1 }, { id: poolId, position: 3, day: null },
       ]);
       await world.settle();
       expect((await actor.observe()).durable.snapshot.destinations.find((row: { id: string }) => row.id === poolId)).toMatchObject({ emoji: '📍', markerColor: '#5E6C84' });
+      expect(world.backend.itinerary.find((row: { id: string }) => row.id === poolId).meet_at).toBeNull();
       const completionSession = await service(actor, 'navigation.start', GROUP_ID, firstId, 'first-stop-completion');
       await world.settle();
       await service(actor, 'destination.complete', GROUP_ID, firstId, completionSession.id);
