@@ -6,6 +6,7 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
   const pending = new Map();
   const files = new Map();
   const datePickers = [];
+  const mountedDatePickers = new Map();
   let sequence = 0;
   const state = {
     searchResults: [], searchError: null, holdSearch: false,
@@ -65,7 +66,19 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
   });
   const dateModule = {
     __esModule: true,
-    default: props => React.createElement('host:DateTimePicker', props),
+    default: props => {
+      const latest = React.useRef(props);
+      latest.current = props;
+      React.useEffect(() => {
+        const id = ++sequence;
+        mountedDatePickers.set(id, latest);
+        return () => mountedDatePickers.delete(id);
+      }, []);
+      return React.createElement('host:DateTimePicker', { ...props, onChange: event => {
+        const timestamp = event.nativeEvent?.timestamp;
+        latest.current.onChange?.(event, timestamp == null ? undefined : new Date(timestamp));
+      } });
+    },
     DateTimePickerAndroid: {
       open: options => {
         assert(['date', 'time'].includes(options.mode));
@@ -112,9 +125,10 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
         files.set(input.uri, { content: input.content, encoding: input.encoding, size: input.size });
       } else if (input.kind === 'datePicker') {
         const index = input.id === undefined ? datePickers.length - 1 : datePickers.findIndex(item => item.id === input.id);
-        const picker = datePickers[index];
+        const mounted = input.id === undefined ? [...mountedDatePickers.values()].at(-1) : mountedDatePickers.get(input.id);
+        const picker = spec.platform === 'ios' ? mounted && { options: mounted.current } : datePickers[index];
         assert(picker, 'No pending Android date picker');
-        datePickers.splice(index, 1);
+        if (spec.platform !== 'ios') datePickers.splice(index, 1);
         assert(['set', 'dismissed', 'neutralButtonPressed'].includes(input.type));
         const date = input.timestamp == null ? undefined : new Date(input.timestamp);
         assert(!date || Number.isFinite(date.getTime()));
@@ -138,7 +152,8 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
         headers: { get: name => name.toLowerCase() === 'retry-after' ? state.proxyRetryAfter : null }, json: async () => payload };
     },
     observe: () => ({ receipts: clone(receipts), pending: [...pending.keys()],
-      datePickers: datePickers.map(({ id, options }) => ({ id, mode: options.mode, value: options.value?.toISOString() })) }),
-    dispose: () => ({ pending: pending.size, datePickers: datePickers.length }),
+      datePickers: [...datePickers, ...[...mountedDatePickers].map(([id, latest]) => ({ id, options: latest.current }))]
+        .map(({ id, options }) => ({ id, mode: options.mode, value: options.value?.toISOString() })) }),
+    dispose: () => ({ pending: pending.size, datePickers: datePickers.length + mountedDatePickers.size }),
   };
 };
