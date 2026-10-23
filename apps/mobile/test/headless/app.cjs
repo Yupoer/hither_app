@@ -88,8 +88,12 @@ exports.createPresentation = (React, spec, host, app) => {
     const { t } = require('../../src/i18n').useTranslation();
     const [screen, setScreen] = React.useState(spec.screen);
     React.useEffect(() => { host.route.route = screen.name; host.route.params = screen.params; host.route.routes = [{ name: screen.name, params: screen.params }]; }, []);
-    host.mount = next => { assert(paths[next.name], `Unsupported real screen ${next.name}`); setScreen(next); };
-    host.bindScreenRenderer(next => host.mount(next));
+    host.mount = next => {
+      assert(paths[next.name], `Unsupported real screen ${next.name}`);
+      host.route.route = next.name; host.route.params = next.params; host.route.routes = [{ name: next.name, params: next.params }];
+      setScreen(next);
+    };
+    host.bindScreenRenderer(next => { assert(paths[next.name], `Unsupported real screen ${next.name}`); setScreen(next); });
     const Screen = require(paths[screen.name])[namedExports[screen.name] ?? 'default'];
     app.groupId = screen.params?.groupId ?? session.membership?.group.id ?? null;
     const callbacks = React.useMemo(() => new Map(), [screen.name]);
