@@ -907,12 +907,11 @@ export function createCoreDataStore(
             );
           }
 
-          const metadataOperations = Array.isArray(pendingItineraryResult) ? pendingItineraryResult.filter(op =>
-            op.groupId === state.group.id && (actor === undefined || (actor != null && (!op.actorId || op.actorId === actor)))
-            && ['set_trip_details', 'set_daily_accommodation', 'clear_daily_accommodation'].includes(op.operationType)) : [];
-          if (metadataOperations.length > 0) {
+          const pendingOperations = Array.isArray(pendingItineraryResult) ? pendingItineraryResult.filter(op =>
+            op.groupId === state.group.id && (actor === undefined || (actor != null && (!op.actorId || op.actorId === actor)))) : [];
+          if (pendingOperations.length > 0) {
             const projected = projectOperationGroupState({ ...state, group: snapshot.group,
-              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, metadataOperations, [snapshot.activeGathering.activeDestinationId]);
+              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, pendingOperations, [snapshot.activeGathering.activeDestinationId]);
             snapshot.group = projected.group;
             snapshot.dailyAccommodations = projected.dailyAccommodations;
             snapshot.destinations = projected.destinations;

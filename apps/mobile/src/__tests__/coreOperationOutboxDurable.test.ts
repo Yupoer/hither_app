@@ -553,6 +553,43 @@ describe('durable core operation outbox', () => {
     expect((await coreDb.getSnapshot('group-a'))?.source).toBe('remote');
   });
 
+  it.each(['pending', 'failed', 'inflight'] as const)('persists unacknowledged itinerary intent through remote hydrate (%s)', async status => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const coreDb = new MemoryCoreDataDatabase();
+    const actor = { value: 'actor-a' };
+    const queue = makeQueue(db, async operation => accepted(operation), actor, () => 1_000, coreDb);
+    const store = createCoreDataStore(coreDb, () => 2_000, async () => false,
+      groupId => queue.getPendingItineraryOperations(groupId), async () => actor.value);
+    const remote = groupStateFromCoreSnapshot({ ...snapshotForGroup(),
+      destinations: [{ id: 'old', title: 'Old stop', order: 0, day: 1,
+        coordinates: { latitude: 25, longitude: 121 } }],
+    });
+    await store.saveRemoteGroupState(remote);
+    const add = await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'add_destination',
+      payload: { destinationId: 'local', title: 'Local pool stop', latitude: 25.05, longitude: 121.54, day: null },
+    });
+    await db.update({ ...add, status });
+    await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'edit_destination',
+      payload: { destinationId: 'local', patch: { title: 'Renamed local stop' } },
+    });
+    await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'delete_destination',
+      payload: { destinationId: 'old' },
+    });
+    await db.insert({ ...add, id: 'foreign-operation', actorId: 'actor-b',
+      payload: { destinationId: 'foreign', title: 'Other account draft', latitude: 26, longitude: 122 },
+    });
+    await store.saveRemoteGroupState({ ...remote,
+      destinations: [...remote.destinations, { ...remote.destinations[0], id: 'server', title: 'Remote-only stop', order: 1 }],
+    });
+    const reopened = createCoreDataStore(coreDb, () => 3_000);
+    expect((await reopened.readSnapshot('group-a'))?.destinations).toEqual([
+      expect.objectContaining({ id: 'server', title: 'Remote-only stop' }),
+      expect.objectContaining({ id: 'local', title: 'Renamed local stop', day: null,
+        coordinates: { latitude: 25.05, longitude: 121.54 } }),
+    ]);
+    expect((await reopened.readSnapshot('group-a'))?.source).toBe('local_optimistic');
+  });
+
   it('scopes pending guards to the current actor', async () => {
     const db = new MemoryCoreOperationOutboxDatabase();
     const actor = { value: 'actor-a' };
