@@ -2531,6 +2531,20 @@
     },
     {
       "parent": 320,
+      "child": "map-controls",
+      "acceptance": "Actual Map parent controls execute membership, profile, Store, location and tour workflows on both platforms.",
+      "testFile": "headlessMapControlsScenario.test.ts",
+      "testNamePattern": "actual Map Store waits for SSV|actual Map hands active navigation|actual Map profile saves trimmed"
+    },
+    {
+      "parent": 320,
+      "child": "native-location",
+      "acceptance": "Real background location wrappers respect platform support, permission, privacy, ownership and external failures.",
+      "testFile": "headlessNativeLocationScenario.test.ts",
+      "testNamePattern": "transfers one real controller owner|rolls back persisted ownership|releases a real access-signal refresh"
+    },
+    {
+      "parent": 320,
       "child": "presentation",
       "acceptance": "The real App resolves platform modules and screen navigation, while explicit screen mounts report the committed route.",
       "testFile": "headlessPresentation.test.ts",

@@ -73,4 +73,5 @@ module.exports = [
     'Native GPS and a real Start trigger actual route loading and camera fit; card uses returned distance/ETA; travel mode persists; cancel opens nothing and explicit Google/Apple choices emit exact cycling URLs.'),
   screen('MAP-MEET-01,MAP-MEET-02', 'actual card clock preserves its three-argument',
     'Actual card clock saves shortcut and warning threshold via the supported remote update branch, issues no durable operation, and clear nulls meet time.'),
+  ...require('./scenarios-map-controls.cjs'),
 ];
