@@ -1,0 +1,1351 @@
+{
+  "baseline": "fdb05f6fa1d3e72ade1a2de4cd5ce47d6e159273",
+  "meaning": "Source-reviewed operation families. Several actions can implement one family; this is not a passing-test count.",
+  "families": [
+    {
+      "id": "A01",
+      "area": "Authentication and session",
+      "source": "Email sign in: `screens/LoginScreen.tsx::submitEmail` → `state/useAuthFlow.ts::signInWithEmail`"
+    },
+    {
+      "id": "A02",
+      "area": "Authentication and session",
+      "source": "Email registration: same `submitEmail` → `signUpWithEmail`"
+    },
+    {
+      "id": "A03",
+      "area": "Authentication and session",
+      "source": "Switch sign in/sign up: `LoginScreen::setAuthMode`"
+    },
+    {
+      "id": "A04",
+      "area": "Authentication and session",
+      "source": "Edit email/password/confirm and field blur: `changeField`, `validateAuthForm`, `errorFor`"
+    },
+    {
+      "id": "A05",
+      "area": "Authentication and session",
+      "source": "Show/hide password: `renderPasswordToggle`"
+    },
+    {
+      "id": "A06",
+      "area": "Authentication and session",
+      "source": "Google sign in: `LoginScreen::runSocial` → `useAuthFlow::signInWithGoogle`"
+    },
+    {
+      "id": "A07",
+      "area": "Authentication and session",
+      "source": "Apple sign in: `runSocial` → `useAuthFlow::signInWithApple`"
+    },
+    {
+      "id": "A08",
+      "area": "Authentication and session",
+      "source": "Open password reset: `LoginScreen::openPasswordReset`"
+    },
+    {
+      "id": "A09",
+      "area": "Authentication and session",
+      "source": "Send/resend password reset: `LoginScreen::submitReset` → `SessionContext::requestPasswordReset`"
+    },
+    {
+      "id": "A10",
+      "area": "Authentication and session",
+      "source": "Resend signup confirmation: `resendConfirmation` → `SessionContext::resendSignupConfirmation`"
+    },
+    {
+      "id": "A11",
+      "area": "Authentication and session",
+      "source": "Back to sign in from reset/pending: `LoginScreen::backToSignIn`"
+    },
+    {
+      "id": "A12",
+      "area": "Authentication and session",
+      "source": "Open guest warning: `LoginScreen::openGuestConfirm`"
+    },
+    {
+      "id": "A13",
+      "area": "Authentication and session",
+      "source": "Confirm guest: `LoginScreen::continueAsGuest`"
+    },
+    {
+      "id": "A14",
+      "area": "Authentication and session",
+      "source": "Cancel guest warning: `LoginScreen::cancelGuest`"
+    },
+    {
+      "id": "A15",
+      "area": "Authentication and session",
+      "source": "Open privacy/terms: `LoginScreen` legal Text callbacks → `config/legal.ts::getLegalUrl`"
+    },
+    {
+      "id": "A16",
+      "area": "Authentication and session",
+      "source": "Recovery callback/deep link: `auth/callbacks.ts::{beginAuthCallback,validateAuthCallback,consumeAuthCallback}` + `SessionContext::handleAuthUrl`"
+    },
+    {
+      "id": "A17",
+      "area": "Authentication and session",
+      "source": "Set recovered password: `screens/PasswordRecoveryScreen.tsx::submit` → `SessionContext::completePasswordRecovery`"
+    },
+    {
+      "id": "A18",
+      "area": "Authentication and session",
+      "source": "Dismiss recovery success: `PasswordRecoveryScreen` success timer → `clearPasswordRecovery`"
+    },
+    {
+      "id": "A19",
+      "area": "Authentication and session",
+      "source": "Lazy guest sign in while creating/joining: `screens/AuthScreen.tsx::submitAuth` → `useAuthFlow::signIn`"
+    },
+    {
+      "id": "A20",
+      "area": "Authentication and session",
+      "source": "Restore session/start app: `SessionContext` hydration/`restoreSession`; `navigation/RootNavigator.tsx`"
+    },
+    {
+      "id": "A21",
+      "area": "Authentication and session",
+      "source": "Foreground auth recovery: `SessionContext::restoreSession` + `api/authRecovery.ts::createAuthRecovery`"
+    },
+    {
+      "id": "A22",
+      "area": "Authentication and session",
+      "source": "Sign out from RoleSelect/settings: `RoleSelectScreen::startSignOut` → `SessionContext::signOutWithJourneyCleanup` → `useAuthFlow::signOut`"
+    },
+    {
+      "id": "A23",
+      "area": "Authentication and session",
+      "source": "Delete account: `components/AccountSheet.tsx` delete action → `utils/deleteAccount.ts::confirmDeleteAccount` → `SessionContext::deleteAccountWithJourneyCleanup`"
+    },
+    {
+      "id": "A24",
+      "area": "Authentication and session",
+      "source": "Leave current session membership: `SessionContext::leaveGroupWithJourneyCleanup`"
+    },
+    {
+      "id": "P01",
+      "area": "Account/profile/custom commands",
+      "source": "`components/AccountSheet.tsx::handleUpgrade` → `useAuthFlow::upgradeToEmailAccount`"
+    },
+    {
+      "id": "P02",
+      "area": "Account/profile/custom commands",
+      "source": "`AccountSheet::handleAddPassword` → same upgrade hook"
+    },
+    {
+      "id": "P03",
+      "area": "Account/profile/custom commands",
+      "source": "`AccountSheet::handleLink('google')` → `useAuthFlow::linkWithGoogle`"
+    },
+    {
+      "id": "P04",
+      "area": "Account/profile/custom commands",
+      "source": "`handleLink('apple')` → `useAuthFlow::linkWithApple`"
+    },
+    {
+      "id": "P05",
+      "area": "Account/profile/custom commands",
+      "source": "Open account sheet: `AccountSheetContent` visible effects; `SessionContext::refreshProfile`"
+    },
+    {
+      "id": "P06",
+      "area": "Account/profile/custom commands",
+      "source": "Open/edit/cancel profile: `screens/MapScreen/components/ProfileOverlay.tsx` visible effect/`handleCancel`"
+    },
+    {
+      "id": "P07",
+      "area": "Account/profile/custom commands",
+      "source": "Save profile: `ProfileOverlay::handleSave` → `utils/profileSaveLifecycle.ts` → `useAuthFlow::updateProfile` → `api/services/ProfileService.ts::updateProfile`"
+    },
+    {
+      "id": "P08",
+      "area": "Account/profile/custom commands",
+      "source": "Rename nickname: `useAuthFlow::updateNickname` → `ProfileService::updateNickname`"
+    },
+    {
+      "id": "P09",
+      "area": "Account/profile/custom commands",
+      "source": "Edit custom quick command: `components/CustomQuickCommandSheet.tsx::save` → `SessionContext::setCustomQuickCommand`"
+    },
+    {
+      "id": "T01",
+      "area": "Home/team list",
+      "source": "RoleSelect create: `RoleSelectScreen` role-create callback"
+    },
+    {
+      "id": "T02",
+      "area": "Home/team list",
+      "source": "RoleSelect join: role-join callback"
+    },
+    {
+      "id": "T03",
+      "area": "Home/team list",
+      "source": "RoleSelect MyTeams: role-my-teams callback"
+    },
+    {
+      "id": "T04",
+      "area": "Home/team list",
+      "source": "RoleSelect load/retry: `useJoinedGroups(user.id,false)`; focus retry"
+    },
+    {
+      "id": "T05",
+      "area": "Home/team list",
+      "source": "MyTeams load/retry: `screens/MyTeamsScreen.tsx` → `state/useJoinedGroups.ts`"
+    },
+    {
+      "id": "T06",
+      "area": "Home/team list",
+      "source": "Expand/collapse team card: `MyTeamsScreen` NativeTeamCard onPress"
+    },
+    {
+      "id": "T07",
+      "area": "Home/team list",
+      "source": "Enter team: `MyTeamsScreen::handleEnterGroup`"
+    },
+    {
+      "id": "T08",
+      "area": "Home/team list",
+      "source": "Enter team with missing nickname: same handler"
+    },
+    {
+      "id": "T09",
+      "area": "Home/team list",
+      "source": "Leave one team: `MyTeamsScreen::handleLeaveGroup`"
+    },
+    {
+      "id": "T10",
+      "area": "Home/team list",
+      "source": "Leave all teams: `MyTeamsScreen::handleClearAllGroups`"
+    },
+    {
+      "id": "T11",
+      "area": "Home/team list",
+      "source": "Empty MyTeams create: teams-empty-create callback"
+    },
+    {
+      "id": "T12",
+      "area": "Home/team list",
+      "source": "Empty MyTeams join: teams-empty-join callback"
+    },
+    {
+      "id": "T13",
+      "area": "Home/team list",
+      "source": "Back actions: MyTeams and `AuthScreen` back button"
+    },
+    {
+      "id": "G01",
+      "area": "Group domain entry points",
+      "source": "`createGroup` via Auth `submitAuth` leader"
+    },
+    {
+      "id": "G02",
+      "area": "Group domain entry points",
+      "source": "`joinGroup` via Auth `submitAuth` follower"
+    },
+    {
+      "id": "G03",
+      "area": "Group domain entry points",
+      "source": "`updateGroupAvatar` via Settings `saveGroupAvatar`"
+    },
+    {
+      "id": "G04",
+      "area": "Group domain entry points",
+      "source": "`getMyJoinedGroups` cache mutation/actor checks"
+    },
+    {
+      "id": "G05",
+      "area": "Group domain entry points",
+      "source": "`leaveGroups`"
+    },
+    {
+      "id": "G06",
+      "area": "Group domain entry points",
+      "source": "`kickGroupMember`"
+    },
+    {
+      "id": "G07",
+      "area": "Group domain entry points",
+      "source": "`setJourneyStatus`"
+    },
+    {
+      "id": "G08",
+      "area": "Group domain entry points",
+      "source": "`setJourneyTarget`"
+    },
+    {
+      "id": "G09",
+      "area": "Group domain entry points",
+      "source": "`setStragglerConfig`"
+    },
+    {
+      "id": "G10",
+      "area": "Group domain entry points",
+      "source": "`reportStraggler`"
+    },
+    {
+      "id": "G11",
+      "area": "Group domain entry points",
+      "source": "`updateGroupTripDetails`"
+    },
+    {
+      "id": "G12",
+      "area": "Group domain entry points",
+      "source": "`setSolo`, `selfSplit`, `selfMerge`"
+    },
+    {
+      "id": "S01",
+      "area": "Subgroup invitations",
+      "source": "`api/services/SubgroupService.ts::inviteToSubgroup`"
+    },
+    {
+      "id": "S02",
+      "area": "Subgroup invitations",
+      "source": "`state/useSubgroupInvites.ts::accept` → `acceptSubgroupInvite`"
+    },
+    {
+      "id": "S03",
+      "area": "Subgroup invitations",
+      "source": "`useSubgroupInvites::decline` → `declineSubgroupInvite`"
+    },
+    {
+      "id": "S04",
+      "area": "Subgroup invitations",
+      "source": "`SubgroupService::fetchMyInvites`"
+    },
+    {
+      "id": "S05",
+      "area": "Subgroup invitations",
+      "source": "`SubgroupService::fetchSentInvites`"
+    },
+    {
+      "id": "S06",
+      "area": "Subgroup invitations",
+      "source": "`useSubgroupInvites` load/realtime/foreground lifecycle"
+    },
+    {
+      "id": "V01",
+      "area": "Preferences/settings",
+      "source": "`setTravelMode`"
+    },
+    {
+      "id": "V02",
+      "area": "Preferences/settings",
+      "source": "`setLanguage` via LanguagePicker and Settings language options"
+    },
+    {
+      "id": "V03",
+      "area": "Preferences/settings",
+      "source": "`setThemeName` via Settings/Onboarding Theme"
+    },
+    {
+      "id": "V04",
+      "area": "Preferences/settings",
+      "source": "`setTextScale` via Settings segmented selector"
+    },
+    {
+      "id": "V05",
+      "area": "Preferences/settings",
+      "source": "`setHighAccuracy`"
+    },
+    {
+      "id": "V06",
+      "area": "Preferences/settings",
+      "source": "`setSharingEnabled`"
+    },
+    {
+      "id": "V07",
+      "area": "Preferences/settings",
+      "source": "`setObliqueLocate`"
+    },
+    {
+      "id": "V08",
+      "area": "Preferences/settings",
+      "source": "`setLiveActivityEnabled`"
+    },
+    {
+      "id": "V09",
+      "area": "Preferences/settings",
+      "source": "`setMeetRedMin`"
+    },
+    {
+      "id": "V10",
+      "area": "Preferences/settings",
+      "source": "`setDayColor`"
+    },
+    {
+      "id": "V11",
+      "area": "Preferences/settings",
+      "source": "`setGatherCardDefaultExpanded`"
+    },
+    {
+      "id": "V12",
+      "area": "Preferences/settings",
+      "source": "`setGatherCardTitleMarquee`"
+    },
+    {
+      "id": "V13",
+      "area": "Preferences/settings",
+      "source": "`setGatherCardMarqueeSpeed`"
+    },
+    {
+      "id": "V14",
+      "area": "Preferences/settings",
+      "source": "`setArrivalRadiusM`"
+    },
+    {
+      "id": "V15",
+      "area": "Preferences/settings",
+      "source": "`setPassiveCompanionMode`"
+    },
+    {
+      "id": "V16",
+      "area": "Preferences/settings",
+      "source": "`SettingsOverlay::onDiagnosticSwitchChange` → `setDiagnosticUploadEnabled`"
+    },
+    {
+      "id": "V17",
+      "area": "Preferences/settings",
+      "source": "Provider initial hydration"
+    },
+    {
+      "id": "V18",
+      "area": "Preferences/settings",
+      "source": "Settings pages/back/dismiss/root reset"
+    },
+    {
+      "id": "V19",
+      "area": "Preferences/settings",
+      "source": "Reset travel preferences/replay: Settings `onConfirmResetPrefs` → `onboarding/sync.ts::markOnboardingReplayForHome`"
+    },
+    {
+      "id": "W01",
+      "area": "Store wallet/reward/redemption",
+      "source": "`refresh`/mount snapshot load → `StoreService::getStoreSnapshot`"
+    },
+    {
+      "id": "W02",
+      "area": "Store wallet/reward/redemption",
+      "source": "`refreshConnectivity`/foreground subscription"
+    },
+    {
+      "id": "W03",
+      "area": "Store wallet/reward/redemption",
+      "source": "Deep link product highlight effect"
+    },
+    {
+      "id": "W04",
+      "area": "Store wallet/reward/redemption",
+      "source": "`onWatchAd` registration guard"
+    },
+    {
+      "id": "W05",
+      "area": "Store wallet/reward/redemption",
+      "source": "`onWatchAd` offline preflight"
+    },
+    {
+      "id": "W06",
+      "area": "Store wallet/reward/redemption",
+      "source": "`ensureRewardedAdsReady` native adapter"
+    },
+    {
+      "id": "W07",
+      "area": "Store wallet/reward/redemption",
+      "source": "`onWatchAd` create reward session"
+    },
+    {
+      "id": "W08",
+      "area": "Store wallet/reward/redemption",
+      "source": "`onWatchAd` load reward ad → `native/rewardedAds.ts::createRewardedAdController`"
+    },
+    {
+      "id": "W09",
+      "area": "Store wallet/reward/redemption",
+      "source": "Watch/dismiss reward ad"
+    },
+    {
+      "id": "W10",
+      "area": "Store wallet/reward/redemption",
+      "source": "`markVerifyingSession` + `startVerifyPoll`"
+    },
+    {
+      "id": "W11",
+      "area": "Store wallet/reward/redemption",
+      "source": "`startLateSsvPoll`/`onBalanceCredited`"
+    },
+    {
+      "id": "W12",
+      "area": "Store wallet/reward/redemption",
+      "source": "`silentFillProbe`"
+    },
+    {
+      "id": "W13",
+      "area": "Store wallet/reward/redemption",
+      "source": "`confirmRedeem` pre-confirmation"
+    },
+    {
+      "id": "W14",
+      "area": "Store wallet/reward/redemption",
+      "source": "Confirm redeem actual mutation"
+    },
+    {
+      "id": "W15",
+      "area": "Store wallet/reward/redemption",
+      "source": "Redemption insufficient/not-applicable/unavailable/not-member/conflict"
+    },
+    {
+      "id": "W16",
+      "area": "Store wallet/reward/redemption",
+      "source": "Redemption transport retry/success"
+    },
+    {
+      "id": "W17",
+      "area": "Store wallet/reward/redemption",
+      "source": "Store subscribe/register entries and product action projection"
+    },
+    {
+      "id": "B01",
+      "area": "Premium/subscription/entitlements",
+      "source": "`components/PremiumPresentation.tsx` plan select/catalog load → `services/premiumPurchaseFlow.ts::loadPremiumStoreProducts`"
+    },
+    {
+      "id": "B02",
+      "area": "Premium/subscription/entitlements",
+      "source": "PremiumPresentation `handlePurchase`"
+    },
+    {
+      "id": "B03",
+      "area": "Premium/subscription/entitlements",
+      "source": "`premiumPurchaseFlow::purchasePremiumSubscription`"
+    },
+    {
+      "id": "B04",
+      "area": "Premium/subscription/entitlements",
+      "source": "`premiumPurchaseFlow::settlePurchase` (through public purchase/recovery/restore)"
+    },
+    {
+      "id": "B05",
+      "area": "Premium/subscription/entitlements",
+      "source": "`native/purchases.ts` request/listener adapter"
+    },
+    {
+      "id": "B06",
+      "area": "Premium/subscription/entitlements",
+      "source": "`PremiumPresentation::handleRestore` → `restorePremiumSubscription`"
+    },
+    {
+      "id": "B07",
+      "area": "Premium/subscription/entitlements",
+      "source": "`components/PremiumPurchaseRecovery.tsx` effect → `reconcileUnfinishedPremiumPurchases`"
+    },
+    {
+      "id": "B08",
+      "area": "Premium/subscription/entitlements",
+      "source": "Premium redeem promo: `PremiumPresentation::handleRedeem` → `EntitlementService::redeemPromoCode`"
+    },
+    {
+      "id": "B09",
+      "area": "Premium/subscription/entitlements",
+      "source": "`SessionContext::{refreshEntitlement,setMembership}`"
+    },
+    {
+      "id": "B10",
+      "area": "Premium/subscription/entitlements",
+      "source": "`ensurePremiumAccess` → `ensurePersonalPremiumAccess`/`refreshPremiumProjection`"
+    },
+    {
+      "id": "B11",
+      "area": "Premium/subscription/entitlements",
+      "source": "`EntitlementService::{getTripEntitlement,getPremiumProjection,getPremiumAppAccountToken,applyVerifiedSubscription,applyVerifiedTripPass,syncAppStoreSubscription,restoreEntitlements,applyVerifiedPurchase}`"
+    },
+    {
+      "id": "B12",
+      "area": "Premium/subscription/entitlements",
+      "source": "Entitlement fail closed: `EntitlementService::setProStatus`, `entitlements.ts` capacity/expiry helpers"
+    },
+    {
+      "id": "Q01",
+      "area": "Search/coordinates",
+      "source": "`components/DestinationSearch.tsx` visible effect/query input"
+    },
+    {
+      "id": "Q02",
+      "area": "Search/coordinates",
+      "source": "Debounced maps search + `normalizePlaceSearchResults`"
+    },
+    {
+      "id": "Q03",
+      "area": "Search/coordinates",
+      "source": "`DestinationSearch::handlePick`"
+    },
+    {
+      "id": "Q04",
+      "area": "Search/coordinates",
+      "source": "`native/maps` actual search adapter (see existing `mapsSearchFallback`/identity tests)"
+    },
+    {
+      "id": "Q05",
+      "area": "Search/coordinates",
+      "source": "`components/CoordinateDestinationSheet.tsx` open/edit/`handleSubmit` → `utils/coordinateDestination.ts::validateCoordinateDestination`"
+    },
+    {
+      "id": "Q06",
+      "area": "Search/coordinates",
+      "source": "Search/coordinate cancel and external result-confirm aliases"
+    },
+    {
+      "id": "K01",
+      "area": "KML/KMZ import",
+      "source": "`components/KmlImportSheet.tsx::pickFile`"
+    },
+    {
+      "id": "K02",
+      "area": "KML/KMZ import",
+      "source": "`utils/kmlLoad.ts::loadKmlKmzFromAsset` via pickFile"
+    },
+    {
+      "id": "K03",
+      "area": "KML/KMZ import",
+      "source": "Same KMZ loader/parser"
+    },
+    {
+      "id": "K04",
+      "area": "KML/KMZ import",
+      "source": "`KmlImportSheet::allowedFor` preview"
+    },
+    {
+      "id": "K05",
+      "area": "KML/KMZ import",
+      "source": "`KmlImportSheet::runImport`"
+    },
+    {
+      "id": "K06",
+      "area": "KML/KMZ import",
+      "source": "Import persistence/permission/point-limit/validation/no-points/invalid-coordinates failure"
+    },
+    {
+      "id": "K07",
+      "area": "KML/KMZ import",
+      "source": "KML reset/close/upgrade"
+    },
+    {
+      "id": "F01",
+      "area": "Favorites",
+      "source": "`listFavoritePlaces`"
+    },
+    {
+      "id": "F02",
+      "area": "Favorites",
+      "source": "`findFavoriteByExactMatch`, `saveFavoritePlace`"
+    },
+    {
+      "id": "F03",
+      "area": "Favorites",
+      "source": "`unsaveFavoritePlace`"
+    },
+    {
+      "id": "F04",
+      "area": "Favorites",
+      "source": "`unsaveFavoriteByExactMatch`"
+    },
+    {
+      "id": "N01",
+      "area": "Notifications",
+      "source": "`components/NotificationPreferencesCard.tsx` load"
+    },
+    {
+      "id": "N02",
+      "area": "Notifications",
+      "source": "NotificationPreferencesCard `toggle`"
+    },
+    {
+      "id": "N03",
+      "area": "Notifications",
+      "source": "`state/usePushRegistration.ts` → `NotificationService::savePushToken`"
+    },
+    {
+      "id": "N04",
+      "area": "Notifications",
+      "source": "`native/notifications.ts::getDevicePushToken`"
+    },
+    {
+      "id": "N05",
+      "area": "Notifications",
+      "source": "`native/notifications::scheduleLocalNotification`"
+    },
+    {
+      "id": "N06",
+      "area": "Notifications",
+      "source": "Native foreground notification handler"
+    },
+    {
+      "id": "N07",
+      "area": "Notifications",
+      "source": "`scheduleLocalNotificationAt,cancelScheduledNotification`"
+    },
+    {
+      "id": "N08",
+      "area": "Notifications",
+      "source": "`notifyThisDeviceAutoComplete`"
+    },
+    {
+      "id": "N09",
+      "area": "Notifications",
+      "source": "`state/useGroupNotifications.ts` commands INSERT callback → `fire`"
+    },
+    {
+      "id": "N10",
+      "area": "Notifications",
+      "source": "Same hook itinerary_items INSERT"
+    },
+    {
+      "id": "N11",
+      "area": "Notifications",
+      "source": "Same hook group_alerts INSERT"
+    },
+    {
+      "id": "N12",
+      "area": "Notifications",
+      "source": "Same hook groups UPDATE journey status"
+    },
+    {
+      "id": "N13",
+      "area": "Notifications",
+      "source": "Same hook destination_arrivals INSERT"
+    },
+    {
+      "id": "N14",
+      "area": "Notifications",
+      "source": "Hook push+realtime dedupe/lifecycle"
+    },
+    {
+      "id": "N15",
+      "area": "Notifications",
+      "source": "`state/journeyNotifications.ts::notifyJourneyOperator,notifyJourneyApproach` + `journeyNotificationLedger.ts::deliverJourneyEventOnce`"
+    },
+    {
+      "id": "N16",
+      "area": "Notifications",
+      "source": "`NotificationService::sendCommand`"
+    },
+    {
+      "id": "L01",
+      "area": "Live Activity / Android live updates",
+      "source": "`state/useLiveActivity.ts` start effect → `utils/liveActivityLifecycle.ts::LiveActivityLifecycleReconciler.request`"
+    },
+    {
+      "id": "L02",
+      "area": "Live Activity / Android live updates",
+      "source": "Same lifecycle stop/clear"
+    },
+    {
+      "id": "L03",
+      "area": "Live Activity / Android live updates",
+      "source": "Hook push token listener → `utils/liveActivityPushTokenAdoption.ts::decidePushTokenAdoption`"
+    },
+    {
+      "id": "L04",
+      "area": "Live Activity / Android live updates",
+      "source": "Push-to-start observation → `utils/liveActivityTokenGate.ts`"
+    },
+    {
+      "id": "L05",
+      "area": "Live Activity / Android live updates",
+      "source": "`api/services/LiveActivityService.ts::upsertDeviceActivityToken`"
+    },
+    {
+      "id": "L06",
+      "area": "Live Activity / Android live updates",
+      "source": "Hook `persistSession` → `upsertLiveActivitySession`"
+    },
+    {
+      "id": "L07",
+      "area": "Live Activity / Android live updates",
+      "source": "Hook foreground display effect"
+    },
+    {
+      "id": "L08",
+      "area": "Live Activity / Android live updates",
+      "source": "Theme accent update and existing observation"
+    },
+    {
+      "id": "L09",
+      "area": "Live Activity / Android live updates",
+      "source": "Session progress/delete APIs in LiveActivityService"
+    },
+    {
+      "id": "O01",
+      "area": "Onboarding",
+      "source": "`onboarding/OnboardingScreen.tsx::handleAnswer` + `flow.ts` common intro/theme/role"
+    },
+    {
+      "id": "O02",
+      "area": "Onboarding",
+      "source": "`steps/PermissionsStep.tsx::handleContinue`"
+    },
+    {
+      "id": "O03",
+      "area": "Onboarding",
+      "source": "`steps/ThemeStep.tsx` theme select/continue"
+    },
+    {
+      "id": "O04",
+      "area": "Onboarding",
+      "source": "`steps/L1PurposeStep.tsx` choose/continue"
+    },
+    {
+      "id": "O05",
+      "area": "Onboarding",
+      "source": "`steps/L2DaysStep.tsx::change` and continue"
+    },
+    {
+      "id": "O06",
+      "area": "Onboarding",
+      "source": "`steps/L3DepartureStep.tsx::openCustom,submit`"
+    },
+    {
+      "id": "O07",
+      "area": "Onboarding",
+      "source": "`steps/QuizStep.tsx::makeQuizStep` F1/F2/F3"
+    },
+    {
+      "id": "O08",
+      "area": "Onboarding",
+      "source": "`steps/MascotStep.tsx` continue + `content.ts::resolveMascot`"
+    },
+    {
+      "id": "O09",
+      "area": "Onboarding",
+      "source": "`steps/F4PrefsStep.tsx::toggle`/continue"
+    },
+    {
+      "id": "O10",
+      "area": "Onboarding",
+      "source": "`steps/BrowserStep.tsx::makeBrowserStep` C1/C2/C3"
+    },
+    {
+      "id": "O11",
+      "area": "Onboarding",
+      "source": "`OnboardingScreen::handleBack,handleSkip`"
+    },
+    {
+      "id": "O12",
+      "area": "Onboarding",
+      "source": "Celebration finish: `OnboardingScreen::finish` → `sync.ts::writeOnboardingCompleted`"
+    },
+    {
+      "id": "O13",
+      "area": "Onboarding",
+      "source": "`onboarding/sync.ts::{shouldPresentFullOnboarding,isOnboardingCompleteForTourGate,syncOnboardingIfNeeded}` + `gate.ts`"
+    },
+    {
+      "id": "D01",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`components/FeedbackSheet.tsx::submit` → `api/feedback.ts::submitFeedback`"
+    },
+    {
+      "id": "D02",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`FeedbackSheet::handleClose`/success close timer"
+    },
+    {
+      "id": "D03",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`state/diagnostics.ts::createDiagnostics.write`"
+    },
+    {
+      "id": "D04",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`createDiagnostics.flush,purge` → `DiagnosticService::ingestDiagnosticBatch`"
+    },
+    {
+      "id": "D05",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`DiagnosticService::uploadMetricPayload,uploadMetricPayloadBatch`"
+    },
+    {
+      "id": "D06",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`createDiagnostics.list,summary,exportJson`"
+    },
+    {
+      "id": "X01",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "Settings manual OTA check: `SettingsOverlay` visible effect"
+    },
+    {
+      "id": "X02",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`SettingsOverlay::handleApplyOta` → `utils/otaUpdates.ts::applyOtaUpdate`"
+    },
+    {
+      "id": "X03",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "OTA bootstrap/toast: `otaUpdates::{startOtaUpdateBootstrap,consumeOtaAppliedNotice}` + `components/OtaUpdateToast.tsx`"
+    },
+    {
+      "id": "X04",
+      "area": "Diagnostics/feedback/OTA",
+      "source": "`components/AppErrorBoundary.tsx` and `GroupLoadError.tsx` recovery controls"
+    },
+    {
+      "id": "MAP-DEST-01",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:3721 `handleSearchPick` <- `DestinationSearch.onPick` M:8988"
+    },
+    {
+      "id": "MAP-DEST-02",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:3895 `handleLongPressCoordinate` <- `GroupMap.onLongPressCoordinate` M:7077"
+    },
+    {
+      "id": "MAP-DEST-03",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:7155 private `confirmAddPlace` <- M:7304/7313 buttons"
+    },
+    {
+      "id": "MAP-DEST-04",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:3741 `handlePickDestination` -> S/DestinationService:110 `addDestination`"
+    },
+    {
+      "id": "MAP-DEST-05",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:3659 `notifyLeaderPlace` -> S/GatheringWorkflowService:104 `submitGatherPointRequest`"
+    },
+    {
+      "id": "MAP-DEST-06",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:3890/3915 coordinate sheet open/`handleCoordinateDestination` <- `CoordinateDestinationSheet.onSubmit` M:9037"
+    },
+    {
+      "id": "MAP-DEST-07",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:3844 `handleKmlImport` <- `KmlImportSheet.onImport` M:9023"
+    },
+    {
+      "id": "MAP-DEST-08",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:5107/5117 `openKmlImport[ForScope]`"
+    },
+    {
+      "id": "MAP-DEST-09",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:1425 `refreshKmlQuota` -> S/DestinationService:244"
+    },
+    {
+      "id": "MAP-DEST-10",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:1582 `togglePendingFavorite` <- confirm card star"
+    },
+    {
+      "id": "MAP-DEST-11",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:6507 and M:8241 inline `onDeleteFavorite` -> S/FavoritePlacesService:129"
+    },
+    {
+      "id": "MAP-DEST-12",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:6499 overview `onPickFavorite` -> `notifyLeaderPlace`; M:8382 editor inline `onPickFavorite`"
+    },
+    {
+      "id": "MAP-DEST-13",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:1641 `dismissConfirmCard`, M:3646 `closeSearch`, M:3653 `handleSearchOpenComplete`"
+    },
+    {
+      "id": "MAP-DEST-14",
+      "area": "Independent slice A: destination add/search/coordinates/KML/favorites",
+      "source": "M:1371/1430+, M:8111-8154 search-open closures"
+    },
+    {
+      "id": "MAP-ROUTE-01",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:6476 route edit entry, M:8111 editor close, M:1898 route-open sync effect"
+    },
+    {
+      "id": "MAP-ROUTE-02",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:4737 `applyReorderToDestinations` -> M:4781/4806"
+    },
+    {
+      "id": "MAP-ROUTE-03",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:4781 `handleReorder` <- `DestinationReorderList.onReorder` M:8210"
+    },
+    {
+      "id": "MAP-ROUTE-04",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:4806 `persistReorderNow` <- `reorderForNavigationRef` / hook navigation promote"
+    },
+    {
+      "id": "MAP-ROUTE-05",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:4888 `flushRouteDraft` <- editor dismiss / KML open"
+    },
+    {
+      "id": "MAP-ROUTE-06",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:4948 materialize loop in flush"
+    },
+    {
+      "id": "MAP-ROUTE-07",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:4990-5040 daily diff in flush"
+    },
+    {
+      "id": "MAP-ROUTE-08",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:5122 `persistRouteDeletions` <- M:5149 `handleDelete`/5171 `handleDeleteMany`"
+    },
+    {
+      "id": "MAP-ROUTE-09",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:5190 `handleUpdateEmojiColor` <- list onUpdateEmojiColor M:8213"
+    },
+    {
+      "id": "MAP-ROUTE-10",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:5386 `handleUpdateTripDetails` <- list M:8209"
+    },
+    {
+      "id": "MAP-STAY-01",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:8253 inline `onClearDailyAccommodation`"
+    },
+    {
+      "id": "MAP-STAY-02",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:8265 inline `onSetDailyFromDestination`"
+    },
+    {
+      "id": "MAP-STAY-03",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:8314 inline `onQuickAddAccommodation`"
+    },
+    {
+      "id": "MAP-STAY-04",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "S/DailyAccommodationService:118 `setDailyAccommodation` <- flush M:5030"
+    },
+    {
+      "id": "MAP-STAY-05",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "S/DailyAccommodationService:153 `clearDailyAccommodation` <- flush M:5002"
+    },
+    {
+      "id": "MAP-STAY-06",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "S/DailyAccommodationService:56/71 reads and :168 `setAccommodationAutoAdd`"
+    },
+    {
+      "id": "MAP-ROUTE-11",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "M:6405 `toggleRouteScope` + hydration M:6377+"
+    },
+    {
+      "id": "MAP-ROUTE-12",
+      "area": "Independent slice B: route editor and daily accommodation",
+      "source": "`components/DestinationReorderList.tsx`:227,400,475,771,792,1179,1412,1528"
+    },
+    {
+      "id": "MAP-GATHER-01",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:1067 `loadGatheringWorkflow`, M:1195 realtime scheduler"
+    },
+    {
+      "id": "MAP-GATHER-02",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4008 `handleGatherPointRequest` <- reject/approve M:6616/6634"
+    },
+    {
+      "id": "MAP-GATHER-03",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:2416 `resolveCurrentNavigationSessionId`"
+    },
+    {
+      "id": "MAP-ARRIVAL-01",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4456 `handleSelfArrival` -> :4451 -> :2535 `commitPersonalArrival` <- card M:7983"
+    },
+    {
+      "id": "MAP-ARRIVAL-02",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:2587 `evaluateForegroundArrival` <- incoming sample ref M:1922 / effect"
+    },
+    {
+      "id": "MAP-ARRIVAL-03",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:2463+ undo hydration + :2587 suppression"
+    },
+    {
+      "id": "MAP-ARRIVAL-04",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4376 `handleArrival` <- active undo M:7961 / management M:8764/8821"
+    },
+    {
+      "id": "MAP-ARRIVAL-05",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:1107 `patchLocalArrival`, :1139+ outbox projection"
+    },
+    {
+      "id": "MAP-GATHER-04",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4072 `runCompleteGatheringStop` <- completion prompt/auto"
+    },
+    {
+      "id": "MAP-GATHER-05",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4178 `promptCompleteAfterArrival` -> :4161 `executeAutoCompleteStop`"
+    },
+    {
+      "id": "MAP-ARRIVAL-06",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4301 `afterPersonalArrivalRef` assignment"
+    },
+    {
+      "id": "MAP-GATHER-06",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:2227 `startArrivalCardExit` + :2300-2390 closed/visible-list effects"
+    },
+    {
+      "id": "MAP-GATHER-07",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4356 `requestLeaderStart` <- navigation command"
+    },
+    {
+      "id": "MAP-HISTORY-01",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:1302 `loadHistory` <- history-open effect"
+    },
+    {
+      "id": "MAP-HISTORY-02",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4460 `handleDeleteHistory` <- M:8902"
+    },
+    {
+      "id": "MAP-HISTORY-03",
+      "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
+      "source": "M:4695 `archiveAllForTest` <- settings :8428"
+    },
+    {
+      "id": "MAP-NAV-01",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:804 `startNavigation` <- M:7845 dispatch"
+    },
+    {
+      "id": "MAP-NAV-02",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:710 `enqueueTeamCommand`, :630 `runTeamStart`, :543 `runTeamEnd`"
+    },
+    {
+      "id": "MAP-NAV-03",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:846 requestTeamEnd /858 stopNavigation /877 stopRemovedDestination"
+    },
+    {
+      "id": "MAP-NAV-04",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:534 `startLocalRoutePlan`"
+    },
+    {
+      "id": "MAP-NAV-05",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:241-507 reconciliation effects"
+    },
+    {
+      "id": "MAP-NAV-06",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:175/187 frame callback, :891+ follow/promotion effects"
+    },
+    {
+      "id": "MAP-NAV-07",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useJourneyNavigation:517 external chooser <- M:7770 / passive panel"
+    },
+    {
+      "id": "MAP-LOC-01",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useDeviceLocation:220 consumeForegroundSample <- Expo watch OR GroupMap.onUserLocationSample M:7074"
+    },
+    {
+      "id": "MAP-LOC-02",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useDeviceLocation:136/150/171"
+    },
+    {
+      "id": "MAP-LOC-03",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useDeviceLocation:269 refreshDeviceLocation <- M:3538 locateMe, :3597 refreshAllLocations"
+    },
+    {
+      "id": "MAP-LOC-04",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "M:3625 fitAllMembers <- recenter control"
+    },
+    {
+      "id": "MAP-LOC-05",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "M:2124/2158 sharing controller <- tools switch / presence macro"
+    },
+    {
+      "id": "MAP-LOC-06",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "M:2107 hydration + :2176 follower ACK effects"
+    },
+    {
+      "id": "MAP-LOC-07",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "M:2880-3100 background-owner effect + :3559 recovery"
+    },
+    {
+      "id": "MAP-ROUTES-01",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "H/useMapKitRoutes:47 loadMapKitRoutes /118 hook"
+    },
+    {
+      "id": "MAP-PROGRESS-01",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "M:2800 baseline/sticky effects -> H/usePersonalProgressSurfaces:56"
+    },
+    {
+      "id": "MAP-PROGRESS-02",
+      "area": "Independent slice D: journey navigation / device / routes / progress",
+      "source": "M:3335 approach effect, :3495 Live Activity inputs"
+    },
+    {
+      "id": "MAP-COORD-01",
+      "area": "Independent slice E: coordination requests",
+      "source": "H/useCoordinationRequests:97 load /139 schedule /148 refresh <- ops panel"
+    },
+    {
+      "id": "MAP-COORD-02",
+      "area": "Independent slice E: coordination requests",
+      "source": "C/CoordinationRequestsPanel:109/115/123 private create controller -> hook :201 -> S:197"
+    },
+    {
+      "id": "MAP-COORD-03",
+      "area": "Independent slice E: coordination requests",
+      "source": "C/CoordinationRequestsPanel:150 -> hook :222 -> S:218 respond"
+    },
+    {
+      "id": "MAP-COORD-04",
+      "area": "Independent slice E: coordination requests",
+      "source": "Panel :159 -> hook :239 -> S:231 override"
+    },
+    {
+      "id": "MAP-COORD-05",
+      "area": "Independent slice E: coordination requests",
+      "source": "Panel :168 -> hook :256 -> S:268 cancel"
+    },
+    {
+      "id": "MAP-COORD-06",
+      "area": "Independent slice E: coordination requests",
+      "source": "S/CoordinationRequestService:247/258 single/all due resolution"
+    },
+    {
+      "id": "MAP-COORD-07",
+      "area": "Independent slice E: coordination requests",
+      "source": "S:278/302/314 requests/responses/versioned itinerary operation reads"
+    },
+    {
+      "id": "MAP-COORD-08",
+      "area": "Independent slice E: coordination requests",
+      "source": "Panel :317/488 detail/list selection and refresh"
+    },
+    {
+      "id": "MAP-MEMBER-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:4547 toggleSolo /5552 applyPresenceMacroKind /5602 Android status sheet"
+    },
+    {
+      "id": "MAP-MEMBER-02",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:4586 warning /4608 accept /4621 decline /4632 invite /4653 split /4672 merge"
+    },
+    {
+      "id": "MAP-MEMBER-03",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:5656 kick /704 membership loss effect"
+    },
+    {
+      "id": "MAP-GROUP-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:4500 copyCode /4511 shareCode /4485 registration prompt"
+    },
+    {
+      "id": "MAP-GROUP-02",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:4528 home /5240 leave /5278 signout /5303 confirm"
+    },
+    {
+      "id": "MAP-PROFILE-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "C/ProfileOverlay:55 cancel/:60 save"
+    },
+    {
+      "id": "MAP-SETTINGS-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "C/SettingsOverlay:154 diagnostics /177 avatar /220 OTA, M:8440 avatar callback"
+    },
+    {
+      "id": "MAP-SETTINGS-02",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:5316 resetPrefs <-5365 confirm"
+    },
+    {
+      "id": "MAP-STORE-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "C/StorePane:490 onWatchAd /864 confirmRedeem, M:6126/6166 entitlement refresh"
+    },
+    {
+      "id": "MAP-TOOLS-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:6769 Live Activity toggle /6789 passive enter /3486 exit /8005 travel mode /6830 radius"
+    },
+    {
+      "id": "MAP-OPS-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:8598/8617/8632 exception actions -> `useOrganizerExceptions.markHandled`"
+    },
+    {
+      "id": "MAP-SHELL-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:5899-5980 overlays/settings/custom/paywall/tabs/sheet/card"
+    },
+    {
+      "id": "MAP-SHELL-02",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "H/useCarouselSelection:31/57/62"
+    },
+    {
+      "id": "MAP-SHELL-03",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "H/useGatherCardExpansion:40/56/68/76/81/85"
+    },
+    {
+      "id": "MAP-SHELL-04",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "H/usePendingPlaceEntrance:6 + C/SettingsSheetPanel:90/109 and SettingsChildSheet.ios:72/77/83"
+    },
+    {
+      "id": "MAP-TOUR-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:1491/1550 add-place effects,1828 route tour scroll,6071 active change,7348 next/7367 prev,9233/9264"
+    },
+    {
+      "id": "MAP-SHELL-05",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "C/SheetPaneTabs.ios:41 /C/SheetPaneTabs generic /C/Segmented:162 /C/PassiveCompanionPanel:184/188/197 /C/SubgroupSection:82"
+    },
+    {
+      "id": "MAP-MEET-01",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:1748 open /1773 Android picker /9056 quick shortcuts /9142 iOS picker /9186 threshold /9196 save /9210 clear"
+    },
+    {
+      "id": "MAP-MEET-02",
+      "area": "Map component and adjacent behavior closure list",
+      "source": "M:1731 persistMeetTime /1669 nextMeet scheduling /1721 foreground notification"
+    }
+  ]
+}

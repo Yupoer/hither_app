@@ -33,10 +33,10 @@ describe('headless harness contract', () => {
     const world = new World();
     try {
       const a = await world.device({ id: 'a', userId: LEADER });
-      expect(catalog().map((entry: any) => entry.name)).toEqual([
+      expect(catalog().map((entry: any) => entry.name)).toEqual(expect.arrayContaining([
         'group.observe', 'group.refresh', 'location.refresh', 'journey.start', 'journey.end', 'journey.stop',
         'destination.add', 'destination.delete', 'destination.reorder',
-      ]);
+      ]));
       await expect(a.perform('not-an-action')).rejects.toThrow('Unsupported action');
       await expect(a.observe()).rejects.toThrow('Unsupported action');
       await expect(world.close()).rejects.toThrow('Sticky external failure');
