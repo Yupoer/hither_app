@@ -19,6 +19,9 @@ insert into public.itinerary_items(id, group_id, title, latitude, longitude, pos
  ('aaaaaaaa-aaaa-4aaa-8aaa-000000000004', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Legacy restart', 25, 121, 3, 1, 'stop'),
  ('aaaaaaaa-aaaa-4aaa-8aaa-000000000005', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Legacy completed', 25, 121, 4, 1, 'stop');
 
+create temporary table results(label text primary key, body jsonb);
+grant select, insert on results to authenticated;
+
 create function pg_temp.id(n integer) returns uuid language sql immutable as $$
  select ('aaaaaaaa-aaaa-4aaa-8aaa-' || lpad(n::text, 12, '0'))::uuid
 $$;
@@ -44,9 +47,13 @@ begin
    0, op, payload || extra, coalesce(seq, n), '{}'::uuid[]);
 end;
 $$;
-grant usage on schema pg_temp to authenticated;
+do $$
+begin
+ execute format('grant usage on schema %I to authenticated',
+   (select nspname from pg_namespace where oid = pg_my_temp_schema()));
+end;
+$$;
 set local role authenticated;
-create temporary table results(label text primary key, body jsonb);
 
 select is(pg_temp.call_arrival(100, 'start_gathering',
  '11111111-1111-4111-8111-111111111111', 1, 100)->>'status', 'accepted', 'start original session');
