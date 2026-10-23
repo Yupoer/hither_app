@@ -28,9 +28,9 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     await run(device, 'map.place.rename', { value: title });
   }
   async function expand(world: InstanceType<typeof World>, device: Device) {
-    await device.input({ kind: 'gesture', testId: 'map-bottom-sheet', phase: 'onBegin', value: {} });
-    await device.input({ kind: 'gesture', testId: 'map-bottom-sheet', phase: 'onUpdate', value: { translationY: -250, velocityY: 0 } });
-    await device.input({ kind: 'gesture', testId: 'map-bottom-sheet', phase: 'onEnd', value: { translationY: -250, velocityY: 0 }, success: true });
+    await device.host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase: 'onBegin', value: {} });
+    await device.host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase: 'onUpdate', value: { translationY: -250, velocityY: 0 } });
+    await device.host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase: 'onEnd', value: { translationY: -250, velocityY: 0 }, success: true });
     await world.settle();
   }
   async function route(world: InstanceType<typeof World>, device: Device) {
@@ -86,7 +86,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       world.hold('apply_core_operation_v3');
       await drop(device, '  Local pool stop  ');
       await run(device, 'map.place.pool');
-      const local = await world.waitFor(device, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'add_destination'), 'real Map durable add');
+      const local = await world.waitFor(device, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'add_destination') && value.durable.snapshot.destinations.some(row => row.title === 'Local pool stop'), 'real Map durable add');
       expect(local.durable.snapshot.destinations.find((row: { title: string }) => row.title === 'Local pool stop')).toMatchObject({ day: null });
       expect(has(local, 'confirm-place-name')).toBe(false);
       expect(world.backend.itinerary).toHaveLength(1);
@@ -163,6 +163,113 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
+  it('MAP-DEST-01 MAP-DEST-14 actual search stages an editor confirmation and materializes a provider stop only on first-stop submit', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await device.input({ kind: 'mapsConfigure', patch: { searchResults: [{ id: 'station', name: 'Provider station', coordinates: { latitude: 25.03, longitude: 121.55 } }] } });
+      await run(device, 'map.search.open');
+      await device.input({ kind: 'animation', finished: true });
+      await run(device, 'map.search.query', { value: ' Station ' });
+      await world.advance(450);
+      const resultKey = JSON.stringify(['station', 25.03, 121.55]);
+      await world.waitFor(device, (value: MapObservation) => has(value, `place-search-result-${resultKey}`), 'Map-owned search result');
+      await run(device, 'map.search.pick', { resultKey });
+      await world.advance(0);
+      await device.input({ kind: 'animation', finished: true });
+      expect(field(await device.observe(), 'confirm-place-name')?.value).toBe('Provider station');
+      expect(world.backend.itinerary).toHaveLength(1);
+      await run(device, 'map.place.first-stop');
+      await world.settle();
+      expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Provider station')).toMatchObject({ provider_place_id: 'station', day: 1 });
+      expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Provider station').position).toBeLessThan(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION).position);
+      expect(has(await device.observe(), 'confirm-place-name')).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-DEST-11 MAP-DEST-12 MAP-STAY-03 MAP-ROUTE-06 actual favorite and quick hotel remain drafts until Done and retry restores failed favorite deletion', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await drop(device, 'Favorite stop');
+      await run(device, 'map.place.favorite');
+      await world.settle();
+      const favoriteId = world.backend.tables.account_favorite_places[0].id;
+      await run(device, 'map.place.cancel');
+      await route(world, device);
+      await run(device, 'map.route.favorites');
+      device.online = false;
+      await run(device, 'map.route.favorite.delete', { favoriteId });
+      await world.waitFor(device, (value: MapObservation) => has(value, `route-favorite-${favoriteId}`), 'failed favorite deletion restored');
+      expect(world.backend.tables.account_favorite_places).toHaveLength(1);
+      device.online = true;
+      await run(device, 'map.route.favorite.pick', { favoriteId });
+      await device.input({ kind: 'animation', finished: true });
+      await run(device, 'map.route.stay.quick-add', { day: 1 });
+      expect(world.backend.itinerary).toHaveLength(1);
+      await done(world, device);
+      expect(world.backend.itinerary.filter((row: { title: string }) => row.title === 'Favorite stop')).toEqual([expect.objectContaining({ day: null })]);
+      expect(world.backend.itinerary.filter((row: { kind: string }) => row.kind === 'accommodation')).toEqual([expect.objectContaining({ day: 1, stay_anchor: false, latitude: 25.04, longitude: 121.53 })]);
+      expect((await device.observe()).durable.operations).toEqual([]);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-DEST-07 MAP-DEST-08 MAP-DEST-09 actual Map KML opener reads quota and commits the selected batch atomically', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await route(world, device);
+      await run(device, 'map.kml.open');
+      await device.input({ kind: 'animation', finished: true });
+      await world.waitFor(device, (value: MapObservation) => has(value, 'kml-pick-file'), 'Map-owned KML sheet');
+      const content = '<kml><Placemark><name>North &amp; South</name><Point><coordinates>121.55,25.03</coordinates></Point></Placemark><Placemark><name>East</name><Point><coordinates>121.56,25.04</coordinates></Point></Placemark></kml>';
+      await device.input({ kind: 'mapFile', uri: 'content://map/route', content });
+      await device.input({ kind: 'mapsConfigure', patch: { picker: { canceled: false, assets: [{ uri: 'content://map/route', name: 'route.kml' }] } } });
+      await run(device, 'map.kml.pick');
+      await run(device, 'map.kml.import');
+      await world.settle();
+      expect(world.backend.itinerary.filter((row: { title: string }) => ['North & South', 'East'].includes(row.title))).toEqual(expect.arrayContaining([
+        expect.objectContaining({ title: 'North & South', day: null }), expect.objectContaining({ title: 'East', day: null }),
+      ]));
+      expect(world.backend.trace.filter((call: { name: string; args?: { p_operation_type: string } }) => call.name === 'apply_core_operation_v3' && call.args?.p_operation_type === 'import_itinerary_batch')).toHaveLength(1);
+      expect((await device.observe()).durable.operations).toEqual([]);
+      await world.advance(1000);
+      expect(has(await device.observe(), 'kml-import-confirm')).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-ROUTE-08 MAP-ROUTE-09 MAP-ROUTE-10 MAP-ROUTE-12 actual marker trip and multi-selection controls save edits and honor delete cancellation', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await route(world, device);
+      await run(device, 'map.route.emoji.open', { destinationId: DESTINATION });
+      await run(device, 'map.route.emoji.category', { category: 'food' });
+      expect(has(await device.observe(), 'route-emoji-preset-🚉')).toBe(false);
+      await run(device, 'map.route.emoji.preset', { emoji: '☕' });
+      await run(device, 'map.route.emoji.save');
+      await world.settle();
+      expect(world.backend.itinerary[0]).toMatchObject({ emoji: '☕', marker_color: '#A56A43' });
+      await run(device, 'map.route.trip.open');
+      await run(device, 'map.route.trip.more-days');
+      await run(device, 'map.overlay.done', { label: 'commit' });
+      expect(world.backend.groups.get(GROUP_ID).trip_days).toBe(1);
+      await done(world, device);
+      expect(world.backend.groups.get(GROUP_ID).trip_days).toBe(2);
+      await route(world, device);
+      await run(device, 'map.route.interaction-mode');
+      await run(device, 'map.route.select', { destinationId: DESTINATION });
+      await run(device, 'map.route.delete-selected');
+      await device.input({ kind: 'alert', index: 0 });
+      expect(world.backend.itinerary).toHaveLength(1);
+      await run(device, 'map.route.delete-selected');
+      await device.input({ kind: 'alert', index: 1 });
+      await world.settle();
+      expect(world.backend.itinerary).toEqual([]);
+      expect((await device.observe()).durable.snapshot.destinations).toEqual([]);
+    } finally { await world.close(); }
+  });
+
   it('MAP-LOC-05 confirmation cancel preserves sharing and accepted disable persists actual local consent before network retry', async () => {
     const world = new World();
     try {
@@ -208,6 +315,102 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(request.status).toBe('resolved');
       expect(request.resolved_outcome).toBe('opt_a');
       expect(has(await device.observe(), 'coordination-option-opt_b')).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-NAV-01 MAP-NAV-03 actual Start then End pauses the shared session without completing the itinerary stop', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'actual shared Start');
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.disabled).toBe(false);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(device, () => [...world.backend.sessions.values()].every((session: { status: string }) => session.status !== 'active'), 'actual shared End');
+      expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({ status: 'cancelled' })]);
+      expect((await device.observe()).durable.snapshot.destinations.find((row: { id: string }) => row.id === DESTINATION).closedAt).toBeFalsy();
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      expect(has(await device.observe(), `gather-arrival-${DESTINATION}`)).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-NAV-04 actual follower request-start sends a command without creating a leader session', async () => {
+    const world = new World();
+    try {
+      const device = await map(world, PEER);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.settle();
+      expect(world.backend.notificationOutbox).toEqual([expect.objectContaining({ sender_id: PEER, target_user_id: LEADER,
+        payload: expect.objectContaining({ type: 'request_start', groupId: GROUP_ID }) })]);
+      expect(world.backend.sessions.size).toBe(0);
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+    } finally { await world.close(); }
+  });
+
+  it('MAP-ARRIVAL-01 MAP-ARRIVAL-03 MAP-ARRIVAL-04 MAP-GATHER-04 MAP-GATHER-05 real self arrival undo confirmation and forced completion preserve session audit', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-${DESTINATION}`), 'active self-arrival control');
+      await run(device, 'map.arrival.mark', { destinationId: DESTINATION });
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'personal arrival reflected');
+      const session = [...world.backend.sessions.values()][0];
+      expect(world.backend.tables.destination_arrivals[0]).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, arrived_at: new Date(world.now).toISOString() });
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      await run(device, 'map.arrival.undo', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 0 });
+      expect(world.backend.tables.destination_arrivals).toHaveLength(1);
+      await run(device, 'map.arrival.undo', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-${DESTINATION}`), 'confirmed undo reflected');
+      expect(world.backend.tables.destination_arrivals).toEqual([]);
+      await run(device, 'map.arrival.mark', { destinationId: DESTINATION });
+      await world.settle();
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 0 });
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.waitFor(device, (value: MapObservation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'forced completion local history');
+      expect(world.backend.itinerary[0]).toMatchObject({ closed_by_session_id: session.id });
+      expect(session.status).toBe('completed');
+      await expand(world, device);
+      await run(device, 'map.tab', { index: 1 });
+      await run(device, 'map.arrival.manage');
+      await device.input({ kind: 'animation', finished: true });
+      await run(device, 'map.arrival.correct', { destinationId: DESTINATION, userId: PEER });
+      await device.input({ kind: 'alert', index: 0 });
+      expect(world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER)).toBe(false);
+      await run(device, 'map.arrival.correct', { destinationId: DESTINATION, userId: PEER });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.settle();
+      expect(world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER)).toMatchObject({ arrived_at: null, navigation_session_id: session.id });
+      const correction = world.backend.trace.find((call: { args?: { p_operation_type: string } }) => call.args?.p_operation_type === 'leader_correct_arrival');
+      expect(correction.args.p_payload).toMatchObject({ actorId: LEADER, targetUserId: PEER, sessionId: session.id, arrivedAt: null, source: 'leader_correction' });
+    } finally { await world.close(); }
+  });
+
+  it('MAP-HISTORY-01 MAP-HISTORY-02 actual history cancel retains a waypoint and confirmed deletion reloads the real list', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await run(device, 'map.service.history.record', { args: [GROUP_ID, 'Historic gate', { latitude: 25.04, longitude: 121.53 }] });
+      const rows = await run(device, 'map.service.history.list', { args: [GROUP_ID] });
+      const historyId = rows.find((row: { name: string }) => row.name === 'Historic gate').id;
+      await expand(world, device);
+      await run(device, 'map.tab', { index: 1 });
+      await run(device, 'map.history.open');
+      await device.input({ kind: 'animation', finished: true });
+      await world.waitFor(device, (value: MapObservation) => has(value, `history-delete-${historyId}`), 'real history waypoint row');
+      await run(device, 'map.history.delete', { historyId });
+      await device.input({ kind: 'alert', index: 0 });
+      expect(await run(device, 'map.service.history.list', { args: [GROUP_ID] })).toHaveLength(1);
+      await run(device, 'map.history.delete', { historyId });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.waitFor(device, (value: MapObservation) => !has(value, `history-delete-${historyId}`), 'deleted waypoint reload');
+      expect(await run(device, 'map.service.history.list', { args: [GROUP_ID] })).toEqual([]);
     } finally { await world.close(); }
   });
 
