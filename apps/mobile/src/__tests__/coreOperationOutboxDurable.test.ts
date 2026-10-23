@@ -561,6 +561,8 @@ describe('durable core operation outbox', () => {
     const store = createCoreDataStore(coreDb, () => 2_000, async () => false,
       groupId => queue.getPendingItineraryOperations(groupId), async () => actor.value);
     const remote = groupStateFromCoreSnapshot({ ...snapshotForGroup(),
+      group: { id: 'group-a', name: 'Team', inviteCode: 'ABC123', createdBy: 'actor-a',
+        journeyStatus: 'paused', stragglerAlerts: false, stragglerThresholdM: 100 },
       destinations: [{ id: 'old', title: 'Old stop', order: 0, day: 1,
         coordinates: { latitude: 25, longitude: 121 } }],
     });
