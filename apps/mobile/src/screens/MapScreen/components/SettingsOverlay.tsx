@@ -328,7 +328,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <NavRow
               title={t('settings.groupAvatar')}
               testID="settings-page-groupAvatar"
-            onPress={() => setPage('groupAvatar')}
+              onPress={() => setPage('groupAvatar')}
               styles={styles}
             />
           ) : null}

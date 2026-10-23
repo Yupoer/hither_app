@@ -53,6 +53,7 @@ for (const [name, id, kind] of [['password', 'recovery-password', 'changeText'],
 }
 
 session('session.signout', 'A22', 'signOut');
+session('auth.recovery.complete', 'A17', 'completePasswordRecovery');
 session('session.leave', 'A24', 'leaveGroup');
 session('session.membership', 'B09', 'setMembership');
 session('session.entitlement.refresh', 'B09', 'refreshEntitlement');
@@ -147,9 +148,13 @@ register('feedback.category', 'D01', 'src/components/FeedbackSheet.tsx', 'setCat
 for (const symbol of ['uploadMetricPayload', 'uploadMetricPayloadBatch']) {
   exported(`diagnostics.${symbol}`, 'D05', 'src/api/services/DiagnosticService.ts', symbol);
 }
-for (const symbol of ['applyOtaUpdate', 'consumeOtaAppliedNotice', 'startOtaUpdateBootstrap']) {
+for (const symbol of ['applyOtaUpdate', 'consumeOtaAppliedNotice']) {
   exported(`ota.${symbol}`, 'X02,X03', 'src/utils/otaUpdates.ts', symbol);
 }
+register('ota.bootstrap.start', 'X03', 'src/utils/otaUpdates.ts', 'startOtaUpdateBootstrap', 'service', '{}', app => {
+  app.stopOtaBootstrap = require('../../src/utils/otaUpdates.ts').startOtaUpdateBootstrap();
+});
+register('ota.bootstrap.stop', 'X03', 'src/utils/otaUpdates.ts', 'startOtaUpdateBootstrap', 'service', '{}', app => app.stopOtaBootstrap?.());
 control('error.retry', 'X04', 'src/components/AppErrorBoundary.tsx', 'handleRetry', 'app-error-retry');
 
 for (const [symbol, ids] of [['write', 'D03'], ['flush', 'D04'], ['purge', 'D04'], ['list', 'D06'], ['summary', 'D06'], ['exportJson', 'D06']]) {
