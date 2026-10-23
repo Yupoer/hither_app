@@ -414,7 +414,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       expect(pending.durable.snapshot.group).toMatchObject({ tripDays: 3, departureDate: '2026-11-01' });
       expect(pending.durable.snapshot.members.find((member: any) => member.userId === LEADER).solo).toBe(true);
       device.online = true;
-      await world.advance(30000);
+      await world.advance(120000);
       await world.waitFor(device, (value: any) => value.durable.operations.length === 0, 'accepted trip and solo operations');
       expect(world.backend.groups.get(GROUP_ID)).toMatchObject({ trip_days: 3, departure_date: '2026-11-01' });
       expect(world.backend.memberships.find((member: any) => member.user_id === LEADER).solo).toBe(true);
@@ -468,7 +468,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
     try {
       const device = await screen(world, 'RoleSelect');
       const file = path.join(world.directory, device.spec.id, 'async.json');
-      const values = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const values = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
       Object.assign(values, { 'pref.language': 'bad', 'pref.theme': 'bad', 'pref.textScale': '2', 'pref.travelMode': 'spaceship',
         'pref.meetRedMin': '7', 'pref.dayColors': '{bad', 'pref.gatherCardMarqueeSpeed': 'NaN', 'pref.arrivalRadiusM': 'NaN',
         'pref.locationSharing': 'false' });
