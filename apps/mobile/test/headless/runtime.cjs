@@ -11,8 +11,10 @@ exports.run = async function run(jest) {
   assert(ipc?.send, 'Device requires an IPC owner');
   const spec = JSON.parse(process.env.HITHER_HEADLESS_DEVICE);
   const failures = [];
+  const renderErrors = [];
   const reportError = console.error;
   console.error = (...args) => {
+    renderErrors.push(args.map(value => value instanceof Error ? value.stack : String(value)).join(' '));
     if (args.some(value => typeof value === 'string' && value.includes('overlapping act() calls'))) {
       failures.push('React reported overlapping act() calls');
     }
@@ -77,6 +79,10 @@ exports.run = async function run(jest) {
     const write = () => fs.writeFileSync(file, JSON.stringify(values));
     return {
       getItem: async key => values[key] ?? null,
+      multiGet: async keys => keys.map(key => [key, values[key] ?? null]),
+      multiSet: async pairs => { for (const [key, value] of pairs) values[key] = value; write(); },
+      multiRemove: async keys => { for (const key of keys) delete values[key]; write(); },
+      getAllKeys: async () => Object.keys(values),
       setItem: async (key, value) => { values[key] = value; write(); },
       removeItem: async key => { delete values[key]; write(); },
     };
@@ -89,6 +95,7 @@ exports.run = async function run(jest) {
   const channels = new Set();
   const handles = new Map();
   const permission = { status: 'granted', canAskAgain: true, granted: true };
+  const backgroundTasks = new Map();
   let sdk;
   let sdkStorage;
   const authKey = 'sb-headless-auth-token';
@@ -108,6 +115,10 @@ exports.run = async function run(jest) {
   };
   const noRender = () => fatal('Native presentation was rendered');
   const alertQueue = [];
+  const presentationMode = spec.mode === 'app' || Boolean(spec.screen);
+  let host;
+  const externalNative = require('./external-native.cjs').createExternalNative({ platform: spec.platform, strict, profile: spec.capabilities });
+  const authListeners = new Set();
   jest.doMock('react-native', () => strict('react-native', {
     Platform: { OS: spec.platform ?? 'ios', Version: 26, select: options => options[spec.platform ?? 'ios'] ?? options.default },
     AppState: appState,
@@ -129,10 +140,15 @@ exports.run = async function run(jest) {
     },
   }));
   jest.doMock('expo-location', () => strict('expo-location', {
+    __esModule: true,
     Accuracy: { High: 6, Balanced: 3, Low: 2 },
     requestForegroundPermissionsAsync: async () => ({ ...permission }),
     getForegroundPermissionsAsync: async () => ({ ...permission }),
     getBackgroundPermissionsAsync: async () => ({ ...permission }),
+    requestBackgroundPermissionsAsync: async () => ({ ...permission }),
+    hasStartedLocationUpdatesAsync: async name => backgroundTasks.has(name),
+    startLocationUpdatesAsync: async (name, options) => { assert.equal(typeof name, 'string'); backgroundTasks.set(name, options); },
+    stopLocationUpdatesAsync: async name => { backgroundTasks.delete(name); },
     watchPositionAsync: async (options, callback) => {
       assert(options && typeof callback === 'function');
       watches.add(callback);
@@ -141,7 +157,8 @@ exports.run = async function run(jest) {
   }));
   jest.doMock('expo-modules-core', () => strict('expo-modules-core', {
     requireOptionalNativeModule: name => {
-      if (!['HitherLocation', 'HitherMaps', 'HitherNotifications', 'HitherLiveActivity', 'HitherMetrics'].includes(name)) {
+      if (Object.hasOwn(externalNative.nativeModules, name)) return externalNative.nativeModules[name];
+      if (!['HitherLocation', 'HitherMaps', 'HitherNotifications', 'HitherLiveActivity', 'HitherMetrics', 'HitherMenu'].includes(name)) {
         return fatal(`Unknown optional native module ${name}`);
       }
       return null;
@@ -157,6 +174,12 @@ exports.run = async function run(jest) {
   jest.doMock('expo-blur', () => ({ BlurView: noRender }));
   jest.doMock('expo-file-system/legacy', () => strict('FileSystem', {}));
   jest.doMock('react-native-url-polyfill/auto', () => ({}));
+
+  if (presentationMode) {
+    host = require('./host.cjs').install({ jest, spec, strict, fatal, appState, alertQueue });
+    require('./app.cjs').installNavigation({ jest, host });
+  }
+  for (const [name, module] of Object.entries(externalNative.modules)) jest.doMock(name, () => module);
 
   function builder(kind, name, args) {
     const steps = [];
@@ -176,7 +199,7 @@ exports.run = async function run(jest) {
       abortSignal(value) { signal = value; return this; },
       setHeader(name, value) { assert.equal(name, 'Authorization'); assert(value.startsWith('Bearer fixture-')); return this; },
     };
-    for (const method of ['select', 'eq', 'is', 'gt', 'order', 'limit', 'maybeSingle', 'single', 'upsert']) {
+    for (const method of ['select', 'eq', 'is', 'gt', 'order', 'limit', 'maybeSingle', 'single', 'upsert', 'update', 'insert', 'delete', 'in', 'neq', 'gte', 'lt', 'lte', 'or']) {
       query[method] = (...values) => { steps.push([method, ...values]); return query; };
     }
     return strict(`Supabase.${kind}.${name}`, query);
@@ -188,7 +211,13 @@ exports.run = async function run(jest) {
     sdk = strict('Supabase', {
       auth: strict('auth', {
         getSession: async () => ({ data: { session }, error: null }),
-        refreshSession: async () => fatal('Unexpected fixture token refresh'),
+        refreshSession: async () => {
+          if (!presentationMode) return fatal('Unexpected fixture token refresh');
+          return { data: { session, user: session?.user }, error: null };
+        },
+        getUser: async () => ({ data: { user: session?.user }, error: null }),
+        onAuthStateChange: callback => { authListeners.add(callback); return { data: { subscription: { unsubscribe: () => authListeners.delete(callback) } } }; },
+        startAutoRefresh: () => {},
         stopAutoRefresh: () => {},
       }),
       rpc: (name, args = {}) => builder('rpc', name, args),
@@ -201,7 +230,8 @@ exports.run = async function run(jest) {
             assert.equal(type, 'postgres_changes');
             assert.equal(filter.schema, 'public');
             assert(['member_locations', 'memberships', 'itinerary_items', 'daily_accommodations', 'groups', 'profiles',
-              'navigation_sessions', 'navigation_member_states'].includes(filter.table), `Unknown realtime table ${filter.table}`);
+              'navigation_sessions', 'navigation_member_states', 'subgroup_invites', 'subgroups', 'gather_point_requests',
+              'coordination_requests', 'coordination_responses', 'destination_arrivals', 'itinerary_operations'].includes(filter.table), `Unknown realtime table ${filter.table}`);
             bindings.push({ filter, callback });
             return this;
           },
@@ -239,7 +269,7 @@ exports.run = async function run(jest) {
     assert.equal(session.access_token, `fixture-${session.user.id}`, 'Invalid persisted fixture session');
   } else await authenticate(spec.userId);
   stage('auth persisted');
-  const app = { userId: session.user.id, groupId: null, sharingEnabled: true,
+  const app = { userId: session.user.id, platform: spec.platform, groupId: spec.screen?.params?.groupId ?? null, sharingEnabled: true,
     destinationService: require('../../src/api/services/DestinationService') };
   const mapRef = { current: null };
   const carouselRef = { current: null };
@@ -254,9 +284,9 @@ exports.run = async function run(jest) {
     app.journey = useJourneyNavigation({
       groupId: app.groupId, actorId: app.userId, state: app.group.state,
       isLeader: app.group.state?.members.some(m => m.userId === app.userId && m.role === 'leader') ?? false,
-      destinations, selectedDestination: destinations[0], fromCoords: app.location.deviceCoords ?? undefined,
+      destinations, selectedDestination: destinations[0], fromCoords: app.location?.deviceCoords ?? undefined,
       refresh: app.group.refresh, t, mapRef, carouselRef, setSelectedIndex,
-      navigationSession: app.navigation.session, terminalSession: app.navigation.terminalSession,
+      navigationSession: app.navigation?.session, terminalSession: app.navigation.terminalSession,
       startSession: app.navigation.start, cancelSession: app.navigation.cancel,
       refreshNavigationSession: app.navigation.refresh,
       onOptimisticGathering: app.group.applyOptimisticGathering,
@@ -265,7 +295,13 @@ exports.run = async function run(jest) {
   }
   let root;
   app.render = async () => { root.update(React.createElement(Probe)); };
-  await act(async () => { root = create(React.createElement(Probe)); });
+  let presentation;
+  if (presentationMode) {
+    presentation = require('./app.cjs').createPresentation(React, spec, host, app);
+    app.host = { call: input => host.call(root, input), observe: () => host.observe(root),
+      mount: screen => host.mount ? host.mount(screen) : host.navigation.navigate(screen.name, screen.params) };
+  }
+  await act(async () => { root = create(presentationMode ? presentation.element : React.createElement(Probe)); });
   stage('null root mounted');
   const turn = () => new Promise(resolve => realImmediate(resolve));
   async function observation() {
@@ -273,14 +309,24 @@ exports.run = async function run(jest) {
     const db = await database.getHitherDatabase();
     return {
       pid: process.pid, generation: spec.generation, actorId: await getLocalAuthActorId(),
-      group: { state: app.group.state, loading: app.group.loading, error: app.group.error,
-        dataSource: app.group.dataSource, snapshotFreshness: app.group.snapshotFreshness,
-        emptyLocalSnapshot: app.group.emptyLocalSnapshot, refreshing: app.group.refreshing },
-      location: { coordinates: app.location.deviceCoords, accuracy: app.location.deviceAccuracyM,
-        acceptedAt: app.location.deviceCoordsAcceptedAtMs, appState: app.location.appState },
-      journey: { targetId: app.journey.navTargetId, sharedTargetId: app.journey.sharedTargetId,
-        status: app.journey.journeyStatus, busy: app.journey.journeyBusy },
-      navigation: { session: app.navigation.session, error: app.navigation.error },
+      presentation: presentationMode ? {
+        hosts: host.observe(root), route: host.route,
+        session: presentation.observation.session ? JSON.parse(JSON.stringify(presentation.observation.session)) : null,
+        preferences: presentation.observation.preferences ? JSON.parse(JSON.stringify(presentation.observation.preferences)) : null,
+        receipts: host.receipts, nativeGoogle: require('../../src/state/googleSignIn').usesNativeGoogleSignIn,
+        invites: presentation.observation.invites?.invites,
+        resolved: fs.existsSync(path.join(spec.directory, 'resolved.jsonl')) ? [...new Set(fs.readFileSync(path.join(spec.directory, 'resolved.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line).resolved))] : [],
+      } : null,
+      native: externalNative.observe(),
+      renderErrors: renderErrors.slice(-10),
+      group: { state: app.group?.state, loading: app.group?.loading, error: app.group?.error,
+        dataSource: app.group?.dataSource, snapshotFreshness: app.group?.snapshotFreshness,
+        emptyLocalSnapshot: app.group?.emptyLocalSnapshot, refreshing: app.group?.refreshing },
+      location: { coordinates: app.location?.deviceCoords, accuracy: app.location?.deviceAccuracyM,
+        acceptedAt: app.location?.deviceCoordsAcceptedAtMs, appState: app.location?.appState },
+      journey: { targetId: app.journey?.navTargetId, sharedTargetId: app.journey?.sharedTargetId,
+        status: app.journey?.journeyStatus, busy: app.journey?.journeyBusy },
+      navigation: { session: app.navigation?.session, error: app.navigation?.error },
       durable: { locations: await db.getAllAsync('SELECT * FROM location_outbox'),
         operations: app.groupId ? await core.listOpenCoreOperations(app.groupId) : [],
         snapshot: app.groupId ? await require('../../src/state/coreDataStore').readCoreSnapshot(app.groupId) : null },
@@ -298,6 +344,17 @@ exports.run = async function run(jest) {
     if (kind === 'advance') {
       assert(Number.isSafeInteger(message.command.ms) && message.command.ms >= 0 && message.command.ms <= 86400000);
       await act(async () => { await jest.advanceTimersByTimeAsync(message.command.ms); });
+      return;
+    }
+    if (kind === 'host') {
+      assert(presentationMode, 'Host requires real presentation mount');
+      let receipt;
+      await act(async () => { receipt = app.host.call(message.command.input); });
+      return receipt;
+    }
+    if (kind === 'mount') {
+      assert(presentationMode, 'Mount requires real presentation');
+      await act(async () => app.host.mount(message.command.screen));
       return;
     }
     if (kind === 'perform') {
@@ -342,7 +399,12 @@ exports.run = async function run(jest) {
           const button = alert[2]?.[input.index];
           assert(button, 'Unknown Alert choice');
           button.onPress?.();
-        } else return fatal(`Unknown external input ${input.kind}`);
+        } else if (input.kind === 'task') {
+          assert(host?.tasks.has(input.name), `Unknown task ${input.name}`);
+          await host.tasks.get(input.name)(input.value);
+        } else if (['iapConfigure', 'iapPurchase', 'iapError', 'adsConfigure', 'adEvent', 'notificationsConfigure',
+          'notification', 'liveConfigure', 'liveExisting', 'livePushToken', 'livePushToStart'].includes(input.kind)) await externalNative.input(input);
+        else return fatal(`Unknown external input ${input.kind}`);
       });
       return;
     }
@@ -384,6 +446,7 @@ exports.run = async function run(jest) {
       if (hangShutdown) await new Promise(() => {});
       disposing = true;
       await act(async () => root.unmount());
+      externalNative.dispose();
       for (const [id, pending] of requests) {
         pending.cleanup();
         cancelled.add(id);
@@ -400,6 +463,8 @@ exports.run = async function run(jest) {
       assert.equal(residual.watches, 0, 'GPS listener leaked');
       assert.equal(residual.channels, 0, 'Realtime channel leaked');
       assert.equal(residual.listeners, 0, 'AppState listener leaked');
+      assert.equal(authListeners.size, 0, 'Auth listener leaked');
+      if (host) assert.equal(host.linkingListeners.size, 0, 'Linking listener leaked');
       finish();
       return residual;
     }

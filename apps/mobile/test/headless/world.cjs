@@ -20,11 +20,11 @@ class World {
     this.backend = new Backend(event => this.events.push(event));
   }
   check() { assert.equal(this.fatals.length, 0, this.fatals.join('\n')); }
-  async device({ id, userId, platform = 'ios' }) {
+  async device({ id, userId, platform = 'ios', mode, screen, capabilities, authFixtures, updatesFixtures }) {
     assert(!this.closed, 'World is closed');
     assert(/^[a-zA-Z0-9_-]+$/.test(id), 'Safe device id required');
     assert(!this.devices.has(id), `Duplicate device ${id}`);
-    const device = new Device(this, { id, userId, platform });
+    const device = new Device(this, { id, userId, platform, mode, screen, capabilities, authFixtures, updatesFixtures });
     this.devices.set(id, device);
     await device.boot();
     return device;
@@ -121,6 +121,7 @@ class Device {
     this.nextCommand = 0;
     this.pending = new Map();
     this.context = null;
+    this.host = { call: input => this.command({ kind: 'host', input }), mount: screen => this.command({ kind: 'mount', screen }) };
   }
   async boot() {
     this.generation++;
