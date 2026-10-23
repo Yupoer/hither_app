@@ -75,3 +75,20 @@ for (const [symbol, ids] of [['upsertDeviceActivityToken', 'L05'], ['upsertLiveA
 exported('live.clear', 'L02', 'src/state/useLiveActivity.ts', 'clearLiveActivities');
 
 exports.operations = operations;
+exports.lifecycle = [
+  { name: 'store.foreground-connectivity', inventory: ['W02'],
+    sources: [{ file: store, symbol: 'refreshConnectivity' }], trigger: 'Mount StorePane or deliver AppState active.',
+    scenarios: [{ file: 'src/__tests__/headlessStoreScenario.test.ts', pattern: 'W02 W03' }] },
+  { name: 'store.product-highlight', inventory: ['W03'],
+    sources: [{ file: store, symbol: 'highlightProductCode' }], trigger: 'Mount StorePane with a product highlight and advance 280ms.',
+    scenarios: [{ file: 'src/__tests__/headlessStoreScenario.test.ts', pattern: 'W02 W03' }] },
+  { name: 'notifications.foreground-dispatch', inventory: ['N06'],
+    sources: [{ file: 'src/native/notifications.ts', symbol: 'handleNotification' }], trigger: 'Inject an external foreground push payload.',
+    scenarios: [{ file: 'src/__tests__/headlessStoreNativeScenario.test.ts', pattern: 'N05 N06' }] },
+  { name: 'notifications.group-realtime', inventory: ['N09', 'N10', 'N11', 'N12', 'N13', 'N14'],
+    sources: [{ file: 'src/state/useGroupNotifications.ts', symbol: 'useGroupNotifications' }], trigger: 'Mount the real hook with SessionProvider membership and inject external push or Realtime events.',
+    scenarios: [{ file: 'src/__tests__/headlessStoreScenario.test.ts', pattern: 'N09 N10 N11 N12 N13 N14' }] },
+  { name: 'live.activity-lifecycle', inventory: ['L01', 'L03', 'L04', 'L07'],
+    sources: [{ file: 'src/state/useLiveActivity.ts', symbol: 'useLiveActivity' }], trigger: 'Mount the real hook, change activity input, and inject native token callbacks.',
+    scenarios: [{ file: 'src/__tests__/headlessStoreScenario.test.ts', pattern: 'L01 L03 L04 L06 L07 L08' }] },
+];
