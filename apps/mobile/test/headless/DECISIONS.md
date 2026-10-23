@@ -33,3 +33,7 @@ The real Map add-place callback invokes a remote refresh after its durable write
 Session entitlement refreshes must belong to the account and membership that created their callback, including callbacks invoked only after a team switch. Personal profile refresh can still update the same account while discarding obsolete team projections. Real provider and purchase-recovery integration checks guard against refresh callback identity causing subscription loops.
 
 Native support follows the repository's actual platform exports. An available iOS native background path and Android's Expo fallback are different scenarios. A platform flag alone cannot establish that either branch ran.
+
+Destination snapshots retain the IDs of local commands already represented by their destination array. Hydration, ACK replacement, alias rewriting and SQLite round trips preserve or clear this provenance with that array. Other state slices still replay their pending commands. This avoids applying an insertion or reorder twice without changing insertion semantics or discarding a server-accepted order.
+
+Arrival receipt compaction retains the newest accepted receipt until older superseded receipts have disappeared from the next durable read. This keeps an interrupted cleanup from reviving an older undo. Switching targets reads open-point status from the durable itinerary because the authoritative gathering projection can include only its current target.

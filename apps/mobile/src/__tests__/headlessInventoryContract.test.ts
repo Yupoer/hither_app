@@ -32,7 +32,10 @@ describe('headless operation completeness', () => {
   });
 
   it('keeps domain backend fixtures strict and validates observable state transitions', () => {
-    require('../../test/headless/backend-contracts.test.cjs');
+    const result = spawnSync(process.execPath, ['--test', 'test/headless/backend-contracts.test.cjs'], {
+      cwd: path.resolve(__dirname, '../..'), encoding: 'utf8', timeout: 30000,
+    });
+    assert.equal(result.status, 0, result.error?.message ?? `${result.stdout}\n${result.stderr}`);
   });
 
   it('enforces host guards, explicit completion and navigation ownership', () => {
