@@ -41,6 +41,7 @@ class World {
     await this.settle();
   }
   execute(device, operation) {
+    if (operation.kind === 'health' && device.online) { assert.equal(operation.name, 'auth.health'); assert.deepEqual(operation.args, {}); return { data: {}, error: null }; }
     return device.online ? this.backend.execute(device.spec.id, operation)
       : { data: null, error: { message: 'Network request failed', code: 'NETWORK_ERROR' } };
   }

@@ -5,6 +5,8 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const receipts = [];
   const linkingListeners = new Set();
   const tasks = new Map();
+  const animations = new Map();
+  let animationId = 0;
   const make = name => React.forwardRef((props, ref) => {
     React.useImperativeHandle(ref, () => ({
       focus: () => receipts.push({ host: name, method: 'focus' }),
@@ -21,6 +23,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       getCamera: async () => ({ center: { latitude: 25, longitude: 121 }, pitch: 0, heading: 0, altitude: 1000, zoom: 14 }),
       setNativeProps: value => receipts.push({ host: name, method: 'setNativeProps', value }),
     }), []);
+    if ((name === 'Modal' && props.visible === false) || (name === 'SwiftUI.BottomSheet' && props.isPresented === false)) return null;
     const children = typeof props.children === 'function' ? props.children({ pressed: false }) : props.children;
     return React.createElement(`host:${name}`, props, children);
   });
@@ -30,13 +33,17 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   class AnimatedValue {
     constructor(value) { this.value = value; }
     setValue(value) { this.value = value; }
-    stopAnimation(callback) { callback?.(this.value); }
+    stopAnimation(callback) { for (const [id, animation] of [...animations]) if (animation.value === this) { animations.delete(id); animation.callback?.({ finished: false }); } callback?.(this.value); }
     interpolate() { return this; }
     addListener() { return 'listener'; }
     removeListener() {}
     removeAllListeners() {}
   }
-  const nativeAnimation = value => ({ start() {}, stop() {}, reset() {} });
+  const nativeAnimation = (value, options) => {
+    let id;
+    return { start(callback) { id = ++animationId; animations.set(id, { value, options, callback }); },
+      stop() { const animation = animations.get(id); animations.delete(id); animation?.callback?.({ finished: false }); }, reset() {} };
+  };
   const flatten = value => Array.isArray(value) ? Object.assign({}, ...value.map(flatten)) : value || {};
   const rn = strict('react-native', {
     ...hosts, Platform: { OS: spec.platform, Version: 26, select: values => values[spec.platform] ?? values.native ?? values.default },
@@ -109,7 +116,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     Skia: { RuntimeEffect: { Make: source => ({ source }) }, Path: { Make: () => ({ addCircle() {}, moveTo() {}, lineTo() {}, cubicTo() {}, close() {} }) } },
     vec: (x, y) => ({ x, y }),
   }));
-  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Slider','Picker','TextField','Menu','Divider','Section','Form','Label','ProgressView','ContextMenu'];
+  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Slider','Picker','TextField','Menu','Divider','Section','Form','Label','ProgressView','ContextMenu','BottomSheet','Group','RNHostView'];
   jest.doMock('@expo/ui/swift-ui', () => strict('swift-ui', Object.fromEntries(swiftNames.map(name => [name, make(`SwiftUI.${name}`)]))));
   jest.doMock('@expo/ui', () => strict('expo-ui', { Host: make('ExpoUI.Host'), Switch: make('ExpoUI.Switch') }));
   const modifierNames = ['accessibilityLabel','accessibilityHint','buttonStyle','buttonBorderShape','controlSize','font','disabled','frame','foregroundColor',
@@ -130,19 +137,35 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('expo-blur', () => ({ BlurView: make('BlurView') }));
   jest.doMock('expo-glass-effect', () => strict('Glass', { GlassView: make('GlassView'), isLiquidGlassAvailable: () => false }));
   const host = {
-    receipts, linkingListeners, tasks,
+    receipts, linkingListeners, tasks, animations,
+    input(input) {
+      assert.equal(input.kind, 'animation'); assert.equal(typeof input.finished, 'boolean');
+      const ids = input.id == null ? [...animations.keys()] : [input.id];
+      for (const id of ids) {
+        const animation = animations.get(id); assert(animation, `Unknown animation ${id}`); animations.delete(id);
+        if (input.finished && animation.value instanceof AnimatedValue && animation.options) animation.value.setValue(animation.options.toValue);
+        animation.callback?.({ finished: input.finished });
+      }
+    },
     call(root, { kind, testId, label, value, within }) {
       const nativeEvents = ['onLongPress', 'onPress', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
-        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd'];
+        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur'];
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
       const property = kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
       assert(property, `Unknown host event ${kind}`);
-      const match = node => typeof node.type === 'string' && node.type.startsWith('host:') &&
+      const visible = node => {
+        for (let current = node; current; current = current.parent) {
+          if (typeof current.type !== 'string' || !current.type.startsWith('host:')) continue;
+          if (current.props.pointerEvents === 'none' || flatten(current.props.style).display === 'none') return false;
+        }
+        return true;
+      };
+      const match = node => visible(node) && typeof node.type === 'string' && node.type.startsWith('host:') &&
         (testId ? node.props.testID === testId : node.props.accessibilityLabel === label || node.props.modifiers?.some(m => m.modifier === 'accessibilityLabel' && m.args[0] === label));
       const scope = within ? root.root.findAll(match => typeof match.type === 'string' && match.props.testID === within) : [root.root];
       assert.equal(scope.length, 1, `Expected one scope ${within}`);
       const endpoints = scope[0].findAll(match).flatMap(node => typeof node.props[property] === 'function' ? [node] : node.findAll(child =>
-        typeof child.type === 'string' && child.type.startsWith('host:') && typeof child.props[property] === 'function'));
+        visible(child) && typeof child.type === 'string' && child.type.startsWith('host:') && typeof child.props[property] === 'function'));
       const unique = [...new Set(endpoints)];
       assert.equal(unique.length, 1, `Expected one ${kind} endpoint ${testId ?? label}, got ${unique.length}`);
       const node = unique[0];

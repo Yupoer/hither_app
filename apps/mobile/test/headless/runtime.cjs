@@ -56,6 +56,28 @@ exports.run = async function run(jest) {
       send({ type: 'request', id, operation });
     });
   }
+  const receive = message => {
+    if (message.generation !== spec.generation) return;
+    if (message.type === 'response') {
+      const pending = requests.get(message.id);
+      if (!pending) {
+        if (cancelled.delete(message.id)) return;
+        failures.push(`Unknown response ${message.id}`);
+        return;
+      }
+      requests.delete(message.id);
+      pending.cleanup();
+      if (message.fatal) failures.push(message.fatal);
+      pending.resolve(message.result);
+      return;
+    }
+    if (message.type !== 'command') { failures.push(`Unknown IPC ${message.type}`); return; }
+    void command(message).then(result => {
+      if (message.command.kind !== 'close') check();
+      send({ type: 'result', id: message.id, result });
+    }).catch(error => send({ type: 'result', id: message.id, error: error.stack ?? String(error) }));
+  };
+  ipc.on(receive);
   const guard = name => () => fatal(`Forbidden real network ${name}`);
   global.fetch = guard('fetch');
   global.WebSocket = guard('WebSocket');
@@ -97,20 +119,13 @@ exports.run = async function run(jest) {
   const permission = { status: 'granted', canAskAgain: true, granted: true };
   const backgroundTasks = new Map();
   let sdk;
-  let sdkStorage;
-  const authKey = 'sb-headless-auth-token';
   let session;
-  async function authenticate(userId) {
-    session = { access_token: `fixture-${userId}`, refresh_token: `refresh-${userId}`,
-      expires_at: Math.floor(Date.now() / 1000) + 86400, user: { id: userId, is_anonymous: false } };
-    await sdkStorage.setItem(authKey, JSON.stringify(session));
-  }
   const appState = {
     currentState: 'active',
     addEventListener: (event, fn) => {
-      assert.equal(event, 'change');
-      appListeners.add(fn);
-      return { remove: () => appListeners.delete(fn) };
+      assert(['change', 'blur', 'focus'].includes(event));
+      const listener = { event, fn }; appListeners.add(listener);
+      return { remove: () => appListeners.delete(listener) };
     },
   };
   const noRender = () => fatal('Native presentation was rendered');
@@ -118,7 +133,19 @@ exports.run = async function run(jest) {
   const presentationMode = spec.mode === 'app' || Boolean(spec.screen);
   let host;
   const externalNative = require('./external-native.cjs').createExternalNative({ platform: spec.platform, strict, profile: spec.capabilities });
-  const authListeners = new Set();
+  const externalMap = require('./external-map.cjs').createExternalMap({ strict, spec });
+  const externalUpdates = require('./external-updates.cjs').createExternalUpdates({ strict, profile: spec.updatesFixtures });
+  global.fetch = async (url, options) => {
+    if (externalMap.handlesFetch(url)) return externalMap.fetch(url, options);
+    if (url === 'https://headless.supabase.co/auth/v1/health' && options?.method === 'GET') {
+      const response = await request({ kind: 'health', name: 'auth.health', args: {}, userId: null }, options.signal);
+      if (response.error) throw new Error(response.error.message);
+      return new Response('{}', { status: 200 });
+    }
+    return guard('fetch')();
+  };
+  const authFixture = require('./external-auth.cjs').createExternalAuth({ strict, request, spec });
+  const authListeners = authFixture.listeners;
   jest.doMock('react-native', () => strict('react-native', {
     Platform: { OS: spec.platform ?? 'ios', Version: 26, select: options => options[spec.platform ?? 'ios'] ?? options.default },
     AppState: appState,
@@ -158,6 +185,7 @@ exports.run = async function run(jest) {
   jest.doMock('expo-modules-core', () => strict('expo-modules-core', {
     requireOptionalNativeModule: name => {
       if (Object.hasOwn(externalNative.nativeModules, name)) return externalNative.nativeModules[name];
+      if (Object.hasOwn(externalMap.nativeModules, name)) return externalMap.nativeModules[name];
       if (!['HitherLocation', 'HitherMaps', 'HitherNotifications', 'HitherLiveActivity', 'HitherMetrics', 'HitherMenu'].includes(name)) {
         return fatal(`Unknown optional native module ${name}`);
       }
@@ -180,6 +208,9 @@ exports.run = async function run(jest) {
     require('./app.cjs').installNavigation({ jest, host });
   }
   for (const [name, module] of Object.entries(externalNative.modules)) jest.doMock(name, () => module);
+  for (const [name, module] of Object.entries(externalMap.modules)) jest.doMock(name, () => module);
+  for (const [name, module] of Object.entries(externalUpdates.modules)) jest.doMock(name, () => module);
+  authFixture.install(jest);
 
   function builder(kind, name, args) {
     const steps = [];
@@ -188,7 +219,7 @@ exports.run = async function run(jest) {
     const query = {
       then(resolve, reject) {
         if (!flight) flight = signal?.aborted ? Promise.resolve({ data: null, error: { message: 'aborted', code: 'ABORT_ERR' } })
-          : request({ kind, name, args, steps, userId: session.user.id }, signal).then(result => {
+          : request({ kind, name, args, steps, userId: authFixture.currentSession()?.user.id ?? null }, signal).then(result => {
             if (signal?.aborted) return { data: null, error: { message: 'aborted', code: 'ABORT_ERR' } };
             return result;
           });
@@ -207,21 +238,11 @@ exports.run = async function run(jest) {
   jest.doMock('@supabase/supabase-js', () => ({ createClient: (url, key, options) => {
     assert.equal(url, process.env.EXPO_PUBLIC_SUPABASE_URL);
     assert.equal(key, 'headless-fixture-only');
-    sdkStorage = options.auth.storage;
     sdk = strict('Supabase', {
-      auth: strict('auth', {
-        getSession: async () => ({ data: { session }, error: null }),
-        refreshSession: async () => {
-          if (!presentationMode) return fatal('Unexpected fixture token refresh');
-          return { data: { session, user: session?.user }, error: null };
-        },
-        getUser: async () => ({ data: { user: session?.user }, error: null }),
-        onAuthStateChange: callback => { authListeners.add(callback); return { data: { subscription: { unsubscribe: () => authListeners.delete(callback) } } }; },
-        startAutoRefresh: () => {},
-        stopAutoRefresh: () => {},
-      }),
+      auth: authFixture.createAuth(options),
       rpc: (name, args = {}) => builder('rpc', name, args),
       from: name => builder('table', name, {}),
+      functions: strict('Supabase.functions', { invoke: (name, args) => request({ kind: 'function', name, args, userId: authFixture.currentSession()?.user.id ?? null }) }),
       channel: name => {
         const bindings = [];
         const channel = {
@@ -262,14 +283,10 @@ exports.run = async function run(jest) {
   const core = require('../../src/state/coreDataSync');
   const { getLocalAuthActorId } = require('../../src/api/supabase');
   stage('production imports loaded');
-  const persistedSession = await sdkStorage.getItem(authKey);
-  if (persistedSession) {
-    session = JSON.parse(persistedSession);
-    assert.equal(typeof session.user?.id, 'string', 'Invalid persisted fixture actor');
-    assert.equal(session.access_token, `fixture-${session.user.id}`, 'Invalid persisted fixture session');
-  } else await authenticate(spec.userId);
+  await authFixture.restore(spec.userId);
+  session = authFixture.currentSession();
   stage('auth persisted');
-  const app = { userId: session.user.id, platform: spec.platform, groupId: spec.screen?.params?.groupId ?? null, sharingEnabled: true,
+  const app = { userId: session?.user.id ?? null, platform: spec.platform, groupId: spec.screen?.params?.groupId ?? null, sharingEnabled: true,
     destinationService: require('../../src/api/services/DestinationService') };
   const mapRef = { current: null };
   const carouselRef = { current: null };
@@ -294,7 +311,7 @@ exports.run = async function run(jest) {
     return null;
   }
   let root;
-  app.render = async () => { root.update(React.createElement(Probe)); };
+  app.render = async () => { root.update(presentationMode ? presentation.element : React.createElement(Probe)); };
   let presentation;
   if (presentationMode) {
     presentation = require('./app.cjs').createPresentation(React, spec, host, app);
@@ -310,14 +327,16 @@ exports.run = async function run(jest) {
     return {
       pid: process.pid, generation: spec.generation, actorId: await getLocalAuthActorId(),
       presentation: presentationMode ? {
-        hosts: host.observe(root), route: host.route,
+        hosts: (() => { try { return host.observe(root); } catch (error) { return fatal(`Presentation renderer failed: ${error.message}\n${renderErrors.join('\n')}`); } })(), route: host.route,
         session: presentation.observation.session ? JSON.parse(JSON.stringify(presentation.observation.session)) : null,
         preferences: presentation.observation.preferences ? JSON.parse(JSON.stringify(presentation.observation.preferences)) : null,
         receipts: host.receipts, nativeGoogle: require('../../src/state/googleSignIn').usesNativeGoogleSignIn,
         invites: presentation.observation.invites?.invites,
+        animations: [...host.animations.keys()],
         resolved: fs.existsSync(path.join(spec.directory, 'resolved.jsonl')) ? [...new Set(fs.readFileSync(path.join(spec.directory, 'resolved.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line).resolved))] : [],
       } : null,
       native: externalNative.observe(),
+      maps: externalMap.observe(), updates: externalUpdates.observe(),
       renderErrors: renderErrors.slice(-10),
       group: { state: app.group?.state, loading: app.group?.loading, error: app.group?.error,
         dataSource: app.group?.dataSource, snapshotFreshness: app.group?.snapshotFreshness,
@@ -377,7 +396,10 @@ exports.run = async function run(jest) {
         } else if (input.kind === 'appState') {
           assert(['active', 'inactive', 'background'].includes(input.value));
           appState.currentState = input.value;
-          for (const listener of [...appListeners]) listener(input.value);
+          for (const listener of [...appListeners]) if (listener.event === 'change') listener.fn(input.value);
+        } else if (input.kind === 'appFocus') {
+          assert(['blur', 'focus'].includes(input.value));
+          for (const listener of [...appListeners]) if (listener.event === input.value) listener.fn();
         } else if (input.kind === 'consentContext') {
           assert.equal(typeof input.enabled, 'boolean');
           await storage.setItem(privacy.LOCATION_SHARING_KEY, String(input.enabled));
@@ -386,9 +408,11 @@ exports.run = async function run(jest) {
           await app.render();
         } else if (input.kind === 'account') {
           assert.equal(typeof input.userId, 'string');
-          await authenticate(input.userId);
+          await authFixture.authenticate(input.userId);
           app.userId = input.userId;
           await app.render();
+        } else if (input.kind === 'auth.configureNative') {
+          authFixture.configureNative(input.value);
         } else if (input.kind === 'permission') {
           assert(['granted', 'denied'].includes(input.status));
           permission.status = input.status;
@@ -402,8 +426,11 @@ exports.run = async function run(jest) {
         } else if (input.kind === 'task') {
           assert(host?.tasks.has(input.name), `Unknown task ${input.name}`);
           await host.tasks.get(input.name)(input.value);
-        } else if (['iapConfigure', 'iapPurchase', 'iapError', 'adsConfigure', 'adEvent', 'notificationsConfigure',
-          'notification', 'liveConfigure', 'liveExisting', 'livePushToken', 'livePushToStart'].includes(input.kind)) await externalNative.input(input);
+        } else if (input.kind === 'animation') {
+          assert(host, 'Animation input requires native host'); host.input(input);
+        } else if (externalNative.handles(input.kind)) await externalNative.input(input);
+        else if (externalMap.handles(input.kind)) await externalMap.input(input);
+        else if (externalUpdates.handles(input.kind)) await externalUpdates.input(input);
         else return fatal(`Unknown external input ${input.kind}`);
       });
       return;
@@ -470,28 +497,6 @@ exports.run = async function run(jest) {
     }
     return fatal(`Unknown command ${kind}`);
   }
-  const receive = message => {
-    if (message.generation !== spec.generation) return;
-    if (message.type === 'response') {
-      const pending = requests.get(message.id);
-      if (!pending) {
-        if (cancelled.delete(message.id)) return;
-        failures.push(`Unknown response ${message.id}`);
-        return;
-      }
-      requests.delete(message.id);
-      pending.cleanup();
-      if (message.fatal) failures.push(message.fatal);
-      pending.resolve(message.result);
-      return;
-    }
-    if (message.type !== 'command') { failures.push(`Unknown IPC ${message.type}`); return; }
-    void command(message).then(result => {
-      if (message.command.kind !== 'close') check();
-      send({ type: 'result', id: message.id, result });
-    }).catch(error => send({ type: 'result', id: message.id, error: error.stack ?? String(error) }));
-  };
-  ipc.on(receive);
   send({ type: 'ready' });
   await disposed;
   ipc.off(receive);
