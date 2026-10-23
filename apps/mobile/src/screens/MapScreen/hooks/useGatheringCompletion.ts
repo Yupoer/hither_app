@@ -1,4 +1,4 @@
-import React, { createElement, Fragment, useState, useCallback, } from 'react';
+import React, { createElement, Fragment, useState, useCallback, useRef, } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { Alert } from 'react-native';
 import type { TranslationKey } from '../../../i18n';
@@ -68,28 +68,45 @@ export function useGatheringCompletion({
   members,
   navTargetId,
 }: UseGatheringCompletionInput) {
+  const latestAuthorityRef = useRef({ groupId, userId: user?.id, canEditItinerary,
+    arrivalContext, allScopedDestinations, resolveCurrentNavigationSessionId });
+  latestAuthorityRef.current = { groupId, userId: user?.id, canEditItinerary,
+    arrivalContext, allScopedDestinations, resolveCurrentNavigationSessionId };
   /** @returns true after local completion is saved; transport never owns success. */
   const runCompleteGatheringStop = useCallback(async (destination: Destination, force = true): Promise<boolean> => {
     // Complete is separate from End navigation: only this path closes the stop
     // (closed_at → leaves carousel → history). End only pauses flock travel.
     // Server complete_gathering_stop also cancels any active nav for this stop.
     if (!groupId || !user?.id || !canEditItinerary) return false;
-    if (pendingLeaderTargetId === destination.id && !resolveCurrentNavigationSessionId(destination)) return false;
+    const sessionId = resolveCurrentNavigationSessionId(destination);
+    if (pendingLeaderTargetId === destination.id && !sessionId) return false;
     const completionContext = arrivalContext;
-    const isCurrent = () => mapMountedRef.current && arrivalContextRef.current === completionContext;
-      const alreadyClosed = !!destination.closedAt
+    const isCurrent = () => {
+      const latest = latestAuthorityRef.current;
+      const currentDestination = latest.allScopedDestinations.find(item => item.id === destination.id);
+      const currentSessionId = latest.resolveCurrentNavigationSessionId(destination);
+      return mapMountedRef.current && arrivalContextRef.current === completionContext
+        && latest.arrivalContext === completionContext && latest.groupId === groupId
+        && latest.userId === user.id && latest.canEditItinerary
+        && (!currentSessionId || currentSessionId === sessionId) && !!currentDestination
+        && (currentDestination.subgroupId ?? null) === (destination.subgroupId ?? null);
+    };
+    const isSessionCurrent = () => isCurrent()
+      && latestAuthorityRef.current.resolveCurrentNavigationSessionId(destination) === sessionId;
+    if (!isSessionCurrent()) return false;
+    const alreadyClosed = !!destination.closedAt
       || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
     const plan = planCompleteGatheringApply({
       alreadyClosed,
       rpcInFlight: completingDestIdsRef.current.has(destination.id),
       remoteAutoCompleted: remoteAutoCompleteDestIdsRef.current.has(destination.id),
     });
+    if (!alreadyClosed && !sessionId) return false;
     const closedAt = destination.closedAt ?? new Date().toISOString();
     if (completingDestIdsRef.current.has(destination.id)) return false;
     if (plan.callRpc) {
       completingDestIdsRef.current.add(destination.id);
       try {
-        const sessionId = resolveCurrentNavigationSessionId(destination);
         const operation = await enqueueJourneyCompletion({
           groupId, destinationId: destination.id, navigationSessionId: sessionId,
           actorId: user.id, scopeSubgroupId: destination.subgroupId ?? null,
@@ -98,9 +115,9 @@ export function useGatheringCompletion({
             && (member.subgroupId ?? null) === (destination.subgroupId ?? null)).map(member => member.userId),
           arrivedMemberIds: activeDestinationArrivals.filter(arrival => arrival.destinationId === destination.id)
             .map(arrival => arrival.userId),
-          force, isCurrent,
+          force, isCurrent: isSessionCurrent,
         });
-        if (!isCurrent() || (!force && !operation)) {
+        if (!isCurrent() || !operation) {
           completingDestIdsRef.current.delete(destination.id);
           return false;
         }
@@ -117,6 +134,7 @@ export function useGatheringCompletion({
         completingDestIdsRef.current.delete(destination.id);
       }
     }
+    if (!isCurrent()) return false;
     // The durable completion already closed the stop in the local snapshot;
     // only an open route draft still holds its own copy of the list.
     const draft = routeDraft.latestDestinations();
@@ -131,7 +149,7 @@ export function useGatheringCompletion({
       );
       startArrivalCardExit({ ...destination, closedAt }, priorIdx);
     }
-    stopRemovedDestination(destination.id, resolveCurrentNavigationSessionId(destination));
+    stopRemovedDestination(destination.id, sessionId);
     if (plan.refreshHistory) void Promise.all([
       navigationSessionState.refresh(), refresh(), loadGatheringWorkflow(), loadHistory(),
     ]).catch(() => undefined);
@@ -183,6 +201,22 @@ export function useGatheringCompletion({
      */
     includeSelf?: boolean;
   }) => {
+    const sessionId = resolveCurrentNavigationSessionId(destination);
+    const stopAlreadyComplete = !!destination.closedAt
+      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
+    if (canEditItinerary && !stopAlreadyComplete && !sessionId) return;
+    const promptContext = arrivalContext;
+    const isPromptCurrent = () => {
+      const latest = latestAuthorityRef.current;
+      const currentDestination = latest.allScopedDestinations.find(item => item.id === destination.id);
+      return mapMountedRef.current && arrivalContextRef.current === promptContext
+        && latest.arrivalContext === promptContext && latest.groupId === groupId
+        && latest.userId === user?.id && latest.canEditItinerary === canEditItinerary
+        && !!currentDestination
+        && (currentDestination.subgroupId ?? null) === (destination.subgroupId ?? null)
+        && latest.resolveCurrentNavigationSessionId(destination) === sessionId;
+    };
+    if (!isPromptCurrent()) return;
     const arrivedIds = new Set(
       activeDestinationArrivals
         .filter((a) => a.destinationId === destination.id)
@@ -196,8 +230,6 @@ export function useGatheringCompletion({
       includeUserId: opts?.includeSelf ? user?.id : null,
       travelerFallback: t('group.travelerFallback'),
     });
-    const stopAlreadyComplete = !!destination.closedAt
-      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
     const prompt = resolveCompletePrompt({
       isLeader: canEditItinerary,
       missingMemberNames: counts.missingMemberNames,
@@ -251,6 +283,7 @@ export function useGatheringCompletion({
       text: confirmLabel,
       style: isMissing ? 'destructive' : undefined,
       onPress: () => {
+        if (!isPromptCurrent()) return;
         // Leader RPC only — members already have arrival/history; just refresh.
         if (isMemberDone) {
           void refresh();
@@ -264,6 +297,9 @@ export function useGatheringCompletion({
   }, [
     allScopedDestinations,
     activeDestinationArrivals,
+    arrivalContext,
+    groupId,
+    resolveCurrentNavigationSessionId,
     executeAutoCompleteStop,
     canEditItinerary,
     loadGatheringWorkflow,

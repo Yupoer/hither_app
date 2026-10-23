@@ -4,6 +4,7 @@ import { getNotificationPreferences, setNotificationPreferences, setSolo, saveOn
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 import { useGatheringCompletion, type UseGatheringCompletionInput } from '../screens/MapScreen/hooks/useGatheringCompletion';
 import { enqueueJourneyCompletion } from '../state/journeyCompletion';
+import { notifyThisDeviceAutoComplete } from '../native/notifications';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useStoreEntitlements, type UseStoreEntitlementsInput } from '../screens/MapScreen/hooks/useStoreEntitlements';
@@ -20,7 +21,7 @@ import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 
 jest.mock('../state/journeyCompletion', () => ({ enqueueJourneyCompletion: jest.fn() }));
-jest.mock('../native/notifications', () => ({ notifyThisDeviceAutoComplete: jest.fn() }));
+jest.mock('../native/notifications', () => ({ notifyThisDeviceAutoComplete: jest.fn(async () => undefined) }));
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() }, Share: { share: jest.fn() } }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('../api/client', () => ({
@@ -214,7 +215,7 @@ function completionInput(): UseGatheringCompletionInput {
     canEditItinerary: true, pendingLeaderTargetId: null,
     resolveCurrentNavigationSessionId: () => 'session', arrivalContext: 'current',
     mapMountedRef: { current: true }, arrivalContextRef: { current: 'current' },
-    allScopedDestinations: [], completingDestIdsRef: { current: new Set() },
+    allScopedDestinations: [completionStop], completingDestIdsRef: { current: new Set() },
     remoteAutoCompleteDestIdsRef: { current: new Set() }, sessionEligibleMembers: [],
     activeDestinationArrivals: [], refreshLocalSnapshot: jest.fn(async () => true), t,
     routeDraft: { latestDestinations: () => null, setDestinations: jest.fn() },
@@ -226,13 +227,133 @@ function completionInput(): UseGatheringCompletionInput {
 }
 
 const completionStop = { id: 'stop', title: 'Temple', coordinates: { latitude: 1, longitude: 2 }, order: 0, day: 1 };
+const completionOperation: NonNullable<Awaited<ReturnType<typeof enqueueJourneyCompletion>>> = {
+  id: 'complete-operation', groupId: 'team', entityType: 'itinerary', entityId: 'team',
+  entityVersion: 1, operationType: 'complete_destination', payload: { destinationId: 'stop', sessionId: 'session' },
+  createdAt: 1, updatedAt: 1, status: 'pending', attempts: 0, nextAttemptAt: 0, conflictResult: null,
+};
+
+function manualCompletionInput(): UseGatheringCompletionInput {
+  return { ...completionInput(), sessionEligibleMembers: [
+    { userId: 'leader', name: 'Leader', role: 'leader', status: 'active', lastUpdated: '2026-10-23T00:00:00Z' },
+    { userId: 'member', name: 'Member', role: 'follower', status: 'active', lastUpdated: '2026-10-23T00:00:00Z' },
+  ] };
+}
 
 describe('MapScreen gathering completion', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  it('completes the active scoped stop once when the final committed arrival is rendered', async () => {
+    const stop = { ...completionStop, subgroupId: 'flock' };
+    const otherStop = { ...completionStop, id: 'other-stop' };
+    let sessionId: string | null = 'session';
+    const input: UseGatheringCompletionInput = {
+      ...manualCompletionInput(), allScopedDestinations: [otherStop, stop], navTargetId: 'stop',
+      resolveCurrentNavigationSessionId: () => sessionId,
+      refreshLocalSnapshot: jest.fn(async () => { sessionId = null; return true; }),
+      sessionEligibleMembers: [
+        ...manualCompletionInput().sessionEligibleMembers.map(member => ({ ...member, subgroupId: 'flock' })),
+        { userId: 'outside', name: 'Outside', role: 'follower', status: 'active', lastUpdated: '2026-10-23T00:00:00Z' },
+      ],
+      activeDestinationArrivals: [
+        { id: 'leader-arrival', groupId: 'team', destinationId: 'stop', userId: 'leader', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'leader' },
+        { id: 'elsewhere', groupId: 'team', destinationId: 'other-stop', userId: 'member', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'member' },
+      ],
+      routeDraft: { latestDestinations: () => [otherStop, stop], setDestinations: jest.fn() },
+      prevVisibleDestOrderRef: { current: ['other-stop', 'stop'] },
+    };
+    const pending = deferred<Awaited<ReturnType<typeof enqueueJourneyCompletion>>>();
+    jest.mocked(enqueueJourneyCompletion).mockReturnValueOnce(pending.promise);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    const finalArrivals = [...input.activeDestinationArrivals,
+      { id: 'member-arrival', groupId: 'team', destinationId: 'stop', userId: 'member', arrivedAt: '2026-10-23T00:01:00Z', source: 'manual', markedBy: 'member' } satisfies UseGatheringCompletionInput['activeDestinationArrivals'][number],
+    ];
+    await mounted.update({ ...input, activeDestinationArrivals: finalArrivals });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    expect(enqueueJourneyCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      groupId: 'team', destinationId: 'stop', navigationSessionId: 'session',
+      scopeSubgroupId: 'flock', navigationMemberIds: ['leader', 'member'],
+      arrivedMemberIds: ['leader', 'member'], force: false,
+    }));
+    await mounted.update({ ...input, activeDestinationArrivals: [...finalArrivals] });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve(completionOperation); });
+    expect(input.routeDraft.setDestinations).toHaveBeenCalledWith([
+      otherStop, expect.objectContaining({ id: 'stop', closedAt: expect.any(String) }),
+    ]);
+    expect(input.startArrivalCardExit).toHaveBeenCalledWith(expect.objectContaining({ id: 'stop', closedAt: expect.any(String) }), 1);
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledWith({
+      title: 'gathering.autoCompleteTitle', body: 'gathering.autoCompleteBody',
+      data: { kind: 'gathering_auto_complete', destinationId: 'stop' },
+    });
+    const closedStop = { ...stop, closedAt: '2026-10-23T00:01:00Z' };
+    await act(async () => { mounted.value.promptCompleteAfterArrival(closedStop); });
+    await mounted.update({ ...input, allScopedDestinations: [otherStop, closedStop], activeDestinationArrivals: finalArrivals });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it('keeps a remotely completed roster open after enqueue failure and retries on the next committed snapshot', async () => {
+    const input: UseGatheringCompletionInput = {
+      ...manualCompletionInput(), navTargetId: 'stop',
+      activeDestinationArrivals: ['leader', 'member'].map(userId => ({
+        id: `${userId}-arrival`, groupId: 'team', destinationId: 'stop', userId,
+        arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: userId,
+      })),
+    };
+    jest.mocked(enqueueJourneyCompletion).mockRejectedValueOnce(new Error('disk failed')).mockResolvedValueOnce(completionOperation);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).toHaveBeenCalledWith('map.setFailedTitle', expect.any(String));
+    expect(input.refreshLocalSnapshot).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    expect(input.loadHistory).not.toHaveBeenCalled();
+    expect(notifyThisDeviceAutoComplete).not.toHaveBeenCalled();
+    await mounted.update({ ...input, activeDestinationArrivals: [...input.activeDestinationArrivals] });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(2);
+    expect(enqueueJourneyCompletion).toHaveBeenLastCalledWith(expect.objectContaining({ navigationSessionId: 'session', force: false }));
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledTimes(1);
+    await mounted.unmount();
+  });
+
+  it('shows the committed partial-arrival count and confirms only those arrival rows', async () => {
+    const translate = jest.fn((key: string) => key);
+    const input: UseGatheringCompletionInput = {
+      ...manualCompletionInput(), t: translate,
+      activeDestinationArrivals: [
+        { id: 'member-arrival', groupId: 'team', destinationId: 'stop', userId: 'member', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'member' },
+        { id: 'leader-elsewhere', groupId: 'team', destinationId: 'other-stop', userId: 'leader', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'leader' },
+      ],
+    };
+    jest.mocked(enqueueJourneyCompletion).mockResolvedValueOnce(completionOperation);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    mounted.value.promptCompleteAfterArrival(completionStop);
+    expect(translate).toHaveBeenCalledWith('gathering.completeMissingMessage', { arrived: '1', total: '2' });
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    await act(async () => { jest.mocked(Alert.alert).mock.calls[0][2]?.[1]?.onPress?.(); });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      destinationId: 'stop', navigationSessionId: 'session', force: true,
+      arrivedMemberIds: ['member'], navigationMemberIds: ['leader', 'member'],
+    }));
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
   it('releases the in-flight guard after failure and retries the same session', async () => {
     const input = completionInput();
-    jest.mocked(enqueueJourneyCompletion).mockRejectedValueOnce(new Error('disk failed')).mockResolvedValueOnce(null);
+    jest.mocked(enqueueJourneyCompletion).mockRejectedValueOnce(new Error('disk failed')).mockResolvedValueOnce(completionOperation);
     const mounted = await mountHook(useGatheringCompletion, input);
     await act(async () => { expect(await mounted.value.runCompleteGatheringStop(completionStop)).toBe(false); });
     expect(input.completingDestIdsRef.current.size).toBe(0);
@@ -276,6 +397,139 @@ describe('MapScreen gathering completion', () => {
     const mounted = await mountHook(useGatheringCompletion, input);
     expect(await mounted.value.runCompleteGatheringStop(completionStop)).toBe(false);
     expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it('keeps the stop open when forced completion is not durably enqueued', async () => {
+    const input = completionInput();
+    jest.mocked(enqueueJourneyCompletion).mockResolvedValueOnce(null);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    expect(await mounted.value.runCompleteGatheringStop(completionStop)).toBe(false);
+    expect(input.refreshLocalSnapshot).not.toHaveBeenCalled();
+    expect(input.routeDraft.setDestinations).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    expect(input.loadHistory).not.toHaveBeenCalled();
+    expect(input.completingDestIdsRef.current.size).toBe(0);
+    await mounted.unmount();
+  });
+
+  it('asks for confirmation with no arrivals and cancellation leaves everything open', async () => {
+    const input = manualCompletionInput();
+    const mounted = await mountHook(useGatheringCompletion, input);
+    mounted.value.promptCompleteAfterArrival(completionStop);
+    expect(Alert.alert).toHaveBeenCalledWith('gathering.completeMissingTitle', 'gathering.completeMissingMessage', [
+      expect.objectContaining({ text: 'common.cancel', style: 'cancel' }),
+      expect.objectContaining({ text: 'gathering.completeConfirm', style: 'destructive' }),
+    ]);
+    const cancel = jest.mocked(Alert.alert).mock.calls[0][2]?.[0];
+    cancel?.onPress?.();
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it('confirms forced completion without inventing personal arrivals', async () => {
+    const input = manualCompletionInput();
+    jest.mocked(enqueueJourneyCompletion).mockResolvedValueOnce(completionOperation);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    mounted.value.promptCompleteAfterArrival(completionStop);
+    await act(async () => { jest.mocked(Alert.alert).mock.calls[0][2]?.[1]?.onPress?.(); });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      destinationId: 'stop', navigationSessionId: 'session', force: true,
+      arrivedMemberIds: [], navigationMemberIds: ['leader', 'member'],
+    }));
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    await mounted.unmount();
+  });
+
+  it('does not open a completion prompt until Start has a real session', async () => {
+    const input = { ...manualCompletionInput(), pendingLeaderTargetId: 'stop', resolveCurrentNavigationSessionId: () => null };
+    const mounted = await mountHook(useGatheringCompletion, input);
+    mounted.value.promptCompleteAfterArrival(completionStop);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it.each(['destination', 'snapshot'])('reconciles a stop already closed in the %s without a session', async source => {
+    const closedStop = { ...completionStop, closedAt: '2026-10-23T00:00:00Z' };
+    const input = { ...manualCompletionInput(), resolveCurrentNavigationSessionId: () => null,
+      allScopedDestinations: [closedStop] };
+    const mounted = await mountHook(useGatheringCompletion, input);
+    await act(async () => {
+      mounted.value.promptCompleteAfterArrival(source === 'destination' ? closedStop : completionStop);
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).toHaveBeenCalledWith(expect.objectContaining({ id: 'stop', closedAt: expect.any(String) }), 0);
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', null);
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    await mounted.unmount();
+  });
+
+  it('blocks manual completion of an open stop without a session', async () => {
+    const input = { ...manualCompletionInput(), resolveCurrentNavigationSessionId: () => null };
+    const mounted = await mountHook(useGatheringCompletion, input);
+    await act(async () => {
+      mounted.value.promptCompleteAfterArrival(completionStop);
+      expect(await mounted.value.runCompleteGatheringStop(completionStop)).toBe(false);
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    expect(input.loadHistory).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it.each([
+    ['session', { resolveCurrentNavigationSessionId: () => 'new-session' }],
+    ['ended session', { resolveCurrentNavigationSessionId: () => null }],
+    ['group', { groupId: 'other-team' }],
+    ['actor', { user: { id: 'other-leader', name: 'Other', email: 'other@example.test' } }],
+    ['permission', { canEditItinerary: false }],
+    ['arrival context', { arrivalContext: 'other-scope' }],
+    ['destination scope', { allScopedDestinations: [{ ...completionStop, subgroupId: 'other-scope' }] }],
+    ['removed destination', { allScopedDestinations: [] }],
+  ] satisfies [string, Partial<UseGatheringCompletionInput>][])(
+    'rejects an old dialog after the %s changes', async (_reason, changed) => {
+      const input = manualCompletionInput();
+      const mounted = await mountHook(useGatheringCompletion, input);
+      mounted.value.promptCompleteAfterArrival(completionStop);
+      const confirm = jest.mocked(Alert.alert).mock.calls[0][2]?.[1]?.onPress;
+      expect(confirm).toBeDefined();
+      await mounted.update({ ...input, ...changed });
+      await act(async () => { confirm?.(); });
+      expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+      expect(input.routeDraft.setDestinations).not.toHaveBeenCalled();
+      expect(input.startArrivalCardExit).not.toHaveBeenCalled();
+      expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+      await mounted.unmount();
+    },
+  );
+
+  it('uses the original session after local refresh removes its resolver identity', async () => {
+    let sessionId: string | null = 'session';
+    const input = { ...completionInput(), resolveCurrentNavigationSessionId: () => sessionId,
+      refreshLocalSnapshot: jest.fn(async () => { sessionId = null; return true; }) };
+    jest.mocked(enqueueJourneyCompletion).mockResolvedValueOnce(completionOperation);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    await act(async () => { expect(await mounted.value.runCompleteGatheringStop(completionStop)).toBe(true); });
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    await mounted.unmount();
+  });
+
+  it('does not apply old completion effects to a newer session while the write is pending', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof enqueueJourneyCompletion>>>();
+    jest.mocked(enqueueJourneyCompletion).mockReturnValueOnce(pending.promise);
+    const input = completionInput();
+    const mounted = await mountHook(useGatheringCompletion, input);
+    const completion = mounted.value.runCompleteGatheringStop(completionStop);
+    await mounted.update({ ...input, resolveCurrentNavigationSessionId: () => 'new-session' });
+    await act(async () => { pending.resolve(completionOperation); expect(await completion).toBe(false); });
+    expect(input.refreshLocalSnapshot).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
     await mounted.unmount();
   });
 });

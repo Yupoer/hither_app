@@ -729,15 +729,6 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('runCompleteGatheringStop');
     // Complete durably queues the original-session terminal operation.
     expect(mapScreen).toContain('navigationSessionState.refresh()');
-    const completeFn = mapScreen.slice(
-      mapScreen.indexOf('runCompleteGatheringStop = useCallback'),
-      mapScreen.indexOf('runCompleteGatheringStop = useCallback') + 2800,
-    );
-    expect(completeFn).toContain('enqueueJourneyCompletion({');
-    expect(completeFn).toContain('resolveCurrentNavigationSessionId(destination)');
-    expect(completeFn).toMatch(/finally\s*\{\s*completingDestIdsRef\.current\.delete\(destination\.id\);/);
-    expect(completeFn).not.toContain('stopNavigation()');
-    expect(completeFn).not.toContain('requestTeamEnd');
     expect(mapScreen).toContain('sharedTargetId');
     expect(carousel).toContain("navCmd.action === 'request_start'");
     expect(carousel).toContain('requestLeaderStart(dest)');

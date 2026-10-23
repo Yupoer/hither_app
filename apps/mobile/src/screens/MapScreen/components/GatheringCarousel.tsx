@@ -862,6 +862,27 @@ export function GatheringCarousel({
                     ) : null}
                   </View>
                   )}
+                  {cardExpanded && canEditItinerary && !dest.closedAt
+                    && sharedTargetId === dest.id ? (
+                    <Pressable
+                      style={[styles.navBtn, { flexGrow: 0, flexBasis: 'auto', minHeight: 44,
+                        marginTop: 8, paddingVertical: 10, backgroundColor: accent }]}
+                      onPress={() => {
+                        registerCardActivity(dest.id);
+                        mediumTap();
+                        promptCompleteAfterArrival(dest);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('gathering.completeMissingTitle')}
+                      accessibilityHint={t('nav.a11yCompleteHint')}
+                      testID={`gather-complete-${dest.id}`}
+                    >
+                      <Ionicons name="checkmark-done" size={18} color={colors.accentText} />
+                      <Text style={[styles.navBtnText, { color: colors.accentText }]}>
+                        {t('gathering.completeMissingTitle')}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   </View>
                 </SwiftUIGlassSurface>
                 </ArrivalCardExitShell>

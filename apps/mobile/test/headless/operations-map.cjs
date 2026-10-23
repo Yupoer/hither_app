@@ -136,11 +136,10 @@ identifiedButton('map.card.toggle', ['MAP-SHELL-01', 'MAP-SHELL-03'], 'toggleGat
   'Actual accessible card press expands/collapses with duplicate gesture guard and real idle timer ownership.');
 identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03', 'MAP-GATHER-07'],
   'gather-nav onPress dispatch', 'gather-nav-', 'destinationId',
-  'Actual card dispatches the rendered Start, End or follower request. Active-session manual force completion is not exposed by the current card; see entryLimits.');
-operations['map.journey.command'].entryLimits = [{ branch: 'manual-force-completion',
-  sources: [...source('src/utils/gatherCommand.ts', 'if (flockNavigatingThis)'), ...source(screen, 'promptComplete: false'),
-    ...source(screen, 'resolveCurrentNavigationSessionId')],
-  reason: 'Active team travel always renders End. Personal arrival does not schedule the force prompt. Complete appears only after travel ends, when the resolver no longer supplies an active session; canonical completion rejects cancelled sessions. Actual all-arrived completion is a separate verified lifecycle.' }];
+  'Actual card dispatches the rendered Start, End or follower request. End pauses navigation and leaves the stop open.');
+identifiedButton('map.journey.complete', ['MAP-GATHER-03', 'MAP-GATHER-04'], 'promptCompleteAfterArrival',
+  'gather-complete-', 'destinationId',
+  'Actual leader control confirms missing-member completion for the original active session without adding arrivals.', panel('GatheringCarousel'));
 identifiedButton('map.arrival.mark', ['MAP-ARRIVAL-01', 'MAP-ARRIVAL-05', 'MAP-ARRIVAL-06'], 'handleSelfArrival', 'gather-arrival-', 'destinationId',
   'Actual card writes device-now personal arrival after the pending-Start barrier; arrival alone never completes a stop.');
 identifiedButton('map.arrival.undo', ['MAP-ARRIVAL-03', 'MAP-ARRIVAL-04'], 'handleArrival', 'gather-arrival-undo-', 'destinationId',
