@@ -56,6 +56,9 @@ exports.createExternalAuth = ({ strict, request, spec = {} }) => {
     const auth = {
       getSession: async () => {
         await ready;
+        await write;
+        const stored = await storage.getItem(authKey);
+        session = stored ? JSON.parse(stored) : null;
         if (session && session.expires_at <= Math.floor(Date.now() / 1000) + 10) return invoke('refreshSession', [{ refresh_token: session.refresh_token }], 'TOKEN_REFRESHED');
         return { data: { session: snapshot(session) }, error: null };
       },

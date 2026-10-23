@@ -62,6 +62,9 @@ async function main() {
   await auth.updateUser({ password: 'Recovered123!' });
   await auth.signOut();
   assert.equal((await auth.signInWithPassword({ email: 'upgrade@headless.test', password: 'Recovered123!' })).data.user.id, anonId);
+  await storage.removeItem('sb-headless-auth-token');
+  assert.equal((await auth.getSession()).data.session, null, 'Project terminal invalidation removes SDK session through the configured storage');
+  await auth.signInWithPassword({ email: 'upgrade@headless.test', password: 'Recovered123!' });
   assert.equal((await auth.resetPasswordForEmail('upgrade@headless.test', { redirectTo: 'https://hither-legal.pages.dev/auth/recovery' })).error, null);
   assert.equal((await auth.resend({ type: 'signup', email: 'new@headless.test' })).error, null);
   assert((await auth.signInWithOAuth({ provider: 'google', options: { redirectTo: 'https://hither-legal.pages.dev/auth/callback' } })).data.url);
