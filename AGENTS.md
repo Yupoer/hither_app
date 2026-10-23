@@ -6,6 +6,8 @@
 - 在專用 worktree 修改；主工作樹 dirty 不阻塞獨立工作，也不得為交接 stash 無關修改。合併後主工作樹安全 fast-forward；其他 active worktree 由 owner 在乾淨交接點同步 master。
 - 完整流程已授權同範圍規劃、Issue／PR、修復、push、merge 與已交付資源清理，不逐階段詢問。未決重大產品取捨、未授權發布、不可恢復的資料丟棄或必要憑證仍須處理。
 - 以現有 CI／package scripts 驗證受影響範圍；保留 required checks、適用的 acceptance-map 與 coverage。相同 head/base 的有效結果不重跑。文件／規則改動不跑無關產品測試。
+- 交付順序為 commit → push 任務分支 → 建立／更新以 master 為目標的 PR → 適用 CI／required checks 與獨立審查通過 → merge master。完整交付已授權時直接完成合併，不停在「CI 已綠」另問一次；不得先直接 push master 再補 PR 合併。
+- CI 或審查失敗就在同一分支／PR 修復，推送後驗證最新 head；合併前重新核對 head、master base、required checks 與 branch protection，不以舊提交的綠燈替代。base 更新時補驗受影響範圍。合併後核實遠端 master 包含 merge commit，再安全 fast-forward 乾淨的 master checkout；dirty checkout 保留並記錄待同步。
 - commit／push 不觸發發布。Native、app config、plugins、native dependencies 變更需相容 binary；OTA／build／submit 僅按明確指定的平台與 channel 執行。
 - 合併後驗證 remote SHA，移除已交付且無 active owner 的 task worktree、feature branch 與已核實的暫存／備份。先檢查 tracked、untracked、ignored、stash；Issue closed 不等於所有本地內容都可刪。
 - 僅本次已授權整理範圍內的未交付內容關聯 GitHub recovery Issue／專用 worktree；無關 WIP 原位保留。正式文件、測試、憑證與發布資產不視作任務垃圾。
