@@ -1458,6 +1458,7 @@ export default function DestinationReorderList({
                 return (
                   <Pressable
                     key={cat.id}
+                    testID={`route-emoji-category-${cat.id}`}
                     onPress={() => setEmojiCategory(cat.id)}
                     style={[
                       styles.emojiCategoryTab,
@@ -1490,6 +1491,7 @@ export default function DestinationReorderList({
                 return (
                   <Pressable
                     key={preset.emoji}
+                    testID={`route-emoji-preset-${preset.emoji}`}
                     onPress={() => {
                       setEmojiDraft(preset.emoji);
                       setEmojiSaveError(false);

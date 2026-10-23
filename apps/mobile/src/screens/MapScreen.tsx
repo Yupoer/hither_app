@@ -7601,6 +7601,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       </Text>
                     ) : null}
                     <GatheringCardPressable
+                      testID={`gather-card-${dest.id}`}
                       onToggle={() => toggleGatheringCard(dest.id)}
                       accessibilityLabel={dest.title}
                       accessibilityHint={
@@ -8159,6 +8160,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={t('route.deleteSelectedA11y')}
+                testID="route-delete-selected"
                 hitSlop={8}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
               >
@@ -8186,6 +8188,7 @@ export default function MapScreen({ route, navigation }: Props) {
                       : t('route.modeHiddenA11y')
                 }
                 hitSlop={8}
+                testID="route-interaction-mode"
                 style={{ paddingVertical: 2, paddingHorizontal: 2 }}
               >
                 <Ionicons
@@ -9511,12 +9514,14 @@ function CarouselDot({
 }
 
 function GatheringCardPressable({
+  testID,
   onToggle,
   accessibilityLabel,
   accessibilityHint,
   children,
 }: {
   onToggle: () => void;
+  testID?: string;
   accessibilityLabel: string;
   accessibilityHint: string;
   children: React.ReactNode;
@@ -9534,6 +9539,7 @@ function GatheringCardPressable({
   return (
     <Pressable
       onPress={handlePress}
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}

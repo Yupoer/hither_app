@@ -70,6 +70,10 @@ button('map.route.open', ['MAP-ROUTE-01'], 'route edit AmicroButton', 'map-edit-
   'Actual edit action captures main scope; the real overlay synchronizes once per open session.');
 button('map.route.open-subgroup', ['MAP-ROUTE-01'], 'route edit AmicroButton', 'map-edit-itinerary-subgroup',
   'Actual edit action captures subgroup scope and retains dirty draft ownership.');
+button('map.route.interaction-mode', ['MAP-ROUTE-12'], 'setRouteInteractionMode', 'route-interaction-mode',
+  'Actual route mode cycles drag, selection and locked presentation while clearing selected IDs.');
+button('map.route.delete-selected', ['MAP-ROUTE-08', 'MAP-ROUTE-12'], 'handleDeleteMany', 'route-delete-selected',
+  'Actual bulk confirmation persists only captured selected IDs and preserves cancellation.');
 button('map.route.favorites', ['MAP-DEST-12'], 'favorites onPress', 'route-favorites',
   'Real route child sheet displays current owner favorites.', component('DestinationReorderList'));
 identifiedButton('map.route.favorite.pick', ['MAP-DEST-12'], 'favorite onPress → onPickFavorite', 'route-favorite-', 'favoriteId',
@@ -87,6 +91,10 @@ identifiedButton('map.route.select', ['MAP-ROUTE-12'], 'toggleMultiSelect', 'rou
   'Actual selected IDs change and bulk delete receives that captured selection.', component('DestinationReorderList'));
 identifiedButton('map.route.emoji.open', ['MAP-ROUTE-09', 'MAP-ROUTE-12'], 'openEmojiPicker', 'route-emoji-', 'destinationId',
   'Actual marker editor initializes current symbol and color.', component('DestinationReorderList'));
+identifiedButton('map.route.emoji.category', ['MAP-ROUTE-12'], 'setEmojiCategory', 'route-emoji-category-', 'category',
+  'Actual category selection changes available marker presets.', component('DestinationReorderList'));
+identifiedButton('map.route.emoji.preset', ['MAP-ROUTE-12'], 'setEmojiDraft', 'route-emoji-preset-', 'emoji',
+  'Actual preset selection updates draft and clears its prior save error.', component('DestinationReorderList'));
 button('map.route.emoji.save', ['MAP-ROUTE-09', 'MAP-ROUTE-12'], 'emoji confirm → onUpdateEmojiColor', 'dest-emoji-confirm',
   'Real marker save preserves optimistic mutation ownership and shows actual failure.', component('DestinationReorderList'));
 button('map.route.trip.open', ['MAP-ROUTE-10', 'MAP-ROUTE-12'], 'trip settings onPress', 'route-trip-details',
@@ -118,6 +126,8 @@ button('map.kml.import', ['MAP-DEST-07', 'K05', 'K06'], 'runImport → MapScreen
   'Real preview slice reaches atomic writer import or follower request; actual error stage and progress remain visible.', component('KmlImportSheet'));
 button('map.kml.retry', ['K07'], 'reset', 'kml-retry', 'Actual failed import resets to intro without a write.', component('KmlImportSheet'));
 
+identifiedButton('map.card.toggle', ['MAP-SHELL-01', 'MAP-SHELL-03'], 'toggleGatheringCard', 'gather-card-', 'destinationId',
+  'Actual accessible card press expands/collapses with duplicate gesture guard and real idle timer ownership.');
 identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03', 'MAP-NAV-04', 'MAP-GATHER-04', 'MAP-GATHER-05', 'MAP-GATHER-07'],
   'gather-nav onPress dispatch', 'gather-nav-', 'destinationId',
   'Actual card command chooses Start, End, request-start or complete from real role, session and arrival state.');
