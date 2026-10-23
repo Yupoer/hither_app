@@ -1065,7 +1065,7 @@
     {
       "id": "MAP-ARRIVAL-01",
       "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
-      "source": "M:4456 `handleSelfArrival` -> :4451 -> :2535 `commitPersonalArrival` <- card M:7983"
+      "source": "GatheringWorkflowService personal-arrival service binds the original session; active-card manual arrival is removed"
     },
     {
       "id": "MAP-ARRIVAL-02",
@@ -1075,12 +1075,12 @@
     {
       "id": "MAP-ARRIVAL-03",
       "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
-      "source": "M:2463+ undo hydration + :2587 suppression"
+      "source": "GatheringWorkflowService internal arrival undo and MapScreen legacy undo hydration/suppression; no active-card undo control"
     },
     {
       "id": "MAP-ARRIVAL-04",
       "area": "Independent slice C: gathering, arrivals, history and suggestion inbox",
-      "source": "M:4376 `handleArrival` <- active undo M:7961 / management M:8764/8821"
+      "source": "MapScreen `handleArrival` from leader history correction; active-card undo is removed"
     },
     {
       "id": "MAP-ARRIVAL-05",

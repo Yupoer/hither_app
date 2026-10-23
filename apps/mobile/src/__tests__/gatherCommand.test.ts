@@ -499,3 +499,14 @@ describe('arrivalControlJustSplit (#195 B1/B2)', () => {
     expect(arrivalControlJustSplit('d1', true, seen)).toBe(true);
   });
 });
+
+
+it('offers completion beside End only to an active leader with a durable session', () => {
+  for (const personallyArrived of [false, true]) {
+    expect(resolveNavCommand({ isLeader: true, personallyArrived, flockNavigatingThis: true, hasSession: true }))
+      .toMatchObject({ action: 'end_point', canComplete: true });
+  }
+  expect(resolveNavCommand({ isLeader: false, personallyArrived: false, flockNavigatingThis: true, hasSession: true }).canComplete).toBeFalsy();
+  expect(resolveNavCommand({ isLeader: true, personallyArrived: false, flockNavigatingThis: true, hasSession: false }).canComplete).toBe(false);
+  expect(resolveNavCommand({ isLeader: true, personallyArrived: false, flockNavigatingThis: true, hasSession: true, stopClosed: true }).canComplete).toBe(false);
+});

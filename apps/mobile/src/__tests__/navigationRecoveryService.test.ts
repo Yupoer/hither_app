@@ -6,6 +6,7 @@ const mockRpc = jest.fn();
 const mockSupabase = { rpc: mockRpc, from: (table: string) => {
   const query: any = { select: (columns: string) => { mockFilters.push([table, 'select', columns]); return query; }, eq: (key: string, value: unknown) => { mockFilters.push([table, key, value]); return query; },
     is: (key: string, value: unknown) => { mockFilters.push([table, key, value]); return query; },
+    not: () => query,
     gt: () => query, order: () => query, limit: () => query,
     maybeSingle: async () => ({ data: mockRows[table], error: null }),
     upsert: async (row: unknown) => { mockRows[table] = row; return { error: null }; },

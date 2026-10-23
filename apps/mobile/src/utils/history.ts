@@ -138,10 +138,13 @@ export function historyFromDestinationArrivals(
     .flatMap((arrival) => {
       const destination = destinationById.get(arrival.destinationId);
       if (!destination?.closedAt || destination.subgroupId) return [];
+      if (destination.closedBySessionId && arrival.navigationSessionId
+        && destination.closedBySessionId !== arrival.navigationSessionId) return [];
       return [{
         id: "arrival:" + arrival.id,
         userId: arrival.userId,
         destinationId: arrival.destinationId,
+        navigationSessionId: arrival.navigationSessionId,
         name: destination.title,
         coordinates: destination.coordinates,
         // A leader correction deliberately keeps arrivedAt null. Sort by the

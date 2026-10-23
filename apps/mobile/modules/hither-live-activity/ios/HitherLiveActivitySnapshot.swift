@@ -42,12 +42,17 @@ enum HitherLiveActivitySnapshot {
     let newerReceipt = oldSequence != nil && newSequence != nil
       ? newSequence! > oldSequence!
       : oldArrival == nil || (newArrival != nil && newArrival! > oldArrival!)
-    let acceptsReceipt = newArrival != nil && newerReceipt
-      && incoming["personalArrived"] is Bool
+    let oldCorrection = timestamp(current["personalArrivalCorrectionAtMs"])
+    let newCorrection = timestamp(incoming["personalArrivalCorrectionAtMs"])
+    let acceptsAuthority = newCorrection != nil
+      ? oldCorrection == nil || newCorrection! > oldCorrection!
+      : oldCorrection == nil && newArrival != nil && newerReceipt
+    let acceptsReceipt = acceptsAuthority && incoming["personalArrived"] is Bool
     if !acceptsReceipt {
       merged["personalArrived"] = current["personalArrived"]
       merged["personalArrivalAtMs"] = current["personalArrivalAtMs"]
       merged["personalArrivalSequence"] = current["personalArrivalSequence"]
+      merged["personalArrivalCorrectionAtMs"] = current["personalArrivalCorrectionAtMs"]
     }
     // Only an explicit durable receipt reaches this branch. Radius progress=1
     // alone never grants arrival authority; a later undo can clear the receipt.
@@ -55,10 +60,8 @@ enum HitherLiveActivitySnapshot {
       merged["progress"] = 1.0
       merged["etaSeconds"] = 0.0
       merged["etaTargetAtMs"] = merged["personalArrivalAtMs"]
-    } else if acceptsReceipt && preservesSample && current["personalArrived"] as? Bool == true {
-      // A new undo clears arrival authority, but an old fix cannot supply a
-      // replacement estimate. Keep the latest distance/sample and show unknown
-      // progress/ETA until a fresh GPS estimate arrives.
+    } else if (acceptsReceipt && preservesSample && current["personalArrived"] as? Bool == true)
+      || (!acceptsReceipt && oldCorrection != nil && incoming["personalArrived"] as? Bool == true) {
       merged.removeValue(forKey: "progress")
       merged.removeValue(forKey: "etaSeconds")
       merged.removeValue(forKey: "etaTargetAtMs")

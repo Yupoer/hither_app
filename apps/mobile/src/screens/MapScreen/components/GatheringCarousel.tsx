@@ -8,9 +8,7 @@ import { DEFAULT_MEET_RED_MIN } from '../../../state/PreferencesContext';
 import { type Coordinates, type Destination, type MemberLocation } from '../../../types';
 import { logEvent } from '../../../utils/activityLog';
 import { type ArrivalCardExitRecord } from '../../../utils/arrivalCardExit';
-import { canMarkDestinationArrival } from '../../../utils/arrivalMarking';
-import { deriveCardNavFlags, deriveScopedArrivalCounts, arrivalControlJustSplit, resolveNavCommand } from '../../../utils/gatherCommand';
-import { ARRIVED_FADE_MS, ARRIVED_SPLIT_MS } from '../../../utils/gatherCommandLayout';
+import { deriveCardNavFlags, deriveScopedArrivalCounts, resolveNavCommand } from '../../../utils/gatherCommand';
 import { distanceMeters, etaSecondsFor, formatDistance, type TravelMode } from '../../../utils/geo';
 import { mediumTap, lightTap } from '../../../utils/haptics';
 import { shortEta, splitDistanceParts, splitEtaParts, navCommandDisplayLabel, formatTripDayLine } from '../../../utils/mapFormatters';
@@ -22,7 +20,7 @@ import { MeetTimeChip } from './MeetTimeChip';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ScrollView, View, Platform, StyleSheet, Text, Pressable, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut, FadeInRight, FadeOutRight } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import type { MapStyles } from '../styles';
 import type { DestinationArrival, User } from '../../../types';
 import type { AppStateStatus } from 'react-native';
@@ -42,7 +40,6 @@ export interface GatheringCarouselProps {
   appState: AppStateStatus;
   arrivalCelebrateDestId: string | null;
   arrivalExitRecords: Map<string, ArrivalCardExitRecord>;
-  arrivalSplitSeenRef: React.RefObject<Set<string>>;
   atFull: boolean;
   canEditItinerary: boolean;
   carouselMaxHeight: number;
@@ -55,10 +52,8 @@ export interface GatheringCarouselProps {
   gatherCardMarqueeSpeed: number;
   gatherCardRadius: number;
   gatherCardTitleMarquee: boolean;
-  handleArrival: (destination: Destination, targetUserId: string, arrived: boolean) => void;
   handleMomentumEnd: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
   handleScrollBeginDrag: () => void;
-  handleSelfArrival: (destination: Destination, targetUserId: string) => void;
   insets: EdgeInsets;
   isCardExpanded: (id: string) => boolean;
   isLeader: boolean;
@@ -94,6 +89,7 @@ export interface GatheringCarouselProps {
   setTourTargetRef: (id: TourTargetId, node: View | null) => void;
   setTravelMode: (mode: TravelMode) => void;
   sharedTargetId: string | null;
+  navigationSessionId: string | null;
   showDenseChrome: boolean;
   startNavigation: (dest: Destination, index: number) => Promise<void>;
   styles: MapStyles;
@@ -113,7 +109,6 @@ export function GatheringCarousel({
   appState,
   arrivalCelebrateDestId,
   arrivalExitRecords,
-  arrivalSplitSeenRef,
   atFull,
   canEditItinerary,
   carouselMaxHeight,
@@ -126,10 +121,8 @@ export function GatheringCarousel({
   gatherCardMarqueeSpeed,
   gatherCardRadius,
   gatherCardTitleMarquee,
-  handleArrival,
   handleMomentumEnd,
   handleScrollBeginDrag,
-  handleSelfArrival,
   insets,
   isCardExpanded,
   isLeader,
@@ -165,6 +158,7 @@ export function GatheringCarousel({
   setTourTargetRef,
   setTravelMode,
   sharedTargetId,
+  navigationSessionId,
   showDenseChrome,
   startNavigation,
   styles,
@@ -277,39 +271,18 @@ export function GatheringCarousel({
             const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
             // Use active itinerary (carousel list), not raw history-inclusive
             // scope — past-day open rows must not hide the arrive control.
-            const canMarkArrival = canMarkDestinationArrival({
-              destId: dest.id,
-              destOrder: dest.order,
-              destSubgroupId: dest.subgroupId,
-              scopedDestinations: destinations,
-              myArrivedDestinationIds: myCompletedDestinationIds,
-    activeDestinationId: sharedTargetId,
-            });
-            // Product: only show 「已抵達」while this card's team nav is active.
-            // Pre-start: Start occupies the arrived slot (3 controls).
-            // Post-start: Arrived splits out. Post-end: Start swallows it again.
-            const showArrivalControl =
-              Boolean(user?.id)
-              && canMarkArrival
-              && !dest.closedAt
-              && flockNavigatingThis;
-            const arrivalJustSplit = arrivalControlJustSplit(
-              dest.id,
-              showArrivalControl,
-              arrivalSplitSeenRef.current,
-            );
-            // #176: icon-only Start only when Arrived is also present under tight
-            // density. When Arrived is absent, Start fills that slot (not square).
-            const navIconOnly = chromeTight && showArrivalControl;
+            const navIconOnly = false;
             const personallyArrived = myCompletedDestinationIds.has(dest.id);
             const navCmd = resolveNavCommand({
-              isLeader,
+              isLeader: canEditItinerary,
+              hasSession: Boolean(navigationSessionId),
+              stopClosed: Boolean(dest.closedAt),
               personallyArrived,
               flockNavigatingThis,
               isNextTeamPending: true,
               teamStartBlocked: false,
             });
-            const navLabel = navCommandDisplayLabel(navCmd.kind, t);
+            const navLabel = navCmd.kind === 'leader_stop' ? t('nav.endNavigation') : navCommandDisplayLabel(navCmd.kind, t);
             const startAccessibilityHint = isLeader
               ? navCmd.kind === 'leader_stop'
                 ? t('nav.a11yEndHint')
@@ -622,7 +595,7 @@ export function GatheringCarousel({
     
                   </GatheringCardPressable>
                   {/* a11y-layout:commandRow — always one row.
-                      Order (#148): [Start/End | Arrived] [Countdown] [Transport]
+                      Order: [Start / End + Complete] [Countdown] [Transport]
                       Outside expand Pressable so Start never toggles the card.
                       Density tracks narrow + Dynamic Type. */}
                   {cardExpanded && (
@@ -734,74 +707,25 @@ export function GatheringCarousel({
                       </Pressable>
                     ) : null}
     
-                    {/* Personal check-in splits from Start/End right (#148). */}
-                    {showArrivalControl ? (
-                      <Animated.View
-                        entering={
-                          arrivalJustSplit
-                            ? (tourReduceMotion
-                              ? FadeIn.duration(ARRIVED_FADE_MS)
-                              : FadeInRight.duration(ARRIVED_SPLIT_MS))
-                            : undefined
-                        }
-                        exiting={
-                          tourReduceMotion
-                            ? FadeOut.duration(ARRIVED_FADE_MS)
-                            : FadeOutRight.duration(ARRIVED_SPLIT_MS)
-                        }
-                        collapsable={false}
+                    {navCmd.canComplete ? (
+                      <Pressable
+                        style={[styles.navBtn, { backgroundColor: accent }]}
+                        testID={`gather-complete-${dest.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('nav.completeJourney')}
+                        accessibilityHint={t('nav.a11yCompleteHint')}
+                        onPress={() => {
+                          registerCardActivity(dest.id);
+                          mediumTap();
+                          promptCompleteAfterArrival(dest);
+                        }}
                       >
-                        {personallyArrived ? (
-                          <Pressable
-                            ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
-                            collapsable={false}
-                            style={[
-                              styles.cmdSquare,
-                              styles.arrivalCmdSquare,
-                              styles.arrivalCmdArrived,
-                            ]}
-                            onPress={() => {
-                              registerCardActivity(dest.id);
-                              lightTap();
-                              if (user?.id) handleArrival(dest, user.id, false);
-                            }}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('arrival.undo')}
-                            testID={`gather-arrival-undo-${dest.id}`}
-                          >
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={chromeTight ? 18 : 20}
-                              color={glass.ok}
-                            />
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            ref={active ? (n) => setTourTargetRef('personalArrive', n) : undefined}
-                            collapsable={false}
-                            style={[
-                              styles.cmdSquare,
-                              styles.arrivalCmdSquare,
-                            ]}
-                            onPress={() => {
-                              registerCardActivity(dest.id);
-                              lightTap();
-                              if (user?.id) handleSelfArrival(dest, user.id);
-                            }}
-                            accessibilityRole="button"
-                            accessibilityLabel={t('arrival.mark')}
-                            testID={`gather-arrival-${dest.id}`}
-                          >
-                            <Ionicons
-                              name="checkmark-circle-outline"
-                              size={chromeTight ? 18 : 20}
-                              color={accent}
-                            />
-                          </Pressable>
-                        )}
-                      </Animated.View>
+                        <Ionicons name="checkmark-done" size={16} color={colors.accentText} />
+                        <Text style={[styles.navBtnText, { color: colors.accentText }]} numberOfLines={1}
+                          adjustsFontSizeToFit minimumFontScale={0.75}>{t('nav.completeJourney')}</Text>
+                      </Pressable>
                     ) : null}
-    
+
                     {/* Transport before meet countdown (product: swap order). */}
                     {cardExpanded ? (
                     <>
@@ -840,7 +764,7 @@ export function GatheringCarousel({
                       accent={accent}
                       chromeTight={chromeTight}
                       chromeCompact={chromeCompact}
-                      expanded={!showArrivalControl}
+                      expanded={!navCmd.canComplete}
                       styles={styles}
                       canEdit={canEditItinerary}
                       a11yLabel={
@@ -862,27 +786,6 @@ export function GatheringCarousel({
                     ) : null}
                   </View>
                   )}
-                  {cardExpanded && canEditItinerary && !dest.closedAt
-                    && sharedTargetId === dest.id ? (
-                    <Pressable
-                      style={[styles.navBtn, { flexGrow: 0, flexBasis: 'auto', minHeight: 44,
-                        marginTop: 8, paddingVertical: 10, backgroundColor: accent }]}
-                      onPress={() => {
-                        registerCardActivity(dest.id);
-                        mediumTap();
-                        promptCompleteAfterArrival(dest);
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('gathering.completeMissingTitle')}
-                      accessibilityHint={t('nav.a11yCompleteHint')}
-                      testID={`gather-complete-${dest.id}`}
-                    >
-                      <Ionicons name="checkmark-done" size={18} color={colors.accentText} />
-                      <Text style={[styles.navBtnText, { color: colors.accentText }]}>
-                        {t('gathering.completeMissingTitle')}
-                      </Text>
-                    </Pressable>
-                  ) : null}
                   </View>
                 </SwiftUIGlassSurface>
                 </ArrivalCardExitShell>

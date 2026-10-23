@@ -140,10 +140,6 @@ identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03
 identifiedButton('map.journey.complete', ['MAP-GATHER-03', 'MAP-GATHER-04'], 'promptCompleteAfterArrival',
   'gather-complete-', 'destinationId',
   'Actual leader control confirms missing-member completion for the original active session without adding arrivals.', panel('GatheringCarousel'));
-identifiedButton('map.arrival.mark', ['MAP-ARRIVAL-01', 'MAP-ARRIVAL-05', 'MAP-ARRIVAL-06'], 'handleSelfArrival', 'gather-arrival-', 'destinationId',
-  'Actual card writes device-now personal arrival after the pending-Start barrier; arrival alone never completes a stop.');
-identifiedButton('map.arrival.undo', ['MAP-ARRIVAL-03', 'MAP-ARRIVAL-04'], 'handleArrival', 'gather-arrival-undo-', 'destinationId',
-  'Actual self undo confirmation persists the matching session marker and suppresses automatic inside-radius reentry.');
 button('map.arrival.manage', ['MAP-ARRIVAL-04'], 'arrivalManage open onPress', 'map-arrival-manage',
   'Actual main-leader history correction controls appear only for closed main history.');
 operation('map.arrival.correct', ['MAP-ARRIVAL-04'], screen, 'handleArrival', '{ destinationId: string, userId: string }',
@@ -314,8 +310,8 @@ const services = {
   'gathering.resolve': ['GatheringWorkflowService', 'resolveGatherPointRequest', ['MAP-GATHER-02']],
   'gathering.resolve-resilient': ['GatheringWorkflowService', 'resolveGatherPointRequestResilient', ['MAP-GATHER-02']],
   'gathering.arrivals': ['GatheringWorkflowService', 'fetchDestinationArrivals', ['MAP-GATHER-01']],
-  'gathering.arrival': ['GatheringWorkflowService', 'setDestinationArrival', ['MAP-ARRIVAL-01']],
-  'gathering.arrival-at': ['GatheringWorkflowService', 'setDestinationArrivalAt', ['MAP-ARRIVAL-01']],
+  'gathering.arrival': ['GatheringWorkflowService', 'setDestinationArrival', ['MAP-ARRIVAL-01', 'MAP-ARRIVAL-03']],
+  'gathering.arrival-at': ['GatheringWorkflowService', 'setDestinationArrivalAt', ['MAP-ARRIVAL-01', 'MAP-ARRIVAL-03']],
   'gathering.correct-arrival': ['GatheringWorkflowService', 'correctDestinationArrival', ['MAP-ARRIVAL-04']],
   'history.record': ['WaypointService', 'recordVisitedWaypoint', ['MAP-HISTORY-03']],
   'history.list': ['WaypointService', 'fetchVisitedWaypoints', ['MAP-HISTORY-01']],
@@ -342,12 +338,12 @@ for (const [name, [module, symbol, inventory]] of Object.entries(services)) {
       return service[symbol](...args);
     }, 'service');
 }
-operations['map.service.destination.complete'].precondition = 'Editor with the original active/completed destination session; forced service completion is callable, but is not a reachable active-session Map card button.';
+operations['map.service.destination.complete'].precondition = 'Editor with the original active/completed destination session; this direct service call does not prove the reachable Map leader confirmation. Use map.journey.complete for that control.';
 
 const controlOwners = {
   AddPlaceConfirmCard: ['map.place.rename', 'map.place.cancel', 'map.place.pool', 'map.place.first-stop', 'map.place.favorite', 'map.place.center'],
   RouteEditorSheet: ['map.route.interaction-mode', 'map.route.delete-selected'],
-  GatheringCarousel: ['map.card.toggle', 'map.journey.command', 'map.arrival.mark', 'map.arrival.undo', 'map.external-navigation', 'map.travel-mode', 'map.meet.open', 'map.carousel.begin', 'map.carousel.end'],
+  GatheringCarousel: ['map.card.toggle', 'map.journey.command', 'map.external-navigation', 'map.travel-mode', 'map.meet.open', 'map.carousel.begin', 'map.carousel.end'],
   RoutePane: ['map.arrival.manage', 'map.ops.open', 'map.suggestion.approve', 'map.suggestion.reject', 'map.history.open'],
   RefreshLocationsButton: ['map.location.refresh'],
   MembersPane: ['map.sharing.toggle', 'map.subgroup.invite.accept', 'map.subgroup.invite.decline', 'map.group.invite', 'map.presence.select'],
@@ -370,10 +366,14 @@ exports.operations = operations;
 exports.scenarios = require('./scenarios-map.cjs');
 exports.catalog = () => Object.entries(operations).map(([name, { run, ...metadata }]) => ({ name, ...metadata }));
 exports.lifecycle = [
-  { name: 'map.gathering.auto-complete', inventory: ['MAP-GATHER-04', 'MAP-GATHER-05'],
+  { name: 'map.arrival.foreground', inventory: ['MAP-ARRIVAL-02', 'MAP-ARRIVAL-05'],
+    sources: source('src/screens/MapScreen.tsx', 'evaluateForegroundArrival'),
+    trigger: 'Real GPS callbacks reject poor fixes, project and durably enqueue the automatic session arrival, then accept its receipt without an active-card manual control.',
+    scenarios: ['headlessMapScenario.test.ts::actual GPS arrival ignores poor fixes'] },
+  { name: 'map.gathering.auto-complete', inventory: ['MAP-GATHER-04', 'MAP-GATHER-05', 'MAP-ARRIVAL-06'],
     sources: source('src/screens/MapScreen/hooks/useGatheringCompletion.ts', 'executeAutoCompleteStop'),
     trigger: 'Real Map workflow receives arrivals for every eligible frozen-session member, enqueues completion and closes the matching stop.',
-    scenarios: ['headlessMapScenario.test.ts::real self arrival undo and all-arrived completion'] },
+    scenarios: ['headlessMapScenario.test.ts::automatic arrivals and all-arrived completion'] },
   { name: 'map.journey.reconcile', inventory: ['MAP-NAV-05'],
     sources: source('src/screens/MapScreen/hooks/useJourneyNavigation.ts', 'useJourneyNavigation'),
     trigger: 'Mount actual MapScreen, deliver held Start/End ACK, durable snapshots and session events, then restart actor.',

@@ -255,7 +255,7 @@ export async function fetchDestinationArrivals(
 ): Promise<DestinationArrival[]> {
   const { data, error } = await supabase
     .from('destination_arrivals')
-    .select('id, group_id, destination_id, user_id, arrived_at, source, marked_by, navigation_session_id')
+    .select('id, group_id, destination_id, user_id, arrived_at, source, marked_by, navigation_session_id, corrected_at')
     .eq('group_id', groupId);
   orThrow(error);
   return ((data ?? []) as {
@@ -267,6 +267,7 @@ export async function fetchDestinationArrivals(
     source: DestinationArrival['source'];
     marked_by: string;
     navigation_session_id?: string | null;
+    corrected_at?: string | null;
   }[]).map((row) => ({
     id: row.id,
     groupId: row.group_id,
@@ -275,6 +276,7 @@ export async function fetchDestinationArrivals(
     arrivedAt: row.arrived_at,
     source: row.source,
     markedBy: row.marked_by,
+    ...(row.corrected_at ? { updatedAt: row.corrected_at } : {}),
     ...(typeof row.navigation_session_id === 'string'
       ? { navigationSessionId: row.navigation_session_id }
       : {}),
@@ -411,4 +413,16 @@ export async function correctDestinationArrival(input: {
     p_arrived_at: null,
   });
   orThrow(error);
+}
+
+export async function fetchArrivalCorrections(groupId: string): Promise<import('../../state/arrivalSync').EffectiveArrival[]> {
+  const { data, error } = await supabase.from('navigation_session_history')
+    .select('navigation_session_id, destination_id, user_id, arrived, arrived_at, corrected_at, corrected_by')
+    .eq('group_id', groupId).not('corrected_at', 'is', null);
+  orThrow(error);
+  return (data ?? []).filter(row => row.destination_id && row.corrected_at).map(row => ({
+    sessionId: row.navigation_session_id, destinationId: row.destination_id, userId: row.user_id,
+    arrived: row.arrived, arrivedAt: row.arrived_at, source: 'leader_correction' as const,
+    markedBy: row.corrected_by, updatedAt: row.corrected_at,
+  }));
 }

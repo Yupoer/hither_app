@@ -191,6 +191,7 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
     statePersonalArrived: state.personalArrived,
     statePersonalArrivalAtMs: state.personalArrivalAtMs,
     statePersonalArrivalSequence: state.personalArrivalSequence,
+    statePersonalArrivalCorrectionAtMs: state.personalArrivalCorrectionAtMs,
     stateLanguage: state.language,
     stateSampledAtMs: state.sampledAtMs,
     stateEtaTargetAtMs: state.etaTargetAtMs,
@@ -234,6 +235,7 @@ interface LiveActivityResourceInput {
   statePersonalArrived: GroupActivityState['personalArrived'];
   statePersonalArrivalAtMs: GroupActivityState['personalArrivalAtMs'];
   statePersonalArrivalSequence: GroupActivityState['personalArrivalSequence'];
+  statePersonalArrivalCorrectionAtMs: GroupActivityState['personalArrivalCorrectionAtMs'];
   stateLanguage: GroupActivityState['language'];
   stateSampledAtMs: GroupActivityState['sampledAtMs'];
   stateEtaTargetAtMs: GroupActivityState['etaTargetAtMs'];
@@ -456,7 +458,7 @@ function LiveActivityDisplayDelivery({
     const handle = reconcilerRef.current?.currentHandle;
     if (!active || !handle || !session || !reconcilerRef.current?.ownsScope(session.destinationId, session.navigationSessionId)
       || !foreground || AppState.currentState !== 'active') return;
-    const semantic = JSON.stringify([session?.navigationSessionId, session?.destinationId, state.status, state.personalArrived, state.personalArrivalAtMs, state.personalArrivalSequence, state.gatheredCount,
+    const semantic = JSON.stringify([session?.navigationSessionId, session?.destinationId, state.status, state.personalArrived, state.personalArrivalAtMs, state.personalArrivalSequence, state.personalArrivalCorrectionAtMs, state.gatheredCount,
       state.memberCount, state.gatheringTitle, state.groupName, state.accentHex, state.travelMode,
       arrivalSignature, emojiSignature, destinationEmojiSig, state.language]);
     const payload = JSON.stringify(currentScopedState());
@@ -489,13 +491,13 @@ function LiveActivityDisplayDelivery({
 function LiveActivityResources(input: LiveActivityResourceInput) {
   const {
     navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground, stateStatus,
-    statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, stateLanguage, stateSampledAtMs,
+    statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, statePersonalArrivalCorrectionAtMs, stateLanguage, stateSampledAtMs,
     stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount, stateMemberCount,
     stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationEmojiSig,
   } = input;
   const [previous, setPrevious] = useState({
     navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground, stateStatus,
-    statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, stateLanguage, stateSampledAtMs,
+    statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, statePersonalArrivalCorrectionAtMs, stateLanguage, stateSampledAtMs,
     stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount, stateMemberCount,
     stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationEmojiSig,
     LiveActivitySessionObservationGeneration: 0, LiveActivityAccentGeneration: 0, LiveActivityTokenPolicyGeneration: 0,
@@ -525,6 +527,7 @@ function LiveActivityResources(input: LiveActivityResourceInput) {
     || !Object.is(previous.statePersonalArrived, statePersonalArrived)
     || !Object.is(previous.statePersonalArrivalAtMs, statePersonalArrivalAtMs)
     || !Object.is(previous.statePersonalArrivalSequence, statePersonalArrivalSequence)
+    || !Object.is(previous.statePersonalArrivalCorrectionAtMs, statePersonalArrivalCorrectionAtMs)
     || !Object.is(previous.stateLanguage, stateLanguage)
     || !Object.is(previous.stateSampledAtMs, stateSampledAtMs)
     || !Object.is(previous.stateEtaTargetAtMs, stateEtaTargetAtMs)
@@ -548,7 +551,7 @@ function LiveActivityResources(input: LiveActivityResourceInput) {
     || LiveActivityDisplayDeliveryChanged) {
     setPrevious({
       navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground,
-      stateStatus, statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, stateLanguage,
+      stateStatus, statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, statePersonalArrivalCorrectionAtMs, stateLanguage,
       stateSampledAtMs, stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount,
       stateMemberCount, stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature,
       destinationEmojiSig,

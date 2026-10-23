@@ -91,6 +91,40 @@ struct HitherLiveActivitySnapshotTests {
     oldUndo["personalArrivalAtMs"] = 9000.0
     precondition(number(HitherLiveActivitySnapshot.merge(incoming: oldUndo, current: sequencedArrival), "progress") == 1)
 
+    var correction = snapshot(1000)
+    correction["personalArrived"] = false
+    correction["personalArrivalCorrectionAtMs"] = 50.125
+    let corrected = HitherLiveActivitySnapshot.merge(incoming: correction, current: sequencedArrival)
+    precondition(corrected["personalArrived"] as? Bool == false,
+      "older server correction overrides a later offline physical arrival")
+    precondition(number(corrected, "personalArrivalCorrectionAtMs") == 50.125)
+    precondition(corrected["personalArrivalAtMs"] == nil && corrected["personalArrivalSequence"] == nil)
+    var lateGPS = sequencedArrival
+    lateGPS["sampledAtMs"] = 10000.0
+    lateGPS["personalArrivalAtMs"] = 10000.0
+    lateGPS["personalArrivalSequence"] = 100.0
+    let afterGPS = HitherLiveActivitySnapshot.merge(incoming: lateGPS, current: corrected)
+    precondition(afterGPS["personalArrived"] as? Bool == false,
+      "later unversioned GPS cannot resurrect an authoritative false correction")
+    precondition(number(afterGPS, "personalArrivalCorrectionAtMs") == 50.125)
+    precondition(afterGPS["progress"] == nil && afterGPS["etaSeconds"] == nil,
+      "rejected GPS arrival cannot restore its arrived progress or zero ETA")
+    correction["personalArrived"] = true
+    correction["personalArrivalCorrectionAtMs"] = 50.126
+    let recorrected = HitherLiveActivitySnapshot.merge(incoming: correction, current: afterGPS)
+    precondition(recorrected["personalArrived"] as? Bool == true)
+    precondition(number(recorrected, "progress") == 1 && number(recorrected, "etaSeconds") == 0)
+    correction["personalArrived"] = false
+    precondition(HitherLiveActivitySnapshot.merge(incoming: correction, current: recorrected)["personalArrived"] as? Bool == true,
+      "equal correction versions preserve the accepted state")
+    correction["personalArrivalCorrectionAtMs"] = 50.125
+    precondition(HitherLiveActivitySnapshot.merge(incoming: correction, current: recorrected)["personalArrived"] as? Bool == true,
+      "older correction versions cannot replace a later correction")
+    lateGPS["navigationSessionId"] = "session-b"
+    let newSession = HitherLiveActivitySnapshot.merge(incoming: lateGPS, current: corrected)
+    precondition(newSession["personalArrived"] as? Bool == true && newSession["personalArrivalCorrectionAtMs"] == nil,
+      "correction authority never crosses navigation sessions")
+
     // Exercise the real async queue: the first operation suspends after reading
     // current state. The stale caller must wait, then read the updated snapshot.
     let queue = HitherLiveActivityUpdateQueue()

@@ -61,9 +61,13 @@ describe('integrated tour + i18n verification', () => {
     expect(order.indexOf('navCommand')).toBeGreaterThan(order.indexOf('collapsedCard'));
     const nav = TOUR_STEPS.find((s) => s.id === 'navCommand');
     expect(nav?.roleBody).toBe(true);
-    expect(translate('zh', 'tour.navCommand.body.leader')).toContain('隊長');
+    expect(translate('zh', 'tour.navCommand.body.leader')).toContain('結束導航');
+    expect(translate('zh', 'tour.navCommand.body.leader')).toContain('完成行程');
+    expect(translate('zh', 'tour.navCommand.body.leader')).toContain('定位自動記錄');
     expect(translate('zh', 'tour.navCommand.body.member')).toContain('成員');
-    expect(translate('en', 'tour.navCommand.body.leader').toLowerCase()).toContain('leader');
+    expect(translate('en', 'tour.navCommand.body.leader').toLowerCase()).toContain('end navigation');
+    expect(translate('en', 'tour.navCommand.body.leader').toLowerCase()).toContain('complete the journey');
+    expect(translate('en', 'tour.navCommand.body.leader').toLowerCase()).toContain('recorded automatically');
     expect(translate('en', 'tour.navCommand.body.member').toLowerCase()).toContain('member');
   });
 

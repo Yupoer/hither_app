@@ -104,8 +104,9 @@ jest.mock('../state/locationPrivacy', () => ({
   setLocationSharingConsent: forward(mockSetConsent),
 }));
 jest.mock('../state/arrivalSync', () => ({
-  enqueueArrival: forward(mockArrival),
-  projectArrivals: jest.requireActual('../state/arrivalSync').projectArrivals,
+  ...jest.requireActual('../state/arrivalSync'),
+  enqueueAutomaticArrival: (input: any) => mockArrival({ ...input, userId: input.actorId, source: 'automatic',
+    occurredAt: new Date(input.sampledAtMs).toISOString(), arrivedAt: new Date(input.sampledAtMs).toISOString(), completeSolo: false }),
 }));
 jest.mock('../state/coreDataSync', () => ({
   readLocalJourneyProjection: forward(mockJourneyProjection),
@@ -505,6 +506,46 @@ describe('background journey lifecycle and callback gate', () => {
     }));
   });
 
+  it('hydrates sticky correction authority and blocks a later GPS receipt across reconfiguration', async () => {
+    const correctionAtMs = Date.parse('2026-10-23T00:00:00Z') + 0.456;
+    await startBackgroundJourney({ ...baseConfig, personalArrived: false, personalArrivalCorrectionAtMs: correctionAtMs });
+    await startBackgroundJourney(baseConfig);
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+      personalArrived: false, personalArrivalCorrectionAtMs: correctionAtMs,
+    }));
+    mockListByGroup.mockResolvedValue([{
+      operationType: 'record_arrival', entityId: baseConfig.destinationId,
+      actorId: baseConfig.actorId, sequence: 42, createdAt: Date.now(), status: 'pending',
+      payload: { actorId: baseConfig.actorId, userId: baseConfig.actorId,
+        navigationSessionId: baseConfig.navigationSessionId, arrived: true, source: 'automatic',
+        occurredAt: new Date().toISOString() },
+    }]);
+    await handleBackgroundLocations({ data: { locations: [location()] } });
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      personalArrived: false, personalArrivalCorrectionAtMs: correctionAtMs,
+      personalArrivalAtMs: undefined, personalArrivalSequence: undefined,
+    }));
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+      personalArrived: false, personalArrivalCorrectionAtMs: correctionAtMs,
+    }));
+    expect(mockArrival).not.toHaveBeenCalled();
+  });
+
+  it('delivers a later server correction immediately without inventing an arrival time', async () => {
+    const updatedAt = '2026-10-23T00:00:00.123457Z';
+    await startBackgroundJourney({ ...baseConfig, personalArrived: false,
+      personalArrivalCorrectionAtMs: Date.parse('2026-10-23T00:00:00.123Z') + 0.456,
+      arrivalCorrections: [{ sessionId: baseConfig.navigationSessionId, destinationId: baseConfig.destinationId,
+        userId: baseConfig.actorId, arrived: true, arrivedAt: null, source: 'leader_correction',
+        markedBy: 'leader', updatedAt }],
+    });
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.01)] } });
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      personalArrived: true, personalArrivalCorrectionAtMs: Date.parse('2026-10-23T00:00:00.123Z') + 0.457,
+      personalArrivalAtMs: undefined, personalArrivalSequence: undefined,
+    }));
+  });
+
   it('keeps a personal receipt and location uploads when cloud progress and optional notifications fail', async () => {
     await startBackgroundJourney(baseConfig);
     mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
@@ -658,6 +699,7 @@ describe('background journey lifecycle and callback gate', () => {
     jest.advanceTimersByTime(1);
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.002)] } });
     expect(mockNavigationContext).toHaveBeenCalledTimes(1);
+    await reconcileBackgroundNavigation(baseConfig.groupId);
     expect(await loadBackgroundJourney()).toMatchObject({ navigationSessionId: 'session-2',
       destinationId: target.id, highAccuracy: true });
     expect(mockArrival).not.toHaveBeenCalled();
@@ -686,6 +728,70 @@ describe('background journey lifecycle and callback gate', () => {
       timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 },
     }));
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists each GPS callback while remote control reconciliation never settles', async () => {
+    await startCurrent();
+    let finishControl!: (value: unknown) => void;
+    mockNavigationContext.mockImplementationOnce(() => new Promise(resolve => { finishControl = resolve; }));
+    jest.advanceTimersByTime(15_000);
+    const sampledAt = Date.now();
+    await handleBackgroundLocations({ data: { locations: [location(sampledAt)] } });
+    expect(mockArrival).toHaveBeenCalledWith(expect.objectContaining({ source: 'automatic',
+      navigationSessionId: baseConfig.navigationSessionId, occurredAt: new Date(sampledAt).toISOString() }));
+    await handleBackgroundLocations({ data: { locations: [location(sampledAt + 1, 25.002)] } });
+    expect((await loadBackgroundJourney())?.lastProcessedLocationAt).toBe(sampledAt + 1);
+    expect(mockArrival).toHaveBeenCalledTimes(1);
+    finishControl({ actorId: baseConfig.actorId, hasMembership: true, sharingEnabled: true, session: null, target: null });
+    await reconcileBackgroundNavigation(baseConfig.groupId);
+  });
+
+
+  it.each(['gps-first', 'remote-during-gps'])('merges delayed control correction without losing GPS state with %s ordering', async ordering => {
+    await startCurrent();
+    mockComplete.mockResolvedValue(null);
+    let finishRemote!: (value: unknown) => void;
+    let remoteStarted!: () => void;
+    const requested = new Promise<void>(resolve => { remoteStarted = resolve; });
+    mockNavigationContext.mockImplementationOnce(() => {
+      remoteStarted();
+      return new Promise(resolve => { finishRemote = resolve; });
+    });
+    const reconciliation = reconcileBackgroundNavigation(baseConfig.groupId);
+    await requested;
+    const sampledAt = Date.now();
+    const correction = { sessionId: 'session-1', destinationId: 'destination-1', userId: 'actor-1',
+      arrived: false, arrivedAt: null, source: 'leader_correction', markedBy: 'leader', updatedAt: '2026-10-23T01:00:00.123456Z' };
+    let releaseGps!: () => void;
+    let gpsPaused!: () => void;
+    const paused = new Promise<void>(resolve => { gpsPaused = resolve; });
+    if (ordering === 'remote-during-gps') {
+      mockArrival.mockImplementationOnce(async input => {
+        gpsPaused();
+        await new Promise<void>(resolve => { releaseGps = resolve; });
+        return savedArrival(input);
+      });
+    }
+    const gps = handleBackgroundLocations({ data: { locations: [location(sampledAt)] } });
+    if (ordering === 'gps-first') await gps;
+    else await paused;
+    finishRemote({ actorId: baseConfig.actorId, hasMembership: true, sharingEnabled: true,
+      session: { id: 'session-1' }, target: baseConfig.target,
+      navigationMemberIds: ['actor-1', 'peer'], arrivedMemberIds: ['peer'], arrivalCorrections: [correction], leaderId: 'leader' });
+    if (ordering === 'remote-during-gps') {
+      for (let i = 0; i < 30; i += 1) await settle();
+      releaseGps();
+    }
+    await Promise.all([gps, reconciliation]);
+    expect(await loadBackgroundJourney()).toMatchObject({ lastProcessedLocationAt: sampledAt,
+      arrivalState: { status: 'arrived' }, personalArrived: false,
+      arrivalCorrections: [correction], arrivedMemberIds: ['peer'], navigationMemberIds: ['actor-1', 'peer'],
+      personalArrivalCorrectionAtMs: Date.parse('2026-10-23T01:00:00.123Z') + 0.456 });
+    await handleBackgroundLocations({ data: { locations: [location(sampledAt + 1)] } });
+    expect(await loadBackgroundJourney()).toMatchObject({ lastProcessedLocationAt: sampledAt + 1,
+      personalArrived: false, arrivedMemberIds: ['peer'], arrivalCorrections: [correction] });
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      personalArrived: false, personalArrivalCorrectionAtMs: Date.parse('2026-10-23T01:00:00.123Z') + 0.456 }));
   });
 
   it('processes an out-of-order enter/exit batch without losing the arrival or waiting for ACK', async () => {
@@ -806,9 +912,11 @@ describe('background journey lifecycle and callback gate', () => {
     await startCurrent();
     const now = Date.now();
     let release!: (access: unknown) => void;
-    mockCaptureAccess.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    let entered!: () => void;
+    const paused = new Promise<void>(resolve => { entered = resolve; });
+    mockCaptureAccess.mockImplementationOnce(() => new Promise(resolve => { release = resolve; entered(); }));
     const first = handleBackgroundLocations({ data: { locations: [location(now - 3_000, 25.002)] } });
-    await settle();
+    await paused;
     const enter = handleBackgroundLocations({ data: { locations: [location(now - 2_000)] } });
     const exit = handleBackgroundLocations({ data: { locations: [location(now - 1_000, 25.002)] } });
     release({ generation: 1, groupId: 'group-1' });

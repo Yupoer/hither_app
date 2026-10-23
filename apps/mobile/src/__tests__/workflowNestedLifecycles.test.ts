@@ -36,6 +36,7 @@ jest.mock('../api/client', () => ({
   fetchDestinationArrivals: (...args: unknown[]) => mockArrivals(...args),
   fetchPendingGatherPointRequests: jest.fn(async () => []),
 }));
+jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchArrivalCorrections: jest.fn(async () => []) }));
 jest.mock('../state/coreDataSync', () => ({ getCoreOperationOutbox: () => ({ removeArrival: jest.fn() }) }));
 jest.mock('../native', () => ({ notifications: { scheduleLocalNotification: jest.fn() } }));
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn(), logError: jest.fn() }));

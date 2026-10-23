@@ -243,7 +243,7 @@ exports.run = async function run(jest) {
       abortSignal(value) { signal = value; return this; },
       setHeader(name, value) { assert.equal(name, 'Authorization'); assert(value.startsWith('Bearer fixture-')); return this; },
     };
-    for (const method of ['select', 'eq', 'is', 'gt', 'order', 'limit', 'maybeSingle', 'single', 'upsert', 'update', 'insert', 'delete', 'in', 'neq', 'gte', 'lt', 'lte', 'or']) {
+    for (const method of ['select', 'eq', 'is', 'not', 'gt', 'order', 'limit', 'maybeSingle', 'single', 'upsert', 'update', 'insert', 'delete', 'in', 'neq', 'gte', 'lt', 'lte', 'or']) {
       query[method] = (...values) => { steps.push([method, ...values]); return query; };
     }
     return strict(`Supabase.${kind}.${name}`, query);
@@ -264,8 +264,8 @@ exports.run = async function run(jest) {
             assert.equal(type, 'postgres_changes');
             assert.equal(filter.schema, 'public');
             assert(['member_locations', 'memberships', 'itinerary_items', 'daily_accommodations', 'groups', 'profiles',
-              'navigation_sessions', 'navigation_member_states', 'subgroup_invites', 'subgroups', 'gather_point_requests',
-              'coordination_requests', 'coordination_responses', 'destination_arrivals', 'itinerary_operations', 'commands', 'group_alerts'].includes(filter.table), `Unknown realtime table ${filter.table}`);
+              'navigation_sessions', 'navigation_session_history', 'navigation_member_states', 'subgroup_invites', 'subgroups', 'gather_point_requests',
+              'coordination_requests', 'coordination_responses', 'destination_arrivals', 'visited_waypoints', 'itinerary_operations', 'commands', 'group_alerts'].includes(filter.table), `Unknown realtime table ${filter.table}`);
             bindings.push({ filter, callback });
             return this;
           },

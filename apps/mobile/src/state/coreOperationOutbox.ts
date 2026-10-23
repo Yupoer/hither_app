@@ -1493,20 +1493,25 @@ export function createCoreOperationOutbox(
         );
         const normalizeSession = (value: unknown): string | null =>
           typeof value === 'string' && value.length > 0 ? value : null;
+        const sessionAliases = new Set([normalizeSession(payload.navigationSessionId),
+          ...(Array.isArray(payload.navigationSessionAliases) ? payload.navigationSessionAliases.map(normalizeSession) : [])]);
+        const sameSession = (row: CoreOperation): boolean => sessionAliases.has(normalizeSession(row.payload.navigationSessionId))
+          || (Array.isArray(row.payload.navigationSessionAliases)
+            && row.payload.navigationSessionAliases.some(value => sessionAliases.has(normalizeSession(value))));
         const isSameArrivalIntent = (row: CoreOperation): boolean =>
           row.operationType === 'record_arrival'
           && row.entityId === destinationId
           && row.actorId === actorKey
           && row.payload.userId === payload.userId
           && (row.payload.arrived !== false) === (payload.arrived !== false)
-          && normalizeSession(row.payload.navigationSessionId)
-            === normalizeSession(payload.navigationSessionId);
+          && sameSession(row);
         const candidates = (await outboxDb.listByGroup(groupId))
           .filter((row) => row.operationType === 'record_arrival'
             && row.entityId === destinationId
             && row.actorId === actorKey
             && row.payload.userId === payload.userId
-            && row.status !== 'acked')
+            && sameSession(row)
+            && (row.status !== 'acked' || payload.source === 'automatic'))
           .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0)
             || b.createdAt - a.createdAt);
         // Only the latest open intent may be coalesced. An arrival, undo,

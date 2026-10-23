@@ -546,7 +546,7 @@
       "child": 196,
       "acceptance": "D5 Sharing toggle is in 成員, immediately right of 目前狀態.",
       "testFile": "mapUiContracts.test.ts",
-      "testNamePattern": "keeps arrival beside navigation"
+      "testNamePattern": "keeps leader End and Complete journey controls with automatic arrival only"
     },
     {
       "parent": 193,
@@ -880,30 +880,30 @@
     {
       "parent": 206,
       "child": 212,
-      "acceptance": "A1 Started + collapsed card hides Arrived",
+      "acceptance": "A1 Active cards omit manual Arrived and Undo for every role, expanded or collapsed; supersedes the old manual-arrival control requirement",
       "testFile": "mapUiContracts.test.ts",
-      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+      "testNamePattern": "keeps leader End and Complete journey controls with automatic arrival only"
     },
     {
       "parent": 206,
       "child": 212,
-      "acceptance": "A2 Started + expanded card shows Arrived when other conditions hold",
+      "acceptance": "A2 Started leader card shows End navigation and Complete journey regardless of personal arrival; arrival is recorded automatically",
       "testFile": "mapUiContracts.test.ts",
-      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+      "testNamePattern": "keeps leader End and Complete journey controls with automatic arrival only"
     },
     {
       "parent": 206,
       "child": 212,
       "acceptance": "A3 Start/end remain expanded-only",
       "testFile": "mapUiContracts.test.ts",
-      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+      "testNamePattern": "keeps leader End and Complete journey controls with automatic arrival only"
     },
     {
       "parent": 206,
       "child": 212,
-      "acceptance": "A4 mapUiContracts flipped and green",
+      "acceptance": "A4 Active card omits the removed manual-arrival control and its tour target",
       "testFile": "mapUiContracts.test.ts",
-      "testNamePattern": "keeps arrival beside navigation controls and auto-applies current time"
+      "testNamePattern": "keeps leader End and Complete journey controls with automatic arrival only"
     },
     {
       "parent": 206,

@@ -80,8 +80,13 @@ const startedSession = started.data.effects.navigationSession;
 assert.equal(table('navigation_sessions', [['select', '*, navigation_member_states(user_id)'], ['eq', 'id', startedSession.id], ['maybeSingle']]).data.destination_id, newDestinationId);
 const localDestination = { ...added.data.entity.destinations.find(d => d.id === newDestinationId), title: 'Cached stop title', coordinates: { latitude: 26, longitude: 122 } };
 const sourceArrival = { actorId: PEER, userId: PEER, destination: localDestination, completeSolo: false, arrivedAt: null,
-  occurredAt: new Date(b.now).toISOString(), navigationSessionId: startedSession.id };
-assert.equal(core('record_arrival', sourceArrival, PEER, { p_entity_id: newDestinationId }).data.status, 'accepted');
+  occurredAt: new Date(b.now).toISOString(), navigationSessionId: startedSession.id, navigationSessionAliases: ['local-start-request', startedSession.id] };
+const sourceArrivalReceipt = core('record_arrival', sourceArrival, PEER, { p_entity_id: newDestinationId });
+assert.equal(sourceArrivalReceipt.data.status, 'accepted');
+assert.equal(sourceArrivalReceipt.data.entity.sessionId, startedSession.id);
+const sessionWaypoint = table('visited_waypoints', [['select', 'navigation_session_id, arrival:destination_arrivals!arrival_id(corrected_at)'], ['eq', 'destination_id', newDestinationId]]).data[0];
+assert.equal(sessionWaypoint.navigation_session_id, startedSession.id);
+assert.equal(sessionWaypoint.arrival, null);
 assert.equal(b.tables.destination_arrivals.find(r => r.destination_id === newDestinationId).user_id, PEER);
 assert.equal(b.tables.visited_waypoints.find(r => r.destination_id === newDestinationId).name, startedSession.destination_name);
 assert.equal(b.tables.visited_waypoints.find(r => r.destination_id === newDestinationId).latitude, startedSession.destination_latitude);
@@ -225,6 +230,13 @@ const correctedState = regression.tables.navigation_member_states.find(n => n.na
 assert.equal(correctedState.local_status, 'missed');
 assert.equal(correctedState.detail.correctedBy, LEADER);
 assert.equal(correctedState.detail.correctedAt, new Date(regression.now).toISOString());
+const correctionQuery = { kind: 'table', name: 'navigation_session_history', userId: LEADER,
+  steps: [['select', 'navigation_session_id, destination_id, user_id, arrived, arrived_at, corrected_at, corrected_by'], ['eq', 'group_id', GROUP_ID], ['not', 'corrected_at', 'is', null]] };
+const correctionRows = regression.execute('contract-history', correctionQuery).data;
+assert.deepEqual(correctionRows, [{ navigation_session_id: 'explicit-request', destination_id: targetId,
+  user_id: PEER, arrived: false, arrived_at: null, corrected_at: new Date(regression.now).toISOString(), corrected_by: LEADER }]);
+assert.deepEqual(regression.execute('contract-history', { ...correctionQuery, userId: 'outside-member' }).data, []);
+assert.throws(() => regression.execute('contract-history', { ...correctionQuery, steps: [['not', 'corrected_at', 'eq', 'unreviewed']] }), /Only the reviewed NOT IS NULL/);
 
 regression = new Backend(() => {});
 const activeSession = regressionRpc('start_navigation_session', { p_group_id: GROUP_ID, p_destination_id: targetId, p_request_id: 'completion-session' }).data;

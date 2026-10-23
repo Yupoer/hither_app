@@ -48,7 +48,7 @@ export type MapBackgroundLocationInput = {
   journeyStartCoords: Coordinates | null;
   progressDepartedStart: boolean;
   progressMaxSticky: number | null;
-  backgroundEtaRef: React.RefObject<{ etaToPinSeconds?: number; etaTargetAtMs?: number; etaSampledAtMs?: number; lastEtaDistanceM?: number; personalArrivalAtMs?: number; personalArrivalSequence?: number }>;
+  backgroundEtaRef: React.RefObject<{ etaToPinSeconds?: number; etaTargetAtMs?: number; etaSampledAtMs?: number; lastEtaDistanceM?: number; personalArrivalAtMs?: number; personalArrivalSequence?: number; personalArrivalCorrectionAtMs?: number; personalArrived?: boolean }>;
   selfRoute: { expectedTravelTimeSeconds: number } | null;
   mapFocused: boolean;
   preferencesReady: boolean;

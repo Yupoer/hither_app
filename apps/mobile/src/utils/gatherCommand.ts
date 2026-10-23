@@ -19,6 +19,8 @@ export type NavCommandKind =
 
 export interface NavCommandInput {
   isLeader: boolean;
+  hasSession?: boolean;
+  stopClosed?: boolean;
   /** Viewer already marked arrived at this stop. */
   personallyArrived: boolean;
   /** Shared flock navigation targets this stop (leader session active). */
@@ -39,6 +41,7 @@ export interface NavCommandInput {
 
 export interface NavCommandResult {
   kind: NavCommandKind;
+  canComplete?: boolean;
   /** Display label (zh) used by UI and contracts. */
   label: string;
   disabled: boolean;
@@ -94,6 +97,7 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     if (flockNavigatingThis) {
       return {
         kind: 'leader_stop',
+        canComplete: input.hasSession === true && !input.stopClosed,
         label: '結束',
         disabled: false,
         action: 'end_point',

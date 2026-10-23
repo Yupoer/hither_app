@@ -16,6 +16,7 @@ jest.mock('../api/client', () => ({
   fetchDestinationArrivals: () => mockFetchArrivals(),
   fetchPendingGatherPointRequests: () => mockFetchRequests(),
 }));
+jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchArrivalCorrections: jest.fn(async () => []) }));
 jest.mock('../api/demo', () => ({ isDemoGroup: (id: string | null) => id === 'demo' }));
 jest.mock('../api/supabase', () => ({
   supabase: {
@@ -222,4 +223,106 @@ describe('useGatheringWorkflow', () => {
     await render(input({ arrivalOperations: [reentry, undo], arrivalSessionScope: ['s1'] }));
     expect(mockRemoveArrival).not.toHaveBeenCalledWith('undo');
   });
+  it('retains an effective false ACK until a later remote read and end of its active session', async () => {
+    const { fetchArrivalCorrections } = require('../api/services/GatheringWorkflowService');
+    const op: CoreOperation = { entityType: 'itinerary', entityVersion: 0, attempts: 0, nextAttemptAt: 0, conflictResult: null,
+      id: 'suppressed', actorId: 'leader', groupId: 'g1', entityId: 'd1',
+      operationType: 'record_arrival', status: 'acked', updatedAt: 1, createdAt: 1, sequence: 1,
+      payload: { actorId: 'leader', userId: 'leader', navigationSessionId: 's1', arrived: true,
+        effectiveArrival: { sessionId: 's1', destinationId: 'd1', userId: 'leader', arrived: false,
+          arrivedAt: null, source: 'leader_correction', markedBy: 'leader', updatedAt: '2026-10-23T01:00:00Z' } },
+    };
+    mockFetchArrivals.mockResolvedValue([{ id: 'stale', groupId: 'g1', destinationId: 'd1', userId: 'leader',
+      navigationSessionId: 's1', arrivedAt: '2026-10-23T00:00:00Z', source: 'automatic', markedBy: 'leader' }]);
+    await render(input({ arrivalOperations: [op], arrivalSessionScope: ['s1'] }));
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith(op.id);
+    expect(projectArrivals(workflow!.remoteArrivals, [op], 'leader', 's1')).toEqual([]);
+    mockFetchArrivals.mockResolvedValue([]);
+    fetchArrivalCorrections.mockResolvedValue([op.payload.effectiveArrival]);
+    await act(async () => { await workflow!.loadGatheringWorkflow(); });
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith(op.id);
+    await render(input({ arrivalOperations: [op], arrivalSessionScope: [] }));
+    expect(mockRemoveArrival).toHaveBeenCalledWith(op.id);
+    expect(projectArrivals(workflow!.remoteArrivals, [], 'leader', 's1')).toEqual([]);
+    fetchArrivalCorrections.mockResolvedValue([]);
+  });
+
+  it('keeps a false correction ACK when an independent remote correction read is older', async () => {
+    const { fetchArrivalCorrections } = require('../api/services/GatheringWorkflowService');
+    const receipt: CoreOperation = { id: 'new-false-correction', actorId: 'leader', groupId: 'g1', entityId: 'd1',
+      entityType: 'itinerary', entityVersion: 0, operationType: 'leader_correct_arrival', status: 'acked',
+      sequence: 3, createdAt: 1, updatedAt: 2, attempts: 1, nextAttemptAt: 0, conflictResult: null,
+      payload: { actorId: 'leader', targetUserId: 'leader', sessionId: 's1', arrived: false,
+        correctedAt: '2026-10-23T01:02:00Z' } };
+    const correction = { sessionId: 's1', destinationId: 'd1', userId: 'leader', arrived: true,
+      arrivedAt: null, source: 'leader_correction', markedBy: 'leader', updatedAt: '2026-10-23T01:01:00Z' };
+    mockFetchArrivals.mockResolvedValue([]);
+    fetchArrivalCorrections.mockResolvedValue([correction]);
+    try {
+      await render(input({ arrivalOperations: [receipt], arrivalSessionScope: [] }));
+      expect(mockRemoveArrival).not.toHaveBeenCalled();
+      expect(projectArrivals(workflow!.remoteArrivals, [receipt], 'leader', 's1', false,
+        workflow!.remoteArrivalCorrections)).toEqual([]);
+      fetchArrivalCorrections.mockResolvedValue([{ ...correction, arrived: false, updatedAt: String(receipt.payload.correctedAt) }]);
+      await act(async () => { await workflow!.loadGatheringWorkflow(); });
+      expect(mockRemoveArrival).toHaveBeenCalledWith(receipt.id);
+      expect(projectArrivals(workflow!.remoteArrivals, [], 'leader', 's1', false,
+        workflow!.remoteArrivalCorrections)).toEqual([]);
+    } finally {
+      fetchArrivalCorrections.mockResolvedValue([]);
+    }
+  });
+
+  it('retains a newer true correction ACK until independent remote reads reflect its version', async () => {
+    const { fetchArrivalCorrections } = require('../api/services/GatheringWorkflowService');
+    const receipt: CoreOperation = { id: 'new-true-correction', actorId: 'leader', groupId: 'g1', entityId: 'd1',
+      entityType: 'itinerary', entityVersion: 0, operationType: 'leader_correct_arrival', status: 'acked',
+      sequence: 3, createdAt: 1, updatedAt: 2, attempts: 1, nextAttemptAt: 0, conflictResult: null,
+      payload: { actorId: 'leader', targetUserId: 'leader', sessionId: 's1', arrived: true,
+        correctedAt: '2026-10-23T01:02:00Z' } };
+    const row: DestinationArrival = { id: 'old-true', groupId: 'g1', destinationId: 'd1', userId: 'leader',
+      navigationSessionId: 's1', arrivedAt: null, source: 'leader_correction', markedBy: 'leader',
+      updatedAt: '2026-10-23T01:00:00Z' };
+    const correction = { sessionId: 's1', destinationId: 'd1', userId: 'leader', arrived: false,
+      arrivedAt: null, source: 'leader_correction', markedBy: 'leader', updatedAt: '2026-10-23T01:01:00Z' };
+    mockFetchArrivals.mockResolvedValue([row]);
+    fetchArrivalCorrections.mockResolvedValue([correction]);
+    try {
+      await render(input({ arrivalOperations: [receipt], arrivalSessionScope: ['s1'] }));
+      expect(mockRemoveArrival).not.toHaveBeenCalled();
+      expect(projectArrivals(workflow!.remoteArrivals, [receipt], 'leader', 's1', false,
+        workflow!.remoteArrivalCorrections)).toEqual([expect.objectContaining({ userId: 'leader' })]);
+      mockFetchArrivals.mockResolvedValue([{ ...row, updatedAt: String(receipt.payload.correctedAt) }]);
+      fetchArrivalCorrections.mockResolvedValue([{ ...correction, arrived: true, updatedAt: String(receipt.payload.correctedAt) }]);
+      await act(async () => { await workflow!.loadGatheringWorkflow(); });
+      expect(mockRemoveArrival).toHaveBeenCalledWith(receipt.id);
+      expect(projectArrivals(workflow!.remoteArrivals, [], 'leader', 's1', false,
+        workflow!.remoteArrivalCorrections)).toEqual([expect.objectContaining({ userId: 'leader' })]);
+    } finally {
+      fetchArrivalCorrections.mockResolvedValue([]);
+    }
+  });
+
+  it.each([true, false])('retires raw correction ACK arrived=%s after a newer authoritative remote correction', async arrived => {
+    const { fetchArrivalCorrections } = require('../api/services/GatheringWorkflowService');
+    const receipt: CoreOperation = { id: 'old-correction', actorId: 'leader', groupId: 'g1', entityId: 'd1',
+      entityType: 'itinerary', entityVersion: 0, operationType: 'leader_correct_arrival', status: 'acked',
+      sequence: 1, createdAt: 1, updatedAt: 2, attempts: 1, nextAttemptAt: 0, conflictResult: null,
+      payload: { actorId: 'leader', targetUserId: 'leader', sessionId: 's1', arrived,
+        correctedAt: '2026-10-23T01:00:00.123456Z' } };
+    const correction = { sessionId: 's1', destinationId: 'd1', userId: 'leader', arrived: !arrived,
+      arrivedAt: null, source: 'leader_correction', markedBy: 'leader', updatedAt: '2026-10-23T01:00:00.123457Z' };
+    mockFetchArrivals.mockResolvedValue([]);
+    fetchArrivalCorrections.mockResolvedValue([correction]);
+    try {
+      await render(input({ arrivalOperations: [receipt], arrivalSessionScope: ['s1'] }));
+      expect(mockRemoveArrival).toHaveBeenCalledWith(receipt.id);
+      mockRemoveArrival.mockClear();
+      await render(input({ arrivalOperations: [{ ...receipt, status: 'pending' }], arrivalSessionScope: ['s1'] }));
+      expect(mockRemoveArrival).not.toHaveBeenCalled();
+    } finally {
+      fetchArrivalCorrections.mockResolvedValue([]);
+    }
+  });
+
 });

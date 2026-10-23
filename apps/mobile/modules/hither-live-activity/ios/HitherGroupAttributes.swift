@@ -24,6 +24,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var personalArrived: Bool?
     public var personalArrivalAtMs: Double?
     public var personalArrivalSequence: Double?
+    public var personalArrivalCorrectionAtMs: Double?
     public var status: String?
     public var gatheringTitle: String?
     public var distanceMeters: Double?
@@ -59,6 +60,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       personalArrived: Bool? = nil,
       personalArrivalAtMs: Double? = nil,
       personalArrivalSequence: Double? = nil,
+      personalArrivalCorrectionAtMs: Double? = nil,
       status: String? = nil,
       gatheringTitle: String? = nil,
       distanceMeters: Double? = nil,
@@ -80,6 +82,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.personalArrived = personalArrived
       self.personalArrivalAtMs = personalArrivalAtMs
       self.personalArrivalSequence = personalArrivalSequence
+      self.personalArrivalCorrectionAtMs = personalArrivalCorrectionAtMs
       self.status = status
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
@@ -104,6 +107,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.personalArrived = state["personalArrived"] as? Bool
       self.personalArrivalAtMs = (state["personalArrivalAtMs"] as? NSNumber)?.doubleValue
       self.personalArrivalSequence = (state["personalArrivalSequence"] as? NSNumber)?.doubleValue
+      self.personalArrivalCorrectionAtMs = (state["personalArrivalCorrectionAtMs"] as? NSNumber)?.doubleValue
       self.status = state["status"] as? String
       self.gatheringTitle = state["gatheringTitle"] as? String
       self.distanceMeters = (state["distanceMeters"] as? NSNumber)?.doubleValue

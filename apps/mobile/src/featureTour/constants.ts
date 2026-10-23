@@ -136,14 +136,7 @@ export const TOUR_STEPS: readonly TourStepDef[] = [
     expandCard: true,
     pauseAutoCollapse: true,
   },
-  {
-    id: 'personalArrive',
-    target: 'personalArrive',
-    titleKey: 'tour.personalArrive.title',
-    bodyKey: 'tour.personalArrive.body',
-    expandCard: true,
-    pauseAutoCollapse: true,
-  },
+
   {
     id: 'meetTime',
     target: 'meetTime',

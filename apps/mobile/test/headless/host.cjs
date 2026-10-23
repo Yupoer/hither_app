@@ -18,6 +18,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       measureInWindow: callback => callback(0, 0, 390, 844),
       animateToRegion: (...args) => receipts.push({ host: name, method: 'animateToRegion', args }),
       animateCamera: (...args) => receipts.push({ host: name, method: 'animateCamera', args }),
+      ...(name === 'Marker' ? { animateMarkerToCoordinate: (...args) => receipts.push({ host: name, method: 'animateMarkerToCoordinate', args }) } : {}),
       setCamera: value => receipts.push({ host: name, method: 'setCamera', value }),
       fitToCoordinates: (...args) => receipts.push({ host: name, method: 'fitToCoordinates', args }),
       getCamera: async () => ({ center: { latitude: 25, longitude: 121 }, pitch: 0, heading: 0, altitude: 1000, zoom: 14 }),

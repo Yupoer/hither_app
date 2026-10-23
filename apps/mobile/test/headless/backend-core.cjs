@@ -14,7 +14,7 @@ const payloadFields = {
   complete_destination: 'destinationId sessionId reason subgroupId', set_solo: 'userId solo',
   set_trip_details: 'tripDays departureDate', set_daily_accommodation: 'stayDate daily day', clear_daily_accommodation: 'stayDate daily day',
   submit_gather_point_request: 'requestId subgroupId items', resolve_gather_point_request: 'requestId approve',
-  record_arrival: 'actorId userId targetUserId destination arrived completeSolo arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
+  record_arrival: 'actorId userId targetUserId destination arrived completeSolo arrivedAt navigationSessionId navigationSessionAliases sessionId deviceId occurredAt source note',
   leader_correct_arrival: 'actorId targetUserId userId arrived arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
   set_navigation_response: 'sessionId userId response result',
   send_command: 'type message latitude longitude expiresAt',

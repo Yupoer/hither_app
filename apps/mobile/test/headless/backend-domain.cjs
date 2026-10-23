@@ -19,13 +19,14 @@ const schemas = {
   coordination_responses: { fields: 'id request_id user_id option_id responded_at updated_at', modes: ['select'] },
   itinerary_operations: { fields: 'id group_id subgroup_id version operation_type payload source_request_id created_by created_at', modes: ['select'] },
   navigation_sessions: { fields: 'id group_id scope_subgroup_id destination_id destination_name destination_latitude destination_longitude arrival_radius_m started_by request_id started_at expires_at status version navigation_member_states', modes: ['select'] },
+  navigation_session_history: { fields: 'group_id navigation_session_id destination_id user_id arrived arrived_at recorded_at corrected_at corrected_by correction_note', modes: ['select'] },
   navigation_member_states: { fields: 'navigation_session_id user_id local_status detail latest_distance_m latest_accuracy_m live_activity_id acknowledged_at arrived_at updated_at', modes: ['select'] },
   push_tokens: { fields: 'user_id device_id token platform updated_at', owner: 'user_id', modes: ['upsert'], conflict: 'user_id,token' },
   device_live_activity_tokens: { fields: 'user_id device_id push_to_start_token live_activities_enabled accent_hex updated_at', owner: 'user_id', modes: ['select', 'upsert', 'update', 'delete'], conflict: 'user_id,device_id' },
   live_activity_sessions: { fields: 'user_id device_id activity_id group_id destination_id push_token accent_hex initial_distance_m current_distance_m eta_seconds travel_mode last_progress_bucket updated_at', owner: 'user_id', modes: ['upsert', 'update', 'delete'], conflict: 'user_id,group_id' },
   metric_payloads: { fields: 'id user_id device_id kind payload received_at', owner: 'user_id', modes: ['insert'] },
   performance_events: { fields: 'id user_id session_id occurred_at event_type operation payload', owner: 'user_id', modes: ['upsert'], conflict: 'id' },
-  visited_waypoints: { fields: 'id user_id group_id destination_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
+  visited_waypoints: { fields: 'id user_id group_id destination_id navigation_session_id arrival_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
   core_entity_versions: { fields: 'group_id entity_type entity_id entity_version state', modes: ['select'] },
   commands: { fields: 'id group_id sender_id type message latitude longitude expires_at created_at', modes: ['select'] },
   group_alerts: { fields: 'id group_id kind sender_id member_id member_name distance_m created_at', modes: ['select'] },
@@ -76,6 +77,7 @@ function tableRows(b, name) {
   if (name === 'itinerary_items') return b.itinerary;
   if (name === 'member_locations') return [...b.locations.values()];
   if (name === 'navigation_sessions') return [...b.sessions.values()];
+  if (name === 'navigation_session_history') return [...b.sessionHistory.values()];
   return b.tables[name];
 }
 function storeRows(b, name, rows) {
@@ -95,12 +97,14 @@ function executeTable(b, operation) {
   const mode = steps.find(s => ['insert', 'upsert', 'update', 'delete'].includes(s[0]))?.[0] ?? 'select';
   assert(schema.modes.includes(mode), `Unsupported ${name}.${mode}`);
   for (const [method, field] of steps) {
-    assert(['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte', 'order', 'limit', 'single', 'maybeSingle', 'abortSignal'].includes(method), `Unsupported builder ${method}`);
-    if (['eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte', 'order'].includes(method)) assert(fields.includes(field) || schema.fields === '*', `Unknown ${name} filter ${field}`);
+    assert(['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'is', 'not', 'gt', 'gte', 'lt', 'lte', 'order', 'limit', 'single', 'maybeSingle', 'abortSignal'].includes(method), `Unsupported builder ${method}`);
+    if (['eq', 'in', 'is', 'not', 'gt', 'gte', 'lt', 'lte', 'order'].includes(method)) assert(fields.includes(field) || schema.fields === '*', `Unknown ${name} filter ${field}`);
     if (method === 'select' && field !== '*') for (const selected of field.split(',').map(v => v.trim())) {
-      assert(selected === '*' || fields.includes(selected) || name === 'navigation_sessions' && selected === 'navigation_member_states(user_id)', `Unknown ${name} selection ${selected}`);
+      assert(selected === '*' || fields.includes(selected) || name === 'navigation_sessions' && selected === 'navigation_member_states(user_id)'
+        || name === 'visited_waypoints' && selected === 'arrival:destination_arrivals!arrival_id(corrected_at)', `Unknown ${name} selection ${selected}`);
     }
   }
+  for (const step of steps.filter(step => step[0] === 'not')) assert(step[2] === 'is' && step[3] === null, 'Only the reviewed NOT IS NULL filter is supported');
   const mutation = steps.find(s => s[0] === mode);
   if (mutation && mode !== 'select' && mode !== 'delete') for (const input of Array.isArray(mutation[1]) ? mutation[1] : [mutation[1]]) {
     for (const field of Object.keys(input)) assert(fields.includes(field), `Unknown ${name} write ${field}`);
@@ -109,8 +113,8 @@ function executeTable(b, operation) {
   }
   const fault = require('./backend-faults.cjs').take(b, operation, mode);
   if (fault) return fault;
-  const filters = steps.filter(s => ['eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte'].includes(s[0]));
-  const matches = row => filters.every(([op, field, value]) => op === 'in' ? value.includes(row[field]) : op === 'eq' ? row[field] === value : op === 'is' ? (row[field] ?? null) === value : op === 'gt' ? row[field] > value : op === 'gte' ? row[field] >= value : op === 'lt' ? row[field] < value : row[field] <= value);
+  const filters = steps.filter(s => ['eq', 'in', 'is', 'not', 'gt', 'gte', 'lt', 'lte'].includes(s[0]));
+  const matches = row => filters.every(([op, field, value]) => op === 'in' ? value.includes(row[field]) : op === 'eq' ? row[field] === value : op === 'is' ? (row[field] ?? null) === value : op === 'not' ? row[field] != null : op === 'gt' ? row[field] > value : op === 'gte' ? row[field] >= value : op === 'lt' ? row[field] < value : row[field] <= value);
   let all = tableRows(b, name);
   let rows = all.filter(matches);
   if (schema.owner && name !== 'profiles' && mode === 'select') rows = rows.filter(row => row[schema.owner] === userId);
@@ -119,7 +123,7 @@ function executeTable(b, operation) {
   if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
   if (name === 'navigation_member_states') rows = rows.filter(r => member(b, b.sessions.get(r.navigation_session_id)?.group_id, userId));
   if (name === 'visited_waypoints') rows = rows.filter(r => r.user_id === userId || member(b, r.group_id, userId));
-  if (['groups', 'memberships', 'itinerary_items', 'subgroups', 'daily_accommodations', 'member_locations', 'coordination_requests', 'itinerary_operations', 'destination_arrivals', 'gather_point_requests', 'navigation_sessions', 'core_entity_versions', 'commands', 'group_alerts'].includes(name)) {
+  if (['groups', 'memberships', 'itinerary_items', 'subgroups', 'daily_accommodations', 'member_locations', 'coordination_requests', 'itinerary_operations', 'destination_arrivals', 'gather_point_requests', 'navigation_sessions', 'navigation_session_history', 'core_entity_versions', 'commands', 'group_alerts'].includes(name)) {
     rows = rows.filter(r => name === 'memberships' && r.user_id === userId || member(b, name === 'groups' ? r.id : r.group_id, userId));
   }
   if (mode !== 'select') {
@@ -162,7 +166,13 @@ function executeTable(b, operation) {
   if (mode !== 'select' && !select) return ok(null);
   if (select && select[1] !== '*') rows = rows.map(row => {
     const selected = select[1].split(',').map(v => v.trim());
-    return { ...(selected.includes('*') ? row : {}), ...Object.fromEntries(selected.filter(field => field !== '*').map(field => field === 'navigation_member_states(user_id)' ? ['navigation_member_states', row.navigation_member_states ?? []] : [field, row[field] ?? null])) };
+    return { ...(selected.includes('*') ? row : {}), ...Object.fromEntries(selected.filter(field => field !== '*').map(field => field === 'navigation_member_states(user_id)' ? ['navigation_member_states', row.navigation_member_states ?? []]
+      : field === 'arrival:destination_arrivals!arrival_id(corrected_at)'
+        ? ['arrival', (() => {
+          const arrival = b.tables.destination_arrivals.find(arrival => arrival.id === row.arrival_id);
+          return arrival ? { corrected_at: arrival.corrected_at ?? null } : null;
+        })()]
+        : [field, row[field] ?? null])) };
   });
   if (steps.some(s => s[0] === 'single' || s[0] === 'maybeSingle')) {
     if (rows.length > 1 || rows.length === 0 && steps.some(s => s[0] === 'single')) return fail('JSON object requested, multiple (or no) rows returned', 'PGRST116');

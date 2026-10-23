@@ -996,3 +996,50 @@ describe('SQLite core storage adapters', () => {
     expect((await queue.getOperation(original.id)).status).toBe('pending');
   });
 });
+
+it('reopens a GPS receipt from disk and sends the original identity after the journey has ended', async () => {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const os = require('node:os') as typeof import('node:os');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-arrival-'));
+  const file = path.join(directory, 'receipt.sqlite');
+  let database = makeAsyncSqliteDatabase(new DatabaseSync(file));
+  try {
+    const first = await loadProduction(database);
+    const submitBeforeReconnect = jest.fn();
+    const queue = first.createCoreOperationOutbox(first.core, first.outbox, submitBeforeReconnect,
+      () => 100, () => 'gps-operation', async () => 'actor-a');
+    const sampleTime = '2026-10-23T01:00:00.000Z';
+    const payload = { actorId: 'actor-a', userId: 'actor-a', source: 'automatic',
+      navigationSessionId: 'original-session', navigationSessionAliases: ['original-session', 'local-start'],
+      occurredAt: sampleTime, arrivedAt: sampleTime, completeSolo: false };
+    const receipt = await queue.enqueueArrival('group-a', 'stop-a', payload);
+    expect(submitBeforeReconnect).not.toHaveBeenCalled();
+    await database.closeAsync();
+    database = makeAsyncSqliteDatabase(new DatabaseSync(file));
+    const reopened = await loadProduction(database);
+    const submit = jest.fn(async (operation: CoreOperation) => ({ ...accepted(operation), entity: {
+      arrivalDisposition: 'history_only', appliedToCurrentSession: false,
+      effectiveArrival: { sessionId: 'original-session', destinationId: 'stop-a', userId: 'actor-a',
+        arrived: true, arrivedAt: sampleTime, source: 'automatic', markedBy: 'actor-a', updatedAt: sampleTime },
+    } }));
+    let nextId = 0;
+    const restarted = reopened.createCoreOperationOutbox(reopened.core, reopened.outbox, submit,
+      () => 1_000_000, () => `next-${++nextId}`, async () => 'actor-a');
+    expect(await restarted.getOperation(receipt.id)).toMatchObject({ id: 'gps-operation', payload });
+    await restarted.flush();
+    await restarted.flush();
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0][0]).toMatchObject({ id: receipt.id, payload });
+    const duplicate = await restarted.enqueueArrival('group-a', 'stop-a', { ...payload, navigationSessionId: 'local-start' });
+    expect(duplicate.id).toBe(receipt.id);
+    const nextSession = await restarted.enqueueArrival('group-a', 'stop-a', { ...payload,
+      navigationSessionId: 'new-session', navigationSessionAliases: ['new-session'] });
+    expect(nextSession.id).not.toBe(receipt.id);
+    expect(await restarted.getOperation(receipt.id)).toMatchObject({ status: 'acked',
+      payload: { navigationSessionId: 'original-session', occurredAt: sampleTime, arrivalDisposition: 'history_only' } });
+  } finally {
+    await database.closeAsync();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

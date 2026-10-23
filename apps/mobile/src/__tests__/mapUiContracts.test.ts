@@ -113,7 +113,7 @@ describe('map UI placement contracts', () => {
   });
 
   it('keeps add-place secondary controls bright, transparent, and evenly spaced', () => {
-    expect(mapStyles).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 8, flexShrink: 0 }');
+    expect(mapStyles).toContain('confirmControlRow: { flexDirection: \'row\', alignItems: \'center\', gap: 4, flexShrink: 0 }');
     expect(mapStyles).toContain('confirmBtnRow: {');
     expect(mapStyles).toContain('gap: 12');
     expect(mapStyles).toContain('paddingHorizontal: 20');
@@ -618,38 +618,26 @@ describe('map UI placement contracts', () => {
     expect(bottomSheet).toContain('borderTopRightRadius: topRadius');
   });
 
-  it('keeps arrival beside navigation controls and auto-applies current time', () => {
+  it('keeps leader End and Complete journey controls with automatic arrival only', () => {
     const commandRow = carousel.indexOf('styles.commandRow');
-    const arrivalButton = carousel.indexOf('arrivalCmdSquare', commandRow);
-    const meetButton = carousel.indexOf('styles.meetBtn', commandRow);
-    // Product order: nav | arrived | transport | countdown (transport before meet).
     const transportRef = carousel.indexOf("setTourTargetRef('transport'", commandRow);
     const meetRef = carousel.indexOf("setTourTargetRef('meetTime'", commandRow);
-
-    expect(arrivalButton).toBeGreaterThan(commandRow);
-    expect(arrivalButton).toBeLessThan(meetButton);
     expect(transportRef).toBeGreaterThan(commandRow);
     expect(transportRef).toBeLessThan(meetRef);
-    expect(carousel).toContain('ARRIVED_SPLIT_MS');
-    expect(carousel).toContain('FadeInRight');
-    expect(carousel).toContain('FadeOutRight');
-    expect(mapScreen).toContain('commitPersonalArrival(destination, targetUserId');
-    // Arrive is one-tap now — no multi-option time-choice Alert.
-    expect(mapScreen).toContain('handleSelfArrival');
-    expect(mapScreen).toContain('submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString())');
-    expect(mapScreen).not.toContain("arrival.timeLeader");
-    expect(mapScreen).not.toContain("arrival.timeNow");
-    expect(mapScreen).not.toContain("arrival.timeAutomatic");
-    expect(mapScreen).not.toContain('handleArrival(dest, user.id, true)');
-    expect(mapScreen).not.toContain('await syncFromDatabase();\n        await setDestinationArrivalAt');
-    // Personal arrive: sequential rules + team nav active on this card only
-    // (Start splits 「已抵達」; End swallows it back into Start).
-    expect(mapScreen).toContain('canMarkArrival');
-    expect(carousel).toContain('expanded={!showArrivalControl}');
-    expect(carousel).toContain('arrivalControlJustSplit');
-    expect(mapScreen).not.toContain('cardExpanded || showArrivalControl');
+    expect(carousel).toContain("navCmd.kind === 'leader_stop' ? t('nav.endNavigation')");
+    expect(carousel).toContain('{navCmd.canComplete ? (');
+    expect(carousel).toContain("accessibilityLabel={t('nav.completeJourney')}");
+    expect(carousel).toContain('testID={`gather-complete-${dest.id}`}');
+    expect(carousel).toContain('promptCompleteAfterArrival(dest)');
+    expect(carousel).not.toContain('gather-arrival-');
+    expect(carousel).not.toContain('handleSelfArrival');
+    expect(carousel).not.toContain("handleArrival(dest, user.id, false)");
+    expect(carousel).not.toContain("accessibilityLabel={t('arrival.undo')}");
+    expect(carousel).not.toContain("setTourTargetRef('personalArrive'");
+    expect(mapScreen).toContain('personalArriveVisible: false');
+    expect(mapScreen).toContain('commitPersonalArrival');
+    expect(mapScreen).toContain('evaluateForegroundArrival');
     expect(carousel).toContain('{cardExpanded && (');
-    expect(carousel).toContain('{showArrivalControl ? (');
     expect(membersPane).toContain('testID="members-location-sharing"');
     expect(historySheet).toContain('color={glass.danger}');
     expect(mapScreen).toContain('locationSharingConfirmCopy');
@@ -658,20 +646,6 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toMatch(
       /toolsPaneBody[\s\S]*settings\.locationSharing[\s\S]*AmicroButton/,
     );
-    expect(mapScreen + carousel).not.toMatch(
-      /showArrivalControl\s*=\s*[\s\S]{0,200}sharedTargetId === dest\.id/,
-    );
-    const arriveBlocks = (mapScreen + carousel).match(
-      /const showArrivalControl\s*=\s*[\s\S]{0,220}?;/g,
-    ) ?? [];
-    expect(arriveBlocks.length).toBeGreaterThanOrEqual(2);
-    for (const block of arriveBlocks) {
-      expect(block).not.toMatch(/sharedTargetId/);
-      expect(block).not.toMatch(/journeyActive/);
-      expect(block).not.toMatch(/navCmd/);
-      // Must gate on flockNavigatingThis so pre-start shows 3 controls only.
-      expect(block).toMatch(/flockNavigatingThis/);
-    }
     // Route editor count + list share openForRouteEditor (not day-gated carousel).
     expect(mapScreen).toContain('openForRouteEditor');
     expect(mapScreen).toContain("t('map.stopsReorder', { count })");
@@ -742,9 +716,8 @@ describe('map UI placement contracts', () => {
     // Member confirm never calls leader-only complete RPC.
     expect(mapScreen).toContain("prompt.kind === 'member_leader_already_done'");
     expect(mapScreen).toContain('member_leader_already_done');
-    // Arrived green check is pressable for undo (anti mis-tap).
-    expect(carousel).toContain("handleArrival(dest, user.id, false)");
-    expect(carousel).toContain("accessibilityLabel={t('arrival.undo')}");
+    expect(carousel).not.toContain("handleArrival(dest, user.id, false)");
+    expect(carousel).not.toContain("accessibilityLabel={t('arrival.undo')}");
     // Expanded mock: day + people chip; dist | eta | maps metrics row.
     expect(carousel).toContain('styles.cardSubRow');
     expect(carousel).toContain('styles.cardDayLine');

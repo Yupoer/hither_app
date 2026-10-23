@@ -22,7 +22,12 @@ import { useStragglerAlerts } from '../state/useStragglerAlerts';
 
 jest.mock('../state/journeyCompletion', () => ({ enqueueJourneyCompletion: jest.fn() }));
 jest.mock('../native/notifications', () => ({ notifyThisDeviceAutoComplete: jest.fn(async () => undefined) }));
-jest.mock('react-native', () => ({ Alert: { alert: jest.fn() }, Share: { share: jest.fn() } }));
+jest.mock('react-native', () => ({ AppState: { addEventListener: jest.fn(() => ({ remove: jest.fn() })) }, Alert: { alert: jest.fn() }, Share: { share: jest.fn() } }));
+jest.mock('../api/supabase', () => ({ supabase: {
+  channel: jest.fn(() => ({ on: jest.fn().mockReturnThis(), subscribe: jest.fn().mockReturnThis() })),
+  removeChannel: jest.fn(),
+} }));
+jest.mock('../state/coreDataSync', () => ({}));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('../api/client', () => ({
   fetchVisitedWaypoints: jest.fn(), leaveGroups: jest.fn(), reportStraggler: jest.fn(),
@@ -625,4 +630,54 @@ describe('MapScreen member presence', () => {
     }
   });
 
+});
+
+it('refreshes open history on history-only events, reconnect and foreground, and unsubscribes on close', async () => {
+  jest.useFakeTimers();
+  const { supabase } = require('../api/supabase');
+  const { AppState } = require('react-native');
+  jest.mocked(fetchVisitedWaypoints).mockResolvedValue([]);
+  const input: UseVisitHistoryInput = { allScopedDestinations: [], arrivalOperations: [], destinationArrivals: [],
+    group: null, groupId: 'team', isLeader: true, members: [], overlay: 'history',
+    routeDepartureDate: undefined, routeTripDays: undefined,
+    user: { id: 'leader', name: 'Leader', email: 'leader@example.test' } };
+  const mounted = await mountHook(useVisitHistory, input);
+  const channel = supabase.channel.mock.results.at(-1).value;
+  const event = channel.on.mock.calls.find((call: any[]) => call[1].table === 'navigation_session_history')[2];
+  const subscribed = channel.subscribe.mock.calls[0][0];
+  const foreground = AppState.addEventListener.mock.calls.at(-1)[1];
+  expect(channel.on.mock.calls.map((call: any[]) => call[1].table)).toEqual(['visited_waypoints', 'navigation_session_history']);
+  const before = jest.mocked(fetchVisitedWaypoints).mock.calls.length;
+  for (const trigger of [event, () => subscribed('SUBSCRIBED'), () => foreground('active')]) {
+    await act(async () => { trigger(); jest.advanceTimersByTime(300); });
+  }
+  expect(fetchVisitedWaypoints).toHaveBeenCalledTimes(before + 3);
+  await mounted.update({ ...input, overlay: null });
+  expect(supabase.removeChannel).toHaveBeenCalledWith(channel);
+  const callsAfterClose = jest.mocked(fetchVisitedWaypoints).mock.calls.length;
+  await act(async () => { jest.advanceTimersByTime(60_000); });
+  expect(fetchVisitedWaypoints).toHaveBeenCalledTimes(callsAfterClose);
+  await mounted.unmount();
+  jest.useRealTimers();
+});
+
+it('a false ACK removes stale visited history only for its original session', async () => {
+  const receipt = { id: 'receipt', actorId: 'me', groupId: 'team', entityId: 'stop', operationType: 'record_arrival',
+    status: 'acked', payload: { actorId: 'me', userId: 'me', effectiveArrival: {
+      sessionId: 'old', destinationId: 'stop', userId: 'me', arrived: false, arrivedAt: null,
+      source: 'leader_correction', markedBy: 'leader', updatedAt: '2026-10-23T01:00:00Z',
+    } } } as unknown as UseVisitHistoryInput['arrivalOperations'][number];
+  const visited = { id: 'visit', userId: 'me', destinationId: 'stop', navigationSessionId: 'old',
+    arrivedAt: '2026-10-23T00:00:00Z', name: 'Temple', coordinates: { latitude: 25, longitude: 121 } };
+  jest.mocked(fetchVisitedWaypoints).mockResolvedValue([visited]);
+  const input: UseVisitHistoryInput = { allScopedDestinations: [], arrivalOperations: [receipt], destinationArrivals: [],
+    group: null, groupId: 'team', isLeader: false, members: [], overlay: 'history',
+    routeDepartureDate: undefined, routeTripDays: undefined,
+    user: { id: 'me', name: 'Me', email: 'me@example.test' } };
+  const mounted = await mountHook(useVisitHistory, input);
+  expect(mounted.value.historyGroups).toEqual([]);
+  jest.mocked(fetchVisitedWaypoints).mockResolvedValue([{ ...visited, navigationSessionId: 'new' }]);
+  await act(async () => { await mounted.value.loadHistory(); });
+  expect(mounted.value.historyGroups.flatMap(day => day.items)).toEqual([expect.objectContaining({ navigationSessionId: 'new' })]);
+  await mounted.unmount();
 });
