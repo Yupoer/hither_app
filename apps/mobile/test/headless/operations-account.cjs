@@ -186,7 +186,7 @@ exports.lifecycle = [
 ];
 
 const testFile = 'src/__tests__/headlessAccountScenario.test.ts';
-const scenario = (ids, pattern, assertions) => ({ inventory: ids.split(','), testFile, pattern,
+const scenario = (ids, pattern, assertions) => ({ inventory: ids.split(','), file: testFile, pattern,
   platforms: ['ios', 'android'], assertions });
 exports.scenarios = [
   scenario('P06,P07,P08,P09', 'cancels a profile draft', 'Draft cancellation writes nothing; changed profile fields commit; missing profile nickname upserts; custom command trims and preserves its selected slot.'),
@@ -214,3 +214,4 @@ exports.scenarios = [
   scenario('O11,O13,V19', 'preserves partial onboarding answers', 'Skip persists answers; failed profile sync remains retryable; successful sync is idempotent; replay waits for the home boundary and blocks the group tour.'),
   scenario('O02,O05,O06,O12', 'continues after permission denial', 'Denied permissions do not block progression; days stop at the maximum; dismissed date selection does not enable continue; confirmed native dates persist as ISO.'),
 ];
+exports.scenarios.push(...require('./scenarios-auth.cjs'));
