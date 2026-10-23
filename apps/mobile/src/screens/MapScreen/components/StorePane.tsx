@@ -1093,6 +1093,7 @@ export const StorePane = React.memo(function StorePane({
           <Pressable
             style={[styles.cta, { backgroundColor: accent }]}
             onPress={() => onRequireRegistration?.()}
+            testID="store-register"
             accessibilityRole="button"
             accessibilityLabel={t('store.registerCta')}
           >
@@ -1288,6 +1289,7 @@ function ProductCard({
           { backgroundColor: canAfford && !disabled ? accent : glass.fill },
         ]}
         onPress={onRedeem}
+        testID={`store-redeem-${product.code}`}
         disabled={disabled || !canAfford || redeeming}
         accessibilityRole="button"
         accessibilityState={{ disabled: disabled || !canAfford || redeeming, busy: redeeming }}

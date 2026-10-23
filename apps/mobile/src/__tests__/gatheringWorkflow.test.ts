@@ -9,7 +9,7 @@ const mockRemoved: unknown[] = [];
 const mockAlert = jest.fn();
 const mockFetchArrivals = jest.fn(async (): Promise<DestinationArrival[]> => []);
 const mockFetchRequests = jest.fn(async (): Promise<GatherPointRequest[]> => []);
-const mockRemoveArrival = jest.fn(async () => undefined);
+const mockRemoveArrival = jest.fn(async (_id: string) => undefined);
 
 jest.mock('react-native', () => ({ Alert: { alert: (...args: unknown[]) => mockAlert(...args) } }));
 jest.mock('../api/client', () => ({
@@ -43,6 +43,7 @@ jest.mock('../state/coreDataSync', () => ({
 jest.mock('../state/useForegroundReconcile', () => ({ useForegroundReconcile: jest.fn(() => null) }));
 
 import { useGatheringWorkflow, type UseGatheringWorkflowInput } from '../screens/MapScreen/hooks/useGatheringWorkflow';
+import { projectArrivals } from '../state/arrivalSync';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -172,5 +173,53 @@ describe('useGatheringWorkflow', () => {
     expect(mockRemoveArrival).not.toHaveBeenCalled();
     await render(input({ arrivalOperations: [undo], arrivalSessionScope: [] }));
     expect(mockRemoveArrival).toHaveBeenCalledWith('undo');
+  });
+
+  it.each(['forward-clock', 'backward-clock', 'legacy-without-sequence'])('retires a superseded undo after re-entry is acknowledged with %s ordering', async (ordering) => {
+    const operation = (id: string, sequence: number, arrived: boolean, occurredAt: string): CoreOperation => ({
+      id, groupId: 'g1', entityId: 'd1', entityType: 'itinerary', entityVersion: 0,
+      operationType: 'record_arrival', status: 'acked', actorId: 'leader',
+      sequence: ordering === 'legacy-without-sequence' ? undefined : sequence,
+      createdAt: sequence, updatedAt: sequence, attempts: 1, nextAttemptAt: 0, conflictResult: null,
+      payload: { actorId: 'leader', userId: 'leader', navigationSessionId: 's1', arrived,
+        arrivedAt: arrived ? occurredAt : null, occurredAt },
+    });
+    const undo = operation('undo', 2, false, '2026-10-22T00:00:02Z');
+    const reentry = operation('reentry', 3, true,
+      ordering === 'backward-clock' ? '2026-10-22T00:00:01Z' : '2026-10-22T00:00:05Z');
+    const remote: DestinationArrival[] = [{ id: 'r1', groupId: 'g1', destinationId: 'd1', userId: 'leader',
+      navigationSessionId: 's1', arrivedAt: String(reentry.payload.arrivedAt), source: 'automatic', markedBy: 'leader' }];
+    mockFetchArrivals.mockResolvedValue(remote);
+    await render(input({ arrivalOperations: [reentry, undo], arrivalSessionScope: ['s1'] }));
+    expect(mockRemoveArrival).toHaveBeenCalledWith('undo');
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith('reentry');
+    await render(input({ arrivalOperations: [reentry, undo], arrivalSessionScope: ['s1'] }));
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith('reentry');
+    expect(projectArrivals(remote, [reentry, undo], 'leader', 's1')).toEqual([
+      expect.objectContaining({ destinationId: 'd1', userId: 'leader', navigationSessionId: 's1', arrivedAt: reentry.payload.arrivedAt }),
+    ]);
+    await render(input({ arrivalOperations: [reentry], arrivalSessionScope: ['s1'] }));
+    expect(mockRemoveArrival).toHaveBeenCalledWith('reentry');
+    const retained = [undo, reentry].filter(op => !mockRemoveArrival.mock.calls.some(([id]) => id === op.id));
+    expect(projectArrivals(remote, retained, 'leader', 's1')).toEqual(remote);
+  });
+
+  it.each(['pending', 'failed', 'other-session', 'other-actor', 'actor-mismatch'])('keeps the active undo when the newer arrival is %s', async (variant) => {
+    const undo: CoreOperation = {
+      id: 'undo', groupId: 'g1', entityId: 'd1', entityType: 'itinerary', entityVersion: 0,
+      operationType: 'record_arrival', status: 'acked', actorId: 'leader', sequence: 2,
+      createdAt: 2, updatedAt: 2, attempts: 1, nextAttemptAt: 0, conflictResult: null,
+      payload: { actorId: 'leader', userId: 'leader', navigationSessionId: 's1', arrived: false },
+    };
+    const reentry: CoreOperation = { ...undo, id: 'reentry', sequence: 3, createdAt: 3,
+      status: variant === 'pending' || variant === 'failed' ? variant : 'acked',
+      actorId: variant === 'other-actor' || variant === 'actor-mismatch' ? 'other' : 'leader',
+      payload: { ...undo.payload, arrived: true,
+        actorId: variant === 'other-actor' ? 'other' : 'leader',
+        navigationSessionId: variant === 'other-session' ? 's2' : 's1' },
+    };
+    mockFetchArrivals.mockResolvedValue([]);
+    await render(input({ arrivalOperations: [reentry, undo], arrivalSessionScope: ['s1'] }));
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith('undo');
   });
 });

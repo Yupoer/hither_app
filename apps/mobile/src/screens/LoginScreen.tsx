@@ -559,9 +559,9 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.signupLegal}>
             <Text style={styles.signupLegalText}>
               {t('login.signupAgreementPrefix')}{' '}
-              <Text onPress={() => termsUrl && void Linking.openURL(termsUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.terms')}</Text>
+              <Text testID="login-terms" onPress={() => termsUrl && void Linking.openURL(termsUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.terms')}</Text>
               {t('login.signupAgreementAnd')}
-              <Text onPress={() => privacyUrl && void Linking.openURL(privacyUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.privacy')}</Text>
+              <Text testID="login-privacy" onPress={() => privacyUrl && void Linking.openURL(privacyUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.privacy')}</Text>
               {t('login.signupAgreementSuffix')}
             </Text>
           </View>
@@ -658,7 +658,7 @@ export default function LoginScreen({ navigation }: Props) {
             </Text>
           )}
         </SafePressable>
-        <Pressable onPress={backToSignIn} accessibilityRole="button" style={styles.backLink}>
+        <Pressable testID="login-pending-back" onPress={backToSignIn} accessibilityRole="button" style={styles.backLink}>
           <Text style={styles.backLinkText}>{t('login.backToSignIn')}</Text>
         </Pressable>
       </View>
@@ -843,7 +843,7 @@ export default function LoginScreen({ navigation }: Props) {
             >
               <Text style={styles.ctaText}>{t('anon.continue')}</Text>
             </Pressable>
-            <Pressable onPress={cancelGuest} accessibilityRole="button" style={styles.modalSecondary}>
+            <Pressable testID="guest-cancel-button" onPress={cancelGuest} accessibilityRole="button" style={styles.modalSecondary}>
               <Text style={styles.modalSecondaryText}>{t('common.cancel')}</Text>
             </Pressable>
           </SwiftUIGlassSurface>

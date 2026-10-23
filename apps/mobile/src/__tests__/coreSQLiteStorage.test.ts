@@ -309,6 +309,7 @@ describe('SQLite core storage adapters', () => {
   it('restores durable trip and daily accommodation snapshots and receipts after JS restart', async () => {
     const harness = await newHarness();
     const snapshot = makeSnapshot('trip-stay');
+    snapshot.projectedDestinationOperationIds = ['trip-write', 'stay-write'];
     snapshot.group = { ...snapshot.group, tripDays: 4, departureDate: '2026-10-01' };
     snapshot.dailyAccommodations = [{ id: 'stay', groupId: 'trip-stay', stayDate: '2026-10-01',
       title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } }];
@@ -321,6 +322,8 @@ describe('SQLite core storage adapters', () => {
     });
     const restored = await loadProduction(harness.database);
     expect(await restored.core.getSnapshot('trip-stay')).toEqual(snapshot);
+    expect(restored.coreDataModule.groupStateFromCoreSnapshot(await restored.core.getSnapshot('trip-stay'))
+      .projectedDestinationOperationIds).toEqual(['trip-write', 'stay-write']);
     expect((await restored.outbox.listByGroup('trip-stay')).map((op: CoreOperation) => op.operationType))
       .toEqual(['set_trip_details', 'set_daily_accommodation']);
     expect(await restored.core.getSnapshot('missing')).toBeNull();

@@ -307,6 +307,7 @@ export function AccountSheetContent({
                 <View style={styles.socialRow}>
                   <Pressable
                     style={({ pressed }) => [styles.socialButton, pressed && styles.pressed, upgradeBusy && styles.disabledButton]}
+                    testID="account-link-google"
                     onPress={() => void handleLink('google')}
                     disabled={upgradeBusy}
                     accessibilityRole="button"
@@ -318,6 +319,7 @@ export function AccountSheetContent({
                   {appleAvailable ? (
                     <Pressable
                       style={({ pressed }) => [styles.socialButton, pressed && styles.pressed, upgradeBusy && styles.disabledButton]}
+                      testID="account-link-apple"
                       onPress={() => void handleLink('apple')}
                       disabled={upgradeBusy}
                       accessibilityRole="button"
@@ -330,6 +332,7 @@ export function AccountSheetContent({
                 </View>
                 <TextInput
                   style={styles.accountInput}
+                  testID="account-email"
                   value={upgradeEmail}
                   onChangeText={setUpgradeEmail}
                   placeholder="you@example.com"
@@ -341,6 +344,7 @@ export function AccountSheetContent({
                 />
                 <TextInput
                   style={[styles.accountInput, styles.accountPasswordInput]}
+                  testID="account-password"
                   value={upgradePassword}
                   onChangeText={setUpgradePassword}
                   placeholder={t('account.password')}
@@ -355,6 +359,7 @@ export function AccountSheetContent({
                     { backgroundColor: accentMix(accent, pressed ? 28 : 20) },
                     (!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy) && styles.disabledButton,
                   ]}
+                  testID="account-upgrade"
                   onPress={() => void handleUpgrade()}
                   disabled={!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy}
                   accessibilityRole="button"
@@ -376,6 +381,7 @@ export function AccountSheetContent({
                 <Text style={styles.promoHint}>{t('account.addPasswordHint')}</Text>
                 <TextInput
                   style={styles.accountInput}
+                  testID="account-password"
                   value={upgradePassword}
                   onChangeText={setUpgradePassword}
                   placeholder={t('login.newPasswordPlaceholder')}
@@ -387,6 +393,7 @@ export function AccountSheetContent({
                 />
                 <TextInput
                   style={[styles.accountInput, styles.accountPasswordInput]}
+                  testID="account-confirm-password"
                   value={accountPasswordConfirm}
                   onChangeText={setAccountPasswordConfirm}
                   placeholder={t('login.confirmPasswordPlaceholder')}
@@ -472,6 +479,7 @@ export function AccountSheetContent({
                   })
                 }
                 accessibilityRole="button"
+                testID="account-delete"
                 accessibilityLabel={t('account.delete')}
               >
                 <Text style={styles.deleteButtonText}>{t('account.delete')}</Text>

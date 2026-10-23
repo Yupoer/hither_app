@@ -126,6 +126,7 @@ export default function FeedbackSheet({
             return (
               <Pressable
                 key={c.key}
+                testID={`feedback-category-${c.key}`}
                 onPress={() => setCategory(c.key)}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
@@ -143,6 +144,7 @@ export default function FeedbackSheet({
         </View>
         <TextInput
           style={styles.input}
+          testID="feedback-description"
           value={description}
           onChangeText={setDescription}
           placeholder={t('feedback.placeholder')}
@@ -163,6 +165,7 @@ export default function FeedbackSheet({
             { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
             (!description.trim() || status === 'sending') && styles.ctaDisabled,
           ]}
+          testID="feedback-submit"
           onPress={submit}
           disabled={!description.trim() || status === 'sending'}
           accessibilityRole="button"

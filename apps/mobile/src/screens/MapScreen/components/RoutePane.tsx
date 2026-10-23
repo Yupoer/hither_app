@@ -241,6 +241,7 @@ export function RoutePane({
             onPress={() => { lightTap(); setOverlay('arrivalManage'); }}
             accessibilityRole="button"
             accessibilityLabel={t('arrival.manage')}
+            testID="map-arrival-manage"
           >
             <Text style={styles.listRowTitle}>{t('arrival.manage')}</Text>
             <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
@@ -264,6 +265,7 @@ export function RoutePane({
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
           onPress={() => { lightTap(); openHistoryOverlay(); }}
+          testID="map-history"
           accessibilityRole="button"
         >
           <Text style={styles.listRowTitle}>{t('history.title')}</Text>

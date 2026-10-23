@@ -435,6 +435,7 @@ export default React.memo(function PremiumPresentation({
           return (
             <Pressable
               key={plan}
+              testID={`${testID}-plan-${plan}`}
               style={[
                 styles.planChoice,
                 { borderColor: selected ? accent : glass.hairlineStrong },

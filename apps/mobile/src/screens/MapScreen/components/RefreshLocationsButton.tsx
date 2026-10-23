@@ -44,6 +44,7 @@ export const RefreshLocationsButton = React.memo(function RefreshLocationsButton
       onPress={() => { lightTap(); onPress(); }}
       disabled={refreshing}
       accessibilityLabel={t('map.refreshLocationsA11y')}
+      testID="map-refresh-locations"
       accessibilityHint={cooling ? t('map.refreshLocationsCooldown', { seconds: remaining }) : undefined}
     />
     )}

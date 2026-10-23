@@ -1,0 +1,39 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const ts = require(require.resolve('typescript', {paths:[process.cwd()]}));
+const {scan,compare} = require('./source-inventory.cjs');
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-source-inventory-'));
+try {
+  fs.mkdirSync(path.join(directory, 'src'));
+  fs.writeFileSync(path.join(directory, 'App.tsx'), 'export default function App() { return <Button onPress={save} />; }');
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export async function save() { return 1; }');
+  const baseline = scan(directory, ts);
+  assert(baseline.some(entry => entry.kind === 'callback' && entry.name === 'onPress'));
+  assert.deepEqual(compare(baseline, scan(directory, ts)), {added:[],removed:[]});
+  fs.writeFileSync(path.join(directory, 'App.tsx'), 'export default function App() { return <Button onPress={save} onLongPress={remove} />; }');
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export async function save() { return 2; }');
+  const changed = compare(baseline, scan(directory, ts));
+  assert(changed.added.some(entry => entry.name === 'onLongPress'));
+  assert(changed.removed.some(entry => entry.name === 'save'));
+  assert(changed.added.some(entry => entry.name === 'save'));
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export {save as persist} from "./other";');
+  assert(scan(directory, ts).some(entry => entry.kind === 'export-alias'));
+  const multiline = 'export {\n  save as persist,\n  remove\n} from "./other";';
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), multiline);
+  const linux = scan(directory, ts);
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), multiline.replace(/\n/g, '\r\n'));
+  assert.deepEqual(compare(linux, scan(directory, ts)), {added:[],removed:[]});
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'function Screen() { useMountEffect(start); }');
+  assert(scan(directory, ts).some(entry => entry.kind === 'lifecycle' && entry.name === 'useMountEffect'));
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export const adapter = { start() { return 1; } } satisfies Adapter;');
+  const objectBaseline = scan(directory, ts);
+  assert(objectBaseline.some(entry => entry.kind === 'export' && entry.name === 'adapter'));
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export const adapter = { start() { return 2; }, stop: () => 3 } satisfies Adapter;');
+  assert(compare(objectBaseline, scan(directory, ts)).added.some(entry => entry.name === 'adapter'));
+  console.log('Source inventory detects new callbacks, changed service bodies and exported aliases');
+} finally {
+  assert(path.resolve(directory).startsWith(`${path.resolve(os.tmpdir())}${path.sep}hither-source-inventory-`));
+  fs.rmSync(directory, {recursive:true,force:true});
+}

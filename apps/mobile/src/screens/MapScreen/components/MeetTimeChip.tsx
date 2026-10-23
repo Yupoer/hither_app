@@ -24,6 +24,7 @@ export const MeetTimeChip = React.memo(function MeetTimeChip({
   formatDue,
   captionLive,
   captionDue,
+  testID,
 }: {
   meetAtIso: string | null | undefined;
   meetRedMinutes: number;
@@ -39,6 +40,7 @@ export const MeetTimeChip = React.memo(function MeetTimeChip({
   formatDue: (time: string) => string;
   captionLive: string;
   captionDue: string;
+  testID?: string;
 }) {
   const [due, setDue] = useState(() => {
     if (!meetAtIso) return false;
@@ -64,6 +66,7 @@ export const MeetTimeChip = React.memo(function MeetTimeChip({
       disabled={!canEdit}
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}
+      testID={testID}
     >
       <View style={styles.meetBtnStack}>
         <View style={styles.meetBtnTimeRow}>

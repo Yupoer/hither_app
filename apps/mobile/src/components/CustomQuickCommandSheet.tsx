@@ -70,6 +70,7 @@ export default function CustomQuickCommandSheet({
       <ScrollView contentContainerStyle={styles.body}>
         <Text style={styles.title}>{title}</Text>
         <TextInput
+          testID="custom-command-label"
           value={label}
           onChangeText={setLabel}
           placeholder={t('settings.customQuickCommandName')}
@@ -80,6 +81,7 @@ export default function CustomQuickCommandSheet({
           accessibilityLabel={t('settings.customQuickCommandName')}
         />
         <TextInput
+          testID="custom-command-message"
           value={message}
           onChangeText={setMessage}
           placeholder={t('settings.customQuickCommandMessage')}
@@ -92,6 +94,7 @@ export default function CustomQuickCommandSheet({
         />
         <Pressable
           style={[styles.saveButton, { backgroundColor: colors.accent }]}
+          testID="custom-command-save"
           onPress={() => void save()}
           accessibilityRole="button"
         >

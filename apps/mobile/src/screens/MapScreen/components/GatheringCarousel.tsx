@@ -197,6 +197,7 @@ export function GatheringCarousel({
           showsHorizontalScrollIndicator={false}
           onScrollBeginDrag={handleScrollBeginDrag}
           onMomentumScrollEnd={handleMomentumEnd}
+            testID="map-carousel"
           scrollEventThrottle={16}
         >
           {destinations.map((dest, index) => {
@@ -390,6 +391,7 @@ export function GatheringCarousel({
                     </Text>
                   ) : null}
                   <GatheringCardPressable
+                    testID={`gather-card-${dest.id}`}
                     onToggle={() => toggleGatheringCard(dest.id)}
                     accessibilityLabel={dest.title}
                     accessibilityHint={
@@ -572,6 +574,7 @@ export function GatheringCarousel({
                               }}
                               accessibilityRole="button"
                               accessibilityLabel={t('map.openExternalNavigation')}
+                              testID={`gather-external-${dest.id}`}
                             >
                               <Ionicons name="map" size={22} color="#fff" />
                             </Pressable>
@@ -764,6 +767,7 @@ export function GatheringCarousel({
                             }}
                             accessibilityRole="button"
                             accessibilityLabel={t('arrival.undo')}
+                            testID={`gather-arrival-undo-${dest.id}`}
                           >
                             <Ionicons
                               name="checkmark-circle"
@@ -786,6 +790,7 @@ export function GatheringCarousel({
                             }}
                             accessibilityRole="button"
                             accessibilityLabel={t('arrival.mark')}
+                            testID={`gather-arrival-${dest.id}`}
                           >
                             <Ionicons
                               name="checkmark-circle-outline"
@@ -812,6 +817,7 @@ export function GatheringCarousel({
                       }}
                       accessibilityRole="button"
                       accessibilityLabel={`${t(`map.travelMode.${travelMode}`)} ${etaLabel} ${distLabel}`.trim()}
+                      testID={`gather-travel-mode-${dest.id}`}
                     >
                       <Ionicons
                         name={modeIconName}
@@ -826,6 +832,7 @@ export function GatheringCarousel({
                       style={styles.meetBtnSlot}
                     >
                     <MeetTimeChip
+                      testID={`gather-meet-time-${dest.id}`}
                       meetAtIso={dest.meetAt as string | null | undefined}
                       meetRedMinutes={
                         dest.meetRedMinutes ?? meetRedMin ?? DEFAULT_MEET_RED_MIN

@@ -84,6 +84,7 @@ export default function NotificationPreferencesCard({
         >
           <Text style={styles.label}>{t(label)}</Text>
           <SystemToggle
+            testID={`notification-preference-${key}`}
             value={prefs[key]}
             onValueChange={(v) => toggle(key, v)}
             accessibilityLabel={t(label)}

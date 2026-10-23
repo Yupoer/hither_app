@@ -241,6 +241,68 @@ afterEach(async () => {
 });
 
 describe('coreDataSync production orchestration', () => {
+  it('switches from a SQL-shaped partial gathering using the durable itinerary and version', async () => {
+    const state = makeState();
+    await seedSnapshot(state);
+    const durable = { ...deriveActiveGatheringFromGroupState(state, 7, 1_000),
+      journeyPhase: 'en_route' as const, activeDestinationId: 'd1',
+      pointStatuses: { d1: 'en_route' as const }, navigationSessionId: 'server-session' };
+    memoryCoreDb().gatherings.set('group-1', durable);
+
+    const switched = await enqueueLeaderGatheringSwitch('group-1', {
+      activeDestinationId: 'd2', baseState: deriveActiveGatheringFromGroupState(state, 0),
+      groupState: state, actorId: 'actor-a', flushImmediately: false,
+    });
+
+    expect(switched.base).toEqual({ ...durable, pointStatuses: { d1: 'en_route', d2: 'pending' } });
+    expect(switched.local).toMatchObject({ entityVersion: 8, activeDestinationId: 'd2',
+      pointStatuses: { d1: 'pending', d2: 'en_route' }, navigationSessionId: 'server-session' });
+    expect((await listOpenCoreOperations('group-1'))[0]).toMatchObject({
+      operationType: 'switch_gathering', entityVersion: 7, payload: { activeDestinationId: 'd2' },
+    });
+  });
+
+  it.each(['unknown', 'deleted', 'closed', 'completed', 'unscheduled'])('rejects a %s switch target despite a stale caller map', async kind => {
+    const destinationId = 'd2';
+    const stale = makeState();
+    const destinations = kind === 'closed'
+      ? [makeDestination('d1', 0), makeDestination(destinationId, 1, { closedAt: '2026-10-01T00:00:00Z' })]
+      : kind === 'unscheduled'
+        ? [makeDestination('d1', 0), makeDestination(destinationId, 1, { day: null })]
+        : kind === 'completed' ? stale.destinations : [makeDestination('d1', 0)];
+    await seedSnapshot(makeState('group-1', destinations));
+    const durable = { ...deriveActiveGatheringFromGroupState(stale, 7, 1_000),
+      journeyPhase: 'en_route' as const, activeDestinationId: 'd1',
+      pointStatuses: { d1: 'en_route' as const,
+        ...(kind === 'unknown' ? {} : { d2: kind === 'completed' ? 'completed' as const : 'pending' as const }) } };
+    memoryCoreDb().gatherings.set('group-1', durable);
+
+    await expect(enqueueLeaderGatheringSwitch('group-1', {
+      activeDestinationId: destinationId, baseState: deriveActiveGatheringFromGroupState(stale, 0),
+      groupState: stale, actorId: 'actor-a', flushImmediately: false,
+    })).rejects.toThrow(kind === 'closed' || kind === 'completed'
+      ? 'invalid_transition:switch_completed_gathering' : 'invalid_transition:unknown_gathering');
+    expect(await listOpenCoreOperations('group-1')).toEqual([]);
+    expect(await getCoreDataStore().getActiveGathering('group-1')).toEqual(durable);
+  });
+
+  it('switches to a pending local addition absent from both the gathering map and stale closure', async () => {
+    const stale = makeState('group-1', [makeDestination('d1', 0)]);
+    await seedSnapshot(stale);
+    const added = await enqueueDestinationAdd({ groupId: 'group-1', title: 'Added offline',
+      latitude: 25, longitude: 121, day: 1, actorId: 'actor-a' });
+
+    const switched = await enqueueLeaderGatheringSwitch('group-1', {
+      activeDestinationId: added.destinationId, baseState: deriveActiveGatheringFromGroupState(stale, 0),
+      groupState: stale, actorId: 'actor-a', flushImmediately: false,
+    });
+
+    expect(switched.local.activeDestinationId).toBe(added.destinationId);
+    expect(switched.local.pointStatuses[added.destinationId]).toBe('en_route');
+    expect((await listOpenCoreOperations('group-1')).map(operation => operation.operationType))
+      .toEqual(['add_destination', 'switch_gathering']);
+  });
+
   it('starts a fresh request over a stale en_route projection of the same dismissed session', async () => {
     const state = makeState();
     state.group = { ...state.group, journeyStatus: 'going', activeDestinationId: 'd1' };

@@ -117,6 +117,7 @@ export default React.memo(function CoordinateDestinationSheet({
             placeholderTextColor={glass.textTertiary}
             keyboardAppearance="dark"
             accessibilityLabel={t('coord.nameLabel')}
+            testID="coordinate-name"
             editable={!submitting}
           />
 
@@ -130,6 +131,7 @@ export default React.memo(function CoordinateDestinationSheet({
             keyboardAppearance="dark"
             keyboardType="numbers-and-punctuation"
             accessibilityLabel={t('coord.latLabel')}
+            testID="coordinate-latitude"
             editable={!submitting}
           />
 
@@ -143,6 +145,7 @@ export default React.memo(function CoordinateDestinationSheet({
             keyboardAppearance="dark"
             keyboardType="numbers-and-punctuation"
             accessibilityLabel={t('coord.lngLabel')}
+            testID="coordinate-longitude"
             editable={!submitting}
           />
 
@@ -155,6 +158,7 @@ export default React.memo(function CoordinateDestinationSheet({
           <View style={styles.actions}>
             <Pressable
               onPress={onClose}
+              testID="coordinate-cancel"
               style={styles.cancelBtn}
               disabled={submitting}
               accessibilityRole="button"
@@ -163,6 +167,7 @@ export default React.memo(function CoordinateDestinationSheet({
             </Pressable>
             <Pressable
               onPress={() => void handleSubmit()}
+              testID="coordinate-submit"
               style={[styles.submitBtn, submitting && styles.submitDisabled]}
               disabled={submitting}
               accessibilityRole="button"

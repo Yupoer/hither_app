@@ -51,6 +51,7 @@ function ScenarioCard({
 
   return (
     <Pressable
+      testID={`onboarding-quiz-${tag}`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={() => {

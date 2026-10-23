@@ -121,6 +121,7 @@ export default class AppErrorBoundary extends Component<Props, State> {
             {translate(lang, 'errorBoundary.body')}
           </Text>
           <Pressable
+            testID="app-error-retry"
             onPress={this.handleRetry}
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
             accessibilityRole="button"

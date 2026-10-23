@@ -95,6 +95,7 @@ export function ArrivalManageSheet({
                         <Pressable
                           style={styles.arrivalToggleBtn}
                           onPress={() => handleArrival(destination, member.userId, !arrived)}
+                          testID={`history-arrival-${destination.id}-${member.userId}`}
                           accessibilityRole="button"
                           accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
                           accessibilityState={{ checked: arrived }}

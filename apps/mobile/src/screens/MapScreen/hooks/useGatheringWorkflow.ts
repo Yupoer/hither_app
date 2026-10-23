@@ -204,34 +204,39 @@ function ArrivalReceiptCompactionCommit({ arrivalOperations, userId, arrivalSess
       op.payload.targetUserId ?? op.payload.userId ?? ''
     )}:${String(op.payload.navigationSessionId ?? op.payload.sessionId ?? '')}`;
     const latestByKey = new Map<string, CoreOperation>();
-    for (const op of arrivalOperations) {
-      if (op.status === 'conflict' || op.payload.actorId !== userId) continue;
+    const currentOperations = arrivalOperations.filter(op => op.status !== 'conflict'
+      && op.payload.actorId === userId && (op.actorId == null || op.actorId === userId));
+    for (const op of currentOperations) {
       const key = keyFor(op);
       const previous = latestByKey.get(key);
-      if (!previous || eventOrder(previous) <= eventOrder(op)) latestByKey.set(key, op);
+      if (!previous || (typeof previous.sequence === 'number' && typeof op.sequence === 'number'
+        ? previous.sequence <= op.sequence
+        : eventOrder(previous) <= eventOrder(op))) latestByKey.set(key, op);
     }
-    for (const op of arrivalOperations) {
-      if (op.status !== 'acked' || op.payload.actorId !== userId) continue;
+    const supersededKeys = new Set(currentOperations.filter(op => op.status === 'acked'
+      && latestByKey.get(keyFor(op))?.id !== op.id).map(keyFor));
+    for (const op of currentOperations) {
+      if (op.status !== 'acked') continue;
+      // Retire a superseded undo with the older receipts, before the new
+      // arrival is compacted and the old tombstone could hide its server row.
+      const latest = latestByKey.get(keyFor(op));
+      if (latest && latest.id !== op.id && latest.status === 'acked') {
+        void getCoreOperationOutbox().removeArrival(op.id);
+        continue;
+      }
+      // Keep the newest receipt until a later read confirms older receipts were deleted.
+      if (latest?.id === op.id && supersededKeys.has(keyFor(op))) continue;
       const opSessionId = typeof (op.payload.navigationSessionId ?? op.payload.sessionId) === 'string'
         ? String(op.payload.navigationSessionId ?? op.payload.sessionId)
         : null;
-      // Keep the latest active-session undo as a tombstone until the member
-      // leaves the geofence.  Background can start after ACK/compaction and
-      // still suppress the old arrival for this exact session.
+      // Keep the latest active-session undo so a cold background callback
+      // still suppresses the old arrival for this exact session.
       const activeUndoTombstone = op.operationType === 'record_arrival'
         && op.payload.arrived === false
         && op.payload.userId === userId
         && opSessionId != null
         && arrivalSessionScope.includes(opSessionId);
       if (activeUndoTombstone) continue;
-      // Once a newer acked intent is reflected, older receipts are safe to
-      // compact too. Otherwise an old leader correction can re-project after
-      // the newer undo/correction receipt is removed.
-      const latest = latestByKey.get(keyFor(op));
-      if (latest && latest.id !== op.id && latest.status === 'acked') {
-        void getCoreOperationOutbox().removeArrival(op.id);
-        continue;
-      }
       const targetUserId = String(op.payload.targetUserId ?? op.payload.userId ?? '');
       const sessionId = opSessionId;
       const matching = remoteArrivals.find(a => a.destinationId === op.entityId

@@ -83,6 +83,7 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
       <View style={styles.row}>
         <Pressable
           accessibilityRole="button"
+          testID="onboarding-departure-now"
           accessibilityState={{ selected: key === 'now' }}
           onPress={() => {
             selectionTick();
@@ -113,6 +114,7 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ selected: key === 'custom' }}
+          testID="onboarding-departure-custom"
           onPress={openCustom}
           style={[
             styles.tile,
@@ -154,12 +156,13 @@ export default function L3DepartureStep({ answers, onAnswer, onSkip, onBack }: S
       {/* Calendar in a centered popup so it's never clipped off-screen or
           hidden behind the footer button. */}
       <Modal
+        testID="onboarding-date-modal"
         visible={showIosPicker}
         transparent
         animationType="fade"
         onRequestClose={() => setShowIosPicker(false)}
       >
-        <Pressable style={styles.backdrop} onPress={() => setShowIosPicker(false)} />
+        <Pressable testID="onboarding-date-cancel" style={styles.backdrop} onPress={() => setShowIosPicker(false)} />
         <View style={styles.modalWrap} pointerEvents="box-none">
           <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
             <DateTimePicker

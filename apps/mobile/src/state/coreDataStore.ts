@@ -138,6 +138,7 @@ interface NavResponseRow {
 export function snapshotPayloadOf(snapshot: CoreGroupSnapshot): string {
   return JSON.stringify({
     ownerActorId: snapshot.ownerActorId,
+    projectedDestinationOperationIds: snapshot.projectedDestinationOperationIds,
     group: snapshot.group,
     destinations: snapshot.destinations,
     dailyAccommodations: snapshot.dailyAccommodations,
@@ -151,6 +152,7 @@ export function snapshotPayloadOf(snapshot: CoreGroupSnapshot): string {
 function rowToSnapshot(row: SnapshotRow): CoreGroupSnapshot {
   const payload = JSON.parse(row.payload) as {
     ownerActorId?: string;
+    projectedDestinationOperationIds?: CoreGroupSnapshot['projectedDestinationOperationIds'];
     group: CoreGroupSnapshot['group'];
     destinations: CoreGroupSnapshot['destinations'];
     dailyAccommodations?: CoreGroupSnapshot['dailyAccommodations'];
@@ -162,6 +164,7 @@ function rowToSnapshot(row: SnapshotRow): CoreGroupSnapshot {
   return {
     groupId: row.group_id,
     ...(payload.ownerActorId ? { ownerActorId: payload.ownerActorId } : {}),
+    projectedDestinationOperationIds: payload.projectedDestinationOperationIds,
     group: payload.group,
     destinations: payload.destinations,
     ...(payload.dailyAccommodations ? { dailyAccommodations: payload.dailyAccommodations } : {}),
@@ -753,6 +756,7 @@ export function coreSnapshotFromGroupState(
     ?? deriveActiveGatheringFromGroupState(state, gatheringVersion, now);
   return {
     groupId: state.group.id,
+    projectedDestinationOperationIds: state.projectedDestinationOperationIds,
     ...(options.ownerActorId ? { ownerActorId: options.ownerActorId } : {}),
     group: state.group,
     destinations: state.destinations,
@@ -775,7 +779,7 @@ export function groupStateFromCoreSnapshot(snapshot: CoreGroupSnapshot): GroupSt
     snapshot.activeGathering,
     snapshot.members ?? [],
     snapshot.subgroups ?? [],
-  ), dailyAccommodations: snapshot.dailyAccommodations ?? [] };
+  ), dailyAccommodations: snapshot.dailyAccommodations ?? [], projectedDestinationOperationIds: snapshot.projectedDestinationOperationIds };
 }
 
 export type PendingGatheringGuard = (groupId: string) => Promise<boolean>;
@@ -907,15 +911,15 @@ export function createCoreDataStore(
             );
           }
 
-          const metadataOperations = Array.isArray(pendingItineraryResult) ? pendingItineraryResult.filter(op =>
-            op.groupId === state.group.id && (actor === undefined || (actor != null && (!op.actorId || op.actorId === actor)))
-            && ['set_trip_details', 'set_daily_accommodation', 'clear_daily_accommodation'].includes(op.operationType)) : [];
-          if (metadataOperations.length > 0) {
+          const pendingOperations = Array.isArray(pendingItineraryResult) ? pendingItineraryResult.filter(op =>
+            op.groupId === state.group.id && (actor === undefined || (actor != null && (!op.actorId || op.actorId === actor)))) : [];
+          if (pendingOperations.length > 0) {
             const projected = projectOperationGroupState({ ...state, group: snapshot.group,
-              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, metadataOperations, [snapshot.activeGathering.activeDestinationId]);
+              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, pendingOperations, [snapshot.activeGathering.activeDestinationId]);
             snapshot.group = projected.group;
             snapshot.dailyAccommodations = projected.dailyAccommodations;
             snapshot.destinations = projected.destinations;
+            snapshot.projectedDestinationOperationIds = projected.projectedDestinationOperationIds;
             snapshot.source = 'local_optimistic';
           }
 

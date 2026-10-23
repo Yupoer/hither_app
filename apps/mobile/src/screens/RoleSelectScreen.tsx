@@ -94,6 +94,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
       </View>
       <NativeGlassButton
         systemImage="rectangle.portrait.and.arrow.right"
+        testID="role-signout"
         onPress={() => Alert.alert(
           t('settings.signOutTitle'),
           t('settings.signOutMsg'),

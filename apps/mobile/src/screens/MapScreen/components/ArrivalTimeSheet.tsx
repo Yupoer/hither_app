@@ -71,6 +71,7 @@ export function ArrivalTimeSheet({
                   <Pressable
                     style={styles.arrivalToggleBtn}
                     onPress={() => handleArrival(arrivalDestination, member.userId, !arrived)}
+                    testID={`history-arrival-${arrivalDestination.id}-${member.userId}`}
                     accessibilityRole="button"
                     accessibilityLabel={t(arrived ? 'arrival.undo' : 'arrival.mark')}
                     accessibilityState={{ checked: arrived }}

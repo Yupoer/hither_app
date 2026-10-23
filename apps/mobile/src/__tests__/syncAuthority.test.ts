@@ -24,6 +24,7 @@ function state(overrides: Partial<GroupState> = {}): GroupState {
     destinations: overrides.destinations ?? [],
     subgroups: overrides.subgroups ?? [],
     nextDestination: overrides.nextDestination,
+    projectedDestinationOperationIds: overrides.projectedDestinationOperationIds,
   } as GroupState;
 }
 
@@ -116,6 +117,7 @@ describe('syncAuthority', () => {
     })).toBe(false);
 
     const previous = state({
+      projectedDestinationOperationIds: ['local-reorder'],
       destinations: [
         { id: 'a', title: 'A' } as GroupState['destinations'][number],
         { id: 'b', title: 'B' } as GroupState['destinations'][number],
@@ -130,11 +132,13 @@ describe('syncAuthority', () => {
       ],
     });
     const remoteEmpty = state({
+      group: { ...previous.group, tripDays: 4 },
       destinations: [],
       nextDestination: undefined,
       members: [
         {
           userId: 'leader', name: 'L', role: 'leader', status: 'active',
+          solo: true,
           coordinates: { latitude: 1, longitude: 2 },
           lastUpdated: 't1',
         },
@@ -153,7 +157,10 @@ describe('syncAuthority', () => {
       { reloadReason: 'membership_change' },
     );
     expect(fenced.destinations).toHaveLength(2);
+    expect(fenced.projectedDestinationOperationIds).toEqual(['local-reorder']);
     expect(fenced.members).toHaveLength(2);
+    expect(fenced.group.tripDays).toBe(4);
+    expect(fenced.members.find(member => member.userId === 'leader')?.solo).toBe(true);
     expect(describeRecoveryMerge({
       reason: 'membership_change',
       revision: 'r1',
@@ -168,6 +175,7 @@ describe('syncAuthority', () => {
       { reloadReason: 'itinerary_mutation' },
     );
     expect(cleared.destinations).toHaveLength(0);
+    expect(cleared.projectedDestinationOperationIds).toBeUndefined();
     expect(pickStrongerReloadReason('membership_change', 'itinerary_mutation'))
       .toBe('itinerary_mutation');
     expect(pickStrongerReloadReason('itinerary_mutation', 'membership_change'))

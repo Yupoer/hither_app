@@ -20,11 +20,11 @@ class World {
     this.backend = new Backend(event => this.events.push(event));
   }
   check() { assert.equal(this.fatals.length, 0, this.fatals.join('\n')); }
-  async device({ id, userId, platform = 'ios' }) {
+  async device({ id, userId, platform = 'ios', mode, screen, capabilities, authFixtures, updatesFixtures }) {
     assert(!this.closed, 'World is closed');
     assert(/^[a-zA-Z0-9_-]+$/.test(id), 'Safe device id required');
     assert(!this.devices.has(id), `Duplicate device ${id}`);
-    const device = new Device(this, { id, userId, platform });
+    const device = new Device(this, { id, userId, platform, mode, screen, capabilities, authFixtures, updatesFixtures });
     this.devices.set(id, device);
     await device.boot();
     return device;
@@ -41,6 +41,8 @@ class World {
     await this.settle();
   }
   execute(device, operation) {
+    if (operation.kind === 'auth' && operation.name === 'fixtureSession') return this.backend.execute(device.spec.id, operation);
+    if (operation.kind === 'health' && device.online) { assert.equal(operation.name, 'auth.health'); assert.deepEqual(operation.args, {}); return { data: {}, error: null }; }
     return device.online ? this.backend.execute(device.spec.id, operation)
       : { data: null, error: { message: 'Network request failed', code: 'NETWORK_ERROR' } };
   }
@@ -121,6 +123,7 @@ class Device {
     this.nextCommand = 0;
     this.pending = new Map();
     this.context = null;
+    this.host = { call: input => this.command({ kind: 'host', input }), mount: screen => this.command({ kind: 'mount', screen }) };
   }
   async boot() {
     this.generation++;
@@ -182,7 +185,8 @@ class Device {
       }
       this.world.fatals.push(`Unexpected child message ${message.type}`);
     });
-    await deadline(boot, 20000, `Boot ${this.spec.id}`).catch(error => { throw new Error(`${error.message}: ${this.logs}`); });
+    const bootTimeout = this.spec.mode === 'app' || this.spec.screen ? 60000 : 20000;
+    await deadline(boot, bootTimeout, `Boot ${this.spec.id}`).catch(error => { throw new Error(`${error.message}: ${this.logs}`); });
   }
   command(command) {
     assert(this.child?.connected, `Device ${this.spec.id} is closed`);

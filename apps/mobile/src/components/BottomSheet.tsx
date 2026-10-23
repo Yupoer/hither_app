@@ -179,6 +179,7 @@ export default React.memo(function BottomSheet({
   hideHeaderOnScroll = false,
   useSwiftUIGlassSurface = false,
   children,
+  testID,
 }: {
   /** Live sheet height, owned by the parent (drives sheet + floating chrome). */
   height: SharedValue<number>;
@@ -214,6 +215,7 @@ export default React.memo(function BottomSheet({
   /** Use the native SwiftUI Liquid Glass surface for this sheet only. */
   useSwiftUIGlassSurface?: boolean;
   children: React.ReactNode;
+  testID?: string;
 }) {
   const foreground = useVisibleUi();
   const scrollRef = useAnimatedRef<RNScrollView>();
@@ -542,7 +544,7 @@ export default React.memo(function BottomSheet({
       dismissDistance={dismissDistance ?? 1000} gestureClosePending={gestureClosePending} dismissEpoch={dismissEpoch}
       dismiss={dismiss} dismissComplete={dismissComplete} />
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.sheet, sheetStyle]}>
+      <Animated.View testID={testID} style={[styles.sheet, sheetStyle]}>
         {useSwiftUIGlassSurface ? (
           <Animated.View
             pointerEvents="none"

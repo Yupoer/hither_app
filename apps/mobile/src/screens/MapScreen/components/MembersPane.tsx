@@ -88,6 +88,7 @@ export function MembersPane({
                 }
               }}
               accessibilityLabel={t('solo.statusTitle')}
+              testID="map-presence"
               style={styles.myStatusTrigger}
             >
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
@@ -111,6 +112,7 @@ export function MembersPane({
               onPress={openAndroidStatusSheet}
               accessibilityRole="button"
               accessibilityLabel={t('solo.statusTitle')}
+              testID="map-presence"
             >
               <View style={styles.myStatusTriggerInner} pointerEvents="none">
                 <Ionicons
@@ -203,6 +205,7 @@ export function MembersPane({
                   <Pressable
                     style={[styles.chip, { backgroundColor: accentMix(accent, 24), borderColor: accentMix(accent, 50) }]}
                     onPress={() => void handleAcceptInvite(inv.id)}
+                    testID={`subgroup-invite-accept-${inv.id}`}
                     accessibilityRole="button"
                   >
                     <Text style={styles.chipText}>
@@ -212,6 +215,7 @@ export function MembersPane({
                   <Pressable
                     style={styles.chipGhost}
                     onPress={() => void handleDeclineInvite(inv.id)}
+                    testID={`subgroup-invite-decline-${inv.id}`}
                     accessibilityRole="button"
                   >
                     <Text style={styles.chipText}>{t('subgroup.decline')}</Text>
@@ -226,6 +230,7 @@ export function MembersPane({
       <View style={styles.listGroup}>
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
+          testID="map-invite-members"
           onPress={() => {
             lightTap();
             setOverlay('invite');
@@ -247,6 +252,7 @@ export function MembersPane({
         </View>
         <SystemToggle
           value={highAccuracy}
+          testID="map-precise-location"
           onValueChange={setHighAccuracy}
           accessibilityLabel={t('settings.preciseLocation')}
         />

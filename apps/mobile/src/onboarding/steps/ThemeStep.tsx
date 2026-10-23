@@ -96,6 +96,7 @@ function ThemePreviewCard({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      testID={`onboarding-theme-${name}`}
       accessibilityLabel={selected ? `${label}, selected` : label}
       onPress={onPress}
       hitSlop={4}

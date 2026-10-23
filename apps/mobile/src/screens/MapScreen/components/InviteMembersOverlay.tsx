@@ -94,6 +94,7 @@ export function InviteMembersOverlay({
               durationMs={420}
               style={styles.inviteActionButton}
               accessibilityLabel={t('map.shareInviteLink')}
+              testID="map-share-code"
               onPress={lightTap}
               onAnimationComplete={async () => {
                 try {
@@ -115,6 +116,7 @@ export function InviteMembersOverlay({
               centeredLabel
               style={styles.inviteActionButton}
               accessibilityLabel={codeCopied ? t('group.copied') : t('map.copyGroupCode')}
+              testID="map-copy-code"
               onPress={lightTap}
               onAnimationComplete={() => { void copyCode(); }}
             />

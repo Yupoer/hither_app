@@ -15,7 +15,7 @@ export default function GroupLoadError({ error, loading, retry, color }: {
     <Text style={{ color, textAlign: 'center' }}>{error.kind === 'unknown'
       ? t('coreData.loadFailed') : getOperationErrorMessage(error)}</Text>
     {loading ? <WaveLoading color={color} /> : null}
-    <Pressable accessibilityRole="button" disabled={loading} onPress={retry}
+    <Pressable testID="group-load-retry" accessibilityRole="button" disabled={loading} onPress={retry}
       accessibilityState={{ disabled: loading, busy: loading }} style={{ padding: 12 }}>
       <Text style={{ color }}>{t('interaction.retry')}</Text>
     </Pressable>

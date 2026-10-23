@@ -143,6 +143,7 @@ export function RouteEditorSheet({
               }}
               accessibilityRole="button"
               accessibilityLabel={t('route.deleteSelectedA11y')}
+                testID="route-delete-selected"
               hitSlop={8}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
             >
@@ -171,6 +172,7 @@ export function RouteEditorSheet({
               }
               hitSlop={8}
               style={{ paddingVertical: 2, paddingHorizontal: 2 }}
+                testID="route-interaction-mode"
             >
               <Ionicons
                 name={

@@ -27,6 +27,16 @@ describe('parseKml', () => {
     expect(result).toEqual([{ name: 'Unnamed 1', latitude: 25.0, longitude: 121.5 }]);
   });
 
+  it.each([
+    ['A &amp; B &lt;gate&gt; &quot;two&quot; &apos;three&apos;', 'A & B <gate> "two" \'three\''],
+    ['&#65; &#x53F0;&#x5317; &#128205;', 'A 台北 📍'],
+    ['&amp;lt; &unknown; &#0; &#xD800; &#x110000;', '&lt; &unknown; &#0; &#xD800; &#x110000;'],
+    ['<![CDATA[A &amp; B &#65;]]>', 'A &amp; B &#65;'],
+  ])('decodes XML name entities once and preserves CDATA and invalid references (%s)', (name, expected) => {
+    const xml = `<Placemark><name>${name}</name><Point><coordinates>121.5,25</coordinates></Point></Placemark>`;
+    expect(parseKml(xml)).toEqual([{ name: expected, latitude: 25, longitude: 121.5 }]);
+  });
+
   it('trims whitespace and newlines inside coordinates', () => {
     const xml = `<Placemark><name>Spot</name><Point><coordinates>
       121.5,25.0,0

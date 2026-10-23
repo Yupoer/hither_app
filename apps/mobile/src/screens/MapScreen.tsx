@@ -3316,6 +3316,7 @@ export default function MapScreen({ route, navigation }: Props) {
             size={46}
             style={styles.headerIconBtn}
             accessibilityLabel={t('map.searchA11y')}
+            testID="map-search"
             onPress={lightTap}
             onAnimationComplete={async () => {
               // Ticket 05: animation complete → sheet open complete → reset.
@@ -3342,6 +3343,7 @@ export default function MapScreen({ route, navigation }: Props) {
           size={46}
           style={styles.headerIconBtn}
           accessibilityLabel={t('map.overlaySettings')}
+          testID="map-settings"
           onPress={lightTap}
           onAnimationComplete={openSettingsFromSheet}
         />
@@ -3357,6 +3359,7 @@ export default function MapScreen({ route, navigation }: Props) {
           onPress={openProfile}
           accessibilityRole="button"
           accessibilityLabel={t('profile.title')}
+          testID="map-profile"
         >
           {user ? (
             <HitherText typeRole="emoji" style={styles.headerAvatarEmoji}>
@@ -3749,6 +3752,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         <Pressable
           style={styles.routeScopeHeader}
+          testID={`route-scope-toggle-${scopeKey}`}
           onPress={canEdit ? undefined : () => toggleRouteScope(scopeKey)}
           disabled={canEdit}
           accessibilityRole={canEdit ? undefined : 'button'}
@@ -4450,6 +4454,7 @@ export default function MapScreen({ route, navigation }: Props) {
         pointerEvents={confirmCardReady || !showDenseChrome ? 'none' : 'box-none'}
       >
       <BottomSheet
+        testID="map-bottom-sheet"
         height={heightSV}
         detents={detents}
         index={detent}

@@ -96,6 +96,7 @@ export function HistorySheet({
                           <Pressable
                             style={styles.cmdSquare}
                             onPress={() => handleDeleteHistory(item)}
+                            testID={`history-delete-${item.id}`}
                             accessibilityRole="button"
                             accessibilityLabel={t('common.delete')}
                           >

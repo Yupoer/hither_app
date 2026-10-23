@@ -99,6 +99,7 @@ export function OpsCenterSheet({
                       disabled={busy}
                       accessibilityRole="button"
                       accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.acknowledge')}`}
+                      testID={`map-exception-acknowledge-${item.rootCauseKey}`}
                       accessibilityState={{ disabled: busy }}
                     >
                       <Text style={styles.chipText}>{t('exception.acknowledge')}</Text>
@@ -118,6 +119,7 @@ export function OpsCenterSheet({
                       disabled={busy}
                       accessibilityRole="button"
                       accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.resolve')}`}
+                      testID={`map-exception-resolve-${item.rootCauseKey}`}
                       accessibilityState={{ disabled: busy }}
                     >
                       <Text style={styles.chipText}>{t('exception.resolve')}</Text>
@@ -133,6 +135,7 @@ export function OpsCenterSheet({
                       disabled={busy}
                       accessibilityRole="button"
                       accessibilityLabel={`${item.memberName}, ${typeLabel}, ${t('exception.reopen')}`}
+                      testID={`map-exception-reopen-${item.rootCauseKey}`}
                       accessibilityState={{ disabled: busy }}
                     >
                       <Text style={styles.chipText}>{t('exception.reopen')}</Text>

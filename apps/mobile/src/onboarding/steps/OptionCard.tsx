@@ -66,6 +66,7 @@ export default function OptionCard({
   return (
     <Pressable
       accessibilityRole="button"
+      testID={`onboarding-option-${title}`}
       accessibilityState={{ selected }}
       onPress={() => {
         selectionTick();

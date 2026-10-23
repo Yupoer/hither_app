@@ -96,6 +96,7 @@ export interface NavigationAnnouncementResponse {
  * Members/live GPS are best-effort cache only and not required offline.
  */
 export interface CoreGroupSnapshot {
+  projectedDestinationOperationIds?: GroupState['projectedDestinationOperationIds'];
   groupId: string;
   /** Actor that owns unpublished local projection, absent for authoritative data. */
   ownerActorId?: string;

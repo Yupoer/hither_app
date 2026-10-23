@@ -49,6 +49,7 @@ export function MeetTimeSheet({
             {[10, 30, 60].map((m) => (
               <Pressable
                 key={m}
+                testID={`meet-time-plus-${m}`}
                 style={[
                   styles.meetQuickBtn,
                   meetTimeEditor.quickMinutes === m && {
@@ -106,6 +107,7 @@ export function MeetTimeSheet({
             }
             accessibilityRole={Platform.OS === 'android' ? 'button' : undefined}
             accessibilityLabel={t('meetTime.pickDateTime')}
+            testID="meet-time-date"
           >
             <Ionicons name="calendar-outline" size={20} color={accent} />
             <Text style={styles.meetSelectedClock}>
@@ -127,6 +129,7 @@ export function MeetTimeSheet({
           {Platform.OS !== 'android' && (
             <View style={styles.meetPickerWrap}>
               <DateTimePicker
+                testID="meet-time-picker"
                 value={meetTimeEditor.value}
                 mode="datetime"
                 display="spinner"
@@ -186,6 +189,7 @@ export function MeetTimeSheet({
               styles.meetSetBtn,
               { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
             ]}
+            testID="meet-time-save"
             onPress={() => {
               persistMeetTime(
                 meetTimeEditor.id,
@@ -200,6 +204,7 @@ export function MeetTimeSheet({
           </Pressable>
           <Pressable
             style={styles.meetClearBtn}
+            testID="meet-time-clear"
             onPress={() => {
               persistMeetTime(meetTimeEditor.id, null);
               setMeetTimeEditor(null);

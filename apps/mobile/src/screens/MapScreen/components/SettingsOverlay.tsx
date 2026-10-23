@@ -94,16 +94,19 @@ function NavRow({
   onPress,
   styles,
   accessibilityLabel,
+  testID,
 }: {
   title: string;
   description?: string;
   onPress: () => void;
   styles: any;
   accessibilityLabel?: string;
+  testID?: string;
 }) {
   return (
     <TouchableOpacity
       style={styles.settingsTopRow}
+      testID={testID}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
@@ -318,6 +321,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('settings.account')}
+            testID="settings-page-account"
             onPress={() => setPage('account')}
             styles={styles}
           />
@@ -329,6 +333,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           {isLeader && onUpdateGroupAvatar && group ? (
             <NavRow
               title={t('settings.groupAvatar')}
+              testID="settings-page-groupAvatar"
               onPress={() => setPage('groupAvatar')}
               styles={styles}
             />
@@ -336,17 +341,20 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           {onGoHome ? (
             <NavRow
               title={t('map.backToHome')}
+              testID="settings-go-home"
               onPress={onGoHome}
               styles={styles}
             />
           ) : null}
           <NavRow
             title={t('group.leave')}
+            testID="settings-leave"
             onPress={onConfirmLeave}
             styles={styles}
           />
           <NavRow
             title={t('settings.signOut')}
+            testID="settings-signout"
             onPress={onConfirmSignOut}
             styles={styles}
           />
@@ -356,16 +364,19 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('settings.language')}
+            testID="settings-page-language"
             onPress={() => setPage('language')}
             styles={styles}
           />
           <NavRow
             title={t('settings.theme')}
+            testID="settings-page-theme"
             onPress={() => setPage('theme')}
             styles={styles}
           />
           <NavRow
             title={t('settings.textSize')}
+            testID="settings-page-textSize"
             onPress={() => setPage('textSize')}
             styles={styles}
           />
@@ -375,6 +386,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('settings.notifSection')}
+            testID="settings-page-notifications"
             onPress={() => setPage('notifications')}
             styles={styles}
           />
@@ -384,6 +396,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('settings.sectionMapJourney')}
+            testID="settings-page-mapJourney"
             onPress={() => setPage('mapJourney')}
             styles={styles}
           />
@@ -406,6 +419,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
 
           <NavRow
             title={t('settings.sectionSupport')}
+            testID="settings-page-support"
             onPress={() => setPage('support')}
             styles={styles}
           />
@@ -421,6 +435,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <TouchableOpacity
             style={styles.accountBtn}
             onPress={onArchiveAllForTest}
+            testID="settings-archive"
             accessibilityRole="button"
             activeOpacity={0.7}
           >
@@ -434,6 +449,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
         <View style={styles.settingsTopGroup}>
           <NavRow
             title={t('settings.resetAllPrefs')}
+            testID="settings-reset-preferences"
             onPress={onConfirmResetPrefs}
             styles={styles}
           />
@@ -470,6 +486,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             {AVATAR_EMOJI.map((emoji) => (
               <Pressable
                 key={emoji}
+                testID={`settings-group-avatar-${emoji}`}
                 onPress={() => setGroupAvatar(emoji)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: groupAvatar === emoji }}
@@ -492,6 +509,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             {AVATAR_COLORS.map((color) => (
               <Pressable
                 key={color}
+                testID={`settings-group-color-${color}`}
                 onPress={() => setGroupAvatarColor(color)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: groupAvatarColor === color }}
@@ -504,6 +522,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             ))}
           </ScrollView>
           <TouchableOpacity
+            testID="settings-group-avatar-save"
             onPress={() => { void saveGroupAvatar(); }}
             disabled={savingGroupAvatar}
             accessibilityRole="button"
@@ -528,6 +547,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <Pressable
               key={option.key}
               style={styles.settingsTopRow}
+              testID={`settings-language-${option.key}`}
               onPress={() => setLanguage(option.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: language === option.key }}
@@ -552,6 +572,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             <Pressable
               key={n}
               style={styles.settingsTopRow}
+              testID={`settings-theme-${n}`}
               onPress={() => setThemeName(n)}
               accessibilityRole="button"
               accessibilityState={{ selected: themeName === n }}
@@ -696,6 +717,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                   marginBottom: 8,
                 },
               ]}
+              testID="settings-apply-ota"
               onPress={handleApplyOta}
               disabled={applyingOta}
               accessibilityRole="button"

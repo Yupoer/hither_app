@@ -261,7 +261,7 @@ export default function OverlaySheet({
     {visibilityMotion}
     <View style={[StyleSheet.absoluteFill, !foreground && { display: 'none' }]} pointerEvents={visible ? 'auto' : 'none'}>
       <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable testID="overlay-close" style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
 
       <Animated.View
@@ -294,6 +294,7 @@ export default function OverlaySheet({
               {title}
             </Text>
             <SheetHeaderAction
+              testID={onDone ? "overlay-done" : "overlay-header-close"}
               action={isCloseAction ? 'close' : 'commit'}
               onPress={handleDone}
               accessibilityLabel={doneLabel}

@@ -3,12 +3,14 @@ import { Pressable } from 'react-native';
 import { rigidTap } from '../../../utils/haptics';
 
 export function GatheringCardPressable({
+  testID,
   onToggle,
   accessibilityLabel,
   accessibilityHint,
   children,
 }: {
   onToggle: () => void;
+  testID?: string;
   accessibilityLabel: string;
   accessibilityHint: string;
   children: React.ReactNode;
@@ -26,6 +28,7 @@ export function GatheringCardPressable({
   return (
     <Pressable
       onPress={handlePress}
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}

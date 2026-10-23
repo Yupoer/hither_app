@@ -127,6 +127,7 @@ export const FlockRow = React.memo(function FlockRow({
           {subgroupId ? (
             <Pressable
               onPress={() => void onSelfMerge()}
+              testID="map-subgroup-merge"
               hitSlop={8}
               accessibilityRole="button"
               style={({ pressed }) => pressed && styles.rowActionPressed}
@@ -138,6 +139,7 @@ export const FlockRow = React.memo(function FlockRow({
           ) : (
             <Pressable
               onPress={() => void onSelfSplit()}
+              testID="map-subgroup-split"
               hitSlop={8}
               accessibilityRole="button"
               style={({ pressed }) => pressed && styles.rowActionPressed}
@@ -153,6 +155,7 @@ export const FlockRow = React.memo(function FlockRow({
         <View style={styles.selfControls}>
           <Pressable
             onPress={onKick}
+            testID={`map-kick-${userId}`}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t('group.kick')}
