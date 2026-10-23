@@ -15,7 +15,7 @@ const schemas = {
   account_favorite_places: { fields: 'id user_id title address latitude longitude lat_norm lng_norm title_norm created_at updated_at', owner: 'user_id', modes: ['select', 'upsert', 'delete'], conflict: 'user_id,title_norm,lat_norm,lng_norm' },
   daily_accommodations: { fields: 'id group_id stay_date title address latitude longitude source_destination_id created_at updated_at', modes: ['select'] },
   destination_arrivals: { fields: 'id group_id destination_id user_id arrived_at navigation_session_id occurred_at', modes: ['select'] },
-  gather_point_requests: { fields: 'id group_id user_id title address latitude longitude status created_at resolved_at resolved_by destination_id', modes: ['select'] },
+  gather_point_requests: { fields: 'id group_id subgroup_id requester_id items status created_at resolved_at resolved_by', modes: ['select'] },
   coordination_requests: { fields: 'id group_id subgroup_id created_by subject subject_kind options deadline policy default_outcome status resolved_outcome resolution_source resolved_at resolved_by applied_operation_id created_at updated_at', modes: ['select'] },
   coordination_responses: { fields: 'id request_id user_id option_id responded_at updated_at', modes: ['select'] },
   itinerary_operations: { fields: 'id group_id subgroup_id version operation_type payload source_request_id created_by created_at', modes: ['select'] },
@@ -25,6 +25,10 @@ const schemas = {
   device_live_activity_tokens: { fields: 'user_id device_id push_to_start_token live_activities_enabled accent_hex updated_at', owner: 'user_id', modes: ['select', 'upsert', 'update', 'delete'], conflict: 'user_id,device_id' },
   live_activity_sessions: { fields: 'user_id device_id activity_id group_id destination_id push_token accent_hex initial_distance_m current_distance_m eta_seconds travel_mode last_progress_bucket updated_at', owner: 'user_id', modes: ['upsert', 'update', 'delete'], conflict: 'user_id,group_id' },
   metric_payloads: { fields: 'id user_id device_id kind payload received_at', owner: 'user_id', modes: ['insert'] },
+  performance_events: { fields: 'id user_id session_id occurred_at event_type operation payload', owner: 'user_id', modes: ['upsert'], conflict: 'id' },
+  visited_waypoints: { fields: 'id user_id group_id destination_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
+  core_entity_versions: { fields: 'group_id entity_type entity_id entity_version state', modes: ['select'] },
+  commands: { fields: 'id group_id sender_id type payload created_at', modes: ['select'] },
 };
 const ok = data => ({ data: structuredClone(data), error: null });
 const fail = (message, code = '42501') => ({ data: null, error: { message, code } });
@@ -44,6 +48,9 @@ function initialize(b, { LEADER, PEER }) {
   b.feedback = [];
   b.diagnostics = new Map();
   b.fixtureResponses = new Map();
+  b.locationRefreshes = [];
+  b.verifiedPurchases = new Map();
+  b.purchaseLedger = new Map();
 }
 
 function tableRows(b, name) {
@@ -84,11 +91,16 @@ function executeTable(b, { name, steps, userId }) {
   let rows = all.filter(matches);
   if (schema.owner && name !== 'profiles' && mode === 'select') rows = rows.filter(row => row[schema.owner] === userId);
   if (name === 'profiles' && mode === 'select') rows = rows.filter(p => p.id === userId || b.memberships.some(m => m.user_id === userId && b.memberships.some(n => n.group_id === m.group_id && n.user_id === p.id)));
+  if (name === 'subgroup_invites') rows = rows.filter(r => r.invitee_id === userId || r.inviter_id === userId);
+  if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
+  if (name === 'navigation_member_states') rows = rows.filter(r => member(b, b.sessions.get(r.navigation_session_id)?.group_id, userId));
+  if (name === 'visited_waypoints') rows = rows.filter(r => r.user_id === userId || member(b, r.group_id, userId));
   if (['groups', 'memberships', 'itinerary_items', 'subgroups', 'daily_accommodations', 'member_locations', 'coordination_requests', 'itinerary_operations', 'destination_arrivals', 'gather_point_requests', 'navigation_sessions'].includes(name)) {
     rows = rows.filter(r => name === 'memberships' && r.user_id === userId || member(b, name === 'groups' ? r.id : r.group_id, userId));
   }
   if (mode !== 'select') {
     if (schema.owner && ['update', 'delete'].includes(mode) && !filters.some(s => s[0] === 'eq' && s[1] === schema.owner && s[2] === userId)) return fail('owner_required');
+    if (name === 'visited_waypoints' && mode === 'delete' && rows.some(r => r.user_id !== userId && !leader(b, r.group_id, userId))) return fail('owner_required');
     if (name === 'memberships' && !filters.some(s => s[0] === 'eq' && s[1] === 'user_id' && s[2] === userId)) return fail('owner_required');
     if (['groups', 'itinerary_items'].includes(name) && rows.some(r => !leader(b, name === 'groups' ? r.id : r.group_id, userId))) return fail('leader_required');
     if (mode === 'delete') {
@@ -109,7 +121,8 @@ function executeTable(b, { name, steps, userId }) {
           else { const row = { id: randomUUID(), created_at: iso(b), ...structuredClone(input) }; all.push(row); rows.push(row); }
         } else if (mode === 'insert') {
           if (input.id && all.some(row => row.id === input.id)) return fail('duplicate key', '23505');
-          const row = { id: randomUUID(), created_at: iso(b), ...structuredClone(input) }; all.push(row); rows.push(row);
+          if (name === 'visited_waypoints' && (input.user_id !== userId || !member(b, input.group_id, userId))) return fail('not_member');
+          const row = { id: randomUUID(), created_at: iso(b), ...(name === 'visited_waypoints' ? { arrived_at: iso(b) } : {}), ...structuredClone(input) }; all.push(row); rows.push(row);
         } else rows.forEach(row => Object.assign(row, structuredClone(input)));
       }
       rows.forEach(row => b.publish(name, row, mode === 'update' ? 'UPDATE' : 'INSERT'));
@@ -143,6 +156,8 @@ function projection(b, userId, groupId) {
 function execute(b, operation) {
   const { kind, name, userId, args = {}, steps = [] } = operation;
   if (kind === 'table') return executeTable(b, operation);
+  const workflow = require('./backend-workflows.cjs').execute(b, operation);
+  if (workflow !== undefined) return workflow;
   if (kind !== 'rpc') return undefined;
   if (name === 'create_group') {
     keys(args, 'p_name');
