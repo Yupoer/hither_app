@@ -79,10 +79,10 @@ exports.createExternalAuth = ({ strict, request, spec = {} }) => {
   }
   async function authenticate(userId) {
     assert(storage, 'createAuth must run before authentication');
-    if (userId == null) return persist(null);
+    if (userId == null) return emit('SIGNED_OUT', null);
     const result = await call('fixtureSession', [userId]);
     assert(!result.error && result.data?.session, `Unknown fixture session ${userId}`);
-    await persist(result.data.session);
+    await emit('SIGNED_IN', result.data.session);
   }
   function restore(userId) {
     assert(storage, 'createAuth must run before restore');

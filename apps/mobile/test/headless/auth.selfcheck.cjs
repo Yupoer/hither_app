@@ -32,6 +32,10 @@ async function main() {
   assert.equal((await auth.getSession()).data.session, null);
   assert.equal((await auth.signInWithPassword({ email: 'leader@headless.test', password: 'Headless123!' })).data.user.id, LEADER);
   assert(events.some(([event, id]) => event === 'SIGNED_IN' && id === LEADER));
+  await fixture.authenticate(PEER);
+  assert.deepEqual(events.at(-1), ['SIGNED_IN', PEER]);
+  assert.equal((await auth.getSession()).data.session.user.id, PEER);
+  await fixture.authenticate(LEADER);
   const previous = (await auth.getSession()).data.session;
   const rotated = await auth.refreshSession();
   assert.notEqual(rotated.data.session.refresh_token, previous.refresh_token);
