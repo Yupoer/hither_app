@@ -346,6 +346,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-approve-${request.id}`), 'actual leader inbox');
       await run(leader, 'map.suggestion.approve', { requestId: request.id });
+      await world.waitFor(leader, () => request.status === 'approved', 'request approval accepted by transport');
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-approve-${request.id}`), 'approved request leaves inbox');
       expect(request.status).toBe('approved');
@@ -356,6 +357,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-reject-${rejected}`), 'next coalesced inbox request');
       await run(leader, 'map.suggestion.reject', { requestId: rejected });
+      await world.waitFor(leader, () => world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status === 'rejected', 'request rejection accepted by transport');
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-reject-${rejected}`), 'rejected request leaves inbox');
       expect(world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status).toBe('rejected');
@@ -614,7 +616,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
-  it('MAP-ARRIVAL-01 MAP-ARRIVAL-03 MAP-ARRIVAL-04 MAP-GATHER-04 MAP-GATHER-05 real self arrival undo confirmation and forced completion preserve session audit', async () => {
+  it('MAP-ARRIVAL-01 MAP-ARRIVAL-03 MAP-ARRIVAL-04 MAP-GATHER-04 MAP-GATHER-05 real self arrival undo and all-arrived completion preserve session audit', async () => {
     const world = new World();
     try {
       const device = await map(world);
@@ -634,13 +636,14 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.tables.destination_arrivals).toEqual([]);
       await run(device, 'map.arrival.mark', { destinationId: DESTINATION });
       await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'second personal arrival reflected');
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
-      expect((await device.observe()).external.alerts).toBe(1);
-      await device.input({ kind: 'alert', index: 0 });
+      expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('結束');
       expect(world.backend.itinerary[0].closed_at).toBeNull();
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
-      await device.input({ kind: 'alert', index: 1 });
-      await world.waitFor(device, (value: MapObservation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'forced completion local history');
+      const peer = await world.device({ id: 'peer', userId: PEER, platform });
+      await peer.perform('group.observe', { groupId: GROUP_ID });
+      await run(peer, 'map.service.gathering.arrival', { args: [DESTINATION, PEER, true, session.id] });
+      await world.waitFor(peer, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'last roster member arrival accepted');
+      await world.advance(2500);
+      await world.waitFor(device, (value: MapObservation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'all-arrived completion local history');
       expect(world.backend.itinerary[0]).toMatchObject({ closed_by_session_id: session.id });
       expect(session.status).toBe('completed');
       expect(has(await device.observe(), `gather-card-${DESTINATION}`)).toBe(true);
@@ -654,6 +657,10 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await device.input({ kind: 'animation', finished: true });
       await run(device, 'map.arrival.correct', { destinationId: DESTINATION, userId: PEER });
       await device.input({ kind: 'alert', index: 0 });
+      expect(world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER)).toBe(true);
+      await run(device, 'map.arrival.correct', { destinationId: DESTINATION, userId: PEER });
+      await device.input({ kind: 'alert', index: 1 });
+      await world.settle();
       expect(world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER)).toBe(false);
       await run(device, 'map.arrival.correct', { destinationId: DESTINATION, userId: PEER });
       await device.input({ kind: 'alert', index: 1 });
