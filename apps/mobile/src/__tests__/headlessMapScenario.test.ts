@@ -297,6 +297,72 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
+  it('MAP-ROUTE-11 actual read-only scope collapse persists for the same account and group after restart', async () => {
+    const world = new World();
+    try {
+      const device = await map(world, PEER);
+      await expand(world, device);
+      await run(device, 'map.tab', { index: 1 });
+      expect(has(await device.observe(), 'map-edit-itinerary')).toBe(false);
+      const titles = (value: MapObservation) => value.presentation.hosts.filter(host => host.text === 'Meeting point').length;
+      const expandedCount = titles(await device.observe());
+      expect(expandedCount).toBeGreaterThan(0);
+      await run(device, 'map.route.scope', { scope: 'main' });
+      expect(titles(await device.observe())).toBe(expandedCount - 1);
+      await device.restart();
+      await world.waitFor(device, (value: MapObservation) => has(value, 'map-search'), 'restarted real Map');
+      await expand(world, device);
+      await run(device, 'map.tab', { index: 1 });
+      expect(titles(await device.observe())).toBe(expandedCount - 1);
+      await run(device, 'map.route.scope', { scope: 'main' });
+      expect(titles(await device.observe())).toBe(expandedCount);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-ROUTES-01 MAP-PROGRESS-01 MAP-PROGRESS-02 MAP-NAV-06 MAP-NAV-07 actual GPS directions feed card metrics and external provider choice respects travel mode', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      await device.input({ kind: 'mapsConfigure', patch: { route: { distanceMeters: 1000, expectedTravelTimeSeconds: 600,
+        points: [{ latitude: 25.03, longitude: 121.53 }, { latitude: 25.04, longitude: 121.53 }] } } });
+      const sample = async (latitude: number) => {
+        await world.advance(1000);
+        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        else await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        await world.settle();
+      };
+      await sample(25.03);
+      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(device, (value: MapObservation) => field(value, `gather-travel-mode-${DESTINATION}`)?.label?.includes('10 min') === true, 'real route metrics');
+      expect(field(await device.observe(), `gather-travel-mode-${DESTINATION}`)?.label).toContain('1.0 km');
+      await world.settle();
+      const receipts = (await device.observe()).presentation.receipts;
+      expect(receipts.some((receipt: { host: string; method: string }) => receipt.host === 'MapView' && receipt.method === 'fitToCoordinates')).toBe(true);
+      await run(device, 'map.external-navigation', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 2 });
+      expect((await device.observe()).presentation.receipts.filter((receipt: { host: string }) => receipt.host === 'Linking')).toEqual([]);
+      await run(device, 'map.travel-mode', { destinationId: DESTINATION });
+      expect((await device.observe()).presentation.preferences.travelMode).toBe('bicycle');
+      await run(device, 'map.external-navigation', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 0 });
+      expect((await device.observe()).presentation.receipts.filter((receipt: { host: string }) => receipt.host === 'Linking')).toEqual([
+        expect.objectContaining({ method: 'openURL', url: 'https://www.google.com/maps/dir/?api=1&destination=25.04%2C121.53&travelmode=bicycling' }),
+      ]);
+      await run(device, 'map.external-navigation', { destinationId: DESTINATION });
+      await device.input({ kind: 'alert', index: 1 });
+      expect((await device.observe()).presentation.receipts.filter((receipt: { host: string }) => receipt.host === 'Linking')).toEqual(expect.arrayContaining([
+        expect.objectContaining({ url: 'https://maps.apple.com/directions?destination=25.04%2C121.53&mode=cycling' }),
+      ]));
+      await sample(25.035);
+      const near = field(await device.observe(), `gather-travel-mode-${DESTINATION}`)?.label;
+      expect(near).toBeTruthy();
+      await device.input({ kind: 'appState', value: 'background' });
+      await device.input({ kind: 'appState', value: 'active' });
+      expect((await device.observe()).presentation.preferences.travelMode).toBe('bicycle');
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+    } finally { await world.close(); }
+  });
+
   it('MAP-COORD-02 MAP-COORD-03 MAP-COORD-04 actual create respond and override controls retain the resolved request', async () => {
     const world = new World();
     try {
@@ -396,7 +462,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(DESTINATION);
       await run(device, 'map.journey.command', { destinationId: secondId });
       await device.input({ kind: 'alert', index: 1 });
-      await world.settle();
+      await world.waitFor(device, () => [...world.backend.sessions.values()].some((row: { status: string; destination_id: string }) => row.status === 'active' && row.destination_id === secondId), 'accepted switch target');
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(secondId);
       expect(world.backend.itinerary.find((row: { id: string }) => row.id === secondId).position).toBeLessThan(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION).position);
       expect(world.backend.itinerary.every((row: { closed_at: string | null }) => row.closed_at === null)).toBe(true);
@@ -452,8 +518,9 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-${DESTINATION}`), 'confirmed undo reflected');
       expect(world.backend.tables.destination_arrivals).toEqual([]);
       await run(device, 'map.arrival.mark', { destinationId: DESTINATION });
-      await world.settle();
+      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'second personal arrival reflected');
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      expect((await device.observe()).external.alerts).toBe(1);
       await device.input({ kind: 'alert', index: 0 });
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
@@ -461,6 +528,11 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.waitFor(device, (value: MapObservation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'forced completion local history');
       expect(world.backend.itinerary[0]).toMatchObject({ closed_by_session_id: session.id });
       expect(session.status).toBe('completed');
+      expect(has(await device.observe(), `gather-card-${DESTINATION}`)).toBe(true);
+      await world.advance(3200);
+      expect(has(await device.observe(), `gather-card-${DESTINATION}`)).toBe(true);
+      await world.advance(440);
+      expect(has(await device.observe(), `gather-card-${DESTINATION}`)).toBe(false);
       await expand(world, device);
       await run(device, 'map.tab', { index: 1 });
       await run(device, 'map.arrival.manage');
