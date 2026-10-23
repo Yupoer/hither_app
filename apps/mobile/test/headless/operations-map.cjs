@@ -357,6 +357,7 @@ operations['map.meet.save'].sources.push(...source('src/screens/MapScreen/hooks/
 operations['map.meet.clear'].sources.push(...source('src/screens/MapScreen/hooks/useMeetTimeEditor.ts', 'persistMeetTime'));
 
 exports.operations = operations;
+exports.scenarios = require('./scenarios-map.cjs');
 exports.catalog = () => Object.entries(operations).map(([name, { run, ...metadata }]) => ({ name, ...metadata }));
 exports.lifecycle = [
   { name: 'map.journey.reconcile', inventory: ['MAP-NAV-05'],
