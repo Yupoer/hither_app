@@ -245,3 +245,17 @@ assert.equal(regressionRpc('resolve_due_coordination_requests', { p_group_id: GR
 assert.equal(require('./backend-requests.cjs').processDue(regression)[0].status, 'expired');
 assert.deepEqual(require('./backend-requests.cjs').processDue(regression), []);
 console.log('Backend SQL contract regressions passed');
+
+regression.failNext({ kind: 'table', name: 'profiles', mode: 'update', userId: LEADER }, { message: 'profile write rejected', code: '42501' });
+assert.throws(() => regression.execute('fault', { kind: 'table', name: 'profiles', userId: LEADER, steps: [['update', { invented: true }], ['eq', 'id', LEADER]] }), /Unknown profiles write/);
+assert.equal(regression.failures.length, 1);
+const profileFailure = regression.execute('fault', { kind: 'table', name: 'profiles', userId: LEADER, steps: [['update', { nickname: 'Failed' }], ['eq', 'id', LEADER]] });
+assert.equal(profileFailure.error.message, 'profile write rejected');
+assert.equal(regression.profiles.get(LEADER).nickname, 'Leader');
+assert.equal(regression.failures.length, 0);
+regression.failNext({ kind: 'rpc', name: 'get_premium_projection' }, { message: 'projection unavailable', code: 'NETWORK_ERROR' });
+assert.throws(() => regressionRpc('get_premium_projection', { invented: true }), /RPC argument contract/);
+assert.equal(regression.failures.length, 1);
+assert.equal(regressionRpc('get_premium_projection', { p_group_id: GROUP_ID }).error.code, 'NETWORK_ERROR');
+assert.throws(() => regression.failNext({ kind: 'rpc', name: 'invented_rpc' }, { message: 'masked' }), /explicitly supported RPC/);
+console.log('Backend bounded fault injection contracts passed');

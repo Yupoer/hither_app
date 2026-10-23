@@ -60,6 +60,7 @@ function initialize(b, { LEADER, PEER }) {
   b.notificationOutbox = [];
   b.arrivalEvents = [];
   b.sessionHistory = new Map();
+  b.failures = [];
   require('./backend-auth.cjs').initialize(b, { LEADER, PEER });
 }
 
@@ -81,7 +82,8 @@ function storeRows(b, name, rows) {
   else b.tables[name] = rows;
 }
 
-function executeTable(b, { name, steps, userId }) {
+function executeTable(b, operation) {
+  const { name, steps, userId } = operation;
   const schema = schemas[name];
   if (!schema) return undefined;
   const fields = schema.fields.split(' ');
@@ -95,6 +97,13 @@ function executeTable(b, { name, steps, userId }) {
     }
   }
   const mutation = steps.find(s => s[0] === mode);
+  if (mutation && mode !== 'select' && mode !== 'delete') for (const input of Array.isArray(mutation[1]) ? mutation[1] : [mutation[1]]) {
+    for (const field of Object.keys(input)) assert(fields.includes(field), `Unknown ${name} write ${field}`);
+    if (mode === 'update' && schema.write) for (const field of Object.keys(input)) assert(schema.write.split(' ').includes(field), `Forbidden ${name} write ${field}`);
+    if (name === 'profiles' && mode === 'upsert') for (const field of Object.keys(input)) assert(field === 'id' || schema.write.split(' ').includes(field), `Forbidden profiles write ${field}`);
+  }
+  const fault = require('./backend-faults.cjs').take(b, operation, mode);
+  if (fault) return fault;
   const filters = steps.filter(s => ['eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte'].includes(s[0]));
   const matches = row => filters.every(([op, field, value]) => op === 'in' ? value.includes(row[field]) : op === 'eq' ? row[field] === value : op === 'is' ? (row[field] ?? null) === value : op === 'gt' ? row[field] > value : op === 'gte' ? row[field] >= value : op === 'lt' ? row[field] < value : row[field] <= value);
   let all = tableRows(b, name);
@@ -121,10 +130,7 @@ function executeTable(b, { name, steps, userId }) {
       const inputs = Array.isArray(mutation[1]) ? mutation[1] : [mutation[1]];
       if (mode !== 'update') rows = [];
       for (const input of inputs) {
-        for (const field of Object.keys(input)) assert(fields.includes(field), `Unknown ${name} write ${field}`);
         if (schema.owner && Object.hasOwn(input, schema.owner) && input[schema.owner] !== userId) return fail('owner_mismatch');
-        if (mode === 'update' && schema.write) for (const field of Object.keys(input)) assert(schema.write.split(' ').includes(field), `Forbidden ${name} write ${field}`);
-        if (name === 'profiles' && mode === 'upsert') for (const field of Object.keys(input)) assert(field === 'id' || schema.write.split(' ').includes(field), `Forbidden profiles write ${field}`);
         if (mode === 'upsert') {
           const conflict = mutation[2]?.onConflict ?? schema.conflict ?? schema.owner;
           assert(conflict && (!mutation[2]?.onConflict || !schema.conflict || conflict === schema.conflict), `Unknown ${name} conflict`);
@@ -173,6 +179,8 @@ function execute(b, operation) {
   if (kind === 'auth') return require('./backend-auth.cjs').execute(b, operation);
   if (kind === 'table') return executeTable(b, operation);
   if (kind === 'rpc') assert(steps.every(step => name === 'ingest_diagnostic_batch' && step[0] === 'abortSignal'), `Unexpected RPC builder steps ${name}`);
+  const fault = require('./backend-faults.cjs').take(b, operation);
+  if (fault) return fault;
   const workflow = require('./backend-workflows.cjs').execute(b, operation);
   if (workflow !== undefined) return workflow;
   const request = require('./backend-requests.cjs').execute(b, operation);
