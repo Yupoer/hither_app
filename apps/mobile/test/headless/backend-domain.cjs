@@ -51,10 +51,15 @@ function initialize(b, { LEADER, PEER }) {
   b.wallets = new Map();
   b.rewardSessions = new Map();
   b.redemptions = new Map();
+  b.redemptionBindings = new Map();
+  b.promoCodes = new Map();
+  b.promoRedemptions = new Set();
+  b.unavailableProducts = new Set();
   b.feedback = [];
   b.diagnostics = new Map();
-  b.fixtureResponses = new Map();
   b.locationRefreshes = [];
+  b.locationRefreshPending = new Map();
+  b.locationRefreshAcks = new Map();
   b.verifiedPurchases = new Map();
   b.purchaseLedger = new Map();
   b.notificationOutbox = [];

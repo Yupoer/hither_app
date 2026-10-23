@@ -24,7 +24,9 @@ function startSession(b, groupId, destinationId, requestId, userId, replace = fa
     active.status = 'cancelled'; active.ended_at = iso(b); active.version++; b.publish('navigation_sessions', active);
     for (const state of b.tables.navigation_member_states) if (state.navigation_session_id === active.id && state.local_status !== 'arrived') { state.local_status = 'missed'; state.detail = { ...state.detail, reason: 'session_replaced' }; b.publish('navigation_member_states', state); }
   }
-  b.tables.destination_arrivals = b.tables.destination_arrivals.filter(a => a.destination_id !== destinationId || a.navigation_session_id != null && active && a.navigation_session_id !== active.id);
+  const previousArrivals = b.tables.destination_arrivals.filter(a => a.destination_id === destinationId && (a.navigation_session_id == null || !active || a.navigation_session_id === active.id));
+  b.tables.destination_arrivals = b.tables.destination_arrivals.filter(a => !previousArrivals.includes(a));
+  previousArrivals.forEach(old => b.emit({ table: 'destination_arrivals', eventType: 'DELETE', new: {}, old, commit_timestamp: iso(b) }));
   const roster = b.memberships.filter(m => m.group_id === groupId && (m.subgroup_id ?? null) === scope);
   const session = { id: sessionId, group_id: groupId, scope_subgroup_id: scope, destination_id: destination.id,
     destination_name: destination.title, destination_latitude: destination.latitude, destination_longitude: destination.longitude,

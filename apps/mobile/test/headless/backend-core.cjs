@@ -149,6 +149,7 @@ function apply(b, { args: a, userId }) {
     const result = require('./backend-arrivals.cjs').apply(b, a, userId);
     if (result.conflict) return conflict(result.conflict);
     entity = result.entity;
+    effects = result.effects;
   } else if (type === 'submit_gather_point_request' || type === 'resolve_gather_point_request') {
     const name = type;
     const args = type === 'submit_gather_point_request' ? { p_group_id: group.id, p_subgroup_id: scope, p_items: p.items } : { p_request_id: p.requestId, p_approve: p.approve };

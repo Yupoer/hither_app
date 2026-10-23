@@ -71,7 +71,7 @@ function apply(b, a, userId) {
       } else if (!prior?.navigation_session_id || prior.navigation_session_id === session.id) b.tables.visited_waypoints = b.tables.visited_waypoints.filter(r => r !== prior);
     }
   }
-  return { entity: { sessionId: session.id, destinationId: session.destination_id, userId: targetId, arrived: event.arrived, arrivedAt,
-    ...(correction ? { correctedBy: userId, correctedAt: iso(b), source: 'leader_correction' } : {}), appliedToCurrentSession: applyCurrent } };
+  return { entity: { sessionId: session.id, destinationId: session.destination_id, ...(correction ? { targetUserId: targetId } : { userId: targetId }), arrived: event.arrived, arrivedAt,
+    ...(correction ? { correctedBy: userId, correctedAt: iso(b) } : { appliedToCurrentSession: applyCurrent }) }, effects: { arrivalEventId: event.id } };
 }
 module.exports = { apply };

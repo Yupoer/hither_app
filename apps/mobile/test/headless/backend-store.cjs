@@ -34,28 +34,37 @@ function execute(b, { kind, name, args: a = {}, userId }) {
   }
   if (name === 'request_group_location_refresh') {
     keys(a, 'p_group_id'); if (!member(b, a.p_group_id, userId)) return fail('not_member');
-    const recent = b.locationRefreshes.find(r => r.group_id === a.p_group_id && r.requested_by === userId && b.now - Date.parse(r.requested_at) < 30000);
-    if (recent) return ok({ accepted: false, retry_after_seconds: Math.ceil((30000 - b.now + Date.parse(recent.requested_at)) / 1000), recipient_ids: [], requested_at: recent.requested_at });
-    const recipients = b.memberships.filter(m => m.group_id === a.p_group_id && m.user_id !== userId).map(m => m.user_id);
+    const recent = b.locationRefreshes.findLast(r => r.group_id === a.p_group_id && b.now - Date.parse(r.requested_at) < 60000);
+    if (recent) return ok({ accepted: false, retry_after_seconds: Math.ceil((60000 - b.now + Date.parse(recent.requested_at)) / 1000), requested_at: recent.requested_at });
+    const recipients = b.memberships.filter(m => m.group_id === a.p_group_id && m.user_id !== userId && member(b, m.group_id, m.user_id)
+      && m.status !== 'offline' && b.tables.member_privacy_settings.find(p => p.user_id === m.user_id)?.sharing_enabled !== false).map(m => m.user_id).sort();
     const row = { group_id: a.p_group_id, requested_by: userId, requested_at: iso(b), recipient_ids: recipients, acknowledgements: [] };
-    b.locationRefreshes.push(row); return ok({ accepted: true, retry_after_seconds: 30, recipient_ids: recipients, requested_at: row.requested_at });
+    b.locationRefreshes.push(row);
+    recipients.forEach(id => b.locationRefreshPending.set(`${a.p_group_id}:${id}`, { group_id: a.p_group_id, user_id: id, requested_by: userId, requested_at: row.requested_at }));
+    return ok({ accepted: true, retry_after_seconds: 60, recipient_ids: recipients, requested_at: row.requested_at });
   }
   if (name === 'list_my_pending_location_refreshes') {
-    keys(a, ''); return ok(b.locationRefreshes.filter(r => r.recipient_ids.includes(userId) && !r.acknowledgements.includes(userId) && b.now - Date.parse(r.requested_at) < 120000).map(({ group_id, requested_by, requested_at }) => ({ group_id, requested_by, requested_at })));
+    keys(a, ''); return ok([...b.locationRefreshPending.values()].filter(r => r.user_id === userId && member(b, r.group_id, userId)).sort((x, y) => x.requested_at.localeCompare(y.requested_at)).map(({ group_id, requested_by, requested_at }) => ({ group_id, requested_by, requested_at })));
   }
   if (name === 'ack_my_location_refresh' || name === 'get_group_location_refresh_acknowledgements') {
     keys(a, 'p_group_id p_requested_at'); if (!member(b, a.p_group_id, userId)) return fail('not_member');
     const row = b.locationRefreshes.find(r => r.group_id === a.p_group_id && r.requested_at === a.p_requested_at);
-    if (name.startsWith('get')) return ok(row?.acknowledgements ?? []);
-    if (!row || !row.recipient_ids.includes(userId)) return ok(false);
-    if (!row.acknowledgements.includes(userId)) row.acknowledgements.push(userId); return ok(true);
+    if (name.startsWith('get')) return ok(b.memberships.filter(m => m.group_id === a.p_group_id && member(b, m.group_id, m.user_id)
+      && b.locationRefreshAcks.get(`${a.p_group_id}:${m.user_id}`) === a.p_requested_at).map(m => m.user_id).sort());
+    const key = `${a.p_group_id}:${userId}`;
+    if (b.locationRefreshPending.get(key)?.requested_at === a.p_requested_at) {
+      b.locationRefreshPending.delete(key); b.locationRefreshAcks.set(key, a.p_requested_at);
+      if (row && !row.acknowledgements.includes(userId)) row.acknowledgements.push(userId);
+      return ok(true);
+    }
+    return ok(b.locationRefreshAcks.get(key) === a.p_requested_at);
   }
   if (name === 'get_store_snapshot') {
     keys(a, 'p_group_id'); const group = b.groups.get(a.p_group_id);
     if (!userId) return ok({ ok: false, error: 'not_authenticated' });
     const anonymous = b.authUsers?.get(userId)?.is_anonymous === true;
     const active = [...b.rewardSessions.values()].find(r => r.user_id === userId && ['active', 'verifying'].includes(r.status) && Date.parse(r.expires_at) > b.now);
-    return ok({ ok: true, anonymous, registration_required: anonymous, balance: anonymous ? 0 : b.wallets.get(userId) ?? 0, catalog,
+    return ok({ ok: true, anonymous, registration_required: anonymous, balance: anonymous ? 0 : b.wallets.get(userId) ?? 0, catalog: catalog.filter(p => !b.unavailableProducts.has(p.code)),
       can_create_reward_session: !anonymous && !active, can_redeem: !anonymous, group_id: group?.id ?? null, group_name: group?.name ?? null,
       is_member: Boolean(member(b, group?.id, userId)), member_count: b.memberships.filter(m => m.group_id === group?.id).length,
       trip_premium: b.teamPremium?.get(group?.id) ?? null, extra_point_credits: b.pointCredits?.get(group?.id) ?? 0,
@@ -82,20 +91,61 @@ function execute(b, { kind, name, args: a = {}, userId }) {
     if (!userId) return ok({ ok: false, error: 'not_authenticated' });
     if (b.authUsers?.get(userId)?.is_anonymous) return ok({ ok: false, error: 'registration_required' });
     const product = catalog.find(p => p.code === a.p_product_code);
-    if (!product) return ok({ ok: false, error: 'product_not_found' });
-    if (product.scope === 'team' && !member(b, a.p_group_id, userId)) return ok({ ok: false, error: 'not_member' });
-    const key = a.p_client_request_key && `${userId}:${a.p_client_request_key}`;
-    if (key && b.redemptions.has(key)) return ok(b.redemptions.get(key));
+    if (!product || b.unavailableProducts.has(product.code)) return ok({ ok: false, error: 'product_unavailable' });
+    const requestKey = a.p_client_request_key?.trim();
+    if (requestKey?.length > 128) return ok({ ok: false, error: 'invalid_request_key' });
+    const key = requestKey && `${userId}:${requestKey}`;
+    if (key && b.redemptions.has(key)) {
+      const binding = b.redemptionBindings.get(key);
+      if (binding.productCode !== a.p_product_code || binding.groupId !== a.p_group_id) return ok({ ok: false, error: 'idempotency_conflict' });
+      return ok({ ...b.redemptions.get(key), already: true });
+    }
     const balance = b.wallets.get(userId) ?? 0;
     if (balance < product.price_tokens) return ok({ ok: false, error: 'insufficient_balance', balance, price: product.price_tokens, shortfall: product.price_tokens - balance });
+    if (product.scope === 'team' && !a.p_group_id) return ok({ ok: false, error: 'group_required' });
+    if (product.scope === 'team' && !member(b, a.p_group_id, userId)) return ok({ ok: false, error: 'not_member' });
+    if (product.effect_json.kind === 'team_premium_days') {
+      const count = b.memberships.filter(m => m.group_id === a.p_group_id).length;
+      if (count < 2 || count > 5) return ok({ ok: false, error: 'not_applicable' });
+      const premium = b.teamPremium?.get(a.p_group_id);
+      if (projection(b, userId, a.p_group_id).teamPremiumActive && premium?.source !== 'token_redemption') return ok({ ok: false, error: 'not_applicable' });
+    }
     b.wallets.set(userId, balance - product.price_tokens);
     const result = { ok: true, product_code: product.code, balance: b.wallets.get(userId), redemption_id: randomUUID(), started_at: iso(b), source: 'token_store' };
     if (product.effect_json.kind === 'team_extra_points') { b.pointCredits ??= new Map(); result.extra_point_credits = (b.pointCredits.get(a.p_group_id) ?? 0) + product.effect_json.credits; b.pointCredits.set(a.p_group_id, result.extra_point_credits); }
     else if (product.scope === 'personal') { b.liveUnlocks ??= new Set(); b.liveUnlocks.add(userId); result.live_activity_personal = true; }
-    else { b.teamPremium ??= new Map(); const prior = b.teamPremium.get(a.p_group_id); result.stacked = Boolean(prior && Date.parse(prior.expires_at) > b.now); result.expires_at = new Date(Math.max(b.now, Date.parse(prior?.expires_at ?? '') || 0) + product.effect_json.days * 86400000).toISOString(); b.teamPremium.set(a.p_group_id, { status: 'active', expires_at: result.expires_at }); }
-    if (key) b.redemptions.set(key, result); return ok(result);
+    else { b.teamPremium ??= new Map(); const prior = b.teamPremium.get(a.p_group_id); result.stacked = Boolean(prior && Date.parse(prior.expires_at) > b.now); result.expires_at = new Date(Math.max(b.now, Date.parse(prior?.expires_at ?? '') || 0) + product.effect_json.days * 86400000).toISOString(); b.teamPremium.set(a.p_group_id, { status: 'active', source: 'token_redemption', expires_at: result.expires_at }); }
+    if (key) { b.redemptions.set(key, result); b.redemptionBindings.set(key, { productCode: a.p_product_code, groupId: a.p_group_id }); } return ok(result);
   }
-  if (name === 'redeem_promo_code') { keys(a, 'p_code p_group_id'); return ok({ success: false, error: 'invalid_code' }); }
+  if (name === 'redeem_promo_code') {
+    keys(a, 'p_code p_group_id');
+    const rejected = error => ok({ success: false, error, code: error });
+    if (!userId) return rejected('not_authenticated');
+    if (b.authUsers?.get(userId)?.is_anonymous) return rejected('not_applicable');
+    const code = a.p_code.trim();
+    const promo = b.promoCodes.get(code.toUpperCase()) ?? b.promoCodes.get(code);
+    if (!promo) return rejected('invalid');
+    if (promo.expires_at && Date.parse(promo.expires_at) < b.now) return rejected('expired');
+    const redemptionKey = `${code.toUpperCase()}:${userId}`;
+    if (promo.remaining_uses != null && promo.remaining_uses <= 0 || b.promoRedemptions.has(redemptionKey)) return rejected('already_used');
+    const plan = promo.plan_code ?? 'lifetime_premium';
+    let expiresAt = null;
+    if (plan === 'small_trip_pass' || promo.duration_days > 0) {
+      if (!a.p_group_id || !leader(b, a.p_group_id, userId)) return rejected('not_applicable');
+      if (projection(b, userId, a.p_group_id).teamPremiumActive) return rejected('duplicate');
+      const count = b.memberships.filter(m => m.group_id === a.p_group_id).length;
+      if (count < 1 || count > 5) return rejected('not_applicable');
+      expiresAt = new Date(b.now + (promo.duration_days || 7) * 86400000).toISOString();
+      b.teamPremium ??= new Map(); b.teamPremium.set(a.p_group_id, { status: 'active', source: 'promo', expires_at: expiresAt });
+    } else {
+      b.premium.set(userId, { status: 'active', product_id: plan, source: 'promo', source_version: 'promo-v1', expires_at: null });
+      const profile = b.profiles.get(userId);
+      if (profile) Object.assign(profile, { pro: true, pro_plan: promo.plan_name ?? 'Lifetime Premium', pro_purchased_at: iso(b), pro_expires_at: null });
+    }
+    if (promo.remaining_uses != null) promo.remaining_uses--;
+    b.promoRedemptions.add(redemptionKey);
+    return ok({ success: true, plan_name: promo.plan_name ?? plan, plan_code: plan, status: 'active', started_at: iso(b), expires_at: expiresAt, duration_days: promo.duration_days ?? null, entitlement_id: randomUUID() });
+  }
   return undefined;
 }
 

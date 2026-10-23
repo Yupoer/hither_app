@@ -35,7 +35,7 @@ function resolve(b, request, userId, optionId, source) {
 function deadline(b, request, userId) {
   if (request.status !== 'open') return ok(request);
   if (Date.parse(request.deadline) > b.now) return fail('deadline_not_reached', 'P0001');
-  const eligible = b.memberships.filter(m => m.group_id === request.group_id && (request.subgroup_id == null || m.subgroup_id === request.subgroup_id || m.role === 'leader')).map(m => m.user_id);
+  const eligible = b.memberships.filter(m => m.group_id === request.group_id && member(b, request.group_id, m.user_id) && (request.subgroup_id == null || m.subgroup_id === request.subgroup_id || m.role === 'leader')).map(m => m.user_id);
   const responses = b.tables.coordination_responses.filter(r => r.request_id === request.id && eligible.includes(r.user_id));
   let option = request.default_outcome, source = 'timeout_default';
   const counts = new Map(); responses.forEach(r => counts.set(r.option_id, (counts.get(r.option_id) ?? 0) + 1));
