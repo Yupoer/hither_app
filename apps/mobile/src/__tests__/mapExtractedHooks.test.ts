@@ -4,6 +4,7 @@ import { getNotificationPreferences, setNotificationPreferences, setSolo, saveOn
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 import { useGatheringCompletion, type UseGatheringCompletionInput } from '../screens/MapScreen/hooks/useGatheringCompletion';
 import { enqueueJourneyCompletion } from '../state/journeyCompletion';
+import { notifyThisDeviceAutoComplete } from '../native/notifications';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useStoreEntitlements, type UseStoreEntitlementsInput } from '../screens/MapScreen/hooks/useStoreEntitlements';
@@ -241,6 +242,114 @@ function manualCompletionInput(): UseGatheringCompletionInput {
 
 describe('MapScreen gathering completion', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('completes the active scoped stop once when the final committed arrival is rendered', async () => {
+    const stop = { ...completionStop, subgroupId: 'flock' };
+    const otherStop = { ...completionStop, id: 'other-stop' };
+    let sessionId: string | null = 'session';
+    const input: UseGatheringCompletionInput = {
+      ...manualCompletionInput(), allScopedDestinations: [otherStop, stop], navTargetId: 'stop',
+      resolveCurrentNavigationSessionId: () => sessionId,
+      refreshLocalSnapshot: jest.fn(async () => { sessionId = null; return true; }),
+      sessionEligibleMembers: [
+        ...manualCompletionInput().sessionEligibleMembers.map(member => ({ ...member, subgroupId: 'flock' })),
+        { userId: 'outside', name: 'Outside', role: 'follower', status: 'active', lastUpdated: '2026-10-23T00:00:00Z' },
+      ],
+      activeDestinationArrivals: [
+        { id: 'leader-arrival', groupId: 'team', destinationId: 'stop', userId: 'leader', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'leader' },
+        { id: 'elsewhere', groupId: 'team', destinationId: 'other-stop', userId: 'member', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'member' },
+      ],
+      routeDraft: { latestDestinations: () => [otherStop, stop], setDestinations: jest.fn() },
+      prevVisibleDestOrderRef: { current: ['other-stop', 'stop'] },
+    };
+    const pending = deferred<Awaited<ReturnType<typeof enqueueJourneyCompletion>>>();
+    jest.mocked(enqueueJourneyCompletion).mockReturnValueOnce(pending.promise);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    const finalArrivals = [...input.activeDestinationArrivals,
+      { id: 'member-arrival', groupId: 'team', destinationId: 'stop', userId: 'member', arrivedAt: '2026-10-23T00:01:00Z', source: 'manual', markedBy: 'member' } satisfies UseGatheringCompletionInput['activeDestinationArrivals'][number],
+    ];
+    await mounted.update({ ...input, activeDestinationArrivals: finalArrivals });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    expect(enqueueJourneyCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      groupId: 'team', destinationId: 'stop', navigationSessionId: 'session',
+      scopeSubgroupId: 'flock', navigationMemberIds: ['leader', 'member'],
+      arrivedMemberIds: ['leader', 'member'], force: false,
+    }));
+    await mounted.update({ ...input, activeDestinationArrivals: [...finalArrivals] });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve(completionOperation); });
+    expect(input.routeDraft.setDestinations).toHaveBeenCalledWith([
+      otherStop, expect.objectContaining({ id: 'stop', closedAt: expect.any(String) }),
+    ]);
+    expect(input.startArrivalCardExit).toHaveBeenCalledWith(expect.objectContaining({ id: 'stop', closedAt: expect.any(String) }), 1);
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledWith({
+      title: 'gathering.autoCompleteTitle', body: 'gathering.autoCompleteBody',
+      data: { kind: 'gathering_auto_complete', destinationId: 'stop' },
+    });
+    const closedStop = { ...stop, closedAt: '2026-10-23T00:01:00Z' };
+    await act(async () => { mounted.value.promptCompleteAfterArrival(closedStop); });
+    await mounted.update({ ...input, allScopedDestinations: [otherStop, closedStop], activeDestinationArrivals: finalArrivals });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it('keeps a remotely completed roster open after enqueue failure and retries on the next committed snapshot', async () => {
+    const input: UseGatheringCompletionInput = {
+      ...manualCompletionInput(), navTargetId: 'stop',
+      activeDestinationArrivals: ['leader', 'member'].map(userId => ({
+        id: `${userId}-arrival`, groupId: 'team', destinationId: 'stop', userId,
+        arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: userId,
+      })),
+    };
+    jest.mocked(enqueueJourneyCompletion).mockRejectedValueOnce(new Error('disk failed')).mockResolvedValueOnce(completionOperation);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).toHaveBeenCalledWith('map.setFailedTitle', expect.any(String));
+    expect(input.refreshLocalSnapshot).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    expect(input.loadHistory).not.toHaveBeenCalled();
+    expect(notifyThisDeviceAutoComplete).not.toHaveBeenCalled();
+    await mounted.update({ ...input, activeDestinationArrivals: [...input.activeDestinationArrivals] });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledTimes(2);
+    expect(enqueueJourneyCompletion).toHaveBeenLastCalledWith(expect.objectContaining({ navigationSessionId: 'session', force: false }));
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).toHaveBeenCalledTimes(1);
+    await mounted.unmount();
+  });
+
+  it('shows the committed partial-arrival count and confirms only those arrival rows', async () => {
+    const translate = jest.fn((key: string) => key);
+    const input: UseGatheringCompletionInput = {
+      ...manualCompletionInput(), t: translate,
+      activeDestinationArrivals: [
+        { id: 'member-arrival', groupId: 'team', destinationId: 'stop', userId: 'member', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'member' },
+        { id: 'leader-elsewhere', groupId: 'team', destinationId: 'other-stop', userId: 'leader', arrivedAt: '2026-10-23T00:00:00Z', source: 'manual', markedBy: 'leader' },
+      ],
+    };
+    jest.mocked(enqueueJourneyCompletion).mockResolvedValueOnce(completionOperation);
+    const mounted = await mountHook(useGatheringCompletion, input);
+    mounted.value.promptCompleteAfterArrival(completionStop);
+    expect(translate).toHaveBeenCalledWith('gathering.completeMissingMessage', { arrived: '1', total: '2' });
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    await act(async () => { jest.mocked(Alert.alert).mock.calls[0][2]?.[1]?.onPress?.(); });
+    expect(enqueueJourneyCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      destinationId: 'stop', navigationSessionId: 'session', force: true,
+      arrivedMemberIds: ['member'], navigationMemberIds: ['leader', 'member'],
+    }));
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', 'session');
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    expect(notifyThisDeviceAutoComplete).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
 
   it('releases the in-flight guard after failure and retries the same session', async () => {
     const input = completionInput();
