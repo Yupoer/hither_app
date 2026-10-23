@@ -26,7 +26,7 @@ exports.installNavigation = ({ jest, host }) => {
     useFocusEffect: callback => React.useEffect(callback, [callback]),
     DefaultTheme: { colors: {} }, DarkTheme: { colors: {} },
     createNavigationContainerRef: () => ({ ...nav, getRootState: () => ({ index: 0, routes: [{ name: state.route, key: state.route }] }), isReady: () => true }),
-    NavigationContainer: React.forwardRef((props, ref) => {
+    NavigationContainer: React.forwardRef(function NavigationContainer(props, ref) {
       stateChanged = props.onStateChange;
       React.useEffect(() => { props.onReady?.(); }, []);
       return React.createElement(React.Fragment, null, host.ProviderObservation && React.createElement(host.ProviderObservation), props.children);

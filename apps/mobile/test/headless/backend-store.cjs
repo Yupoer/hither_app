@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { Buffer } = require('node:buffer');
 const { randomUUID } = require('node:crypto');
 const { ok, fail, keys, member, leader, iso, projection } = require('./backend-domain.cjs');
 const { scopeAllowed } = require('./backend-workflows.cjs');

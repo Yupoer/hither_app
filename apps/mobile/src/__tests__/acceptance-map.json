@@ -2507,6 +2507,41 @@
       "acceptance": "Each virtual device preserves account isolation and rejects unknown registry actions.",
       "testFile": "headlessHarnessContract.test.ts",
       "testNamePattern": "derives the callable catalog"
+    },
+    {
+      "parent": 320,
+      "child": "auth",
+      "acceptance": "Real authentication controls validate inputs, preserve durable identity and isolate platform sign-in and recovery flows.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "validates credentials locally|validates callback boundaries|boots the real navigator"
+    },
+    {
+      "parent": 320,
+      "child": "account",
+      "acceptance": "Real profile, settings and lifecycle operations preserve drafts, persistence, account ownership and failed-operation recovery on both platforms.",
+      "testFile": "headlessAccountScenario.test.ts",
+      "testNamePattern": "blocks profile cancel|keeps the current team entitlement|persists every preference|debounces real subgroup subscriptions"
+    },
+    {
+      "parent": 320,
+      "child": "map",
+      "acceptance": "Real Map parent callbacks preserve pending destinations, role-specific suggestions, route drafts and explicit navigation completion semantics.",
+      "testFile": "headlessMapScenario.test.ts",
+      "testNamePattern": "real confirmation durably adds|a follower confirm persists|actual Start then End"
+    },
+    {
+      "parent": 320,
+      "child": "presentation",
+      "acceptance": "The real App resolves platform modules and screen navigation, while explicit screen mounts report the committed route.",
+      "testFile": "headlessPresentation.test.ts",
+      "testNamePattern": "cold mounts real providers|direct screen mounts"
+    },
+    {
+      "parent": 320,
+      "child": "pending-itinerary",
+      "acceptance": "Remote hydration retains unacknowledged itinerary intent across cold reads without including another actor's drafts.",
+      "testFile": "coreOperationOutboxDurable.test.ts",
+      "testNamePattern": "persists unacknowledged itinerary intent"
     }
   ]
 }

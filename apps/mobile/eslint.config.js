@@ -165,6 +165,10 @@ const REACT_COMPILER_RULES_OFF = {
 module.exports = defineConfig([
   expoConfig,
   {
+    files: ['**/*.cjs'],
+    languageOptions: { globals: { __dirname: 'readonly' } },
+  },
+  {
     ignores: ['ios/**', 'android/**', 'coverage/**', '**/__tests__/**', '**/*.test.ts', '**/*.test.tsx'],
     rules: {
       'react-hooks/rules-of-hooks': 'error',

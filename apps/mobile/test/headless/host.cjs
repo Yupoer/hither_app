@@ -7,7 +7,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const tasks = new Map();
   const animations = new Map();
   let animationId = 0;
-  const make = name => React.forwardRef((props, ref) => {
+  const make = name => React.forwardRef(function NativeHost(props, ref) {
     React.useImperativeHandle(ref, () => ({
       focus: () => receipts.push({ host: name, method: 'focus' }),
       blur: () => receipts.push({ host: name, method: 'blur' }),
@@ -77,20 +77,20 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     UIManager: { setLayoutAnimationEnabledExperimental() {} },
     LayoutAnimation: { configureNext() {}, Presets: { easeInEaseOut: {} } },
     Share: { share: async value => { receipts.push({ host: 'Share', method: 'share', value }); return { action: 'sharedAction' }; } },
-    FlatList: React.forwardRef((props, ref) => React.createElement(hosts.ScrollView, { ...props, ref },
+    FlatList: React.forwardRef(function FlatList(props, ref) { return React.createElement(hosts.ScrollView, { ...props, ref },
       props.ListHeaderComponent && React.createElement(props.ListHeaderComponent),
       props.data.map((item, index) => React.createElement(React.Fragment, { key: props.keyExtractor?.(item, index) ?? index }, props.renderItem({ item, index }))),
-      props.ListFooterComponent && React.createElement(props.ListFooterComponent))),
+      props.ListFooterComponent && React.createElement(props.ListFooterComponent)); }),
   });
   jest.doMock('react-native', () => rn);
   jest.doMock('react-native-safe-area-context', () => ({ SafeAreaProvider: make('SafeAreaProvider'), SafeAreaView: hosts.View,
     useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: 0 }) }));
   jest.doMock('@expo/vector-icons', () => strict('vector-icons', { Ionicons: make('Ionicons'), MaterialCommunityIcons: make('MaterialCommunityIcons') }));
-  const shared = value => React.useRef({ value }).current;
+  const useShared = value => React.useRef({ value }).current;
   const animation = strict('reanimated', {
     __esModule: true, default: { View: hosts.View, Text: hosts.Text, ScrollView: hosts.ScrollView,
       createAnimatedComponent: component => component },
-    makeMutable: value => ({ value }), useSharedValue: shared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
+    makeMutable: value => ({ value }), useSharedValue: useShared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
     scrollTo: (ref, x, y, animated) => ref.current?.scrollTo({ x, y, animated }),
     useAnimatedStyle: fn => fn(), useAnimatedProps: fn => fn(), useReducedMotion: () => true,
     useFrameCallback: () => React.useRef({ setActive() {} }).current,
@@ -105,7 +105,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   });
   for (const name of ['FadeIn', 'FadeInRight', 'FadeOut', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
   jest.doMock('react-native-reanimated', () => animation);
-  jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: React.forwardRef((props, ref) => {
+  jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: React.forwardRef(function ReanimatedSwipeable(props, ref) {
     const [open, setOpen] = React.useState(false);
     const methods = { close: () => { setOpen(false); props.onSwipeableClose?.('right'); } };
     React.useImperativeHandle(ref, () => methods);

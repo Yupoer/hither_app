@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { Buffer } = require('node:buffer');
 
 exports.createExternalMap = function createExternalMap({ strict = (_name, value) => value, spec = {} } = {}) {
   const React = require('react');
@@ -66,7 +67,7 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
   });
   const dateModule = {
     __esModule: true,
-    default: props => {
+    default: function DateTimePicker(props) {
       const latest = React.useRef(props);
       latest.current = props;
       React.useEffect(() => {
