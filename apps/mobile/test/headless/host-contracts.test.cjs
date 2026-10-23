@@ -41,8 +41,10 @@ test('native hosts retain rows, children, refs and disabled or readonly input se
     host.call(root, { kind: 'press', testId: 'row-2' });
     host.call(root, { kind: 'changeText', testId: 'input', value: 'accepted' });
     ref.current.focus();
+    modules.get('react-native-reanimated').scrollTo(ref, 10, 20, false);
     assert.equal(calls, 2);
     assert(host.receipts.some(receipt => receipt.method === 'focus'));
+    assert(host.receipts.some(receipt => receipt.method === 'scrollTo' && receipt.value.x === 10 && receipt.value.y === 20 && receipt.value.animated === false));
     try { rn.Keyboard.unimplemented(); } catch {}
     assert.deepEqual(failures, ['Unsupported external react-native.Keyboard.unimplemented']);
   } finally { await act(async () => root.unmount()); }
@@ -69,6 +71,16 @@ test('animation completion is explicit and disabled gesture callbacks stay block
   try {
     assert.deepEqual(host.call(root, { kind: 'gesture', testId: 'pan', phase: 'onEnd', value: { translationY: 100 } }), { invoked: false, reason: 'disabled' });
     assert.equal(calls, 0);
+    pan.enabled(true);
+    for (const props of [{ style: { display: 'none' } }, { pointerEvents: 'none' }]) {
+      await act(async () => root.update(React.createElement(rn.View, props,
+        React.createElement(gesture.GestureDetector, { gesture: pan }, React.createElement(rn.View, { testID: 'pan' })))));
+      assert.throws(() => host.call(root, { kind: 'gesture', testId: 'pan', phase: 'onEnd', value: {} }), /Expected one gesture target/);
+      assert.equal(calls, 0);
+    }
+    await act(async () => root.update(React.createElement(gesture.GestureDetector, { gesture: pan }, React.createElement(rn.View, { testID: 'pan' }))));
+    assert.deepEqual(host.call(root, { kind: 'gesture', testId: 'pan', phase: 'onEnd', value: {} }), { invoked: true });
+    assert.equal(calls, 1);
   } finally { await act(async () => root.unmount()); }
 });
 

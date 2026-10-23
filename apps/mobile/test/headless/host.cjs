@@ -91,6 +91,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     __esModule: true, default: { View: hosts.View, Text: hosts.Text, ScrollView: hosts.ScrollView,
       createAnimatedComponent: component => component },
     makeMutable: value => ({ value }), useSharedValue: shared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
+    scrollTo: (ref, x, y, animated) => ref.current?.scrollTo({ x, y, animated }),
     useAnimatedStyle: fn => fn(), useAnimatedProps: fn => fn(), useReducedMotion: () => true,
     useFrameCallback: () => React.useRef({ setActive() {} }).current,
     useAnimatedReaction: () => {}, useAnimatedScrollHandler: value => value,
@@ -164,7 +165,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     call(root, { kind, testId, label, value, within, phase, success }) {
       if (kind === 'gesture') {
         assert(['onBegin', 'onStart', 'onUpdate', 'onChange', 'onEnd', 'onFinalize'].includes(phase));
-        const nodes = root.root.findAll(node => typeof node.type === 'string' && node.type.startsWith('host:') && node.props.testID === testId);
+        const nodes = root.root.findAll(node => typeof node.type === 'string' && node.type.startsWith('host:') && node.props.testID === testId && availability(node).acceptsInput);
         assert.equal(nodes.length, 1, `Expected one gesture target ${testId}`);
         let detector = nodes[0];
         while (detector && detector.type !== 'host:GestureDetector') detector = detector.parent;
