@@ -192,6 +192,13 @@ describe('useGatheringWorkflow', () => {
     mockFetchArrivals.mockResolvedValue(remote);
     await render(input({ arrivalOperations: [reentry, undo], arrivalSessionScope: ['s1'] }));
     expect(mockRemoveArrival).toHaveBeenCalledWith('undo');
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith('reentry');
+    await render(input({ arrivalOperations: [reentry, undo], arrivalSessionScope: ['s1'] }));
+    expect(mockRemoveArrival).not.toHaveBeenCalledWith('reentry');
+    expect(projectArrivals(remote, [reentry, undo], 'leader', 's1')).toEqual([
+      expect.objectContaining({ destinationId: 'd1', userId: 'leader', navigationSessionId: 's1', arrivedAt: reentry.payload.arrivedAt }),
+    ]);
+    await render(input({ arrivalOperations: [reentry], arrivalSessionScope: ['s1'] }));
     expect(mockRemoveArrival).toHaveBeenCalledWith('reentry');
     const retained = [undo, reentry].filter(op => !mockRemoveArrival.mock.calls.some(([id]) => id === op.id));
     expect(projectArrivals(remote, retained, 'leader', 's1')).toEqual(remote);
