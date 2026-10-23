@@ -68,6 +68,13 @@ const actions = {
   },
 };
 
+for (const module of ['./operations-account.cjs', './operations-map.cjs', './operations-store.cjs']) {
+  for (const [name, definition] of Object.entries(require(module).operations)) {
+    assert(!Object.hasOwn(actions, name), `Duplicate action ${name}`);
+    actions[name] = definition;
+  }
+}
+
 exports.catalog = () => Object.entries(actions).map(([name, { run, ...description }]) => ({ name, ...description }));
 exports.has = name => Object.hasOwn(actions, name);
 exports.perform = (app, name, input = {}) => {

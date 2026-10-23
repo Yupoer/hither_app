@@ -160,4 +160,4 @@ for (const [symbol, ids] of [['accept', 'S02'], ['decline', 'S03'], ['refresh', 
   register('invites.' + symbol, ids, 'src/state/useSubgroupInvites.ts', 'useSubgroupInvites', 'hook', '{ args? }',
     (app, { args = [] }) => app.invites[symbol](...args));
 }
-module.exports = operations;
+exports.operations = operations;
