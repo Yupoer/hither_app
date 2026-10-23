@@ -205,6 +205,11 @@ assert.equal(corrected.marked_by, LEADER);
 assert.equal(corrected.corrected_by, LEADER);
 assert.equal(corrected.correction_note, 'Audited correction');
 assert.equal(regression.arrivalEvents.at(-1).event_kind, 'leader_correction');
+regressionCore('leader_correct_arrival', { ...correctionPayload, arrived: false }, LEADER, { p_entity_id: targetId });
+const correctedState = regression.tables.navigation_member_states.find(n => n.navigation_session_id === 'explicit-request' && n.user_id === PEER);
+assert.equal(correctedState.local_status, 'missed');
+assert.equal(correctedState.detail.correctedBy, LEADER);
+assert.equal(correctedState.detail.correctedAt, new Date(regression.now).toISOString());
 
 regression = new Backend(() => {});
 const activeSession = regressionRpc('start_navigation_session', { p_group_id: GROUP_ID, p_destination_id: targetId, p_request_id: 'completion-session' }).data;
@@ -229,6 +234,11 @@ regression = new Backend(() => {});
 const versionedAdd = regressionCore('add_destination', { destinationId: 'versioned-stop', title: 'Versioned', latitude: 25, longitude: 121, day: 1, subgroupId: null, kind: 'stop' }).data;
 assert.equal(versionedAdd.entity.destinations.find(d => d.id === 'versioned-stop').title, 'Versioned');
 assert.equal(versionedAdd.entity_version, 1);
+const acceptedWire = regression.trace.at(-1).args;
+const replayWire = { ...acceptedWire, p_entity_version: 99, p_sequence: 99, p_created_at: new Date(regression.now + 1000).toISOString(),
+  p_payload: Object.fromEntries(Object.entries(acceptedWire.p_payload).reverse()) };
+assert.equal(regressionRpc('apply_core_operation_v3', replayWire).data.status, 'duplicate');
+assert.equal(regressionRpc('apply_core_operation_v3', { ...replayWire, p_payload: { ...replayWire.p_payload, rebase: true } }).data.status, 'duplicate');
 assert.equal(regressionCore('set_solo', { userId: PEER, solo: true }, PEER).data.entity_version, 1);
 assert.equal(regressionCore('set_solo', { userId: PEER, solo: false }, PEER, { p_entity_id: GROUP_ID }).data.conflict.code, 'unauthorized');
 assert.equal(regression.tables.core_entity_versions.filter(r => r.entity_type === 'itinerary').length, 2);

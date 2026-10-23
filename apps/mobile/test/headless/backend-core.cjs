@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
+const { isDeepStrictEqual } = require('node:util');
 const { ok, fail, keys, member, iso } = require('./backend-domain.cjs');
 const { scopeAllowed, startSession, terminalSession } = require('./backend-workflows.cjs');
 
@@ -51,11 +52,13 @@ function apply(b, { args: a, userId }) {
   assert(Number.isSafeInteger(a.p_sequence) && a.p_sequence > 0, 'Integer core sequence');
   const type = a.p_operation_type, p = a.p_payload;
   assert(Object.hasOwn(payloadFields, type), `Unsupported core operation ${type}`);
-  for (const field of Object.keys(p)) assert(payloadFields[type].split(' ').includes(field), `Unknown ${type} payload ${field}`);
+  for (const field of Object.keys(p)) assert(field === 'rebase' || payloadFields[type].split(' ').includes(field), `Unknown ${type} payload ${field}`);
   const conflict = (code, message = code) => ok({ status: 'conflict', operation_id: a.p_operation_id, conflict: { code, message } });
-  const signature = JSON.stringify(a);
+  const { rebase: _rebase, ...identityPayload } = p;
+  const signature = { actorId: userId, groupId: a.p_group_id, entityType: a.p_entity_type, entityId: a.p_entity_id,
+    operationType: type, dependencies: a.p_dependency_ids, payload: structuredClone(identityPayload) };
   const previous = b.receipts.get(a.p_operation_id);
-  if (previous) return b.operationSignatures?.get(a.p_operation_id) === signature ? ok({ ...previous, status: 'duplicate' }) : conflict('operation_identity_mismatch');
+  if (previous) return isDeepStrictEqual(b.operationSignatures?.get(a.p_operation_id), signature) ? ok({ ...previous, status: 'duplicate' }) : conflict('operation_identity_mismatch');
   const m = member(b, a.p_group_id, userId);
   if (!m) return conflict('unauthorized');
   for (const dependency of a.p_dependency_ids) if (!b.receipts.has(dependency)) return conflict('dependency_missing');

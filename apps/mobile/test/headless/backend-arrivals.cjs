@@ -58,7 +58,8 @@ function apply(b, a, userId) {
       ...(correction ? { corrected_at: iso(b), corrected_by: userId, correction_note: p.note || null } : {}) });
     if (['active', 'completed'].includes(session.status)) {
       const state = b.tables.navigation_member_states.find(n => n.navigation_session_id === session.id && n.user_id === targetId);
-      Object.assign(state, { local_status: event.arrived ? 'arrived' : 'pending', arrived_at: event.arrived ? arrivedAt : null, updated_at: iso(b) });
+      Object.assign(state, { local_status: event.arrived ? 'arrived' : correction ? 'missed' : 'pending', arrived_at: event.arrived ? arrivedAt : null, updated_at: iso(b),
+        ...(correction ? { detail: { ...state.detail, correctedAt: iso(b), correctedBy: userId } } : {}) });
       b.publish('navigation_member_states', state);
     }
     if (session.scope_subgroup_id == null && ownsProjection) {
