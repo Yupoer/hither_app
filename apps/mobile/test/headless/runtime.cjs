@@ -14,7 +14,7 @@ exports.run = async function run(jest) {
   const renderErrors = [];
   const reportError = console.error;
   console.error = (...args) => {
-    renderErrors.push(args.map(value => value instanceof Error ? value.stack : String(value)).join(' '));
+    renderErrors.push(args.map(value => value && typeof value.stack === 'string' ? value.stack : String(value)).join(' '));
     if (args.some(value => typeof value === 'string' && value.includes('overlapping act() calls'))) {
       failures.push('React reported overlapping act() calls');
     }
@@ -124,7 +124,7 @@ exports.run = async function run(jest) {
     currentState: 'active',
     addEventListener: (event, fn) => {
       assert(['change', 'blur', 'focus'].includes(event));
-      const listener = { event, fn }; appListeners.add(listener);
+      const listener = { event, fn, stack: new Error().stack }; appListeners.add(listener);
       return { remove: () => appListeners.delete(listener) };
     },
   };
@@ -252,7 +252,7 @@ exports.run = async function run(jest) {
             assert.equal(filter.schema, 'public');
             assert(['member_locations', 'memberships', 'itinerary_items', 'daily_accommodations', 'groups', 'profiles',
               'navigation_sessions', 'navigation_member_states', 'subgroup_invites', 'subgroups', 'gather_point_requests',
-              'coordination_requests', 'coordination_responses', 'destination_arrivals', 'itinerary_operations'].includes(filter.table), `Unknown realtime table ${filter.table}`);
+              'coordination_requests', 'coordination_responses', 'destination_arrivals', 'itinerary_operations', 'commands', 'group_alerts'].includes(filter.table), `Unknown realtime table ${filter.table}`);
             bindings.push({ filter, callback });
             return this;
           },
@@ -288,6 +288,7 @@ exports.run = async function run(jest) {
   stage('auth persisted');
   const app = { userId: session?.user.id ?? null, platform: spec.platform, groupId: spec.screen?.params?.groupId ?? null, sharingEnabled: true,
     destinationService: require('../../src/api/services/DestinationService') };
+  app.external = { input: input => command({ command: { kind: 'input', input } }) };
   const mapRef = { current: null };
   const carouselRef = { current: null };
   const t = key => key;
@@ -337,6 +338,7 @@ exports.run = async function run(jest) {
       } : null,
       native: externalNative.observe(),
       maps: externalMap.observe(), updates: externalUpdates.observe(),
+      auth: { user: authFixture.currentSession()?.user ?? null, autoRefresh: authFixture.inspection().autoRefresh, listeners: authListeners.size },
       renderErrors: renderErrors.slice(-10),
       group: { state: app.group?.state, loading: app.group?.loading, error: app.group?.error,
         dataSource: app.group?.dataSource, snapshotFreshness: app.group?.snapshotFreshness,
@@ -379,10 +381,11 @@ exports.run = async function run(jest) {
     if (kind === 'perform') {
       if (!actions.has(message.command.name)) return fatal(`Unsupported action ${message.command.name}`);
       let result;
-      await act(async () => { result = actions.perform(app, message.command.name, message.command.input); });
+      await act(async () => { result = Promise.resolve(actions.perform(app, message.command.name, message.command.input)).then(value => ({ value }), error => ({ error })); });
       const completed = await result;
       await act(turn);
-      return completed;
+      if (completed.error) throw completed.error;
+      return completed.value;
     }
     if (kind === 'input') {
       const input = message.command.input;
@@ -413,6 +416,9 @@ exports.run = async function run(jest) {
           await app.render();
         } else if (input.kind === 'auth.configureNative') {
           authFixture.configureNative(input.value);
+        } else if (input.kind === 'linking') {
+          assert.equal(typeof input.url, 'string'); assert(host, 'Linking input requires native host');
+          for (const listener of host.linkingListeners) listener({ url: input.url });
         } else if (input.kind === 'permission') {
           assert(['granted', 'denied'].includes(input.status));
           permission.status = input.status;
@@ -483,15 +489,20 @@ exports.run = async function run(jest) {
       requests.clear();
       await turn();
       const residual = { watches: watches.size, channels: channels.size, listeners: appListeners.size,
-        pending: requests.size, timers: jest.getTimerCount(), fatal: [...failures] };
+        pending: requests.size, timers: jest.getTimerCount(), fatal: [...failures], native: externalNative.dispose(), maps: externalMap.dispose(), updates: externalUpdates.observe() };
       for (const db of handles.values()) await db.closeAsync();
       jest.clearAllTimers();
       jest.useRealTimers();
       assert.equal(residual.watches, 0, 'GPS listener leaked');
       assert.equal(residual.channels, 0, 'Realtime channel leaked');
-      assert.equal(residual.listeners, 0, 'AppState listener leaked');
+      assert.equal(residual.listeners, 0, `AppState listener leaked ${[...appListeners].map(listener => listener.stack).join('\n')}`);
       assert.equal(authListeners.size, 0, 'Auth listener leaked');
       if (host) assert.equal(host.linkingListeners.size, 0, 'Linking listener leaked');
+      assert.equal(residual.native.notification, 0, 'Notification listener leaked');
+      assert.equal(residual.native.live, 0, 'Live Activity listener leaked');
+      assert.equal(residual.native.ads, 0, 'Ad listener leaked');
+      assert([0, 2].includes(residual.native.iapProcessListeners), 'Unexpected process-owned IAP listeners');
+      assert.equal(residual.updates.listeners, 0, 'Updates listener leaked');
       finish();
       return residual;
     }

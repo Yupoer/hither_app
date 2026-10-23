@@ -74,7 +74,8 @@ exports.createPresentation = (React, spec, host, app) => {
     NotificationPreferences: '../../src/components/NotificationPreferencesCard', QuickCommands: '../../src/components/QuickCommandsCard',
     CoordinateDestinationSheet: '../../src/components/CoordinateDestinationSheet', FeedbackSheet: '../../src/components/FeedbackSheet',
     CustomQuickCommandSheet: '../../src/components/CustomQuickCommandSheet', AccountSheetContent: '../../src/components/AccountSheet',
-    ProfileOverlay: '../../src/screens/MapScreen/components/ProfileOverlay', SettingsOverlay: '../../src/screens/MapScreen/components/SettingsOverlay' };
+    ProfileOverlay: '../../src/screens/MapScreen/components/ProfileOverlay', SettingsOverlay: '../../src/screens/MapScreen/components/SettingsOverlay',
+    DestinationSearch: '../../src/components/DestinationSearch', KmlImportSheet: '../../src/components/KmlImportSheet', NativeObservers: './observers-store.cjs' };
   const namedExports = { Store: 'StorePane', AccountSheetContent: 'AccountSheetContent', ProfileOverlay: 'ProfileOverlay', SettingsOverlay: 'SettingsOverlay' };
   assert(paths[spec.screen?.name], `Unsupported real screen ${spec.screen?.name}`);
   function Content() {
@@ -99,10 +100,16 @@ exports.createPresentation = (React, spec, host, app) => {
       onPurchaseSuccess: receipt('onPurchaseSuccess'), onRestoreSuccess: receipt('onRestoreSuccess'),
       onEntitlementActivated: receipt('onEntitlementActivated'), onConfigureCustom: receipt('onConfigureCustom'),
       onAccountDeleted: receipt('onAccountDeleted'),
+      onHighlightConsumed: receipt('onHighlightConsumed'), onPick: receipt('onPick'), onOpenComplete: receipt('onOpenComplete'),
+      onConfirmResetPrefs: receipt('onConfirmResetPrefs'), onConfirmLeave: receipt('onConfirmLeave'),
+      onConfirmSignOut: receipt('onConfirmSignOut'), onOpenFeedback: receipt('onOpenFeedback'),
+      onImport: receipt('onImport'), onUpgrade: receipt('onUpgrade'), currentCount: 0, remainingQuota: 10, isPro: session.isPro,
+      onAppNotice: receipt('onAppNotice'),
     };
     return React.createElement(React.Fragment, null, React.createElement(Observe), !session.initializing && React.createElement(Screen, {
       ...componentProps, ...screen.props, navigation: host.navigation, route: { name: screen.name, params: screen.params },
     }));
   }
-  return { element: React.createElement(PreferencesProvider, null, React.createElement(SessionProvider, null, React.createElement(Content))), observation };
+  const AppErrorBoundary = require('../../src/components/AppErrorBoundary').default;
+  return { element: React.createElement(AppErrorBoundary, null, React.createElement(PreferencesProvider, null, React.createElement(SessionProvider, null, React.createElement(Content)))), observation };
 };

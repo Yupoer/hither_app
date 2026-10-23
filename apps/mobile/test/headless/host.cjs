@@ -45,6 +45,15 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       stop() { const animation = animations.get(id); animations.delete(id); animation?.callback?.({ finished: false }); }, reset() {} };
   };
   const flatten = value => Array.isArray(value) ? Object.assign({}, ...value.map(flatten)) : value || {};
+  const availability = node => {
+    let pointerEvents = true;
+    for (let current = node; current; current = current.parent) {
+      if (typeof current.type !== 'string' || !current.type.startsWith('host:')) continue;
+      if (flatten(current.props.style).display === 'none') return { hidden: true, acceptsInput: false };
+      if (current.props.pointerEvents === 'none') pointerEvents = false;
+    }
+    return { hidden: false, acceptsInput: pointerEvents };
+  };
   const rn = strict('react-native', {
     ...hosts, Platform: { OS: spec.platform, Version: 26, select: values => values[spec.platform] ?? values.native ?? values.default },
     AppState: appState, Alert: { alert: (...args) => alertQueue.push(args) },
@@ -56,7 +65,9 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     Appearance: { setColorScheme() {}, getColorScheme: () => 'dark', addChangeListener: () => ({ remove() {} }) },
     useColorScheme: () => 'dark', Keyboard: { dismiss() {}, addListener: () => ({ remove() {} }) },
     AccessibilityInfo: { isReduceMotionEnabled: async () => true, isBoldTextEnabled: async () => false,
-      addEventListener: () => ({ remove() {} }), announceForAccessibility() {} },
+      addEventListener: () => ({ remove() {} }), announceForAccessibility() {},
+      setAccessibilityFocus: value => receipts.push({ host: 'AccessibilityInfo', method: 'setAccessibilityFocus', value }) },
+    findNodeHandle: node => node ? 1 : null,
     I18nManager: { isRTL: false }, PixelRatio: { get: () => 1, getFontScale: () => 1, roundToNearestPixel: value => value },
     BackHandler: { addEventListener: () => ({ remove() {} }) },
     Animated: { Value: AnimatedValue, View: hosts.View, timing: nativeAnimation, spring: nativeAnimation,
@@ -86,8 +97,9 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     withRepeat: value => value, withSequence: (...values) => values.at(-1), runOnJS: fn => fn,
     interpolate: (value, input, output) => output[0] + (value - input[0]) / (input.at(-1) - input[0]) * (output.at(-1) - output[0]),
     interpolateColor: (_value, _input, output) => output[0],
-    Extrapolation: { CLAMP: 'clamp' }, Easing: { linear: value => value, ease: value => value, quad: value => value,
-      out: fn => fn, inOut: fn => fn, bezier: () => value => value },
+    Extrapolation: { CLAMP: 'clamp' }, Easing: { linear: value => value, ease: value => value, quad: value => value, cubic: value => value,
+      out: fn => fn, in: fn => fn, inOut: fn => fn, bezier: () => value => value },
+    LinearTransition: { springify: () => ({ animation: 'LinearTransition' }) },
   });
   for (const name of ['FadeIn', 'FadeInRight', 'FadeOut', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
   jest.doMock('react-native-reanimated', () => animation);
@@ -119,6 +131,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Slider','Picker','TextField','Menu','Divider','Section','Form','Label','ProgressView','ContextMenu','BottomSheet','Group','RNHostView'];
   jest.doMock('@expo/ui/swift-ui', () => strict('swift-ui', Object.fromEntries(swiftNames.map(name => [name, make(`SwiftUI.${name}`)]))));
   jest.doMock('@expo/ui', () => strict('expo-ui', { Host: make('ExpoUI.Host'), Switch: make('ExpoUI.Switch') }));
+  jest.doMock('@expo/ui/community/segmented-control', () => ({ __esModule: true, default: make('SegmentedControl'), SegmentedControl: make('SegmentedControl') }));
   const modifierNames = ['accessibilityLabel','accessibilityHint','buttonStyle','buttonBorderShape','controlSize','font','disabled','frame','foregroundColor',
     'labelStyle','offset','padding','tint','background','cornerRadius','opacity','clipShape','shadow','glassEffect','fixedSize','lineLimit','multilineTextAlignment','environment','tag','rotationEffect','scaleEffect',
     'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator'];
@@ -153,13 +166,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
       const property = kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
       assert(property, `Unknown host event ${kind}`);
-      const visible = node => {
-        for (let current = node; current; current = current.parent) {
-          if (typeof current.type !== 'string' || !current.type.startsWith('host:')) continue;
-          if (current.props.pointerEvents === 'none' || flatten(current.props.style).display === 'none') return false;
-        }
-        return true;
-      };
+      const visible = node => availability(node).acceptsInput;
       const match = node => visible(node) && typeof node.type === 'string' && node.type.startsWith('host:') &&
         (testId ? node.props.testID === testId : node.props.accessibilityLabel === label || node.props.modifiers?.some(m => m.modifier === 'accessibilityLabel' && m.args[0] === label));
       const scope = within ? root.root.findAll(match => typeof match.type === 'string' && match.props.testID === within) : [root.root];
@@ -169,7 +176,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       const unique = [...new Set(endpoints)];
       assert.equal(unique.length, 1, `Expected one ${kind} endpoint ${testId ?? label}, got ${unique.length}`);
       const node = unique[0];
-      const disabled = Boolean(node.props.disabled || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0]));
+      const disabled = Boolean(node.props.disabled || (kind === 'changeText' && node.props.editable === false) || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0]));
       receipts.push({ host: node.type, kind, testId, label, disabled });
       if (disabled) return { invoked: false, reason: 'disabled' };
       const event = kind === 'nativeEvent' ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'event')) : value;
@@ -178,11 +185,12 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     },
     observe(root) {
       return root.root.findAll(node => typeof node.type === 'string' && node.type.startsWith('host:')).map(node => ({
+        ...availability(node),
         kind: node.type, testId: node.props.testID, label: node.props.accessibilityLabel ?? node.props.modifiers?.find(m => m.modifier === 'accessibilityLabel')?.args[0],
         disabled: Boolean(node.props.disabled || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0])),
         value: node.props.value, text: node.children.filter(child => typeof child === 'string').join(''),
-        secureTextEntry: node.props.secureTextEntry, selected: node.props.accessibilityState?.selected,
-      })).filter(node => node.testId || node.label || node.text);
+        secureTextEntry: node.props.secureTextEntry, selected: node.props.accessibilityState?.selected, checked: node.props.accessibilityState?.checked,
+      })).filter(node => !node.hidden && (node.testId || node.label || node.text));
     },
   };
   return host;
