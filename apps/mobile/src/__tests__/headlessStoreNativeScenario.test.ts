@@ -123,6 +123,24 @@ describe.each(['ios', 'android'])('external-only Store/native scenarios on %s', 
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  it.each(['named', 'default', 'lowercase'])('W06 initializes the actual adapter with the %s SDK export', async adsFactory => {
+    native = createExternalNative({ platform, strict, profile: { adsFactory } });
+    jest.doMock('react-native-google-mobile-ads', () => native.modules['react-native-google-mobile-ads']);
+    const ads = require('../native/rewardedAds');
+    await expect(ads.ensureRewardedAdsReady()).resolves.toEqual({ available: true });
+    expect(native.observe().receipts.map((call: { method: string }) => call.method)).toEqual(['ads.requestInfoUpdate', 'ads.initialize']);
+  });
+
+  it('W06 B05 fails closed for explicitly unavailable native packages', async () => {
+    native = createExternalNative({ platform, strict, profile: { iap: false, ads: false } });
+    jest.doMock('expo-iap', () => native.modules['expo-iap']);
+    jest.doMock('react-native-google-mobile-ads', () => native.modules['react-native-google-mobile-ads']);
+    await expect(require('../native/rewardedAds').ensureRewardedAdsReady()).resolves.toEqual({ available: false, reason: 'missing_module' });
+    const purchases = require('../native/purchases');
+    await expect(purchases.requestPremiumSubscription('app.hither.premium.annual', 'fixture-account')).resolves.toEqual({ status: 'unavailable', reason: 'native_iap_not_linked' });
+    expect(native.observe().receipts).toEqual([]);
+  });
+
   it('W08 W09 distinguishes no fill, dismissed and timeout and disposes SDK listeners', async () => {
     const ads = require('../native/rewardedAds');
     const controller = ads.createRewardedAdController(platform);
@@ -177,6 +195,29 @@ describe.each(['ios', 'android'])('external-only Store/native scenarios on %s', 
     state.currentState = 'background'; locked = true;
     await notifications.scheduleLocalNotification({ ...input, data: { kind: 'approach', eventId: 'approach-2' } });
     expect(native.observe().scheduled).toHaveLength(before + (platform === 'ios' ? 1 : 2));
+  });
+
+  it('N15 persists the actual journey delivery claim across reload and releases a failed claim for retry', async () => {
+    const storage = new Map<string, string>();
+    jest.doMock('@react-native-async-storage/async-storage', () => ({
+      getItem: async (key: string) => storage.get(key) ?? null,
+      setItem: async (key: string, value: string) => { storage.set(key, value); },
+    }));
+    const notifications = require('../native/notifications');
+    const ledger = require('../state/journeyNotificationLedger');
+    const deliver = () => notifications.scheduleLocalNotification({ title: 'Journey started' });
+    await Promise.all([ledger.deliverJourneyEventOnce('operator:event-1', deliver), ledger.deliverJourneyEventOnce('operator:event-1', deliver)]);
+    expect(native.observe().scheduled).toHaveLength(1);
+    jest.resetModules();
+    const restored = require('../state/journeyNotificationLedger');
+    await restored.deliverJourneyEventOnce('operator:event-1', deliver);
+    expect(native.observe().scheduled).toHaveLength(1);
+    await native.input({ kind: 'notificationsConfigure', patch: { permission: 'denied' } });
+    await restored.deliverJourneyEventOnce('operator:event-retry', deliver);
+    expect(native.observe().scheduled).toHaveLength(1);
+    await native.input({ kind: 'notificationsConfigure', patch: { permission: 'granted' } });
+    await restored.deliverJourneyEventOnce('operator:event-retry', deliver);
+    expect(native.observe().scheduled).toHaveLength(2);
   });
 
   it('L01 L02 exposes actual native activity state and ends only the specified handle', async () => {

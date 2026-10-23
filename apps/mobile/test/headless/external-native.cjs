@@ -98,7 +98,9 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   } });
   const adsModule = boundary('react-native-google-mobile-ads', {
     __esModule: true,
-    MobileAds: mobileAdsFactory, mobileAds: mobileAdsFactory, default: mobileAdsFactory,
+    MobileAds: !profile.adsFactory || profile.adsFactory === 'named' ? mobileAdsFactory : undefined,
+    mobileAds: !profile.adsFactory || profile.adsFactory === 'lowercase' ? mobileAdsFactory : undefined,
+    default: !profile.adsFactory || profile.adsFactory === 'default' ? mobileAdsFactory : undefined,
     AdsConsent: {
       requestInfoUpdate: async () => {
         effect('ads.requestInfoUpdate'); fail(ads, 'consentError');
@@ -218,9 +220,8 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     }),
     HitherLiveActivity: profile.liveActivity === false ? null : liveModule,
   };
-  const modules = { 'expo-notifications': notificationsModule };
-  if (profile.iap !== false) modules['expo-iap'] = iapModule;
-  if (profile.ads !== false) modules['react-native-google-mobile-ads'] = adsModule;
+  const modules = { 'expo-notifications': notificationsModule, 'expo-iap': profile.iap === false ? null : iapModule,
+    'react-native-google-mobile-ads': profile.ads === false ? null : adsModule };
   return {
     modules, nativeModules,
     handles: kind => ['iapConfigure', 'iapPurchase', 'iapError', 'adsConfigure', 'adEvent', 'notificationsConfigure',
