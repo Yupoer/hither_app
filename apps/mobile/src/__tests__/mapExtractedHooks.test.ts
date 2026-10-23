@@ -20,7 +20,7 @@ import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 
 jest.mock('../state/journeyCompletion', () => ({ enqueueJourneyCompletion: jest.fn() }));
-jest.mock('../native/notifications', () => ({ notifyThisDeviceAutoComplete: jest.fn() }));
+jest.mock('../native/notifications', () => ({ notifyThisDeviceAutoComplete: jest.fn(async () => undefined) }));
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() }, Share: { share: jest.fn() } }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('../api/client', () => ({
@@ -340,6 +340,37 @@ describe('MapScreen gathering completion', () => {
     mounted.value.promptCompleteAfterArrival(completionStop);
     expect(Alert.alert).not.toHaveBeenCalled();
     expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    await mounted.unmount();
+  });
+
+  it.each(['destination', 'snapshot'])('reconciles a stop already closed in the %s without a session', async source => {
+    const closedStop = { ...completionStop, closedAt: '2026-10-23T00:00:00Z' };
+    const input = { ...manualCompletionInput(), resolveCurrentNavigationSessionId: () => null,
+      allScopedDestinations: [closedStop] };
+    const mounted = await mountHook(useGatheringCompletion, input);
+    await act(async () => {
+      mounted.value.promptCompleteAfterArrival(source === 'destination' ? closedStop : completionStop);
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).toHaveBeenCalledWith(expect.objectContaining({ id: 'stop', closedAt: expect.any(String) }), 0);
+    expect(input.stopRemovedDestination).toHaveBeenCalledWith('stop', null);
+    expect(input.loadHistory).toHaveBeenCalledTimes(1);
+    await mounted.unmount();
+  });
+
+  it('blocks manual completion of an open stop without a session', async () => {
+    const input = { ...manualCompletionInput(), resolveCurrentNavigationSessionId: () => null };
+    const mounted = await mountHook(useGatheringCompletion, input);
+    await act(async () => {
+      mounted.value.promptCompleteAfterArrival(completionStop);
+      expect(await mounted.value.runCompleteGatheringStop(completionStop)).toBe(false);
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(enqueueJourneyCompletion).not.toHaveBeenCalled();
+    expect(input.startArrivalCardExit).not.toHaveBeenCalled();
+    expect(input.stopRemovedDestination).not.toHaveBeenCalled();
+    expect(input.loadHistory).not.toHaveBeenCalled();
     await mounted.unmount();
   });
 

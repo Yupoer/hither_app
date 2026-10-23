@@ -202,7 +202,9 @@ export function useGatheringCompletion({
     includeSelf?: boolean;
   }) => {
     const sessionId = resolveCurrentNavigationSessionId(destination);
-    if (canEditItinerary && !sessionId) return;
+    const stopAlreadyComplete = !!destination.closedAt
+      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
+    if (canEditItinerary && !stopAlreadyComplete && !sessionId) return;
     const promptContext = arrivalContext;
     const isPromptCurrent = () => {
       const latest = latestAuthorityRef.current;
@@ -228,8 +230,6 @@ export function useGatheringCompletion({
       includeUserId: opts?.includeSelf ? user?.id : null,
       travelerFallback: t('group.travelerFallback'),
     });
-    const stopAlreadyComplete = !!destination.closedAt
-      || allScopedDestinations.find((d) => d.id === destination.id)?.closedAt != null;
     const prompt = resolveCompletePrompt({
       isLeader: canEditItinerary,
       missingMemberNames: counts.missingMemberNames,

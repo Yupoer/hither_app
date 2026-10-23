@@ -6777,7 +6777,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "b035a21d0b4f79bfea96fef017afda12e22536b943d64db4426023cccdf6da66"
+    "hash": "e5f2bae0db03037fb01cbe167e27d01cbe56e18e15d9533d5b2754c56d82c296"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -7965,7 +7965,7 @@
     "file": "src/screens/MapScreen/hooks/useGatheringCompletion.ts",
     "kind": "export",
     "name": "useGatheringCompletion",
-    "hash": "3ff227bc6a18f7276da2d4e9934211fb179d0582a40eeb601e8637b9eb986b30"
+    "hash": "64a81e064af06783add7ac9670611e730ea66fa52b117b6a7ab2d2d5ab81b08b"
   },
   {
     "file": "src/screens/MapScreen/hooks/useGatheringCompletion.ts",

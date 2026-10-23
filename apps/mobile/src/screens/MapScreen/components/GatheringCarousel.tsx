@@ -862,7 +862,7 @@ export function GatheringCarousel({
                     ) : null}
                   </View>
                   )}
-                  {cardExpanded && isLeader && canEditItinerary && !dest.closedAt
+                  {cardExpanded && canEditItinerary && !dest.closedAt
                     && sharedTargetId === dest.id ? (
                     <Pressable
                       style={[styles.navBtn, { flexGrow: 0, flexBasis: 'auto', minHeight: 44,

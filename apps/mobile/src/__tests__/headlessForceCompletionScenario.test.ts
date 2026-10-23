@@ -81,6 +81,33 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
       expect((await leader.observe()).durable.operations).toEqual([]);
     } finally { await world.close(); }
   });
+
+  it('MAP-GATHER-03 a subgroup leader can force complete only their active scoped destination', async () => {
+    const world = new World();
+    try {
+      const subgroupId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+      world.backend.tables.subgroups.push({ id: subgroupId, group_id: GROUP_ID, name: 'Peer subgroup', mode: 'led', leader_id: PEER, parent_subgroup_id: null });
+      world.backend.memberships.find((row: { user_id: string }) => row.user_id === PEER).subgroup_id = subgroupId;
+      world.backend.itinerary[0].subgroup_id = subgroupId;
+      const started = world.backend.execute('fixture', { kind: 'rpc', name: 'apply_core_operation_v3', userId: PEER, steps: [],
+        args: { p_operation_id: 'subgroup-start', p_group_id: GROUP_ID, p_actor_id: PEER, p_entity_type: 'active_gathering',
+          p_entity_id: GROUP_ID, p_entity_version: 0, p_operation_type: 'start_gathering', p_sequence: 1,
+          p_dependency_ids: [], p_created_at: new Date(world.now).toISOString(),
+          p_payload: { action: 'start', subgroupId, activeDestinationId: DESTINATION, navigationRequestId: 'subgroup-session', navigationSessionId: null } } });
+      expect(started.error).toBeNull();
+      expect(started.data.status).toBe('accepted');
+      const sessionId = [...world.backend.sessions.values()][0].id;
+      const leader = await map(world, PEER, 'subgroup-leader');
+      expect(has(await leader.observe(), `gather-complete-${DESTINATION}`)).toBe(true);
+      await complete(leader);
+      expect((await leader.observe()).external.alertDetails.at(-1)?.message).toBe('已抵達成員（0/1），是否要完成此集合點？');
+      await leader.input({ kind: 'alert', index: 1 });
+      await world.waitFor(leader, () => !!world.backend.itinerary[0].closed_at, 'subgroup completion accepted');
+      expect(world.backend.itinerary[0].closed_by_session_id).toBe(sessionId);
+      expect(world.backend.sessions.get(sessionId)).toMatchObject({ status: 'completed', scope_subgroup_id: subgroupId });
+      expect(world.backend.tables.destination_arrivals).toHaveLength(0);
+    } finally { await world.close(); }
+  });
 });
 
 export {};
