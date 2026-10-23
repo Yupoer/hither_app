@@ -367,6 +367,7 @@ exports.run = async function run(jest) {
         operations: app.groupId ? await core.listOpenCoreOperations(app.groupId) : [],
         snapshot: app.groupId ? await require('../../src/state/coreDataStore').readCoreSnapshot(app.groupId) : null },
       external: { watches: watches.size, channels: channels.size, listeners: appListeners.size, alerts: alertQueue.length,
+        alertDetails: alertQueue.map(([title, message, buttons]) => ({ title, message, buttons: buttons?.map(button => button.text) ?? [] })),
         backgroundTasks: [...backgroundTasks].map(([name, options]) => ({ name, options })), heldActTurn: Boolean(releaseActTurn) },
       pending: [...requests.keys()], timers: jest.getTimerCount(), fatal: [...failures], now: Date.now(),
     };
