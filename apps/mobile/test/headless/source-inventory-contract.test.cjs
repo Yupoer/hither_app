@@ -20,6 +20,11 @@ try {
   assert(changed.added.some(entry => entry.name === 'save'));
   fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export {save as persist} from "./other";');
   assert(scan(directory, ts).some(entry => entry.kind === 'export-alias'));
+  const multiline = 'export {\n  save as persist,\n  remove\n} from "./other";';
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), multiline);
+  const linux = scan(directory, ts);
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), multiline.replace(/\n/g, '\r\n'));
+  assert.deepEqual(compare(linux, scan(directory, ts)), {added:[],removed:[]});
   fs.writeFileSync(path.join(directory, 'src/service.ts'), 'function Screen() { useMountEffect(start); }');
   assert(scan(directory, ts).some(entry => entry.kind === 'lifecycle' && entry.name === 'useMountEffect'));
   fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export const adapter = { start() { return 1; } } satisfies Adapter;');

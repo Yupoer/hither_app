@@ -19,7 +19,7 @@ function scan(root, ts = require('typescript')) {
     const source = ts.createSourceFile(file, fs.readFileSync(path.join(root, file), 'utf8'), ts.ScriptTarget.Latest, true);
     const add = (kind, name, node) => {
       const body = printer.printNode(ts.EmitHint.Unspecified, node, source).replace(/\r\n/g, '\n');
-      entries.push({file,kind,name,hash:crypto.createHash('sha256').update(body).digest('hex')});
+      entries.push({file,kind,name:name.replace(/\r\n/g, '\n'),hash:crypto.createHash('sha256').update(body).digest('hex')});
     };
     function visit(node) {
       const exported = node.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword);

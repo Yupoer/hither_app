@@ -248,37 +248,37 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  generateInviteCode,\r\n  requireUserId,\r\n  requireLocalActorId,\r\n  requireAuthenticatedSession,\r\n  runAuthenticatedOperation,\r\n  orThrow,\r\n  isNetworkRequestError,\r\n  sleep,\r\n}",
+    "name": "{\n  generateInviteCode,\n  requireUserId,\n  requireLocalActorId,\n  requireAuthenticatedSession,\n  runAuthenticatedOperation,\n  orThrow,\n  isNetworkRequestError,\n  sleep,\n}",
     "hash": "ac05dff8eeda7204a896c71bbc6af98a663c25d00f7fca7129fabac5125d7873"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  classifyOperationError,\r\n  getOperationErrorMessage,\r\n  mapOperationErrorToMessage,\r\n  operationErrorMessage,\r\n}",
+    "name": "{\n  classifyOperationError,\n  getOperationErrorMessage,\n  mapOperationErrorToMessage,\n  operationErrorMessage,\n}",
     "hash": "0e64841a31e33c1c214dd9787bdf4e84e06a596a0414f343afb86236b27a2667"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  OperationErrorKind,\r\n  OperationErrorClassification,\r\n  OperationErrorContext,\r\n}",
+    "name": "{\n  OperationErrorKind,\n  OperationErrorClassification,\n  OperationErrorContext,\n}",
     "hash": "3f89a63285f5c048c287852cc4e360f674ea9f3dcb293ad29a2226d1726c58c0"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  createAuthRecovery,\r\n  configureDefaultAuthRecovery,\r\n  getDefaultAuthRecovery,\r\n}",
+    "name": "{\n  createAuthRecovery,\n  configureDefaultAuthRecovery,\n  getDefaultAuthRecovery,\n}",
     "hash": "a1f3f39ac6e3b437428fdcd912c4c856333921cb3c20e64f3c70d74ff02cdecd"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  AuthAdapterResult,\r\n  AuthRecoveryAdapter,\r\n  AuthRecoveryController,\r\n  AuthSessionLike,\r\n  AuthenticatedOperationOptions,\r\n}",
+    "name": "{\n  AuthAdapterResult,\n  AuthRecoveryAdapter,\n  AuthRecoveryController,\n  AuthSessionLike,\n  AuthenticatedOperationOptions,\n}",
     "hash": "9950aeadc0cccc23aa39304a42f69107f4739b690c0d400221c6a10ac22fc058"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  withAuthenticatedTransport,\r\n  DEFAULT_READ_ONLY_RPC_NAMES,\r\n}",
+    "name": "{\n  withAuthenticatedTransport,\n  DEFAULT_READ_ONLY_RPC_NAMES,\n}",
     "hash": "908f3125c9647957622f83c8461a23e444b51e460d9d3496920afd8185a6eef6"
   },
   {
@@ -290,25 +290,25 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  mapGroup,\r\n  mapMember,\r\n  mapSubgroup,\r\n  mapSubgroupInvite,\r\n  createGroup,\r\n  updateGroupAvatar,\r\n  joinGroup,\r\n  getGroupState,\r\n  getGroupRecoverySnapshot,\r\n  setJourneyStatus,\r\n  setJourneyTarget,\r\n  setStragglerConfig,\r\n  reportStraggler,\r\n  updateGroupTripDetails,\r\n  setSolo,\r\n  selfSplit,\r\n  selfMerge,\r\n  getMyJoinedGroups,\r\n  getCachedMyJoinedGroups,\r\n  invalidateMyJoinedGroupsCache,\r\n  leaveGroups,\r\n  kickGroupMember,\r\n}",
+    "name": "{\n  mapGroup,\n  mapMember,\n  mapSubgroup,\n  mapSubgroupInvite,\n  createGroup,\n  updateGroupAvatar,\n  joinGroup,\n  getGroupState,\n  getGroupRecoverySnapshot,\n  setJourneyStatus,\n  setJourneyTarget,\n  setStragglerConfig,\n  reportStraggler,\n  updateGroupTripDetails,\n  setSolo,\n  selfSplit,\n  selfMerge,\n  getMyJoinedGroups,\n  getCachedMyJoinedGroups,\n  invalidateMyJoinedGroupsCache,\n  leaveGroups,\n  kickGroupMember,\n}",
     "hash": "64fc39158b05c8465f4be007bce06d131bd8e1314c7a510ff41f06218a7d5e70"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  JoinedGroupInfo,\r\n  GetMyJoinedGroupsOptions,\r\n  GroupRow,\r\n  MembershipRow,\r\n  SubgroupRow,\r\n  SubgroupInviteRow,\r\n  ProfileRow,\r\n  LocationRow,\r\n}",
+    "name": "{\n  JoinedGroupInfo,\n  GetMyJoinedGroupsOptions,\n  GroupRow,\n  MembershipRow,\n  SubgroupRow,\n  SubgroupInviteRow,\n  ProfileRow,\n  LocationRow,\n}",
     "hash": "c33d61ea113c72e4bdc08718bf8202e634f621ed1b4ce26a518e42d20c0ab969"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  mapDestination,\r\n  addDestination,\r\n  addDestinationsBatch,\r\n  getKmlImportQuota,\r\n  deleteDestination,\r\n  completeGatheringStop,\r\n  reorderDestinations,\r\n  setDestinationMeetTime,\r\n  updateDestinationEmojiColor,\r\n}",
+    "name": "{\n  mapDestination,\n  addDestination,\n  addDestinationsBatch,\n  getKmlImportQuota,\n  deleteDestination,\n  completeGatheringStop,\n  reorderDestinations,\n  setDestinationMeetTime,\n  updateDestinationEmojiColor,\n}",
     "hash": "57748a452890d0f3b732e2cc17380301784f45aeb2fdde9661dfa7a6f2e7d582"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  getPremiumProjection,\r\n  getPremiumAppAccountToken,\r\n  applyVerifiedSubscription,\r\n  applyVerifiedTripPass,\r\n}",
+    "name": "{\n  getPremiumProjection,\n  getPremiumAppAccountToken,\n  applyVerifiedSubscription,\n  applyVerifiedTripPass,\n}",
     "hash": "44b5e9559813a47a95d9f75bc53c572c3658b1f2bd625cb98c91a8bd2b8d0e4c"
   },
   {
@@ -320,19 +320,19 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  mapDailyAccommodation,\r\n  listDailyAccommodations,\r\n  getDailyAccommodationForDate,\r\n  setDailyAccommodation,\r\n  clearDailyAccommodation,\r\n  setAccommodationAutoAdd,\r\n}",
+    "name": "{\n  mapDailyAccommodation,\n  listDailyAccommodations,\n  getDailyAccommodationForDate,\n  setDailyAccommodation,\n  clearDailyAccommodation,\n  setAccommodationAutoAdd,\n}",
     "hash": "128bde21bd03bbb25f83a5a45ce7088ec57a482ba5e23686c09bb1dd85d3fd49"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  DailyAccommodation as DailyAccommodationDto,\r\n  SetDailyAccommodationInput,\r\n  SetDailyAccommodationResult,\r\n}",
+    "name": "{\n  DailyAccommodation as DailyAccommodationDto,\n  SetDailyAccommodationInput,\n  SetDailyAccommodationResult,\n}",
     "hash": "8464611917555641328fac226b88412c454ba2b3abed32aaa55c68d1d08fef89"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  mapFavoritePlace,\r\n  listFavoritePlaces,\r\n  findFavoriteByExactMatch,\r\n  saveFavoritePlace,\r\n  unsaveFavoritePlace,\r\n  unsaveFavoriteByExactMatch,\r\n}",
+    "name": "{\n  mapFavoritePlace,\n  listFavoritePlaces,\n  findFavoriteByExactMatch,\n  saveFavoritePlace,\n  unsaveFavoritePlace,\n  unsaveFavoriteByExactMatch,\n}",
     "hash": "4b0b141bb59c9072c849ea9da5b93d851413decab660f7a9799227976e719364"
   },
   {
@@ -344,13 +344,13 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  recordVisitedWaypoint,\r\n  fetchVisitedWaypoints,\r\n  deleteVisitedWaypoint,\r\n}",
+    "name": "{\n  recordVisitedWaypoint,\n  fetchVisitedWaypoints,\n  deleteVisitedWaypoint,\n}",
     "hash": "d99adc4892e6afd5574255d65519f849dd93232d2952d0d5d9f5fee3a13de39b"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  submitGatherPointRequest,\r\n  fetchPendingGatherPointRequests,\r\n  resolveGatherPointRequest,\r\n  resolveGatherPointRequestResilient,\r\n  fetchDestinationArrivals,\r\n  setDestinationArrival,\r\n  setDestinationArrivalAt,\r\n  correctDestinationArrival,\r\n}",
+    "name": "{\n  submitGatherPointRequest,\n  fetchPendingGatherPointRequests,\n  resolveGatherPointRequest,\n  resolveGatherPointRequestResilient,\n  fetchDestinationArrivals,\n  setDestinationArrival,\n  setDestinationArrivalAt,\n  correctDestinationArrival,\n}",
     "hash": "5129829c7520e849f8217d133351118de724164977d9b90e691a87898adb1cb4"
   },
   {
@@ -362,7 +362,7 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  mapCoordinationRequest,\r\n  mapCoordinationResponse,\r\n  mapItineraryOperation,\r\n  createCoordinationRequest,\r\n  respondToCoordinationRequest,\r\n  overrideCoordinationRequest,\r\n  resolveCoordinationRequestDeadline,\r\n  resolveDueCoordinationRequests,\r\n  cancelCoordinationRequest,\r\n  fetchCoordinationRequests,\r\n  fetchCoordinationResponses,\r\n  fetchItineraryOperations,\r\n}",
+    "name": "{\n  mapCoordinationRequest,\n  mapCoordinationResponse,\n  mapItineraryOperation,\n  createCoordinationRequest,\n  respondToCoordinationRequest,\n  overrideCoordinationRequest,\n  resolveCoordinationRequestDeadline,\n  resolveDueCoordinationRequests,\n  cancelCoordinationRequest,\n  fetchCoordinationRequests,\n  fetchCoordinationResponses,\n  fetchItineraryOperations,\n}",
     "hash": "693c7bf5fd9394e902bce45bbb7d86fdf46f076bab2ea6ffefcf6c96bc7505c8"
   },
   {
@@ -374,25 +374,25 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  updateNickname,\r\n  updateProfile,\r\n  saveOnboardingProfile,\r\n  setProStatus,\r\n  redeemPromoCode,\r\n}",
+    "name": "{\n  updateNickname,\n  updateProfile,\n  saveOnboardingProfile,\n  setProStatus,\n  redeemPromoCode,\n}",
     "hash": "d96dce48293194919e3aedf6e945d49386af4a88f4ec1886252f123eb6ac7728"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  getTripEntitlement,\r\n  applyVerifiedPurchase,\r\n  restoreEntitlements,\r\n}",
+    "name": "{\n  getTripEntitlement,\n  applyVerifiedPurchase,\n  restoreEntitlements,\n}",
     "hash": "0752948fb77522b9042ace38b023d389a402fd07965a30c6a3f50a6801c1804e"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  getStoreSnapshot,\r\n  createRewardSession,\r\n  updateRewardSessionStatus,\r\n  redeemStoreProduct,\r\n  mapStoreSnapshot,\r\n}",
+    "name": "{\n  getStoreSnapshot,\n  createRewardSession,\n  updateRewardSessionStatus,\n  redeemStoreProduct,\n  mapStoreSnapshot,\n}",
     "hash": "b34bf68cb23fc8fef2fc8eb1559515d1e1a6325d2ab51641ce87b1a8341ca0b5"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  applyCoreOperation,\r\n  fetchCoreEntityVersions,\r\n}",
+    "name": "{\n  applyCoreOperation,\n  fetchCoreEntityVersions,\n}",
     "hash": "a6ed3d35d342f8477fbf88ea5f214b2a16ac1830730e4051ff45bff146748e0c"
   },
   {
@@ -404,25 +404,25 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  inviteToSubgroup,\r\n  acceptSubgroupInvite,\r\n  declineSubgroupInvite,\r\n  fetchMyInvites,\r\n  fetchSentInvites,\r\n}",
+    "name": "{\n  inviteToSubgroup,\n  acceptSubgroupInvite,\n  declineSubgroupInvite,\n  fetchMyInvites,\n  fetchSentInvites,\n}",
     "hash": "be9cf012fc4827c38003f0ebb12f6a45bf0adcfd0639398666a6d07e87adbe27"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  mapNotificationPreferences,\r\n  savePushToken,\r\n  sendCommand,\r\n  getNotificationPreferences,\r\n  setNotificationPreferences,\r\n}",
+    "name": "{\n  mapNotificationPreferences,\n  savePushToken,\n  sendCommand,\n  getNotificationPreferences,\n  setNotificationPreferences,\n}",
     "hash": "8a6b6b1e81d8876af1fdae6a3b279f04484a27a8c7367671e0157b6332403184"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  requestGroupLocationRefresh,\r\n  getGroupLocationRefreshAcknowledgements,\r\n  updateMyLocation,\r\n}",
+    "name": "{\n  requestGroupLocationRefresh,\n  getGroupLocationRefreshAcknowledgements,\n  updateMyLocation,\n}",
     "hash": "cef9a120ac7c8e76175cf1cef36d358f3d4f939f1c17e1bc54223dae9cf45f15"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\r\n  upsertLiveActivitySession,\r\n  deleteLiveActivitySession,\r\n  deleteMyLiveActivitySessions,\r\n  deleteMyLiveActivitySessionsForGroups,\r\n}",
+    "name": "{\n  upsertLiveActivitySession,\n  deleteLiveActivitySession,\n  deleteMyLiveActivitySessions,\n  deleteMyLiveActivitySessionsForGroups,\n}",
     "hash": "cd8d26a55a1be2d6fcefa876da8aa1235e78d2fc64a28c63fa4d93f7dd396446"
   },
   {
@@ -1298,7 +1298,7 @@
   {
     "file": "src/api/services/ProfileService.ts",
     "kind": "export-alias",
-    "name": "{\r\n  redeemPromoCode,\r\n  setProStatus,\r\n}",
+    "name": "{\n  redeemPromoCode,\n  setProStatus,\n}",
     "hash": "baea2e61a4f224cae1162c34a2bb5e30bd856fc9129581bf7e633a08a607cd96"
   },
   {
@@ -1424,7 +1424,7 @@
   {
     "file": "src/api/services/_helpers.ts",
     "kind": "export-alias",
-    "name": "{\r\n  classifyOperationError,\r\n  type OperationErrorClassification,\r\n}",
+    "name": "{\n  classifyOperationError,\n  type OperationErrorClassification,\n}",
     "hash": "c340553f0a710c43b5e3df9cac81ead735e7a547cba037ceeae40da3d24687b9"
   },
   {
@@ -2360,7 +2360,7 @@
   {
     "file": "src/components/GroupMap.tsx",
     "kind": "export-alias",
-    "name": "{\r\n  DEFAULT_LATITUDE_DELTA,\r\n  LOCATE_ALTITUDE,\r\n  LOCATE_ZOOM,\r\n  PLACE_ALTITUDE,\r\n  PLACE_ZOOM,\r\n  latOffsetForVisibleBand,\r\n}",
+    "name": "{\n  DEFAULT_LATITUDE_DELTA,\n  LOCATE_ALTITUDE,\n  LOCATE_ZOOM,\n  PLACE_ALTITUDE,\n  PLACE_ZOOM,\n  latOffsetForVisibleBand,\n}",
     "hash": "27a93bfb2539fc5be184d18fb1eec35c51fc26195fc6864041f1d8e6fb4feed5"
   },
   {
@@ -3398,7 +3398,7 @@
   {
     "file": "src/entitlements.ts",
     "kind": "export-alias",
-    "name": "{\r\n  ANONYMOUS_ACCESS_DAYS,\r\n  ANONYMOUS_MAX_GROUP_MEMBERS,\r\n  ANONYMOUS_ACCESS_MS,\r\n  computeAnonymousExpiresAt,\r\n  isAnonymousAccessExpired,\r\n  anonymousLeaderRequiresRegistration,\r\n}",
+    "name": "{\n  ANONYMOUS_ACCESS_DAYS,\n  ANONYMOUS_MAX_GROUP_MEMBERS,\n  ANONYMOUS_ACCESS_MS,\n  computeAnonymousExpiresAt,\n  isAnonymousAccessExpired,\n  anonymousLeaderRequiresRegistration,\n}",
     "hash": "0a5c2769243006cb57772cea801d06c56727cc5fe5c9ba4dab83794121263f2f"
   },
   {
@@ -3614,19 +3614,19 @@
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  GROUP_FEATURE_TOUR_STORAGE_KEY,\r\n  TOUR_STEPS,\r\n  buildTourSteps,\r\n  type TourControlAvailability,\r\n  type TourStepDef,\r\n  type TourStepId,\r\n  type TourTargetId,\r\n}",
+    "name": "{\n  GROUP_FEATURE_TOUR_STORAGE_KEY,\n  TOUR_STEPS,\n  buildTourSteps,\n  type TourControlAvailability,\n  type TourStepDef,\n  type TourStepId,\n  type TourTargetId,\n}",
     "hash": "e5f49ad1838011d8ae3db0cd4336ddd4d42577399cfcb17984ac72ecaa0b3716"
   },
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  readGroupFeatureTourCompletedLocal,\r\n  writeGroupFeatureTourCompletedLocal,\r\n  completeGroupFeatureTour,\r\n  clearGroupFeatureTour,\r\n  isTourCompletedFromSources,\r\n  shouldStartGroupFeatureTour,\r\n  retryPendingTourAccountSync,\r\n  isTourAccountSyncPending,\r\n  readTourAccountSyncPending,\r\n  parseTourAccountSyncPending,\r\n  readTourResetIntent,\r\n  writeTourResetIntent,\r\n  GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,\r\n  GROUP_FEATURE_TOUR_RESET_INTENT_KEY,\r\n  type TourAccountSyncPending,\r\n}",
+    "name": "{\n  readGroupFeatureTourCompletedLocal,\n  writeGroupFeatureTourCompletedLocal,\n  completeGroupFeatureTour,\n  clearGroupFeatureTour,\n  isTourCompletedFromSources,\n  shouldStartGroupFeatureTour,\n  retryPendingTourAccountSync,\n  isTourAccountSyncPending,\n  readTourAccountSyncPending,\n  parseTourAccountSyncPending,\n  readTourResetIntent,\n  writeTourResetIntent,\n  GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,\n  GROUP_FEATURE_TOUR_RESET_INTENT_KEY,\n  type TourAccountSyncPending,\n}",
     "hash": "82976aeede7930775cb2bb8e47a1e6b4a6c93930116e1e775c57c2215275f948"
   },
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  createTourControllerState,\r\n  currentStep,\r\n  advanceTour,\r\n  retreatTour,\r\n  isFinalStep,\r\n  startTour,\r\n  stopTour,\r\n  stepOrder,\r\n  stepCount,\r\n  type TourControllerState,\r\n}",
+    "name": "{\n  createTourControllerState,\n  currentStep,\n  advanceTour,\n  retreatTour,\n  isFinalStep,\n  startTour,\n  stopTour,\n  stepOrder,\n  stepCount,\n  type TourControllerState,\n}",
     "hash": "96863014152094211a35c980d6872e96e6cd127f41dccc0a4649f50cefec5203"
   },
   {
@@ -3638,7 +3638,7 @@
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  placeTourCard,\r\n  holeRadius,\r\n  holeKindForTarget,\r\n  clipRectToWindow,\r\n  expectedSheetChromeTop,\r\n  snapTourRectY,\r\n  isSheetTourTarget,\r\n  SHEET_PANE_TAB_WRAP_MARGIN_TOP,\r\n}",
+    "name": "{\n  placeTourCard,\n  holeRadius,\n  holeKindForTarget,\n  clipRectToWindow,\n  expectedSheetChromeTop,\n  snapTourRectY,\n  isSheetTourTarget,\n  SHEET_PANE_TAB_WRAP_MARGIN_TOP,\n}",
     "hash": "dd8a3f3385a47ce3443181b626514304a8936bd8e39d1ff332edd55adbd2c23c"
   },
   {
@@ -3662,13 +3662,13 @@
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  ADD_PLACE_TOUR_STORAGE_KEY,\r\n  ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,\r\n  ADD_PLACE_TOUR_SETTLE_MS,\r\n  ADD_PLACE_TOUR_STEPS,\r\n  addPlaceTourAccountSyncPendingKey,\r\n  addPlaceTourStorageKey,\r\n  areAddPlaceTourTargetsReady,\r\n  clearAddPlaceTour,\r\n  completeAddPlaceTour,\r\n  isAddPlaceTourCompletedFromSources,\r\n  isMeasuredTourRect,\r\n  parseAddPlaceTourAccountSyncPending,\r\n  readAddPlaceTourAccountSyncPending,\r\n  readAddPlaceTourCompletedLocal,\r\n  retryPendingAddPlaceTourAccountSync,\r\n  shouldStartAddPlaceTour,\r\n  writeAddPlaceTourCompletedLocal,\r\n  type AddPlaceTourAccountSyncPending,\r\n  type AddPlaceTourStep,\r\n  type AddPlaceTourStepId,\r\n  type AddPlaceTourTargetId,\r\n}",
+    "name": "{\n  ADD_PLACE_TOUR_STORAGE_KEY,\n  ADD_PLACE_TOUR_ACCOUNT_SYNC_PENDING_KEY,\n  ADD_PLACE_TOUR_SETTLE_MS,\n  ADD_PLACE_TOUR_STEPS,\n  addPlaceTourAccountSyncPendingKey,\n  addPlaceTourStorageKey,\n  areAddPlaceTourTargetsReady,\n  clearAddPlaceTour,\n  completeAddPlaceTour,\n  isAddPlaceTourCompletedFromSources,\n  isMeasuredTourRect,\n  parseAddPlaceTourAccountSyncPending,\n  readAddPlaceTourAccountSyncPending,\n  readAddPlaceTourCompletedLocal,\n  retryPendingAddPlaceTourAccountSync,\n  shouldStartAddPlaceTour,\n  writeAddPlaceTourCompletedLocal,\n  type AddPlaceTourAccountSyncPending,\n  type AddPlaceTourStep,\n  type AddPlaceTourStepId,\n  type AddPlaceTourTargetId,\n}",
     "hash": "a02b5211b01ed6d958a5e9fa2644cbee9fe30422ec4f981b083f8c89ab311470"
   },
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  ROUTE_REORDER_TOUR_STORAGE_KEY,\r\n  ROUTE_REORDER_TOUR_ACCOUNT_SYNC_PENDING_KEY,\r\n  ROUTE_REORDER_TOUR_STEPS,\r\n  routeReorderTourStorageKey,\r\n  routeReorderTourAccountSyncPendingKey,\r\n  parseRouteReorderTourAccountSyncPending,\r\n  readRouteReorderTourCompletedLocal,\r\n  writeRouteReorderTourCompletedLocal,\r\n  readRouteReorderTourAccountSyncPending,\r\n  retryPendingRouteReorderTourAccountSync,\r\n  completeRouteReorderTour,\r\n  clearRouteReorderTour,\r\n  shouldStartRouteReorderTour,\r\n  routeTourScrollOffset,\r\n  useRouteReorderTour,\r\n  type RouteReorderTourTargetId,\r\n  type RouteReorderTourStep,\r\n  type RouteReorderTourAccountSyncPending,\r\n}",
+    "name": "{\n  ROUTE_REORDER_TOUR_STORAGE_KEY,\n  ROUTE_REORDER_TOUR_ACCOUNT_SYNC_PENDING_KEY,\n  ROUTE_REORDER_TOUR_STEPS,\n  routeReorderTourStorageKey,\n  routeReorderTourAccountSyncPendingKey,\n  parseRouteReorderTourAccountSyncPending,\n  readRouteReorderTourCompletedLocal,\n  writeRouteReorderTourCompletedLocal,\n  readRouteReorderTourAccountSyncPending,\n  retryPendingRouteReorderTourAccountSync,\n  completeRouteReorderTour,\n  clearRouteReorderTour,\n  shouldStartRouteReorderTour,\n  routeTourScrollOffset,\n  useRouteReorderTour,\n  type RouteReorderTourTargetId,\n  type RouteReorderTourStep,\n  type RouteReorderTourAccountSyncPending,\n}",
     "hash": "b073954626e510a9a78e6fce817a1fef63f7bc11270b7bdbb8b860e4169cf90a"
   },
   {
@@ -4304,7 +4304,7 @@
   {
     "file": "src/native/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  GroupActivityState,\r\n  ActivityHandle,\r\n  ActivityStartResult,\r\n}",
+    "name": "{\n  GroupActivityState,\n  ActivityHandle,\n  ActivityStartResult,\n}",
     "hash": "c00781331bca380734840875eb6189b960c28b3e682762629d2a93a7d4021b00"
   },
   {
@@ -4316,7 +4316,7 @@
   {
     "file": "src/native/index.ts",
     "kind": "export-alias",
-    "name": "{\r\n  PurchaseResult,\r\n  PurchaseResultStatus,\r\n  PremiumStoreProduct,\r\n  StorePurchase,\r\n}",
+    "name": "{\n  PurchaseResult,\n  PurchaseResultStatus,\n  PremiumStoreProduct,\n  StorePurchase,\n}",
     "hash": "fd56fda1763c6a72935fa3c87df9aa31ff9f7339144db1bd59c32fc34a674527"
   },
   {
