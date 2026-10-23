@@ -162,6 +162,31 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
+  it('MAP-ROUTE-01 actual subgroup editor captures its own lane and never reorders the main itinerary', async () => {
+    const world = new World();
+    const subgroupId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const mainId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    try {
+      world.backend.groups.get(GROUP_ID).trip_days = 2;
+      world.backend.tables.subgroups.push({ id: subgroupId, group_id: GROUP_ID, name: 'Side route', leader_id: PEER, created_at: new Date(world.now).toISOString() });
+      world.backend.memberships.find((row: { user_id: string }) => row.user_id === PEER).subgroup_id = subgroupId;
+      world.backend.itinerary[0].subgroup_id = subgroupId;
+      world.backend.itinerary.push({ ...world.backend.itinerary[0], id: mainId, subgroup_id: null, title: 'Main stop' });
+      const device = await map(world, PEER);
+      await expand(world, device);
+      await run(device, 'map.tab', { index: 1 });
+      expect(has(await device.observe(), 'map-edit-itinerary')).toBe(false);
+      await run(device, 'map.route.open-subgroup');
+      await device.input({ kind: 'animation', finished: true });
+      await run(device, 'map.route.move.open', { destinationId: DESTINATION });
+      await run(device, 'map.route.move.day', { day: 2 });
+      await world.settle();
+      expect(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION)).toMatchObject({ day: 2, subgroup_id: subgroupId });
+      expect(world.backend.itinerary.find((row: { id: string }) => row.id === mainId)).toMatchObject({ day: 1, position: 0, subgroup_id: null });
+      expect((await device.observe()).durable.snapshot.destinations.find((row: { id: string }) => row.id === mainId).day).toBe(1);
+    } finally { await world.close(); }
+  });
+
   it('MAP-DEST-10 F02 F04 the actual star normalizes identity and toggles the same owner favorite', async () => {
     const world = new World();
     try {
