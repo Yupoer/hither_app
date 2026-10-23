@@ -107,10 +107,13 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('react-native-reanimated', () => animation);
   jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: React.forwardRef(function ReanimatedSwipeable(props, ref) {
     const [open, setOpen] = React.useState(false);
-    const methods = { close: () => { setOpen(false); props.onSwipeableClose?.('right'); } };
-    React.useImperativeHandle(ref, () => methods);
+    const currentProps = React.useRef(props);
+    currentProps.current = props;
+    const methods = React.useRef(null);
+    if (!methods.current) methods.current = { close: () => { setOpen(false); currentProps.current.onSwipeableClose?.('right'); } };
+    React.useImperativeHandle(ref, () => methods.current, []);
     return React.createElement('host:ReanimatedSwipeable', { ...props, onSwipeableOpen: direction => { setOpen(true); props.onSwipeableOpen?.(direction); } },
-      props.children, open && props.renderRightActions?.({ value: 1 }, { value: 1 }, methods));
+      props.children, open && props.renderRightActions?.({ value: 1 }, { value: 1 }, methods.current));
   }) }));
   jest.doMock('@react-native-community/slider', () => ({ __esModule: true, default: make('Slider') }));
   jest.doMock('expo-linear-gradient', () => ({ LinearGradient: make('LinearGradient') }));

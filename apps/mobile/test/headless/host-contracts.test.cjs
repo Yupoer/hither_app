@@ -84,6 +84,33 @@ test('animation completion is explicit and disabled gesture callbacks stay block
   } finally { await act(async () => root.unmount()); }
 });
 
+test('swipe actions reopen after cancellation and retain the mounted native handle', async () => {
+  const { host, modules } = fixture();
+  const Swipeable = modules.get('react-native-gesture-handler/ReanimatedSwipeable').default;
+  const ref = React.createRef();
+  let owner = null;
+  let closed = 0;
+  const element = version => React.createElement(Swipeable, { ref, testID: 'swipe',
+    onSwipeableOpen: () => { if (owner && owner !== ref.current) owner.close(); owner = ref.current; },
+    onSwipeableClose: () => { closed = version; if (owner === ref.current) owner = null; },
+    renderRightActions: (_progress, _translation, methods) => React.createElement('host:Pressable', { testID: 'delete', onPress: methods.close }),
+  });
+  let root;
+  await act(async () => { root = create(element(1)); });
+  const mounted = ref.current;
+  try {
+    await act(async () => host.call(root, { kind: 'nativeEvent', testId: 'swipe', value: { event: 'onSwipeableOpen' } }));
+    await act(async () => root.update(element(2)));
+    await act(async () => host.call(root, { kind: 'press', testId: 'delete' }));
+    assert.equal(closed, 2);
+    assert.equal(owner, null);
+    assert.equal(ref.current, mounted);
+    assert(!host.observe(root).some(node => node.testId === 'delete'));
+    await act(async () => host.call(root, { kind: 'nativeEvent', testId: 'swipe', value: { event: 'onSwipeableOpen' } }));
+    assert(host.observe(root).some(node => node.testId === 'delete'));
+  } finally { await act(async () => root.unmount()); }
+});
+
 test('navigation replacement, reset and a new account navigator retain only the current stack', async () => {
   const f = fixture();
   installNavigation({ jest: f.jest, host: f.host });
