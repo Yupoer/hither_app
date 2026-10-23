@@ -167,7 +167,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     const world = new World();
     try {
       const device = await map(world);
-      await device.input({ kind: 'mapsConfigure', patch: { searchResults: [{ id: 'station', name: 'Provider station', coordinates: { latitude: 25.03, longitude: 121.55 } }] } });
+      await device.input({ kind: 'mapsConfigure', patch: { searchResults: [{ id: 'station', providerPlaceId: 'mapkit:station', name: 'Provider station', coordinates: { latitude: 25.03, longitude: 121.55 } }] } });
       await run(device, 'map.search.open');
       await device.input({ kind: 'animation', finished: true });
       await run(device, 'map.search.query', { value: ' Station ' });
@@ -181,7 +181,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary).toHaveLength(1);
       await run(device, 'map.place.first-stop');
       await world.settle();
-      expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Provider station')).toMatchObject({ provider_place_id: 'station', day: 1 });
+      expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Provider station')).toMatchObject({ provider_place_id: 'mapkit:station', day: 1 });
       expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Provider station').position).toBeLessThan(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION).position);
       expect(has(await device.observe(), 'confirm-place-name')).toBe(false);
     } finally { await world.close(); }
@@ -335,7 +335,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
-  it('MAP-NAV-04 actual follower request-start sends a command without creating a leader session', async () => {
+  it('MAP-GATHER-07 actual follower request-start sends a command without creating a leader session', async () => {
     const world = new World();
     try {
       const device = await map(world, PEER);
