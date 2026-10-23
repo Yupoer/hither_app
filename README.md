@@ -80,6 +80,20 @@ npm test
 5. Set an active meeting point as the Leader.
 6. Confirm that the Member map displays the destination and distance state.
 
+## Development and release workflow
+
+Hither uses local review and direct `master` delivery for solo development. A GitHub Issue is optional. A PR is not a routine delivery step.
+
+1. Check `origin/master`, the current branch, existing worktrees, and uncommitted files. Use a task worktree based on the latest remote `master` when other work is in progress. Preserve unrelated changes and stashes.
+2. Implement the task, inspect the complete diff, and review behavior, data access, permissions, compatibility, accessibility, and tests. Fix findings locally. Run the affected package and CI checks, including the applicable acceptance map and changed-function coverage. Do not rerun an unchanged valid result.
+3. Confirm that the task branch contains only reviewed work. Push a `deliver/<task>` branch without a PR and wait for its `ci-required` result. The branch CI checks the whole task diff against `origin/master`, including the full acceptance map. Fix failures on the same branch and rerun the affected local review.
+4. Check that the reviewed branch still starts from the current remote `master`. If `master` moved, integrate it into the task branch and rerun affected checks and CI. Fast-forward a clean local `master` to the passing task commit, then push normally. Confirm the remote SHA and its `master` CI result. A failed post-push CI requires a new reviewed fix and another passing run. Never reset or force-push another owner's work.
+5. For a requested full iOS product release, pin the delivered SHA. Compare all changes since the binary and latest successful update actually in use. Deploy and verify any required Supabase migration or Function before publishing dependent app code. Documentation-only and backend-only changes need no app update.
+6. If every app change is compatible with the installed production binary, publish an iOS `production` OTA from a clean checkout of that SHA and verify its update group, runtime, channel, and source. If native code, dependencies, permissions, plugins, entitlements, or another compatibility gap requires a binary, use the existing `mac-codex` SSH handoff to run the Mac `hither-release` flow. It performs an EAS local iOS build, IPA validation, TestFlight upload, and Apple status readback. Keep the same source SHA on both machines. Do not publish an extra OTA for a binary-only release.
+7. Report Git, CI, backend, OTA or TestFlight, and physical-device results separately. `uploaded` and `processing` do not mean the build is installable. Clean up only task-owned resources after confirming that no unshipped work remains.
+
+The Windows release entry is `C:/Users/alexs/.codex/skills/hither-release/SKILL.md`. It uses `Publish-HitherMaster.ps1` for reviewed-path commits and pushes, and `Invoke-HitherMacRelease.ps1` for the existing Mac release handoff. A Git-only request stops after Git verification. OTA-only and build-only requests keep their stated limits. A plain commit or push does not start a release.
+
 ## OpenAI Codex and GPT-5.6 Usage
 
 This project was built with assistance from OpenAI Codex and GPT-5.6.

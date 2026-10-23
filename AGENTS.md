@@ -1,14 +1,10 @@
 # Hither 工作規則
 
-- Git repo 為 hither_app；mobile 位於 apps/mobile。以 remote default branch 為整合基準。
-- 完整任務使用 workflow-controller：sol-plan-publish → implement-integration-pr → sol-review-land；未通過回實作，通過才 merge，接著同步及清理。只有 Release skill 使用 gpt-6-astra low；其餘 workflow phase 使用 gpt-5.6-luna max。
-- GitHub Issue／PR 是任務狀態來源。一個 parent 一個 branch／worktree／PR，不同 parent 可並行。只讀當前任務需要的規格與資料。
-- 在專用 worktree 修改；主工作樹 dirty 不阻塞獨立工作，也不得為交接 stash 無關修改。合併後主工作樹安全 fast-forward；其他 active worktree 由 owner 在乾淨交接點同步 master。
-- 完整流程已授權同範圍規劃、Issue／PR、修復、push、merge 與已交付資源清理，不逐階段詢問。未決重大產品取捨、未授權發布、不可恢復的資料丟棄或必要憑證仍須處理。
-- 以現有 CI／package scripts 驗證受影響範圍；保留 required checks、適用的 acceptance-map 與 coverage。相同 head/base 的有效結果不重跑。文件／規則改動不跑無關產品測試。
-- 交付順序為 commit → push 任務分支 → 建立／更新以 master 為目標的 PR → 適用 CI／required checks 與獨立審查通過 → merge master。完整交付已授權時直接完成合併，不停在「CI 已綠」另問一次；不得先直接 push master 再補 PR 合併。
-- CI 或審查失敗就在同一分支／PR 修復，推送後驗證最新 head；合併前重新核對 head、master base、required checks 與 branch protection，不以舊提交的綠燈替代。base 更新時補驗受影響範圍。合併後核實遠端 master 包含 merge commit，再安全 fast-forward 乾淨的 master checkout；dirty checkout 保留並記錄待同步。
-- commit／push 不觸發發布。Native、app config、plugins、native dependencies 變更需相容 binary；OTA／build／submit 僅按明確指定的平台與 channel 執行。
-- 合併後驗證 remote SHA，移除已交付且無 active owner 的 task worktree、feature branch 與已核實的暫存／備份。先檢查 tracked、untracked、ignored、stash；Issue closed 不等於所有本地內容都可刪。
-- 僅本次已授權整理範圍內的未交付內容關聯 GitHub recovery Issue／專用 worktree；無關 WIP 原位保留。正式文件、測試、憑證與發布資產不視作任務垃圾。
-- 交付與清理各自回報；清理未完成繼續處理，不重啟已完成實作。不可把 Jest／typecheck 或 build 成功當成 native 裝置驗收。
+- Git repo 為 `hither_app`；mobile 位於 `apps/mobile`。以遠端 `master` 為整合基準。詳細步驟見 [README](README.md#development-and-release-workflow)。
+- 完整開發先在本地隔離工作樹實作、檢查差異、審查並修復，再執行受影響測試。GitHub Issue 可用於追蹤，但不以 Issue、PR 或雲端審查作為每個任務的固定階段。
+- 審查涵蓋行為、資料與權限、相容性、無障礙和測試語意。非平凡邏輯變更補行為測試；保留適用的 acceptance-map、changed-function coverage 與 CI gate。相同來源的有效結果不重跑。
+- 把已審查提交推至 `deliver/<task>` 分支，等待該提交的 `ci-required` 通過。核對遠端 `master` 沒有前進後，在乾淨的 `master` 工作樹 fast-forward 到同一提交並普通 push。若 GitHub 保護規則阻擋就保留結果並回報，不繞過保護或 force push。遠端 `master` CI 失敗時修復並重驗，不宣稱交付完成。
+- 保留無關 dirty work、staged files、stash、ignored files 和其他 active worktree。只整理已確認屬於本任務且已交付的資源；不得 reset、auto-stash 或清理其他 owner 的工作。
+- 完整 iOS 產品交付在固定遠端 SHA 後判斷全部尚未交付差異。現有 binary 能完整承載時發布 `production` OTA；有原生或相容性缺口時透過既有 `mac-codex` SSH 交接，在 Mac 執行 EAS local build、驗證 IPA 並上傳 TestFlight。後端相依變更先部署並驗證。純文件、純後端或明確 Git-only 範圍不製造 OTA 或 IPA。
+- 完整發布以 [hither-release](C:/Users/alexs/.codex/skills/hither-release/SKILL.md) 的現有交付入口執行；明確指定的平台、channel 或 Git-only／OTA-only／build-only 範圍優先。commit 與 push 本身不會自動發布。
+- 分開核實並回報本地審查、測試、遠端 master、CI、OTA 或 TestFlight 狀態與實機驗收。Jest、typecheck、archive 或 Apple processing 均不等於實機已驗收。
