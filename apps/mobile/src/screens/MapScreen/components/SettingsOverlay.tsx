@@ -335,17 +335,20 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           {onGoHome ? (
             <NavRow
               title={t('map.backToHome')}
+              testID="settings-go-home"
               onPress={onGoHome}
               styles={styles}
             />
           ) : null}
           <NavRow
             title={t('group.leave')}
+            testID="settings-leave"
             onPress={onConfirmLeave}
             styles={styles}
           />
           <NavRow
             title={t('settings.signOut')}
+            testID="settings-signout"
             onPress={onConfirmSignOut}
             styles={styles}
           />
@@ -426,6 +429,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <TouchableOpacity
             style={styles.accountBtn}
             onPress={onArchiveAllForTest}
+            testID="settings-archive"
             accessibilityRole="button"
             activeOpacity={0.7}
           >
