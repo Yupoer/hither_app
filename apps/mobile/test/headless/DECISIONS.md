@@ -25,3 +25,11 @@ Backend review found permissive fixture contracts despite passing contract tests
 Host review checks hidden and non-editable controls, account navigation reset, unknown external calls and listener disposal. Cleanup observes residual subscriptions after real unmount; clearing fixture collections first would conceal leaks.
 
 Production defects discovered by these scenarios need a focused regression and a minimal fix, or an explicit unresolved issue. Tests must not change external event ordering or grant premium fixtures merely to avoid a failing application path.
+
+## Findings from complete callers
+
+The real Map add-place callback invokes a remote refresh after its durable write. That refresh exposed a missing pending-itinerary projection in the durable snapshot. A service-only enqueue check had not exercised this caller. The fix must retain pending intent across cold reads and remain correct when the foreground hook projects the same operations again.
+
+Session entitlement refreshes must belong to the account and membership that created their callback, including callbacks invoked only after a team switch. Personal profile refresh can still update the same account while discarding obsolete team projections. Real provider and purchase-recovery integration checks guard against refresh callback identity causing subscription loops.
+
+Native support follows the repository's actual platform exports. An available iOS native background path and Android's Expo fallback are different scenarios. A platform flag alone cannot establish that either branch ran.
