@@ -203,6 +203,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [passwordRecoverySuccess, setPasswordRecoverySuccess] = useState(false);
   const [tripEntitlement, setTripEntitlement] = useState<TripEntitlement | null>(null);
+  const tripEntitlementRef = useRef(tripEntitlement);
+  tripEntitlementRef.current = tripEntitlement;
+  const membershipRevisionRef = useRef(0);
   const [premiumProjection, setPremiumProjection] = useState<PremiumProjection>(
     EMPTY_PREMIUM_PROJECTION,
   );
@@ -250,6 +253,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void clearLiveActivities({ localOnly: true }).catch(() => undefined);
       const previousId = identityActorIdRef.current ?? premiumUserIdRef.current;
       identityActorIdRef.current = null;
+      membershipRevisionRef.current += 1;
       premiumUserIdRef.current = null;
       if (previousId) void clearPremiumProjectionCache(previousId);
       if (active) {
@@ -267,6 +271,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const adoptActor = (actorId: string) => {
       const previousId = identityActorIdRef.current;
       identityActorIdRef.current = actorId;
+      if (previousId !== actorId) membershipRevisionRef.current += 1;
       if (!previousId || previousId === actorId) return;
       premiumUserIdRef.current = null;
       setMembershipState(null);
@@ -616,6 +621,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [deleteAccount, user?.id]);
 
   const leaveGroupWithJourneyCleanup = useCallback(() => {
+    const revision = ++membershipRevisionRef.current;
+    const actorId = identityActorIdRef.current;
+    const isCurrent = () => revision === membershipRevisionRef.current && actorId === identityActorIdRef.current;
     setLocationAccessContext(null, false);
     void stopBackgroundJourney();
     void purgeLocationOutbox().catch(() => undefined);
@@ -626,9 +634,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // null group keeps the personal grant visible after leaving a team.
     void getPremiumProjection(null)
       .then((projection) => {
-        setPremiumProjection(projection);
+        if (isCurrent()) setPremiumProjection(projection);
       })
       .catch(() => {
+        if (!isCurrent()) return;
         setPremiumProjection((previous) => ({
           ...previous,
           teamPremiumActive: false,
@@ -639,15 +648,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const refreshEntitlement = useCallback(
     async (groupId?: string | null): Promise<TripEntitlement | null> => {
       const gid = groupId ?? membership?.group.id ?? null;
+      const revision = membershipRevisionRef.current;
+      const actorId = identityActorIdRef.current;
+      const isCurrent = () => revision === membershipRevisionRef.current && actorId === identityActorIdRef.current;
       try {
         if (gid) {
           const trip = await getTripEntitlement(gid);
+          if (!isCurrent()) return tripEntitlementRef.current;
           setTripEntitlement(trip);
           try {
             const projection = await getPremiumProjection(gid);
+            if (!isCurrent()) return tripEntitlementRef.current;
             if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
               const uid = premiumUserIdRef.current;
               if (uid) await clearPremiumProjectionCache(uid);
+              if (!isCurrent()) return tripEntitlementRef.current;
               setPremiumProjection({
                 ...projection,
                 personalPremiumActive: false,
@@ -655,7 +670,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             } else {
               const uid = premiumUserIdRef.current;
               if (uid) await writePremiumProjectionCache(uid, projection);
-              setPremiumProjection(projection);
+              if (isCurrent()) setPremiumProjection(projection);
             }
           } catch {
             // Keep the last server projection; legacy trip state never unlocks
@@ -670,12 +685,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           teamPremiumActive: false,
         }));
         await restoreEntitlements(null);
+        if (!isCurrent()) return tripEntitlementRef.current;
         setTripEntitlement(null);
         try {
           const projection = await getPremiumProjection(null);
+          if (!isCurrent()) return tripEntitlementRef.current;
           if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
             const uid = premiumUserIdRef.current;
             if (uid) await clearPremiumProjectionCache(uid);
+            if (!isCurrent()) return tripEntitlementRef.current;
             setPremiumProjection({
               ...projection,
               personalPremiumActive: false,
@@ -684,7 +702,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           } else {
             const uid = premiumUserIdRef.current;
             if (uid) await writePremiumProjectionCache(uid, projection);
-            setPremiumProjection(projection);
+            if (isCurrent()) setPremiumProjection(projection);
           }
         } catch {
           // Fail closed when there is no authoritative projection.
@@ -692,10 +710,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         return null;
       } catch {
         // Network failures keep the previous cache; do not invent premium.
-        return tripEntitlement;
+        return tripEntitlementRef.current;
       }
     },
-    [membership?.group.id, tripEntitlement],
+    [membership?.group.id],
   );
 
   const ensurePremiumAccess = useCallback(async (): Promise<boolean> => {
@@ -725,6 +743,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const setMembership = useCallback(
     (next: Membership) => {
       const actorId = identityActorIdRef.current;
+      const revision = ++membershipRevisionRef.current;
+      const isCurrent = () => actorId === identityActorIdRef.current && revision === membershipRevisionRef.current;
       setMembershipState(next);
       // Clear prior trip premium until server responds for the new group.
       setTripEntitlement(null);
@@ -734,18 +754,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }));
       void getTripEntitlement(next.group.id)
         .then((trip) => {
-          if (identityActorIdRef.current !== actorId) return;
+          if (!isCurrent()) return;
           setTripEntitlement(trip);
           return getPremiumProjection(next.group.id)
             .then(async (projection) => {
-              if (identityActorIdRef.current !== actorId) return;
+              if (!isCurrent()) return;
               const uid = premiumUserIdRef.current;
               if (projection.error === 'subscription_required' && !projection.personalPremiumActive) {
                 if (uid) await clearPremiumProjectionCache(uid);
               } else if (uid) {
                 await writePremiumProjectionCache(uid, projection);
               }
-              if (identityActorIdRef.current === actorId) setPremiumProjection(projection);
+              if (isCurrent()) setPremiumProjection(projection);
             })
             .catch(() => {
               // Do not use the legacy trip snapshot as a Premium fallback.

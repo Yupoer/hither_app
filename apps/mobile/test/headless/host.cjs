@@ -49,7 +49,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     let pointerEvents = true;
     for (let current = node; current; current = current.parent) {
       if (typeof current.type !== 'string' || !current.type.startsWith('host:')) continue;
-      if (flatten(current.props.style).display === 'none') return { hidden: true, acceptsInput: false };
+      if (Object.assign({}, flatten(current.props.style)).display === 'none') return { hidden: true, acceptsInput: false };
       if (current.props.pointerEvents === 'none') pointerEvents = false;
     }
     return { hidden: false, acceptsInput: pointerEvents };
@@ -63,8 +63,8 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     StyleSheet: { create: value => value, flatten, hairlineWidth: 1, absoluteFill: {}, absoluteFillObject: {} },
     useWindowDimensions: () => dimensions, Dimensions: { get: () => dimensions, addEventListener: () => ({ remove() {} }) },
     Appearance: { setColorScheme() {}, getColorScheme: () => 'dark', addChangeListener: () => ({ remove() {} }) },
-    useColorScheme: () => 'dark', Keyboard: { dismiss() {}, addListener: () => ({ remove() {} }) },
-    AccessibilityInfo: { isReduceMotionEnabled: async () => true, isBoldTextEnabled: async () => false,
+    useColorScheme: () => 'dark', Keyboard: { dismiss() {}, metrics: () => undefined, isVisible: () => false, addListener: () => ({ remove() {} }) },
+    AccessibilityInfo: { isReduceMotionEnabled: async () => true, isBoldTextEnabled: async () => false, isHighTextContrastEnabled: async () => false,
       addEventListener: () => ({ remove() {} }), announceForAccessibility() {},
       setAccessibilityFocus: value => receipts.push({ host: 'AccessibilityInfo', method: 'setAccessibilityFocus', value }) },
     findNodeHandle: node => node ? 1 : null,
@@ -103,13 +103,16 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   });
   for (const name of ['FadeIn', 'FadeInRight', 'FadeOut', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
   jest.doMock('react-native-reanimated', () => animation);
-  jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: make('ReanimatedSwipeable') }));
-  jest.doMock('@react-native-community/datetimepicker', () => ({ __esModule: true, default: make('DateTimePicker'),
-    DateTimePickerAndroid: { open: value => receipts.push({ host: 'DateTimePickerAndroid', method: 'open', value: { ...value, onChange: undefined } }), dismiss: async () => {} } }));
+  jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: React.forwardRef((props, ref) => {
+    const [open, setOpen] = React.useState(false);
+    const methods = { close: () => { setOpen(false); props.onSwipeableClose?.('right'); } };
+    React.useImperativeHandle(ref, () => methods);
+    return React.createElement('host:ReanimatedSwipeable', { ...props, onSwipeableOpen: direction => { setOpen(true); props.onSwipeableOpen?.(direction); } },
+      props.children, open && props.renderRightActions?.({ value: 1 }, { value: 1 }, methods));
+  }) }));
   jest.doMock('@react-native-community/slider', () => ({ __esModule: true, default: make('Slider') }));
   jest.doMock('expo-linear-gradient', () => ({ LinearGradient: make('LinearGradient') }));
   jest.doMock('expo-clipboard', () => strict('Clipboard', { setStringAsync: async value => receipts.push({ host: 'Clipboard', method: 'setStringAsync', value }) }));
-  jest.doMock('expo-document-picker', () => strict('DocumentPicker', { getDocumentAsync: async () => ({ canceled: true, assets: null }) }));
   jest.doMock('react-native-maps', () => ({ __esModule: true, default: make('MapView'), Marker: make('Marker'), Polyline: make('Polyline') }));
   jest.doMock('expo', () => strict('expo', { requireNativeView: name => { assert.equal(name, 'HitherSheetPaneTabs'); return make(name); } }));
   const gesture = () => {
@@ -139,10 +142,6 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('expo-task-manager', () => strict('TaskManager', { __esModule: true,
     defineTask: (name, callback) => { assert(!tasks.has(name), `Task already defined ${name}`); tasks.set(name, callback); },
     isTaskDefined: name => tasks.has(name), isAvailableAsync: async () => true }));
-  jest.doMock('expo-web-browser', () => strict('WebBrowser', { maybeCompleteAuthSession: () => ({ type: 'dismiss' }), openAuthSessionAsync: async () => ({ type: 'cancel' }) }));
-  jest.doMock('expo-apple-authentication', () => strict('AppleAuthentication', { isAvailableAsync: async () => false,
-    AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 } }));
-  jest.doMock('expo-auth-session', () => strict('AuthSession', { makeRedirectUri: () => 'hither://auth/callback' }));
   jest.doMock('expo-haptics', () => strict('Haptics', { selectionAsync: async () => {}, impactAsync: async () => {}, notificationAsync: async () => {},
     ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Soft: 'soft', Rigid: 'rigid' }, NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' } }));
   jest.doMock('expo-status-bar', () => ({ StatusBar: make('StatusBar') }));
@@ -151,6 +150,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('expo-glass-effect', () => strict('Glass', { GlassView: make('GlassView'), isLiquidGlassAvailable: () => false }));
   const host = {
     receipts, linkingListeners, tasks, animations,
+    nativeView(name) { assert.equal(name, 'HitherMenu'); return make(name); },
     input(input) {
       assert.equal(input.kind, 'animation'); assert.equal(typeof input.finished, 'boolean');
       const ids = input.id == null ? [...animations.keys()] : [input.id];
@@ -160,9 +160,22 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         animation.callback?.({ finished: input.finished });
       }
     },
-    call(root, { kind, testId, label, value, within }) {
+    call(root, { kind, testId, label, value, within, phase, success }) {
+      if (kind === 'gesture') {
+        assert(['onBegin', 'onStart', 'onUpdate', 'onChange', 'onEnd', 'onFinalize'].includes(phase));
+        const nodes = root.root.findAll(node => typeof node.type === 'string' && node.type.startsWith('host:') && node.props.testID === testId);
+        assert.equal(nodes.length, 1, `Expected one gesture target ${testId}`);
+        let detector = nodes[0];
+        while (detector && detector.type !== 'host:GestureDetector') detector = detector.parent;
+        assert(detector, `No external gesture detector for ${testId}`);
+        const gestures = [detector.props.gesture].flat(Infinity).filter(gesture => Object.hasOwn(gesture, `${phase}Input`));
+        assert.equal(gestures.length, 1, `Expected one gesture ${phase} callback`);
+        receipts.push({ host: 'GestureDetector', kind, testId, phase, value, success });
+        gestures[0][`${phase}Input`][0](value, success ?? true);
+        return { invoked: true };
+      }
       const nativeEvents = ['onLongPress', 'onPress', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
-        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur'];
+        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen'];
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
       const property = kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
       assert(property, `Unknown host event ${kind}`);

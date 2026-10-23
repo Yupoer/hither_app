@@ -37,6 +37,7 @@ exports.installNavigation = ({ jest, host }) => {
     Navigator: ({ children, initialRouteName }) => {
       const [route, setRoute] = React.useState({ name: initialRouteName, params: undefined });
       render = setRoute;
+      React.useEffect(() => { state.routes = [{ name: initialRouteName, params: undefined }]; }, []);
       React.useEffect(() => {
         state.route = route.name; state.params = route.params;
         if (!state.routes.length) state.routes.push(route);
@@ -75,8 +76,9 @@ exports.createPresentation = (React, spec, host, app) => {
     CoordinateDestinationSheet: '../../src/components/CoordinateDestinationSheet', FeedbackSheet: '../../src/components/FeedbackSheet',
     CustomQuickCommandSheet: '../../src/components/CustomQuickCommandSheet', AccountSheetContent: '../../src/components/AccountSheet',
     ProfileOverlay: '../../src/screens/MapScreen/components/ProfileOverlay', SettingsOverlay: '../../src/screens/MapScreen/components/SettingsOverlay',
-    DestinationSearch: '../../src/components/DestinationSearch', KmlImportSheet: '../../src/components/KmlImportSheet', NativeObservers: './observers-store.cjs' };
-  const namedExports = { Store: 'StorePane', AccountSheetContent: 'AccountSheetContent', ProfileOverlay: 'ProfileOverlay', SettingsOverlay: 'SettingsOverlay' };
+    DestinationSearch: '../../src/components/DestinationSearch', KmlImportSheet: '../../src/components/KmlImportSheet', NativeObservers: './observers-store.cjs',
+    ErrorBoundary: './observers-account.cjs', GroupLoadError: './observers-account.cjs' };
+  const namedExports = { Store: 'StorePane', AccountSheetContent: 'AccountSheetContent', ProfileOverlay: 'ProfileOverlay', SettingsOverlay: 'SettingsOverlay', GroupLoadError: 'GroupLoadObserver' };
   assert(paths[spec.screen?.name], `Unsupported real screen ${spec.screen?.name}`);
   function Content() {
     const session = useSession();
@@ -84,11 +86,16 @@ exports.createPresentation = (React, spec, host, app) => {
     const { colors } = require('../../src/state/PreferencesContext').useTheme();
     const { t } = require('../../src/i18n').useTranslation();
     const [screen, setScreen] = React.useState(spec.screen);
+    React.useEffect(() => { host.route.route = screen.name; host.route.params = screen.params; host.route.routes = [{ name: screen.name, params: screen.params }]; }, []);
     host.mount = next => { assert(paths[next.name], `Unsupported real screen ${next.name}`); setScreen(next); };
     host.bindScreenRenderer(next => host.mount(next));
     const Screen = require(paths[screen.name])[namedExports[screen.name] ?? 'default'];
     app.groupId = screen.params?.groupId ?? session.membership?.group.id ?? null;
-    const receipt = method => (...args) => { host.receipts.push({ host: screen.name, method, args }); };
+    const callbacks = React.useMemo(() => new Map(), [screen.name]);
+    const receipt = method => {
+      if (!callbacks.has(method)) callbacks.set(method, (...args) => { host.receipts.push({ host: screen.name, method, args }); });
+      return callbacks.get(method);
+    };
     const componentProps = {
       visible: true, colors, accent: colors.accent, t, styles: {}, slot: 0,
       groupId: app.groupId, group: session.membership?.group, groupName: session.membership?.group.name,
@@ -105,6 +112,7 @@ exports.createPresentation = (React, spec, host, app) => {
       onConfirmSignOut: receipt('onConfirmSignOut'), onOpenFeedback: receipt('onOpenFeedback'),
       onImport: receipt('onImport'), onUpgrade: receipt('onUpgrade'), currentCount: 0, remainingQuota: 10, isPro: session.isPro,
       onAppNotice: receipt('onAppNotice'),
+      onRetry: receipt('retry'),
     };
     return React.createElement(React.Fragment, null, React.createElement(Observe), !session.initializing && React.createElement(Screen, {
       ...componentProps, ...screen.props, navigation: host.navigation, route: { name: screen.name, params: screen.params },

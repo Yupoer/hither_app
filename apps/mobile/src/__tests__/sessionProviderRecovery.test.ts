@@ -158,4 +158,26 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     await act(async () => { emit('SIGNED_OUT', null); resolve({ data: { nickname: 'old response' }, error: null }); await drain(); });
     expect(snapshot.user).toBeNull(); expect(snapshot.membership).toBeNull();
   });
+  it('keeps the entitlement refresh callback stable when its own trip result changes', async () => {
+    await mount();
+    await act(async () => { snapshot.setMembership({ group: { id: 'group-a' }, role: 'leader' } as never); await drain(); });
+    const refresh = snapshot.refreshEntitlement;
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-a', isPremium: false });
+    await act(async () => { await refresh(); await drain(); });
+    expect(snapshot.refreshEntitlement).toBe(refresh);
+  });
+  it('ignores an older same-account team response even after returning to its group', async () => {
+    await mount();
+    let resolveOld!: (trip: unknown) => void;
+    mockTripEntitlement.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    await act(async () => { snapshot.setMembership({ group: { id: 'group-a' }, role: 'leader' } as never); await drain(); });
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-b', isPremium: false });
+    await act(async () => { snapshot.setMembership({ group: { id: 'group-b' }, role: 'leader' } as never); await drain(); });
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-a', isPremium: false });
+    await act(async () => { snapshot.setMembership({ group: { id: 'group-a' }, role: 'leader' } as never); await drain(); });
+    await act(async () => { resolveOld({ groupId: 'group-a', isPremium: true }); await drain(); });
+    expect(snapshot.membership?.group.id).toBe('group-a');
+    expect(snapshot.tripEntitlement).toEqual({ groupId: 'group-a', isPremium: false });
+    expect(snapshot.isPro).toBe(false);
+  });
 });

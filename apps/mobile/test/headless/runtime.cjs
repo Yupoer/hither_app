@@ -1,7 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const crypto = require('node:crypto');
 const { setImmediate: realImmediate } = require('node:timers');
 const { open } = require('./sqlite.cjs');
 const actions = require('./actions.cjs');
@@ -25,13 +24,21 @@ exports.run = async function run(jest) {
     throw new Error(message);
   };
   const check = () => { if (failures.length) throw new Error(failures.join('\n')); };
-  const strict = (name, value) => new Proxy(value, {
+  const strictCache = new WeakMap();
+  const strict = (name, value) => {
+    if (strictCache.has(value)) return strictCache.get(value);
+    const proxy = new Proxy(value, {
     get(target, key) {
       if (typeof key === 'symbol' || ['__esModule', 'then', 'toJSON', '$$typeof'].includes(key)) return target[key];
       if (!Reflect.has(target, key)) return fatal(`Unsupported external ${name}.${String(key)}`);
-      return target[key];
+      const result = target[key];
+      return result && typeof result === 'object' && !Array.isArray(result) && !result.$$typeof
+        ? strict(`${name}.${String(key)}`, result) : result;
     },
-  });
+    });
+    strictCache.set(value, proxy);
+    return proxy;
+  };
   const send = value => ipc.send({ generation: spec.generation, ...value });
   const stage = value => send({ type: 'stage', value });
   stage('starting guard');
@@ -154,11 +161,10 @@ exports.run = async function run(jest) {
     StyleSheet: { create: value => value, absoluteFill: {} },
     View: noRender,
   }));
-  jest.doMock('@react-native-async-storage/async-storage', () => strict('AsyncStorage', storage));
+  jest.doMock('@react-native-async-storage/async-storage', () => strict('AsyncStorage', { __esModule: true, default: storage, ...storage }));
   jest.doMock('expo-secure-store', () => strict('SecureStore', {
     getItemAsync: secure.getItem, setItemAsync: secure.setItem, deleteItemAsync: secure.removeItem,
   }));
-  jest.doMock('expo-crypto', () => ({ randomUUID: crypto.randomUUID }));
   jest.doMock('expo-sqlite', () => ({
     openDatabaseAsync: async name => {
       assert.equal(path.basename(name), name, 'Database path escapes device');
@@ -186,21 +192,20 @@ exports.run = async function run(jest) {
     requireOptionalNativeModule: name => {
       if (Object.hasOwn(externalNative.nativeModules, name)) return externalNative.nativeModules[name];
       if (Object.hasOwn(externalMap.nativeModules, name)) return externalMap.nativeModules[name];
+      if (name === 'HitherMenu' && presentationMode && spec.capabilities?.menu !== false) return strict('HitherMenu', {});
       if (!['HitherLocation', 'HitherMaps', 'HitherNotifications', 'HitherLiveActivity', 'HitherMetrics', 'HitherMenu'].includes(name)) {
         return fatal(`Unknown optional native module ${name}`);
       }
       return null;
     },
+    requireNativeViewManager: name => { assert(host, 'Native view requires presentation host'); return host.nativeView(name); },
   }));
   jest.doMock('expo-constants', () => ({ __esModule: true, default: {
     expoConfig: { version: 'headless' }, nativeBuildVersion: 'headless',
-    executionEnvironment: 'storeClient', appOwnership: 'expo',
+    executionEnvironment: spec.capabilities?.expoGo ? 'storeClient' : 'standalone', appOwnership: spec.capabilities?.expoGo ? 'expo' : 'standalone',
   }, ExecutionEnvironment: { StoreClient: 'storeClient' } }));
-  jest.doMock('expo-updates', () => strict('Updates', { isEmbeddedLaunch: true, updateId: null, runtimeVersion: 'headless' }));
-  jest.doMock('expo-notifications', () => strict('Notifications', { setNotificationHandler: handler => assert(handler.handleNotification) }));
   jest.doMock('expo-glass-effect', () => strict('Glass', { GlassView: noRender, isLiquidGlassAvailable: () => false }));
   jest.doMock('expo-blur', () => ({ BlurView: noRender }));
-  jest.doMock('expo-file-system/legacy', () => strict('FileSystem', {}));
   jest.doMock('react-native-url-polyfill/auto', () => ({}));
 
   if (presentationMode) {
@@ -426,6 +431,7 @@ exports.run = async function run(jest) {
         } else if (input.kind === 'alert') {
           const alert = alertQueue.shift();
           assert(alert, 'No pending Alert');
+          if (!alert[2]?.length) { assert.equal(input.index, 0, 'Implicit Alert has only OK'); return; }
           const button = alert[2]?.[input.index];
           assert(button, 'Unknown Alert choice');
           button.onPress?.();
