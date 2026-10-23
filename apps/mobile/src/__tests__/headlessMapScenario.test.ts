@@ -96,7 +96,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect((await device.observe()).durable.operations).toEqual([]);
       const addedId = world.backend.itinerary.find((row: { title: string }) => row.title === 'Local pool stop').id;
       await route(world, device);
-      await run(device, 'map.route.swipe.open', { destinationId: addedId });
+      expect(await run(device, 'map.route.swipe.open', { destinationId: addedId })).toMatchObject({ invoked: true });
       await run(device, 'map.route.delete', { destinationId: addedId });
       await device.input({ kind: 'alert', index: 0 });
       expect(world.backend.itinerary.some((row: { id: string }) => row.id === addedId)).toBe(true);
@@ -354,8 +354,10 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.advance(300);
       expect((await follower.observe()).durable.snapshot.destinations.some((row: { title: string }) => row.title === 'Suggested KML')).toBe(true);
       const rejected = await run(follower, 'map.service.gathering.suggest', { args: [GROUP_ID, null, [{ title: 'Rejected suggestion', coordinates: { latitude: 25.06, longitude: 121.57 } }]] });
+      await world.waitFor(follower, () => world.backend.tables.gather_point_requests.some((row: { id: string }) => row.id === rejected), 'next suggestion accepted by transport');
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-reject-${rejected}`), 'next coalesced inbox request');
+      if ((await leader.observe()).external.alerts) await leader.input({ kind: 'alert', index: 0 });
       await run(leader, 'map.suggestion.reject', { requestId: rejected });
       await world.waitFor(leader, () => world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status === 'rejected', 'request rejection accepted by transport');
       await world.advance(2500);
@@ -619,6 +621,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
   it('MAP-ARRIVAL-01 MAP-ARRIVAL-03 MAP-ARRIVAL-04 MAP-GATHER-04 MAP-GATHER-05 real self arrival undo and all-arrived completion preserve session audit', async () => {
     const world = new World();
     try {
+      world.backend.itinerary.push({ ...world.backend.itinerary[0], id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: 'Next open stop', position: 1, latitude: 25.05 });
       const device = await map(world);
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
       await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-${DESTINATION}`), 'active self-arrival control');
