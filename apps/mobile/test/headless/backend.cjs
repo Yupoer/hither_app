@@ -39,6 +39,7 @@ class Backend {
   publish(table, row, eventType = 'UPDATE') {
     this.emit({ table, eventType, new: structuredClone(row), old: {}, commit_timestamp: new Date(this.now).toISOString() });
   }
+  configureAuth(fixtures) { require('./backend-auth.cjs').configure(this, fixtures); }
   execute(deviceId, operation) {
     const { kind, name, args, steps, userId } = operation;
     const trace = structuredClone({ deviceId, ...operation, at: this.now });

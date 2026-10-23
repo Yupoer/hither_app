@@ -5,9 +5,10 @@ const { ok, fail, keys, member, leader, iso } = require('./backend-domain.cjs');
 function scopeAllowed(b, groupId, scope, userId) {
   const membership = member(b, groupId, userId);
   if (!membership) return false;
-  if (scope == null) return membership.role === 'leader';
+  if (b.authUsers?.get(userId)?.is_anonymous && Date.parse(b.profiles.get(userId)?.anonymous_expires_at) <= b.now) return false;
+  if (scope == null) return membership.role === 'leader' && membership.subgroup_id == null;
   const subgroup = b.tables.subgroups.find(s => s.id === scope && s.group_id === groupId);
-  return Boolean(subgroup && membership.subgroup_id === scope && (subgroup.mode === 'collab' || subgroup.leader_id === userId));
+  return Boolean(subgroup && (membership.role === 'leader' && membership.subgroup_id == null || membership.subgroup_id === scope && subgroup.leader_id === userId));
 }
 
 function startSession(b, groupId, destinationId, requestId, userId, replace = false, sessionId = randomUUID()) {
@@ -108,8 +109,9 @@ function execute(b, operation) {
   if (name === 'self_split') {
     keys(args, 'p_group p_name'); const m = member(b, args.p_group, userId);
     if (!m) return fail('not_member');
+    if (m.subgroup_id != null) return fail('already_in_subgroup', 'P0001');
     if (!args.p_name?.trim()) return fail('invalid_name', '22023');
-    const row = { id: randomUUID(), group_id: args.p_group, name: args.p_name.trim(), mode: 'collab', leader_id: null, parent_subgroup_id: m.subgroup_id ?? null };
+    const row = { id: randomUUID(), group_id: args.p_group, name: args.p_name.trim(), mode: 'led', leader_id: userId, parent_subgroup_id: null };
     b.tables.subgroups.push(row); m.subgroup_id = row.id; m.solo = false;
     b.publish('subgroups', row, 'INSERT'); b.publish('memberships', m); return ok(row);
   }
@@ -117,7 +119,12 @@ function execute(b, operation) {
     keys(args, 'p_group'); const m = member(b, args.p_group, userId);
     if (!m) return fail('not_member');
     const subgroup = b.tables.subgroups.find(s => s.id === m.subgroup_id);
-    m.subgroup_id = subgroup?.parent_subgroup_id ?? null; b.publish('memberships', m); return ok(null);
+    m.subgroup_id = subgroup?.parent_subgroup_id ?? null; b.publish('memberships', m);
+    if (subgroup && !b.memberships.some(n => n.subgroup_id === subgroup.id) && !b.tables.subgroups.some(s => s.parent_subgroup_id === subgroup.id)) {
+      b.tables.subgroups = b.tables.subgroups.filter(s => s !== subgroup);
+      b.emit({ table: 'subgroups', eventType: 'DELETE', new: {}, old: subgroup, commit_timestamp: iso(b) });
+    }
+    return ok(null);
   }
   if (name === 'invite_to_subgroup') {
     keys(args, 'p_subgroup p_invitee');
@@ -187,8 +194,15 @@ function executeFunction(b, { name, args = {}, userId }) {
   const id = body.transaction_id ?? body.transactionId ?? proof;
   const existing = b.purchaseLedger.get(id);
   if (existing) return existing.userId === userId ? ok({ ...existing.result, duplicate: true }) : ok({ ok: false, error: 'transaction_bound_elsewhere' });
-  b.premium.set(userId, { ...verified, status: 'active' });
-  const result = { ok: true, status: 'active', product_id: verified.product_id, expires_at: verified.expires_at ?? null, personal_premium_active: !verified.group_id, group_id: verified.group_id ?? null };
+  if (b.authUsers?.get(userId)?.is_anonymous) return ok({ ok: false, error: 'anonymous_upgrade_required' });
+  if (verified.product_id && (body.product_id ?? body.productId) && verified.product_id !== (body.product_id ?? body.productId)) return ok({ ok: false, error: 'product_id_mismatch' });
+  if (verified.transaction_id && (body.transaction_id ?? body.transactionId) && verified.transaction_id !== (body.transaction_id ?? body.transactionId)) return ok({ ok: false, error: 'transaction_id_mismatch' });
+  if (verified.status && verified.status !== 'active') return ok({ ok: false, error: verified.status });
+  if (verified.expires_at && Date.parse(verified.expires_at) <= b.now) return ok({ ok: false, error: 'expired' });
+  if (verified.group_id) { if (!member(b, verified.group_id, userId)) return ok({ ok: false, error: 'not_member' }); b.teamPremium ??= new Map(); b.teamPremium.set(verified.group_id, { ...verified, status: 'active' }); }
+  else b.premium.set(userId, { ...verified, status: 'active' });
+  const result = { ok: true, durable: true, status: 'active', product_id: verified.product_id, transaction_id: id, expires_at: verified.expires_at ?? null,
+    entitlement_version: verified.entitlement_version ?? 1, personal_premium_active: !verified.group_id, team_premium_active: Boolean(verified.group_id), group_id: verified.group_id ?? null };
   b.purchaseLedger.set(id, { userId, result }); return ok(result);
 }
 

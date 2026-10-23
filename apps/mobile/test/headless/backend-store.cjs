@@ -28,8 +28,9 @@ function execute(b, { kind, name, args: a = {}, userId }) {
   if (name === 'report_straggler') {
     keys(a, 'p_group_id p_member_id p_distance_m');
     if (!leader(b, a.p_group_id, userId) || !member(b, a.p_group_id, a.p_member_id)) return fail('leader_required');
-    const row = { id: randomUUID(), group_id: a.p_group_id, sender_id: userId, type: 'straggler', message: JSON.stringify({ member_id: a.p_member_id, distance_m: a.p_distance_m }), latitude: null, longitude: null, created_at: iso(b) };
-    b.tables.commands.push(row); b.publish('commands', row, 'INSERT'); return ok(null);
+    if (b.groups.get(a.p_group_id).straggler_alerts !== true) return ok(null);
+    const row = { id: randomUUID(), group_id: a.p_group_id, sender_id: userId, kind: 'straggler', member_id: a.p_member_id, member_name: b.profiles.get(a.p_member_id)?.nickname ?? '成員', distance_m: a.p_distance_m, created_at: iso(b) };
+    b.tables.group_alerts.push(row); b.publish('group_alerts', row, 'INSERT'); return ok(null);
   }
   if (name === 'request_group_location_refresh') {
     keys(a, 'p_group_id'); if (!member(b, a.p_group_id, userId)) return fail('not_member');
@@ -51,15 +52,19 @@ function execute(b, { kind, name, args: a = {}, userId }) {
   }
   if (name === 'get_store_snapshot') {
     keys(a, 'p_group_id'); const group = b.groups.get(a.p_group_id);
+    if (!userId) return ok({ ok: false, error: 'not_authenticated' });
+    const anonymous = b.authUsers?.get(userId)?.is_anonymous === true;
     const active = [...b.rewardSessions.values()].find(r => r.user_id === userId && ['active', 'verifying'].includes(r.status) && Date.parse(r.expires_at) > b.now);
-    return ok({ ok: true, anonymous: false, registration_required: false, balance: b.wallets.get(userId) ?? 0, catalog,
-      can_create_reward_session: !active, can_redeem: true, group_id: group?.id ?? null, group_name: group?.name ?? null,
+    return ok({ ok: true, anonymous, registration_required: anonymous, balance: anonymous ? 0 : b.wallets.get(userId) ?? 0, catalog,
+      can_create_reward_session: !anonymous && !active, can_redeem: !anonymous, group_id: group?.id ?? null, group_name: group?.name ?? null,
       is_member: Boolean(member(b, group?.id, userId)), member_count: b.memberships.filter(m => m.group_id === group?.id).length,
       trip_premium: b.teamPremium?.get(group?.id) ?? null, extra_point_credits: b.pointCredits?.get(group?.id) ?? 0,
-      live_activity_personal: b.liveUnlocks?.has(userId) ?? false, live_activity_effective: projection(b, userId, group?.id).teamPremiumActive || (b.liveUnlocks?.has(userId) ?? false), active_reward_session: active ?? null });
+      live_activity_personal: !anonymous && (b.liveUnlocks?.has(userId) ?? false), live_activity_effective: !anonymous && (projection(b, userId, group?.id).teamPremiumActive || (b.liveUnlocks?.has(userId) ?? false)), active_reward_session: anonymous ? null : active ?? null });
   }
   if (name === 'create_reward_session') {
     keys(a, 'p_platform'); assert(['ios', 'android'].includes(a.p_platform), 'Reward platform contract');
+    if (!userId) return ok({ ok: false, error: 'not_authenticated' });
+    if (b.authUsers?.get(userId)?.is_anonymous) return ok({ ok: false, error: 'registration_required' });
     const active = [...b.rewardSessions.values()].find(r => r.user_id === userId && ['active', 'verifying'].includes(r.status) && Date.parse(r.expires_at) > b.now);
     if (active) return ok({ ok: false, error: 'active_session_exists', session_ref: active.session_ref, expires_at: active.expires_at });
     const row = { user_id: userId, session_ref: randomUUID(), platform: a.p_platform, status: 'active', created_at: iso(b), expires_at: new Date(b.now + 600000).toISOString() };
@@ -74,6 +79,8 @@ function execute(b, { kind, name, args: a = {}, userId }) {
   }
   if (name === 'redeem_store_product') {
     keys(a, 'p_product_code p_group_id p_client_request_key');
+    if (!userId) return ok({ ok: false, error: 'not_authenticated' });
+    if (b.authUsers?.get(userId)?.is_anonymous) return ok({ ok: false, error: 'registration_required' });
     const product = catalog.find(p => p.code === a.p_product_code);
     if (!product) return ok({ ok: false, error: 'product_not_found' });
     if (product.scope === 'team' && !member(b, a.p_group_id, userId)) return ok({ ok: false, error: 'not_member' });

@@ -126,8 +126,20 @@ function apply(b, { args: a, userId }) {
     if (p.userId !== userId) return conflict('unauthorized');
     entity = { ...p, entityVersion: version, updatedAt: b.now };
   } else if (type === 'send_command') {
-    const row = { id: a.p_operation_id, group_id: group.id, sender_id: userId, type: p.type, message: p.message, latitude: p.latitude, longitude: p.longitude, expires_at: p.expiresAt, created_at: iso(b) };
-    b.tables.commands.push(row); b.publish('commands', row, 'INSERT');
+    const leaderCommands = ['gather', 'find_gathering', 'depart', 'rest', 'be_careful', 'go_left', 'go_right', 'stop', 'hurry_up'];
+    assert([...leaderCommands, 'need_restroom', 'need_break', 'need_help', 'found_something', 'request_start', 'custom'].includes(p.type), 'Command type contract');
+    if (leaderCommands.includes(p.type) && m.role !== 'leader') return conflict('unauthorized');
+    const expiresAt = new Date(Math.min(b.now + 300000, Date.parse(p.expiresAt) || b.now + 300000)).toISOString();
+    const category = m.role === 'leader' ? 'leader_commands' : 'follower_requests';
+    const targets = Date.parse(expiresAt) <= b.now ? [] : b.memberships.filter(target => target.group_id === group.id && target.user_id !== userId
+      && (m.subgroup_id == null || target.subgroup_id === m.subgroup_id || target.role === 'leader')
+      && (p.type === 'request_start' ? target.role === 'leader' : !target.solo)
+      && b.tables.notification_preferences.find(pref => pref.user_id === target.user_id)?.[category] !== false);
+    const rows = targets.map(target => ({ id: randomUUID(), operation_id: a.p_operation_id, group_id: group.id, sender_id: userId, target_user_id: target.user_id,
+      category, target_role: target.role === 'leader' ? 'leader' : 'member', payload: { ...p, category, groupId: group.id, senderId: userId, targetUserId: target.user_id, expiresAt }, created_at: iso(b), expires_at: expiresAt }));
+    b.notificationOutbox.push(...rows);
+    effects = { category, targetRole: p.type === 'request_start' ? 'leader' : 'member', targetCount: rows.length, notificationIds: rows.map(r => r.id), expiresAt, expired: Date.parse(expiresAt) <= b.now };
+    entity = { operationId: a.p_operation_id, accepted: true, expired: effects.expired };
   }
   const receipt = { status: 'accepted', operation_id: a.p_operation_id, entity_version: version, entity, effects };
   b.versions.set(versionKey, version); b.receipts.set(a.p_operation_id, receipt);

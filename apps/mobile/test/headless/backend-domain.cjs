@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 
-// Wire contracts follow api/services and supabase/migrations; these fixtures do not execute SQL policies.
 const schemas = {
   profiles: { fields: 'id nickname avatar avatar_color pro created_at pro_plan pro_purchased_at pro_expires_at anonymous_expires_at preferences onboarding', write: 'nickname avatar avatar_color preferences onboarding', owner: 'id', modes: ['select', 'update', 'upsert'], conflict: 'id' },
-  memberships: { fields: 'group_id user_id role status solo subgroup_id', modes: ['select', 'delete'] },
+  memberships: { fields: 'group_id user_id role status solo subgroup_id created_at', modes: ['select', 'delete'] },
   groups: { fields: 'id name invite_code avatar avatar_color created_by created_at journey_status active_destination_id journey_started_at straggler_alerts straggler_threshold_m trip_days departure_date accommodation_auto_add', write: 'avatar avatar_color journey_status straggler_alerts straggler_threshold_m', modes: ['select', 'update'] },
   itinerary_items: { fields: 'id group_id title address latitude longitude position day meet_at meet_red_minutes subgroup_id closed_at closed_by_session_id emoji marker_color kind stay_anchor provider_place_id', write: 'emoji marker_color meet_at meet_red_minutes', modes: ['select', 'update'] },
   subgroups: { fields: 'id group_id name mode leader_id parent_subgroup_id', modes: ['select'] },
@@ -29,17 +28,24 @@ const schemas = {
   visited_waypoints: { fields: 'id user_id group_id destination_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
   core_entity_versions: { fields: 'group_id entity_type entity_id entity_version state', modes: ['select'] },
   commands: { fields: 'id group_id sender_id type message latitude longitude expires_at created_at', modes: ['select'] },
+  group_alerts: { fields: 'id group_id kind sender_id member_id member_name distance_m created_at', modes: ['select'] },
 };
 const ok = data => ({ data: structuredClone(data), error: null });
 const fail = (message, code = '42501') => ({ data: null, error: { message, code } });
 const iso = b => new Date(b.now).toISOString();
-const member = (b, group, actor) => b.memberships.find(m => m.group_id === group && m.user_id === actor);
+function anonymousExpired(b, actor) {
+  if (!b.authUsers?.get(actor)?.is_anonymous) return false;
+  const firstJoin = Math.min(...b.memberships.filter(m => m.user_id === actor).map(m => Date.parse(m.created_at)).filter(Number.isFinite));
+  const expires = Date.parse(b.profiles.get(actor)?.anonymous_expires_at) || firstJoin + 14 * 86400000;
+  return expires <= b.now;
+}
+const member = (b, group, actor) => anonymousExpired(b, actor) ? undefined : b.memberships.find(m => m.group_id === group && m.user_id === actor);
 const leader = (b, group, actor) => member(b, group, actor)?.role === 'leader';
 const keys = (args, expected) => assert.deepEqual(Object.keys(args ?? {}).sort(), expected.split(' ').filter(Boolean).sort(), 'RPC argument contract');
 
 function initialize(b, { LEADER, PEER }) {
   b.profiles = new Map([LEADER, PEER].map((id, index) => [id, { id, nickname: index ? 'Peer' : 'Leader', created_at: iso(b), preferences: {}, pro: false }]));
-  b.memberships.forEach(m => { if (m.role === 'member') m.role = 'follower'; m.solo = false; m.subgroup_id = null; });
+  b.memberships.forEach(m => { if (m.role === 'member') m.role = 'follower'; m.solo = false; m.subgroup_id = null; m.created_at = iso(b); });
   b.tables = Object.fromEntries(Object.keys(schemas).map(name => [name, []]));
   b.premium = new Map();
   b.wallets = new Map();
@@ -51,6 +57,8 @@ function initialize(b, { LEADER, PEER }) {
   b.locationRefreshes = [];
   b.verifiedPurchases = new Map();
   b.purchaseLedger = new Map();
+  b.notificationOutbox = [];
+  require('./backend-auth.cjs').initialize(b, { LEADER, PEER });
 }
 
 function tableRows(b, name) {
@@ -95,14 +103,15 @@ function executeTable(b, { name, steps, userId }) {
   if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
   if (name === 'navigation_member_states') rows = rows.filter(r => member(b, b.sessions.get(r.navigation_session_id)?.group_id, userId));
   if (name === 'visited_waypoints') rows = rows.filter(r => r.user_id === userId || member(b, r.group_id, userId));
-  if (['groups', 'memberships', 'itinerary_items', 'subgroups', 'daily_accommodations', 'member_locations', 'coordination_requests', 'itinerary_operations', 'destination_arrivals', 'gather_point_requests', 'navigation_sessions'].includes(name)) {
+  if (['groups', 'memberships', 'itinerary_items', 'subgroups', 'daily_accommodations', 'member_locations', 'coordination_requests', 'itinerary_operations', 'destination_arrivals', 'gather_point_requests', 'navigation_sessions', 'core_entity_versions', 'commands', 'group_alerts'].includes(name)) {
     rows = rows.filter(r => name === 'memberships' && r.user_id === userId || member(b, name === 'groups' ? r.id : r.group_id, userId));
   }
   if (mode !== 'select') {
     if (schema.owner && ['update', 'delete'].includes(mode) && !filters.some(s => s[0] === 'eq' && s[1] === schema.owner && s[2] === userId)) return fail('owner_required');
     if (name === 'visited_waypoints' && mode === 'delete' && rows.some(r => r.user_id !== userId && !leader(b, r.group_id, userId))) return fail('owner_required');
     if (name === 'memberships' && !filters.some(s => s[0] === 'eq' && s[1] === 'user_id' && s[2] === userId)) return fail('owner_required');
-    if (['groups', 'itinerary_items'].includes(name) && rows.some(r => !leader(b, name === 'groups' ? r.id : r.group_id, userId))) return fail('leader_required');
+    if (name === 'groups' && rows.some(r => !leader(b, r.id, userId))) return fail('leader_required');
+    if (name === 'itinerary_items' && rows.some(r => !require('./backend-workflows.cjs').scopeAllowed(b, r.group_id, r.subgroup_id, userId))) return fail('leader_required');
     if (mode === 'delete') {
       all = all.filter(row => !rows.includes(row));
       rows.forEach(row => b.emit({ table: name, eventType: 'DELETE', new: {}, old: structuredClone(row), commit_timestamp: iso(b) }));
@@ -113,11 +122,12 @@ function executeTable(b, { name, steps, userId }) {
         for (const field of Object.keys(input)) assert(fields.includes(field), `Unknown ${name} write ${field}`);
         if (schema.owner && Object.hasOwn(input, schema.owner) && input[schema.owner] !== userId) return fail('owner_mismatch');
         if (mode === 'update' && schema.write) for (const field of Object.keys(input)) assert(schema.write.split(' ').includes(field), `Forbidden ${name} write ${field}`);
+        if (name === 'profiles' && mode === 'upsert') for (const field of Object.keys(input)) assert(field === 'id' || schema.write.split(' ').includes(field), `Forbidden profiles write ${field}`);
         if (mode === 'upsert') {
           const conflict = mutation[2]?.onConflict ?? schema.conflict ?? schema.owner;
           assert(conflict && (!mutation[2]?.onConflict || !schema.conflict || conflict === schema.conflict), `Unknown ${name} conflict`);
           const found = all.find(row => conflict.split(',').every(key => row[key] === input[key]));
-          if (found) { Object.assign(found, input); rows.push(found); }
+          if (found) { if (!mutation[2]?.ignoreDuplicates) Object.assign(found, input); rows.push(found); }
           else { const row = { id: randomUUID(), created_at: iso(b), ...structuredClone(input) }; all.push(row); rows.push(row); }
         } else if (mode === 'insert') {
           if (input.id && all.some(row => row.id === input.id)) return fail('duplicate key', '23505');
@@ -158,6 +168,7 @@ function projection(b, userId, groupId) {
 
 function execute(b, operation) {
   const { kind, name, userId, args = {}, steps = [] } = operation;
+  if (kind === 'auth') return require('./backend-auth.cjs').execute(b, operation);
   if (kind === 'table') return executeTable(b, operation);
   if (kind === 'rpc') assert(steps.every(step => name === 'ingest_diagnostic_batch' && step[0] === 'abortSignal'), `Unexpected RPC builder steps ${name}`);
   const workflow = require('./backend-workflows.cjs').execute(b, operation);
@@ -170,21 +181,26 @@ function execute(b, operation) {
   if (name === 'create_group') {
     keys(args, 'p_name');
     if (!userId) return fail('not_authenticated');
+    if (anonymousExpired(b, userId)) return fail('anonymous access expired', 'P0401');
     if (typeof args.p_name !== 'string' || !args.p_name.trim()) return fail('invalid_name', '22023');
     const group = { id: randomUUID(), name: args.p_name.trim(), invite_code: randomUUID().replaceAll('-', '').slice(0, 6).toUpperCase(), created_by: userId, created_at: iso(b), journey_status: 'paused', active_destination_id: null, journey_started_at: null, trip_days: 1, departure_date: iso(b).slice(0, 10), accommodation_auto_add: true };
     b.groups.set(group.id, group);
-    b.memberships.push({ group_id: group.id, user_id: userId, role: 'leader', status: 'active', solo: false, subgroup_id: null });
+    b.memberships.push({ group_id: group.id, user_id: userId, role: 'leader', status: 'active', solo: false, subgroup_id: null, created_at: iso(b) });
+    if (b.authUsers?.get(userId)?.is_anonymous && b.profiles.has(userId) && !b.profiles.get(userId).anonymous_expires_at) b.profiles.get(userId).anonymous_expires_at = new Date(b.now + 14 * 86400000).toISOString();
     b.publish('groups', group, 'INSERT');
     return ok(group);
   }
   if (name === 'join_group') {
     keys(args, 'p_code');
+    if (!userId) return fail('not_authenticated');
+    if (anonymousExpired(b, userId)) return fail('anonymous access expired', 'P0401');
     const group = [...b.groups.values()].find(g => g.invite_code === args.p_code.trim().toUpperCase());
     if (!group) return fail('invalid_invite_code', 'P0002');
     if (!member(b, group.id, userId)) {
-      if (b.memberships.filter(m => m.group_id === group.id).length >= 5) return fail('member_limit', 'P0003');
-      const row = { group_id: group.id, user_id: userId, role: 'follower', status: 'active', solo: false, subgroup_id: null };
+      if (b.memberships.filter(m => m.group_id === group.id).length >= 5) return b.authUsers?.get(group.created_by)?.is_anonymous ? fail('leader registration required before adding member 6', 'P0406') : fail('member_limit', 'P0003');
+      const row = { group_id: group.id, user_id: userId, role: 'follower', status: 'active', solo: false, subgroup_id: null, created_at: iso(b) };
       b.memberships.push(row); b.publish('memberships', row, 'INSERT');
+      if (b.authUsers?.get(userId)?.is_anonymous && b.profiles.has(userId) && !b.profiles.get(userId).anonymous_expires_at) b.profiles.get(userId).anonymous_expires_at = new Date(b.now + 14 * 86400000).toISOString();
     }
     return ok(group);
   }
@@ -211,4 +227,4 @@ function execute(b, operation) {
   return undefined;
 }
 
-module.exports = { initialize, execute, schemas, ok, fail, keys, member, leader, iso, projection };
+module.exports = { initialize, execute, schemas, ok, fail, keys, member, leader, iso, projection, anonymousExpired };
