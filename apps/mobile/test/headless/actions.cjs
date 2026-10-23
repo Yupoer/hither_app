@@ -24,7 +24,7 @@ const actions = {
     run: app => app.location.refreshDeviceLocation({ requireUpload: true }),
   },
   'journey.start': {
-    inventory: ['MAP-NAV-01'], sources: [{ file: 'src/screens/MapScreen/hooks/useJourneyNavigation.ts', symbol: 'startNavigation' }],
+    inventory: ['MAP-NAV-01', 'MAP-NAV-04'], sources: [{ file: 'src/screens/MapScreen/hooks/useJourneyNavigation.ts', symbol: 'startNavigation' }],
     entry: 'useJourneyNavigation.startNavigation', level: 'hook', input: '{ destinationId: string }',
     completion: 'Callback schedules work; await hook target, durable row and transport receipt.',
     run: (app, { destinationId }) => {

@@ -590,8 +590,20 @@ async function resolveLocalGatheringBase(groupId: string, options: {
   // React closures may outlive a committed End/ACK. Prefer the actor-fenced
   // durable version before making the next command's local transition.
   const durable = await getCoreActiveGathering(groupId);
-  if (durable && (!options.baseState || durable.entityVersion >= options.baseState.entityVersion)) return durable;
-  return options.baseState ?? (options.groupState ? deriveActiveGatheringFromGroupState(options.groupState, 0) : null);
+  const base = durable && (!options.baseState || durable.entityVersion >= options.baseState.entityVersion)
+    ? durable
+    : options.baseState ?? (options.groupState ? deriveActiveGatheringFromGroupState(options.groupState, 0) : null);
+  const destinations = (await sharedCoreDataStore.readSnapshot(groupId))?.destinations ?? options.groupState?.destinations;
+  if (!base || !destinations) return base;
+  // Server gathering maps may contain only the active stop. The durable
+  // itinerary owns membership and closure, including pending local edits.
+  const pointStatuses: ActiveGatheringState['pointStatuses'] = {};
+  for (const destination of destinations) {
+    if (destination.day === null) continue;
+    pointStatuses[destination.id] = destination.closedAt
+      ? 'completed' : base.pointStatuses[destination.id] ?? 'pending';
+  }
+  return { ...base, pointStatuses };
 }
 
 /**
