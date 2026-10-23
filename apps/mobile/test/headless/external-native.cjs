@@ -211,7 +211,41 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
       effect('live.endAllGroupActivities'); fail(live, 'endError'); activities.clear();
     },
   });
+  const locationEvents = listeners(['onBackgroundLocation', 'onBackgroundLocationError']);
+  const location = { permission: 'granted', locked: null, prepareResult: true, startResult: true,
+    prepareError: null, startError: null, stopError: null, hasError: null };
+  let locationPrepared = false;
+  let locationRunning = false;
+  const locationSupported = platform === 'ios' && profile.nativeLocationLiveUpdates !== false;
+  const locationModule = boundary('HitherLocation', {
+    supportsBackgroundLiveUpdates: platform === 'ios' ? () => locationSupported : undefined,
+    isDeviceLocked: platform === 'ios' ? async () => location.locked : undefined,
+    getCurrentLocation: platform === 'android' ? async () => null : undefined,
+    prepareBackgroundLocation: platform === 'ios' ? async enabled => {
+      assert.equal(typeof enabled, 'boolean');
+      effect('nativeLocation.prepare', enabled); fail(location, 'prepareError');
+      locationPrepared = Boolean(enabled && locationSupported && location.permission === 'granted' && location.prepareResult);
+      if (!enabled) locationRunning = false;
+      return locationPrepared;
+    } : undefined,
+    hasBackgroundLocation: platform === 'ios' ? async () => {
+      effect('nativeLocation.hasStarted'); fail(location, 'hasError'); return locationRunning;
+    } : undefined,
+    startBackgroundLocation: platform === 'ios' ? async options => {
+      assert(options && typeof options === 'object' && !Array.isArray(options));
+      assert.equal(options.activityType, 3);
+      assert.equal(options.showsBackgroundLocationIndicator, true);
+      effect('nativeLocation.start', options); fail(location, 'startError');
+      locationRunning = Boolean(locationSupported && locationPrepared && location.permission === 'granted' && location.startResult);
+      return locationRunning;
+    } : undefined,
+    stopBackgroundLocation: platform === 'ios' ? async () => {
+      effect('nativeLocation.stop'); fail(location, 'stopError'); locationRunning = false;
+    } : undefined,
+    addListener: platform === 'ios' ? (name, listener) => listen(locationEvents, name, listener) : undefined,
+  });
   const nativeModules = {
+    HitherLocation: profile.nativeLocation === true ? locationModule : null,
     HitherNotifications: profile.notifications === false ? null : boundary('HitherNotifications', {
       getDevicePushToken: async () => {
         effect('nativeNotifications.getDevicePushToken'); fail(notifications, 'nativeTokenError');
@@ -225,9 +259,35 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   return {
     modules, nativeModules,
     handles: kind => ['iapConfigure', 'iapPurchase', 'iapError', 'adsConfigure', 'adEvent', 'notificationsConfigure',
-      'notification', 'liveConfigure', 'liveExisting', 'livePushToken', 'livePushToStart'].includes(kind),
+      'notification', 'liveConfigure', 'liveExisting', 'livePushToken', 'livePushToStart',
+      'nativeLocationConfigure', 'nativeLocation', 'nativeLocationError'].includes(kind),
     async input(input) {
       switch (input.kind) {
+        case 'nativeLocationConfigure':
+          assert.equal(profile.nativeLocation, true, 'Native location capability is disabled');
+          settings(location, input.patch);
+          assert(['granted', 'denied'].includes(location.permission));
+          assert.equal(typeof location.prepareResult, 'boolean');
+          assert.equal(typeof location.startResult, 'boolean');
+          assert(location.locked === null || typeof location.locked === 'boolean');
+          return;
+        case 'nativeLocation': {
+          assert(locationRunning, 'No native background location owner');
+          const sample = input.sample;
+          assert(Number.isFinite(sample?.timestamp));
+          assert(Number.isFinite(sample.coords?.latitude) && Math.abs(sample.coords.latitude) <= 90);
+          assert(Number.isFinite(sample.coords?.longitude) && Math.abs(sample.coords.longitude) <= 180);
+          assert(Number.isFinite(sample.coords?.accuracy) && sample.coords.accuracy >= 0);
+          assert(sample.stationary === undefined || typeof sample.stationary === 'boolean');
+          effect('nativeLocation.sample', sample);
+          emit(locationEvents, 'onBackgroundLocation', structuredClone(sample)); return;
+        }
+        case 'nativeLocationError':
+          assert(locationRunning, 'No native background location owner');
+          assert.deepEqual(input.error, { code: 'location_stream_failed' });
+          locationRunning = false;
+          effect('nativeLocation.error', input.error);
+          emit(locationEvents, 'onBackgroundLocationError', structuredClone(input.error)); return;
         case 'iapConfigure': settings(iap, input.patch); return;
         case 'iapPurchase': emit(iapEvents, 'purchase', structuredClone(input.purchase)); return;
         case 'iapError': emit(iapEvents, 'error', structuredClone(input.error)); return;
@@ -257,10 +317,14 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
       }
     },
     observe: () => ({ receipts: structuredClone(receipts), notificationTasks: [...notificationTasks], scheduled: [...scheduled].map(([id, input]) => ({ id, input: structuredClone(input) })),
+      location: { available: profile.nativeLocation === true, supported: profile.nativeLocation === true && locationSupported,
+        prepared: locationPrepared, running: locationRunning, listeners: [...locationEvents.values()].reduce((sum, set) => sum + set.size, 0) },
       activities: [...activities.values()].map(activity => structuredClone(activity)),
       ads: [...adInstances].map(([id, ad]) => ({ id, unitId: ad.unitId, options: structuredClone(ad.options), listeners: [...ad.events.values()].reduce((sum, set) => sum + set.size, 0) })),
       listeners: { iap: [...iapEvents.values()].reduce((sum, set) => sum + set.size, 0), notification: notificationEvents.get('received').size, live: [...liveEvents.values()].reduce((sum, set) => sum + set.size, 0) } }),
-    dispose: () => ({ iapProcessListeners: [...iapEvents.values()].reduce((sum, set) => sum + set.size, 0),
+    dispose: () => ({ ...(profile.nativeLocation === true ? { location: { running: locationRunning, prepared: locationPrepared,
+      processListeners: [...locationEvents.values()].reduce((sum, set) => sum + set.size, 0) } } : {}),
+      iapProcessListeners: [...iapEvents.values()].reduce((sum, set) => sum + set.size, 0),
       notification: notificationEvents.get('received').size,
       live: [...liveEvents.values()].reduce((sum, set) => sum + set.size, 0),
       ads: [...adInstances.values()].reduce((sum, ad) => sum + [...ad.events.values()].reduce((count, set) => count + set.size, 0), 0) }),

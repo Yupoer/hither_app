@@ -107,6 +107,8 @@ exports.run = async function run(jest) {
   process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://headless.supabase.co';
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'headless-fixture-only';
   jest.useFakeTimers({ now: spec.now, doNotFake: ['setImmediate', 'clearImmediate', 'nextTick', 'queueMicrotask', 'performance', 'hrtime'] });
+  global.requestAnimationFrame = callback => setTimeout(() => callback(Date.now()), 16);
+  global.cancelAnimationFrame = clearTimeout;
 
   const store = name => {
     const file = path.join(spec.directory, `${name}.json`);
@@ -365,7 +367,7 @@ exports.run = async function run(jest) {
         operations: app.groupId ? await core.listOpenCoreOperations(app.groupId) : [],
         snapshot: app.groupId ? await require('../../src/state/coreDataStore').readCoreSnapshot(app.groupId) : null },
       external: { watches: watches.size, channels: channels.size, listeners: appListeners.size, alerts: alertQueue.length,
-        heldActTurn: Boolean(releaseActTurn) },
+        backgroundTasks: [...backgroundTasks].map(([name, options]) => ({ name, options })), heldActTurn: Boolean(releaseActTurn) },
       pending: [...requests.keys()], timers: jest.getTimerCount(), fatal: [...failures], now: Date.now(),
     };
   }
@@ -436,6 +438,9 @@ exports.run = async function run(jest) {
           assert(['granted', 'denied'].includes(input.status));
           permission.status = input.status;
           permission.granted = input.status === 'granted';
+          if (spec.capabilities?.nativeLocation === true) {
+            await externalNative.input({ kind: 'nativeLocationConfigure', patch: { permission: input.status } });
+          }
         } else if (input.kind === 'alert') {
           const alert = alertQueue.shift();
           assert(alert, 'No pending Alert');
@@ -515,6 +520,11 @@ exports.run = async function run(jest) {
       assert.equal(residual.native.notification, 0, 'Notification listener leaked');
       assert.equal(residual.native.live, 0, 'Live Activity listener leaked');
       assert.equal(residual.native.ads, 0, 'Ad listener leaked');
+      if (residual.native.location) {
+        assert.equal(residual.native.location.running, false, 'Native location owner leaked');
+        assert.equal(residual.native.location.prepared, false, 'Native background activity leaked');
+        assert([0, 1].includes(residual.native.location.processListeners), 'Temporary native location listener leaked');
+      }
       assert([0, 2].includes(residual.native.iapProcessListeners), 'Unexpected process-owned IAP listeners');
       assert.equal(residual.updates.listeners, 0, 'Updates listener leaked');
       finish();
