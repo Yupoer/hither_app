@@ -3,7 +3,7 @@ const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/bac
 
 type Host = { testId?: string; label?: string; text?: string; value?: unknown; disabled?: boolean };
 type Presentation = { hosts: Host[]; receipts: { host: string; method: string; args?: unknown[] }[];
-  preferences: { sharingEnabled: boolean; passiveCompanionMode: boolean; travelMode: string } };
+  preferences: { sharingEnabled: boolean; passiveCompanionMode: boolean; travelMode: string; dayColors: Record<string, string> } };
 type MapObservation = { presentation: Presentation; external: { alerts: number; watches: number };
   durable: { snapshot: { destinations: { id: string; title: string; day: number | null; closedAt?: string; kind?: string }[];
     dailyAccommodations: { title: string; sourceDestinationId?: string | null; stayDate: string }[] };
@@ -274,8 +274,8 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.settle();
       expect(world.backend.itinerary[0]).toMatchObject({ emoji: '☕', marker_color: null });
       await run(device, 'map.route.day-color.open', { day: 1 });
-      await run(device, 'map.route.day-color', { color: '#FF5A5F' });
-      expect((await device.observe()).presentation.preferences.dayColors['1']).toBe('#FF5A5F');
+      await run(device, 'map.route.day-color', { color: '#6FA8FF' });
+      expect((await device.observe()).presentation.preferences.dayColors['1']).toBe('#6FA8FF');
       await run(device, 'map.route.trip.open');
       await run(device, 'map.route.trip.more-days');
       await run(device, 'map.route.trip.fewer-days');
