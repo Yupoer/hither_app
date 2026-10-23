@@ -1,0 +1,130 @@
+name: CD iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Reviewed 40-character commit on master
+        required: true
+        type: string
+      mode:
+        description: Preflight, signed IPA only, or signed IPA plus TestFlight upload
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - build-only
+          - submit
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-ios-production
+  cancel-in-progress: false
+
+jobs:
+  ios:
+    runs-on: xcode-27
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_MODE: ${{ inputs.mode }}
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Validate trusted dispatch
+        working-directory: .
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/master ]] || { echo 'Dispatch from master only'; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'source_sha must be a full lowercase SHA'; exit 1; }
+          [[ "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]] || exit 1
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify pinned master source and Xcode
+        working-directory: .
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/master
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | grep -E '^Xcode 27\.0(\.[0-9]+)?$'
+          sw_vers
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun simctl list runtimes
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.16.0
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install and verify native dependencies
+        run: |
+          npm ci
+          npx patch-package --error-on-fail
+          npm run verify:runtime
+          npx --yes eas-cli@21.0.2 --version
+
+      - name: Build signed production IPA on this runner
+        if: inputs.mode != 'preflight'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          npx --yes eas-cli@21.0.2 whoami
+          npx --yes eas-cli@21.0.2 build --platform ios --profile production --local \
+            --non-interactive --output "$RUNNER_TEMP/Hither-production.ipa"
+
+      - name: Verify IPA and record source
+        if: inputs.mode != 'preflight'
+        run: |
+          ipa="$RUNNER_TEMP/Hither-production.ipa"
+          test -s "$ipa"
+          unzip -tq "$ipa" >/dev/null
+          ditto -x -k "$ipa" "$RUNNER_TEMP/hither-ipa"
+          shopt -s nullglob
+          apps=("$RUNNER_TEMP/hither-ipa/Payload/"*.app)
+          [[ ${#apps[@]} -eq 1 ]]
+          app=${apps[0]}
+          [[ "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" == app.hither.mobile ]]
+          widgets=("$app/PlugIns/"*.appex)
+          [[ ${#widgets[@]} -eq 1 ]]
+          widget=${widgets[0]}
+          [[ "$(plutil -extract CFBundleIdentifier raw "$widget/Info.plist")" == app.hither.mobile.widget ]]
+          codesign --verify --deep --strict "$app"
+          version=$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")
+          build=$(plutil -extract CFBundleVersion raw "$app/Info.plist")
+          [[ "$build" =~ ^[0-9]+$ ]]
+          digest=$(shasum -a 256 "$ipa" | cut -d ' ' -f 1)
+          printf 'source_sha=%s\nmode=%s\nversion=%s\nbuild=%s\nipa_sha256=%s\nrun_id=%s\n' \
+            "$SOURCE_SHA" "$RELEASE_MODE" "$version" "$build" "$digest" "$GITHUB_RUN_ID" \
+            > "$RUNNER_TEMP/hither-receipt.txt"
+          cat "$RUNNER_TEMP/hither-receipt.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: inputs.mode != 'preflight'
+        with:
+          name: hither-ios-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/Hither-production.ipa
+            ${{ runner.temp }}/hither-receipt.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload this IPA to TestFlight
+        if: inputs.mode == 'submit'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx --yes eas-cli@21.0.2 submit --platform ios --profile production \
+            --path "$RUNNER_TEMP/Hither-production.ipa" --non-interactive --wait
