@@ -303,6 +303,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await device.perform('teams.create');
       expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'leader' } });
       await device.host.mount({ name: 'MyTeams' });
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'teams-empty-join'), 'empty team join action after remount');
       await device.perform('teams.join');
       expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower' } });
     } finally { await world.close(); }

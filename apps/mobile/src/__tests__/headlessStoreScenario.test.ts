@@ -114,13 +114,13 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       expect(world.backend.notificationOutbox).toEqual([]);
       device.online = false;
       await device.perform('commands.custom', { slot: 0 });
-      const pending = await world.waitFor(device, (value: any) => value.durable.operations.some((operation: any) => operation.operationType === 'send_command'), 'durable offline custom command');
+      const pending = await world.waitFor(device, (value: any) => value.durable.operations.some((operation: any) => operation.operationType === 'send_command' && operation.status === 'failed' && operation.attempts === 1), 'durable offline custom command retry');
       const operation = pending.durable.operations.find((row: any) => row.operationType === 'send_command');
       expect(operation.actorId).toBe(PEER);
       expect(operation.payload).toMatchObject({ type: 'custom', message: 'Please meet here', expiresAt: new Date(world.now + 300000).toISOString() });
       expect(world.backend.notificationOutbox).toEqual([]);
       device.online = true;
-      await world.advance(1000);
+      await world.advance(operation.nextAttemptAt - world.now);
       await device.perform('commands.flush', { args: [] });
       await world.waitFor(device, () => world.backend.notificationOutbox.length === 1, 'replayed actual command');
       expect(world.backend.notificationOutbox[0]).toMatchObject({ group_id: GROUP_ID, sender_id: PEER, target_user_id: LEADER, payload: { type: 'custom', message: 'Please meet here' } });
