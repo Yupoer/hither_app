@@ -31,12 +31,11 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 `install-git-hooks.sh` 與舊 auto-ship 入口只提示，不修改 Git 或發布 OTA。
 驗證按 AGENTS.md 與 CI；OTA／build／submit 由明確授權的 release 流程執行。
 
-## 4. 共用技能
+## 4. 開發與發布流程
 
-使用使用者共用技能目錄 `~/.agents/skills`。Claude 的技能入口指向同一來源，不維護另一份內容。
-`workflow-controller` 自動接續規劃、實作、審查修復、合併與清理。
-只有 Release skill 為 `gpt-6-astra`／`low`；其餘 workflow phase 使用 `gpt-5.6-luna`／`max`。宿主不可用時明示能力限制。
-主工作樹不用安裝只為模擬模型的 nested launcher。
+依 [README](README.md#development-and-release-workflow) 在本地實作、審查與驗證，再交付 `master` 並確認 CI。
+完整 iOS 產品發布使用現有 `hither-release` 入口，先判斷 OTA 相容性；需要新 binary 時經 `mac-codex` 執行 EAS local build 和 TestFlight 上傳。
+新電腦須另行設定 SSH、EAS 與 Apple 登入；不複製既有電腦的私密金鑰。
 
 ## 5. Supabase CLI 重新 link（要跑 migration 時才需要）
 

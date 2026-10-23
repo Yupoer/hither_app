@@ -20,7 +20,7 @@ name: CI
 
 on:
   push:
-    branches: ["master"]
+    branches: ["master", "deliver/**"]
   pull_request:
   workflow_dispatch:
 
@@ -59,7 +59,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before }}
         run: python3 scripts/check-workflow-scope.py
         working-directory: ${{ github.workspace }}
 
@@ -97,17 +97,17 @@ jobs:
         env:
           NODE_OPTIONS: --experimental-vm-modules
 
-      # Durable PR marker (not github.base_ref): <!-- hither-test-meta parent: N|pure-chore -->
-      - name: Resolve META_PARENT from PR metadata
+      - name: Resolve META_PARENT
         id: test_meta
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const marker = /<!--\s*hither-test-meta\s+parent:\s*([A-Za-z0-9_-]+)\s*-->/i;
             const ref = context.ref || '';
-            if (ref === 'refs/heads/master' || ref === 'refs/heads/main') {
+            if (ref === 'refs/heads/master' || ref === 'refs/heads/main' ||
+                (context.eventName === 'push' && ref.startsWith('refs/heads/deliver/'))) {
               core.setOutput('parent', '');
-              core.info('default-branch push: META_PARENT unset (validate whole map)');
+              core.info('direct-delivery push: META_PARENT unset (validate whole map)');
               return;
             }
             let body = '';
@@ -154,7 +154,7 @@ jobs:
       - name: Coverage changed functions ≥85%
         run: npm run test:coverage:changed
         env:
-          COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          COVERAGE_BASE: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
 
       - name: Lint (eslint — full tree; featureTour at error severity)
@@ -328,7 +328,7 @@ jobs:
               `**Run:** ${runUrl}`,
               ``,
               `@claude The CI pipeline (\`.github/workflows/ci.yml\`) is red. Open the run above,`,
-              `read the failing step's logs, find the root cause, and open a PR that fixes it.`,
+              `read the failing step's logs, find the root cause, and deliver a reviewed fix.`,
               `Gates are: jest, test:meta, test:coverage:changed, lint, tsc --noEmit, verify:runtime, expo install --check, expo-doctor, supabase test db (pgTAP). Keep the fix minimal.`,
             ].join("\n");
             // Dedupe: skip if an open ci-failure issue already exists for this sha.

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const workflow = fs.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const step = workflow.split('      - name: Resolve META_PARENT from PR metadata')[1]
+const step = workflow.split('      - name: Resolve META_PARENT')[1]
   .split('      - name: Test meta (L1 map + L2 anti-fake)')[0];
 const script = step.split('          script: |\n')[1].split('\n')
   .map((line) => line.replace(/^ {12}/, '')).join('\n');
@@ -59,6 +59,10 @@ for (const ref of ['refs/heads/master', 'refs/heads/main']) {
   assert.deepEqual(result.outputs, { parent: '' });
   assert.deepEqual(result.calls, []);
 }
+
+const direct = await run({ ref: 'refs/heads/deliver/local-workflow', eventName: 'push', prs: [] });
+assert.deepEqual(direct.outputs, { parent: '' });
+assert.deepEqual(direct.calls, []);
 
 const dispatch = await run({ ref: 'refs/heads/feature/ci', eventName: 'workflow_dispatch' });
 assert.deepEqual(dispatch.outputs, { parent: 'pure-chore' });
