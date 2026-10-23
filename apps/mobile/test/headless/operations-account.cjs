@@ -49,7 +49,8 @@ for (const symbol of ['beginAuthCallback', 'consumeAuthCallback', 'validateAuthC
 }
 for (const [name, id, kind] of [['password', 'recovery-password', 'changeText'],
   ['confirm', 'recovery-confirm-password', 'changeText'], ['reveal', 'recovery-password-toggle'], ['submit', 'recovery-submit']]) {
-  control(`auth.recovery.${name}`, 'A17,A18', 'src/screens/PasswordRecoveryScreen.tsx', 'submit', id, kind);
+  const symbol = { password: 'setPassword', confirm: 'setConfirmPassword', reveal: 'setShowPassword', submit: 'submit' }[name];
+  control(`auth.recovery.${name}`, 'A17,A18', 'src/screens/PasswordRecoveryScreen.tsx', symbol, id, kind);
 }
 
 session('session.signout', 'A22', 'signOut');
@@ -61,9 +62,9 @@ session('profile.nickname', 'P08', 'updateNickname');
 session('profile.refresh', 'P05', 'refreshProfile');
 
 for (const [name, ids, symbol, id, kind] of [
-  ['name', 'A19,G01,G02', 'submitAuth', 'auth-name', 'changeText'],
-  ['group-name', 'G01', 'submitAuth', 'auth-group-name', 'changeText'],
-  ['code', 'G02', 'submitAuth', 'auth-code', 'changeText'],
+  ['name', 'A19,G01,G02', 'setName', 'auth-name', 'changeText'],
+  ['group-name', 'G01', 'setGroupName', 'auth-group-name', 'changeText'],
+  ['code', 'G02', 'setCode', 'auth-code', 'changeText'],
   ['create', 'G01,A19', 'submitAuth', 'auth-create-group'],
   ['join', 'G02,A19', 'submitAuth', 'auth-join-group'],
 ]) control(`team.${name}`, ids, 'src/screens/AuthScreen.tsx', symbol, id, kind);
@@ -86,7 +87,9 @@ for (const [name, ids, id, kind] of [['email', 'P01', 'account-email', 'changeTe
   ['password', 'P01,P02', 'account-password', 'changeText'], ['confirm', 'P02', 'account-confirm-password', 'changeText'],
   ['upgrade', 'P01', 'account-upgrade'], ['add-password', 'P02', 'account-add-password'],
   ['google', 'P03', 'account-link-google'], ['apple', 'P04', 'account-link-apple'], ['delete', 'A23', 'account-delete']]) {
-  control(`account.${name}`, ids, 'src/components/AccountSheet.tsx', name === 'delete' ? 'confirmDeleteAccount' : name === 'upgrade' ? 'handleUpgrade' : name === 'add-password' ? 'handleAddPassword' : ['google', 'apple'].includes(name) ? 'handleLink' : 'AccountSheetContent', id, kind);
+  const symbol = { email: 'setUpgradeEmail', password: 'setUpgradePassword', confirm: 'setAccountPasswordConfirm',
+    upgrade: 'handleUpgrade', 'add-password': 'handleAddPassword', google: 'handleLink', apple: 'handleLink', delete: 'confirmDeleteAccount' }[name];
+  control(`account.${name}`, ids, 'src/components/AccountSheet.tsx', symbol, id, kind);
 }
 for (const [name, ids, id, kind] of [['name', 'P06,P07', 'profile-name', 'changeText'],
   ['save', 'P07', 'overlay-done'], ['cancel', 'P06', 'overlay-close']]) {
@@ -98,7 +101,8 @@ for (const field of ['avatar', 'color']) register(`profile.${field}`, 'P06,P07',
   (app, { value }) => app.host.call({ kind: 'press', testId: `profile-${field}-${value}` }));
 for (const [name, id, kind] of [['label', 'custom-command-label', 'changeText'], ['message', 'custom-command-message', 'changeText'],
   ['save', 'custom-command-save'], ['cancel', 'overlay-close']]) {
-  control(`command.${name}`, 'P09', 'src/components/CustomQuickCommandSheet.tsx', 'save', id, kind);
+  const symbol = { label: 'setLabel', message: 'setMessage', save: 'save', cancel: 'onClose' }[name];
+  control(`command.${name}`, 'P09', 'src/components/CustomQuickCommandSheet.tsx', symbol, id, kind);
 }
 
 for (const [symbol, ids] of [['createGroup', 'G01'], ['joinGroup', 'G02'], ['updateGroupAvatar', 'G03'],
@@ -141,7 +145,8 @@ for (const symbol of ['readOnboardingState', 'readOnboardingReplayIntent', 'mark
 }
 
 for (const [name, id, kind] of [['description', 'feedback-description', 'changeText'], ['submit', 'feedback-submit'], ['close', 'settings-child-back']]) {
-  control(`feedback.${name}`, name === 'close' ? 'D02' : 'D01', 'src/components/FeedbackSheet.tsx', name === 'close' ? 'handleClose' : 'submit', id, kind);
+  const symbol = { description: 'setDescription', submit: 'submit', close: 'handleClose' }[name];
+  control(`feedback.${name}`, name === 'close' ? 'D02' : 'D01', 'src/components/FeedbackSheet.tsx', symbol, id, kind);
 }
 register('feedback.category', 'D01', 'src/components/FeedbackSheet.tsx', 'setCategory', 'screen', '{ value }',
   (app, { value }) => app.host.call({ kind: 'press', testId: `feedback-category-${value}` }));
