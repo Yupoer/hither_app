@@ -134,9 +134,12 @@ export function projectOperationGroupState(state: GroupState, operations: CoreOp
   let members = [...(state.members ?? [])];
   let dailyAccommodations = [...(state.dailyAccommodations ?? [])];
   let destinations = [...state.destinations];
-  for (const operation of operations.filter(op => ['pending', 'failed', 'inflight'].includes(op.status))
+  const open = operations.filter(op => ['pending', 'failed', 'inflight'].includes(op.status));
+  const applied = new Set(state.projectedDestinationOperationIds ?? []);
+  for (const operation of open
     .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt - b.createdAt)) {
-    destinations = projectOperationDestinations(destinations, [operation]);
+    const destinationsApplied = applied.has(operation.id);
+    if (!destinationsApplied) destinations = projectOperationDestinations(destinations, [operation]);
     const payload = operation.payload;
     if (operation.operationType === 'set_solo') {
       members = members.map(member => member.userId === operation.actorId
@@ -149,7 +152,7 @@ export function projectOperationGroupState(state: GroupState, operations: CoreOp
       dailyAccommodations = dailyAccommodations.filter(daily => daily.stayDate !== stayDate);
       if (operation.operationType === 'set_daily_accommodation') {
         const nextStay = payload.daily as unknown as NonNullable<GroupState['dailyAccommodations']>[number];
-        if (previous) {
+        if (previous && !destinationsApplied) {
           // Replace only open copies of the old daily stay. Independent hotels,
           // other dates/scopes and completed history retain their identity/data.
           const day = typeof payload.day === 'number' ? payload.day
@@ -168,11 +171,12 @@ export function projectOperationGroupState(state: GroupState, operations: CoreOp
         dailyAccommodations.push(nextStay);
         group = { ...group, accommodationAutoAdd: false };
       }
-      if (previous || operation.operationType === 'clear_daily_accommodation') {
+      if (!destinationsApplied && (previous || operation.operationType === 'clear_daily_accommodation')) {
         destinations = destinations.map(destination => !destination.subgroupId && destination.kind === 'accommodation'
           && (destination.day ?? 1) === (payload.day ?? 1) ? { ...destination, stayAnchor: false } : destination);
       }
     }
   }
-  return { ...state, group, members, destinations, dailyAccommodations: dailyAccommodations.sort((a, b) => a.stayDate.localeCompare(b.stayDate)) };
+  return { ...state, group, members, destinations, projectedDestinationOperationIds: open.map(op => op.id),
+    dailyAccommodations: dailyAccommodations.sort((a, b) => a.stayDate.localeCompare(b.stayDate)) };
 }

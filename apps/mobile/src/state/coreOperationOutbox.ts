@@ -896,6 +896,13 @@ export function createCoreOperationOutbox(
     work: (exec: CoreSqlExecutor) => Promise<T>,
   ): Promise<T> => runCoreDataWriteLock(() => outboxDb.withExclusiveTransaction(work));
 
+  const markProjectedDestinations = async (exec: CoreSqlExecutor, operation: CoreOperation): Promise<void> => {
+    if (!isItineraryMutation(operation)) return;
+    const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+    if (snapshot) await coreDb.writeSnapshot(exec, { ...snapshot,
+      projectedDestinationOperationIds: [...new Set([...(snapshot.projectedDestinationOperationIds ?? []), operation.id])] });
+  };
+
   /**
    * ONE exclusive transaction: local state write + outbox insert.
    * Uses coreDb's exclusive txn so gathering writes use the same exec
@@ -1154,14 +1161,25 @@ export function createCoreOperationOutbox(
       }
       return currentId;
     };
+    const rewrite = (value: unknown): unknown => {
+      if (typeof value === 'string') return resolveAlias(value);
+      if (Array.isArray(value)) return value.map(rewrite);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, rewrite(child)]));
+      }
+      return value;
+    };
+    const pendingRows = rowsBefore.map(pending => ({ ...pending, entityId: resolveAlias(pending.entityId),
+      payload: rewrite(pending.payload) as Record<string, unknown> }));
     if (snapshot && operation.entityType === 'itinerary'
       && (serverDestinations !== null || aliasMap.size > 0)) {
       const projected = projectOperationGroupState({
         group: { ...snapshot.group, ...entity?.group },
-        destinations: serverDestinations ?? snapshot.destinations,
+        destinations: (serverDestinations ?? snapshot.destinations).map(destination => ({ ...destination, id: resolveAlias(destination.id) })),
+        projectedDestinationOperationIds: serverDestinations === null ? snapshot.projectedDestinationOperationIds : undefined,
         dailyAccommodations: entity?.dailyAccommodations ?? snapshot.dailyAccommodations,
         members: snapshot.members ?? [], subgroups: snapshot.subgroups ?? [],
-      }, rowsBefore.filter(row => row.id !== operation.id && row.actorId === operation.actorId), [snapshot.activeGathering.activeDestinationId]);
+      }, pendingRows.filter(row => row.id !== operation.id && row.actorId === operation.actorId), [snapshot.activeGathering.activeDestinationId]);
       let destinations = projected.destinations;
       if (aliasMap.size > 0) {
         const seen = new Set<string>();
@@ -1210,6 +1228,7 @@ export function createCoreOperationOutbox(
         group: projected.group,
         dailyAccommodations: projected.dailyAccommodations,
         destinations,
+        projectedDestinationOperationIds: projected.projectedDestinationOperationIds,
         activeGathering,
         ...(typeof nextItineraryVersion === 'number'
           ? { itineraryVersion: nextItineraryVersion }
@@ -1230,25 +1249,10 @@ export function createCoreOperationOutbox(
     // A merge can be acknowledged while dependent local edits are still in
     // the device queue. Rewrite their payload and entity id in this same
     // transaction; operation IDs, sequences, and dependency IDs stay intact.
-    const rewrite = (value: unknown): unknown => {
-      if (typeof value === 'string') return resolveAlias(value);
-      if (Array.isArray(value)) return value.map(rewrite);
-      if (value && typeof value === 'object') {
-        return Object.fromEntries(
-          Object.entries(value).map(([key, child]) => [key, rewrite(child)]),
-        );
-      }
-      return value;
-    };
-    for (const pending of rowsBefore) {
+    for (const pending of pendingRows) {
       if (pending.id === operation.id || pending.status === 'acked'
         || pending.actorId !== operation.actorId) continue;
-      const entityId = resolveAlias(pending.entityId);
-      await outboxDb.writeUpdate(exec, {
-        ...pending,
-        entityId,
-        payload: rewrite(pending.payload) as Record<string, unknown>,
-      });
+      await outboxDb.writeUpdate(exec, pending);
     }
   };
 
@@ -1279,6 +1283,13 @@ export function createCoreOperationOutbox(
           await outboxDb.writeDelete(exec, operation.id);
         }
         await applyAcceptedEffects(exec, operation, result, current, rowsBefore);
+        const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+        if (snapshot?.projectedDestinationOperationIds) {
+          const openIds = new Set(rowsBefore.filter(row => row.id !== operation.id && isOpenOperation(row)
+            && row.actorId === operation.actorId).map(row => row.id));
+          await coreDb.writeSnapshot(exec, { ...snapshot,
+            projectedDestinationOperationIds: snapshot.projectedDestinationOperationIds.filter(id => openIds.has(id)) });
+        }
 
         if (result.entity
           && typeof result.entity === 'object'
@@ -1436,6 +1447,7 @@ export function createCoreOperationOutbox(
               ...snapshot,
               group: projected.group, dailyAccommodations: projected.dailyAccommodations,
               destinations: projected.destinations,
+              projectedDestinationOperationIds: projected.projectedDestinationOperationIds,
               itineraryVersion: conflict.serverEntityVersion ?? snapshot.itineraryVersion ?? 0,
               syncedAt: current,
               updatedAt: current,
@@ -1452,6 +1464,13 @@ export function createCoreOperationOutbox(
         if (entity.sessionId && entity.userId) {
           await coreDb.writeNavigationResponse(exec, entity);
         }
+      }
+      const snapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
+      if (snapshot?.projectedDestinationOperationIds) {
+        const openIds = new Set(conflictRows.filter(row => !invalidated.has(row.id) && isOpenOperation(row)
+          && row.actorId === operation.actorId).map(row => row.id));
+        await coreDb.writeSnapshot(exec, { ...snapshot,
+          projectedDestinationOperationIds: snapshot.projectedDestinationOperationIds.filter(id => openIds.has(id)) });
       }
     });
     });
@@ -1669,6 +1688,7 @@ export function createCoreOperationOutbox(
                 } },
               };
               await coreDb.writeSnapshot(exec, { ...snapshot, destinations, updatedAt: current,
+                projectedDestinationOperationIds: [...(snapshot.projectedDestinationOperationIds ?? []), promotion.id],
                 source: 'local_optimistic', ownerActorId: operation.actorId });
               await outboxDb.writeInsert(exec, promotion);
             }
@@ -1816,7 +1836,10 @@ export function createCoreOperationOutbox(
         };
         await writeLocalAndOutbox(
           input.applyLocal
-            ? (exec) => input.applyLocal!(exec, operation)
+            ? async (exec) => {
+              await input.applyLocal!(exec, operation);
+              await markProjectedDestinations(exec, operation);
+            }
             : async () => undefined,
           operation,
         );
@@ -1908,7 +1931,13 @@ export function createCoreOperationOutbox(
           for (const id of discard) await outboxDb.writeDelete(exec, id);
           recreated.sequence = await outboxDb.writeAllocateSequence(exec, actorId, original.groupId);
           await outboxDb.writeInsert(exec, recreated);
-          if (options.applyLocal) await options.applyLocal(exec, recreated);
+          const snapshot = await coreDb.readSnapshotInTransaction(exec, original.groupId);
+          if (snapshot?.projectedDestinationOperationIds) await coreDb.writeSnapshot(exec, { ...snapshot,
+            projectedDestinationOperationIds: snapshot.projectedDestinationOperationIds.filter(id => !discard.has(id)) });
+          if (options.applyLocal) {
+            await options.applyLocal(exec, recreated);
+            await markProjectedDestinations(exec, recreated);
+          }
         });
         notifyCoreOutboxChanged();
         return recreated;

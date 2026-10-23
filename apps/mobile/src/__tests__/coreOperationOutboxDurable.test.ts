@@ -25,6 +25,7 @@ import {
 import { projectPendingDestinations } from '../state/coreDataSync';
 import { applyCoreOperation } from '../api/services/CoreDataService';
 import { supabase } from '../api/supabase';
+import { insertFirstStop } from '../utils/firstStopInsertion';
 
 const mockedSupabase = supabase as unknown as {
   auth: { getSession: jest.Mock };
@@ -95,6 +96,70 @@ function snapshotForGroup(
 }
 
 describe('durable core operation outbox', () => {
+  it('carries destination provenance through atomic promotion, local writes and a receipt retaining the snapshot', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const coreDb = new MemoryCoreDataDatabase();
+    const queue = makeQueue(db, async operation => operation.operationType === 'set_trip_details'
+      ? { ...accepted(operation), effects: { destinationIdAliases: { unused: 'canonical-unused' } } }
+      : accepted(operation), { value: 'actor-a' }, () => 1_000, coreDb);
+    const store = createCoreDataStore(coreDb, () => 2_000, id => queue.hasPendingGathering(id),
+      id => queue.getPendingItineraryOperations(id), async () => 'actor-a');
+    const remote: GroupState = {
+      group: { id: 'group-a', name: 'Trip', inviteCode: 'TRIP', createdBy: 'actor-a', journeyStatus: 'paused',
+        stragglerAlerts: false, stragglerThresholdM: 100 }, members: [], subgroups: [],
+      destinations: ['a', 'b'].map((id, order) => ({ id, title: id, order, day: 1, coordinates: { latitude: 25, longitude: 121 } })),
+    };
+    const initial = await store.saveRemoteGroupState(remote);
+    const trip = await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'set_trip_details',
+      payload: { tripDays: 2, departureDate: '2026-10-23' }, applyLocal: async () => undefined });
+    await queue.enqueueGatheringTransition({ groupId: 'group-a', actorId: 'actor-a', action: 'start',
+      activeDestinationId: 'b', baseState: initial.activeGathering, promoteWithinDay: true });
+    const add = await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'add_destination',
+      payload: { destinationId: 'local', title: 'Local', latitude: 25, longitude: 121, day: 1, placement: 'firstStop' },
+      applyLocal: async exec => {
+        const current = await coreDb.readSnapshotInTransaction(exec, 'group-a');
+        if (!current) throw new Error('missing snapshot');
+        await coreDb.writeSnapshot(exec, { ...current, destinations: insertFirstStop(current.destinations,
+          { id: 'local', title: 'Local', order: 99, day: 1, coordinates: { latitude: 25, longitude: 121 } }) });
+      } });
+    const edit = await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'edit_destination',
+      payload: { destinationId: 'b', patch: { title: 'Edited' } } });
+    const before = await store.readSnapshot('group-a');
+    if (!before) throw new Error('missing snapshot');
+    const promotion = (await queue.getPendingItineraryOperations('group-a')).find(op => op.operationType === 'reorder_destinations');
+    expect(before.projectedDestinationOperationIds).toEqual(expect.arrayContaining([trip.id, promotion?.id, add.id]));
+    expect(before.projectedDestinationOperationIds).not.toContain(edit.id);
+    expect((await queue.flush(1)).sent).toBe(1);
+    const after = await store.readSnapshot('group-a');
+    if (!after) throw new Error('missing snapshot');
+    const visible = projectPendingDestinations(groupStateFromCoreSnapshot(after), await queue.getPendingItineraryOperations('group-a'));
+    expect([...visible.destinations].sort((a, b) => a.order - b.order).map(d => d.id)).toEqual(['local', 'b', 'a']);
+    expect(visible.destinations.find(d => d.id === 'b')?.title).toBe('Edited');
+    expect(after.projectedDestinationOperationIds).not.toContain(trip.id);
+    const refreshed = await store.saveRemoteGroupState(remote);
+    const refreshedVisible = projectPendingDestinations(groupStateFromCoreSnapshot(refreshed), await queue.getPendingItineraryOperations('group-a'));
+    expect([...refreshedVisible.destinations].sort((a, b) => a.order - b.order).map(d => d.id)).toEqual(['local', 'b', 'a']);
+    for (let remaining = 0; remaining < 4; remaining += 1) await queue.flush(1);
+    expect((await store.readSnapshot('group-a'))?.projectedDestinationOperationIds).toEqual([]);
+  });
+
+  it('preserves a server-visible pending add rank and fields ahead of a newer remote stop', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const coreDb = new MemoryCoreDataDatabase();
+    const queue = makeQueue(db, async op => accepted(op), { value: 'actor-a' }, () => 1_000, coreDb);
+    const store = createCoreDataStore(coreDb, () => 2_000, undefined,
+      id => queue.getPendingItineraryOperations(id), async () => 'actor-a');
+    await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'add_destination',
+      payload: { destinationId: 'local', title: 'Original', latitude: 25, longitude: 121, day: 1 } });
+    const remote: GroupState = { group: { id: 'group-a', name: 'Trip', inviteCode: 'TRIP', createdBy: 'actor-a',
+      journeyStatus: 'paused', stragglerAlerts: false, stragglerThresholdM: 100 }, members: [], subgroups: [],
+    destinations: ['local', 'server-newer'].map((id, order) => ({ id, title: `Server ${id}`, order, day: 1,
+      coordinates: { latitude: 25, longitude: 121 }, emoji: 'X' })) };
+    const saved = await store.saveRemoteGroupState(remote);
+    const visible = projectPendingDestinations(groupStateFromCoreSnapshot(saved), await queue.getPendingItineraryOperations('group-a'));
+    expect(visible.destinations).toEqual(remote.destinations);
+  });
+
   it('allows a fresh same-resource intent after a retained terminal receipt', async () => {
     const db = new MemoryCoreOperationOutboxDatabase();
     const queue = makeQueue(db, async op => accepted(op));
@@ -749,6 +814,10 @@ describe('durable core operation outbox', () => {
     expect(rewritten?.payload.destinationId).toBe('canonical-place');
     const projected = await coreDb.getSnapshot('group-a');
     expect(projected?.destinations[0]?.id).toBe('canonical-place');
+    expect(projected?.destinations[0]?.title).toBe('Edited');
+    if (!projected) throw new Error('missing canonical snapshot');
+    expect(projectPendingDestinations(groupStateFromCoreSnapshot(projected), await queue.getPendingItineraryOperations('group-a'))
+      .destinations[0]?.title).toBe('Edited');
     expect(projected?.activeGathering.activeDestinationId).toBe('canonical-place');
     expect(projected?.activeGathering.pointStatuses).toEqual({ 'canonical-place': 'en_route' });
   });
@@ -793,14 +862,22 @@ it('rolls back a terminal transport rejection using local history while preservi
   await coreDb.putSnapshot(snapshotForGroup() as any);
   const queue = makeQueue(db, async () => { throw Object.assign(new Error('limit'), { code: 'P0004' }); }, undefined, undefined, coreDb);
   const destination = { id: 'rejected', title: 'rejected', order: 0, day: null, coordinates: { latitude: 25, longitude: 121 } };
-  await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'add_destination', payload: { destinationId: destination.id },
+  const rejected = await queue.enqueueMutation({ ...mutation('group-a'), operationType: 'add_destination', payload: { destinationId: destination.id },
     applyLocal: async (exec) => {
       const snapshot = (await coreDb.readSnapshotInTransaction(exec, 'group-a'))!;
       await coreDb.writeSnapshot(exec, { ...snapshot, destinations: [destination] });
     },
   });
   const current = (await coreDb.getSnapshot('group-a'))!;
+  expect(current.projectedDestinationOperationIds).toEqual([rejected.id]);
   await coreDb.putSnapshot({ ...current, destinations: [...current.destinations, { ...destination, id: 'independent' }] });
   await queue.flush();
   expect((await coreDb.getSnapshot('group-a'))!.destinations.map(item => item.id)).toEqual(['independent']);
+  expect((await coreDb.getSnapshot('group-a'))?.projectedDestinationOperationIds).toEqual([]);
+  await queue.recreateConflict(rejected.id, { operationId: rejected.id });
+  const recreated = await coreDb.getSnapshot('group-a');
+  if (!recreated) throw new Error('missing snapshot');
+  expect(recreated.projectedDestinationOperationIds).toEqual([]);
+  expect(projectPendingDestinations(groupStateFromCoreSnapshot(recreated), await queue.getPendingItineraryOperations('group-a'))
+    .destinations.map(item => item.id)).toEqual(['independent', 'rejected']);
 });

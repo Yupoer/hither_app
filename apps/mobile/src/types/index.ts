@@ -525,6 +525,8 @@ export interface DailyAccommodation {
 
 /** Aggregated live view of a group, consumed by the Map screen. */
 export interface GroupState {
+  /** Local commands already represented by this destination array. */
+  projectedDestinationOperationIds?: string[];
   group: Group;
   members: MemberLocation[];
   destinations: Destination[];

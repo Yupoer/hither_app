@@ -183,6 +183,8 @@ export function mergeRemoteGroupStatePreservingOwnLocation(
     ...remote,
     members,
     destinations: preserveDestinations ? previous.destinations : remote.destinations,
+    projectedDestinationOperationIds: preserveDestinations
+      ? previous.projectedDestinationOperationIds : remote.projectedDestinationOperationIds,
     nextDestination: preserveDestinations
       ? previous.nextDestination
       : remote.nextDestination,
