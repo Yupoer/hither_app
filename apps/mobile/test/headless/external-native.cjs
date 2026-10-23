@@ -15,7 +15,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     assert(events.has(name), `Unsupported native event ${name}`);
     assert.equal(typeof listener, 'function');
     events.get(name).add(listener);
-    return { remove: () => events.get(name).delete(listener) };
+    return boundary(`NativeSubscription.${name}`, { remove: () => events.get(name).delete(listener) });
   };
   const emit = (events, name, value) => {
     assert(events.has(name), `Unsupported native event ${name}`);
@@ -93,7 +93,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   const ads = { canRequestAds: true, formAvailable: false, afterFormCanRequestAds: true, consentError: null, initializeError: null, loadError: null, showError: null };
   const adInstances = new Map();
   let nextAd = 0;
-  const mobileAdsFactory = () => ({ initialize: async () => {
+  const mobileAdsFactory = () => boundary('MobileAds.instance', { initialize: async () => {
     effect('ads.initialize'); fail(ads, 'initializeError'); return [];
   } });
   const adsModule = boundary('react-native-google-mobile-ads', {
