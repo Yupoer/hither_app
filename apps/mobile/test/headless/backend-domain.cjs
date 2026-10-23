@@ -58,6 +58,8 @@ function initialize(b, { LEADER, PEER }) {
   b.verifiedPurchases = new Map();
   b.purchaseLedger = new Map();
   b.notificationOutbox = [];
+  b.arrivalEvents = [];
+  b.sessionHistory = new Map();
   require('./backend-auth.cjs').initialize(b, { LEADER, PEER });
 }
 

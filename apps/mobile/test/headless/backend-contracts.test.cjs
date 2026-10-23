@@ -52,7 +52,7 @@ assert.throws(() => b.execute('contract', { kind: 'rpc', name: 'get_store_snapsh
 assert.throws(() => table('navigation_member_states', [['select', '*'], ['eq', 'invented_column', 1]]), /Unknown navigation_member_states filter/);
 const core = (type, payload, userId = LEADER, extra = {}) => rpc('apply_core_operation_v3', {
   p_operation_id: `core-${++core.sequence}`, p_group_id: GROUP_ID, p_actor_id: userId, p_entity_type: 'itinerary',
-  p_entity_id: GROUP_ID, p_entity_version: 0, p_operation_type: type, p_payload: payload, p_sequence: core.sequence,
+  p_entity_id: type === 'set_solo' ? userId : GROUP_ID, p_entity_version: 0, p_operation_type: type, p_payload: payload, p_sequence: core.sequence,
   p_dependency_ids: [], p_created_at: new Date(b.now).toISOString(), ...extra,
 }, userId);
 core.sequence = 0;
@@ -101,9 +101,11 @@ rpc('respond_to_coordination_request', { p_request_id: request.id, p_option_id: 
 assert.equal(b.tables.coordination_responses.filter(r => r.request_id === request.id).length, 1);
 assert.equal(rpc('override_coordination_request', { p_request_id: request.id, p_option_id: 'add' }, PEER).error.code, '42501');
 b.now += 1000;
-assert.equal(rpc('resolve_coordination_request_deadline', { p_request_id: request.id }, PEER).data.resolved_outcome, 'add');
+assert.equal(rpc('resolve_coordination_request_deadline', { p_request_id: request.id }, PEER).error.code, '42501');
+assert.equal(require('./backend-requests.cjs').processDue(b)[0].resolved_outcome, 'add');
 assert.equal(b.itinerary.filter(d => d.title === 'Voted stop').length, 1);
-assert.equal(rpc('resolve_coordination_request_deadline', { p_request_id: request.id }, PEER).data.applied_operation_id, b.tables.itinerary_operations[0].id);
+assert.deepEqual(require('./backend-requests.cjs').processDue(b), []);
+assert.equal(b.tables.coordination_requests.find(r => r.id === request.id).applied_operation_id, b.tables.itinerary_operations[0].id);
 const refresh = rpc('request_group_location_refresh', { p_group_id: GROUP_ID }).data;
 assert.deepEqual(rpc('list_my_pending_location_refreshes', {}, PEER).data.map(r => r.group_id), [GROUP_ID]);
 assert.equal(rpc('ack_my_location_refresh', { p_group_id: GROUP_ID, p_requested_at: refresh.requested_at }, PEER).data, true);
@@ -113,6 +115,7 @@ rpc('import_itinerary_batch', { p_group_id: GROUP_ID, p_subgroup_id: null, p_day
 assert.equal(rpc('get_kml_import_quota', {}).data, 4);
 assert.equal(rpc('get_store_snapshot', { p_group_id: GROUP_ID }).data.balance, 0);
 const reward = rpc('create_reward_session', { p_platform: 'ios' }).data;
+assert.equal(rpc('create_reward_session', { p_platform: 'ios' }).data.error, 'session_active');
 rpc('update_reward_session_status', { p_session_ref: reward.session_ref, p_status: 'verifying' });
 assert.equal(b.wallets.get(LEADER) ?? 0, 0);
 require('./backend-store.cjs').creditReward(b, reward.session_ref);
@@ -165,3 +168,80 @@ assert.equal(b.teamPremium.get(GROUP_ID).product_id, 'hither.small_trip_pass');
 assert.throws(() => auth('unsupportedAuth', []), /Unsupported backend auth/);
 assert.throws(() => table('profiles', [['upsert', { id: LEADER, pro: true }, { onConflict: 'id' }]]), /Forbidden profiles write/);
 console.log('Backend auth integration, scoped authority and notification outbox contracts passed');
+
+let regression = new Backend(() => {});
+let sequence = 0;
+const regressionRpc = (name, args, userId = LEADER) => regression.execute('regression', { kind: 'rpc', name, args, steps: [], userId });
+const regressionWire = (type, payload, userId = LEADER, extra = {}) => ({
+  p_operation_id: `regression-${++sequence}`, p_group_id: GROUP_ID, p_actor_id: userId, p_entity_type: 'itinerary',
+  p_entity_id: type === 'set_solo' ? userId : GROUP_ID, p_entity_version: 0, p_operation_type: type, p_payload: payload,
+  p_sequence: sequence, p_dependency_ids: [], p_created_at: new Date(regression.now).toISOString(), ...extra,
+});
+const regressionCore = (type, payload, userId = LEADER, extra = {}) => regressionRpc('apply_core_operation_v3', regressionWire(type, payload, userId, extra), userId);
+const targetId = regression.itinerary[0].id;
+const explicitStart = regressionCore('start_gathering', { action: 'start', subgroupId: null, activeDestinationId: targetId, navigationRequestId: 'explicit-request' }, LEADER, { p_entity_type: 'active_gathering' }).data;
+assert.equal(explicitStart.effects.navigationSession.id, 'explicit-request');
+assert.notEqual(explicitStart.operation_id, 'explicit-request');
+assert.equal(regressionCore('record_arrival', { actorId: PEER, userId: PEER, arrived: true }, PEER, { p_entity_id: targetId }).data.conflict.code, 'session_required');
+const originalState = regression.tables.navigation_member_states.find(n => n.user_id === PEER);
+regression.tables.navigation_member_states = regression.tables.navigation_member_states.filter(n => n !== originalState);
+assert.equal(regressionCore('record_arrival', { actorId: PEER, userId: PEER, arrived: true, navigationSessionId: 'explicit-request' }, PEER, { p_entity_id: targetId }).data.conflict.code, 'not_session_member');
+regression.tables.navigation_member_states.push(originalState);
+assert.equal(regressionCore('record_arrival', { actorId: PEER, userId: PEER, arrived: true, navigationSessionId: 'explicit-request' }, PEER, { p_entity_id: 'different-target' }).data.conflict.code, 'session_mismatch');
+const arrivalPayload = { actorId: PEER, userId: PEER, arrived: true, arrivedAt: new Date(regression.now).toISOString(), occurredAt: new Date(regression.now).toISOString(), navigationSessionId: 'explicit-request', deviceId: 'peer-device' };
+regressionCore('record_arrival', arrivalPayload, PEER, { p_entity_id: targetId, p_sequence: 2 });
+regressionCore('record_arrival', { ...arrivalPayload, arrived: false, arrivedAt: null, occurredAt: new Date(regression.now - 1000).toISOString() }, PEER, { p_entity_id: targetId, p_sequence: 1 });
+assert.equal(regression.tables.destination_arrivals.length, 1);
+assert.equal(regression.arrivalEvents.length, 2);
+assert.equal(regression.sessionHistory.get(`explicit-request:${PEER}`).arrived, true);
+const correctionPayload = { actorId: LEADER, targetUserId: PEER, userId: PEER, arrived: true, arrivedAt: null, source: 'leader_correction', sessionId: 'explicit-request', navigationSessionId: 'explicit-request', note: 'Audited correction' };
+assert.equal(regressionCore('leader_correct_arrival', correctionPayload, LEADER, { p_entity_id: targetId }).data.conflict.code, 'history_not_correctable');
+assert.equal(regressionCore('complete_destination', { destinationId: targetId, sessionId: 'explicit-request', reason: 'forced', subgroupId: null }).data.status, 'accepted');
+assert.equal(regressionCore('leader_correct_arrival', correctionPayload, LEADER, { p_entity_id: targetId }).data.status, 'accepted');
+const corrected = regression.tables.destination_arrivals[0];
+assert.equal(corrected.arrived_at, null);
+assert.equal(corrected.source, 'leader_correction');
+assert.equal(corrected.marked_by, LEADER);
+assert.equal(corrected.corrected_by, LEADER);
+assert.equal(corrected.correction_note, 'Audited correction');
+assert.equal(regression.arrivalEvents.at(-1).event_kind, 'leader_correction');
+
+regression = new Backend(() => {});
+const activeSession = regressionRpc('start_navigation_session', { p_group_id: GROUP_ID, p_destination_id: targetId, p_request_id: 'completion-session' }).data;
+const completion = regressionWire('complete_destination', { destinationId: targetId, sessionId: activeSession.id, reason: 'all_arrived', subgroupId: null });
+assert.equal(regressionRpc('apply_core_operation_v3', completion).error.code, '40001');
+assert.equal(regression.sessions.get(activeSession.id).status, 'active');
+assert.equal(regression.itinerary[0].closed_at, null);
+for (const userId of [LEADER, PEER]) regressionCore('record_arrival', { actorId: userId, userId, arrived: true, arrivedAt: new Date(regression.now).toISOString(), navigationSessionId: activeSession.id }, userId, { p_entity_id: targetId });
+assert.equal(regressionRpc('apply_core_operation_v3', completion).data.status, 'accepted');
+assert.equal(regression.sessions.get(activeSession.id).status, 'completed');
+assert.equal(regressionRpc('apply_core_operation_v3', completion).data.status, 'duplicate');
+
+regression = new Backend(() => {});
+regressionRpc('start_navigation_session', { p_group_id: GROUP_ID, p_destination_id: targetId, p_request_id: 'delete-session' });
+assert.equal(regressionCore('delete_destination', { destinationId: targetId, subgroupId: null, sessionId: null }).data.conflict.code, 'validation');
+assert.equal(regression.itinerary.length, 1);
+assert.equal(regression.sessions.get('delete-session').status, 'active');
+assert.equal(regressionCore('delete_destination', { destinationId: targetId, subgroupId: null, sessionId: 'delete-session' }).data.status, 'accepted');
+assert.equal(regression.itinerary.length, 0);
+
+regression = new Backend(() => {});
+const versionedAdd = regressionCore('add_destination', { destinationId: 'versioned-stop', title: 'Versioned', latitude: 25, longitude: 121, day: 1, subgroupId: null, kind: 'stop' }).data;
+assert.equal(versionedAdd.entity.destinations.find(d => d.id === 'versioned-stop').title, 'Versioned');
+assert.equal(versionedAdd.entity_version, 1);
+assert.equal(regressionCore('set_solo', { userId: PEER, solo: true }, PEER).data.entity_version, 1);
+assert.equal(regressionCore('set_solo', { userId: PEER, solo: false }, PEER, { p_entity_id: GROUP_ID }).data.conflict.code, 'unauthorized');
+assert.equal(regression.tables.core_entity_versions.filter(r => r.entity_type === 'itinerary').length, 2);
+regression.tables.member_privacy_settings.push({ user_id: 'unrelated', sharing_enabled: false });
+assert.deepEqual(regression.snapshot(GROUP_ID).location_sharing, [{ user_id: LEADER, sharing_enabled: true }, { user_id: PEER, sharing_enabled: true }]);
+regression.locations.set(`${GROUP_ID}:${PEER}`, { group_id: GROUP_ID, user_id: PEER, latitude: 25, longitude: 121 });
+regression.tables.member_privacy_settings.push({ user_id: PEER, sharing_enabled: false });
+assert.equal(regression.snapshot(GROUP_ID).locations.length, 0);
+const timeout = regressionRpc('create_coordination_request', { p_group_id: GROUP_ID, p_subgroup_id: null, p_subject: 'Timeout', p_subject_kind: 'itinerary',
+  p_options: [{ id: 'a', label: 'A', kind: 'keep_current' }, { id: 'b', label: 'B', kind: 'no_change' }], p_deadline: new Date(regression.now + 1).toISOString(), p_policy: 'timeout_default', p_default_outcome: 'a' }).data;
+regression.now++;
+assert.equal(regressionRpc('resolve_coordination_request_deadline', { p_request_id: timeout.id }).error.code, '42501');
+assert.equal(regressionRpc('resolve_due_coordination_requests', { p_group_id: GROUP_ID }).error.code, '42501');
+assert.equal(require('./backend-requests.cjs').processDue(regression)[0].status, 'expired');
+assert.deepEqual(require('./backend-requests.cjs').processDue(regression), []);
+console.log('Backend SQL contract regressions passed');

@@ -31,8 +31,8 @@ class Backend {
   snapshot(groupId) {
     return structuredClone({ group: this.groups.get(groupId), memberships: this.memberships.filter(m => m.group_id === groupId),
       profiles: [...this.profiles.values()].filter(p => this.memberships.some(m => m.group_id === groupId && m.user_id === p.id)),
-      locations: [...this.locations.values()].filter(l => l.group_id === groupId),
-      location_sharing: this.tables.member_privacy_settings, itinerary: this.itinerary.filter(d => d.group_id === groupId),
+      locations: [...this.locations.values()].filter(l => l.group_id === groupId && this.tables.member_privacy_settings.find(p => p.user_id === l.user_id)?.sharing_enabled !== false),
+      location_sharing: this.memberships.filter(m => m.group_id === groupId).map(m => ({ user_id: m.user_id, sharing_enabled: this.tables.member_privacy_settings.find(p => p.user_id === m.user_id)?.sharing_enabled !== false })), itinerary: this.itinerary.filter(d => d.group_id === groupId),
       subgroups: this.tables.subgroups.filter(s => s.group_id === groupId), entity_versions: this.tables.core_entity_versions.filter(r => r.group_id === groupId),
       generated_at: new Date(this.now).toISOString(), realtime_revision: new Date(this.now).toISOString() });
   }
@@ -58,7 +58,7 @@ class Backend {
       assert.deepEqual(steps, [], `Unexpected RPC builder steps ${name}`);
       if (name === 'get_group_recovery_snapshot') {
         assert.deepEqual(Object.keys(args), ['p_group_id']);
-        assert(this.memberships.some(m => m.group_id === args.p_group_id && m.user_id === userId), 'Fixture membership required');
+        if (!domain.member(this, args.p_group_id, userId)) return domain.fail('not_member');
         return ok(this.snapshot(args.p_group_id));
       }
       if (name === 'ingest_location_batch') {
@@ -105,33 +105,6 @@ class Backend {
       throw new Error(`Unsupported backend RPC ${name}`);
     }
     assert.equal(kind, 'table', 'Unknown SDK request kind');
-    const method = name => steps.filter(step => step[0] === name);
-    const eq = field => method('eq').find(step => step[1] === field)?.[2];
-    if (eq('group_id')) assert(this.memberships.some(m => m.group_id === eq('group_id') && m.user_id === userId), 'Fixture membership required');
-    if (name === 'daily_accommodations') {
-      assert.deepEqual(steps, [
-        ['select', 'id, group_id, stay_date, title, address, latitude, longitude, source_destination_id, created_at, updated_at'],
-        ['eq', 'group_id', eq('group_id')], ['order', 'stay_date', { ascending: true }],
-      ]);
-      assert(this.groups.has(eq('group_id')));
-      return ok([]);
-    }
-    if (name === 'core_entity_versions') {
-      assert.deepEqual(steps, [['select', 'group_id, entity_type, entity_id, entity_version, state'], ['eq', 'group_id', eq('group_id')]]);
-      return ok([]);
-    }
-    if (name === 'navigation_sessions') {
-      assert.deepEqual(steps, [['select', '*, navigation_member_states(user_id)'], ['eq', 'group_id', eq('group_id')],
-        ['eq', 'status', 'active'], ['is', 'scope_subgroup_id', null], ['gt', 'expires_at', method('gt')[0]?.[2]],
-        ['order', 'started_at', { ascending: false }], ['limit', 1], ['maybeSingle']]);
-      return ok([...this.sessions.values()].find(row => row.group_id === eq('group_id') && row.status === 'active') ?? null);
-    }
-    if (name === 'navigation_member_states') {
-      assert.deepEqual(steps, [['select', '*'], ['eq', 'navigation_session_id', eq('navigation_session_id')],
-        ['eq', 'user_id', userId], ['maybeSingle']]);
-      assert(this.sessions.has(eq('navigation_session_id')));
-      return ok(null);
-    }
     throw new Error(`Unsupported backend table ${name} ${JSON.stringify(steps)}`);
   }
 }

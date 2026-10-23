@@ -66,7 +66,7 @@ function execute(b, { kind, name, args: a = {}, userId }) {
     if (!userId) return ok({ ok: false, error: 'not_authenticated' });
     if (b.authUsers?.get(userId)?.is_anonymous) return ok({ ok: false, error: 'registration_required' });
     const active = [...b.rewardSessions.values()].find(r => r.user_id === userId && ['active', 'verifying'].includes(r.status) && Date.parse(r.expires_at) > b.now);
-    if (active) return ok({ ok: false, error: 'active_session_exists', session_ref: active.session_ref, expires_at: active.expires_at });
+    if (active) return ok({ ok: false, error: 'session_active', session_ref: active.session_ref, expires_at: active.expires_at });
     const row = { user_id: userId, session_ref: randomUUID(), platform: a.p_platform, status: 'active', created_at: iso(b), expires_at: new Date(b.now + 600000).toISOString() };
     b.rewardSessions.set(row.session_ref, row); return ok({ ok: true, ...row, reward_amount: 1, reward_item: 'hither_token', ad_unit: `fixture-${a.p_platform}-reward` });
   }

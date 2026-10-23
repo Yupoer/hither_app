@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { ok, keys, member, iso } = require('./backend-domain.cjs');
-const { scopeAllowed, startSession, terminalSession, arrival } = require('./backend-workflows.cjs');
+const { ok, fail, keys, member, iso } = require('./backend-domain.cjs');
+const { scopeAllowed, startSession, terminalSession } = require('./backend-workflows.cjs');
 
 const payloadFields = {
   start_gathering: 'action subgroupId navigationSessionId expectedSessionStartedAt nextDestinationId activeDestinationId result navigationRequestId',
@@ -13,7 +13,7 @@ const payloadFields = {
   complete_destination: 'destinationId sessionId reason subgroupId', set_solo: 'userId solo',
   set_trip_details: 'tripDays departureDate', set_daily_accommodation: 'stayDate daily day', clear_daily_accommodation: 'stayDate daily day',
   submit_gather_point_request: 'requestId subgroupId items', resolve_gather_point_request: 'requestId approve',
-  record_arrival: 'actorId userId arrived completeSolo arrivedAt navigationSessionId deviceId occurredAt',
+  record_arrival: 'actorId userId targetUserId arrived completeSolo arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
   leader_correct_arrival: 'actorId targetUserId userId arrived arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
   set_navigation_response: 'sessionId userId response result',
   send_command: 'type message latitude longitude expiresAt',
@@ -34,6 +34,17 @@ function addDestination(b, groupId, payload) {
   b.itinerary.push(row); b.publish('itinerary_items', row, 'INSERT'); return row;
 }
 
+function itineraryState(b, groupId) {
+  const group = b.groups.get(groupId);
+  return { groupId, group: { tripDays: group.trip_days, departureDate: group.departure_date, accommodationAutoAdd: group.accommodation_auto_add },
+    destinations: b.itinerary.filter(d => d.group_id === groupId).sort((a, c) => (a.day ?? 0) - (c.day ?? 0) || a.position - c.position).map(d => ({ id: d.id, title: d.title, address: d.address ?? null,
+      coordinates: { latitude: d.latitude, longitude: d.longitude }, order: d.position, day: d.day, subgroupId: d.subgroup_id ?? null,
+      meetAt: d.meet_at ?? null, meetRedMinutes: d.meet_red_minutes ?? null, closedAt: d.closed_at ?? null, closedBySessionId: d.closed_by_session_id ?? null,
+      emoji: d.emoji ?? null, markerColor: d.marker_color ?? null, kind: d.kind ?? 'stop', stayAnchor: d.stay_anchor ?? false, providerPlaceId: d.provider_place_id ?? null })),
+    dailyAccommodations: b.tables.daily_accommodations.filter(d => d.group_id === groupId).map(d => ({ id: d.id, groupId, stayDate: d.stay_date, title: d.title, address: d.address,
+      coordinates: { latitude: d.latitude, longitude: d.longitude }, sourceDestinationId: d.source_destination_id ?? null })) };
+}
+
 function apply(b, { args: a, userId }) {
   keys(a, 'p_operation_id p_group_id p_actor_id p_entity_type p_entity_id p_entity_version p_operation_type p_payload p_sequence p_dependency_ids p_created_at');
   assert.equal(a.p_actor_id, userId, 'Wire actor ownership');
@@ -50,17 +61,21 @@ function apply(b, { args: a, userId }) {
   for (const dependency of a.p_dependency_ids) if (!b.receipts.has(dependency)) return conflict('dependency_missing');
   const group = b.groups.get(a.p_group_id);
   const destination = b.itinerary.find(d => d.id === p.destinationId && d.group_id === group.id);
-  const scope = p.subgroupId ?? destination?.subgroup_id ?? null;
-  const ownCommands = ['set_solo', 'record_arrival', 'set_navigation_response', 'submit_gather_point_request', 'send_command'];
+  const scope = p.subgroupId ?? null;
+  const ownCommands = ['set_solo', 'record_arrival', 'leader_correct_arrival', 'set_navigation_response', 'submit_gather_point_request', 'resolve_gather_point_request', 'reorder_destinations', 'send_command'];
   if (!ownCommands.includes(type) && !scopeAllowed(b, group.id, scope, userId)) return conflict('unauthorized');
-  const versionKey = `${group.id}:${a.p_entity_type}`;
+  if (destination && (destination.subgroup_id ?? null) !== scope) return conflict('scope_mismatch');
+  const versionKey = `${group.id}:${a.p_entity_type}:${a.p_entity_id}`;
   const version = (b.versions.get(versionKey) ?? 0) + 1;
   let entity, effects;
   if (['start_gathering', 'switch_gathering'].includes(type)) {
-    const result = startSession(b, group.id, p.activeDestinationId, p.navigationRequestId ?? a.p_operation_id, userId, type === 'switch_gathering' || Boolean(p.navigationRequestId), a.p_operation_id);
+    const target = b.itinerary.find(d => d.id === p.activeDestinationId && d.group_id === group.id);
+    if ((target?.subgroup_id ?? null) !== scope) return conflict('scope_mismatch');
+    const requestId = p.navigationRequestId ?? a.p_operation_id;
+    const result = startSession(b, group.id, p.activeDestinationId, requestId, userId, true, requestId);
     if (result.error) return conflict('invalid_transition', result.error.message);
     const session = result.data;
-    entity = { groupId: group.id, sessionId: session.id, navigationSessionId: session.id, journeyPhase: 'en_route', journeyStatus: 'going', scope: scope == null ? 'team' : 'subgroup', status: 'active', destinationId: session.destination_id, activeDestinationId: session.destination_id, pointStatuses: { [session.destination_id]: 'en_route' }, phaseChangedAt: b.now, entityVersion: version, version: session.version };
+    entity = { groupId: group.id, sessionId: session.id, navigationSessionId: session.id, journeyPhase: 'en_route', journeyStatus: 'going', scope: scope ?? 'main', status: 'active', destinationId: session.destination_id, activeDestinationId: session.destination_id, pointStatuses: { [session.destination_id]: 'en_route' }, phaseChangedAt: b.now, entityVersion: version, version: session.version };
     effects = { navigationSessionId: session.id, navigationSession: session };
   } else if (type === 'end_gathering') {
     const session = b.sessions.get(p.navigationSessionId) ?? [...b.sessions.values()].find(s => s.request_id === p.navigationSessionId);
@@ -74,14 +89,27 @@ function apply(b, { args: a, userId }) {
   } else if (type === 'edit_destination' || type === 'set_destination_meet_time') {
     if (!destination) return conflict('target_deleted');
     const patch = type === 'edit_destination' ? p.patch : { meetAt: p.meetAt, meetRedMinutes: p.meetRedMinutes };
-    const fields = { title: 'title', address: 'address', day: 'day', subgroupId: 'subgroup_id', kind: 'kind', stayAnchor: 'stay_anchor', providerPlaceId: 'provider_place_id', meetAt: 'meet_at', meetRedMinutes: 'meet_red_minutes' };
-    for (const [key, value] of Object.entries(patch)) { assert(fields[key], `Unknown destination patch ${key}`); destination[fields[key]] = value; }
+    const fields = { title: 'title', address: 'address', day: 'day', subgroupId: 'subgroup_id', kind: 'kind', stayAnchor: 'stay_anchor', providerPlaceId: 'provider_place_id', meetAt: 'meet_at', meetRedMinutes: 'meet_red_minutes', emoji: 'emoji', markerColor: 'marker_color' };
+    for (const key of Object.keys(patch)) assert(fields[key], `Unknown destination patch ${key}`);
+    for (const [key, value] of Object.entries(patch)) destination[fields[key]] = value;
     b.publish('itinerary_items', destination);
   } else if (type === 'delete_destination' || type === 'complete_destination') {
     if (!destination) return conflict('target_deleted');
-    for (const s of b.sessions.values()) if (s.destination_id === destination.id && s.status === 'active') terminalSession(b, s.id, s.version, type === 'delete_destination' ? 'cancelled' : 'completed', userId);
+    const active = [...b.sessions.values()].find(s => s.destination_id === destination.id && s.status === 'active');
+    if (type === 'delete_destination' && active && p.sessionId !== active.id) return conflict('validation', 'active destination requires the original sessionId before deletion');
+    let completion;
+    if (type === 'complete_destination') {
+      const session = p.sessionId ? b.sessions.get(p.sessionId) : active;
+      if (!session || session.destination_id !== destination.id || session.scope_subgroup_id !== scope || ['cancelled', 'expired'].includes(session.status)) return conflict('validation', 'invalid completion session');
+      if (!['all_arrived', 'forced'].includes(p.reason ?? 'forced')) return conflict('validation', 'invalid completion reason');
+      const eligible = b.memberships.filter(m => m.group_id === group.id && !m.solo && (m.subgroup_id ?? null) === scope && b.tables.navigation_member_states.some(n => n.navigation_session_id === session.id && n.user_id === m.user_id));
+      if (p.reason === 'all_arrived' && session.status === 'active' && (!eligible.length || eligible.some(m => !b.tables.destination_arrivals.some(r => r.destination_id === destination.id && r.user_id === m.user_id && r.navigation_session_id === session.id && r.arrived_at != null)))) return fail('waiting for all session members to arrive', '40001');
+      completion = session;
+    }
+    const terminal = type === 'delete_destination' ? active : completion;
+    if (terminal?.status === 'active') terminalSession(b, terminal.id, terminal.version, type === 'delete_destination' ? 'cancelled' : 'completed', userId);
     if (type === 'delete_destination') { b.itinerary = b.itinerary.filter(d => d !== destination); b.emit({ table: 'itinerary_items', eventType: 'DELETE', new: {}, old: destination, commit_timestamp: iso(b) }); }
-    else { destination.closed_at = iso(b); destination.closed_by_session_id = p.sessionId; b.publish('itinerary_items', destination); }
+    else { destination.closed_at ??= iso(b); destination.closed_by_session_id ??= completion.id; b.publish('itinerary_items', destination); }
   } else if (type === 'reorder_destinations') {
     for (const update of p.updates) {
       const d = b.itinerary.find(r => r.id === update.id && r.group_id === group.id);
@@ -96,8 +124,9 @@ function apply(b, { args: a, userId }) {
     }
     b.itinerary.sort((x, y) => x.position - y.position);
   } else if (type === 'set_solo') {
-    if (p.userId !== userId) return conflict('unauthorized');
-    m.solo = p.solo; b.publish('memberships', m);
+    if (p.userId !== userId || a.p_entity_type !== 'itinerary' || a.p_entity_id !== userId) return conflict('unauthorized');
+    if (typeof p.solo !== 'boolean') return conflict('validation');
+    m.solo = p.solo; entity = { userId, solo: p.solo }; b.publish('memberships', m);
   } else if (type === 'set_trip_details') {
     group.trip_days = p.tripDays; group.departure_date = p.departureDate; b.publish('groups', group);
   } else if (type === 'set_daily_accommodation' || type === 'clear_daily_accommodation') {
@@ -114,14 +143,15 @@ function apply(b, { args: a, userId }) {
       group.accommodation_auto_add = false; b.publish('groups', group);
     }
   } else if (type === 'record_arrival' || type === 'leader_correct_arrival') {
-    const result = arrival(b, a.p_entity_id, p.userId, p.arrived !== false, p.arrivedAt, userId, p.navigationSessionId);
-    if (result.error) return conflict('validation', result.error.message);
-    entity = { completeSolo: false };
+    const result = require('./backend-arrivals.cjs').apply(b, a, userId);
+    if (result.conflict) return conflict(result.conflict);
+    entity = result.entity;
   } else if (type === 'submit_gather_point_request' || type === 'resolve_gather_point_request') {
     const name = type;
     const args = type === 'submit_gather_point_request' ? { p_group_id: group.id, p_subgroup_id: scope, p_items: p.items } : { p_request_id: p.requestId, p_approve: p.approve };
     const result = require('./backend-requests.cjs').execute(b, { kind: 'rpc', name, args, userId, requestId: p.requestId });
     if (result.error) return conflict('validation', result.error.message);
+    entity = structuredClone(b.tables.gather_point_requests.find(r => r.id === p.requestId));
   } else if (type === 'set_navigation_response') {
     if (p.userId !== userId) return conflict('unauthorized');
     entity = { ...p, entityVersion: version, updatedAt: b.now };
@@ -141,6 +171,7 @@ function apply(b, { args: a, userId }) {
     effects = { category, targetRole: p.type === 'request_start' ? 'leader' : 'member', targetCount: rows.length, notificationIds: rows.map(r => r.id), expiresAt, expired: Date.parse(expiresAt) <= b.now };
     entity = { operationId: a.p_operation_id, accepted: true, expired: effects.expired };
   }
+  if (entity === undefined) entity = itineraryState(b, group.id);
   const receipt = { status: 'accepted', operation_id: a.p_operation_id, entity_version: version, entity, effects };
   b.versions.set(versionKey, version); b.receipts.set(a.p_operation_id, receipt);
   b.operationSignatures ??= new Map(); b.operationSignatures.set(a.p_operation_id, signature);
@@ -150,4 +181,4 @@ function apply(b, { args: a, userId }) {
   return ok(receipt);
 }
 
-module.exports = { apply, addDestination };
+module.exports = { apply, addDestination, itineraryState };

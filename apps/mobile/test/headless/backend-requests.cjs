@@ -28,14 +28,14 @@ function resolve(b, request, userId, optionId, source) {
     operation_type: applied ? 'coordination_apply' : 'coordination_no_change', payload: { option_id: optionId, kind: option.kind, applied },
     source_request_id: request.id, created_by: userId, created_at: iso(b) };
   b.tables.itinerary_operations.push(operation); b.publish('itinerary_operations', operation, 'INSERT');
-  Object.assign(request, { status: 'resolved', resolved_outcome: optionId, resolution_source: source, resolved_at: iso(b), resolved_by: userId, applied_operation_id: operation.id, updated_at: iso(b) });
+  Object.assign(request, { status: source === 'timeout_default' ? 'expired' : 'resolved', resolved_outcome: optionId, resolution_source: source, resolved_at: iso(b), resolved_by: userId, applied_operation_id: operation.id, updated_at: iso(b) });
   b.publish('coordination_requests', request); return ok(request);
 }
 
 function deadline(b, request, userId) {
   if (request.status !== 'open') return ok(request);
   if (Date.parse(request.deadline) > b.now) return fail('deadline_not_reached', 'P0001');
-  const eligible = b.memberships.filter(m => m.group_id === request.group_id && !m.solo && (m.subgroup_id ?? null) === request.subgroup_id).map(m => m.user_id);
+  const eligible = b.memberships.filter(m => m.group_id === request.group_id && (request.subgroup_id == null || m.subgroup_id === request.subgroup_id || m.role === 'leader')).map(m => m.user_id);
   const responses = b.tables.coordination_responses.filter(r => r.request_id === request.id && eligible.includes(r.user_id));
   let option = request.default_outcome, source = 'timeout_default';
   const counts = new Map(); responses.forEach(r => counts.set(r.option_id, (counts.get(r.option_id) ?? 0) + 1));
@@ -76,16 +76,15 @@ function execute(b, { kind, name, args: a = {}, userId, requestId }) {
     b.tables.coordination_requests.push(row); b.publish('coordination_requests', row, 'INSERT'); return ok(row);
   }
   if (name === 'resolve_due_coordination_requests') {
-    keys(a, 'p_group_id'); if (!member(b, a.p_group_id, userId)) return fail('not_member');
-    return ok(b.tables.coordination_requests.filter(r => r.group_id === a.p_group_id && r.status === 'open' && Date.parse(r.deadline) <= b.now).map(r => deadline(b, r, userId).data));
+    keys(a, 'p_group_id'); return fail('permission denied for function resolve_due_coordination_requests');
   }
   if (!['respond_to_coordination_request', 'override_coordination_request', 'resolve_coordination_request_deadline', 'cancel_coordination_request'].includes(name)) return undefined;
   keys(a, ['respond_to_coordination_request', 'override_coordination_request'].includes(name) ? 'p_request_id p_option_id' : 'p_request_id');
+  if (name === 'resolve_coordination_request_deadline') return fail('permission denied for function resolve_coordination_request_deadline');
   const request = b.tables.coordination_requests.find(r => r.id === a.p_request_id);
   if (!request) return fail('request_not_found', 'P0002');
   const m = member(b, request.group_id, userId);
-  if (!m || (m.subgroup_id ?? null) !== request.subgroup_id) return fail('not_member');
-  if (name === 'resolve_coordination_request_deadline') return deadline(b, request, userId);
+  if (!m || request.subgroup_id != null && m.subgroup_id !== request.subgroup_id && m.role !== 'leader') return fail('not_member');
   if (name !== 'respond_to_coordination_request' && !scopeAllowed(b, request.group_id, request.subgroup_id, userId)) return fail('leader_required');
   if (name === 'cancel_coordination_request') { if (request.status === 'open') { request.status = 'cancelled'; request.updated_at = iso(b); b.publish('coordination_requests', request); } return ok(request); }
   if (request.status !== 'open' || Date.parse(request.deadline) <= b.now) return fail('request_closed', 'P0001');
@@ -98,4 +97,7 @@ function execute(b, { kind, name, args: a = {}, userId, requestId }) {
   b.publish('coordination_responses', response, existing ? 'UPDATE' : 'INSERT'); return ok(response);
 }
 
-module.exports = { execute };
+function processDue(b) {
+  return b.tables.coordination_requests.filter(r => r.status === 'open' && Date.parse(r.deadline) <= b.now).sort((a, c) => a.deadline.localeCompare(c.deadline)).slice(0, 100).map(r => deadline(b, r, r.created_by).data);
+}
+module.exports = { execute, processDue };

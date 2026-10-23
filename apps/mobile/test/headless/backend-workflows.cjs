@@ -11,7 +11,7 @@ function scopeAllowed(b, groupId, scope, userId) {
   return Boolean(subgroup && (membership.role === 'leader' && membership.subgroup_id == null || membership.subgroup_id === scope && subgroup.leader_id === userId));
 }
 
-function startSession(b, groupId, destinationId, requestId, userId, replace = false, sessionId = randomUUID()) {
+function startSession(b, groupId, destinationId, requestId, userId, replace = false, sessionId = requestId) {
   const destination = b.itinerary.find(d => d.id === destinationId && d.group_id === groupId);
   if (!destination || destination.day == null || destination.closed_at) return fail('invalid_destination', '22023');
   const scope = destination.subgroup_id ?? null;
@@ -20,8 +20,12 @@ function startSession(b, groupId, destinationId, requestId, userId, replace = fa
   if (duplicate) return ok(duplicate);
   const active = [...b.sessions.values()].find(s => s.group_id === groupId && s.scope_subgroup_id === scope && s.status === 'active');
   if (active && !replace) return fail('active_session_exists', 'P0001');
-  if (active) { active.status = 'cancelled'; active.version++; b.publish('navigation_sessions', active); }
-  const roster = b.memberships.filter(m => m.group_id === groupId && !m.solo && (m.subgroup_id ?? null) === scope);
+  if (active) {
+    active.status = 'cancelled'; active.ended_at = iso(b); active.version++; b.publish('navigation_sessions', active);
+    for (const state of b.tables.navigation_member_states) if (state.navigation_session_id === active.id && state.local_status !== 'arrived') { state.local_status = 'missed'; state.detail = { ...state.detail, reason: 'session_replaced' }; b.publish('navigation_member_states', state); }
+  }
+  b.tables.destination_arrivals = b.tables.destination_arrivals.filter(a => a.destination_id !== destinationId || a.navigation_session_id != null && active && a.navigation_session_id !== active.id);
+  const roster = b.memberships.filter(m => m.group_id === groupId && (m.subgroup_id ?? null) === scope);
   const session = { id: sessionId, group_id: groupId, scope_subgroup_id: scope, destination_id: destination.id,
     destination_name: destination.title, destination_latitude: destination.latitude, destination_longitude: destination.longitude,
     arrival_radius_m: 50, started_by: userId, request_id: requestId, started_at: iso(b),
@@ -46,7 +50,7 @@ function terminalSession(b, sessionId, expected, status, userId) {
   if (!scopeAllowed(b, session.group_id, session.scope_subgroup_id, userId)) return fail('leader_required');
   if (session.status === status) return ok(session);
   if (session.status !== 'active' || session.version !== expected) return fail('version_conflict', 'P0001');
-  session.status = status; session.version++;
+  session.status = status; session.ended_at = iso(b); session.version++;
   if (status === 'completed') {
     const destination = b.itinerary.find(d => d.id === session.destination_id);
     destination.closed_at = iso(b); destination.closed_by_session_id = session.id;
@@ -89,10 +93,14 @@ function execute(b, operation) {
   if (kind !== 'rpc') return undefined;
   if (['start_navigation_session', 'start_navigation_session_switch'].includes(name)) {
     keys(args, 'p_group_id p_destination_id p_request_id');
+    if (!scopeAllowed(b, args.p_group_id, null, userId) || b.itinerary.find(d => d.id === args.p_destination_id)?.subgroup_id != null) return fail('main-team leader required');
+    const current = [...b.sessions.values()].find(s => s.group_id === args.p_group_id && s.scope_subgroup_id == null && s.status === 'active' && s.destination_id === args.p_destination_id);
+    if (name === 'start_navigation_session' && current) return ok(current);
     return startSession(b, args.p_group_id, args.p_destination_id, args.p_request_id, userId, name.endsWith('_switch'));
   }
   if (['cancel_navigation_session', 'complete_navigation_session'].includes(name)) {
     keys(args, 'p_session_id p_expected_version');
+    if (b.sessions.get(args.p_session_id)?.scope_subgroup_id != null) return fail('legacy navigation RPC cannot address a subgroup session');
     return terminalSession(b, args.p_session_id, args.p_expected_version, name.startsWith('cancel') ? 'cancelled' : 'completed', userId);
   }
   if (name === 'ack_navigation_session') {
