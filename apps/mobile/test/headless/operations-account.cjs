@@ -160,4 +160,16 @@ for (const [symbol, ids] of [['accept', 'S02'], ['decline', 'S03'], ['refresh', 
   register('invites.' + symbol, ids, 'src/state/useSubgroupInvites.ts', 'useSubgroupInvites', 'hook', '{ args? }',
     (app, { args = [] }) => app.invites[symbol](...args));
 }
+for (const operation of Object.values(operations)) {
+  if (operation.inventory.includes('P06') || operation.inventory.includes('P07')) operation.crossLinks = ['MAP-PROFILE-01'];
+  if (operation.inventory.includes('V18') || operation.inventory.includes('V19')) operation.crossLinks = ['MAP-SETTINGS-01'];
+}
 exports.operations = operations;
+exports.lifecycle = [
+  { name: 'session.bootstrap', inventory: ['A20'], sources: [{ file: 'src/state/SessionContext.tsx', symbol: 'SessionProvider' }],
+    trigger: 'Boot an app or real screen device and await SessionProvider hydration.', scenarios: ['real providers hydrated', 'signed out Login'] },
+  { name: 'session.foreground', inventory: ['A21'], sources: [{ file: 'src/state/SessionContext.tsx', symbol: 'restoreSession' }],
+    trigger: 'Send background then active through the external AppState subscription.', scenarios: ['foreground session recovery'] },
+  { name: 'preferences.hydrate', inventory: ['V17'], sources: [{ file: 'src/state/PreferencesContext.tsx', symbol: 'PreferencesProvider' }],
+    trigger: 'Restart the same device and await actual preferences.ready.', scenarios: ['persists every preference through real provider setters and rehydrates the same device'] },
+];
