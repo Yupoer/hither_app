@@ -55,6 +55,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     return { hidden: false, acceptsInput: pointerEvents };
   };
   const rn = strict('react-native', {
+    __esModule: true,
     ...hosts, Platform: { OS: spec.platform, Version: 26, select: values => values[spec.platform] ?? values.native ?? values.default },
     AppState: appState, Alert: { alert: (...args) => alertQueue.push(args) },
     Linking: strict('Linking', { getInitialURL: async () => null, addEventListener: (event, fn) => {
@@ -170,6 +171,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         assert(detector, `No external gesture detector for ${testId}`);
         const gestures = [detector.props.gesture].flat(Infinity).filter(gesture => Object.hasOwn(gesture, `${phase}Input`));
         assert.equal(gestures.length, 1, `Expected one gesture ${phase} callback`);
+        if (Object.hasOwn(gestures[0], 'enabledInput') && gestures[0].enabledInput[0] === false) return { invoked: false, reason: 'disabled' };
         receipts.push({ host: 'GestureDetector', kind, testId, phase, value, success });
         gestures[0][`${phase}Input`][0](value, success ?? true);
         return { invoked: true };
@@ -189,7 +191,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       const unique = [...new Set(endpoints)];
       assert.equal(unique.length, 1, `Expected one ${kind} endpoint ${testId ?? label}, got ${unique.length}`);
       const node = unique[0];
-      const disabled = Boolean(node.props.disabled || (kind === 'changeText' && node.props.editable === false) || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0]));
+      const disabled = Boolean(node.props.disabled || node.props.enabled === false || (kind === 'changeText' && node.props.editable === false) || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0]));
       receipts.push({ host: node.type, kind, testId, label, disabled });
       if (disabled) return { invoked: false, reason: 'disabled' };
       const event = kind === 'nativeEvent' ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'event')) : value;

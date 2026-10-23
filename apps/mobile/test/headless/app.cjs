@@ -60,8 +60,9 @@ exports.createPresentation = (React, spec, host, app) => {
   const observation = {};
   function Observe() {
     observation.session = app.session = useSession(); observation.preferences = app.preferences = usePreferences();
+    if (spec.mode === 'app') { app.userId = observation.session.user?.id ?? null; app.groupId = observation.session.membership?.group.id ?? null; }
     observation.invites = app.invites = require('../../src/state/useSubgroupInvites').useSubgroupInvites();
-    return null;
+    return observation.invites.lifecycle;
   }
   host.ProviderObservation = Observe;
   if (spec.mode === 'app') {

@@ -5,6 +5,26 @@ const { setImmediate: realImmediate } = require('node:timers');
 const { open } = require('./sqlite.cjs');
 const actions = require('./actions.cjs');
 
+function createStrict(fatal) {
+  const strictCache = new WeakMap();
+  const strict = (name, value) => {
+    if (strictCache.has(value)) return strictCache.get(value);
+    const proxy = new Proxy(value, {
+      get(target, key) {
+        if (typeof key === 'symbol' || ['__esModule', 'then', 'toJSON', '$$typeof'].includes(key)) return target[key];
+        if (!Reflect.has(target, key)) return fatal(`Unsupported external ${name}.${String(key)}`);
+        const result = target[key];
+        return result && typeof result === 'object' && !Array.isArray(result) && !result.$$typeof
+          ? strict(`${name}.${String(key)}`, result) : result;
+      },
+    });
+    strictCache.set(value, proxy);
+    return proxy;
+  };
+  return strict;
+}
+exports.createStrict = createStrict;
+
 exports.run = async function run(jest) {
   const ipc = global.__HEADLESS_IPC__;
   assert(ipc?.send, 'Device requires an IPC owner');
@@ -24,21 +44,7 @@ exports.run = async function run(jest) {
     throw new Error(message);
   };
   const check = () => { if (failures.length) throw new Error(failures.join('\n')); };
-  const strictCache = new WeakMap();
-  const strict = (name, value) => {
-    if (strictCache.has(value)) return strictCache.get(value);
-    const proxy = new Proxy(value, {
-    get(target, key) {
-      if (typeof key === 'symbol' || ['__esModule', 'then', 'toJSON', '$$typeof'].includes(key)) return target[key];
-      if (!Reflect.has(target, key)) return fatal(`Unsupported external ${name}.${String(key)}`);
-      const result = target[key];
-      return result && typeof result === 'object' && !Array.isArray(result) && !result.$$typeof
-        ? strict(`${name}.${String(key)}`, result) : result;
-    },
-    });
-    strictCache.set(value, proxy);
-    return proxy;
-  };
+  const strict = createStrict(fatal);
   const send = value => ipc.send({ generation: spec.generation, ...value });
   const stage = value => send({ type: 'stage', value });
   stage('starting guard');
@@ -322,6 +328,7 @@ exports.run = async function run(jest) {
   let presentation;
   if (presentationMode) {
     presentation = require('./app.cjs').createPresentation(React, spec, host, app);
+    stage('presentation imports loaded');
     app.host = { call: input => host.call(root, input), observe: () => host.observe(root),
       mount: screen => host.mount ? host.mount(screen) : host.navigation.navigate(screen.name, screen.params) };
   }

@@ -185,7 +185,8 @@ class Device {
       }
       this.world.fatals.push(`Unexpected child message ${message.type}`);
     });
-    await deadline(boot, 20000, `Boot ${this.spec.id}`).catch(error => { throw new Error(`${error.message}: ${this.logs}`); });
+    const bootTimeout = this.spec.mode === 'app' || this.spec.screen ? 60000 : 20000;
+    await deadline(boot, bootTimeout, `Boot ${this.spec.id}`).catch(error => { throw new Error(`${error.message}: ${this.logs}`); });
   }
   command(command) {
     assert(this.child?.connected, `Device ${this.spec.id} is closed`);
