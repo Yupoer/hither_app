@@ -90,7 +90,7 @@ exports.lifecycle = [
     sources: [{ file: 'src/state/useGroupNotifications.ts', symbol: 'useGroupNotifications' }], trigger: 'Mount the real hook with SessionProvider membership and inject external push or Realtime events.',
     scenarios: [{ file: 'src/__tests__/headlessStoreScenario.test.ts', pattern: 'N09 N10 N11 N12 N13 N14' }] },
   { name: 'live.activity-lifecycle', inventory: ['L01', 'L03', 'L04', 'L07'],
-    sources: [{ file: 'src/state/useLiveActivity.ts', symbol: 'useLiveActivity' }], trigger: 'Mount the real hook, change activity input, and inject native token callbacks.',
+    sources: [{ file: 'src/state/useLiveActivity.ts', symbol: 'LiveActivityRuntime' }], trigger: 'Mount the real runtime component, change activity input, and inject native token callbacks.',
     scenarios: [{ file: 'src/__tests__/headlessStoreScenario.test.ts', pattern: 'adopts only its scoped activity' }] },
 ];
 exports.scenarios = [

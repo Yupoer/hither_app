@@ -2,7 +2,8 @@ exports.default = function NativeObservers({ activityActive, activityState = { g
   const React = require('react');
   const notifications = require('../../src/state/useGroupNotifications').useGroupNotifications();
   const pushes = require('../../src/state/usePushRegistration').usePushRegistration();
-  const activities = require('../../src/state/useLiveActivity').useLiveActivity(activityActive, activityState, activitySession, activityEnabled);
+  const activities = React.createElement(require('../../src/state/useLiveActivity').LiveActivityRuntime,
+    { active: activityActive, state: activityState, session: activitySession, liveActivitiesEnabled: activityEnabled });
   React.useEffect(() => require('../../src/state/appNotice').subscribeAppNotices(onAppNotice), [onAppNotice]);
   return React.createElement(React.Fragment, null, notifications, pushes, activities,
     premiumRecovery ? React.createElement(require('../../src/components/PremiumPurchaseRecovery').default) : null);
