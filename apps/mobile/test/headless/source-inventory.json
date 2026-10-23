@@ -6777,7 +6777,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "5c47871ea001697d24b4522d373c08a318df2b9a9b93c704e28c371bb13ea51f"
+    "hash": "b035a21d0b4f79bfea96fef017afda12e22536b943d64db4426023cccdf6da66"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -6844,6 +6844,12 @@
     "kind": "callback",
     "name": "onPress",
     "hash": "c91125312de06fd4726b5f74b50f48d6ca742a3b18ce1be89432fca8e2552c7c"
+  },
+  {
+    "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "b113139c8f68915603f7cd78bb40d8dabc59b9e0c82c33c5f45e45166d30bc94"
   },
   {
     "file": "src/screens/MapScreen/components/HistorySheet.tsx",
@@ -7959,7 +7965,7 @@
     "file": "src/screens/MapScreen/hooks/useGatheringCompletion.ts",
     "kind": "export",
     "name": "useGatheringCompletion",
-    "hash": "186d1685720c90fd74af0c44afd3488dd46b533cb0e3da63757daed9546be8c0"
+    "hash": "3ff227bc6a18f7276da2d4e9934211fb179d0582a40eeb601e8637b9eb986b30"
   },
   {
     "file": "src/screens/MapScreen/hooks/useGatheringCompletion.ts",
