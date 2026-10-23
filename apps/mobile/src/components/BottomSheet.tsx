@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { useVisibleUi } from '../state/foregroundUi';
 import { Platform, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
@@ -12,6 +13,7 @@ import Animated, {
   useAnimatedReaction,
   useAnimatedScrollHandler,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withSpring,
   withTiming,
@@ -48,6 +50,94 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 const MODE_NONE = 0;
 const MODE_SHEET = 1; // finger resizes the sheet (content pinned)
 const MODE_SCROLL = 2; // finger scrolls the content (sheet frozen)
+
+interface SheetMotionInput {
+  foreground: boolean;
+  height: SharedValue<number>;
+  dismissY: SharedValue<number>;
+  dismissTranslateY: SharedValue<number> | undefined;
+  dismissRequested: boolean | undefined;
+  detentsKey: string;
+  index: number;
+}
+
+interface SheetMotionOwner {
+  input: SheetMotionInput | null;
+  replay: boolean;
+}
+
+function SheetMotionCommit({ input, owner, detents, dismissDistance, gestureClosePending, dismissEpoch, dismiss, dismissComplete }: {
+  input: SheetMotionInput;
+  owner: React.RefObject<SheetMotionOwner>;
+  detents: number[];
+  dismissDistance: number;
+  gestureClosePending: SharedValue<boolean>;
+  dismissEpoch: SharedValue<number>;
+  dismiss: () => void;
+  dismissComplete: () => void;
+}) {
+  useMountEffect(() => {
+    const previous = owner.current.input;
+    const replay = owner.current.replay;
+    const { foreground, height, dismissY, dismissTranslateY, dismissRequested, index } = input;
+    const policyChanged = replay || !previous || !Object.is(previous.foreground, foreground)
+      || !Object.is(previous.height, height) || !Object.is(previous.dismissY, dismissY);
+    const closeChanged = policyChanged || !previous
+      || !Object.is(previous.dismissTranslateY, dismissTranslateY)
+      || !Object.is(previous.dismissRequested, dismissRequested);
+    const snapChanged = replay || !previous || !Object.is(previous.foreground, foreground)
+      || !Object.is(previous.detentsKey, input.detentsKey) || !Object.is(previous.index, index);
+    owner.current = { input, replay: false };
+
+    // Cancellation, resumed close and remeasure share one writer in that order.
+    if (policyChanged) {
+      dismissEpoch.value += 1;
+      if (previous) { cancelAnimation(previous.height); cancelAnimation(previous.dismissY); }
+      if (!foreground) { cancelAnimation(height); cancelAnimation(dismissY); }
+    }
+    if (closeChanged && foreground) {
+      const startTranslateDismiss = (notifyDismiss: boolean) => {
+        const epoch = ++dismissEpoch.value;
+        cancelAnimation(dismissY);
+        dismissY.value = withTiming(dismissDistance, { duration: 220 }, (finished) => {
+          'worklet';
+          if (!finished || dismissEpoch.value !== epoch) return;
+          if (notifyDismiss) {
+            if (!gestureClosePending.value) return;
+            gestureClosePending.value = false;
+            runOnJS(dismiss)();
+          }
+          dismissEpoch.value += 1;
+          runOnJS(dismissComplete)();
+        });
+      };
+      if (gestureClosePending.value) {
+        if (dismissTranslateY != null) startTranslateDismiss(true);
+        else {
+          const epoch = ++dismissEpoch.value;
+          height.value = withSpring(0, SPRING, (finished) => {
+            'worklet';
+            if (finished && dismissEpoch.value === epoch && gestureClosePending.value) {
+              gestureClosePending.value = false;
+              runOnJS(dismiss)();
+            }
+          });
+        }
+      } else if (dismissTranslateY != null && dismissRequested != null) {
+        if (dismissRequested) {
+          dismissEpoch.value += 1;
+          cancelAnimation(dismissY);
+          dismissY.value = 0;
+        } else startTranslateDismiss(false);
+      }
+    }
+    if (snapChanged && foreground && !gestureClosePending.value) {
+      const nextIndex = Math.max(0, Math.min(index, detents.length - 1));
+      height.value = withSpring(detents[nextIndex], { ...SPRING, velocity: 0 });
+    }
+  });
+  return null;
+}
 
 /**
  * Apple-Maps-style pull-up glass sheet with two or more detents.
@@ -148,30 +238,14 @@ export default React.memo(function BottomSheet({
     opacity: canHideHeader && scrollOffset.value > TOP_EPS ? 0 : 1,
   }), [canHideHeader]);
 
-  // Mirror props into SharedValues so pan / sheetStyle worklets always read
+  // Derive UI-thread inputs so pan / sheetStyle worklets always read
   // current detents & inset without rebuilding Gesture.Pan() every render.
-  const detentsSV = useSharedValue(detents);
-  const indexSV = useSharedValue(index);
-  const foregroundSV = useSharedValue(foreground);
-  useEffect(() => { indexSV.value = index; foregroundSV.value = foreground; }, [index, foreground, indexSV, foregroundSV]);
-  const bottomInsetSV = useSharedValue(bottomInset);
-  const dismissIndexSV = useSharedValue(dismissOnDownFromIndex ?? -1);
-  const edgeToEdgeAtLastSV = useSharedValue(edgeToEdgeAtLast ? 1 : 0);
-  useEffect(() => {
-    detentsSV.value = detents;
-    bottomInsetSV.value = bottomInset;
-    dismissIndexSV.value = dismissOnDownFromIndex ?? -1;
-    edgeToEdgeAtLastSV.value = edgeToEdgeAtLast ? 1 : 0;
-  }, [
-    bottomInset,
-    dismissOnDownFromIndex,
-    detents,
-    detentsSV,
-    edgeToEdgeAtLast,
-    edgeToEdgeAtLastSV,
-    bottomInsetSV,
-    dismissIndexSV,
-  ]);
+  const detentsSV = useDerivedValue(() => detents, [detents]);
+  const indexSV = useDerivedValue(() => index, [index]);
+  const foregroundSV = useDerivedValue(() => foreground, [foreground]);
+  const bottomInsetSV = useDerivedValue(() => bottomInset, [bottomInset]);
+  const dismissIndexSV = useDerivedValue(() => dismissOnDownFromIndex ?? -1, [dismissOnDownFromIndex]);
+  const edgeToEdgeAtLastSV = useDerivedValue(() => edgeToEdgeAtLast ? 1 : 0, [edgeToEdgeAtLast]);
 
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
   const gStartH = useSharedValue(detents[index]);
@@ -200,59 +274,15 @@ export default React.memo(function BottomSheet({
   const dismissY = dismissTranslateY ?? dismissTranslateYInternal;
   // Gesture intent survives cancelled visual motion while the app is inactive.
   const gestureClosePending = useSharedValue(false);
-  const dismissDistanceSV = useSharedValue(dismissDistance ?? 1000);
-  useEffect(() => {
-    dismissDistanceSV.value = dismissDistance ?? 1000;
-  }, [dismissDistance, dismissDistanceSV]);
-
-  // Cancel before the controlled-close effect, so resume can start its latest intent once.
-  useEffect(() => {
-    if (!foreground) { cancelAnimation(height); cancelAnimation(dismissY); }
-    return () => { cancelAnimation(height); cancelAnimation(dismissY); };
-  }, [foreground, height, dismissY]);
-
-  const startTranslateDismiss = useCallback((notifyDismiss: boolean) => {
-    if (!foreground) return;
-    cancelAnimation(dismissY);
-    dismissY.value = withTiming(
-      dismissDistanceSV.value,
-      { duration: 220 },
-      (finished) => {
-        'worklet';
-        if (!finished) return;
-        if (notifyDismiss) {
-          if (!gestureClosePending.value) return;
-          gestureClosePending.value = false;
-          runOnJS(dismiss)();
-        }
-        runOnJS(dismissComplete)();
-      },
-    );
-  }, [foreground, dismissComplete, dismissDistanceSV, dismiss, dismissY, gestureClosePending]);
-
-  // Controlled close (X / scrim / parent visibility) uses the same fixed-size
-  // translateY exit as the gesture path, but must not notify onDismiss twice.
-  useEffect(() => {
-    if (!foreground) return;
-    if (gestureClosePending.value) {
-      if (dismissTranslateY != null) startTranslateDismiss(true);
-      else height.value = withSpring(0, SPRING, (finished) => {
-        'worklet';
-        if (finished && gestureClosePending.value) {
-          gestureClosePending.value = false;
-          runOnJS(dismiss)();
-        }
-      });
-      return;
-    }
-    if (dismissTranslateY == null || dismissRequested == null) return;
-    if (dismissRequested) {
-      cancelAnimation(dismissY);
-      dismissY.value = 0;
-      return;
-    }
-    startTranslateDismiss(false);
-  }, [foreground, dismissRequested, dismissTranslateY, dismissY, startTranslateDismiss, gestureClosePending, height, dismiss]);
+  const dismissEpoch = useSharedValue(0);
+  const dismissDistanceSV = useDerivedValue(() => dismissDistance ?? 1000, [dismissDistance]);
+  const motionOwner = useRef<SheetMotionOwner>({ input: null, replay: true });
+  useMountEffect(() => () => {
+    const current = motionOwner.current.input;
+    motionOwner.current.replay = true;
+    dismissEpoch.value += 1;
+    if (current) { cancelAnimation(current.height); cancelAnimation(current.dismissY); }
+  });
 
   // Settle a released sheet-drag on the JS thread — reuses the unit-tested pure
   // helpers, then springs the shared height (carrying the fling velocity) and
@@ -272,12 +302,15 @@ export default React.memo(function BottomSheet({
   // Gesture-driven index changes settle via `settle` (not listed as a dep).
   // Use zero restart velocity so a mid-flight remeasure doesn't "kick back".
   const detentsKey = detents.join(',');
-  useEffect(() => {
-    if (!foreground || gestureClosePending.value) return;
-    const nextIndex = Math.max(0, Math.min(index, detents.length - 1));
-    height.value = withSpring(detents[nextIndex], { ...SPRING, velocity: 0 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [foreground, detentsKey, index]);
+  const [motionInput, setMotionInput] = useState({ foreground, height, dismissY, dismissTranslateY,
+    dismissRequested, detentsKey, index, generation: 0 });
+  if (!Object.is(motionInput.foreground, foreground) || !Object.is(motionInput.height, height)
+    || !Object.is(motionInput.dismissY, dismissY) || !Object.is(motionInput.dismissTranslateY, dismissTranslateY)
+    || !Object.is(motionInput.dismissRequested, dismissRequested) || !Object.is(motionInput.detentsKey, detentsKey)
+    || !Object.is(motionInput.index, index)) {
+    setMotionInput({ foreground, height, dismissY, dismissTranslateY, dismissRequested, detentsKey, index,
+      generation: motionInput.generation + 1 });
+  }
 
   // Build pan once: worklets read detentsSV / height / gesture shared values.
   // Do NOT depend on detents array identity — that would recreate every render.
@@ -293,6 +326,7 @@ export default React.memo(function BottomSheet({
         .onBegin(() => {
           'worklet';
           if (gestureClosePending.value) return;
+          dismissEpoch.value += 1;
           cancelAnimation(height);
           if (dismissTranslateY != null) {
             cancelAnimation(dismissY);
@@ -372,6 +406,7 @@ export default React.memo(function BottomSheet({
               && (e.translationY > DISMISS_TRAVEL || e.velocityY > DISMISS_VELOCITY);
             if (canDismiss) {
               gestureClosePending.value = true;
+              const epoch = ++dismissEpoch.value;
               if (dismissTranslateY != null) {
                 cancelAnimation(dismissY);
                 dismissY.value = withTiming(
@@ -379,7 +414,7 @@ export default React.memo(function BottomSheet({
                   { duration: 220 },
                   (finished) => {
                     'worklet';
-                    if (finished && gestureClosePending.value) {
+                    if (finished && dismissEpoch.value === epoch && gestureClosePending.value) {
                       gestureClosePending.value = false;
                       runOnJS(dismiss)();
                       runOnJS(dismissComplete)();
@@ -389,7 +424,7 @@ export default React.memo(function BottomSheet({
               } else {
                 height.value = withSpring(0, SPRING, (finished) => {
                   'worklet';
-                  if (finished && gestureClosePending.value) {
+                  if (finished && dismissEpoch.value === epoch && gestureClosePending.value) {
                     gestureClosePending.value = false;
                     runOnJS(dismiss)();
                   }
@@ -423,7 +458,6 @@ export default React.memo(function BottomSheet({
             : target;
         }),
     // Stable shared values + settle + height + scrollRef only — not detents[].
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       foreground,
       foregroundSV,
@@ -443,6 +477,7 @@ export default React.memo(function BottomSheet({
       dismissTranslateY,
       dismissY,
       gestureClosePending,
+      dismissEpoch,
     ],
   );
 
@@ -504,6 +539,10 @@ export default React.memo(function BottomSheet({
   });
 
   return (
+    <>
+    <SheetMotionCommit key={motionInput.generation} input={motionInput} owner={motionOwner} detents={detents}
+      dismissDistance={dismissDistance ?? 1000} gestureClosePending={gestureClosePending} dismissEpoch={dismissEpoch}
+      dismiss={dismiss} dismissComplete={dismissComplete} />
     <GestureDetector gesture={pan}>
       <Animated.View testID={testID} style={[styles.sheet, sheetStyle]}>
         {useSwiftUIGlassSurface ? (
@@ -574,6 +613,7 @@ export default React.memo(function BottomSheet({
         </View>
       </Animated.View>
     </GestureDetector>
+    </>
   );
 });
 

@@ -91,7 +91,7 @@ exports.perform = (app, name, input = {}) => {
   return actions[name].run(app, input);
 };
 exports.gaps = [
-  'MapScreen private sharing switch, arrival/self-arrival and screen-only destination closures.',
-  'Map rendering, route search, purchases, notifications and physical background/native lifecycle.',
-  'Group create/join are not enabled in this bounded backend contract; seed membership fixtures explicitly.',
+  'Native rendering, gesture physics, Swift/Kotlin execution, sensor accuracy and OS background restrictions.',
+  'Real Supabase SQL/RLS, real push delivery, store receipts and advertising reward verification.',
+  'Source paths without a production caller are documented separately by --inventory.',
 ];

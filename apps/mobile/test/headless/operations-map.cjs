@@ -334,6 +334,28 @@ for (const [name, [module, symbol, inventory]] of Object.entries(services)) {
     }, 'service');
 }
 
+const controlOwners = {
+  AddPlaceConfirmCard: ['map.place.rename', 'map.place.cancel', 'map.place.pool', 'map.place.first-stop', 'map.place.favorite', 'map.place.center'],
+  RouteEditorSheet: ['map.route.interaction-mode', 'map.route.delete-selected'],
+  GatheringCarousel: ['map.card.toggle', 'map.journey.command', 'map.arrival.mark', 'map.arrival.undo', 'map.external-navigation', 'map.travel-mode', 'map.meet.open', 'map.carousel.begin', 'map.carousel.end'],
+  RoutePane: ['map.arrival.manage', 'map.ops.open', 'map.suggestion.approve', 'map.suggestion.reject', 'map.history.open'],
+  RefreshLocationsButton: ['map.location.refresh'],
+  MembersPane: ['map.sharing.toggle', 'map.subgroup.invite.accept', 'map.subgroup.invite.decline', 'map.group.invite', 'map.presence.select'],
+  ToolsPane: ['map.passive.enter', 'map.live-activity.toggle'],
+  FlockRow: ['map.subgroup.split', 'map.subgroup.merge', 'map.member.kick'],
+  InviteMembersOverlay: ['map.group.copy-code', 'map.group.share-code'],
+  HistorySheet: ['map.history.delete'],
+  MeetTimeSheet: ['map.meet.shortcut', 'map.meet.threshold', 'map.meet.save', 'map.meet.clear'],
+  OpsCenterSheet: ['map.exception.acknowledge', 'map.exception.resolve', 'map.exception.reopen'],
+};
+for (const [owner, names] of Object.entries(controlOwners)) for (const name of names) {
+  const definition = operations[name];
+  definition.entry = definition.entry.replace(screen, panel(owner));
+  definition.sources = definition.sources.map(anchor => anchor.file === screen ? { ...anchor, file: panel(owner) } : anchor);
+}
+operations['map.meet.save'].sources.push(...source('src/screens/MapScreen/hooks/useMeetTimeEditor.ts', 'persistMeetTime'));
+operations['map.meet.clear'].sources.push(...source('src/screens/MapScreen/hooks/useMeetTimeEditor.ts', 'persistMeetTime'));
+
 exports.operations = operations;
 exports.catalog = () => Object.entries(operations).map(([name, { run, ...metadata }]) => ({ name, ...metadata }));
 exports.lifecycle = [
@@ -360,5 +382,5 @@ exports.lifecycle = [
     scenarios: ['headlessMapScenario.test.ts'] },
 ];
 exports.unreachable = [{ name: 'map.coordinates.parent-submit', inventory: ['MAP-DEST-06'],
-  sources: [...source(screen, 'openCoordinateSheet'), ...source(screen, 'handleCoordinateDestination')],
-  reason: 'openCoordinateSheet has no production caller. CoordinateDestinationSheet is mounted permanently with coordSheetVisible initially false; no actual control sets it true. Standalone Q05 covers the real form but does not execute this Map parent closure.' }];
+  sources: [...source(screen, 'coordSheetVisible'), ...source(screen, 'handleCoordinateDestination')],
+  reason: 'CoordinateDestinationSheet is mounted permanently with coordSheetVisible initially false. The extracted Map has no opener, and its only setCoordSheetVisible call sets false. Standalone Q05 covers the real form but does not execute this Map parent closure.' }];

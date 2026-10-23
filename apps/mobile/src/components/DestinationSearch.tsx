@@ -1,6 +1,7 @@
 import WaveLoading from './WaveLoading';
 import { useForegroundUi } from '../state/foregroundUi';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import {
   FlatList,
   Pressable,
@@ -40,6 +41,57 @@ export interface DestinationSearchProps {
   onPick: (place: PlaceResult) => Promise<void>;
 }
 
+function DestinationPlaceSearch({ foreground, query, visible, region, sequence, setResults, setSearching, setSearchError }: {
+  foreground: boolean;
+  query: string;
+  visible: boolean;
+  region: MapRegion | undefined;
+  sequence: React.RefObject<number>;
+  setResults: React.Dispatch<React.SetStateAction<PlaceResult[]>>;
+  setSearching: React.Dispatch<React.SetStateAction<boolean>>;
+  setSearchError: React.Dispatch<React.SetStateAction<'failed' | 'quota' | null>>;
+}) {
+  useMountEffect(() => {
+    if (!foreground) return;
+    const trimmed = query.trim();
+    const seq = ++sequence.current;
+    setSearchError(null);
+    if (!visible || !trimmed) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    setResults([]);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const handle = setTimeout(async () => {
+      try {
+        const hits = await Promise.race([
+          maps.searchPlaces(trimmed, region, { throwOnError: true }),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('search_timeout')), 20_000);
+          }),
+        ]);
+        if (seq === sequence.current) setResults(normalizePlaceSearchResults(hits));
+      } catch (error) {
+        if (seq === sequence.current) {
+          setResults([]);
+          setSearchError(classifyOperationError(error).kind === 'quota' ? 'quota' : 'failed');
+        }
+      } finally {
+        clearTimeout(timeout);
+        if (seq === sequence.current) setSearching(false);
+      }
+    }, DEBOUNCE_MS);
+    return () => {
+      ++sequence.current;
+      clearTimeout(handle);
+      clearTimeout(timeout);
+    };
+  });
+  return null;
+}
+
 /**
  * Address / place search sheet used to set the group's next gathering point.
  *
@@ -67,66 +119,27 @@ export default React.memo(function DestinationSearch({
   // Guards against a stale debounced search resolving after we've moved on.
   const foreground = useForegroundUi();
   const seqRef = useRef(0);
-  const searchRegionRef = useRef(biasRegion);
   const [searchError, setSearchError] = useState<'failed' | 'quota' | null>(null);
-  const selectionRef = useRef({ query, results, searching, visible, submitting: false, epoch: 0 });
-  const epoch = selectionRef.current.epoch + (selectionRef.current.visible !== visible ? 1 : 0);
-  selectionRef.current = { query, results, searching, visible, epoch,
-    submitting: selectionRef.current.epoch === epoch && selectionRef.current.submitting };
-
-  // Reset everything whenever the sheet is opened afresh.
-  useEffect(() => {
+  const [opening, setOpening] = useState({ visible, biasRegion });
+  if (!Object.is(opening.visible, visible)) {
+    setOpening({ visible, biasRegion: visible ? biasRegion : opening.biasRegion });
     if (visible) {
-      searchRegionRef.current = biasRegion;
       setQuery('');
       setResults([]);
       setSearching(false);
       setSubmittingId(null);
       setSearchError(null);
     }
-    // GPS updates must not restart a query while this sheet is open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
-
-  // Debounced search as the query changes.
-  useEffect(() => {
-    if (!foreground) return;
-    const trimmed = query.trim();
-    const seq = ++seqRef.current;
-    setSearchError(null);
-    if (!visible || !trimmed) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    setResults([]);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const handle = setTimeout(async () => {
-      try {
-        const hits = await Promise.race([
-          maps.searchPlaces(trimmed, searchRegionRef.current, { throwOnError: true }),
-          new Promise<never>((_, reject) => {
-            timeout = setTimeout(() => reject(new Error('search_timeout')), 20_000);
-          }),
-        ]);
-        if (seq === seqRef.current) setResults(normalizePlaceSearchResults(hits));
-      } catch (error) {
-        if (seq === seqRef.current) {
-          setResults([]);
-          setSearchError(classifyOperationError(error).kind === 'quota' ? 'quota' : 'failed');
-        }
-      } finally {
-        clearTimeout(timeout);
-        if (seq === seqRef.current) setSearching(false);
-      }
-    }, DEBOUNCE_MS);
-    return () => {
-      ++seqRef.current;
-      clearTimeout(handle);
-      clearTimeout(timeout);
-    };
-  }, [foreground, query, visible]);
+  }
+  const [searchInput, setSearchInput] = useState({ foreground, query, visible, generation: 0 });
+  if (!Object.is(searchInput.foreground, foreground) || !Object.is(searchInput.query, query)
+    || !Object.is(searchInput.visible, visible)) {
+    setSearchInput({ foreground, query, visible, generation: searchInput.generation + 1 });
+  }
+  const selectionRef = useRef({ query, results, searching, visible, submitting: false, epoch: 0 });
+  const epoch = selectionRef.current.epoch + (selectionRef.current.visible !== visible ? 1 : 0);
+  selectionRef.current = { query, results, searching, visible, epoch,
+    submitting: selectionRef.current.epoch === epoch && selectionRef.current.submitting };
 
   async function handlePick(place: PlaceResult) {
     const selection = selectionRef.current;
@@ -151,6 +164,10 @@ export default React.memo(function DestinationSearch({
   }
 
   return (
+    <>
+    <DestinationPlaceSearch key={searchInput.generation} foreground={foreground} query={query} visible={visible}
+      region={opening.biasRegion} sequence={seqRef} setResults={setResults}
+      setSearching={setSearching} setSearchError={setSearchError} />
     <OverlaySheet
       visible={visible}
       onClose={onClose}
@@ -231,6 +248,7 @@ export default React.memo(function DestinationSearch({
         />
       </View>
     </OverlaySheet>
+    </>
   );
 });
 

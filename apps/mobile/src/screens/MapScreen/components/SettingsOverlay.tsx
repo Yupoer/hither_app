@@ -1,5 +1,6 @@
 import WaveLoading from '../../../components/WaveLoading';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import {
   Alert,
   Pressable,
@@ -36,6 +37,23 @@ const MARQUEE_SPEED_MIN = 20;
 const MARQUEE_SPEED_MAX = 80;
 
 const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
+
+function SettingsOtaCheck({ onAvailable }: { onAvailable: (available: boolean) => void }) {
+  useMountEffect(() => {
+    if (!OTA_UPDATES_USABLE) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await Updates.checkForUpdateAsync();
+        if (!cancelled) onAvailable(result.isAvailable);
+      } catch {
+        // A failed manual check keeps the last downloaded update state.
+      }
+    })();
+    return () => { cancelled = true; };
+  });
+  return null;
+}
 interface SettingsOverlayProps {
   visible: boolean;
   onClose: () => void;
@@ -167,15 +185,19 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const [groupAvatarColor, setGroupAvatarColor] = useState(group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : AVATAR_COLORS[0]));
   const [savingGroupAvatar, setSavingGroupAvatar] = useState(false);
 
-  useEffect(() => {
+  const [draftInputs, setDraftInputs] = useState({ visible, group, id: group?.id, avatar: group?.avatar, avatarColor: group?.avatarColor });
+  if (!Object.is(draftInputs.visible, visible) || !Object.is(draftInputs.group, group)
+    || !Object.is(draftInputs.id, group?.id) || !Object.is(draftInputs.avatar, group?.avatar)
+    || !Object.is(draftInputs.avatarColor, group?.avatarColor)) {
+    setDraftInputs({ visible, group, id: group?.id, avatar: group?.avatar, avatarColor: group?.avatarColor });
     if (visible) {
       setPage('root');
       setGroupAvatar(group?.avatar ?? (group ? avatarForGroup(group.id) : AVATAR_EMOJI[0]));
       setGroupAvatarColor(group?.avatarColor ?? (group ? avatarColorForGroup(group.id) : AVATAR_COLORS[0]));
-      return;
+    } else {
+      setPage('root');
     }
-    setPage('root');
-  }, [visible, group, group?.id, group?.avatar, group?.avatarColor]);
+  }
 
   const saveGroupAvatar = useCallback(async () => {
     if (!group?.id || !onUpdateGroupAvatar || savingGroupAvatar) return;
@@ -198,23 +220,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   const { isUpdateAvailable, isUpdatePending } = Updates.useUpdates();
   const [otaAvailable, setOtaAvailable] = useState(false);
   const [applyingOta, setApplyingOta] = useState(false);
-
-  // Manual check when settings opens; useUpdates also reflects background downloads.
-  useEffect(() => {
-    if (!visible || !OTA_UPDATES_USABLE) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const result = await Updates.checkForUpdateAsync();
-        if (!cancelled) setOtaAvailable(result.isAvailable);
-      } catch {
-        // Network / rate-limit: keep prior state from useUpdates.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [visible]);
 
   const showOtaApply =
     OTA_UPDATES_USABLE &&
@@ -289,6 +294,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       testID="settings-slide-page"
       pointerEvents="box-none"
     >
+      {visible ? <SettingsOtaCheck onAvailable={setOtaAvailable} /> : null}
       <SettingsChildSheet
         visible={visible}
         onClose={onClose}

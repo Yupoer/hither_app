@@ -1,5 +1,6 @@
 import WaveLoading from './WaveLoading';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import {
   Pressable,
   ScrollView,
@@ -46,7 +47,7 @@ export default function FeedbackSheet({
   const mountedRef = useRef(true);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  useMountEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
@@ -55,7 +56,7 @@ export default function FeedbackSheet({
         closeTimerRef.current = null;
       }
     };
-  }, []);
+  });
 
   function reset() {
     setDescription('');

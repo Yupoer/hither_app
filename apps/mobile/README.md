@@ -7,7 +7,7 @@ Go is reserved for JavaScript fallback smoke tests.
 
 ## Stack
 
-- Expo SDK 56 / React Native 0.85 / React 19.2
+- Expo SDK 57 / React Native 0.86 / React 19.2
 - React Navigation (native stack)
 - TypeScript (strict)
 - Jest + ts-jest for unit tests

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -40,12 +41,10 @@ export default function RoleSelectScreen({ navigation }: Props) {
   const visuals = useOptionalVisuals();
   const reducedMotion = useReducedMotion();
   const entrance = useSharedValue(0);
-  useEffect(() => {
-    cancelAnimation(entrance);
-    if (!isFocused || !visuals || reducedMotion || entrance.value === 1) { entrance.value = 1; return; }
-    entrance.value = withSpring(1, { duration: 800, dampingRatio: 0.85 });
-    return () => cancelAnimation(entrance);
-  }, [entrance, isFocused, visuals, reducedMotion]);
+  const [entranceIdentity, setEntranceIdentity] = useState({ entrance, isFocused, visuals, reducedMotion, generation: 0 });
+  if (!Object.is(entranceIdentity.entrance, entrance) || !Object.is(entranceIdentity.isFocused, isFocused) || !Object.is(entranceIdentity.visuals, visuals) || !Object.is(entranceIdentity.reducedMotion, reducedMotion)) {
+    setEntranceIdentity({ entrance, isFocused, visuals, reducedMotion, generation: entranceIdentity.generation + 1 });
+  }
   const entranceStyle = useAnimatedStyle(() => ({ opacity: entrance.value, transform: [{ scale: entrance.value }] }));
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -55,7 +54,7 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
   // Paint from in-memory cache immediately; refresh in background without
   // waiting for the full (profiles) path.
-  const { groups: joinedGroups, loading: groupsLoading, error: groupsError, retry } = useJoinedGroups(user?.id ?? null, false);
+  const { groups: joinedGroups, loading: groupsLoading, error: groupsError, retry, lifecycle: joinedGroupsLifecycle } = useJoinedGroups(user?.id ?? null, false);
   useFocusEffect(useCallback(() => {
     if (actorId && getCachedMyJoinedGroups(actorId) === null) retry();
   }, [actorId, retry]));
@@ -87,6 +86,8 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
   return (
     <View style={styles.fill}>
+      {joinedGroupsLifecycle}
+      <RoleEntranceMotion key={entranceIdentity.generation} entrance={entrance} isFocused={isFocused} visuals={visuals} reducedMotion={reducedMotion} />
       <MetalforgeBackground active={isFocused} />
       <View style={[styles.leftChrome, { top: insets.top + 8 }]}>
         <LanguagePicker variant="menu" />
@@ -177,6 +178,21 @@ export default function RoleSelectScreen({ navigation }: Props) {
       </View>
     </View>
   );
+}
+
+function RoleEntranceMotion({ entrance, isFocused, visuals, reducedMotion }: {
+  entrance: ReturnType<typeof useSharedValue<number>>;
+  isFocused: boolean;
+  visuals: boolean;
+  reducedMotion: boolean;
+}) {
+  useMountEffect(() => {
+    cancelAnimation(entrance);
+    if (!isFocused || !visuals || reducedMotion || entrance.value === 1) { entrance.value = 1; return; }
+    entrance.value = withSpring(1, { duration: 800, dampingRatio: 0.85 });
+    return () => cancelAnimation(entrance);
+  });
+  return null;
 }
 
 const styles = StyleSheet.create({

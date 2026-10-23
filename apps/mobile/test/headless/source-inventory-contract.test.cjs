@@ -20,6 +20,8 @@ try {
   assert(changed.added.some(entry => entry.name === 'save'));
   fs.writeFileSync(path.join(directory, 'src/service.ts'), 'export {save as persist} from "./other";');
   assert(scan(directory, ts).some(entry => entry.kind === 'export-alias'));
+  fs.writeFileSync(path.join(directory, 'src/service.ts'), 'function Screen() { useMountEffect(start); }');
+  assert(scan(directory, ts).some(entry => entry.kind === 'lifecycle' && entry.name === 'useMountEffect'));
   console.log('Source inventory detects new callbacks, changed service bodies and exported aliases');
 } finally {
   assert(path.resolve(directory).startsWith(`${path.resolve(os.tmpdir())}${path.sep}hither-source-inventory-`));

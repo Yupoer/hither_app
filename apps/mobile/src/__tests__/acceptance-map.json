@@ -3,235 +3,274 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Concurrent IPC commands finish real React foreground and native location cleanup in order without overlapping act scopes.",
       "testFile": "headlessHarnessContract.test.ts",
       "testNamePattern": "finishes concurrent foreground"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "The functional scenarios execute in iOS and Android mocked native platform paths, including an automated iOS-to-Android location projection.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "headless multiplayer scenarios on|publishes iOS GPS into an Android"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Controlled backend fixtures preserve real ingestion timestamp ordering and duplicate ACK behavior across independent devices, offline delivery holds and restarts.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "same-tick|lost ACK|delivery hold captures"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "The callable manual-refresh action exposes the existing continuous-watch rejection together with the actual successful watch upload and peer observation.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "existing manual-refresh rejection"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Independent headless app processes execute real GPS, privacy, SQLite outbox, auth transport and peer hooks before and after the controlled backend ACK.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "publishes an Expo GPS fix"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Missed events recover at the real polling deadline and offline state persists across a real device process restart.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "repairs missed Realtime|persists offline GPS"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Stale samples, revoked consent, replacement accounts and denied native permission cannot publish forbidden location data.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "fences stale samples|replacement account|permission boundary"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "The peer hook preserves a newer location against an older captured recovery response and reconnects after background.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "ignores an old recovery"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Real journey Start and End callbacks persist durable operations and update the peer, including End before a held Start acknowledgement.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "real public journey Start and End|End authoritative|restores offline Start"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "Real destination service lazy imports add, reorder and delete through actor-bound durable operations and both mounted hooks.",
       "testFile": "headlessScenario.test.ts",
       "testNamePattern": "real destination service lazy import"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "The runnable catalog comes from the actual dispatch registry; unexpected external operations remain fatal even when caught by the app.",
       "testFile": "headlessHarnessContract.test.ts",
       "testNamePattern": "callable catalog|swallowed unexpected"
     },
     {
-      "parent": 316, "child": 316,
+      "parent": 316,
+      "child": 316,
       "acceptance": "The harness isolates actor storage, executes genuine SQL rollback, and reaps owned crashed or hung processes with failure receipts.",
       "testFile": "headlessHarnessContract.test.ts",
       "testNamePattern": "independent app processes|real SQLite|shutdown hangs|actor crash"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "The production Live Activity travel_mode constraint accepts bicycle and existing modes and rejects unsupported values.",
       "testFile": "supabase/tests/live_activity_bicycle_mode.test.sql",
       "testNamePattern": "production Live Activity constraint accepts bicycle"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "A delayed older Start snapshot cannot move the card away from the newly confirmed destination.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "keeps selection on confirmed B"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Durable same-day promotion preserves omitted meeting time and accommodation anchor fields, while explicit null still clears its field.",
       "testFile": "supabase/tests/durable_reorder_optional_fields.test.sql",
       "testNamePattern": "durable promotion preserves omitted fields"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Transport preference survives screen remount and cold startup, while delayed hydration preserves a newer choice.",
       "testFile": "travelModePreference.test.ts",
       "testNamePattern": "persists|keeps user choice"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Transport changes recompute card and Live Activity ETA without stale mode responses or lost progress.",
       "testFile": "transportModeEta.test.ts",
       "testNamePattern": "switches both surface ETAs|recalculates stale sticky ETA|rebases a stale deadline"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Existing journeys require named confirmation, and stale terminal rows cannot cancel a pending Start.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "names the active and requested stops|prompts for a suppressed prior server target|protects a new Start|keeps a same-target restart"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Start frames the device and destination together, including when GPS becomes available later.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "frames the device and destination once"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Start and same-day promotion commit atomically, persist across restart, replay in order, and roll back together on rejection.",
       "testFile": "coreSQLiteStorage.test.ts",
       "testNamePattern": "commits Start and same-day promotion atomically|rejects the dependent promotion and restores order"
     },
     {
-      "parent": 298, "child": 298,
+      "parent": 298,
+      "child": 298,
       "acceptance": "Bicycle directions preserve the selected transport in provider requests and external navigation URLs.",
       "testFile": "mapsDirections.test.ts",
       "testNamePattern": "bicycle"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Premium import preview matches the server batch ceiling without an upgrade promise.",
       "testFile": "kmlImportPreview.test.ts",
       "testNamePattern": "previews and submits only 100 Premium points"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Browser recovery clears callback secrets before network access and never exchanges native PKCE codes.",
       "testFile": "scripts/auth-web-recovery-check.mjs",
       "testNamePattern": "URL cleared before requests"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Server atomically revokes installation push capabilities without affecting other accounts or devices, rejects late registration, and permits a fresh login.",
       "testFile": "supabase/tests/installation_capabilities.test.sql",
       "testNamePattern": "logout revokes in one transaction|late push registration|other account retained|fresh authentication"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Auth callbacks require an exact HTTPS route and a one-time pending PKCE transaction.",
       "testFile": "authCallbackSecurity.test.ts",
       "testNamePattern": "accepts a locally initiated recovery|rejects unsolicited links|rejects expired state|deduplicates simultaneous"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Logout drains and revokes installation capabilities before losing authentication and fences late account writes.",
       "testFile": "installationCapabilities.test.ts",
       "testNamePattern": "drains an in-flight registration|reports revocation failure|rejects an old account registration"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Server enforces text feedback size, rate, and retained-row limits and removes screenshot allocation.",
       "testFile": "supabase/tests/feedback_limits.test.sql",
       "testNamePattern": "oversized text rejected|hourly limit|retained row limit|screenshot upload policy removed"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Promo redemption serializes concurrent distinct accounts against a single remaining use.",
       "testFile": "supabase/tests/promo_redemption_concurrency.mjs",
       "testNamePattern": "two simultaneous redeemers produce one success"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Actual SQL denies removed-member reads and arrivals, unauthorized commands, exhausted promo and excessive imports.",
       "testFile": "supabase/tests/security_group_command_import_arrival.test.sql",
       "testNamePattern": "unauthorized|already_used|101|follower"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "StoreKit authentic fixtures pass while cryptographically valid wrong-purpose certificate chains are rejected before privileged reads.",
       "testFile": "supabase/functions/_shared/storekit_certificate_test.ts",
       "testNamePattern": "Deno.test"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "Feedback accepts text only through the bounded authenticated RPC.",
       "testFile": "feedback.test.ts",
       "testNamePattern": "submits only category and trimmed text|propagates server rejection"
     },
     {
-      "parent": 285, "child": 285,
+      "parent": 285,
+      "child": 285,
       "acceptance": "KMZ rejects excessive directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
       "testFile": "kmlLoad.test.ts",
       "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|parses KML inside KMZ"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "GPS enter then exit in one locked-screen batch records local arrival before ACK.",
       "testFile": "backgroundJourneyCoverage.test.ts",
       "testNamePattern": "processes an out-of-order enter/exit batch"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "Starting inside the radius accepts the first fresh accurate fix.",
       "testFile": "backgroundJourneyCoverage.test.ts",
       "testNamePattern": "accepts the first fresh accurate fix"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "Solo and all-arrived teams use original-session completion; leader force requires no arrivals.",
       "testFile": "journeyCompletion.test.ts",
       "testNamePattern": "explicit leader force completion"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "Failed queue head blocks all later same actor/group actions while other groups proceed.",
       "testFile": "coreOperationOutboxDurable.test.ts",
       "testNamePattern": "enforces FIFO per actor/group"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "Saved journey End remains successful with silent automatic backend retries.",
       "testFile": "journeyDurableCommands.test.ts",
       "testNamePattern": "keeps a saved End successful and silent"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "Trip dates and stays save durably offline, without prerequisite network writes.",
       "testFile": "durableTripAccommodation.test.ts",
       "testNamePattern": "durably saves trip and stay edits offline"
     },
     {
-      "parent": 282, "child": 282,
+      "parent": 282,
+      "child": 282,
       "acceptance": "Historical completed cards never reinsert during hydration or map reentry.",
       "testFile": "localFirstJourneyBoundary.test.ts",
       "testNamePattern": "does not reinsert completed history"
@@ -2001,61 +2040,473 @@
       "testNamePattern": "UI runtime main-thread/nested/typed-throw=PASS"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "particles",
+      "parent": "foreground-navigation-20261006",
+      "child": "particles",
       "acceptance": "Particle identity, positions and lifecycle resume from active time after a long background interval.",
       "testFile": "starfieldPauseResume.test.ts",
       "testNamePattern": "freezes ball identity and phase through background time"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "eta",
+      "parent": "foreground-navigation-20261006",
+      "child": "eta",
       "acceptance": "Identical estimates, foreground resumes and GPS gaps retain their original countdown deadline.",
       "testFile": "liveActivityEta.test.ts",
       "testNamePattern": "keeps the original deadline through identical estimates"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "arrival",
+      "parent": "foreground-navigation-20261006",
+      "child": "arrival",
       "acceptance": "A durable personal receipt survives a terminal backend rejection and worker restart without duplicate transport or team completion.",
       "testFile": "personalArrivalReceipt.test.ts",
       "testNamePattern": "retains a rejected receipt across worker restart"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "location",
+      "parent": "foreground-navigation-20261006",
+      "child": "location",
       "acceptance": "iOS keeps the native MapKit user location when paused or covered by system UI; only true background hands GPS off, and sharing-off stops acquisition.",
       "testFile": "pausedLocationOwnership.test.ts",
       "testNamePattern": "keeps MapKit for paused and navigating iOS, preserves inactive fixes"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "session",
+      "parent": "foreground-navigation-20261006",
+      "child": "session",
       "acceptance": "Cold startup and every actual foreground edge refresh a healthy session while temporary failures retain local identity.",
       "testFile": "sessionProviderRecovery.test.ts",
       "testNamePattern": "force-refreshes a healthy JWT at startup and each real foreground edge|restores local identity through offline refresh"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "terminal-session",
+      "parent": "foreground-navigation-20261006",
+      "child": "terminal-session",
       "acceptance": "Confirmed terminal refresh clears identity, membership and native runtime while preserving durable drafts.",
       "testFile": "sessionProviderRecovery.test.ts",
       "testNamePattern": "clears identity/membership and stops native runtime on confirmed unrecoverable refresh"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "account-switch",
+      "parent": "foreground-navigation-20261006",
+      "child": "account-switch",
       "acceptance": "Switching actors clears the prior account UI before profile enrichment, and successful reauthentication restarts foreground SDK renewal.",
       "testFile": "sessionProviderRecovery.test.ts",
       "testNamePattern": "clears the prior actor ownership before a switched account profile can fail|restarts SDK auto refresh after terminal recovery"
     },
     {
-      "parent": "foreground-navigation-20261006", "child": "route-sync",
+      "parent": "foreground-navigation-20261006",
+      "child": "route-sync",
       "acceptance": "Route-open reconciliation reads local state first, never waits for remote reads, ignores retired generations and handles advisory failures silently.",
       "testFile": "routeOpenSync.test.ts",
       "testNamePattern": "starts remote work after local completion|swallows advisory local and remote reconciliation failures"
     },
-    {"parent": 293, "child": 293, "acceptance": "Particles enter from the right at 1.25 speed with 0.8 radius and independent slow twinkling.", "testFile": "metalforgeStarfield.test.ts", "testNamePattern": "moves 1.25 times the previous speed"},
-    {"parent": 293, "child": 293, "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.", "testFile": "starfieldPauseResume.test.ts", "testNamePattern": "freezes ball identity and phase"},
-    {"parent": 293, "child": 293, "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.", "testFile": "liveActivityDisplay.test.ts", "testNamePattern": "persists changed snapshots at 15 seconds"},
-    {"parent": 293, "child": 293, "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.", "testFile": "backgroundJourneyCoverage.test.ts", "testNamePattern": "delivers background estimates at 5 seconds"},
-    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"},
-    {"parent": 320, "child": "inventory", "acceptance": "Reviewed operation families map to production entries and source changes require coverage review.", "testFile": "headlessInventoryContract.test.ts", "testNamePattern": "maps reviewed operation families|requires source review"},
-    {"parent": 320, "child": "backend", "acceptance": "External backend fixtures enforce source contracts and reject unsupported or unauthorized transitions.", "testFile": "headlessInventoryContract.test.ts", "testNamePattern": "keeps domain backend fixtures strict"},
-    {"parent": 320, "child": "store", "acceptance": "Actual Store and Premium callbacks wait for authoritative reward or purchase verification on both platforms.", "testFile": "headlessStoreScenario.test.ts", "testNamePattern": "waits for external SSV before credit|never finishes a purchase before server verification"},
-    {"parent": 320, "child": "isolation", "acceptance": "Each virtual device preserves account isolation and rejects unknown registry actions.", "testFile": "headlessHarnessContract.test.ts", "testNamePattern": "derives the callable catalog"}
+    {
+      "parent": 293,
+      "child": 293,
+      "acceptance": "Particles enter from the right at 1.25 speed with 0.8 radius and independent slow twinkling.",
+      "testFile": "metalforgeStarfield.test.ts",
+      "testNamePattern": "moves 1.25 times the previous speed"
+    },
+    {
+      "parent": 293,
+      "child": 293,
+      "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.",
+      "testFile": "starfieldPauseResume.test.ts",
+      "testNamePattern": "freezes ball identity and phase"
+    },
+    {
+      "parent": 293,
+      "child": 293,
+      "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.",
+      "testFile": "liveActivityDisplay.test.ts",
+      "testNamePattern": "persists changed snapshots at 15 seconds"
+    },
+    {
+      "parent": 293,
+      "child": 293,
+      "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.",
+      "testFile": "backgroundJourneyCoverage.test.ts",
+      "testNamePattern": "delivers background estimates at 5 seconds"
+    },
+    {
+      "parent": 293,
+      "child": 293,
+      "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.",
+      "testFile": "liveActivityContract.test.ts",
+      "testNamePattern": "uses native glass with a material fallback"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Native marker commands retain stable initial coordinates, reject invalid/nonmonotonic samples, clean replaced marker refs to the accepted endpoint, and ignore discarded renders through Strict replay.",
+      "testFile": "memberMarkerMotion.test.ts",
+      "testNamePattern": "never moves|rejects invalid|equal-value samples|suspended uncommitted sample|Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Device lifecycle publishes privacy before synchronous watch callbacks, preserves UI across profile resets, cancels late watch promises, keeps debug local and allDay watchdog sensor-free, and survives Strict replay.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "publishes privacy|late watch Promise|real watchdog|debug fixes local|Strict setup"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Route committed inputs preserve Object.is reevaluation, same-key pending requests, stale result fences, Strict replay, and no directions from discarded renders.",
+      "testFile": "mapKitRoutes.test.ts",
+      "testNamePattern": "accepts the in-flight request|equal-value new input|suspended uncommitted|cached result after StrictMode|A to B to A"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "The sole mount-only effect helper preserves setup, cleanup, remount and StrictMode replay without restarting on changed callback props.",
+      "testFile": "useMountEffect.test.ts",
+      "testNamePattern": "sets up on mount|keeps the mounted closure|preserves StrictMode|accepts a setup"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "The actual mobile ESLint configuration rejects React effect imports, aliases, members, require destructures and reexports throughout src including tests, with only the mount helper exempt from useEffect.",
+      "testFile": "reactEffectLint.test.ts",
+      "testNamePattern": "rejects|allows|helper"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Actual demo services preserve reorder metadata and untouched stops, and a clean route editor displays saved delete/reorder results without durable or cloud writes.",
+      "testFile": "demoItineraryMutations.test.ts",
+      "testNamePattern": "deletes from the actual demo|reorders and patches demo metadata|renders b after confirming|renders b,a after a saved reorder"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Extracted style scaling preserves emoji glyphs and layout, leaves original style objects intact, and handles system Bold Text and invalid scales.",
+      "testFile": "styleScaling.test.ts",
+      "testNamePattern": "scales text without changing emoji|keeps style identity|reduces heavy text weights"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Member presence keeps current profile data, rolls back failed Solo changes, clears confirmed optimistic state, and ignores notification preferences from old accounts.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "uses the current profile|clears the optimistic Solo override|ignores notification preferences"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Gathering completion preserves session identity, releases failed write guards, and ignores completion after the arrival context changes.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "releases the in-flight guard|ignores completion after|does not submit a second completion|does not complete when a local start"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "MapScreen hook extraction preserves stale entitlement response guards, offline local arrival history, anonymous invite limits, home navigation, leave cleanup, and straggler deduplication.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "rejects an old team store response|does not fetch store entitlements|renders projected local arrivals|blocks anonymous leader invite|returns home without leaving|clears Live Activities|reports each newly flagged"
+    },
+    {
+      "parent": 304,
+      "child": 304,
+      "acceptance": "Profile realtime updates are scoped to current co-members and resubscribe only when the member set changes.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "subscribes to profile updates only for current co-members"
+    },
+    {
+      "parent": 304,
+      "child": 304,
+      "acceptance": "The full group reload polls every 30 s without realtime and every 120 s while the channel is SUBSCRIBED.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "backs off while SUBSCRIBED"
+    },
+    {
+      "parent": 304,
+      "child": 304,
+      "acceptance": "Repeated realtime rejoin failures do not postpone the 30 s fallback poll.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "keeps the 30 s fallback poll running"
+    },
+    {
+      "parent": 304,
+      "child": 304,
+      "acceptance": "A fallback poll never overlaps an in-flight reload.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "never starts a poll while the previous poll load is still in flight"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Mounted organizer resources preserve observations across identity changes, clean late async subscriptions and reject retired navigation callbacks.",
+      "testFile": "foregroundRecoveryHooks.test.ts",
+      "testNamePattern": "organizer recovery|late subscription|continuous firstSeen|abandoned straggler"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Group resources preserve realtime cadence, separate instance channels, stale callback fencing, committed visible seed leases and abandoned render privacy.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "polls every|fallback poll|two hook instances|Strict replay|suspended render"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Foreground repair uses the committed latest callback without restarting its deadline and releases native listeners across enabled, interval, unmount and Strict replay.",
+      "testFile": "foregroundReconcileLifecycle.test.ts",
+      "testNamePattern": "commits the latest|replaces only enabled|Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Route reorder preserves optimistic drop acknowledgement, ends background drag before applying route changes, fences account collapse reads, and retains onboarding callback identity and its original completion policy.",
+      "testFile": "routeDragPreview.test.ts",
+      "testNamePattern": "same-commit route projection|optimistic drop|old account collapse|onboarding callback identity"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "BottomSheet arbitrates cancellation before close/resume and detent snap, preserves native scroll/gesture identity, and fences stale close completions across reopen, unmount and StrictMode.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "keeps native scroll|orders same-commit|replays bottom-sheet|retains a committed bottom-sheet|cancels mid-dismiss|failed gesture"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Overlay motion keeps drafts mounted through background and close/reopen, preserves commit/cancel callbacks, and fences old native and gesture completions including StrictMode replay.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "retains an overlay draft|committed overlay drag|keeps overlay content|fences old overlay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Search keeps its opening bias and native input across GPS and callback changes, resumes foreground queries, and fences timeout, reverse responses, old picks and StrictMode debounce replay.",
+      "testFile": "destinationSearchLifecycle.test.ts",
+      "testNamePattern": "fixed centre|captures a new opening|fences reversed|replays StrictMode|resumes the retained|stalled request|old pick"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Coordinate and quick-command forms retain native input and scroll instances while preserving Object.is reset semantics and feedback close-timer cleanup.",
+      "testFile": "sheetFormIdentity.test.ts",
+      "testNamePattern": "resets coordinates|resets only quick-command|clears the feedback"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Marquee timers, measurement identity and speed changes preserve UI and cancel old work; countdown notifications honor callback identity and never publish discarded renders.",
+      "testFile": "marqueeCountdownLifecycle.test.ts",
+      "testNamePattern": "preserves marquee measurement|cancels old activation|notifies due changes|does not publish a due callback"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Shader and starfield jobs preserve active-only animation time, native registration ordering, visibility, drain timers and balanced workload leases through suspension and Strict replay.",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "installs activation|disables hidden|caps active|retains the same frozen"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Onboarding progress, reduce-motion subscriptions, confetti and theme pulses retain content and shared-value owners through type scaling, selection and suspension.",
+      "testFile": "onboardingMotionLifecycle.test.ts",
+      "testNamePattern": "updates progress|keeps the intro|retains celebration|applies theme selection"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Loading and onboarding button motion cancel and resume without remounting their UI or shared phase owners.",
+      "testFile": "motionResourceLifecycle.test.ts",
+      "testNamePattern": "retains loading phase|changes disabled color|keeps mascot content"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Authentication screen jobs preserve drafts, full User identity navigation, callback-sensitive recovery timers, account scroll ownership and foreground OTA cancellation.",
+      "testFile": "identityAuthScreenLifecycle.test.ts",
+      "testNamePattern": "keeps login drafts|restarts recovery dismissal|keeps the account scroll|cancels late OTA"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Purchase recovery preserves whole User and callback identities and rejects valid late purchase, cache and projection results after account replacement.",
+      "testFile": "premiumRecoveryLifecycle.test.ts",
+      "testNamePattern": "preserves full User|rejects a late"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Foreground clocks retain their state, install one timer per lifetime and release timers across interval, enabled and Strict replay transitions.",
+      "testFile": "foregroundUiStress.test.ts",
+      "testNamePattern": "replaces only the clock timer"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Session recovery ignores old entitlement results across A to B to A, old profile refreshes, and preserves full User object flush triggers.",
+      "testFile": "sessionProviderRecovery.test.ts",
+      "testNamePattern": "fences an in-flight entitlement|a late profile refresh|flushes again for a new same-account"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Real notification consumers install exactly one push, group and invite lifetime through screen branches, replace account resources and dispose all listeners.",
+      "testFile": "sessionNotificationsLifecycle.test.ts",
+      "testNamePattern": "keeps one installed notification lifetime"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Invite loads use committed identity leases: abandoned account renders preserve the current response, while A to B to A rejects the retired request.",
+      "testFile": "sessionNotificationsLifecycle.test.ts",
+      "testNamePattern": "discarded|retired"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Actual subgroup, coordination and gathering consumers install all nested subscriptions and foreground repair jobs, retain them across screen branches and clean them on identity change and unmount.",
+      "testFile": "workflowNestedLifecycles.test.ts",
+      "testNamePattern": "installs nested invite and workflow repair jobs"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Group tour resources preserve atomic copy/geometry snapshots and navigation controls through transitions.",
+      "testFile": "groupFeatureTourOverlayFix.test.ts",
+      "testNamePattern": "copy, hole, and placement atomic|canGoPrev and retreats"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Route tour committed callback publication does not restart eligible work and preserves snapshot, scrolling and measurement order.",
+      "testFile": "routeReorderTour.test.ts",
+      "testNamePattern": "replacement callbacks after commit|six targets atomically|async accommodation scroll"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Pending place motion retains its pose across suspend/resume and restarts only for the original object identity changes.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "same pending map place"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Meet reminders preserve the soonest meet time, native listener cleanup and cancellation of late scheduling results.",
+      "testFile": "meetTimeEditor.test.ts",
+      "testNamePattern": "schedules|native scheduling resolves after unmount"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Distinct workflow lifetimes keep identical generation numbers isolated and reject retired account or entitlement responses.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "independent nested jobs|earlier account|old team store response"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Role resources preserve reference and callback identity, ordered rejection handling and committed-only Session writes.",
+      "testFile": "groupRole.test.ts",
+      "testNamePattern": "publishes committed membership|same-commit rejection|abandoned suspended render"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Real MapScreen installs external resources in all five return branches and preserves native map ownership and its first accepted camera center through location updates.",
+      "testFile": "mapScreenResourceInstallation.test.ts",
+      "testNamePattern": "mounts real resources through every MapScreen return"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Journey baseline publication precedes sticky/departure updates regardless of sibling mount order and preserves coordinate/route-generation identity and locked anchors.",
+      "testFile": "mapJourneyProgressResources.test.ts",
+      "testNamePattern": "publishes the baseline|reevaluates new coordinate references|arbitrates baseline before departure"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map background GPS handoff accepts the committed journey baseline and native intent first, preserves original object/callback reevaluation and permission flight ownership, and adds no per-input GPS stop.",
+      "testFile": "mapBackgroundLocationResource.test.ts",
+      "testNamePattern": "publishes the latest locked baseline|retains object and callback|keeps permission flight ownership|preserves native intent dependency boundaries"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Add-place tour resources preserve place/preferences/callback identity and shared start/measurement generation ordering, including reverse async completions and Strict replay.",
+      "testFile": "mapAddPlaceTourResource.test.ts",
+      "testNamePattern": "retains pending-place|publishes the start generation|reverse measurement completions|keeps Strict replay cancellation"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Completed-card resources retain full carousel rank, avoid replaying historical or background closures and clean timer ownership before visibility/context replacement.",
+      "testFile": "mapArrivalCardsResource.test.ts",
+      "testNamePattern": "seeds historical closures|cancels foreground exit|stable card owner resources"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Foreground arrival resets and hydrates undo ownership before evaluation, preserves array/callback identities and ignores old or superseded asynchronous reads including Strict replay.",
+      "testFile": "mapForegroundArrivalResource.test.ts",
+      "testNamePattern": "resets and starts undo hydration|retains every outbox array identity|newer foreground undo mutation|fences Strict replay"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map access loss deduplicates, route opening fences stale sync completions, and FIFO selection/native pager preserve their stable owners and array identity.",
+      "testFile": "mapScreenChromeResources.test.ts",
+      "testNamePattern": "deduplicates access-loss|syncs each open once|keeps FIFO removal selection"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Map subgroup changes reset only edit/import scope, retain unrelated draft state and correct an unavailable subgroup view.",
+      "testFile": "mapScreenScopeControls.test.ts",
+      "testNamePattern": "resets only edit and import scope|keeps a valid subgroup view"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "MapScreen named resources preserve exact callback and coordinate identity, stable owner drafts, subscription disposal, stale async fencing and one stale deadline.",
+      "testFile": "mapScreenResources.test.ts",
+      "testNamePattern": "installs the outbox listener|callback identity|preserves Object.is|card count|old stale deadline|reversed storage"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Dynamic Type, app text preferences and system bold/contrast update real font layout while Strict subscriptions clean up and unavailable native probes remain safe.",
+      "testFile": "fontLayoutLifecycle.test.ts",
+      "testNamePattern": "updates layout from system settings|refreshes Android contrast"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Resetting account preferences offline preserves durable onboarding replay and clears in-memory tour completion without changing navigation.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "keeps onboarding replay available"
+    },
+    {
+      "parent": 320,
+      "child": "inventory",
+      "acceptance": "Reviewed operation families map to production entries and source changes require coverage review.",
+      "testFile": "headlessInventoryContract.test.ts",
+      "testNamePattern": "maps reviewed operation families|requires source review"
+    },
+    {
+      "parent": 320,
+      "child": "backend",
+      "acceptance": "External backend fixtures enforce source contracts and reject unsupported or unauthorized transitions.",
+      "testFile": "headlessInventoryContract.test.ts",
+      "testNamePattern": "keeps domain backend fixtures strict"
+    },
+    {
+      "parent": 320,
+      "child": "store",
+      "acceptance": "Actual Store and Premium callbacks wait for authoritative reward or purchase verification on both platforms.",
+      "testFile": "headlessStoreScenario.test.ts",
+      "testNamePattern": "waits for external SSV before credit|never finishes a purchase before server verification"
+    },
+    {
+      "parent": 320,
+      "child": "isolation",
+      "acceptance": "Each virtual device preserves account isolation and rejects unknown registry actions.",
+      "testFile": "headlessHarnessContract.test.ts",
+      "testNamePattern": "derives the callable catalog"
+    }
   ]
 }

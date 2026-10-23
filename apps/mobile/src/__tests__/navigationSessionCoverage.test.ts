@@ -1,4 +1,5 @@
 import React from 'react';
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import type { MemberNavigationState, NavigationSession } from '../types/navigation';
 
 const mockAppState: {
@@ -96,7 +97,7 @@ async function mount(groupId: string | null) {
   let value!: ReturnType<typeof useNavigationSession>;
   function Probe() {
     value = useNavigationSession(groupId);
-    return null;
+    return value.lifecycle;
   }
   let tree!: { unmount: () => void };
   await act(async () => {
@@ -240,6 +241,55 @@ describe('useNavigationSession lifecycle and mutations', () => {
     expect(mounted.value().session?.id).toBe('session-2');
     expect(mounted.value().terminalSession).toBeNull();
     await act(async () => mounted.tree.unmount());
+  });
+
+  it('installs the real scoped lane, fences old hydration and releases a late subscription', async () => {
+    let finishOldRead!: (value: NavigationSession) => void;
+    let finishOldSubscription!: (cleanup: () => void) => void;
+    const oldCleanup = jest.fn();
+    mockGetActive.mockImplementationOnce(() => new Promise(resolve => { finishOldRead = resolve; }));
+    mockSubscribe.mockImplementationOnce(() => new Promise(resolve => { finishOldSubscription = resolve; }));
+    let current!: ReturnType<typeof useNavigationSession>;
+    function ScopedProbe({ scope, actor }: { scope: string; actor: string }) {
+      current = useNavigationSession('group-1', scope, actor);
+      return current.lifecycle;
+    }
+    const renderer = require('react-test-renderer') as typeof import('react-test-renderer');
+    let tree!: import('react-test-renderer').ReactTestRenderer;
+    await renderer.act(async () => { tree = renderer.create(React.createElement(ScopedProbe, { scope: 'one', actor: 'actor-a' })); });
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    mockGetActive.mockResolvedValue({ ...session('scope-two'), scopeSubgroupId: 'two' });
+    await renderer.act(async () => { tree.update(React.createElement(ScopedProbe, { scope: 'two', actor: 'actor-b' })); });
+    expect(mockGetActive).toHaveBeenLastCalledWith('group-1', 'two');
+    expect(current.session?.id).toBe('scope-two');
+    await renderer.act(async () => {
+      finishOldRead({ ...session('old-scope'), scopeSubgroupId: 'one' });
+      finishOldSubscription(oldCleanup);
+    });
+    expect(oldCleanup).toHaveBeenCalledTimes(1);
+    expect(current.session?.id).toBe('scope-two');
+    await renderer.act(async () => { tree.unmount(); });
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a single listener and poll owner across Strict replay and stable rerenders', async () => {
+    jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+    const renderer = require('react-test-renderer') as typeof import('react-test-renderer');
+    function Probe() { return useNavigationSession('group-1').lifecycle; }
+    let tree!: import('react-test-renderer').ReactTestRenderer;
+    const element = () => React.createElement(React.StrictMode, null, React.createElement(Probe));
+    await renderer.act(async () => { tree = renderer.create(element()); });
+    const subscriptions = mockSubscribe.mock.calls.length;
+    const listeners = mockAppState.addEventListener.mock.calls.length;
+    await renderer.act(async () => { tree.update(element()); });
+    expect(mockSubscribe).toHaveBeenCalledTimes(subscriptions);
+    expect(mockAppState.addEventListener).toHaveBeenCalledTimes(listeners);
+    expect(jest.getTimerCount()).toBe(1);
+    await renderer.act(async () => { tree.unmount(); });
+    expect(jest.getTimerCount()).toBe(0);
+    expect(unsubscribe).toHaveBeenCalledTimes(subscriptions);
+    expect(mockAppState.remove).toHaveBeenCalledTimes(listeners);
+    jest.useRealTimers();
   });
 
 });

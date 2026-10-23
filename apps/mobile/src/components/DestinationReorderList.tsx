@@ -1,5 +1,6 @@
 import { useForegroundUi, isForegroundUi } from '../state/foregroundUi';
-import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import React, { useCallback, useMemo, useRef, useState, memo } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import {
   Animated,
   PanResponder,
@@ -172,6 +173,133 @@ function listShapeSignature(list: readonly ListItem[]): string {
     .join('|');
 }
 
+interface RouteListInteractionInput {
+  activeId: string | null;
+  canReorder: boolean;
+  closeOpenSwipeable: () => void;
+  interactionMode: RouteInteractionMode;
+  setStayModeDay: number | null;
+  foreground: boolean;
+  endDragSession: () => void;
+  dayDateLabel: (day: number) => string;
+  destinations: Destination[];
+  tripDays: number | undefined;
+  t: ReturnType<typeof useTranslation>['t'];
+}
+
+interface RouteListInteractionOwner {
+  input: RouteListInteractionInput | null;
+  replay: boolean;
+}
+
+function RouteListInteractionCommit({ input, owner, autoScrollRaf, dragging, pendingOrderSignature, setOrder }: {
+  input: RouteListInteractionInput;
+  owner: React.RefObject<RouteListInteractionOwner>;
+  autoScrollRaf: React.RefObject<number | null>;
+  dragging: React.RefObject<boolean>;
+  pendingOrderSignature: React.RefObject<string | null>;
+  setOrder: React.Dispatch<React.SetStateAction<ListItem[]>>;
+}) {
+  useMountEffect(() => {
+    const previous = owner.current.input;
+    const replay = owner.current.replay;
+    const swipeChanged = replay || !previous || !Object.is(previous.activeId, input.activeId)
+      || !Object.is(previous.canReorder, input.canReorder) || !Object.is(previous.closeOpenSwipeable, input.closeOpenSwipeable)
+      || !Object.is(previous.interactionMode, input.interactionMode) || !Object.is(previous.setStayModeDay, input.setStayModeDay);
+    const foregroundChanged = replay || !previous || !Object.is(previous.foreground, input.foreground)
+      || !Object.is(previous.endDragSession, input.endDragSession);
+    const projectionChanged = replay || !previous || !Object.is(previous.closeOpenSwipeable, input.closeOpenSwipeable)
+      || !Object.is(previous.dayDateLabel, input.dayDateLabel) || !Object.is(previous.destinations, input.destinations)
+      || !Object.is(previous.tripDays, input.tripDays) || !Object.is(previous.t, input.t);
+    owner.current = { input, replay: false };
+    if (foregroundChanged) {
+      if (autoScrollRaf.current != null) cancelAnimationFrame(autoScrollRaf.current);
+      autoScrollRaf.current = null;
+    }
+    if (swipeChanged && (input.activeId || input.interactionMode !== 'drag' || input.setStayModeDay != null || !input.canReorder)) {
+      input.closeOpenSwipeable();
+    }
+    // End the drag before applying a same-commit route projection.
+    if (foregroundChanged && !input.foreground) input.endDragSession();
+    if (!projectionChanged) return;
+    input.closeOpenSwipeable();
+    if (dragging.current) return;
+    const nextOrder: ListItem[] = [{ type: 'header', day: 0, id: 'header-pool', title: input.t('trip.pool'), dateStr: '' }];
+    const days = Math.max(1, input.tripDays || 1);
+    const sortedDests = [...input.destinations].sort((a, b) => {
+      const dayA = a.day ?? 0;
+      const dayB = b.day ?? 0;
+      if (dayA !== dayB) return dayA - dayB;
+      return a.order - b.order;
+    });
+    for (const dest of sortedDests.filter(dest => dest.day == null)) nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+    for (let d = 1; d <= days; d++) {
+      nextOrder.push({ type: 'header', day: d, id: `header-${d}`, title: input.t('trip.dayTitle', { day: d }), dateStr: input.dayDateLabel(d) });
+      for (const dest of sortedDests.filter(dest => dest.day === d)) nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+    }
+    for (const dest of sortedDests.filter(dest => (dest.day ?? 0) > days)) nextOrder.push({ type: 'dest', item: dest, id: dest.id });
+    const incomingSignature = listShapeSignature(nextOrder);
+    const pendingSignature = pendingOrderSignature.current;
+    if (pendingSignature && pendingSignature !== incomingSignature) return;
+    pendingOrderSignature.current = null;
+    setOrder(nextOrder);
+  });
+  return null;
+}
+
+function RouteDayCollapsePreferences({ accountId, groupId, departureDate, tripDays, setCollapsedDays }: {
+  accountId: string | undefined;
+  groupId: string | undefined;
+  departureDate: string | undefined;
+  tripDays: number | undefined;
+  setCollapsedDays: React.Dispatch<React.SetStateAction<Record<number, boolean>>>;
+}) {
+  useMountEffect(() => {
+    if (!accountId || !groupId || !departureDate || !tripDays) return;
+    let cancelled = false;
+    void (async () => {
+      const next: Record<number, boolean> = {};
+      for (let d = 1; d <= Math.max(1, tripDays); d++) {
+        const date = dateForTripDay(departureDate, d);
+        if (!date) continue;
+        const key = dayCollapseStorageKey(accountId, groupId, localDayKey(date));
+        try {
+          const raw = await AsyncStorage.getItem(key);
+          if (raw === '1') next[d] = true;
+        } catch {
+          // A failed local preference read leaves that day expanded.
+        }
+      }
+      if (!cancelled) setCollapsedDays(next);
+    })();
+    return () => { cancelled = true; };
+  });
+  return null;
+}
+
+function OnboardingTripDefaults({ tripDays, canReorder, onUpdateTripDetails, setEditDays, setEditDate }: {
+  tripDays: number | undefined;
+  canReorder: boolean;
+  onUpdateTripDetails: Props['onUpdateTripDetails'];
+  setEditDays: React.Dispatch<React.SetStateAction<number>>;
+  setEditDate: React.Dispatch<React.SetStateAction<Date>>;
+}) {
+  useMountEffect(() => {
+    if (canReorder && !tripDays) {
+      readOnboardingState().then((state) => {
+        if (state?.completed && state.answers.days) {
+          const dDays = state.answers.days;
+          const dDate = state.answers.departureDate ?? new Date().toISOString();
+          onUpdateTripDetails?.(dDays, dDate);
+          setEditDays(dDays);
+          setEditDate(parseDateOnlyLocal(dDate) ?? new Date());
+        }
+      }).catch(() => {});
+    }
+  });
+  return null;
+}
+
 export default function DestinationReorderList({
   groupId,
   activeDestinationId,
@@ -338,12 +466,6 @@ export default function DestinationReorderList({
   /** Favorite selected; date must be confirmed before write. */
   const [moveDestinationId, setMoveDestinationId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activeId || interactionMode !== 'drag' || setStayModeDay != null || !canReorder) {
-      closeOpenSwipeable();
-    }
-  }, [activeId, canReorder, closeOpenSwipeable, interactionMode, setStayModeDay]);
-
   const endDragSession = useCallback(() => {
     draggingRef.current = false;
     dragGenerationRef.current += 1;
@@ -364,13 +486,12 @@ export default function DestinationReorderList({
     pan.setValue(0);
   }, [onDragActiveChange, onDragPreviewChange, pan]);
 
-  useEffect(() => {
-    if (!foreground) endDragSession();
-    return () => {
-      if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
-      autoScrollRafRef.current = null;
-    };
-  }, [foreground, endDragSession]);
+  const interactionOwner = useRef<RouteListInteractionOwner>({ input: null, replay: true });
+  useMountEffect(() => () => {
+    interactionOwner.current.replay = true;
+    if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
+    autoScrollRafRef.current = null;
+  });
 
   const openAndroidDatePicker = useCallback(() => {
     if (Platform.OS !== 'android') return;
@@ -400,30 +521,11 @@ export default function DestinationReorderList({
     onUpdateTripDetails?.(editDays, toSave.toISOString());
   }, [departureDate, editDate, editDays, onUpdateTripDetails]);
 
-  // Local collapse prefs: account + group + calendar date (first open = expanded).
-  useEffect(() => {
-    if (!accountId || !groupId || !departureDate || !tripDays) return;
-    let cancelled = false;
-    (async () => {
-      const next: Record<number, boolean> = {};
-      const days = Math.max(1, tripDays);
-      for (let d = 1; d <= days; d++) {
-        const date = dateForTripDay(departureDate, d);
-        if (!date) continue;
-        const key = dayCollapseStorageKey(accountId, groupId, localDayKey(date));
-        try {
-          const raw = await AsyncStorage.getItem(key);
-          if (raw === '1') next[d] = true;
-        } catch {
-          // ignore
-        }
-      }
-      if (!cancelled) setCollapsedDays(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, groupId, departureDate, tripDays]);
+  const [collapseInput, setCollapseInput] = useState({ accountId, groupId, departureDate, tripDays, generation: 0 });
+  if (!Object.is(collapseInput.accountId, accountId) || !Object.is(collapseInput.groupId, groupId)
+    || !Object.is(collapseInput.departureDate, departureDate) || !Object.is(collapseInput.tripDays, tripDays)) {
+    setCollapseInput({ accountId, groupId, departureDate, tripDays, generation: collapseInput.generation + 1 });
+  }
 
   const toggleDayCollapsed = useCallback(
     async (day: number) => {
@@ -465,63 +567,22 @@ export default function DestinationReorderList({
     [departureDate, t],
   );
 
-  // Wait for onboarding
-  useEffect(() => {
-    if (canReorder && !tripDays) {
-      readOnboardingState().then((state) => {
-        if (state?.completed && state.answers.days) {
-           const dDays = state.answers.days;
-           const dDate = state.answers.departureDate ?? new Date().toISOString();
-           onUpdateTripDetails?.(dDays, dDate);
-           setEditDays(dDays);
-           setEditDate(parseDateOnlyLocal(dDate) ?? new Date());
-        }
-      }).catch(() => {});
-    }
-  }, [tripDays, canReorder, onUpdateTripDetails]);
-
-  useEffect(() => {
-    closeOpenSwipeable();
-    if (!draggingRef.current) {
-      const nextOrder: ListItem[] = [{ type: 'header', day: 0, id: 'header-pool', title: t('trip.pool'), dateStr: '' }];
-      const days = Math.max(1, tripDays || 1);
-      // Route editor always shows the full trip (day 1..N). Day-gating belongs
-      // to the carousel only — hiding past days here caused Day1→Day2 after 完成.
-      const startDay = 1;
-
-      const sortedDests = [...destinations].sort((a, b) => {
-        const dayA = a.day ?? 0;
-        const dayB = b.day ?? 0;
-        if (dayA !== dayB) return dayA - dayB;
-        return a.order - b.order;
-      });
-
-      for (const dest of sortedDests.filter(dest => dest.day == null)) nextOrder.push({ type: 'dest', item: dest, id: dest.id });
-      for (let d = startDay; d <= days; d++) {
-        nextOrder.push({
-          type: 'header',
-          day: d,
-          id: `header-${d}`,
-          title: t('trip.dayTitle', { day: d }),
-          dateStr: dayDateLabel(d),
-        });
-        const dayDests = sortedDests.filter((dest) => dest.day === d);
-        for (const dest of dayDests) {
-          nextOrder.push({ type: 'dest', item: dest, id: dest.id });
-        }
-      }
-      // Destinations past tripDays still surface as orphans.
-      for (const dest of sortedDests.filter((d) => (d.day ?? 0) > days)) {
-        nextOrder.push({ type: 'dest', item: dest, id: dest.id });
-      }
-
-      const incomingSignature = listShapeSignature(nextOrder);
-      const pendingSignature = pendingOrderSignatureRef.current;
-      if (pendingSignature && pendingSignature !== incomingSignature) return;
-      pendingOrderSignatureRef.current = null;
-      setOrder(nextOrder);
-    }
-  }, [closeOpenSwipeable, dayDateLabel, destinations, tripDays, t]);
+  const [onboardingInput, setOnboardingInput] = useState({ tripDays, canReorder, onUpdateTripDetails, generation: 0 });
+  if (!Object.is(onboardingInput.tripDays, tripDays) || !Object.is(onboardingInput.canReorder, canReorder)
+    || !Object.is(onboardingInput.onUpdateTripDetails, onUpdateTripDetails)) {
+    setOnboardingInput({ tripDays, canReorder, onUpdateTripDetails, generation: onboardingInput.generation + 1 });
+  }
+  const [interactionInput, setInteractionInput] = useState({ activeId, canReorder, closeOpenSwipeable, interactionMode,
+    setStayModeDay, foreground, endDragSession, dayDateLabel, destinations, tripDays, t, generation: 0 });
+  if (!Object.is(interactionInput.activeId, activeId) || !Object.is(interactionInput.canReorder, canReorder)
+    || !Object.is(interactionInput.closeOpenSwipeable, closeOpenSwipeable) || !Object.is(interactionInput.interactionMode, interactionMode)
+    || !Object.is(interactionInput.setStayModeDay, setStayModeDay) || !Object.is(interactionInput.foreground, foreground)
+    || !Object.is(interactionInput.endDragSession, endDragSession) || !Object.is(interactionInput.dayDateLabel, dayDateLabel)
+    || !Object.is(interactionInput.destinations, destinations) || !Object.is(interactionInput.tripDays, tripDays)
+    || !Object.is(interactionInput.t, t)) {
+    setInteractionInput({ activeId, canReorder, closeOpenSwipeable, interactionMode, setStayModeDay, foreground,
+      endDragSession, dayDateLabel, destinations, tripDays, t, generation: interactionInput.generation + 1 });
+  }
 
   const toReorderEntries = useCallback((list: ListItem[]): ReorderListEntry[] => {
     return list.map((entry) => {
@@ -805,6 +866,12 @@ export default function DestinationReorderList({
 
   return (
     <View>
+      <RouteListInteractionCommit key={`interaction-${interactionInput.generation}`} input={interactionInput} owner={interactionOwner}
+        autoScrollRaf={autoScrollRafRef} dragging={draggingRef} pendingOrderSignature={pendingOrderSignatureRef} setOrder={setOrder} />
+      <RouteDayCollapsePreferences key={`collapse-${collapseInput.generation}`} accountId={accountId} groupId={groupId}
+        departureDate={departureDate} tripDays={tripDays} setCollapsedDays={setCollapsedDays} />
+      <OnboardingTripDefaults key={`onboarding-${onboardingInput.generation}`} tripDays={tripDays} canReorder={canReorder}
+        onUpdateTripDetails={onUpdateTripDetails} setEditDays={setEditDays} setEditDate={setEditDate} />
       {(canReorder || onImport) && (
         <View style={styles.topActions}>
           {canReorder && showTripDetails && <Pressable

@@ -3,6 +3,7 @@ import importlib.util
 import itertools
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -45,4 +46,16 @@ for payload in [valid, outcome("false", ["skipped"] * 4), *invalid]:
     assert (result.returncode == 0) == (payload in [valid, outcome("false", ["skipped"] * 4)]), result
 result = subprocess.run([sys.executable, "-B", str(script)], env={**os.environ, "CI_NEEDS": "not json"}, capture_output=True)
 assert result.returncode != 0
+
+workflow = script.parents[1].joinpath('.github/workflows/ci.yml').read_text(encoding='utf-8')
+backend = re.search(r'(?ms)^  backend:\n(.*?)(?=^  \S|\Z)', workflow).group(1)
+commands = {line.strip() for line in backend.splitlines()}
+for command in (
+    'node --test supabase/scripts/function-source-of-truth.test.mjs',
+    'node supabase/scripts/function-source-of-truth.mjs --check',
+    'node supabase/tests/promo_redemption_concurrency.mjs',
+    'node supabase/tests/trip_storekit_refund_concurrency.mjs',
+):
+    assert command in commands, f'required backend gate missing: {command}'
+assert '          node scripts/test-ci-meta.mjs' in workflow.splitlines(), 'CI metadata self-check missing'
 print("CI required checks passed")

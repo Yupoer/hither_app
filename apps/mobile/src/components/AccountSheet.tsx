@@ -1,5 +1,6 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import WaveLoading from './WaveLoading';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   Keyboard,
@@ -61,24 +62,7 @@ export function AccountSheetContent({
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    if (!visible) {
-      setKeyboardHeight(0);
-      return;
-    }
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-    });
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [visible]);
+
 
   const scrollPaddingBottom = keyboardScrollPaddingBottom({
     safeAreaBottom: insets.bottom + 20,
@@ -110,17 +94,16 @@ export function AccountSheetContent({
   const [upgradeBusy, setUpgradeBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
-  useEffect(() => {
+  useMountEffect(() => {
     void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
-  }, []);
+  });
 
   // Re-hydrate anonymous_expires_at when the sheet opens so the date is shown
   // after the first join (server stamps on membership insert).
-  useEffect(() => {
-    if (visible && isAnonymous) {
-      void refreshProfile().catch(() => undefined);
-    }
-  }, [visible, isAnonymous, refreshProfile]);
+  const [refreshIdentity, setRefreshIdentity] = useState({ visible, isAnonymous, refreshProfile, generation: 0 });
+  if (!Object.is(refreshIdentity.visible, visible) || !Object.is(refreshIdentity.isAnonymous, isAnonymous) || !Object.is(refreshIdentity.refreshProfile, refreshProfile)) {
+    setRefreshIdentity({ visible, isAnonymous, refreshProfile, generation: refreshIdentity.generation + 1 });
+  }
 
   // Compute registered days
   const registeredDays = user?.createdAt
@@ -228,6 +211,8 @@ export function AccountSheetContent({
 
   return (
     <>
+      <AccountKeyboardSubscription key={`account-keyboard:${visible}`} visible={visible} setKeyboardHeight={setKeyboardHeight} />
+      <AnonymousAccountRefresh key={`anonymous-refresh:${refreshIdentity.generation}`} visible={visible} isAnonymous={isAnonymous} refreshProfile={refreshProfile} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={KEYBOARD_SURFACE_GAP_PT}
@@ -515,6 +500,37 @@ export function AccountSheetContent({
     </Modal>
     </>
   );
+}
+
+function AccountKeyboardSubscription({ visible, setKeyboardHeight }: { visible: boolean; setKeyboardHeight: (height: number) => void }) {
+  useMountEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  });
+  return null;
+}
+
+function AnonymousAccountRefresh({ visible, isAnonymous, refreshProfile }: { visible: boolean; isAnonymous: boolean; refreshProfile: () => Promise<void> }) {
+  useMountEffect(() => {
+    if (visible && isAnonymous) {
+      void refreshProfile().catch(() => undefined);
+    }
+  });
+  return null;
 }
 
 export default function AccountSheet({

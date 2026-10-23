@@ -224,12 +224,21 @@ export function demoUpdateDestinationEmoji(
   );
 }
 
-export function demoReorderDestinations(orderedIds: string[]): void {
-  const byId = new Map(state.destinations.map((d) => [d.id, d]));
-  state.destinations = orderedIds
-    .map((id) => byId.get(id))
-    .filter((d): d is Destination => !!d)
-    .map((d, i) => ({ ...d, order: i }));
+export function demoReorderDestinations(
+  updates: (Pick<Destination, 'id' | 'day' | 'meetAt' | 'stayAnchor'> & { position: number })[],
+): void {
+  if (!updates.length) return;
+  const byId = new Map(updates.map((update) => [update.id, update]));
+  state.destinations = state.destinations.map((destination) => {
+    const update = byId.get(destination.id);
+    return update ? {
+      ...destination,
+      order: update.position,
+      day: update.day,
+      ...(update.meetAt === undefined ? {} : { meetAt: update.meetAt }),
+      ...(update.stayAnchor === undefined ? {} : { stayAnchor: update.stayAnchor }),
+    } : destination;
+  }).sort((a, b) => a.order - b.order);
 }
 
 export function demoSetJourneyStatus(status: JourneyStatus): void {

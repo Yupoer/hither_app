@@ -33,7 +33,7 @@ describe('useGatherCardExpansion', () => {
     let result: ReturnType<typeof useGatherCardExpansion> | undefined;
     function Harness({ expanded }: { expanded: boolean }) {
       result = useGatherCardExpansion(expanded);
-      return null;
+      return result.lifecycle;
     }
     let renderer: ReturnType<typeof create>;
     act(() => {

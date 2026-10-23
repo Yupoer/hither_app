@@ -1,16 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const groupActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGroupActions.ts'), 'utf8');
+const accountActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
 const authScreen = readFileSync(join(__dirname, '../screens/AuthScreen.tsx'), 'utf8');
 const myTeamsScreen = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
 const rootNavigator = readFileSync(join(__dirname, '../navigation/RootNavigator.tsx'), 'utf8');
 
 function goHomeBody(): string {
-  const start = mapScreen.indexOf('goHomeCreateOrJoin = useCallback');
+  const start = groupActions.indexOf('goHomeCreateOrJoin = useCallback');
   expect(start).toBeGreaterThanOrEqual(0);
   // Function body is short; keep a bounded slice for assertions.
-  return mapScreen.slice(start, start + 700);
+  return groupActions.slice(start, start + 700);
 }
 
 describe('navigation interaction contract (go home / re-enter map)', () => {
@@ -45,10 +46,10 @@ describe('navigation interaction contract (go home / re-enter map)', () => {
 
   it('leave-group path still resets to RoleSelect separately from go-home', () => {
     // confirmLeave may reset after leave; that is a different actionId.
-    expect(mapScreen).toContain("routes: [{ name: 'RoleSelect' }]");
-    const leaveStart = mapScreen.indexOf('const confirmLeave = useCallback');
+    expect(accountActions).toContain("routes: [{ name: 'RoleSelect' }]");
+    const leaveStart = accountActions.indexOf('const confirmLeave = useCallback');
     expect(leaveStart).toBeGreaterThanOrEqual(0);
-    const leaveBody = mapScreen.slice(leaveStart, leaveStart + 900);
+    const leaveBody = accountActions.slice(leaveStart, leaveStart + 900);
     expect(leaveBody).toContain('leaveGroup');
   });
 });

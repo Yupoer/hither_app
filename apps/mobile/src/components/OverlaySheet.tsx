@@ -1,5 +1,6 @@
 import { useVisibleUi } from '../state/foregroundUi';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import {
   Animated,
   NativeScrollEvent,
@@ -26,6 +27,64 @@ import SheetHeaderAction from './SheetHeaderAction';
 // matches the iOS sheet feel so "Done" is never the only way out.
 const DISMISS_TRAVEL = 90;
 const DISMISS_VELOCITY = 0.6;
+
+function OverlayVisibilityMotion({ foreground, visible, t, dragY, atTop, visibleRef, openCompleted,
+  gestureClosePending, motionGeneration, onOpenComplete, finishGestureClose, setContentMounted }: {
+  foreground: boolean;
+  visible: boolean;
+  t: Animated.Value;
+  dragY: Animated.Value;
+  atTop: React.RefObject<boolean>;
+  visibleRef: React.RefObject<boolean>;
+  openCompleted: React.RefObject<boolean>;
+  gestureClosePending: React.RefObject<boolean>;
+  motionGeneration: React.RefObject<number>;
+  onOpenComplete: React.RefObject<(() => void) | undefined>;
+  finishGestureClose: () => void;
+  setContentMounted: React.Dispatch<React.SetStateAction<boolean>>;
+}) {
+  useMountEffect(() => {
+    const generation = ++motionGeneration.current;
+    const cancelMotion = () => {
+      if (motionGeneration.current !== generation) return;
+      ++motionGeneration.current;
+      t.stopAnimation();
+      dragY.stopAnimation();
+    };
+    if (!visible) { openCompleted.current = false; gestureClosePending.current = false; }
+    if (!foreground) { t.stopAnimation(); dragY.stopAnimation(); return; }
+    if (visible && gestureClosePending.current) {
+      finishGestureClose();
+      return cancelMotion;
+    }
+    if (visible) {
+      dragY.setValue(0);
+      atTop.current = true;
+      setContentMounted(true);
+    }
+    if (visible && openCompleted.current) {
+      t.setValue(1);
+      return cancelMotion;
+    }
+    Animated.timing(t, {
+      toValue: visible ? 1 : 0,
+      duration: 320,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished || motionGeneration.current !== generation) return;
+      if (visibleRef.current) {
+        if (!openCompleted.current) {
+          openCompleted.current = true;
+          onOpenComplete.current?.();
+        }
+      } else {
+        setContentMounted(false);
+      }
+    });
+    return cancelMotion;
+  });
+  return null;
+}
 
 /**
  * Apple-Maps-style stacked overlay: a dim scrim plus a raised dark-glass panel
@@ -99,53 +158,27 @@ export default function OverlaySheet({
   visibleRef.current = visible;
   const openCompletedRef = useRef(false);
   const gestureClosePendingRef = useRef(false);
+  const motionGenerationRef = useRef(0);
 
   function finishGestureClose() {
+    const generation = motionGenerationRef.current;
     Animated.timing(dragY, {
       toValue: heightRef.current,
       duration: 160,
       useNativeDriver: true,
     }).start(({ finished }) => {
-      if (!finished || !gestureClosePendingRef.current || !visibleRef.current) return;
+      if (!finished || motionGenerationRef.current !== generation
+        || !gestureClosePendingRef.current || !visibleRef.current) return;
       gestureClosePendingRef.current = false;
       onCloseRef.current();
     });
   }
 
-  useEffect(() => {
-    if (!visible) { openCompletedRef.current = false; gestureClosePendingRef.current = false; }
-    if (!foreground) { t.stopAnimation(); dragY.stopAnimation(); return; }
-    if (visible && gestureClosePendingRef.current) {
-      finishGestureClose();
-      return () => { t.stopAnimation(); dragY.stopAnimation(); };
-    }
-    if (visible) {
-      dragY.setValue(0);
-      atTop.current = true;
-      setContentMounted(true);
-    }
-    if (visible && openCompletedRef.current) {
-      t.setValue(1);
-      return;
-    }
-    Animated.timing(t, {
-      toValue: visible ? 1 : 0,
-      duration: 320,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        if (visibleRef.current) {
-          if (!openCompletedRef.current) {
-            openCompletedRef.current = true;
-            onOpenCompleteRef.current?.();
-          }
-        } else {
-          setContentMounted(false);
-        }
-      }
-    });
-    return () => { t.stopAnimation(); dragY.stopAnimation(); };
-  }, [foreground, visible, t, dragY]);
+  const visibilityMotion = <OverlayVisibilityMotion key={`${foreground}:${visible}`}
+    foreground={foreground} visible={visible} t={t} dragY={dragY} atTop={atTop} visibleRef={visibleRef}
+    openCompleted={openCompletedRef} gestureClosePending={gestureClosePendingRef}
+    motionGeneration={motionGenerationRef} onOpenComplete={onOpenCompleteRef}
+    finishGestureClose={finishGestureClose} setContentMounted={setContentMounted} />;
 
   // Two drag-to-dismiss responders sharing one release rule: one on the
   // grabber/header (drags anywhere on it), one on the body that only claims a
@@ -190,7 +223,7 @@ export default function OverlaySheet({
 
   // Fully closed: no glass, children, or cloneElement work.
   if (!contentMounted && !visible) {
-    return <View style={StyleSheet.absoluteFill} pointerEvents="none" />;
+    return <>{visibilityMotion}<View style={StyleSheet.absoluteFill} pointerEvents="none" /></>;
   }
 
   // Clone the child (each caller passes a ScrollView) to track whether it's at
@@ -224,6 +257,8 @@ export default function OverlaySheet({
   );
 
   return (
+    <>
+    {visibilityMotion}
     <View style={[StyleSheet.absoluteFill, !foreground && { display: 'none' }]} pointerEvents={visible ? 'auto' : 'none'}>
       <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]}>
         <Pressable testID="overlay-close" style={StyleSheet.absoluteFill} onPress={onClose} />
@@ -272,6 +307,7 @@ export default function OverlaySheet({
       </Animated.View>
       {visible ? floatingContent : null}
     </View>
+    </>
   );
 }
 

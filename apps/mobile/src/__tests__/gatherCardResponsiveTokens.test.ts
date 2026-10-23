@@ -6,6 +6,7 @@ import {
 } from '../utils/gatherCommandLayout';
 
 const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const layout = readFileSync(join(__dirname, '../utils/gatherCommandLayout.ts'), 'utf8');
 
 describe('responsive gather card tokens (#176)', () => {
@@ -31,6 +32,6 @@ describe('responsive gather card tokens (#176)', () => {
   });
 
   it('Start is not forced square when Arrived is absent', () => {
-    expect(map).toContain('navIconOnly = chromeTight && showArrivalControl');
+    expect(carousel).toContain('navIconOnly = chromeTight && showArrivalControl');
   });
 });

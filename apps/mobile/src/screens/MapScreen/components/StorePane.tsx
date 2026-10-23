@@ -3,7 +3,8 @@ import WaveLoading from '../../../components/WaveLoading';
  * Store pane shell + wired balance / ad CTA / catalog redeem.
  * Extracted from MapScreen so the sheet host stays thin.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import {
   AccessibilityInfo,
   Alert,
@@ -230,6 +231,124 @@ const AD_FILL_PROBE_FIRST_MS = 12_000;
 /** Repeat auto probe while still empty (ms). */
 const AD_FILL_PROBE_INTERVAL_MS = 35_000;
 
+type StoreGroupProps = Pick<StorePaneProps, 'groupId'> & {
+  groupIdRef: React.RefObject<StorePaneProps['groupId']>;
+  refresh: () => Promise<StoreSnapshot | null>;
+  refreshConnectivity: () => Promise<boolean>;
+  setSnapshot: React.Dispatch<React.SetStateAction<StoreSnapshot | null>>;
+  setLoading: (loading: boolean) => void;
+  setOffline: (offline: boolean) => void;
+};
+
+function StoreGroupConnection({ groupId, groupIdRef, refresh, refreshConnectivity, setSnapshot, setLoading, setOffline }: StoreGroupProps) {
+  useMountEffect(() => {
+    setSnapshot(null);
+    setLoading(true);
+    void (async () => {
+      const uid = await currentUserIdOrNull();
+      if (uid) {
+        const cached = await readCachedSnapshot(uid, groupId);
+        if ((groupIdRef.current ?? null) === (groupId ?? null) && cached) setSnapshot(cached);
+      }
+      await refreshConnectivity();
+      await refresh();
+    })();
+    const unsubNet = subscribeConnectivity((online) => {
+      if (online === false) setOffline(true);
+      else if (online === true) setOffline(false);
+    });
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void (async () => {
+          const ok = await refreshConnectivity();
+          if (ok !== false) void refresh();
+        })();
+      }
+    });
+    return () => { unsubNet(); sub.remove(); };
+  });
+  return null;
+}
+
+function StoreGroupRuntime(props: StoreGroupProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.groupId, props.groupId) || !Object.is(previous.refresh, props.refresh)
+    || !Object.is(previous.refreshConnectivity, props.refreshConnectivity)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <StoreGroupConnection key={previous.generation} {...props} />;
+}
+
+type StoreHighlightProps = Pick<StorePaneProps, 'highlightProductCode' | 'onHighlightConsumed'> & {
+  setHighlight: (productCode: string) => void;
+  highlightCardRef: React.RefObject<View | null>;
+};
+
+function StoreProductFocus({ highlightProductCode, onHighlightConsumed, setHighlight, highlightCardRef }: StoreHighlightProps) {
+  useMountEffect(() => {
+    if (!highlightProductCode) return;
+    setHighlight(highlightProductCode);
+    onHighlightConsumed?.();
+    const timer = setTimeout(() => {
+      const node = highlightCardRef.current ? findNodeHandle(highlightCardRef.current) : null;
+      if (node != null) AccessibilityInfo.setAccessibilityFocus(node);
+    }, 280);
+    return () => clearTimeout(timer);
+  });
+  return null;
+}
+
+function StoreHighlight(props: StoreHighlightProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.highlightProductCode, props.highlightProductCode)
+    || !Object.is(previous.onHighlightConsumed, props.onHighlightConsumed)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <StoreProductFocus key={previous.generation} {...props} />;
+}
+
+function StoreAdSessionLifetime({ pollRef, latePollRef, controllerRef }: {
+  pollRef: React.RefObject<ReturnType<typeof setInterval> | null>;
+  latePollRef: React.RefObject<ReturnType<typeof setInterval> | null>;
+  controllerRef: React.RefObject<ReturnType<typeof createRewardedAdController> | null>;
+}) {
+  useMountEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (latePollRef.current) clearInterval(latePollRef.current);
+    controllerRef.current?.dispose();
+  });
+  return null;
+}
+
+type StoreFillProps = Pick<StorePaneProps, 'isAnonymous'> & {
+  adState: RewardedAdUiState;
+  offline: boolean;
+  silentFillProbe: () => Promise<void>;
+  setFillChecking: (checking: boolean) => void;
+};
+
+function StoreFillProbeTimers({ adState, isAnonymous, offline, silentFillProbe, setFillChecking }: StoreFillProps) {
+  useMountEffect(() => {
+    if (!AUTO_FILL_PROBE_STATES.has(adState)) { setFillChecking(false); return; }
+    if (isAnonymous || offline) return;
+    let cancelled = false;
+    const run = () => { if (!cancelled) void silentFillProbe(); };
+    const first = setTimeout(run, AD_FILL_PROBE_FIRST_MS);
+    const interval = setInterval(run, AD_FILL_PROBE_INTERVAL_MS);
+    return () => { cancelled = true; clearTimeout(first); clearInterval(interval); };
+  });
+  return null;
+}
+
+function StoreFillInventory(props: StoreFillProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.adState, props.adState) || !Object.is(previous.isAnonymous, props.isAnonymous)
+    || !Object.is(previous.offline, props.offline) || !Object.is(previous.silentFillProbe, props.silentFillProbe)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <StoreFillProbeTimers key={previous.generation} {...props} />;
+}
+
 export const StorePane = React.memo(function StorePane({
   groupId,
   groupName,
@@ -331,43 +450,6 @@ export const StorePane = React.memo(function StorePane({
     }
   }, [groupId]);
 
-  useEffect(() => {
-    // Clear previous team snapshot on group change (avoid cross-team offline bleed).
-    setSnapshot(null);
-    setLoading(true);
-    void (async () => {
-      const uid = await currentUserIdOrNull();
-      if (uid) {
-        const cached = await readCachedSnapshot(uid, groupId);
-        if ((groupIdRef.current ?? null) === (groupId ?? null) && cached) {
-          setSnapshot(cached);
-        }
-      }
-      await refreshConnectivity();
-      await refresh();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount / group change only
-  }, [groupId]);
-
-  useEffect(() => {
-    const unsubNet = subscribeConnectivity((online) => {
-      if (online === false) setOffline(true);
-      else if (online === true) setOffline(false);
-    });
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        void (async () => {
-          const ok = await refreshConnectivity();
-          if (ok !== false) void refresh();
-        })();
-      }
-    });
-    return () => {
-      unsubNet();
-      sub.remove();
-    };
-  }, [refresh, refreshConnectivity]);
-
   const failSession = useCallback(async (sessionRef: string | null | undefined) => {
     if (!sessionRef) return;
     try {
@@ -390,28 +472,6 @@ export const StorePane = React.memo(function StorePane({
     } catch {
       /* SSV credit path still works from active */
     }
-  }, []);
-
-  // Deep-link highlight: pin product + accessibility focus.
-  useEffect(() => {
-    if (!highlightProductCode) return;
-    setHighlight(highlightProductCode);
-    onHighlightConsumed?.();
-    const t = setTimeout(() => {
-      const node = highlightCardRef.current
-        ? findNodeHandle(highlightCardRef.current)
-        : null;
-      if (node != null) {
-        AccessibilityInfo.setAccessibilityFocus(node);
-      }
-    }, 280);
-    return () => clearTimeout(t);
-  }, [highlightProductCode, onHighlightConsumed]);
-
-  useEffect(() => () => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (latePollRef.current) clearInterval(latePollRef.current);
-    controllerRef.current?.dispose();
   }, []);
 
   const stopPoll = () => {
@@ -842,25 +902,6 @@ export const StorePane = React.memo(function StorePane({
     }
   }, [failSession, isAnonymous, offline]);
 
-  useEffect(() => {
-    if (!AUTO_FILL_PROBE_STATES.has(adState)) {
-      setFillChecking(false);
-      return;
-    }
-    if (isAnonymous || offline) return;
-    let cancelled = false;
-    const run = () => {
-      if (!cancelled) void silentFillProbe();
-    };
-    const first = setTimeout(run, AD_FILL_PROBE_FIRST_MS);
-    const interval = setInterval(run, AD_FILL_PROBE_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(first);
-      clearInterval(interval);
-    };
-  }, [adState, isAnonymous, offline, silentFillProbe]);
-
   const confirmRedeem = useCallback((product: StoreCatalogProduct) => {
     if (isAnonymous) {
       onRequireRegistration?.();
@@ -1012,6 +1053,13 @@ export const StorePane = React.memo(function StorePane({
     || adState === 'session_active';
 
   return (
+    <>
+    <StoreGroupRuntime groupId={groupId} groupIdRef={groupIdRef} refresh={refresh} refreshConnectivity={refreshConnectivity}
+      setSnapshot={setSnapshot} setLoading={setLoading} setOffline={setOffline} />
+    <StoreHighlight highlightProductCode={highlightProductCode} onHighlightConsumed={onHighlightConsumed}
+      setHighlight={setHighlight} highlightCardRef={highlightCardRef} />
+    <StoreAdSessionLifetime pollRef={pollRef} latePollRef={latePollRef} controllerRef={controllerRef} />
+    <StoreFillInventory adState={adState} isAnonymous={isAnonymous} offline={offline} silentFillProbe={silentFillProbe} setFillChecking={setFillChecking} />
     <View
       accessibilityRole="summary"
       accessibilityLabel={t('store.title')}
@@ -1179,6 +1227,7 @@ export const StorePane = React.memo(function StorePane({
         </Text>
       ) : null}
     </View>
+    </>
   );
 });
 

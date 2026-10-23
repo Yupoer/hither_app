@@ -1,5 +1,6 @@
 import React from 'react';
 import { getDirections } from '../native/maps';
+import * as routePolicy from '../utils/locationPolicy';
 import {
   loadMapKitRoutes,
   membersRouteSignature,
@@ -194,7 +195,7 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
         fallbackDistanceM: routes.selfRoute?.distanceMeters,
         fallbackEtaSeconds: routes.selfRoute?.expectedTravelTimeSeconds,
       });
-      return null;
+      return routes.lifecycle;
     }
 
     let tree: ReturnType<typeof create>;
@@ -274,7 +275,7 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
         gathering,
         travelMode: props.travelMode,
       });
-      return null;
+      return routes.lifecycle;
     }
 
     let tree: ReturnType<typeof create>;
@@ -325,7 +326,7 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
         gathering: showTarget ? gathering : null,
         travelMode: 'walk',
       });
-      return null;
+      return routes.lifecycle;
     }
 
     let tree: ReturnType<typeof create>;
@@ -417,7 +418,7 @@ describe('destination changes while directions are pending', () => {
     function Harness({ target }: { target: typeof gathering }) {
       routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
       renderedRoutes.push(routes.selfRoute);
-      return null;
+      return routes.lifecycle;
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
@@ -439,7 +440,7 @@ describe('destination changes while directions are pending', () => {
     function Harness({ self }: { self: typeof me }) {
       routes = useMapKitRoutes({ selfCoordinates: self, members: [],
         gathering: { coordinates: { ...gathering.coordinates } }, travelMode: 'walk' });
-      return null;
+      return routes.lifecycle;
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { self: me })); });
@@ -459,7 +460,7 @@ describe('destination changes while directions are pending', () => {
     let routes: ReturnType<typeof useMapKitRoutes>;
     function Harness({ target }: { target: typeof gathering | null }) {
       routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
-      return null;
+      return routes.lifecycle;
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
@@ -480,7 +481,7 @@ describe('destination changes while directions are pending', () => {
     let routes: ReturnType<typeof useMapKitRoutes>;
     function Harness({ target }: { target: typeof gathering }) {
       routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
-      return null;
+      return routes.lifecycle;
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
@@ -499,7 +500,7 @@ describe('destination changes while directions are pending', () => {
     let routes: ReturnType<typeof useMapKitRoutes>;
     function Harness({ target }: { target: typeof gathering }) {
       routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
-      return null;
+      return routes.lifecycle;
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { target: gathering })); });
@@ -522,7 +523,7 @@ describe('destination changes while directions are pending', () => {
     function Harness({ target }: { target: typeof gathering }) {
       routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
       renders += 1;
-      return null;
+      return routes.lifecycle;
     }
     const element = (target: typeof gathering) => React.createElement(React.StrictMode, null,
       React.createElement(Harness, { target }));
@@ -549,7 +550,7 @@ describe('paused navigation directions ownership', () => {
     function Harness({ navigationActive, self }: { navigationActive: boolean; self: typeof me }) {
       routes = useMapKitRoutes({ selfCoordinates: self, members: [],
         gathering: navigationActive ? gathering : null, travelMode: 'walk' });
-      return null;
+      return routes.lifecycle;
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { navigationActive: false, self: me })); });
@@ -564,4 +565,53 @@ describe('paused navigation directions ownership', () => {
     expect(mockGetDirections).toHaveBeenCalledTimes(1);
     await act(async () => { tree.unmount(); });
   });
+});
+
+
+it('reevaluates equal-value new input identities but keeps same references idle', async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const gate = jest.spyOn(routePolicy, 'shouldRecomputeRoute');
+  mockGetDirections.mockReset();
+  mockGetDirections.mockResolvedValue(null);
+  let routes!: ReturnType<typeof useMapKitRoutes>;
+  function Harness({ self, target }: { self: typeof me; target: typeof gathering }) {
+    routes = useMapKitRoutes({ selfCoordinates: self, members: [], gathering: target, travelMode: 'walk' });
+    return routes.lifecycle;
+  }
+  let tree!: ReturnType<typeof create>;
+  try {
+    await act(async () => { tree = create(React.createElement(Harness, { self: me, target: gathering })); });
+    const initialGateCalls = gate.mock.calls.length;
+    await act(async () => { tree.update(React.createElement(Harness, { self: me, target: gathering })); });
+    expect(gate).toHaveBeenCalledTimes(initialGateCalls);
+    await act(async () => { tree.update(React.createElement(Harness,
+      { self: { ...me }, target: { coordinates: { ...gathering.coordinates } } })); });
+    expect(gate).toHaveBeenCalledTimes(initialGateCalls + 1);
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => { tree?.unmount(); });
+    gate.mockRestore();
+  }
+});
+
+it('does not start directions from a suspended uncommitted target render', async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  mockGetDirections.mockReset();
+  mockGetDirections.mockResolvedValue(null);
+  const suspended = new Promise<void>(() => {});
+  const next = { coordinates: { latitude: 25.06, longitude: 121.54 } };
+  function Harness({ target, suspend }: { target: typeof gathering; suspend: boolean }) {
+    const routes = useMapKitRoutes({ selfCoordinates: me, members: [], gathering: target, travelMode: 'walk' });
+    if (suspend) throw suspended;
+    return routes.lifecycle;
+  }
+  const element = (target: typeof gathering, suspend: boolean) =>
+    React.createElement(React.Suspense, { fallback: null }, React.createElement(Harness, { target, suspend }));
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(element(gathering, false)); });
+  await act(async () => { tree.update(element(next, true)); });
+  expect(mockGetDirections).toHaveBeenCalledTimes(1);
+  expect(mockGetDirections).not.toHaveBeenCalledWith(me, next.coordinates, 'walk');
+  await act(async () => { tree.update(element(gathering, false)); });
+  await act(async () => { tree.unmount(); });
 });

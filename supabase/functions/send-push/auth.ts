@@ -12,6 +12,18 @@ export function secureEqual(actual: string, expected: string): boolean {
   return difference === 0;
 }
 
+/**
+ * The function is deployed with verify_jwt = false, so this shared secret is
+ * its only gate. An unset secret fails closed instead of accepting "".
+ */
+export function webhookAuthorization(
+  configuredSecret: string | undefined,
+  suppliedSecret: string | null,
+): "ok" | "not_configured" | "unauthorized" {
+  if (!configuredSecret) return "not_configured";
+  return suppliedSecret && secureEqual(suppliedSecret, configuredSecret) ? "ok" : "unauthorized";
+}
+
 /** Reject stale or misclassified command webhooks before provider fan-out. */
 export function commandSenderIsAuthorized(
   payload: { category: string; type?: string },

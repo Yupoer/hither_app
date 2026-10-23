@@ -1,5 +1,5 @@
 import WaveLoading from '../../../components/WaveLoading';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ScrollView, View, Text, TextInput, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
@@ -37,19 +37,21 @@ export function ProfileOverlay({
   const { colors } = useTheme();
   const accent = colors.accent;
 
-  const [profileName, setProfileName] = useState('');
-  const [profileAvatar, setProfileAvatar] = useState<string | undefined>(undefined);
-  const [profileColor, setProfileColor] = useState<string | undefined>(undefined);
+  const [profileName, setProfileName] = useState(visible ? user?.name ?? '' : '');
+  const [profileAvatar, setProfileAvatar] = useState<string | undefined>(visible ? user?.avatar : undefined);
+  const [profileColor, setProfileColor] = useState<string | undefined>(visible ? user?.avatarColor : undefined);
   const [phase, setPhase] = useState<ProfileSavePhase>('draft');
 
-  useEffect(() => {
+  const [draftInputs, setDraftInputs] = useState({ visible, user });
+  if (!Object.is(draftInputs.visible, visible) || !Object.is(draftInputs.user, user)) {
+    setDraftInputs({ visible, user });
     if (visible) {
       setProfileName(user?.name ?? '');
       setProfileAvatar(user?.avatar);
       setProfileColor(user?.avatarColor);
       setPhase('draft');
     }
-  }, [visible, user]);
+  }
 
   /** Scrim / drag dismiss: discard draft without writing. Block while saving. */
   const handleCancel = useCallback(() => {

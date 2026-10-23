@@ -1,4 +1,5 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { createElement, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { AppState, Platform } from 'react-native';
 import { getRuntimePowerState, optionalVisualsAllowed, subscribeRuntimePowerState } from './runtimePowerState';
 
@@ -48,20 +49,33 @@ export function useOptionalVisuals(): boolean {
   return active && optionalVisualsAllowed(power);
 }
 /** Same display cadence while visible; resume reads wall time once, never replays ticks. */
-export function useForegroundClock(intervalMs: number, enabled = true): number {
+export function useForegroundClock(intervalMs: number, enabled = true) {
   const active = useVisibleUi();
   const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!active || !enabled) return;
-    setNow(Date.now());
-    const timer = setInterval(() => { if (isVisibleUi()) setNow(Date.now()); }, intervalMs);
-    return () => clearInterval(timer);
-  }, [active, enabled, intervalMs]);
-  return now;
+  const [clockIdentity, setClockIdentity] = useState({ active, enabled, intervalMs, generation: 0 });
+  if (!Object.is(clockIdentity.active, active) || !Object.is(clockIdentity.enabled, enabled) || !Object.is(clockIdentity.intervalMs, intervalMs)) {
+    setClockIdentity({ active, enabled, intervalMs, generation: clockIdentity.generation + 1 });
+  }
+  return { now, lifecycle: createElement(ForegroundClockTick, { key: `foreground-clock:${clockIdentity.generation}`, active, enabled, intervalMs, setNow }) };
 }
 
 const readAppState = () => AppState?.currentState;
 /** Reuse the shared native subscription; auth may remain visible while inactive. */
 export function useAppState() {
   return useSyncExternalStore(subscribeForegroundUi, readAppState, readAppState);
+}
+
+function ForegroundClockTick({ active, enabled, intervalMs, setNow }: {
+  active: boolean;
+  enabled: boolean;
+  intervalMs: number;
+  setNow: Dispatch<SetStateAction<number>>;
+}) {
+  useMountEffect(() => {
+    if (!active || !enabled) return;
+    setNow(Date.now());
+    const timer = setInterval(() => { if (isVisibleUi()) setNow(Date.now()); }, intervalMs);
+    return () => clearInterval(timer);
+  });
+  return null;
 }

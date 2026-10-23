@@ -1,10 +1,11 @@
+import { useMountEffect } from '../hooks/useMountEffect';
 import WaveLoading from './WaveLoading';
 /**
  * Shared Premium subscription presentation for Paywall (settings) and Store (inline).
  * Purchase/restore authority stays in premiumPurchaseFlow; this only owns UI + CTA state.
  * `showRestore` is true for Settings Paywall and false for the Store pane.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -146,7 +147,7 @@ export default React.memo(function PremiumPresentation({
   const [products, setProducts] = useState<PremiumStoreProduct[]>([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
 
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
     setCatalogLoading(true);
     void loadPremiumStoreProducts()
@@ -160,7 +161,7 @@ export default React.memo(function PremiumPresentation({
     return () => {
       active = false;
     };
-  }, []);
+  });
 
   const selectedProduct = useMemo(
     () => productForPlan(products, selectedPlan),

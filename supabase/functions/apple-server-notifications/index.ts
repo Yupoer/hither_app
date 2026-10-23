@@ -5,8 +5,13 @@ import {
   allowedStoreKitEnvironments,
   storeKitConfigFromEnv,
   validateStoreKitTransaction,
+  validateStoreKitTripTransaction,
   verifyStoreKitJws,
   type StoreKitEnvironment,
+  type StoreKitTransactionPayload,
+  type StoreKitVerificationConfig,
+  type ValidatedStoreKitTransaction,
+  type ValidatedStoreKitTripTransaction,
 } from '../_shared/storekit.ts';
 
 declare const Deno: {
@@ -120,6 +125,26 @@ function lifecycleStatus(
   return transactionStatus;
 }
 
+type NotificationTransaction =
+  | { kind: 'trip'; transaction: ValidatedStoreKitTripTransaction }
+  | { kind: 'subscription'; transaction: ValidatedStoreKitTransaction };
+
+function validateNotificationTransaction(
+  payload: StoreKitTransactionPayload,
+  config: StoreKitVerificationConfig,
+  nowMs: number,
+  jwsSha256: string,
+): { ok: true; value: NotificationTransaction } | { ok: false; error: string } {
+  if (config.tripProductId && payload.productId === config.tripProductId) {
+    const trip = validateStoreKitTripTransaction(payload, config, nowMs, jwsSha256);
+    return trip.ok ? { ok: true, value: { kind: 'trip', transaction: trip.transaction } } : trip;
+  }
+  const subscription = validateStoreKitTransaction(payload, config, nowMs, jwsSha256);
+  return subscription.ok
+    ? { ok: true, value: { kind: 'subscription', transaction: subscription.transaction } }
+    : subscription;
+}
+
 function createNotificationHandler(
   dependencies: NotificationHandlerDependencies = {},
 ): (req: Request) => Promise<Response> {
@@ -167,6 +192,12 @@ function createNotificationHandler(
     if (!notificationId || !notificationType || !data || typeof data !== 'object') {
       return json(422, { ok: false, error: 'notification_payload_invalid' });
     }
+    // Apple's "Request a Test Notification" carries no transaction. The outer
+    // JWS is already verified, so acknowledge it without touching the ledger.
+    if (notificationType === 'TEST') {
+      logOutcome('test_notification');
+      return json(200, { ok: true, test: true });
+    }
     const dataRecord = data as JsonRecord;
     const environment = text(dataRecord.environment);
     const signedTransactionInfo = text(dataRecord.signedTransactionInfo);
@@ -200,7 +231,7 @@ function createNotificationHandler(
       return json(422, { ok: false, error: 'account_token_missing' });
     }
     const config = { ...baseConfig, appAccountToken: accountToken };
-    const validated = validateStoreKitTransaction(
+    const validated = validateNotificationTransaction(
       transactionPayload,
       config,
       now(),
@@ -211,7 +242,7 @@ function createNotificationHandler(
       return json(422, { ok: false, error: validated.error });
     }
 
-    const transaction = validated.transaction;
+    const transaction = validated.value.transaction;
     const supabaseUrl = env('SUPABASE_URL');
     if (!supabaseUrl) return json(503, { ok: false, error: 'server_configuration_missing' });
     const admin = createAdmin(supabaseUrl, adminKey(env));
@@ -263,22 +294,32 @@ function createNotificationHandler(
       return json(503, { ok: false, error: 'account_not_bound' });
     }
 
-    const status = lifecycleStatus(notificationType, transaction.status);
+    if (validated.value.kind === 'trip') {
+      return await applyTripNotification(admin, {
+        notificationId,
+        userId: accountRow.user_id,
+        transaction: validated.value.transaction,
+        outerSignedAt,
+      });
+    }
+
+    const subscription = validated.value.transaction;
+    const status = lifecycleStatus(notificationType, subscription.status);
     const { data: applied, error: applyError } = await admin.rpc('apply_storekit_transaction', {
       p_user_id: accountRow.user_id,
-      p_transaction_id: transaction.transactionId,
-      p_original_transaction_id: transaction.originalTransactionId,
-      p_product_id: transaction.productId,
-      p_subscription_group_id: transaction.subscriptionGroupId,
-      p_environment: transaction.environment,
-      p_ownership_type: transaction.ownershipType,
-      p_app_account_token: transaction.appAccountToken,
+      p_transaction_id: subscription.transactionId,
+      p_original_transaction_id: subscription.originalTransactionId,
+      p_product_id: subscription.productId,
+      p_subscription_group_id: subscription.subscriptionGroupId,
+      p_environment: subscription.environment,
+      p_ownership_type: subscription.ownershipType,
+      p_app_account_token: subscription.appAccountToken,
       p_status: status,
-      p_purchase_date: transaction.purchaseDate,
-      p_expires_at: transaction.expiresAt,
-      p_revocation_date: transaction.revocationDate,
-      p_signed_at: transaction.signedAt,
-      p_jws_sha256: transaction.jwsSha256,
+      p_purchase_date: subscription.purchaseDate,
+      p_expires_at: subscription.expiresAt,
+      p_revocation_date: subscription.revocationDate,
+      p_signed_at: subscription.signedAt,
+      p_jws_sha256: subscription.jwsSha256,
       p_source_version: `asn-v2:${notificationType}`,
     });
     const appliedLedger = applied as JsonRecord | null;
@@ -325,6 +366,60 @@ function createNotificationHandler(
       transactionId: transaction.transactionId,
     });
   };
+}
+
+const TRIP_LEDGER_REJECTIONS = new Set([
+  'account_token_mismatch',
+  'transaction_binding_mismatch',
+  'notification_payload_mismatch',
+]);
+
+/**
+ * Applies a recorded trip-pass notification. The RPC reads the notification
+ * type from the ledger row, derives the transaction's refund state from every
+ * accepted notification in signedDate order, and marks this one accepted in
+ * the same transaction, so a retry after any failure converges.
+ */
+async function applyTripNotification(
+  admin: AdminClient,
+  input: {
+    notificationId: string;
+    userId: string;
+    transaction: ValidatedStoreKitTripTransaction;
+    outerSignedAt: string;
+  },
+): Promise<Response> {
+  const { transaction } = input;
+  const { data, error } = await admin.rpc('apply_trip_storekit_notification', {
+    p_notification_id: input.notificationId,
+    p_user_id: input.userId,
+    p_transaction_id: transaction.transactionId,
+    p_original_transaction_id: transaction.originalTransactionId,
+    p_product_id: transaction.productId,
+    p_app_account_token: transaction.appAccountToken,
+    p_signed_at: input.outerSignedAt,
+  });
+  const ledger = data as JsonRecord | null;
+  if (error || ledger?.ok !== true || ledger.accepted !== true) {
+    const ledgerError = typeof ledger?.error === 'string' ? ledger.error : '';
+    if (TRIP_LEDGER_REJECTIONS.has(ledgerError)) {
+      logOutcome(ledgerError);
+      return json(422, { ok: false, error: ledgerError });
+    }
+    logOutcome('trip_ledger_failed');
+    return json(503, { ok: false, error: 'transaction_persistence_failed' });
+  }
+
+  const outcome = typeof ledger.outcome === 'string' ? ledger.outcome : 'acknowledged';
+  logOutcome(`trip_${outcome}`);
+  return json(200, {
+    ok: true,
+    duplicate: ledger.duplicate === true,
+    accepted: true,
+    status: typeof ledger.status === 'string' ? ledger.status : null,
+    outcome,
+    transactionId: transaction.transactionId,
+  });
 }
 
 type StoreKitTransactionPayloadWithData = {

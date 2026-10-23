@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
+import { useMountEffect } from '../../hooks/useMountEffect';
+import React, { useMemo } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import { Pressable, StyleSheet } from 'react-native';
 import Animated, {
@@ -31,11 +32,7 @@ export default function PrimaryButton({
   // feedback the moment a valid choice is made.
   const p = useSharedValue(disabled ? 0 : 1);
   const visuals = useOptionalVisuals();
-  useEffect(() => {
-    cancelAnimation(p);
-    p.value = visuals ? withTiming(disabled ? 0 : 1, { duration: 240 }) : (disabled ? 0 : 1);
-    return () => cancelAnimation(p);
-  }, [disabled, p, visuals]);
+
   const bgStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(p.value, [0, 1], [colors.border, colors.accent]),
   }));
@@ -50,6 +47,7 @@ export default function PrimaryButton({
       }}
       style={[styles.btn, bgStyle]}
     >
+      <PrimaryButtonColorMotion key={`${disabled}:${visuals}`} p={p} disabled={disabled} visuals={visuals} />
       <HitherText
         typeRole="title"
         style={[styles.label, { color: disabled ? colors.textSecondary : colors.accentText }]}
@@ -75,3 +73,12 @@ const makeStyles = (scale: number) => {
     label: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
   });
 };
+
+function PrimaryButtonColorMotion({ p, disabled, visuals }: { p: ReturnType<typeof useSharedValue<number>>; disabled: boolean | undefined; visuals: boolean }) {
+  useMountEffect(() => {
+    cancelAnimation(p);
+    p.value = visuals ? withTiming(disabled ? 0 : 1, { duration: 240 }) : (disabled ? 0 : 1);
+    return () => cancelAnimation(p);
+  });
+  return null;
+}

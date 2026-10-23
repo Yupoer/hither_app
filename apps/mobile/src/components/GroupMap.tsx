@@ -1,9 +1,9 @@
 import { useMemberMarkerMotion } from './useMemberMarkerMotion';
+import { useMountEffect } from '../hooks/useMountEffect';
 import React, {
   Component,
   forwardRef,
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -87,6 +87,38 @@ export {
 let androidMapMountCount = 0;
 /** Diagnostic window after ready without loaded — log only, never auto-remount. */
 const MAP_LOADED_TIMEOUT_MS = 10_000;
+
+function GroupMapRenderSample({ meter }: { meter: GroupMapCommitMeter }) {
+  useMountEffect(() => meter.reportCommittedMapRender());
+  return null;
+}
+
+class GroupMapCommitMeter extends Component<Record<string, never>, { renderKey: number }> {
+  state = { renderKey: 0 };
+  private committed = 0;
+  private reported = 0;
+
+  static getDerivedStateFromProps(_props: Record<string, never>, state: { renderKey: number }) {
+    return { renderKey: state.renderKey + 1 };
+  }
+
+  componentDidMount() { this.committed++; }
+  componentDidUpdate() { this.committed++; }
+
+  reportCommittedMapRender() {
+    if (this.reported === this.committed) return;
+    this.reported = this.committed;
+    energyObservability.increment('render');
+  }
+
+  render() { return <GroupMapRenderSample key={this.state.renderKey} meter={this} />; }
+}
+
+function useGroupMapCommitMeter() {
+  'use no memo';
+  // Every owner commit needs a fresh sample; rerun the metric regressions on React/Compiler upgrades.
+  return <GroupMapCommitMeter />;
+}
 
 /** Optional camera framing for centerOn (defaults = locate-me street level). */
 export type CenterOnOptions = {
@@ -247,26 +279,120 @@ class MapSubtreeBoundary extends Component<
  */
 
 
-/**
- * Hook to manage `tracksViewChanges` for custom map markers.
- * react-native-maps has a massive performance penalty if tracksViewChanges
- * is left as true (the default) for custom views, dropping fps drastically.
- * We set it to true briefly when dependencies change (so it captures the view),
- * then switch to false so it doesn't continuously re-render bitmaps.
- */
-function useTracksViewChanges(deps: any[]) {
-  const [tracksViewChanges, setTracksViewChanges] = useState(true);
-
-  useEffect(() => {
+/** Capture changed marker appearance briefly, then stop native bitmap redraws. */
+function MarkerBitmapCapture({ setTracksViewChanges }: { setTracksViewChanges: (tracking: boolean) => void }) {
+  useMountEffect(() => {
     setTracksViewChanges(true);
     const timer = setTimeout(() => {
       setTracksViewChanges(false);
     }, 500);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  });
+  return null;
+}
 
-  return tracksViewChanges;
+type MarkerBitmapAppearance =
+  | { kind: 'destination'; bgColor: string; title: string; emoji: Destination['emoji']; markerColor: Destination['markerColor']; destinationKind: Destination['kind']; markerEmoji: string; description: string; isActiveTarget: boolean; isCompleted: boolean; pulseOn: boolean }
+  | { kind: 'pending'; name: string; accent: string }
+  | { kind: 'member'; name: string; avatar: MemberLocation['avatar']; avatarColor: MemberLocation['avatarColor']; isLeader: boolean; ringColor: string; bgColor: string };
+
+function sameMarkerAppearance(previous: MarkerBitmapAppearance, next: MarkerBitmapAppearance): boolean {
+  if (previous.kind === 'destination' && next.kind === 'destination') {
+    return Object.is(previous.bgColor, next.bgColor) && Object.is(previous.title, next.title)
+      && Object.is(previous.emoji, next.emoji) && Object.is(previous.markerColor, next.markerColor)
+      && Object.is(previous.destinationKind, next.destinationKind) && Object.is(previous.markerEmoji, next.markerEmoji)
+      && Object.is(previous.description, next.description) && Object.is(previous.isActiveTarget, next.isActiveTarget)
+      && Object.is(previous.isCompleted, next.isCompleted) && Object.is(previous.pulseOn, next.pulseOn);
+  }
+  if (previous.kind === 'pending' && next.kind === 'pending') {
+    return Object.is(previous.name, next.name) && Object.is(previous.accent, next.accent);
+  }
+  if (previous.kind === 'member' && next.kind === 'member') {
+    return Object.is(previous.name, next.name) && Object.is(previous.avatar, next.avatar)
+      && Object.is(previous.avatarColor, next.avatarColor) && Object.is(previous.isLeader, next.isLeader)
+      && Object.is(previous.ringColor, next.ringColor) && Object.is(previous.bgColor, next.bgColor);
+  }
+  return false;
+}
+
+function MarkerBitmapTracking({ appearance, setTracksViewChanges }: {
+  appearance: MarkerBitmapAppearance;
+  setTracksViewChanges: (tracking: boolean) => void;
+}) {
+  const [previous, setPrevious] = useState({ appearance, generation: 0 });
+  if (!sameMarkerAppearance(previous.appearance, appearance)) setPrevious({ appearance, generation: previous.generation + 1 });
+  return <MarkerBitmapCapture key={previous.generation} setTracksViewChanges={setTracksViewChanges} />;
+}
+
+type DestinationTrackingProps = {
+  bgColor: string;
+  emoji: Destination['emoji'];
+  id: Destination['id'];
+  markerColor: Destination['markerColor'];
+  isActiveTarget: boolean;
+  isCompleted: boolean;
+};
+
+function DestinationTrackingSample() {
+  useMountEffect(() => { energyObservability.event('marker_tracking'); });
+  return null;
+}
+
+function DestinationMarkerTracking(props: DestinationTrackingProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.bgColor, props.bgColor) || !Object.is(previous.emoji, props.emoji)
+    || !Object.is(previous.id, props.id) || !Object.is(previous.markerColor, props.markerColor)
+    || !Object.is(previous.isActiveTarget, props.isActiveTarget) || !Object.is(previous.isCompleted, props.isCompleted)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <DestinationTrackingSample key={previous.generation} />;
+}
+
+type DestinationPulseProps = {
+  canPulse: boolean;
+  isActiveTarget: boolean;
+  reduceMotion: boolean;
+  scaleAnim: RNAnimated.Value;
+  setPulseOn: (pulsing: boolean) => void;
+};
+
+function DestinationPulseAnimation({ canPulse, isActiveTarget, reduceMotion, scaleAnim, setPulseOn }: DestinationPulseProps) {
+  useMountEffect(() => {
+    if (!canPulse) {
+      setPulseOn(false);
+      scaleAnim.setValue(isActiveTarget && reduceMotion ? reduceMotionEmphasisScale() : 1);
+      return;
+    }
+    let cancelled = false;
+    const runPulse = () => {
+      if (cancelled) return;
+      setPulseOn(true);
+      scaleAnim.setValue(1);
+      RNAnimated.sequence([
+        RNAnimated.timing(scaleAnim, { toValue: pulsePeakScale(), duration: TARGET_PULSE_DURATION_MS / 2, useNativeDriver: true }),
+        RNAnimated.timing(scaleAnim, { toValue: 1, duration: TARGET_PULSE_DURATION_MS / 2, useNativeDriver: true }),
+      ]).start(({ finished }) => { if (finished) setPulseOn(false); });
+    };
+    runPulse();
+    const interval = setInterval(runPulse, TARGET_PULSE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      setPulseOn(false);
+      scaleAnim.stopAnimation();
+      scaleAnim.setValue(1);
+    };
+  });
+  return null;
+}
+
+function DestinationMarkerPulse(props: DestinationPulseProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.canPulse, props.canPulse) || !Object.is(previous.isActiveTarget, props.isActiveTarget)
+    || !Object.is(previous.reduceMotion, props.reduceMotion) || !Object.is(previous.scaleAnim, props.scaleAnim)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <DestinationPulseAnimation key={previous.generation} {...props} />;
 }
 
 const DestinationMarker = React.memo(function DestinationMarker({
@@ -301,47 +427,6 @@ const DestinationMarker = React.memo(function DestinationMarker({
     reduceMotion,
   });
 
-  useEffect(() => {
-    energyObservability.event('marker_tracking');
-  }, [bgColor, dest.emoji, dest.id, dest.markerColor, isActiveTarget, isCompleted]);
-
-  useEffect(() => {
-    if (!canPulse) {
-      setPulseOn(false);
-      scaleAnim.setValue(isActiveTarget && reduceMotion ? reduceMotionEmphasisScale() : 1);
-      return;
-    }
-    let cancelled = false;
-    const runPulse = () => {
-      if (cancelled) return;
-      setPulseOn(true);
-      scaleAnim.setValue(1);
-      RNAnimated.sequence([
-        RNAnimated.timing(scaleAnim, {
-          toValue: pulsePeakScale(),
-          duration: TARGET_PULSE_DURATION_MS / 2,
-          useNativeDriver: true,
-        }),
-        RNAnimated.timing(scaleAnim, {
-          toValue: 1,
-          duration: TARGET_PULSE_DURATION_MS / 2,
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (finished) setPulseOn(false);
-      });
-    };
-    runPulse();
-    const interval = setInterval(runPulse, TARGET_PULSE_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      setPulseOn(false);
-      scaleAnim.stopAnimation();
-      scaleAnim.setValue(1);
-    };
-  }, [canPulse, isActiveTarget, reduceMotion, scaleAnim]);
-
   const markerEmoji = destinationMarkerEmoji(dest);
   const description =
     calloutDescription
@@ -350,18 +435,11 @@ const DestinationMarker = React.memo(function DestinationMarker({
       : dest.day == null ? t('trip.pool') : `Day ${dest.day}`);
 
   // Capture bitmap only on appearance / pulse window / style change — never continuous.
-  const tracksViewChanges = useTracksViewChanges([
-    bgColor,
-    dest.title,
-    dest.emoji,
-    dest.markerColor,
-    dest.kind,
-    markerEmoji,
-    description,
-    isActiveTarget,
-    isCompleted,
-    pulseOn,
-  ]);
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  const bitmapTracking = <MarkerBitmapTracking setTracksViewChanges={setTracksViewChanges} appearance={{
+    kind: 'destination', bgColor, title: dest.title, emoji: dest.emoji, markerColor: dest.markerColor,
+    destinationKind: dest.kind, markerEmoji, description, isActiveTarget, isCompleted, pulseOn,
+  }} />;
 
   const staticEmphasis = isActiveTarget && reduceMotion;
   const markerStyle = [
@@ -372,6 +450,10 @@ const DestinationMarker = React.memo(function DestinationMarker({
   ];
 
   return (
+    <>
+    <DestinationMarkerTracking bgColor={bgColor} emoji={dest.emoji} id={dest.id} markerColor={dest.markerColor} isActiveTarget={isActiveTarget} isCompleted={isCompleted} />
+    <DestinationMarkerPulse canPulse={canPulse} isActiveTarget={isActiveTarget} reduceMotion={reduceMotion} scaleAnim={scaleAnim} setPulseOn={setPulseOn} />
+    {bitmapTracking}
     <Marker
       coordinate={dest.coordinates}
       title={dest.title}
@@ -399,13 +481,16 @@ const DestinationMarker = React.memo(function DestinationMarker({
         </Text>
       </RNAnimated.View>
     </Marker>
+    </>
   );
 });
 
 const PendingPlaceMarker = React.memo(function PendingPlaceMarker({ pendingPlace, accent, styles }: any) {
-  const tracksViewChanges = useTracksViewChanges([pendingPlace.name, accent]);
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
 
   return (
+    <>
+    <MarkerBitmapTracking setTracksViewChanges={setTracksViewChanges} appearance={{ kind: 'pending', name: pendingPlace.name, accent }} />
     <Marker
       coordinate={pendingPlace.coordinates}
       title={pendingPlace.name}
@@ -416,6 +501,7 @@ const PendingPlaceMarker = React.memo(function PendingPlaceMarker({ pendingPlace
         <Ionicons name="flag" size={17} color="#fff" />
       </View>
     </Marker>
+    </>
   );
 });
 
@@ -427,24 +513,23 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
   const lat = member.coordinates?.latitude;
   const lng = member.coordinates?.longitude;
 
-  const tracksViewChanges = useTracksViewChanges([
-    member.name,
-    member.avatar,
-    member.avatarColor,
-    isLeader,
-    ringColor,
-    bgColor,
-  ]);
+  const [tracksViewChanges, setTracksViewChanges] = useState(true);
+  const bitmapTracking = <MarkerBitmapTracking setTracksViewChanges={setTracksViewChanges} appearance={{
+    kind: 'member', name: member.name, avatar: member.avatar, avatarColor: member.avatarColor, isLeader, ringColor, bgColor,
+  }} />;
 
   const markerRef = useRef<React.ElementRef<typeof Marker>>(null);
-  const coordinate = useMemberMarkerMotion(markerRef, {
+  const { coordinate, lifecycle: memberMarkerLifecycle } = useMemberMarkerMotion(markerRef, {
     coordinates: { latitude: lat ?? NaN, longitude: lng ?? NaN },
     sampledAt: Date.parse(member.capturedAt ?? member.lastUpdated ?? ''),
   }, appActive && !reduceMotion);
 
-  if (!coordinate) return null;
+  if (!coordinate) return <>{memberMarkerLifecycle}{bitmapTracking}</>;
 
   return (
+    <>
+      {memberMarkerLifecycle}
+      {bitmapTracking}
     <Marker
       ref={markerRef}
       coordinate={coordinate}
@@ -476,10 +561,122 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
         </View>
       </View>
     </Marker>
+    </>
   );
 });
 
 const EDGE_BUFFER = 16;
+
+function GroupMapAccessibility({ setReduceMotion }: { setReduceMotion: (reduced: boolean) => void }) {
+  useMountEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => sub.remove();
+  });
+  return null;
+}
+
+type GroupMapWorkloadProps = {
+  appActive: boolean;
+  allowMarkerMotion: boolean;
+  memberCount: number;
+  destinationCount: number;
+  routePointCount: number | undefined;
+  displayedPointCount: number;
+};
+
+function GroupMapWorkloadLease({ appActive, allowMarkerMotion, memberCount, destinationCount, routePointCount, displayedPointCount }: GroupMapWorkloadProps) {
+  useMountEffect(() => energyObservability.mountWorkload({
+    mapCount: appActive ? 1 : 0, memberMarkerCount: memberCount, destinationMarkerCount: destinationCount,
+    rawRoutePointCount: routePointCount ?? 0, displayRoutePointCount: displayedPointCount,
+    markerMotionEnabled: allowMarkerMotion ? 1 : 0,
+  }));
+  return null;
+}
+
+function GroupMapWorkload(props: GroupMapWorkloadProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.appActive, props.appActive) || !Object.is(previous.allowMarkerMotion, props.allowMarkerMotion)
+    || !Object.is(previous.memberCount, props.memberCount) || !Object.is(previous.destinationCount, props.destinationCount)
+    || !Object.is(previous.routePointCount, props.routePointCount) || !Object.is(previous.displayedPointCount, props.displayedPointCount)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <GroupMapWorkloadLease key={previous.generation} {...props} />;
+}
+
+type GroupMapReadinessProps = {
+  appActive: boolean;
+  loadedTimeoutTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
+  readyLoggedRef: React.RefObject<boolean>;
+  loadedLoggedRef: React.RefObject<boolean>;
+};
+
+function GroupMapNativeReadiness({ appActive, loadedTimeoutTimerRef, readyLoggedRef, loadedLoggedRef }: GroupMapReadinessProps) {
+  useMountEffect(() => {
+    if (!appActive) {
+      if (loadedTimeoutTimerRef.current) clearTimeout(loadedTimeoutTimerRef.current);
+      loadedTimeoutTimerRef.current = null;
+      readyLoggedRef.current = false;
+      loadedLoggedRef.current = false;
+      return;
+    }
+    return platformizedMapLifecycle({
+      onAndroidMapMount: () => {
+        androidMapMountCount += 1;
+        logEvent('android_map_mount', { mapMountCount: androidMapMountCount });
+      },
+      onAndroidMapUnmount: () => {
+        if (loadedTimeoutTimerRef.current) {
+          clearTimeout(loadedTimeoutTimerRef.current);
+          loadedTimeoutTimerRef.current = null;
+        }
+        logEvent('android_map_unmount', { mapMountCount: androidMapMountCount });
+      },
+    });
+  });
+  return null;
+}
+
+type GroupMapCameraProps = {
+  appActive: boolean;
+  fallbackCenter: Coordinates | undefined;
+  gathering: Destination | undefined;
+  latOffset: number;
+  mapRef: React.RefObject<MapView | null>;
+  centeredModeRef: React.RefObject<GroupMapCameraState['centeredMode']>;
+};
+
+function GroupMapFirstCamera({ appActive, fallbackCenter, gathering, latOffset, mapRef, centeredModeRef }: GroupMapCameraProps) {
+  useMountEffect(() => {
+    if (!appActive || !mapRef.current) return;
+    if (gathering) {
+      if (centeredModeRef.current === 'user') {
+        // Promote ownership without a second stacked animation.
+        centeredModeRef.current = 'gathering';
+        return;
+      }
+      if (centeredModeRef.current !== 'gathering') {
+        mapRef.current.animateToRegion(initialRegionFor(gathering.coordinates, latOffset), 600);
+        centeredModeRef.current = 'gathering';
+      }
+      return;
+    }
+    if (fallbackCenter && centeredModeRef.current === null) {
+      mapRef.current.animateToRegion(initialRegionFor(fallbackCenter, latOffset), 600);
+      centeredModeRef.current = 'fallback';
+    }
+  });
+  return null;
+}
+
+function GroupMapCameraFraming(props: GroupMapCameraProps) {
+  const [previous, setPrevious] = useState({ ...props, generation: 0 });
+  if (!Object.is(previous.appActive, props.appActive) || !Object.is(previous.fallbackCenter, props.fallbackCenter)
+    || !Object.is(previous.gathering, props.gathering)) {
+    setPrevious({ ...props, generation: previous.generation + 1 });
+  }
+  return <GroupMapFirstCamera key={previous.generation} {...props} />;
+}
 
 const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   {
@@ -551,17 +748,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     [dailyAccommodation, dailyAccommodations, destinations],
   );
 
-  useEffect(() => {
-    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => sub.remove();
-  }, []);
-
   const styles = useMemo(() => makeStyles(colors), [colors]);
-
-  useEffect(() => {
-    energyObservability.increment('render');
-  });
+  const commitMeter = useGroupMapCommitMeter();
 
   // Shift camera so the pin sits in the midpoint of the strip between the
   // gathering-point carousel (top) and the bottom sheet (bottom).
@@ -604,11 +792,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     },
     [appActive, routePoints, selfCoordinates, settledRouteViewport],
   );
-  useEffect(() => energyObservability.mountWorkload({
-    mapCount: appActive ? 1 : 0, memberMarkerCount: members.length, destinationMarkerCount: mergedMarkers.length,
-    rawRoutePointCount: routePoints?.length ?? 0, displayRoutePointCount: displayRoute.length,
-    markerMotionEnabled: allowMarkerMotion ? 1 : 0,
-  }), [appActive, allowMarkerMotion, members.length, mergedMarkers.length, routePoints?.length, displayRoute.length]);
   const destinationById = useMemo(() => new Map((destinations ?? []).map(dest => [dest.id, dest])), [destinations]);
   const mapChrome = useMemo(
     () => mapKitChromeLayout({
@@ -621,30 +804,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     }),
     [chromeBottomOffset, chromeStage, insets, topOverlap, windowHeight, windowWidth],
   );
-
-  useEffect(() => {
-    if (!appActive) {
-      if (loadedTimeoutTimerRef.current) clearTimeout(loadedTimeoutTimerRef.current);
-      loadedTimeoutTimerRef.current = null;
-      readyLoggedRef.current = false;
-      loadedLoggedRef.current = false;
-      return;
-    }
-    return platformizedMapLifecycle({
-    onAndroidMapMount: () => {
-      androidMapMountCount += 1;
-      // App lifecycle only — not Google Cloud Map Loads / billing.
-      logEvent('android_map_mount', { mapMountCount: androidMapMountCount });
-    },
-    onAndroidMapUnmount: () => {
-      if (loadedTimeoutTimerRef.current) {
-        clearTimeout(loadedTimeoutTimerRef.current);
-        loadedTimeoutTimerRef.current = null;
-      }
-      logEvent('android_map_unmount', { mapMountCount: androidMapMountCount });
-    },
-    });
-  }, [appActive]);
 
   const onMapReady = useCallback(() => {
     energyObservability.event('map_ready');
@@ -798,31 +957,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     [gathering, members, latOffset, topOverlap, bottomOverlap],
   );
 
-  // A fresh group has neither a gathering point nor a member location yet.
-  // Mount it with a valid fallback camera, then center once when GPS or the
-  // first gathering point becomes available. Never follow every GPS tick.
-  // Skip auto animate when the user already framed via long-press / add / fit.
-  useEffect(() => {
-    if (!appActive || !mapRef.current) return;
-    if (gathering) {
-      if (centeredModeRef.current === 'user') {
-        // Promote to gathering ownership without a second stacked animation.
-        centeredModeRef.current = 'gathering';
-        return;
-      }
-      if (centeredModeRef.current !== 'gathering') {
-        mapRef.current.animateToRegion(initialRegionFor(gathering.coordinates, latOffset), 600);
-        centeredModeRef.current = 'gathering';
-      }
-      return;
-    }
-    if (fallbackCenter && centeredModeRef.current === null) {
-      mapRef.current.animateToRegion(initialRegionFor(fallbackCenter, latOffset), 600);
-      centeredModeRef.current = 'fallback';
-    }
-    // Sheet stage / detent must never re-run this effect.
-  }, [appActive, fallbackCenter, gathering]);
-
   const handleMapSubtreeError = useCallback(() => {
     // Parent-owned: survives ordinary re-renders; not cleared by children identity.
     setShowFallback(true);
@@ -874,15 +1008,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     </View>
   );
 
-  // Parent-owned fallback: first and second failure both stay here so a parent
-  // re-render cannot re-mount a broken MapView underneath the recovery UI.
-  if (!appActive) return null;
-
-  if (showFallback) {
-    return mapFallback;
-  }
-
-  return (
+  const mapContent = !appActive ? null : showFallback ? mapFallback : (
     <MapSubtreeBoundary
       resetKey={surfaceKey}
       onError={handleMapSubtreeError}
@@ -1045,6 +1171,18 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     </View>
     </MapSubtreeBoundary>
   );
+  return <>
+    {commitMeter}
+    <GroupMapAccessibility setReduceMotion={setReduceMotion} />
+    <GroupMapWorkload appActive={appActive} allowMarkerMotion={allowMarkerMotion} memberCount={members.length}
+      destinationCount={mergedMarkers.length} routePointCount={routePoints?.length} displayedPointCount={displayRoute.length} />
+    <GroupMapNativeReadiness key={String(appActive)} appActive={appActive} loadedTimeoutTimerRef={loadedTimeoutTimerRef}
+      readyLoggedRef={readyLoggedRef} loadedLoggedRef={loadedLoggedRef} />
+    <GroupMapCameraFraming appActive={appActive} fallbackCenter={fallbackCenter} gathering={gathering} latOffset={latOffset}
+      mapRef={mapRef} centeredModeRef={centeredModeRef} />
+    {mapContent}
+  </>;
+
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({

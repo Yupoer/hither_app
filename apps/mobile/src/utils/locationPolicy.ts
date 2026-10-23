@@ -289,12 +289,7 @@ export function shouldAcceptUiSample(
 ): boolean {
   if (!last.lastCoords) return true;
   if (nowMs - last.lastAtMs < policy.uiMinIntervalMs) return false;
-  const moved = distanceMeters(last.lastCoords, sample);
-  if (moved >= policy.uiMinDistanceM) return true;
-  if (moved >= policy.uiMinDistanceM * 0.4) {
-    return true;
-  }
-  return false;
+  return distanceMeters(last.lastCoords, sample) >= policy.uiMinDistanceM * 0.4;
 }
 
 /**

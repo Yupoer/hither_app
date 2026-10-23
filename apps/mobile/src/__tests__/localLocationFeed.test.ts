@@ -20,7 +20,7 @@ it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, 
   function Probe({ focused }: { focused: boolean }) {
     feed = useDeviceLocation({ groupId: focused ? 'g' : null, highAccuracy: false,
       nativeMapLocationEnabled: true, hasMembership: focused, onIncomingSample: incoming });
-    return null;
+    return feed.lifecycle;
   }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe, { focused: true })); });
@@ -58,7 +58,7 @@ it('manual refresh requires this event to be accepted and passes precision to fr
   jest.useFakeTimers();
   jest.clearAllMocks();
   let feed!: ReturnType<typeof useDeviceLocation>;
-  function Probe() { feed = useDeviceLocation({ groupId: 'g', highAccuracy: true, nativeMapLocationEnabled: true }); return null; }
+  function Probe() { feed = useDeviceLocation({ groupId: 'g', highAccuracy: true, nativeMapLocationEnabled: true }); return feed.lifecycle; }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe)); });
   const sample = (timestamp: number) => ({ coordinates: { latitude: 25, longitude: 121 }, accuracy: 5, timestamp });

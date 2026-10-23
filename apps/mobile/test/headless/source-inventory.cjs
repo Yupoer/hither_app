@@ -33,7 +33,7 @@ function scan(root, ts = require('typescript')) {
       if (ts.isJsxAttribute(node) && /^on[A-Z]/.test(node.name.getText(source))) add('callback', node.name.getText(source), node);
       if (ts.isCallExpression(node)) {
         const name = node.expression.getText(source);
-        if (/(^|\.)(useEffect|useLayoutEffect|useFocusEffect|addEventListener|addListener|defineTask|runUiAction)$/.test(name)) add('lifecycle', name, node);
+        if (/(^|\.)(useEffect|useLayoutEffect|useMountEffect|useFocusEffect|addEventListener|addListener|defineTask|runUiAction)$/.test(name)) add('lifecycle', name, node);
       }
       ts.forEachChild(node, visit);
     }

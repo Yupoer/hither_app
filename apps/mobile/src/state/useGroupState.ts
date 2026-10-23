@@ -1,5 +1,6 @@
 import { retainVisibleGroupSeed } from './visibleGroupSeed';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createElement, Fragment, useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { AppState, type AppStateStatus } from 'react-native';
 import { requestWithDeadline } from '../utils/requestDeadline';
 import { getGroupRecoverySnapshot } from '../api/client';
@@ -43,13 +44,27 @@ import {
 } from './coreDataSync';
 import type { ActiveGatheringState, CoreOperation } from '../types/coreData';
 
-/**
- * Slow reconciliation interval. Realtime is still the fast path, but the
- * poll also repairs silent/missed events after a member joins or a stop is
- * added while the channel reports SUBSCRIBED.
- */
-// ponytail: 30s is the fallback ceiling; Realtime handles normal propagation.
+/** Full-reload poll while the group realtime channel is not SUBSCRIBED. */
 export const GROUP_POLL_INTERVAL_MS = 30_000;
+/**
+ * Full-reload poll while realtime is SUBSCRIBED. Realtime is the fast path;
+ * this slower poll only repairs events the channel silently missed.
+ */
+export const GROUP_POLL_SUBSCRIBED_INTERVAL_MS = 120_000;
+
+export function groupPollIntervalMs(realtimeSubscribed: boolean): number {
+  return realtimeSubscribed ? GROUP_POLL_SUBSCRIBED_INTERVAL_MS : GROUP_POLL_INTERVAL_MS;
+}
+
+/**
+ * Stable key of the co-member ids whose `profiles` rows this group watches.
+ * Location patches replace `members` often; the key changes only when the
+ * id set does, so the profiles channel does not resubscribe per patch.
+ */
+export function profileWatchKey(members: readonly { userId: string }[] | undefined): string {
+  if (!members?.length) return '';
+  return Array.from(new Set(members.map(member => member.userId))).sort().join(',');
+}
 
 /** Coalesce bursts of non-location realtime events into a single refetch. */
 const REALTIME_DEBOUNCE_MS = 300;
@@ -74,6 +89,7 @@ interface UseGroupStateOptions {
 export type GroupStateDataSource = 'remote' | 'local_cache' | 'none';
 
 interface UseGroupStateResult {
+  lifecycle: ReactElement;
   state: GroupState | null;
   serverTimeOffsetMs: number;
   /** True only during the very first load (before any data arrives). */
@@ -112,10 +128,10 @@ interface UseGroupStateResult {
  *
  * Fallback: slow interval poll only while foregrounded.
  */
-export function useGroupState(
+function useGroupStateOwner(
   groupId: string | null,
   options: UseGroupStateOptions = {},
-): UseGroupStateResult {
+) {
   const { myUserId = null } = options;
   const [state, setState] = useState<GroupState | null>(null);
   /** Mirrors React state so recovery can merge + persist one authoritative snapshot. */
@@ -130,9 +146,7 @@ export function useGroupState(
     unit: 'missing',
   });
   const [emptyLocalSnapshot, setEmptyLocalSnapshot] = useState(false);
-  useEffect(() => {
-    if (myUserId && state) return retainVisibleGroupSeed(myUserId, state);
-  }, [myUserId, state]);
+
   const [openOperations, setOpenOperations] = useState<CoreOperation[]>([]);
   const openOperationsRef = useRef<CoreOperation[]>([]);
   openOperationsRef.current = openOperations;
@@ -146,6 +160,11 @@ export function useGroupState(
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeReadyRef = useRef(false);
+  const scheduleReloadRef = useRef<((
+    reason: GroupReloadReason,
+    payload?: { commit_timestamp?: string },
+  ) => void) | null>(null);
+  const memberIdsKey = useMemo(() => profileWatchKey(state?.members), [state?.members]);
   const pendingPatchesRef = useRef(new Map<string, MemberLocationPatch>());
   const myUserIdRef = useRef(myUserId);
   myUserIdRef.current = myUserId;
@@ -165,6 +184,7 @@ export function useGroupState(
   /** Reason consumed by the in-flight recovery load. */
   const inFlightReasonRef = useRef<GroupReloadReason>('unknown');
   const groupGenerationRef = useRef(0);
+  const identityLeaseRef = useRef<GroupIdentityLease | null>(null);
   const inFlightRevisionRef = useRef<string | null>(null);
   const latestRevisionRef = useRef('0');
   const isOlderRevision = useCallback((candidate: string, current: string): boolean => {
@@ -197,7 +217,7 @@ export function useGroupState(
         openOperationsRef.current = own;
         setOpenOperations(own);
         // Accepted/conflicted intent must converge to authoritative data, not
-        // wait five minutes for the fallback poll or retain a local draft.
+        // wait for the fallback poll or retain a local draft.
         const remainingIds = new Set(own.filter(op => op.status !== 'conflict').map(op => op.id));
         if (previous.some(op => op.status !== 'conflict' && !remainingIds.has(op.id))) {
           void loadRef.current('itinerary_mutation');
@@ -209,7 +229,6 @@ export function useGroupState(
       if (isCurrent()) setError(getOperationErrorMessage(cause));
     }
   }, []);
-
 
   const localSnapshotReadRef = useRef(0);
   const localPaintRevisionRef = useRef(0);
@@ -272,14 +291,6 @@ export function useGroupState(
 
   // The SQLite transaction has already committed when this fires. Paint it
   // before any remote refresh; all screens share the same local projection.
-  useEffect(() => {
-    if (!groupId) return;
-    return subscribeCoreOutboxChanges(() => {
-      void applyLocalSnapshot(groupId).then(applied => {
-        if (!applied) void refreshOpenOperations(groupId);
-      });
-    });
-  }, [groupId, myUserId, applyLocalSnapshot, refreshOpenOperations]);
 
   const load = useCallback((reason: GroupReloadReason = 'unknown'): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);
@@ -504,35 +515,133 @@ export function useGroupState(
   const loadRef = useRef(load);
   loadRef.current = load;
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', setAppState);
-    return () => sub.remove();
-  }, []);
-
   // Initial / group change load — even if briefly backgrounded, keep last state.
   // OTA-04: paint local snapshot immediately so offline cold start is usable,
   // then reconcile with remote when possible.
-  useEffect(() => {
-    activeRef.current = true;
-    realtimeReadyRef.current = false;
-    const generation = groupGenerationRef.current + 1;
-    groupGenerationRef.current = generation;
-    pendingReloadRef.current = false;
-    pendingReloadReasonRef.current = null;
-    setLoading(true);
-    stateRef.current = null;
-    setState(null);
-    setDataSource('none');
-    openOperationsRef.current = [];
-    setOpenOperations([]);
-    setSnapshotFreshness({ unit: 'missing' });
-    setEmptyLocalSnapshot(false);
-    setError(null);
-    setLoadError(null);
-    setRefreshing(false);
-    pendingPatchesRef.current.clear();
-    latestRevisionRef.current = '0';
 
+  // Realtime + poll only while the app is foregrounded (battery budget).
+
+  // Profile edits (name / avatar) only matter for co-members, so the channel
+  // is filtered to the current member ids and kept separate from the group
+  // channel: a membership change resubscribes this one without dropping the
+  // group channel's SUBSCRIBED state.
+
+  const refresh = useCallback(async (reason: GroupReloadReason = 'poll_manual_refresh') => {
+    const actorId = myUserId;
+    if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
+    const ok = await load(reason);
+    if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
+    return loadInFlightRef.current ?? ok;
+  }, [load, groupId, myUserId]);
+  const refreshLocalSnapshot = useCallback(() => groupId
+    ? applyLocalSnapshot(groupId) : Promise.resolve(false), [groupId, applyLocalSnapshot]);
+  const projectedState = useMemo(() => state
+    ? projectPendingDestinations(state, openOperations) : null, [state, openOperations]);
+  return {
+    groupId, myUserId, stateRef, openOperationsRef, activeRef, groupIdRef, debounceRef, locationDebounceRef, realtimeReadyRef, scheduleReloadRef, pendingPatchesRef, myUserIdRef, loadInFlightRef, loadInFlightContextRef, pendingReloadRef, pendingReloadReasonRef, groupGenerationRef, inFlightRevisionRef, latestRevisionRef, identityLeaseRef, applyLocalSnapshot, refreshOpenOperations, isOlderRevision, loadRef, setState, setLoading, setDataSource, setOpenOperations, setSnapshotFreshness, setEmptyLocalSnapshot, setError, setLoadError, setRefreshing, setAppState, appState, memberIdsKey,
+    seedState: state,
+    snapshot: {
+      state: projectedState,
+      serverTimeOffsetMs,
+      loading,
+      error,
+      loadError,
+      refreshing,
+      refresh,
+      refreshLocalSnapshot,
+      dataSource,
+    snapshotFreshness,
+      emptyLocalSnapshot,
+      openOperations,
+      applyOptimisticGathering,
+    },
+  };
+}
+
+interface GroupIdentityLease { groupId: string | null; actorId: string | null; generation: number; }
+type GroupStateOwner = ReturnType<typeof useGroupStateOwner>;
+
+// Prepare one committed identity before any resource accepts synchronous events.
+function prepareGroupIdentity(owner: GroupStateOwner): GroupIdentityLease {
+  const { stateRef, openOperationsRef, activeRef, realtimeReadyRef, pendingPatchesRef, pendingReloadRef, pendingReloadReasonRef, groupGenerationRef, latestRevisionRef, setState, setLoading, setDataSource, setOpenOperations, setSnapshotFreshness, setEmptyLocalSnapshot, setError, setLoadError, setRefreshing } = owner;
+  const previous = owner.identityLeaseRef.current;
+  if (previous && previous.groupId === owner.groupId && previous.actorId === owner.myUserId) return previous;
+  activeRef.current = true;
+  realtimeReadyRef.current = false;
+  const generation = groupGenerationRef.current + 1;
+  groupGenerationRef.current = generation;
+  pendingReloadRef.current = false;
+  pendingReloadReasonRef.current = null;
+  setLoading(true);
+  stateRef.current = null;
+  setState(null);
+  setDataSource('none');
+  openOperationsRef.current = [];
+  setOpenOperations([]);
+  setSnapshotFreshness({ unit: 'missing' });
+  setEmptyLocalSnapshot(false);
+  setError(null);
+  setLoadError(null);
+  setRefreshing(false);
+  pendingPatchesRef.current.clear();
+  latestRevisionRef.current = '0';
+
+  const lease = { groupId: owner.groupId, actorId: owner.myUserId, generation };
+  owner.identityLeaseRef.current = lease;
+  return lease;
+}
+
+function releaseGroupIdentity(owner: GroupStateOwner, lease: GroupIdentityLease) {
+  if (owner.identityLeaseRef.current !== lease) return;
+  owner.identityLeaseRef.current = null;
+  owner.activeRef.current = false;
+  if (owner.groupGenerationRef.current !== lease.generation) return;
+  owner.groupGenerationRef.current += 1;
+  owner.loadInFlightRef.current = null;
+  owner.inFlightRevisionRef.current = null;
+  owner.loadInFlightContextRef.current = null;
+  owner.pendingReloadRef.current = false;
+  owner.pendingReloadReasonRef.current = null;
+}
+
+function VisibleGroupSeed({ actorId, state }: { actorId: string | null; state: GroupState | null }) {
+  useMountEffect(() => { if (actorId && state) return retainVisibleGroupSeed(actorId, state); });
+  return null;
+}
+
+function GroupOutboxProjection({ owner }: { owner: GroupStateOwner }) {
+  const { groupId, applyLocalSnapshot, refreshOpenOperations } = owner;
+  useMountEffect(() => {
+    prepareGroupIdentity(owner);
+    if (!groupId) return;
+    let cancelled = false;
+    const unsubscribe = subscribeCoreOutboxChanges(() => {
+      if (cancelled) return;
+      void applyLocalSnapshot(groupId).then(applied => {
+        if (!cancelled && !applied) void refreshOpenOperations(groupId);
+      });
+    });
+    return () => { cancelled = true; unsubscribe(); };
+
+  });
+  return null;
+}
+
+function GroupAppStateSubscription({ owner }: { owner: GroupStateOwner }) {
+  const { setAppState } = owner;
+  useMountEffect(() => {
+    const sub = AppState.addEventListener('change', setAppState);
+    return () => sub.remove();
+
+  });
+  return null;
+}
+
+function GroupIdentityHydration({ owner }: { owner: GroupStateOwner }) {
+  const { groupId, myUserId, activeRef, applyLocalSnapshot, loadRef, setLoading } = owner;
+  useMountEffect(() => {
+    const identity = prepareGroupIdentity(owner);
+    const generation = identity.generation;
     if (!groupId) {
       setLoading(false);
       return;
@@ -553,23 +662,19 @@ export function useGroupState(
 
     return () => {
       cancelled = true;
-      activeRef.current = false;
-      if (groupGenerationRef.current === generation) {
-        groupGenerationRef.current += 1;
-        // A request for the previous group cannot be reused by the next
-        // effect. It may still settle in the background, but the new group
-        // must start its own recovery request immediately.
-        loadInFlightRef.current = null;
-        inFlightRevisionRef.current = null;
-        loadInFlightContextRef.current = null;
-        pendingReloadRef.current = false;
-        pendingReloadReasonRef.current = null;
-      }
+      releaseGroupIdentity(owner, identity);
     };
-  }, [applyLocalSnapshot, groupId, myUserId]);
 
-  // Realtime + poll only while the app is foregrounded (battery budget).
-  useEffect(() => {
+  });
+  return null;
+}
+
+function GroupForegroundRealtime({ owner }: { owner: GroupStateOwner }) {
+  const { groupId, stateRef, activeRef, groupIdRef, debounceRef, locationDebounceRef, realtimeReadyRef, scheduleReloadRef, pendingPatchesRef, myUserIdRef, loadInFlightRef, pendingReloadRef, pendingReloadReasonRef, latestRevisionRef, isOlderRevision, loadRef, setState, appState } = owner;
+  useMountEffect(() => {
+    prepareGroupIdentity(owner);
+    let stopped = false;
+
     if (!groupId || appState !== 'active') {
       return;
     }
@@ -584,6 +689,7 @@ export function useGroupState(
       reason: GroupReloadReason,
       payload?: { commit_timestamp?: string },
     ) => {
+      if (stopped || groupIdRef.current !== groupId) return;
       const revision = payload?.commit_timestamp;
       if (revision && isOlderRevision(revision, latestRevisionRef.current)) return;
       if (revision && isOlderRevision(latestRevisionRef.current, revision)) {
@@ -609,6 +715,7 @@ export function useGroupState(
     };
 
     const flushLocationPatches = () => {
+      if (stopped || groupIdRef.current !== groupId) return;
       locationDebounceRef.current = null;
       const buffered = Array.from(pendingPatchesRef.current.values());
       pendingPatchesRef.current.clear();
@@ -638,6 +745,29 @@ export function useGroupState(
       locationDebounceRef.current = setTimeout(flushLocationPatches, 250);
     };
 
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let pollDueAt = Infinity;
+    const schedulePoll = () => {
+      clearTimeout(pollTimer);
+      if (stopped) return;
+      const delay = groupPollIntervalMs(realtimeReadyRef.current);
+      pollDueAt = Date.now() + delay;
+      pollTimer = setTimeout(async () => {
+        pollDueAt = Infinity;
+        if (stopped) return;
+        await loadRef.current('poll_manual_refresh');
+        schedulePoll();
+      }, delay);
+    };
+    // Rejoin failures repeat every few seconds while disconnected, so only a
+    // readiness change may move the deadline; otherwise each error would push
+    // the fallback poll out forever.
+    const setRealtimeReady = (ready: boolean) => {
+      if (realtimeReadyRef.current === ready) return;
+      realtimeReadyRef.current = ready;
+      if (ready || pollDueAt > Date.now() + groupPollIntervalMs(false)) schedulePoll();
+    };
+
     const filter = `group_id=eq.${groupId}`;
     // groups PK is `id`, not group_id — journey_status / active_destination_id live here.
     const groupRowFilter = `id=eq.${groupId}`;
@@ -648,7 +778,7 @@ export function useGroupState(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'member_locations', filter },
         (payload) => {
-
+          if (stopped || groupIdRef.current !== groupId) return;
 
           const parsed = locationPatchFromRealtimePayload({
             new: payload.new as Record<string, unknown> | null,
@@ -681,21 +811,17 @@ export function useGroupState(
         (payload) => scheduleReload('accommodation_change', payload as { commit_timestamp?: string }),
       )
       // Leader start/stop nav writes groups.journey_status + active_destination_id.
-      // Without this, followers only learn via the 5-minute poll and never show
+      // Without this, followers only learn via the fallback poll and never show
       // the planned route polyline / multi-mode alts / Live Activity in time.
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'groups', filter: groupRowFilter },
         (payload) => scheduleReload('group_update', payload as { commit_timestamp?: string }),
       )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        (payload) => scheduleReload('profile_update', payload as { commit_timestamp?: string }),
-      )
       .subscribe((status) => {
+        if (stopped || groupIdRef.current !== groupId) return;
         if (status === 'SUBSCRIBED') {
-          realtimeReadyRef.current = true;
+          setRealtimeReady(true);
           // A new member can subscribe after the leader has already written
           // itinerary rows. Hydrate once after the channel is ready instead
           // of relying on an event that happened before this subscription.
@@ -703,55 +829,83 @@ export function useGroupState(
           return;
         }
         if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-          realtimeReadyRef.current = false;
+          setRealtimeReady(false);
         }
       });
-
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const schedule = () => {
-      timer = setTimeout(async () => {
-        if (stopped) return;
-        await loadRef.current('poll_manual_refresh');
-        if (!stopped) schedule();
-      }, GROUP_POLL_INTERVAL_MS);
-    };
-    schedule();
+    scheduleReloadRef.current = scheduleReload;
+    schedulePoll();
 
     return () => {
-      realtimeReadyRef.current = false;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
       stopped = true;
-      clearTimeout(timer);
+      if (scheduleReloadRef.current === scheduleReload) {
+        realtimeReadyRef.current = false;
+        scheduleReloadRef.current = null;
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+      }
+      clearTimeout(pollTimer);
       supabase.removeChannel(channel);
     };
-  }, [groupId, appState, isOlderRevision]);
 
-  const refresh = useCallback(async (reason: GroupReloadReason = 'poll_manual_refresh') => {
-    const actorId = myUserId;
-    if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
-    const ok = await load(reason);
-    if (groupIdRef.current !== groupId || myUserIdRef.current !== actorId) return false;
-    return loadInFlightRef.current ?? ok;
-  }, [load, groupId, myUserId]);
-  const refreshLocalSnapshot = useCallback(() => groupId
-    ? applyLocalSnapshot(groupId) : Promise.resolve(false), [groupId, applyLocalSnapshot]);
-  const projectedState = useMemo(() => state
-    ? projectPendingDestinations(state, openOperations) : null, [state, openOperations]);
-  return {
-    state: projectedState,
-    serverTimeOffsetMs,
-    loading,
-    error,
-    loadError,
-    refreshing,
-    refresh,
-    refreshLocalSnapshot,
-    dataSource,
-    snapshotFreshness,
-    emptyLocalSnapshot,
-    openOperations,
-    applyOptimisticGathering,
-  };
+  });
+  return null;
+}
+
+function GroupProfilesChannel({ owner }: { owner: GroupStateOwner }) {
+  const { groupId, scheduleReloadRef, appState, memberIdsKey } = owner;
+  useMountEffect(() => {
+    prepareGroupIdentity(owner);
+    let cancelled = false;
+    if (!groupId || appState !== 'active' || !memberIdsKey) return;
+    const channel = supabase
+      .channel(`group-profiles:${groupId}:${++channelSeq}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=in.(${memberIdsKey})` },
+        (payload) => { if (!cancelled) scheduleReloadRef.current?.('profile_update', payload as { commit_timestamp?: string }); },
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+
+  });
+  return null;
+}
+
+function GroupStateLifecycle({ owner }: { owner: GroupStateOwner }) {
+  const [seedInput, setSeedInput] = useState({ myUserId: owner.myUserId, seedState: owner.seedState, generation: 0 });
+  if (!Object.is(seedInput.myUserId, owner.myUserId) || !Object.is(seedInput.seedState, owner.seedState)) {
+    setSeedInput({ myUserId: owner.myUserId, seedState: owner.seedState, generation: seedInput.generation + 1 });
+  }
+  const [projectionInput, setProjectionInput] = useState({ groupId: owner.groupId, myUserId: owner.myUserId, applyLocalSnapshot: owner.applyLocalSnapshot, refreshOpenOperations: owner.refreshOpenOperations, generation: 0 });
+  if (!Object.is(projectionInput.groupId, owner.groupId) || !Object.is(projectionInput.myUserId, owner.myUserId) || !Object.is(projectionInput.applyLocalSnapshot, owner.applyLocalSnapshot) || !Object.is(projectionInput.refreshOpenOperations, owner.refreshOpenOperations)) {
+    setProjectionInput({ groupId: owner.groupId, myUserId: owner.myUserId, applyLocalSnapshot: owner.applyLocalSnapshot, refreshOpenOperations: owner.refreshOpenOperations, generation: projectionInput.generation + 1 });
+  }
+  const [identityInput, setIdentityInput] = useState({ applyLocalSnapshot: owner.applyLocalSnapshot, groupId: owner.groupId, myUserId: owner.myUserId, generation: 0 });
+  if (!Object.is(identityInput.applyLocalSnapshot, owner.applyLocalSnapshot) || !Object.is(identityInput.groupId, owner.groupId) || !Object.is(identityInput.myUserId, owner.myUserId)) {
+    setIdentityInput({ applyLocalSnapshot: owner.applyLocalSnapshot, groupId: owner.groupId, myUserId: owner.myUserId, generation: identityInput.generation + 1 });
+  }
+  const [realtimeInput, setRealtimeInput] = useState({ groupId: owner.groupId, appState: owner.appState, isOlderRevision: owner.isOlderRevision, generation: 0 });
+  if (!Object.is(realtimeInput.groupId, owner.groupId) || !Object.is(realtimeInput.appState, owner.appState) || !Object.is(realtimeInput.isOlderRevision, owner.isOlderRevision)) {
+    setRealtimeInput({ groupId: owner.groupId, appState: owner.appState, isOlderRevision: owner.isOlderRevision, generation: realtimeInput.generation + 1 });
+  }
+  const [profilesInput, setProfilesInput] = useState({ groupId: owner.groupId, appState: owner.appState, memberIdsKey: owner.memberIdsKey, generation: 0 });
+  if (!Object.is(profilesInput.groupId, owner.groupId) || !Object.is(profilesInput.appState, owner.appState) || !Object.is(profilesInput.memberIdsKey, owner.memberIdsKey)) {
+    setProfilesInput({ groupId: owner.groupId, appState: owner.appState, memberIdsKey: owner.memberIdsKey, generation: profilesInput.generation + 1 });
+  }
+  return createElement(Fragment, null,
+    createElement(GroupAppStateSubscription, { owner }),
+    createElement(VisibleGroupSeed, { key: 'seed:' + seedInput.generation, actorId: owner.myUserId, state: owner.seedState }),
+    createElement(GroupOutboxProjection, { key: 'projection:' + projectionInput.generation, owner }),
+    createElement(GroupIdentityHydration, { key: 'identity:' + identityInput.generation, owner }),
+    createElement(GroupForegroundRealtime, { key: 'realtime:' + realtimeInput.generation, owner }),
+    createElement(GroupProfilesChannel, { key: 'profiles:' + profilesInput.generation, owner }),
+  );
+}
+
+export function useGroupState(groupId: string | null, options: UseGroupStateOptions = {}): UseGroupStateResult {
+  const owner = useGroupStateOwner(groupId, options);
+  return { ...owner.snapshot, lifecycle: createElement(GroupStateLifecycle, { owner }) };
 }

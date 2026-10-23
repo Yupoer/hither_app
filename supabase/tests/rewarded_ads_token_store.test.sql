@@ -1,11 +1,20 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(16);
+select plan(19);
 
 insert into auth.users (id, email, is_anonymous) values
   ('a7111111-1111-4111-8111-111111111111', 'reward-member@example.test', false),
   ('a7222222-2222-4222-8222-222222222222', 'reward-anon@example.test', true);
+
+select ok(
+  not has_function_privilege('authenticated', 'public.credit_rewarded_ad_transaction(text,text,text,text,text,text)', 'EXECUTE'),
+  'clients cannot credit their own rewarded ads'
+);
+select ok(
+  has_function_privilege('service_role', 'public.credit_rewarded_ad_transaction(text,text,text,text,text,text)', 'EXECUTE'),
+  'the SSV callback role can credit rewarded ads'
+);
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a7222222-2222-4222-8222-222222222222', true);
@@ -58,11 +67,19 @@ select is((select balance from public.token_wallets where user_id = 'a7111111-11
 select is((select count(*)::int from public.token_ledger where external_ref = 'gtxn:reward-test-transaction'),
   1, 'replay leaves one durable ledger entry');
 
+-- Exercise the declared row policy independently of environment default grants.
+grant select on public.token_wallets to authenticated;
 set local role authenticated;
-select throws_ok(
-  $$select balance from public.token_wallets where user_id = 'a7111111-1111-4111-8111-111111111111'$$,
-  '42501', null, 'member cannot bypass the store RPC to read wallets'
+select is(
+  (select balance from public.token_wallets where user_id = 'a7111111-1111-4111-8111-111111111111'),
+  1, 'member can read its own wallet under RLS'
 );
+select set_config('request.jwt.claim.sub', 'a7222222-2222-4222-8222-222222222222', true);
+select is(
+  (select count(*) from public.token_wallets where user_id = 'a7111111-1111-4111-8111-111111111111'),
+  0::bigint, 'another user cannot read the credited wallet under RLS'
+);
+select set_config('request.jwt.claim.sub', 'a7111111-1111-4111-8111-111111111111', true);
 select is(public.get_store_snapshot()->>'balance',
   '1', 'member can read its own credited wallet through the store RPC');
 select is(public.create_reward_session('ios')->>'ok', 'true',

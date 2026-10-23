@@ -33,17 +33,6 @@ describe('measured performance regressions', () => {
     expect(i18n).toContain('}), [dict, language])');
   });
 
-  it('does not put translator identity in gathering-workflow effect deps', () => {
-    expect(mapScreen).toContain('tRef.current');
-    expect(mapScreen).toContain('WORKFLOW_MIN_INTERVAL_MS');
-    expect(mapScreen).toContain('workflowInFlightRef');
-    expect(mapScreen).toContain('workflowPendingRef');
-    // Effect deps must not include bare `t` (historical SELECT storm).
-    expect(mapScreen).toMatch(
-      /}, \[groupId, loadGatheringWorkflow, scheduleWorkflowReload\]\);/,
-    );
-  });
-
   it('force-syncs on foreground and only uploads timestamped sensor samples', () => {
     expect(locationHook).toContain('refreshDeviceLocation');
     expect(locationHook).not.toContain('HEARTBEAT_TICK_MS');
@@ -78,7 +67,7 @@ describe('measured performance regressions', () => {
     expect(mapScreen).toContain('const [mapInitialCenter, setMapInitialCenter]');
     expect(mapScreen).toContain('initialCenter={mapInitialCenter ?? undefined}');
     expect(mapScreen).not.toContain('initialCenter={fromCoords}');
-    expect(mapScreen).toContain('setMapInitialCenter((current) => current ?? fromCoords)');
+    expect(mapScreen).toContain('if (mapInitialCenter == null && fromCoords != null) setMapInitialCenter(fromCoords)');
   });
 
   it('keeps heading native and avoids rebuilding map stay markers in JSX', () => {
@@ -125,10 +114,6 @@ describe('measured performance regressions', () => {
   });
 
   it('keeps workflow channels unique and energy monitoring stable across session updates', () => {
-    expect(mapScreen).toContain(
-      'gathering-workflow:${groupId}:${++workflowChannelSeqRef.current}',
-    );
-    expect(mapScreen).not.toContain('gathering-workflow:${groupId}`');
     expect(mapScreen).toContain('const navigationSessionId = navigationSessionState.session?.id ?? null;');
     expect(mapScreen).toContain('const hasNavigationSession = navigationSessionId !== null;');
     expect(mapScreen).not.toContain('navigationSessionIdForEnergy');

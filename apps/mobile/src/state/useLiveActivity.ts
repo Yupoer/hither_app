@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { createElement, Fragment, useRef, useState, type RefObject } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import { AppState, Platform } from 'react-native';
 import {
   deleteLiveActivitySession,
@@ -61,12 +62,14 @@ export async function clearLiveActivities(opts?: {
   }
 }
 
-export function useLiveActivity(
-  active: boolean | undefined,
-  state: GroupActivityState,
-  session?: LiveActivitySessionContext,
-  liveActivitiesEnabled = true,
-): void {
+export interface LiveActivityRuntimeProps {
+  active: boolean | undefined;
+  state: GroupActivityState;
+  session?: LiveActivitySessionContext;
+  liveActivitiesEnabled?: boolean;
+}
+
+export function LiveActivityRuntime({ active, state, session, liveActivitiesEnabled = true }: LiveActivityRuntimeProps) {
   const { user } = useSession();
   const foreground = useForegroundUi();
   const lastPersistAtRef = useRef(0);
@@ -154,7 +157,100 @@ export function useLiveActivity(
     lastPersistedTravelModeRef.current = currentSession.travelMode;
   };
 
-  useEffect(() => {
+  const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
+  // BUG-05: emoji changes must also push a Live Activity update.
+  const emojiSignature = state.memberEmojis?.join(',') ?? '';
+  const destinationEmojiSig = state.destinationEmoji ?? '';
+
+  return createElement(LiveActivityResources, {
+    reconcilerRef,
+    activeRef,
+    sessionRef,
+    persistSession,
+    session,
+    pushToStartTokenRef,
+    deviceIdRef,
+    userIdRef,
+    enabledRef,
+    stateRef,
+    state,
+    userId: user?.id,
+    liveActivitiesEnabled,
+    active,
+    currentScopedState,
+    foreground,
+    lastDisplayRef,
+    arrivalSignature,
+    emojiSignature,
+    destinationEmojiSig,
+    displayQueueRef,
+    navigationSessionId: session?.navigationSessionId,
+    stateAccentHex: state.accentHex,
+    destinationId: session?.destinationId,
+    stateStatus: state.status,
+    statePersonalArrived: state.personalArrived,
+    statePersonalArrivalAtMs: state.personalArrivalAtMs,
+    statePersonalArrivalSequence: state.personalArrivalSequence,
+    stateLanguage: state.language,
+    stateSampledAtMs: state.sampledAtMs,
+    stateEtaTargetAtMs: state.etaTargetAtMs,
+    stateDistanceMeters: state.distanceMeters,
+    stateEtaSeconds: state.etaSeconds,
+    stateProgress: state.progress,
+    stateGatheredCount: state.gatheredCount,
+    stateMemberCount: state.memberCount,
+    stateGatheringTitle: state.gatheringTitle,
+    stateGroupName: state.groupName,
+    stateTravelMode: state.travelMode,
+  });
+}
+
+interface LiveActivityResourceInput {
+  reconcilerRef: RefObject<LiveActivityLifecycleReconciler | null>;
+  activeRef: RefObject<boolean | undefined>;
+  sessionRef: RefObject<LiveActivitySessionContext | undefined>;
+  persistSession: (activityId: string, opts?: { force?: boolean; }) => Promise<void>;
+  session: LiveActivitySessionContext | undefined;
+  pushToStartTokenRef: RefObject<string | null>;
+  deviceIdRef: RefObject<string | null>;
+  userIdRef: RefObject<string | null>;
+  enabledRef: RefObject<boolean>;
+  stateRef: RefObject<GroupActivityState>;
+  state: GroupActivityState;
+  userId: string | undefined;
+  liveActivitiesEnabled: boolean;
+  active: boolean | undefined;
+  currentScopedState: () => GroupActivityState;
+  foreground: boolean;
+  lastDisplayRef: RefObject<{ at: number; semantic: string; payload: string; }>;
+  arrivalSignature: string | undefined;
+  emojiSignature: string;
+  destinationEmojiSig: string;
+  displayQueueRef: RefObject<Promise<void>>;
+  navigationSessionId: string | undefined;
+  stateAccentHex: GroupActivityState['accentHex'];
+  destinationId: string | undefined;
+  stateStatus: GroupActivityState['status'];
+  statePersonalArrived: GroupActivityState['personalArrived'];
+  statePersonalArrivalAtMs: GroupActivityState['personalArrivalAtMs'];
+  statePersonalArrivalSequence: GroupActivityState['personalArrivalSequence'];
+  stateLanguage: GroupActivityState['language'];
+  stateSampledAtMs: GroupActivityState['sampledAtMs'];
+  stateEtaTargetAtMs: GroupActivityState['etaTargetAtMs'];
+  stateDistanceMeters: GroupActivityState['distanceMeters'];
+  stateEtaSeconds: GroupActivityState['etaSeconds'];
+  stateProgress: GroupActivityState['progress'];
+  stateGatheredCount: GroupActivityState['gatheredCount'];
+  stateMemberCount: GroupActivityState['memberCount'];
+  stateGatheringTitle: GroupActivityState['gatheringTitle'];
+  stateGroupName: GroupActivityState['groupName'];
+  stateTravelMode: GroupActivityState['travelMode'];
+}
+
+function LiveActivityPushTokens({
+  reconcilerRef, activeRef, sessionRef, persistSession,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     const subscription = liveActivity.addPushTokenListener((event) => {
       const reconciler = reconcilerRef.current;
       if (!reconciler || activeRef.current !== true || !sessionRef.current?.destinationId) return;
@@ -186,16 +282,25 @@ export function useLiveActivity(
     });
     return () => subscription.remove();
     // The listener reads mutable refs so token rotation never resubscribes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  });
+  return null;
+}
 
-  useEffect(() => {
+function LiveActivitySessionObservation({
+  session,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     if (session?.navigationSessionId) {
       void liveActivity.observeExistingActivities().catch(() => undefined);
     }
-  }, [session?.navigationSessionId]);
+  });
+  return null;
+}
 
-  useEffect(() => {
+function LiveActivityPushToStartTokens({
+  pushToStartTokenRef, deviceIdRef, userIdRef, enabledRef, stateRef,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     let cancelled = false;
     const persistToken = async (token: string | null) => {
       pushToStartTokenRef.current = token;
@@ -246,16 +351,26 @@ export function useLiveActivity(
       cancelled = true;
       subscription.remove();
     };
-  }, []);
+  });
+  return null;
+}
 
-  useEffect(() => {
-    if (!user?.id || !state.accentHex) return;
+function LiveActivityAccent({
+  state, userId,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
+    if (!userId || !state.accentHex) return;
     void getOrCreateLiveActivityDeviceId().then((id) =>
       updateDeviceActivityAccent(id, state.accentHex!),
     ).catch(() => undefined);
-  }, [user?.id, state.accentHex]);
+  });
+  return null;
+}
 
-  useEffect(() => {
+function LiveActivityTokenPolicy({
+  deviceIdRef, userIdRef, pushToStartTokenRef, liveActivitiesEnabled, stateRef,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     const deviceId = deviceIdRef.current;
     const uid = userIdRef.current;
     if (!deviceId || !uid) return;
@@ -286,10 +401,15 @@ export function useLiveActivity(
           recordTokenRegisterResult('unknown_error');
         });
     });
-  }, [liveActivitiesEnabled, user?.id]);
+  });
+  return null;
+}
 
-  // Generation-aware start/stop (#146) — serialized; stale end-all cannot kill new activity.
-  useEffect(() => {
+// Keep intent generations in the stable reconciler across input-job replacements.
+function LiveActivityJourneyIntent({
+  reconcilerRef, active, session, sessionRef, currentScopedState, persistSession,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     const reconciler = reconcilerRef.current;
     if (!reconciler) return;
 
@@ -313,22 +433,26 @@ export function useLiveActivity(
     } else if (active && !session) {
       // Active journey but session not ready yet — leave existing activity alone.
     } // Unknown/hydrating state must not end a native activity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, session?.destinationId, session?.navigationSessionId]);
+  });
+  return null;
+}
 
-
-  const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
-  // BUG-05: emoji changes must also push a Live Activity update.
-  const emojiSignature = state.memberEmojis?.join(',') ?? '';
-  const destinationEmojiSig = state.destinationEmoji ?? '';
-
-  useEffect(() => {
+function LiveActivityResumeDisplay({
+  foreground, lastDisplayRef,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     // Native may have received a newer headless update while hidden. Returning
     // to the foreground sends the current snapshot without changing its ETA.
     if (!foreground) lastDisplayRef.current = { at: 0, semantic: '', payload: '' };
-  }, [foreground]);
+  });
+  return null;
+}
 
-  useEffect(() => {
+function LiveActivityDisplayDelivery({
+  reconcilerRef, active, session, foreground, state, arrivalSignature, emojiSignature, destinationEmojiSig,
+  currentScopedState, lastDisplayRef, displayQueueRef, sessionRef, persistSession,
+}: LiveActivityResourceInput) {
+  useMountEffect(() => {
     const handle = reconcilerRef.current?.currentHandle;
     if (!active || !handle || !session || !reconcilerRef.current?.ownsScope(session.destinationId, session.navigationSessionId)
       || !foreground || AppState.currentState !== 'active') return;
@@ -347,6 +471,8 @@ export function useLiveActivity(
         const latestPayload = JSON.stringify(latestState);
         if (lastDisplayRef.current.payload === latestPayload) return;
         await liveActivity.updateGroupActivity(handle, latestState);
+        // A canceled send cannot restore the throttle after the background reset.
+        if (cancelled || !isForegroundUi() || reconcilerRef.current?.currentHandle !== handle) return;
         // Only successful native delivery advances the throttle / dedupe state.
         lastDisplayRef.current = { at: Date.now(), semantic, payload: latestPayload };
         await persistSession(handle);
@@ -356,30 +482,91 @@ export function useLiveActivity(
     const timer = waitMs > 0 ? setTimeout(send, waitMs) : undefined;
     if (waitMs === 0) send();
     return () => { cancelled = true; if (timer != null) clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    active,
-    foreground,
-    session?.destinationId,
-    session?.navigationSessionId,
-    state.status,
-    state.personalArrived,
-    state.personalArrivalAtMs,
-    state.personalArrivalSequence,
-    state.language,
-    state.sampledAtMs,
-    state.etaTargetAtMs,
-    state.distanceMeters,
-    state.etaSeconds,
-    state.progress,
-    state.gatheredCount,
-    state.memberCount,
-    state.gatheringTitle,
-    state.groupName,
-    state.accentHex,
-    state.travelMode,
-    arrivalSignature,
-    emojiSignature,
-    destinationEmojiSig,
-  ]);
+  });
+  return null;
+}
+
+function LiveActivityResources(input: LiveActivityResourceInput) {
+  const {
+    navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground, stateStatus,
+    statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, stateLanguage, stateSampledAtMs,
+    stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount, stateMemberCount,
+    stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationEmojiSig,
+  } = input;
+  const [previous, setPrevious] = useState({
+    navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground, stateStatus,
+    statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, stateLanguage, stateSampledAtMs,
+    stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount, stateMemberCount,
+    stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationEmojiSig,
+    LiveActivitySessionObservationGeneration: 0, LiveActivityAccentGeneration: 0, LiveActivityTokenPolicyGeneration: 0,
+    LiveActivityJourneyIntentGeneration: 0, LiveActivityResumeDisplayGeneration: 0,
+    LiveActivityDisplayDeliveryGeneration: 0,
+  });
+  const LiveActivitySessionObservationChanged =
+    !Object.is(previous.navigationSessionId, navigationSessionId);
+  const LiveActivityAccentChanged =
+    !Object.is(previous.userId, userId)
+    || !Object.is(previous.stateAccentHex, stateAccentHex);
+  const LiveActivityTokenPolicyChanged =
+    !Object.is(previous.liveActivitiesEnabled, liveActivitiesEnabled)
+    || !Object.is(previous.userId, userId);
+  const LiveActivityJourneyIntentChanged =
+    !Object.is(previous.active, active)
+    || !Object.is(previous.destinationId, destinationId)
+    || !Object.is(previous.navigationSessionId, navigationSessionId);
+  const LiveActivityResumeDisplayChanged =
+    !Object.is(previous.foreground, foreground);
+  const LiveActivityDisplayDeliveryChanged =
+    !Object.is(previous.active, active)
+    || !Object.is(previous.foreground, foreground)
+    || !Object.is(previous.destinationId, destinationId)
+    || !Object.is(previous.navigationSessionId, navigationSessionId)
+    || !Object.is(previous.stateStatus, stateStatus)
+    || !Object.is(previous.statePersonalArrived, statePersonalArrived)
+    || !Object.is(previous.statePersonalArrivalAtMs, statePersonalArrivalAtMs)
+    || !Object.is(previous.statePersonalArrivalSequence, statePersonalArrivalSequence)
+    || !Object.is(previous.stateLanguage, stateLanguage)
+    || !Object.is(previous.stateSampledAtMs, stateSampledAtMs)
+    || !Object.is(previous.stateEtaTargetAtMs, stateEtaTargetAtMs)
+    || !Object.is(previous.stateDistanceMeters, stateDistanceMeters)
+    || !Object.is(previous.stateEtaSeconds, stateEtaSeconds)
+    || !Object.is(previous.stateProgress, stateProgress)
+    || !Object.is(previous.stateGatheredCount, stateGatheredCount)
+    || !Object.is(previous.stateMemberCount, stateMemberCount)
+    || !Object.is(previous.stateGatheringTitle, stateGatheringTitle)
+    || !Object.is(previous.stateGroupName, stateGroupName)
+    || !Object.is(previous.stateAccentHex, stateAccentHex)
+    || !Object.is(previous.stateTravelMode, stateTravelMode)
+    || !Object.is(previous.arrivalSignature, arrivalSignature)
+    || !Object.is(previous.emojiSignature, emojiSignature)
+    || !Object.is(previous.destinationEmojiSig, destinationEmojiSig);
+  if (LiveActivitySessionObservationChanged
+    || LiveActivityAccentChanged
+    || LiveActivityTokenPolicyChanged
+    || LiveActivityJourneyIntentChanged
+    || LiveActivityResumeDisplayChanged
+    || LiveActivityDisplayDeliveryChanged) {
+    setPrevious({
+      navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground,
+      stateStatus, statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, stateLanguage,
+      stateSampledAtMs, stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount,
+      stateMemberCount, stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature,
+      destinationEmojiSig,
+      LiveActivitySessionObservationGeneration: previous.LiveActivitySessionObservationGeneration + (LiveActivitySessionObservationChanged ? 1 : 0),
+      LiveActivityAccentGeneration: previous.LiveActivityAccentGeneration + (LiveActivityAccentChanged ? 1 : 0),
+      LiveActivityTokenPolicyGeneration: previous.LiveActivityTokenPolicyGeneration + (LiveActivityTokenPolicyChanged ? 1 : 0),
+      LiveActivityJourneyIntentGeneration: previous.LiveActivityJourneyIntentGeneration + (LiveActivityJourneyIntentChanged ? 1 : 0),
+      LiveActivityResumeDisplayGeneration: previous.LiveActivityResumeDisplayGeneration + (LiveActivityResumeDisplayChanged ? 1 : 0),
+      LiveActivityDisplayDeliveryGeneration: previous.LiveActivityDisplayDeliveryGeneration + (LiveActivityDisplayDeliveryChanged ? 1 : 0) });
+  }
+  return createElement(Fragment, null,
+    createElement(LiveActivityPushTokens, { ...input, key: 'LiveActivityPushTokens' }),
+    createElement(LiveActivitySessionObservation, { ...input, key: 'LiveActivitySessionObservation:' + previous.LiveActivitySessionObservationGeneration }),
+    createElement(LiveActivityPushToStartTokens, { ...input, key: 'LiveActivityPushToStartTokens' }),
+    createElement(LiveActivityAccent, { ...input, key: 'LiveActivityAccent:' + previous.LiveActivityAccentGeneration }),
+    createElement(LiveActivityTokenPolicy, { ...input, key: 'LiveActivityTokenPolicy:' + previous.LiveActivityTokenPolicyGeneration }),
+    createElement(LiveActivityJourneyIntent, { ...input, key: 'LiveActivityJourneyIntent:' + previous.LiveActivityJourneyIntentGeneration }),
+    createElement(LiveActivityResumeDisplay, { ...input, key: 'LiveActivityResumeDisplay:' + previous.LiveActivityResumeDisplayGeneration }),
+    createElement(LiveActivityDisplayDelivery, { ...input, key: 'LiveActivityDisplayDelivery:' + previous.LiveActivityDisplayDeliveryGeneration })
+  );
 }

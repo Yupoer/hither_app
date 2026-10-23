@@ -5,7 +5,7 @@
 // Live Activity / push-to-start remain iOS/APNs only.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { commandSenderIsAuthorized, secureEqual } from "./auth.ts";
+import { commandSenderIsAuthorized, webhookAuthorization } from "./auth.ts";
 import { isExpiredPush } from "./deadline.ts";
 import {
   providerToken,
@@ -17,7 +17,6 @@ import {
   sendLiveActivityApns,
   sendLiveActivityStartApns,
   type ApnsConfig,
-  type ApnsResult,
   type LiveActivityContentState,
 } from "./apns.ts";
 import {
@@ -25,8 +24,18 @@ import {
   readFcmConfig,
   sendFcm,
   sendFcmData,
-  type FcmResult,
+  type FcmConfig,
 } from "./fcm.ts";
+import {
+  deadTokens,
+  deliverProvider,
+  deliveryStatus,
+  emptyReport,
+  mergeReports,
+  summarizeDelivery,
+  withControlDelivery,
+  type DeliveryReport,
+} from "./delivery.ts";
 import {
   buildMessage,
   shouldSendAlert,
@@ -75,10 +84,6 @@ interface DeviceTokenRow {
   token: string;
   platform: "ios" | "android";
 }
-
-type PushResult =
-  | (ApnsResult & { provider: "apns" })
-  | FcmResult;
 
 function readSupabaseAdminKey(): string {
   const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
@@ -197,106 +202,72 @@ async function enrichNotificationPayload(payload: PushPayload): Promise<PushPayl
   };
 }
 
+function requireFcmConfig(): FcmConfig {
+  const cfg = readFcmConfig();
+  if (!cfg) {
+    throw new Error("Missing FCM config: set FIREBASE_SERVICE_ACCOUNT_JSON for Android tokens");
+  }
+  return cfg;
+}
+
 async function sendAlerts(
   tokenRows: DeviceTokenRow[],
   payload: PushPayload,
-): Promise<PushResult[]> {
-  if (tokenRows.length === 0) return [];
-  if (!shouldSendAlert(payload)) return [];
+): Promise<DeliveryReport> {
+  if (tokenRows.length === 0 || !shouldSendAlert(payload)) return emptyReport();
   const { ios, android } = splitByPlatform(tokenRows);
   const { title, body } = buildMessage(payload);
   const data = alertData(payload);
-  const results: PushResult[] = [];
 
-  if (ios.length > 0) {
-    const cfg = readApnsConfig();
-    const jwt = await providerToken(cfg);
-    const apnsResults = await Promise.all(
-      ios.map(({ token, user_id }) =>
-        sendApns(cfg, jwt, token, { title, body, data: { ...data, recipientId: user_id } }).then(
-          (r): PushResult => ({ ...r, provider: "apns" }),
-        )),
-    );
-    results.push(...apnsResults);
-  }
-
-  if (android.length > 0) {
-    const cfg = readFcmConfig();
-    if (!cfg) {
-      throw new Error(
-        "Missing FCM config: set FIREBASE_SERVICE_ACCOUNT_JSON for Android tokens",
-      );
-    }
-    const access = await fcmAccessToken(cfg);
-    const fcmResults = await Promise.all(
-      android.map(({ token, user_id }) => sendFcm(cfg, access, token, { title, body, data: { ...data, recipientId: user_id } })),
-    );
-    results.push(...fcmResults);
-  }
-
-  return results;
+  return mergeReports(...await Promise.all([
+    deliverProvider("apns", ios, async () => {
+      const cfg = readApnsConfig();
+      const jwt = await providerToken(cfg);
+      return ({ token, user_id }) =>
+        sendApns(cfg, jwt, token, { title, body, data: { ...data, recipientId: user_id } });
+    }),
+    deliverProvider("fcm", android, async () => {
+      const cfg = requireFcmConfig();
+      const access = await fcmAccessToken(cfg);
+      return ({ token, user_id }) =>
+        sendFcm(cfg, access, token, { title, body, data: { ...data, recipientId: user_id } });
+    }),
+  ]));
 }
 
 async function sendBackgroundLocationRefreshes(
   tokenRows: DeviceTokenRow[],
   payload: PushPayload,
-): Promise<PushResult[]> {
-  if (tokenRows.length === 0) return [];
+): Promise<DeliveryReport> {
+  if (tokenRows.length === 0) return emptyReport();
   const { ios, android } = splitByPlatform(tokenRows);
-  const results: PushResult[] = [];
+  const category = payload.category === "navigation_session" ? "navigation_session" : "location_refresh";
 
-  if (ios.length > 0) {
-    const cfg = readApnsConfig();
-    const jwt = await providerToken(cfg);
-    const apnsResults = await Promise.all(
-      ios.map(({ token }) =>
-        sendBackgroundLocationRefresh(cfg, jwt, token, {
-          category: payload.category === "navigation_session" ? "navigation_session" : "location_refresh",
-          groupId: payload.group_id,
-        }).then((r): PushResult => ({ ...r, provider: "apns" }))),
-    );
-    results.push(...apnsResults);
-  }
-
-  if (android.length > 0) {
-    const cfg = readFcmConfig();
-    if (!cfg) {
-      throw new Error(
-        "Missing FCM config: set FIREBASE_SERVICE_ACCOUNT_JSON for Android tokens",
-      );
-    }
-    const access = await fcmAccessToken(cfg);
-    const fcmResults = await Promise.all(
-      android.map(({ token }) =>
-        sendFcmData(cfg, access, token, {
-          data: {
-            category: payload.category === "navigation_session" ? "navigation_session" : "location_refresh",
-            groupId: payload.group_id,
-          },
-        })),
-    );
-    results.push(...fcmResults);
-  }
-
-  return results;
-}
-
-function summarizePushResults(results: PushResult[]) {
-  const apnsSent = results.filter((r) => r.provider === "apns" && r.status === 200).length;
-  const fcmSent = results.filter((r) => r.provider === "fcm" && r.status === 200).length;
-  return { apnsSent, fcmSent, sent: apnsSent + fcmSent };
+  return mergeReports(...await Promise.all([
+    deliverProvider("apns", ios, async () => {
+      const cfg = readApnsConfig();
+      const jwt = await providerToken(cfg);
+      return ({ token }) =>
+        sendBackgroundLocationRefresh(cfg, jwt, token, { category, groupId: payload.group_id });
+    }),
+    deliverProvider("fcm", android, async () => {
+      const cfg = requireFcmConfig();
+      const access = await fcmAccessToken(cfg);
+      return ({ token }) =>
+        sendFcmData(cfg, access, token, { data: { category, groupId: payload.group_id } });
+    }),
+  ]));
 }
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
-  const webhookSecret = Deno.env.get("PUSH_WEBHOOK_SECRET");
-  if (!webhookSecret) return json({ error: "webhook secret not configured" }, 500);
-
-  const suppliedSecret = req.headers.get("x-hither-webhook-secret") ?? "";
-  if (!secureEqual(suppliedSecret, webhookSecret)) {
-    return json({ error: "unauthorized" }, 401);
-  }
+  const authorization = webhookAuthorization(
+    Deno.env.get("PUSH_WEBHOOK_SECRET"),
+    req.headers.get("x-hither-webhook-secret"),
+  );
+  if (authorization === "not_configured") return json({ error: "webhook secret not configured" }, 500);
+  if (authorization === "unauthorized") return json({ error: "unauthorized" }, 401);
 
   let payload: PushPayload;
   try {
@@ -422,46 +393,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Only require APNs secrets when ios tokens or Live Activity sessions exist.
-    // Only require FCM when android tokens exist. Missing the unused provider
-    // must not fail the whole batch.
-    const needsApns =
-      tokenRows.some((r) => r.platform === "ios") ||
-      refreshTokenRows.some((r) => r.platform === "ios") ||
-      liveSessions.length > 0;
-    const needsFcm =
-      tokenRows.some((r) => r.platform === "android") ||
-      refreshTokenRows.some((r) => r.platform === "android");
+    const [alertReport, refreshReport, liveReport] = await Promise.all([
+      sendAlerts(tokenRows, payload),
+      sendBackgroundLocationRefreshes(refreshTokenRows, payload),
+      sendLiveActivities(liveSessions, members, memberByUser, payload),
+    ]);
+    const deviceReport = mergeReports(alertReport, refreshReport);
 
-    if (needsApns) {
-      // Throws if APNs secrets missing — only when ios path is required.
-      readApnsConfig();
-    }
-    if (needsFcm && !readFcmConfig()) {
-      throw new Error(
-        "Missing FCM config: set FIREBASE_SERVICE_ACCOUNT_JSON for Android tokens",
-      );
-    }
-
-    const alertResults = await sendAlerts(tokenRows, payload);
-    const refreshResults = await sendBackgroundLocationRefreshes(
-      refreshTokenRows,
-      payload,
-    );
-    const liveResults = liveSessions.length > 0
-      ? await sendLiveActivities(liveSessions, members, memberByUser, payload)
-      : [];
-
-    const deadDeviceTokens = [...alertResults, ...refreshResults]
-      .filter((result) => result.dead)
-      .map((result) => result.token);
+    const deadDeviceTokens = deadTokens(deviceReport);
     if (deadDeviceTokens.length > 0) {
       await supabase.from("push_tokens").delete().in("token", deadDeviceTokens);
     }
 
-    const deadActivityTokens = liveResults
-      .filter((result) => result.dead)
-      .map((result) => result.token);
+    const deadActivityTokens = deadTokens(liveReport);
     if (deadActivityTokens.length > 0) {
       await supabase
         .from("live_activity_sessions")
@@ -477,18 +421,23 @@ Deno.serve(async (req) => {
         .eq("group_id", payload.group_id).in("user_id", mainUsers);
     }
 
-    const deviceSummary = summarizePushResults([...alertResults, ...refreshResults]);
+    const deviceSummary = summarizeDelivery(deviceReport);
+    const liveSummary = summarizeDelivery(liveReport);
+    const allDeliveries = mergeReports(deviceReport, liveReport);
     return json({
       sent: deviceSummary.sent,
       apnsSent: deviceSummary.apnsSent,
       fcmSent: deviceSummary.fcmSent,
+      rejected: deviceSummary.rejected + liveSummary.rejected,
+      failed: deviceSummary.failed + liveSummary.failed,
       total: tokenRows.length + refreshTokenRows.length,
-      locationRefreshSent: refreshResults.filter((result) => result.status === 200).length,
+      locationRefreshSent: summarizeDelivery(refreshReport).sent,
       locationRefreshTotal: refreshTokenRows.length,
-      liveActivitySent: liveResults.filter((result) => result.status === 200).length,
+      liveActivitySent: liveSummary.sent,
       liveActivityTotal: liveSessions.length,
       pruned: deadDeviceTokens.length + deadActivityTokens.length,
-    });
+      providerFailures: allDeliveries.failures,
+    }, deliveryStatus(allDeliveries));
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
     console.error("send-push failed", message);
@@ -523,7 +472,8 @@ async function handleNavigationSession(
   members = navigationScopeMembers(members, target.scope_subgroup_id);
   const controlTokens = await loadTokenRows(members.filter(member => !member.solo
     && member.user_id !== payload.sender_id).map(member => member.user_id));
-  await sendBackgroundLocationRefreshes(controlTokens, payload).catch(() => console.warn("navigation_control_delivery_failed"));
+  const controlReport = await sendBackgroundLocationRefreshes(controlTokens, payload);
+  if (controlReport.failures.length > 0) console.warn("navigation_control_delivery_failed");
 
   const eligibleUserIds = await filterNotificationPreferences(
     members.filter((member) => !member.solo).map((member) => member.user_id),
@@ -562,7 +512,7 @@ async function handleNavigationSession(
     );
     // Reuse existing handles when switching; they must not keep the old destination.
     const existingUsers = eligibleUserIds.filter(id => usersWithHandle.has(id));
-    let existingResults: ApnsResult[] = [];
+    let existingReport = emptyReport();
     if (existingUsers.length) {
       const { error } = await supabase.from("live_activity_sessions")
         .update({ destination_id: payload.destination_id, current_distance_m: 0,
@@ -572,7 +522,7 @@ async function handleNavigationSession(
       if (error) throw error;
       const handles = (await loadLiveSessions(payload, members, sender))
         .filter(row => existingUsers.includes(row.user_id));
-      existingResults = await sendLiveActivities(handles, members, memberByUser, payload);
+      existingReport = await sendLiveActivities(handles, members, memberByUser, payload);
     }
     // Starter starts locally; devices that already have a handle must not PTS.
     const startRows = startRowsRaw.filter(
@@ -584,12 +534,8 @@ async function handleNavigationSession(
     );
     const fallbackTokenRows = await loadTokenRows(fallbackUserIds);
 
-    // Live Activity start is iOS-only; require APNs only when start tokens exist
-    // or fallback includes ios tokens. FCM only when android fallbacks exist.
-    let startResults: ApnsResult[] = existingResults;
+    let startReport = emptyReport();
     if (startRows.length > 0) {
-      const cfg = readApnsConfig();
-      const jwt = await providerToken(cfg);
       const timestamp = Math.floor(Date.now() / 1000);
       const groupName = (groupResponse.data?.name as string | undefined) ?? "Hither";
       const gatheringTitle =
@@ -612,8 +558,11 @@ async function handleNavigationSession(
         (member) => avatarByUser.get(member.user_id) ?? "🙂",
       );
       const memberArrived = visibleMembers.map(member => arrivedIds.has(member.user_id));
-      startResults = [...existingResults, ...await Promise.all(
-        startRows.map((row) =>
+      // Live Activity start is iOS-only.
+      startReport = await deliverProvider("apns", startRows, async () => {
+        const cfg = readApnsConfig();
+        const jwt = await providerToken(cfg);
+        return (row) =>
           sendLiveActivityStartApns(cfg, jwt, row.push_to_start_token, {
             timestamp,
             attributesType: "HitherGroupAttributes",
@@ -631,14 +580,12 @@ async function handleNavigationSession(
               memberEmojis,
               memberArrived,
             },
-          })),
-      )];
+          });
+      });
     }
 
-    let fallbackResults = await sendAlerts(fallbackTokenRows, payload);
-    const deadStartTokens = startResults.filter(result => startRows.some(row => row.push_to_start_token === result.token))
-      .filter((result) => result.dead)
-      .map((result) => result.token);
+    let fallbackReport = await sendAlerts(fallbackTokenRows, payload);
+    const deadStartTokens = deadTokens(startReport);
     if (deadStartTokens.length > 0) {
       await supabase
         .from("device_live_activity_tokens")
@@ -649,38 +596,38 @@ async function handleNavigationSession(
         .map((row) => row.user_id)
         .filter((userId) => userId !== payload.sender_id);
       const deadStartFallbackRows = await loadTokenRows(deadStartUsers);
-      fallbackResults = [
-        ...fallbackResults,
-        ...await sendAlerts(deadStartFallbackRows, payload),
-      ];
+      fallbackReport = mergeReports(fallbackReport, await sendAlerts(deadStartFallbackRows, payload));
     }
-    const deadFallbackTokens = fallbackResults
-      .filter((result) => result.dead)
-      .map((result) => result.token);
+    const deadFallbackTokens = deadTokens(fallbackReport);
     if (deadFallbackTokens.length > 0) {
       await supabase.from("push_tokens").delete().in("token", deadFallbackTokens);
     }
-    const fallbackSummary = summarizePushResults(fallbackResults);
+    const fallbackSummary = summarizeDelivery(fallbackReport);
+    const activitySummary = summarizeDelivery(mergeReports(existingReport, startReport));
+    const delivery = withControlDelivery(
+      controlReport,
+      mergeReports(existingReport, startReport, fallbackReport),
+    );
     return json({
       sent: fallbackSummary.sent,
-      apnsSent: fallbackSummary.apnsSent +
-        startResults.filter((r) => r.status === 200).length,
+      apnsSent: fallbackSummary.apnsSent + activitySummary.sent,
       fcmSent: fallbackSummary.fcmSent,
-      liveActivitySent: startResults.filter((result) => result.status === 200).length,
+      rejected: fallbackSummary.rejected + activitySummary.rejected,
+      failed: fallbackSummary.failed + activitySummary.failed,
+      liveActivitySent: activitySummary.sent,
       fallbackTotal: fallbackUserIds.length,
       liveActivityTotal: startRows.length,
       total: fallbackTokenRows.length + startRows.length,
+      controlSent: delivery.controlSent,
+      controlTotal: controlTokens.length,
       pruned: deadStartTokens.length + deadFallbackTokens.length,
-    });
+      providerFailures: delivery.providerFailures,
+    }, delivery.status);
   }
 
   const sessions = await loadLiveSessions(payload, members, sender);
-  const activityResults = sessions.length > 0
-    ? await sendLiveActivities(sessions, members, memberByUser, payload)
-    : [];
-  const deadActivityTokens = activityResults
-    .filter((result) => result.dead)
-    .map((result) => result.token);
+  const activityReport = await sendLiveActivities(sessions, members, memberByUser, payload);
+  const deadActivityTokens = deadTokens(activityReport);
   if (deadActivityTokens.length > 0) {
     await supabase
       .from("live_activity_sessions")
@@ -691,15 +638,22 @@ async function handleNavigationSession(
     await supabase.from("live_activity_sessions").delete().eq("group_id", payload.group_id)
       .eq("destination_id", payload.destination_id);
   }
+  const activitySummary = summarizeDelivery(activityReport);
+  const delivery = withControlDelivery(controlReport, activityReport);
   return json({
     sent: 0,
-    apnsSent: activityResults.filter((result) => result.status === 200).length,
+    apnsSent: activitySummary.sent,
     fcmSent: 0,
-    liveActivitySent: activityResults.filter((result) => result.status === 200).length,
+    rejected: activitySummary.rejected,
+    failed: activitySummary.failed,
+    liveActivitySent: activitySummary.sent,
     liveActivityTotal: sessions.length,
     total: sessions.length,
+    controlSent: delivery.controlSent,
+    controlTotal: controlTokens.length,
     pruned: deadActivityTokens.length,
-  });
+    providerFailures: delivery.providerFailures,
+  }, delivery.status);
 }
 
 async function filterNotificationPreferences(
@@ -784,11 +738,8 @@ async function sendLiveActivities(
   members: MembershipRow[],
   memberByUser: Map<string, MembershipRow>,
   payload: PushPayload,
-) {
-  // Live Activity remote updates are APNs/ActivityKit only.
-  const cfg: ApnsConfig = readApnsConfig();
-  const jwt = await providerToken(cfg);
-
+): Promise<DeliveryReport> {
+  if (sessions.length === 0) return emptyReport();
   const destinationIds = [...new Set(sessions.map((session) => session.destination_id))];
   const userIds = members.map((member) => member.user_id);
 
@@ -817,10 +768,13 @@ async function sendLiveActivities(
     : "update" as const;
   const activityEventAtMs = Date.now();
 
-  return await Promise.all(
-    sessions.flatMap((session) => {
+  // Live Activity remote updates are APNs/ActivityKit only.
+  return await deliverProvider("apns", sessions, async () => {
+    const cfg: ApnsConfig = readApnsConfig();
+    const jwt = await providerToken(cfg);
+    return async (session) => {
       const timestamp = liveActivityOrderingTimestamp(event, session.updated_at, activityEventAtMs);
-      if (timestamp == null) return [];
+      if (timestamp == null) return null;
       const owner = memberByUser.get(session.user_id);
       const visibleMembers = owner
         ? members.filter((member) => member.subgroup_id === owner.subgroup_id)
@@ -854,14 +808,14 @@ async function sendLiveActivities(
         language: "zh",
       };
 
-      return [sendLiveActivityApns(cfg, jwt, session.push_token, {
+      return await sendLiveActivityApns(cfg, jwt, session.push_token, {
         event,
         // Preserve snapshot ordering; old cloud positions cannot outrank native GPS.
         timestamp,
         contentState,
-      })];
-    }),
-  );
+      });
+    };
+  });
 }
 
 function clampProgress(value: number): number {
