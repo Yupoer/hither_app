@@ -6356,6 +6356,7 @@ export default function MapScreen({ route, navigation }: Props) {
         </View>
         <SystemToggle
           value={highAccuracy}
+          testID="map-precise-location"
           onValueChange={setHighAccuracy}
           accessibilityLabel={t('settings.preciseLocation')}
         />
@@ -8097,6 +8098,7 @@ export default function MapScreen({ route, navigation }: Props) {
         pointerEvents={confirmCardReady || !showDenseChrome ? 'none' : 'box-none'}
       >
       <BottomSheet
+        testID="map-bottom-sheet"
         height={heightSV}
         detents={detents}
         index={detent}
