@@ -1,6 +1,6 @@
 import { useGatherCardExpansion } from '../screens/MapScreen/hooks/useGatherCardExpansion';
 import { useMemberPresence, type UseMemberPresenceInput } from '../screens/MapScreen/hooks/useMemberPresence';
-import { getNotificationPreferences, setNotificationPreferences, setSolo } from '../api/client';
+import { getNotificationPreferences, setNotificationPreferences, setSolo, saveOnboardingProfile, fetchVisitedWaypoints, leaveGroups, reportStraggler } from '../api/client';
 import { DEFAULT_NOTIFICATION_PREFERENCES } from '../types';
 import { useGatheringCompletion, type UseGatheringCompletionInput } from '../screens/MapScreen/hooks/useGatheringCompletion';
 import { enqueueJourneyCompletion } from '../state/journeyCompletion';
@@ -12,10 +12,11 @@ import { useGroupActions, type UseGroupActionsInput } from '../screens/MapScreen
 import { useAccountActions, type UseAccountActionsInput } from '../screens/MapScreen/hooks/useAccountActions';
 import { useStragglerReporting, type UseStragglerReportingInput } from '../screens/MapScreen/hooks/useStragglerReporting';
 import { getStoreSnapshot } from '../api/services/StoreService';
-import { fetchVisitedWaypoints, leaveGroups, reportStraggler } from '../api/client';
 import { Alert } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { clearLiveActivities } from '../state/useLiveActivity';
+import { clearGroupFeatureTour, clearAddPlaceTour, clearRouteReorderTour } from '../featureTour';
+import { markOnboardingReplayForHome } from '../onboarding/sync';
 import { useStragglerAlerts } from '../state/useStragglerAlerts';
 
 jest.mock('../state/journeyCompletion', () => ({ enqueueJourneyCompletion: jest.fn() }));
@@ -170,6 +171,39 @@ describe('MapScreen extracted hooks', () => {
     await mounted.update(input);
     expect(reportStraggler).toHaveBeenCalledTimes(1);
     expect(reportStraggler).toHaveBeenCalledWith('team', 'peer', 900);
+    await mounted.unmount();
+  });
+
+  it('keeps onboarding replay available when resetting account preferences offline', async () => {
+    const offline = new Error('offline');
+    jest.mocked(saveOnboardingProfile).mockRejectedValueOnce(offline);
+    jest.mocked(markOnboardingReplayForHome).mockRejectedValueOnce(offline);
+    jest.mocked(clearGroupFeatureTour).mockRejectedValueOnce(offline);
+    jest.mocked(clearAddPlaceTour).mockRejectedValueOnce(offline);
+    jest.mocked(clearRouteReorderTour).mockRejectedValueOnce(offline);
+    const input: UseAccountActionsInput = {
+      groupId: 'team', isLeader: false, leaveGroup: jest.fn(),
+      navigation: { reset: jest.fn() } as unknown as UseAccountActionsInput['navigation'],
+      reevaluateRouteTour: jest.fn(), setAddPlaceTourLocalDone: jest.fn(), signOut: jest.fn(),
+      updateProfile: jest.fn().mockRejectedValue(offline),
+      user: { id: 'me', name: 'Me', email: 'me@example.test', preferences: { groupFeatureTourCompleted: true } },
+      voluntaryLeaveRef: { current: false }, t,
+    };
+    const mounted = await mountHook(useAccountActions, input);
+    await act(async () => {
+      mounted.value.confirmResetPrefs();
+      await new Promise(resolve => setImmediate(resolve));
+    });
+    expect(saveOnboardingProfile).toHaveBeenCalledWith({});
+    expect(markOnboardingReplayForHome).toHaveBeenCalledTimes(1);
+    expect(clearRouteReorderTour).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'me' }));
+    expect(input.reevaluateRouteTour).toHaveBeenCalledTimes(1);
+    expect(input.setAddPlaceTourLocalDone).toHaveBeenCalledWith(false);
+    expect(input.updateProfile).toHaveBeenCalledWith({ preferences: {
+      groupFeatureTourCompleted: false, addPlaceTourCompleted: false, routeReorderTourCompleted: false,
+    } });
+    expect(Alert.alert).toHaveBeenCalledWith('settings.resetAllPrefs', 'settings.resetPrefsDone');
+    expect(input.navigation.reset).not.toHaveBeenCalled();
     await mounted.unmount();
   });
 });

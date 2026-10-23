@@ -2465,6 +2465,20 @@
       "acceptance": "MapScreen named resources preserve exact callback and coordinate identity, stable owner drafts, subscription disposal, stale async fencing and one stale deadline.",
       "testFile": "mapScreenResources.test.ts",
       "testNamePattern": "installs the outbox listener|callback identity|preserves Object.is|card count|old stale deadline|reversed storage"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Dynamic Type, app text preferences and system bold/contrast update real font layout while Strict subscriptions clean up and unavailable native probes remain safe.",
+      "testFile": "fontLayoutLifecycle.test.ts",
+      "testNamePattern": "updates layout from system settings|refreshes Android contrast"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Resetting account preferences offline preserves durable onboarding replay and clears in-memory tour completion without changing navigation.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "keeps onboarding replay available"
     }
   ]
 }
