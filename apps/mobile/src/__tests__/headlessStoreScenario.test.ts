@@ -296,7 +296,7 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
     } finally { await world.close(); }
   });
 
-  it('N09 N10 N11 N12 N13 N14 dispatches real role-scoped realtime notifications and removes listeners on exit', async () => {
+  it('N03 N09 N10 N11 N12 N13 N14 dispatches real role-scoped realtime notifications and removes listeners on exit', async () => {
     const world = new World();
     try {
       const device = await world.device({ id: 'dispatch', userId: PEER, platform, screen: { name: 'NotificationPreferences' } });
@@ -304,6 +304,8 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42' }, role: 'follower' }] });
       await device.command({ kind: 'mount', screen: { name: 'NativeObservers' } });
       await world.waitFor(device, (value: any) => value.native.listeners.notification === 1, 'real notification hook subscribed');
+      await world.waitFor(device, () => world.backend.tables.push_tokens.some((row: any) => row.user_id === PEER && row.platform === platform), 'platform-scoped native token registration');
+      expect(world.backend.tables.push_tokens.find((row: any) => row.user_id === PEER)).toMatchObject({ token: `fixture-${platform}-native-push`, device_id: expect.any(String) });
       const event = async (table: string, row: object, eventType = 'INSERT', old = {}) => {
         await device.command({ kind: 'event', event: { table, eventType, new: row, old } });
         await world.settle();
@@ -317,24 +319,43 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       await event('commands', { id: 'own-command', group_id: GROUP_ID, sender_id: PEER, type: 'need_help', message: 'Own' });
       await event('commands', { id: 'request-command', group_id: GROUP_ID, sender_id: LEADER, type: 'request_start', message: 'Leader only' });
       expect((await device.observe()).native.scheduled).toHaveLength(1);
+      await event('commands', { id: 'unknown-custom', group_id: GROUP_ID, sender_id: 'unknown-sender', type: 'custom', message: 'Unknown role stays a follower request' });
+      await world.waitFor(device, (value: any) => value.native.scheduled.length === 2, 'unknown custom role classified');
+      expect((await device.observe()).native.scheduled.at(-1).input.content.data.category).toBe('followerRequests');
       await event('itinerary_items', { id: 'added-stop', group_id: GROUP_ID, created_by: LEADER, title: 'New meeting' });
-      await world.waitFor(device, (value: any) => value.native.scheduled.length === 2, 'gathering addition delivered');
+      await world.waitFor(device, (value: any) => value.native.scheduled.length === 3, 'gathering addition delivered');
+      await event('group_alerts', { id: 'not-straggler', group_id: GROUP_ID, sender_id: LEADER, kind: 'other' });
+      expect((await device.observe()).native.scheduled).toHaveLength(3);
       await event('group_alerts', { id: 'straggler-1', group_id: GROUP_ID, sender_id: LEADER, kind: 'straggler', member_name: 'Late peer', distance_m: 500 });
-      await world.waitFor(device, (value: any) => value.native.scheduled.length === 3, 'straggler alert delivered');
+      await world.waitFor(device, (value: any) => value.native.scheduled.length === 4, 'straggler alert delivered');
       await event('groups', { id: GROUP_ID, journey_status: 'going', active_destination_id: DESTINATION }, 'UPDATE', { journey_status: 'paused' });
-      await world.waitFor(device, (value: any) => value.native.scheduled.length === 4, 'follower journey alert delivered');
+      await world.waitFor(device, (value: any) => value.native.scheduled.length === 5, 'follower journey alert delivered');
+      world.backend.itinerary[0].closed_at = new Date(world.now).toISOString();
+      await event('groups', { id: GROUP_ID, journey_status: 'paused', active_destination_id: DESTINATION }, 'UPDATE', { journey_status: 'going', active_destination_id: DESTINATION });
+      expect((await device.observe()).native.scheduled).toHaveLength(5);
+      world.backend.itinerary[0].closed_at = null;
       await event('destination_arrivals', { id: 'peer-arrival', group_id: GROUP_ID, destination_id: DESTINATION, user_id: LEADER });
-      expect((await device.observe()).native.scheduled).toHaveLength(4);
+      expect((await device.observe()).native.scheduled).toHaveLength(5);
+      world.backend.memberships.find((row: any) => row.user_id === PEER).solo = true;
+      await event('itinerary_items', { id: 'solo-stop', group_id: GROUP_ID, created_by: LEADER, title: 'Muted while solo' });
+      expect((await device.observe()).native.scheduled).toHaveLength(5);
       await event('destination_arrivals', { id: 'own-arrival', group_id: GROUP_ID, destination_id: DESTINATION, user_id: PEER });
       await world.waitFor(device, (value: any) => value.presentation.receipts.some((receipt: any) => receipt.method === 'onAppNotice' && receipt.args[0]?.id?.startsWith('arrival:')), 'own arrival dispatch state');
+      world.backend.memberships.find((row: any) => row.user_id === PEER).solo = false;
       world.backend.tables.notification_preferences = [{ user_id: PEER, add_gathering: false, leader_commands: true, follower_requests: true, journey: true, arrival: true }];
       await event('itinerary_items', { id: 'muted-stop', group_id: GROUP_ID, created_by: LEADER, title: 'Muted' });
-      expect((await device.observe()).native.scheduled).toHaveLength(4);
+      expect((await device.observe()).native.scheduled).toHaveLength(5);
+      world.hold('notification_preferences');
+      await event('commands', { id: 'old-account-await', group_id: GROUP_ID, sender_id: LEADER, type: 'gather', message: 'Old account' });
+      await world.waitFor(device, () => world.held.some((request: any) => request.operation.name === 'notification_preferences'), 'held old actor preference read');
+      await device.input({ kind: 'account', userId: LEADER });
+      await world.release('notification_preferences');
+      expect((await device.observe()).native.scheduled).toHaveLength(5);
       await device.command({ kind: 'mount', screen: { name: 'NotificationPreferences' } });
       const detached = await device.observe();
       expect(detached.native.listeners).toMatchObject({ notification: 0, live: 0 });
       await event('commands', { id: 'after-unmount', group_id: GROUP_ID, sender_id: LEADER, type: 'gather', message: 'No listener' });
-      expect((await device.observe()).native.scheduled).toHaveLength(4);
+      expect((await device.observe()).native.scheduled).toHaveLength(5);
     } finally { await world.close(); }
   });
 

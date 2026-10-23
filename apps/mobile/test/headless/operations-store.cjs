@@ -106,7 +106,7 @@ exports.scenarios = [
   ['B07,B10,B11,B12', 'recovers unfinished purchases', 'Actual recovery component single-flight, cache avoids transport, revoked personal grant denied despite team grant, direct writes rejected.'],
   ['N01,N02', 'loads all five actual preference toggles', 'Each exact wire field persists and failed optimistic toggle rolls back with an alert.'],
   ['N16', 'invokes actual QuickCommands role guards', 'Role grid, empty custom slot editor, durable offline UUID payload and exact replay notification intent.'],
-  ['N09,N10,N11,N12,N13,N14', 'dispatches real role-scoped realtime notifications', 'Sender and role guards, command/add/straggler/journey/arrival paths, push dedupe, preferences and unmount cleanup.'],
+  ['N03,N09,N10,N11,N12,N13,N14', 'dispatches real role-scoped realtime notifications', 'Platform token scope, sender and role guards, command/add/straggler/journey/arrival paths, push dedupe, stale actor awaits, preferences and unmount cleanup.'],
   ['L01,L02,L03,L04,L05,L06,L07,L08,L09', 'adopts only its scoped activity', 'Hydration preserves activity, scope adoption, token gate, throttled display, owned session payload, progress nullability and local-only cleanup.'],
 ].map(([inventory, pattern, assertions]) => ({ inventory: inventory.split(','),
   file: 'src/__tests__/headlessStoreScenario.test.ts', pattern, platforms: ['ios', 'android'], assertions }));
