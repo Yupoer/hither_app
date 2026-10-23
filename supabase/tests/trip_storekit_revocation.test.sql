@@ -3,7 +3,12 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(49);
+select plan(50);
+
+-- RPC callers must not depend on direct table access, including in local bootstraps.
+revoke select on public.trip_entitlements from service_role;
+select ok(not has_table_privilege('service_role', 'public.trip_entitlements', 'SELECT'),
+  'service RPCs run without direct entitlement reads');
 
 insert into auth.users (id, email) values
   ('d1111111-1111-4111-8111-111111111111', 'trip-refund-leader@example.test'),
@@ -98,12 +103,12 @@ select is(
   'revoked',
   'refund revokes the trip entitlement'
 );
+set local role postgres;
 select is(
   (select status from public.trip_entitlements where transaction_id = 'trip-tx-1'),
   'refunded',
   'entitlement status is refunded'
 );
-set local role postgres;
 select ok(
   not public.group_has_active_premium('daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
   'group loses premium after the refund'
@@ -184,12 +189,14 @@ select is(
   'reinstatement_blocked',
   'a reversal does not reinstate while the group has a different active pass'
 );
+set local role postgres;
 select is(
   (select string_agg(transaction_id || '=' || status, ',' order by transaction_id)
      from public.trip_entitlements where transaction_id in ('trip-tx-a', 'trip-tx-b')),
   'trip-tx-a=refunded,trip-tx-b=active',
   'the blocked reversal leaves both passes unchanged'
 );
+set local role service_role;
 
 -- Freeing the slot must recover an already accepted, blocked reversal.
 select is(
@@ -197,11 +204,13 @@ select is(
   'revoked',
   'the third pass is refunded'
 );
+set local role postgres;
 select is(
   (select status from public.trip_entitlements where transaction_id = 'trip-tx-a'),
   'active',
   'the blocked reversal recovers immediately when the blocking pass is refunded'
 );
+set local role service_role;
 select is(
   public.test_trip_notify('trip-reverse-a', 'REFUND_REVERSED', 'trip-tx-a', now() - interval '40 minutes')->>'duplicate',
   'true',
@@ -225,6 +234,7 @@ select is(
   'reinstatement_blocked',
   'the second reversal waits while the recovered pass occupies the slot'
 );
+set local role postgres;
 select is(
   (select status || '/' || (started_at = now() - interval '2 hours')::text
           || '/' || (expires_at = now() - interval '2 hours' + interval '10 days')::text
@@ -232,11 +242,12 @@ select is(
   'active/true/true',
   'the reinstated pass keeps its original validity window'
 );
-set local role postgres;
 select ok(
   public.group_has_active_premium('daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
   'group regains premium after the reversal'
 );
+select set_config('test.recovered_trip_id',
+  (select id::text from public.trip_entitlements where transaction_id = 'trip-tx-a'), true);
 set local role service_role;
 select is(
   public.test_trip_notify('trip-reverse-b', 'REFUND_REVERSED', 'trip-tx-b', now() - interval '20 minutes')->>'duplicate',
@@ -245,16 +256,18 @@ select is(
 );
 select is(
   public.revoke_trip_entitlement(
-    (select id from public.trip_entitlements where transaction_id = 'trip-tx-a'), 'revoked'
+    current_setting('test.recovered_trip_id')::uuid, 'revoked'
   )->>'ok',
   'true',
   'the recovered pass can be revoked normally'
 );
+set local role postgres;
 select is(
   (select status from public.trip_entitlements where transaction_id = 'trip-tx-b'),
   'active',
   'direct revocation releases the slot for the next accepted reversal'
 );
+set local role service_role;
 
 -- Refund before the first grant, then a reversal: the grant goes through.
 select is(
@@ -298,11 +311,13 @@ select is(
   'acknowledged',
   'a refund signed before an applied reversal does not revoke'
 );
+set local role postgres;
 select is(
   (select status from public.trip_entitlements where transaction_id = 'trip-tx-ooo'),
   'active',
   'the out-of-order pair converges to an active pass'
 );
+set local role service_role;
 
 select is(
   public.test_trip_notify('trip-refund-ooo-3', 'REFUND', 'trip-tx-ooo', now() + interval '4 minutes')->>'status',
@@ -333,12 +348,13 @@ select is(
   'true',
   'restore remains premium after lazy recovery'
 );
-set local role service_role;
+set local role postgres;
 select is(
   (select status from public.trip_entitlements where transaction_id = 'trip-tx-expiring'),
   'expired',
   'the blocking pass is expired before recovery'
 );
+set local role service_role;
 select is(
   public.test_trip_notify('trip-refund-early-2', 'REFUND', 'trip-tx-early', now() + interval '2 minutes')->>'status',
   'refunded',
