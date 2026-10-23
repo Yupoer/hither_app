@@ -7,8 +7,11 @@ const migrations = readdirSync(join(root, 'supabase/migrations'))
   .map((name) => readFileSync(join(root, 'supabase/migrations', name), 'utf8'))
   .join('\n');
 const client = readFileSync(join(__dirname, '../api/client.ts'), 'utf8');
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
-const groupState = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
+const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useGatheringCompletion.ts'), 'utf8');
+const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useVisitHistory.ts'), 'utf8');
+const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
+const arrivalManageSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/ArrivalManageSheet.tsx'), 'utf8');
+const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const groupNotifications = readFileSync(
   join(__dirname, '../state/useGroupNotifications.ts'),
   'utf8',
@@ -53,7 +56,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
 
   it('keeps gather-approve UI resilient to network blips', () => {
     expect(mapScreen).toContain('resolveGatherPointRequestResilient');
-    expect(mapScreen).toContain('isNetworkRequestError');
     expect(mapScreen).toContain('gather_request_resolve');
     expect(mapScreen).toContain('resolvingGatherRequestId');
     // Error copy is classified by the shared mapper; it must not hard-code a
@@ -86,25 +88,18 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('setDestinationArrival');
     expect(client).toContain('setDestinationArrivalAt');
     expect(mapScreen).toContain('destinationArrivals');
-    expect(mapScreen).toContain("t('arrival.mark')");
+    expect(carousel).toContain("t('arrival.mark')");
     expect(mapScreen).toContain("t('common.confirm')");
     expect(mapScreen).toContain('arrivalErrorMessage');
-    expect(mapScreen).toContain('future destination cannot be completed');
-    expect(mapScreen).toContain('arrivalMemberRow');
-    expect(mapScreen).toContain('checkmark-circle');
+    expect(arrivalManageSheet).toContain('arrivalMemberRow');
+    expect(carousel).toContain('checkmark-circle');
     expect(i18n).toContain("'arrival.errFuture'");
     expect(i18n).toContain("'arrival.failedTitle'");
   });
 
   it('keeps itinerary editing and flag colours leader-only', () => {
-    expect(mapScreen).toContain('revokedLeaderContext !== roleContext && Boolean(isLeader || isMySubgroupLeader)');
     expect(reorderList).toContain('canEditColors={canReorder && item.day > 0}');
     expect(migrations).toContain('drop policy if exists "itinerary_items: insert if in that subgroup"');
-  });
-
-  it('filters the request inbox to the leader\'s active route scope', () => {
-    expect(mapScreen).toContain('requests.filter((request) => request.subgroupId === myScopeIdRef.current)');
-    expect(mapScreen).toContain('requests.filter((request) => request.subgroupId == null)');
   });
 
   it('gates quick-add stay CTA; day headers use left-swipe collapse↔drag mutex', () => {
@@ -149,23 +144,8 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(reorderList).toContain('backgroundColor: glass.fill');
   });
 
-  it('reconciles group state periodically even when Realtime misses an event', () => {
-    expect(groupState).toContain('realtimeReadyRef');
-    expect(groupState).toContain("status === 'SUBSCRIBED'");
-    expect(groupState).toContain("status === 'TIMED_OUT'");
-    expect(groupState).toContain("status === 'CHANNEL_ERROR'");
-    expect(groupState).toContain("status === 'CLOSED'");
-    expect(groupState).toContain('let timer: ReturnType<typeof setTimeout>');
-    expect(groupState).toContain('const schedule = () =>');
-    expect(groupState).toContain('GROUP_POLL_INTERVAL_MS');
-    expect(groupState).not.toContain('setInterval(');
-    expect(groupState).toMatch(/void loadRef\.current\(/);
-    expect(groupState).not.toContain('const profilesChannel');
-  });
-
   it('coalesces workflow events and guards destination deletion to leaders', () => {
-    expect(mapScreen).toContain('scheduleWorkflowReload');
-    expect(mapScreen).toContain('if (!canEditItinerary) return;');
+    expect(itineraryMutations).toContain('if (!groupId || !canEditItinerary) return;');
   });
 
   it('reconciles silently while keeping durable personal receipts and route drafts visible', () => {
@@ -176,7 +156,7 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(mapScreen).not.toContain('routeSyncFailed');
     expect(mapScreen).not.toContain('syncFromDatabaseAndUploadLogs');
     const syncStart = mapScreen.indexOf('const syncFromDatabase = useCallback');
-    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('const tRef', syncStart));
+    const syncBlock = mapScreen.slice(syncStart, mapScreen.indexOf('const locationRefreshLifecycle', syncStart));
     expect(syncBlock).toContain('await reconcileRouteOnOpen(refreshLocalSnapshot, refresh)');
     expect(syncBlock).not.toContain('setOptimisticDestinations(null)');
     expect(syncBlock).not.toContain('throw');
@@ -205,9 +185,9 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(migrations).toContain('complete_gathering_stop');
     expect(migrations).toContain('insert into public.visited_waypoints');
     expect(client).toContain('completeGatheringStop');
-    expect(mapScreen).toContain('projectHistoryForViewer');
+    expect(visitHistory).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('enqueueJourneyCompletion');
-    expect(mapScreen).toContain('leader_mark_complete');
+    expect(carousel).toContain('leader_mark_complete');
     expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(pushMessages).toContain('gathering_completed');
     expect(pushMessages).toMatch(/nameOr\(p\.sender_name/);

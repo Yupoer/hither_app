@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useState } from 'react';
 import { Text, type StyleProp, type TextStyle } from 'react-native';
 import { useForegroundClock } from '../state/foregroundUi';
 import { formatCompactDurationFromMinutes } from '../utils/geo';
@@ -52,7 +53,7 @@ export default React.memo(function MeetCountdown({
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
 }) {
-  const now = useForegroundClock(1000);
+  const { now, lifecycle: clockLifecycle } = useForegroundClock(1000);
 
   const remainingSec = Math.round((new Date(meetAtIso).getTime() - now) / 1000);
   const due = remainingSec <= 0;
@@ -74,18 +75,32 @@ export default React.memo(function MeetCountdown({
         ? formatCompactDurationFromMinutes(Math.floor(totalSec / 60))
         : `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, '0')}`;
 
-  useEffect(() => {
-    onDueChange?.(due);
-  }, [due, onDueChange]);
-
   return (
-    <Text
-      style={[baseStyle, red ? { color: redColor } : null]}
-      numberOfLines={1}
-      adjustsFontSizeToFit={adjustsFontSizeToFit}
-      minimumFontScale={minimumFontScale}
-    >
-      {label}
-    </Text>
+    <>
+      <React.Fragment key="countdown-clock">{clockLifecycle}</React.Fragment>
+      <MeetDueNotification due={due} onDueChange={onDueChange} />
+      <Text
+        style={[baseStyle, red ? { color: redColor } : null]}
+        numberOfLines={1}
+        adjustsFontSizeToFit={adjustsFontSizeToFit}
+        minimumFontScale={minimumFontScale}
+      >
+        {label}
+      </Text>
+    </>
   );
 });
+
+function MeetDueNotification({ due, onDueChange }: { due: boolean; onDueChange: ((due: boolean) => void) | undefined }) {
+  const [notificationInput, setNotificationInput] = useState({ due, onDueChange, generation: 0 });
+  if (!Object.is(notificationInput.due, due) || !Object.is(notificationInput.onDueChange, onDueChange)) {
+    setNotificationInput({ due, onDueChange, generation: notificationInput.generation + 1 });
+  }
+  return <CommittedMeetDueNotification key={notificationInput.generation} due={due} onDueChange={onDueChange} />;
+}
+function CommittedMeetDueNotification({ due, onDueChange }: { due: boolean; onDueChange: ((due: boolean) => void) | undefined }) {
+  useMountEffect(() => {
+    onDueChange?.(due);
+  });
+  return null;
+}

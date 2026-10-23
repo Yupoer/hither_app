@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import { useMountEffect } from '../../hooks/useMountEffect';
+import React from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import { Image, StyleSheet, View } from 'react-native';
 import { HitherText } from '../../components/HitherText';
@@ -27,12 +28,6 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
 
   const progress = useSharedValue(0);
   const visuals = useOptionalVisuals();
-  useEffect(() => {
-    cancelAnimation(progress);
-    if (!visuals || progress.value === 1) { progress.value = 1; return; }
-    progress.value = withTiming(1, { duration: 450 });
-    return () => cancelAnimation(progress);
-  }, [progress, visuals]);
 
   const style = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -55,6 +50,7 @@ export default function MascotStep({ answers, onAnswer, onSkip, onBack }: StepPr
       }
     >
       <Animated.View style={[styles.card, style]}>
+        <MascotEntranceMotion key={String(visuals)} progress={progress} visuals={visuals} />
         <View
           style={[
             styles.slot,
@@ -98,3 +94,13 @@ const styles = StyleSheet.create({
   description: { fontSize: 15, fontWeight: '600', marginBottom: 6, textAlign: 'center' },
   bestLeader: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
 });
+
+function MascotEntranceMotion({ progress, visuals }: { progress: ReturnType<typeof useSharedValue<number>>; visuals: boolean }) {
+  useMountEffect(() => {
+    cancelAnimation(progress);
+    if (!visuals || progress.value === 1) { progress.value = 1; return; }
+    progress.value = withTiming(1, { duration: 450 });
+    return () => cancelAnimation(progress);
+  });
+  return null;
+}

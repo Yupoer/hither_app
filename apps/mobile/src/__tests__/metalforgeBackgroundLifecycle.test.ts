@@ -19,7 +19,20 @@ jest.mock('react-native-reanimated', () => ({
   },
   useFrameCallback: (callback: unknown) => {
     const ref = require('react').useRef(null);
-    if (!ref.current) { ref.current = { callback, setActive: jest.fn() }; mockFrames.push(ref.current); }
+    if (!ref.current) {
+      const frame = { callback, isActive: false, registered: false, nativeActive: false,
+        setActive: jest.fn((active: boolean) => {
+          frame.isActive = active;
+          if (frame.registered) frame.nativeActive = active;
+        }) };
+      ref.current = frame; mockFrames.push(frame);
+    }
+    const frame = ref.current;
+    // Reanimated registers after child passive jobs and adopts the saved activation.
+    require('../hooks/useMountEffect').useMountEffect(() => {
+      frame.registered = true; frame.nativeActive = frame.isActive;
+      return () => { frame.registered = false; frame.nativeActive = false; };
+    });
     ref.current.callback = callback;
     return ref.current;
   },
@@ -50,6 +63,27 @@ it('disables hidden frame callbacks and keeps hidden shader time independent of 
   expect(root.root.findAllByType('Canvas')).toHaveLength(0);
   await act(async () => { root.unmount(); });
   expect(mockFrames.every(frame => frame.setActive.mock.calls.at(-1)[0] === false)).toBe(true);
+});
+
+it('installs activation before native registration and retains its active state through Strict replay', async () => {
+  mockFrames.length = 0; mockUniforms.length = 0;
+  updateRuntimePowerState({ lowPowerMode: false, thermalState: 'nominal' });
+  let root: any;
+  const element = (active: boolean) => React.createElement(React.StrictMode, null,
+    React.createElement(MetalforgeBackground, { active }));
+  await act(async () => { root = create(element(true)); });
+  const frame = mockFrames[0];
+  expect(frame.registered).toBe(true);
+  expect(frame.nativeActive).toBe(true);
+  await act(async () => { root.update(element(false)); });
+  expect(frame.nativeActive).toBe(false);
+  expect(root.root.findAllByType('Canvas')).toHaveLength(0);
+  await act(async () => { root.update(element(true)); });
+  expect(frame.nativeActive).toBe(true);
+  expect(mockFrames).toHaveLength(1);
+  await act(async () => { root.unmount(); });
+  expect(frame.registered).toBe(false);
+  expect(frame.nativeActive).toBe(false);
 });
 
 it('caps active GPU frame updates and stops optional graphics at fair thermal pressure', async () => {

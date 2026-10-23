@@ -30,7 +30,7 @@ it('keeps MapKit for paused and navigating iOS, preserves inactive fixes, then s
     feed = useDeviceLocation({ groupId: 'group', highAccuracy: config.highAccuracy, powerMode: config.powerMode,
       teamNavigationActive: active, nativeMapLocationEnabled: config.owner === 'mapkit',
       sharingEnabled: sharing, hasMembership: membership, onIncomingSample: incoming });
-    return null;
+    return feed.lifecycle;
   }
   let renderer!: ReactTestRenderer;
   try {

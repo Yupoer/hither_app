@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -109,80 +110,10 @@ export default function OverflowMarquee({
     return Math.min(MARQUEE_SPEED_MAX, Math.max(MARQUEE_SPEED_MIN, n));
   }, [pixelsPerSecond]);
 
-  useEffect(() => {
-    setTextW(0);
-    retriedRef.current = false;
-    setMeasureGen((g) => g + 1);
-  }, [text, fontKey]);
-
-  // Arm only after the card has been the focused stop for ~1–2s.
-  useEffect(() => {
-    if (!enabled || !active) {
-      setArmed(false);
-      return;
-    }
-    setArmed(false);
-    const delay = Math.max(0, activationDelayMs);
-    const t = setTimeout(() => setArmed(true), delay);
-    return () => clearTimeout(t);
-  }, [active, activationDelayMs, enabled, text]);
-
-  // When viewport first becomes usable but text still unmeasured, force one remeasure.
-  useEffect(() => {
-    if (!enabled || viewportW <= 0 || textW > 0 || retriedRef.current) return;
-    const t = setTimeout(() => {
-      if (textW > 0) return;
-      retriedRef.current = true;
-      setMeasureGen((g) => g + 1);
-    }, 50);
-    return () => clearTimeout(t);
-  }, [enabled, textW, viewportW]);
-
   const overflow = textW > viewportW + 1 && viewportW > 0 && textW > 0;
   const shouldMarquee =
     Boolean(enabled) && Boolean(active) && armed && !reduceMotion && overflow;
   const travel = Math.max(0, textW - viewportW);
-
-  useEffect(() => {
-    cancelAnimation(offset);
-    offset.value = 0;
-    if (!shouldMarquee || travel <= 0) return;
-
-    // Constant px/s — longer titles take longer, but all move at the same speed.
-    const duration = Math.max(1, Math.round((travel / pxPerSec) * 1000));
-
-    offset.value = withRepeat(
-      withSequence(
-        withDelay(
-          startPauseMs,
-          withTiming(-travel, {
-            duration,
-            easing: Easing.linear,
-            reduceMotion: ReduceMotion.System,
-          }),
-        ),
-        withDelay(
-          endPauseMs,
-          withTiming(0, {
-            duration: 0,
-            reduceMotion: ReduceMotion.System,
-          }),
-        ),
-      ),
-      -1,
-      false,
-    );
-
-    return () => cancelAnimation(offset);
-  }, [
-    endPauseMs,
-    offset,
-    pxPerSec,
-    shouldMarquee,
-    startPauseMs,
-    text,
-    travel,
-  ]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: offset.value }],
@@ -226,6 +157,10 @@ export default function OverflowMarquee({
         lineHeight != null && { height: lineHeight },
       ]}
     >
+      <MarqueeJobs text={text} fontKey={fontKey} active={active} activationDelayMs={activationDelayMs} enabled={enabled}
+        textW={textW} viewportW={viewportW} endPauseMs={endPauseMs} pxPerSec={pxPerSec} shouldMarquee={shouldMarquee}
+        startPauseMs={startPauseMs} travel={travel} offset={offset} retriedRef={retriedRef}
+        setTextW={setTextW} setMeasureGen={setMeasureGen} setArmed={setArmed} />
       {measureNode}
       <View style={[styles.mouth, lineHeight != null && { height: lineHeight }]}>
         <View
@@ -314,3 +249,107 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
 });
+
+type MarqueeJobInputs = {
+  text: string; fontKey: string; active: boolean; activationDelayMs: number; enabled: boolean;
+  textW: number; viewportW: number; endPauseMs: number; pxPerSec: number; shouldMarquee: boolean;
+  startPauseMs: number; travel: number; offset: ReturnType<typeof useSharedValue<number>>;
+  retriedRef: React.RefObject<boolean>; setTextW: React.Dispatch<React.SetStateAction<number>>;
+  setMeasureGen: React.Dispatch<React.SetStateAction<number>>; setArmed: React.Dispatch<React.SetStateAction<boolean>>;
+};
+function MarqueeJobs(props: MarqueeJobInputs) {
+  const { text, fontKey, active, activationDelayMs, enabled, textW, viewportW, endPauseMs, pxPerSec, shouldMarquee, startPauseMs, travel } = props;
+  const [measureInput, setMeasureInput] = useState({ text, fontKey, generation: 0 });
+  if (!Object.is(measureInput.text, text) || !Object.is(measureInput.fontKey, fontKey)) {
+    setMeasureInput({ text, fontKey, generation: measureInput.generation + 1 });
+  }
+  const [activationInput, setActivationInput] = useState({ active, activationDelayMs, enabled, text, generation: 0 });
+  if (!Object.is(activationInput.active, active) || !Object.is(activationInput.activationDelayMs, activationDelayMs)
+    || !Object.is(activationInput.enabled, enabled) || !Object.is(activationInput.text, text)) {
+    setActivationInput({ active, activationDelayMs, enabled, text, generation: activationInput.generation + 1 });
+  }
+  const [retryInput, setRetryInput] = useState({ enabled, textW, viewportW, generation: 0 });
+  if (!Object.is(retryInput.enabled, enabled) || !Object.is(retryInput.textW, textW) || !Object.is(retryInput.viewportW, viewportW)) {
+    setRetryInput({ enabled, textW, viewportW, generation: retryInput.generation + 1 });
+  }
+  const [scrollInput, setScrollInput] = useState({ endPauseMs, pxPerSec, shouldMarquee, startPauseMs, text, travel, generation: 0 });
+  if (!Object.is(scrollInput.endPauseMs, endPauseMs) || !Object.is(scrollInput.pxPerSec, pxPerSec)
+    || !Object.is(scrollInput.shouldMarquee, shouldMarquee) || !Object.is(scrollInput.startPauseMs, startPauseMs)
+    || !Object.is(scrollInput.text, text) || !Object.is(scrollInput.travel, travel)) {
+    setScrollInput({ endPauseMs, pxPerSec, shouldMarquee, startPauseMs, text, travel, generation: scrollInput.generation + 1 });
+  }
+  return <>
+    <MarqueeMeasurementReset key={`measure-${measureInput.generation}`} {...props} />
+    <MarqueeActivationDelay key={`activation-${activationInput.generation}`} {...props} />
+    <MarqueeRemeasureRetry key={`retry-${retryInput.generation}`} {...props} />
+    <MarqueeScrollMotion key={`scroll-${scrollInput.generation}`} {...props} />
+  </>;
+}
+function MarqueeMeasurementReset({ setTextW, retriedRef, setMeasureGen }: MarqueeJobInputs) {
+  useMountEffect(() => {
+    setTextW(0);
+    retriedRef.current = false;
+    setMeasureGen((g) => g + 1);
+  });
+  return null;
+}
+function MarqueeActivationDelay({ enabled, active, activationDelayMs, setArmed }: MarqueeJobInputs) {
+  useMountEffect(() => {
+    if (!enabled || !active) {
+      setArmed(false);
+      return;
+    }
+    setArmed(false);
+    const delay = Math.max(0, activationDelayMs);
+    const t = setTimeout(() => setArmed(true), delay);
+    return () => clearTimeout(t);
+  });
+  return null;
+}
+function MarqueeRemeasureRetry({ enabled, viewportW, textW, retriedRef, setMeasureGen }: MarqueeJobInputs) {
+  useMountEffect(() => {
+    if (!enabled || viewportW <= 0 || textW > 0 || retriedRef.current) return;
+    const t = setTimeout(() => {
+      if (textW > 0) return;
+      retriedRef.current = true;
+      setMeasureGen((g) => g + 1);
+    }, 50);
+    return () => clearTimeout(t);
+  });
+  return null;
+}
+function MarqueeScrollMotion({ offset, shouldMarquee, travel, pxPerSec, startPauseMs, endPauseMs }: MarqueeJobInputs) {
+  useMountEffect(() => {
+    cancelAnimation(offset);
+    offset.value = 0;
+    if (!shouldMarquee || travel <= 0) return;
+
+    // Constant px/s — longer titles take longer, but all move at the same speed.
+    const duration = Math.max(1, Math.round((travel / pxPerSec) * 1000));
+
+    offset.value = withRepeat(
+      withSequence(
+        withDelay(
+          startPauseMs,
+          withTiming(-travel, {
+            duration,
+            easing: Easing.linear,
+            reduceMotion: ReduceMotion.System,
+          }),
+        ),
+        withDelay(
+          endPauseMs,
+          withTiming(0, {
+            duration: 0,
+            reduceMotion: ReduceMotion.System,
+          }),
+        ),
+      ),
+      -1,
+      false,
+    );
+
+    return () => cancelAnimation(offset);
+  });
+  return null;
+}

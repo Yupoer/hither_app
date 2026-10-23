@@ -21,25 +21,31 @@ describe('map chrome native surface contract', () => {
   });
 
   it('keeps iOS map cards neutral and Android fallbacks tokenized', () => {
+    const mapStyles = read('screens/MapScreen/styles.ts');
     const map = read('screens/MapScreen.tsx');
+    const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
+    const addPlaceCard = read('screens/MapScreen/components/AddPlaceConfirmCard.tsx');
     expect(map).toContain("Platform.OS === 'android'");
-    expect(map).toContain('tintColor={Platform.OS === \'android\'');
-    expect(map).toContain('styles.locationSharingButton');
-    expect(map).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
-    expect(map).toContain('width: 44');
-    expect(map).toContain('height: 44');
+    expect(addPlaceCard).toContain('tintColor={Platform.OS === \'android\'');
+    expect(membersPane).toContain('styles.locationSharingButton');
+    expect(membersPane).toContain('name={sharingEnabled ? \'eye-outline\' : \'eye-off-outline\'}');
+    expect(mapStyles).toContain('width: 44');
+    expect(mapStyles).toContain('height: 44');
     expect(map).toContain('<SwiftUIGlassSurface');
     expect(map).toContain('useSwiftUIGlassSurface');
   });
 
   it('uses the approved add-place and arrival control sizes', () => {
+    const mapStyles = read('screens/MapScreen/styles.ts');
     const map = read('screens/MapScreen.tsx');
-    expect(map).toContain('confirmArrow: {');
-    expect(map).toContain('confirmControl: {');
-    expect(map).toContain('width: 60');
-    expect(map).toContain('height: 60');
+    expect(mapStyles).toContain('confirmArrow: {');
+    expect(mapStyles).toContain('confirmControl: {');
+    expect(mapStyles).toContain('width: 60');
+    expect(mapStyles).toContain('height: 60');
     expect(map).not.toContain('size={80}');
     expect(map).not.toContain('height={96}');
-    expect((map.match(/size=\{36\}/g) ?? [])).toHaveLength(2);
+    const arrivalSheets = read('screens/MapScreen/components/ArrivalManageSheet.tsx')
+      + read('screens/MapScreen/components/ArrivalTimeSheet.tsx');
+    expect((arrivalSheets.match(/size=\{36\}/g) ?? [])).toHaveLength(2);
   });
 });

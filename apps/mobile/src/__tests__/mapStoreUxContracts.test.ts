@@ -10,6 +10,7 @@ const read = (rel: string) =>
   readFileSync(join(root, rel), 'utf8').replace(/\r\n/g, '\n');
 
 const mapScreen = read('screens/MapScreen.tsx');
+const addPlaceCard = read('screens/MapScreen/components/AddPlaceConfirmCard.tsx');
 const reorderList = read('components/DestinationReorderList.tsx');
 const bottomSheet = read('components/BottomSheet.tsx');
 const rewardedAds = read('native/rewardedAds.ts');
@@ -50,21 +51,21 @@ describe('native AdMob alignment (ticket 02)', () => {
 
 describe('long-press inline rename (#172)', () => {
   it('keeps bottom confirm card with inline name TextInput (no rename Modal)', () => {
-    expect(mapScreen).toContain('testID="confirm-place-name"');
+    expect(addPlaceCard).toContain('testID="confirm-place-name"');
     expect(mapScreen).toContain('setPendingPlaceTitle');
-    expect(mapScreen).toContain("t('confirmGather.quickAdd')");
-    expect(mapScreen).toContain('keyboardAvoidBottomOffset');
+    expect(addPlaceCard).toContain("t('confirmGather.quickAdd')");
+    expect(addPlaceCard).toContain('keyboardAvoidBottomOffset');
     expect(mapScreen).not.toContain('testID="confirm-rename-modal"');
     expect(mapScreen).not.toContain('openRenameModal');
     expect(mapScreen).not.toContain('confirmRenameModal');
     // Add still uses pendingPlaceTitle draft only — no dual rename state.
-    const addStart = mapScreen.indexOf("name: pendingPlaceTitle.trim() || pendingPlace.name");
+    const addStart = addPlaceCard.indexOf("name: pendingPlaceTitle.trim() || pendingPlace.name");
     expect(addStart).toBeGreaterThan(-1);
   });
 
   it('retains draft on add failure and clears only on success dismiss', () => {
-    expect(mapScreen).toContain('// Keep confirm card until success');
-    expect(mapScreen).toContain('if (ok && token.isCurrent()) dismissConfirmCard()');
+    expect(addPlaceCard).toContain('// Keep confirm card until success');
+    expect(addPlaceCard).toContain('if (ok && token.isCurrent()) dismissConfirmCard()');
     expect(mapScreen).toContain("pendingPlaceSourceRef.current = 'longpress'");
     expect(mapScreen).toContain('cameraAfterSuccessfulAdd');
   });
@@ -72,7 +73,7 @@ describe('long-press inline rename (#172)', () => {
   it('dismisses only after durable add success; refresh is best-effort', () => {
     expect(mapScreen).toContain('addDestination resolves only after durable local persistence');
     expect(mapScreen).toContain('void refresh().catch(() => undefined)');
-    expect(mapScreen).toContain('if (ok && token.isCurrent()) dismissConfirmCard()');
+    expect(addPlaceCard).toContain('if (ok && token.isCurrent()) dismissConfirmCard()');
     expect(mapScreen).not.toContain('const projected = await refresh()');
   });
 

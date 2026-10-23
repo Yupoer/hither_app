@@ -142,7 +142,7 @@ select is(
     'id', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     'groupId', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'navigationSessionId', (select id from test_session),
-    'capturedAt', (extract(epoch from now()) * 1000)::bigint,
+    'capturedAt', floor(extract(epoch from now()) * 1000)::bigint - 1000,
     'coords', jsonb_build_object('latitude', 25.04, 'longitude', 121.5, 'accuracy', 10),
     'trackingMode', 'teamNavigation', 'source', 'background_task', 'sequence', 1
   )))->'rejected'->0->>'reason',
@@ -158,7 +158,7 @@ select is(
     'id', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     'groupId', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'navigationSessionId', (select id from test_session),
-    'capturedAt', (extract(epoch from now()) * 1000)::bigint,
+    'capturedAt', floor(extract(epoch from now()) * 1000)::bigint,
     'coords', jsonb_build_object('latitude', 25.04, 'longitude', 121.5, 'accuracy', 10),
     'trackingMode', 'teamNavigation', 'source', 'background_task', 'sequence', 1
   )))->'acceptedIds'),
@@ -173,7 +173,7 @@ select lives_ok(
       'id', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
       'groupId', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       'navigationSessionId', (select id from test_session),
-      'capturedAt', (extract(epoch from now()) * 1000)::bigint,
+      'capturedAt', floor(extract(epoch from now()) * 1000)::bigint,
       'coords', jsonb_build_object('latitude', 25.04, 'longitude', 121.5, 'accuracy', 10),
       'trackingMode', 'teamNavigation', 'source', 'background_task', 'sequence', 1
     ))
@@ -184,7 +184,7 @@ select lives_ok(
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 create temporary table switched_session as
-select (public.start_navigation_session(
+select (public.start_navigation_session_switch(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2',
   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
@@ -193,25 +193,25 @@ select (public.start_navigation_session(
 select is(
   (select status from public.navigation_sessions where id = (select id from test_session)),
   'cancelled',
-  'switching destination cancels the previous session atomically'
+  'switching destination ends the replaced session atomically'
 );
 select is(
   (select closed_at is not null from public.itinerary_items
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
   false,
-  'switching destination keeps the unfinished itinerary item open'
+  'switching destination keeps the unfinished previous item open'
 );
 select is(
   (select position from public.itinerary_items
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'),
   1,
-  'switching destination moves the previous open item behind the active item'
+  'switching destination moves the previous item behind the new target'
 );
 select is(
   (select position from public.itinerary_items
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'),
   0,
-  'switching destination promotes the next item to the first open position'
+  'switching destination promotes the new target to the front'
 );
 select is(
   (select local_status from public.navigation_member_states
@@ -313,6 +313,8 @@ select throws_ok(
   'complete does not claim success for a cancelled session'
 );
 
+-- bbb3 is still open after cancel (cancel does not close the stop); bbb2 was
+-- closed by complete.
 create temporary table active_stale_session as
 select (public.start_navigation_session(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -330,6 +332,7 @@ select throws_ok(
   'a genuinely stale active version still raises 40001'
 );
 
+-- bbb2 was closed by completing switched_session; a switch only cancels.
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', true);
 select is(

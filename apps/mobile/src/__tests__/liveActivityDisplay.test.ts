@@ -22,7 +22,7 @@ jest.mock('../api/services/LiveActivityService', () => ({
 }));
 jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: mockUser }) }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: { write: jest.fn(async () => {}) } }));
-import { useLiveActivity, clearLiveActivities } from '../state/useLiveActivity';
+import { LiveActivityRuntime, clearLiveActivities } from '../state/useLiveActivity';
 const { act, create } = require('react-test-renderer');
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -30,10 +30,13 @@ it('flushes the final throttled update and sends the same deadline immediately o
   jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
   jest.setSystemTime(100000);
   function Harness({ progress }: { progress: number }) {
-    useLiveActivity(true, { groupName: 'Team', distanceMeters: 900, etaSeconds: 600,
+    return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: { groupName: 'Team', distanceMeters: 900, etaSeconds: 600,
       sampledAtMs: 100000, etaTargetAtMs: 700000, progress },
-    { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' });
-    return null;
+    session: { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' },
+  });
+
   }
   let tree: any;
   await act(async () => { tree = create(React.createElement(Harness, { progress: 0 })); });
@@ -77,9 +80,12 @@ it('persists changed snapshots at 15 seconds while native delivery can update ev
   mockUser = { id: 'self' };
   mockPersistSession.mockClear();
   function Harness({ progress }: { progress: number }) {
-    useLiveActivity(true, { groupName: 'Team', distanceMeters: 900, etaSeconds: 600, progress },
-      { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' });
-    return null;
+    return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: { groupName: 'Team', distanceMeters: 900, etaSeconds: 600, progress },
+    session: { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' },
+  });
+
   }
   let tree: any;
   await act(async () => { tree = create(React.createElement(Harness, { progress: 0 })); });
@@ -107,10 +113,13 @@ it('sends and persists a mode change immediately with its new estimate inside th
   mockNative.updateGroupActivity.mockClear();
   function Harness({ mode }: { mode: 'walk' | 'bicycle' }) {
     const etaSeconds = mode === 'walk' ? 600 : 200;
-    useLiveActivity(true, { groupName: 'Team', distanceMeters: 900, etaSeconds, progress: 0.1,
+    return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: { groupName: 'Team', distanceMeters: 900, etaSeconds, progress: 0.1,
       travelMode: mode, sampledAtMs: 300000, etaTargetAtMs: 300000 + etaSeconds * 1000 },
-      { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: mode });
-    return null;
+    session: { groupId: 'team', destinationId: 'stop', initialDistanceM: 1000, travelMode: mode },
+  });
+
   }
   let tree: any;
   await act(async () => { tree = create(React.createElement(Harness, { mode: 'walk' })); });
@@ -124,4 +133,53 @@ it('sends and persists a mode change immediately with its new estimate inside th
   await act(async () => tree.unmount());
   mockUser = null;
   jest.useRealTimers();
+});
+
+it('does not advance the successful-delivery throttle after a native failure', async () => {
+  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  jest.setSystemTime(400000);
+  mockNative.updateGroupActivity.mockReset().mockResolvedValue(undefined);
+  function Harness({ name = 'Team', progress }: { name?: string; progress: number }) {
+    return React.createElement(LiveActivityRuntime, { active: true,
+      state: { groupName: name, distanceMeters: 900, progress },
+      session: { groupId: 'g', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' },
+    });
+  }
+  let tree!: import('react-test-renderer').ReactTestRenderer;
+  await act(async () => { tree = create(React.createElement(Harness, { progress: 0 })); });
+  await act(async () => { tree.update(React.createElement(Harness, { progress: 0.1 })); });
+  mockNative.updateGroupActivity.mockRejectedValueOnce(new Error('native busy'));
+  await act(async () => { tree.update(React.createElement(Harness, { name: 'New Team', progress: 0.2 })); });
+  const failedCount = mockNative.updateGroupActivity.mock.calls.length;
+  await act(async () => { tree.update(React.createElement(Harness, { name: 'New Team', progress: 0.3 })); });
+  expect(mockNative.updateGroupActivity).toHaveBeenCalledTimes(failedCount + 1);
+  expect(mockNative.updateGroupActivity).toHaveBeenLastCalledWith('activity', expect.objectContaining({ groupName: 'New Team', progress: 0.3 }));
+  expect(jest.getTimerCount()).toBe(0);
+  await act(async () => { tree.unmount(); });
+  jest.useRealTimers();
+});
+
+it('keeps one display queue while payload jobs are replaced and cancels queued background sends', async () => {
+  mockNative.updateGroupActivity.mockReset().mockResolvedValue(undefined);
+  function Harness({ progress }: { progress: number }) {
+    return React.createElement(LiveActivityRuntime, { active: true,
+      state: { groupName: 'Team', distanceMeters: 900, progress },
+      session: { groupId: 'g', destinationId: 'stop', initialDistanceM: 1000, travelMode: 'walk' },
+    });
+  }
+  let tree!: import('react-test-renderer').ReactTestRenderer;
+  await act(async () => { tree = create(React.createElement(Harness, { progress: 0 })); });
+  let release!: () => void;
+  mockNative.updateGroupActivity.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  await act(async () => { tree.update(React.createElement(Harness, { progress: 0.1 })); });
+  const runningCount = mockNative.updateGroupActivity.mock.calls.length;
+  await act(async () => { tree.update(React.createElement(Harness, { progress: 0.2 })); });
+  expect(mockNative.updateGroupActivity).toHaveBeenCalledTimes(runningCount);
+  await act(async () => { mockApp.currentState = 'background'; mockListeners.forEach(callback => callback()); });
+  await act(async () => { release(); });
+  expect(mockNative.updateGroupActivity).toHaveBeenCalledTimes(runningCount);
+  await act(async () => { mockApp.currentState = 'active'; mockListeners.forEach(callback => callback()); });
+  expect(mockNative.updateGroupActivity).toHaveBeenCalledTimes(runningCount + 1);
+  expect(mockNative.updateGroupActivity).toHaveBeenLastCalledWith('activity', expect.objectContaining({ progress: 0.2 }));
+  await act(async () => { tree.unmount(); });
 });

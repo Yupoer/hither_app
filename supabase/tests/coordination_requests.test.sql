@@ -403,6 +403,7 @@ where id = (select id from test_deadline);
 grant select on test_deadline to service_role;
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
+select set_config('request.jwt.claim.sub', '', true);
 
 select is(
   (public.resolve_coordination_request_deadline((select id from test_deadline))).status,
@@ -438,6 +439,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.role', 'authenticated', true);
 
 -- Subgroup eligibility: outsider main-group member cannot respond
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', true);
 create temporary table test_sub as
 select * from public.create_coordination_request(
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

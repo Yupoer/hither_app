@@ -91,7 +91,7 @@ describe('Navigation Session UI integration', () => {
         startSession,
         createRequestId,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     act(() => { create(React.createElement(Harness)); });
@@ -130,7 +130,7 @@ describe('Navigation Session UI integration', () => {
         navigationSession,
         terminalSession,
       });
-      return null;
+      return navigation.lifecycle;
     }
 
     let renderer: { update: (element: React.ReactElement) => void };

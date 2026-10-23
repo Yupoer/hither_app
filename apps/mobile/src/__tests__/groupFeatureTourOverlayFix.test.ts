@@ -514,7 +514,7 @@ describe('hook onPrev + canGoPrev', () => {
   }) {
     const snap = useGroupFeatureTour(props.input);
     props.onSnapshot(snap);
-    return null;
+    return snap.lifecycle;
   }
 
   function baseInput(overrides: Partial<Parameters<typeof useGroupFeatureTour>[0]> = {}) {
@@ -596,7 +596,7 @@ describe('MapScreen wires prev + members highlight', () => {
   it('passes onPrev/canGoPrev and highlights the members tab', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
-    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
     expect(map).toContain('onPrev={onTourPrev}');
     expect(map).toContain('canGoPrev={tourCanGoPrev}');
     expect(map).toContain('targetKind={holeKindForTarget(tourStep?.target)}');
@@ -609,15 +609,16 @@ describe('MapScreen wires prev + members highlight', () => {
   it('commits pane and target as one snapshot and highlights the add-place favorite star', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
-    const tour = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.ts'), 'utf8');
+    const tour = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.tsx'), 'utf8');
     const measure = readFileSync(join(__dirname, '../featureTour/measureTarget.ts'), 'utf8');
-    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
+    const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
+    const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
     expect(tour).toContain('const [snapshot, setSnapshot]');
     expect(tour).toContain('ctrl.stepIndex !== snapshot.stepIndex');
     expect(tour).toContain('setSnapshot({');
     expect(measure).toContain('Bounded measurement retry');
     expect(measure).not.toContain('await sleep(STAGE_TWO_SETTLE_MS)');
-    expect(map).toContain("testID=\"add-place-favorite-star\"");
-    expect(map).toContain("setTourTargetRef('addPlaceFavoriteStar'");
+    expect(addPlaceCard).toContain("testID=\"add-place-favorite-star\"");
+    expect(addPlaceCard).toContain("setTourTargetRef('addPlaceFavoriteStar'");
   });
 });

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
+import { useCallback, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   AppState,
@@ -39,7 +40,7 @@ function useSystemFontScale(): number {
     setPolled(readRawFontScale());
   }, []);
 
-  useEffect(() => {
+  useMountEffect(() => {
     refresh();
     const onApp = (state: AppStateStatus) => {
       if (state === 'active') refresh();
@@ -50,7 +51,7 @@ function useSystemFontScale(): number {
       appSub.remove();
       dimSub.remove();
     };
-  }, [refresh]);
+  });
 
   // Prefer window metrics when RN provides a positive fontScale.
   const raw =
@@ -68,7 +69,7 @@ function useSystemFontScale(): number {
 export function useBoldTextEnabled(): boolean {
   const [bold, setBold] = useState(false);
 
-  useEffect(() => {
+  useMountEffect(() => {
     let active = true;
 
     const read = () => {
@@ -112,7 +113,7 @@ export function useBoldTextEnabled(): boolean {
       appSub.remove();
       eventSub?.remove();
     };
-  }, []);
+  });
 
   return bold;
 }

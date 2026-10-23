@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import { useMountEffect } from '../../hooks/useMountEffect';
+import React, { useState } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { HitherText } from '../../components/HitherText';
@@ -54,16 +55,7 @@ const CONFETTI = [
 function Confetti({ spec }: { spec: (typeof CONFETTI)[number] }) {
   const visuals = useOptionalVisuals();
   const v = useSharedValue(0);
-  useEffect(() => {
-    cancelAnimation(v);
-    if (!visuals) { v.value = 0; return; }
-    v.value = withDelay(
-      spec.delay,
-      withRepeat(withTiming(1, { duration: spec.dur, easing: Easing.in(Easing.cubic) }), -1, false),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => cancelAnimation(v);
-  }, [visuals, v, spec]);
+
   const style = useAnimatedStyle(() => ({
     transform: [{ translateY: v.value * 360 }, { rotate: `${v.value * 240}deg` }],
     opacity: v.value < 0.15 ? v.value / 0.15 : 1 - v.value,
@@ -82,7 +74,9 @@ function Confetti({ spec }: { spec: (typeof CONFETTI)[number] }) {
         },
         style,
       ]}
-    />
+    >
+      <ConfettiFall visuals={visuals} v={v} spec={spec} />
+    </Animated.View>
   );
 }
 
@@ -99,19 +93,7 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
 
   const pop = useSharedValue(0);
   const visuals = useOptionalVisuals();
-  useEffect(() => {
-    cancelAnimation(pop);
-    if (!visuals || pop.value === 1) { pop.value = 1; return; }
-    pop.value = withDelay(
-      80,
-      withSequence(
-        withTiming(1.15, { duration: 320, easing: Easing.out(Easing.back(2)) }),
-        withTiming(1, { duration: 180, easing: Easing.inOut(Easing.cubic) }),
-      ),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    return () => cancelAnimation(pop);
-  }, [visuals, pop]);
+
   const heroStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pop.value }],
     opacity: pop.value === 0 ? 0 : 1,
@@ -130,6 +112,7 @@ export default function CelebrationStep({ answers, onAnswer }: StepProps) {
         },
       ]}
     >
+      <CelebrationPopMotion key={String(visuals)} visuals={visuals} pop={pop} />
       <View style={styles.confettiLayer} pointerEvents="none">
         {CONFETTI.map((spec, i) => (
           <Confetti key={i} spec={spec} />
@@ -210,3 +193,41 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13.5, fontWeight: '600' },
   footer: { paddingTop: 8 },
 });
+
+function ConfettiFallMotion({ visuals, v, spec }: { visuals: boolean; v: ReturnType<typeof useSharedValue<number>>; spec: (typeof CONFETTI)[number] }) {
+  useMountEffect(() => {
+    cancelAnimation(v);
+    if (!visuals) { v.value = 0; return; }
+    v.value = withDelay(
+      spec.delay,
+      withRepeat(withTiming(1, { duration: spec.dur, easing: Easing.in(Easing.cubic) }), -1, false),
+    );
+    return () => cancelAnimation(v);
+  });
+  return null;
+}
+
+function CelebrationPopMotion({ visuals, pop }: { visuals: boolean; pop: ReturnType<typeof useSharedValue<number>> }) {
+  useMountEffect(() => {
+    cancelAnimation(pop);
+    if (!visuals || pop.value === 1) { pop.value = 1; return; }
+    pop.value = withDelay(
+      80,
+      withSequence(
+        withTiming(1.15, { duration: 320, easing: Easing.out(Easing.back(2)) }),
+        withTiming(1, { duration: 180, easing: Easing.inOut(Easing.cubic) }),
+      ),
+    );
+    return () => cancelAnimation(pop);
+  });
+  return null;
+}
+
+function ConfettiFall(props: React.ComponentProps<typeof ConfettiFallMotion>) {
+  const { spec, visuals } = props;
+  const [fallInput, setFallInput] = useState({ spec, visuals, generation: 0 });
+  if (!Object.is(fallInput.spec, spec) || !Object.is(fallInput.visuals, visuals)) {
+    setFallInput({ spec, visuals, generation: fallInput.generation + 1 });
+  }
+  return <ConfettiFallMotion key={fallInput.generation} {...props} />;
+}

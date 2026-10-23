@@ -1,7 +1,8 @@
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createElement, useCallback, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { useMountEffect } from '../hooks/useMountEffect';
 import {
   ackNavigationSession,
   cancelNavigationSession,
@@ -23,6 +24,86 @@ import { enqueuePersonalNavigationResponse } from './coreDataSync';
 import { runNavigationTerminalMutation } from './navigationTerminalMutation';
 import { getOperationErrorMessage } from '../utils/operationError';
 import { getActiveLanguage } from '../i18n';
+
+interface NavigationLaneOwner {
+  revision: RefObject<number>;
+  activeSessionIdRef: RefObject<string | null>;
+  sessionRef: RefObject<NavigationSession | null>;
+  lastEventRef: RefObject<NavigationSession | null>;
+  laneRef: RefObject<{ groupId: string | null; scopeSubgroupId: string | null; actorId: string | null } | null>;
+  setTerminalSession: Dispatch<SetStateAction<NavigationSession | null>>;
+  setSession: Dispatch<SetStateAction<NavigationSession | null>>;
+  setMemberState: Dispatch<SetStateAction<MemberNavigationState | null>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+}
+
+interface NavigationLaneInput {
+  groupId: string | null;
+  scopeSubgroupId: string | null;
+  actorId: string | null;
+  refresh: () => Promise<NavigationSession | null>;
+  acceptSession: (next: NavigationSession) => void;
+}
+
+function NavigationLaneSubscription({ owner, groupId, scopeSubgroupId, actorId, refresh, acceptSession, foreground }:
+  NavigationLaneInput & { owner: NavigationLaneOwner; foreground: boolean }) {
+  useMountEffect(() => {
+    const previous = owner.laneRef.current;
+    if (!previous || previous.groupId !== groupId || previous.scopeSubgroupId !== scopeSubgroupId || previous.actorId !== actorId) {
+      owner.laneRef.current = { groupId, scopeSubgroupId, actorId };
+      owner.revision.current += 1;
+      owner.activeSessionIdRef.current = null;
+      owner.sessionRef.current = null;
+      owner.lastEventRef.current = null;
+      owner.setTerminalSession(null);
+      owner.setSession(null);
+      owner.setMemberState(null);
+      if (previous && (previous.groupId !== groupId || previous.scopeSubgroupId !== scopeSubgroupId)) owner.setError(null);
+    }
+    if (!foreground) return;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    void refresh();
+    if (!groupId) return;
+    const timer = setInterval(() => { void refresh(); }, 30_000);
+    void subscribeNavigationSession(groupId, next => {
+      if (!cancelled) acceptSession(next);
+    }, next => {
+      if (!cancelled && next.navigationSessionId === owner.activeSessionIdRef.current) owner.setMemberState(next);
+    }, scopeSubgroupId, () => { if (!cancelled) void refresh(); }).then(cleanup => {
+      if (cancelled) cleanup();
+      else unsubscribe = cleanup;
+    }).catch(cause => {
+      if (!cancelled) owner.setError(getOperationErrorMessage(cause, getActiveLanguage()));
+    });
+    return () => {
+      cancelled = true;
+      owner.revision.current += 1;
+      clearInterval(timer);
+      unsubscribe?.();
+    };
+  });
+  return null;
+}
+
+function NavigationSessionRuntime(input: NavigationLaneInput & { owner: NavigationLaneOwner }) {
+  const { owner } = input;
+  const [foreground, setForeground] = useState(AppState.currentState === 'active');
+  useMountEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      owner.revision.current += 1;
+      setForeground(state === 'active');
+    });
+    return () => { owner.revision.current += 1; sub.remove(); };
+  });
+  const [laneInput, setLaneInput] = useState({ ...input, foreground, generation: 0 });
+  if (!Object.is(laneInput.groupId, input.groupId) || !Object.is(laneInput.scopeSubgroupId, input.scopeSubgroupId)
+    || !Object.is(laneInput.actorId, input.actorId) || !Object.is(laneInput.refresh, input.refresh)
+    || !Object.is(laneInput.acceptSession, input.acceptSession) || !Object.is(laneInput.foreground, foreground)) {
+    setLaneInput({ ...input, foreground, generation: laneInput.generation + 1 });
+  }
+  return createElement(NavigationLaneSubscription, { ...input, foreground, key: laneInput.generation });
+}
 
 export function useNavigationSession(
   groupId: string | null,
@@ -46,23 +127,7 @@ export function useNavigationSession(
   groupRef.current = groupId;
   const scopeRef = useRef<string | null>(scopeSubgroupId);
   scopeRef.current = scopeSubgroupId;
-  const [foreground, setForeground] = useState(AppState.currentState === 'active');
-  useEffect(() => {
-    revision.current += 1;
-    activeSessionIdRef.current = null;
-    sessionRef.current = null;
-    lastEventRef.current = null;
-    setTerminalSession(null);
-    setSession(null);
-    setMemberState(null);
-  }, [groupId, actorId]);
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      revision.current += 1;
-      setForeground(state === 'active');
-    });
-    return () => { revision.current += 1; sub.remove(); };
-  }, []);
+  const laneRef = useRef<NavigationLaneOwner['laneRef']['current']>(null);
 
   const acceptSession = useCallback((next: NavigationSession) => {
     if (next.groupId !== groupRef.current) return;
@@ -133,67 +198,6 @@ export function useNavigationSession(
     }
   }, [acceptSession, groupId, scopeSubgroupId, actorId]);
 
-  useEffect(() => {
-    if (!foreground || !groupId) return;
-    const timer = setInterval(() => { void refresh(); }, 30_000);
-    return () => clearInterval(timer);
-  }, [foreground, groupId, refresh]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let unsubscribe: (() => void) | null = null;
-    if (!foreground) return;
-    void refresh();
-    if (!groupId) return;
-
-    void subscribeNavigationSession(
-      groupId,
-      (next) => {
-        if (!cancelled) acceptSession(next);
-      },
-      (next) => {
-        if (!cancelled && next.navigationSessionId === activeSessionIdRef.current) {
-          setMemberState(next);
-        }
-      },
-      scopeSubgroupId,
-      () => { if (!cancelled) void refresh(); },
-    ).then((cleanup) => {
-      if (cancelled) cleanup();
-      else unsubscribe = cleanup;
-    }).catch((cause) => {
-      if (!cancelled) {
-        setError(getOperationErrorMessage(cause, getActiveLanguage()));
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      revision.current += 1;
-      unsubscribe?.();
-    };
-  }, [acceptSession, groupId, refresh, foreground, scopeSubgroupId, actorId]);
-
-  const laneRef = useRef<{ groupId: string | null; scopeSubgroupId: string | null }>({
-    groupId,
-    scopeSubgroupId,
-  });
-  useEffect(() => {
-    // A subgroup switch is a new navigation lane. Do not let the previous
-    // lane's session survive while the scoped query is hydrating.
-    const previous = laneRef.current;
-    if (previous.groupId === groupId && previous.scopeSubgroupId === scopeSubgroupId) return;
-    laneRef.current = { groupId, scopeSubgroupId };
-    revision.current += 1;
-    activeSessionIdRef.current = null;
-    sessionRef.current = null;
-    lastEventRef.current = null;
-    setTerminalSession(null);
-    setSession(null);
-    setMemberState(null);
-    setError(null);
-    if (foreground && groupId) void refresh().catch(() => undefined);
-  }, [foreground, groupId, refresh, scopeSubgroupId]);
 
   const reconcileTerminalConflict = useCallback(async (
     action: 'cancel' | 'complete',
@@ -286,6 +290,11 @@ export function useNavigationSession(
   }, [groupId, session]);
 
   return {
+    lifecycle: createElement(NavigationSessionRuntime, {
+      groupId, scopeSubgroupId, actorId, refresh, acceptSession,
+      owner: { revision, activeSessionIdRef, sessionRef, lastEventRef, laneRef,
+        setTerminalSession, setSession, setMemberState, setError },
+    }),
     terminalSession: eventIdentityRef.current === JSON.stringify([groupId, scopeSubgroupId, actorId]) ? terminalSession : null,
     session: eventIdentityRef.current === JSON.stringify([groupId, scopeSubgroupId, actorId]) ? session : null,
     memberState: eventIdentityRef.current === JSON.stringify([groupId, scopeSubgroupId, actorId]) ? memberState : null,

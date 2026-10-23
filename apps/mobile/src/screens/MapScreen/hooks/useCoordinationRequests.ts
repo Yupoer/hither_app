@@ -5,7 +5,8 @@
  * Does not gate navigation start.
  */
 import { useForegroundReconcile } from '../../../state/useForegroundReconcile';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createElement, Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import {
   cancelCoordinationRequest,
   createCoordinationRequest,
@@ -37,6 +38,7 @@ export interface UseCoordinationRequestsOptions {
 }
 
 export interface UseCoordinationRequestsResult {
+  lifecycle: import('react').ReactElement;
   requests: CoordinationRequestView[];
   openCount: number;
   loading: boolean;
@@ -134,7 +136,7 @@ export function useCoordinationRequests(
     } while (pendingRef.current && groupIdRef.current === gid);
   }, [active]);
 
-  useForegroundReconcile(active, () => load('silent'));
+  const foregroundLifecycle = useForegroundReconcile(active, () => load('silent'));
 
   const scheduleReload = useCallback(() => {
     if (reloadTimerRef.current) return;
@@ -154,46 +156,7 @@ export function useCoordinationRequests(
     [requests],
   );
 
-  useEffect(() => {
-    setRequests([]);
-    if (!active || !groupId) {
-      setRequests([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    lastLoadAtRef.current = 0;
-    void load('initial');
-
-    const channel = supabase
-      .channel(`coordination-requests:${groupId}:${++channelSeqRef.current}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'coordination_requests',
-          filter: `group_id=eq.${groupId}`,
-        },
-        scheduleReload,
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'coordination_responses',
-        },
-        scheduleReload,
-      )
-      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleReload(); });
-
-    return () => {
-      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
-      reloadTimerRef.current = null;
-      supabase.removeChannel(channel);
-    };
-  }, [active, groupId, load, scheduleReload]);
+  const coordinationRequestsChannelLifecycle = createElement(CoordinationRequestsChannel, { setRequests, active, groupId, setLoading, setError, lastLoadAtRef, load, channelSeqRef, scheduleReload, reloadTimerRef });
 
   // No fixed read/write cadence. Deadline settlement is server-owned; client
   // receives updates via Realtime plus explicit load after local mutations.
@@ -271,6 +234,7 @@ export function useCoordinationRequests(
   );
 
   return {
+    lifecycle: createElement(Fragment, { key: 'coordination-requests-runtime' }, foregroundLifecycle, coordinationRequestsChannelLifecycle),
     requests,
     openCount,
     loading,
@@ -283,4 +247,78 @@ export function useCoordinationRequests(
     override,
     cancel,
   };
+}
+
+function CoordinationRequestsChannel({ setRequests, active, groupId, setLoading, setError, lastLoadAtRef, load, channelSeqRef, scheduleReload, reloadTimerRef }: {
+  setRequests: import("react").Dispatch<import("react").SetStateAction<CoordinationRequestView[]>>;
+  active: boolean;
+  groupId: string | null;
+  setLoading: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  setError: import("react").Dispatch<import("react").SetStateAction<string | null>>;
+  lastLoadAtRef: import("react").RefObject<number>;
+  load: (mode?: "initial" | "refresh" | "silent") => Promise<void>;
+  channelSeqRef: import("react").RefObject<number>;
+  scheduleReload: () => void;
+  reloadTimerRef: import("react").RefObject<NodeJS.Timeout | null>;
+}) {
+  const [coordinationRequestsChannelInputs, setCoordinationRequestsChannelInputs] = useState(() => ({ generation: 0, active, groupId, load, scheduleReload }));
+  if (!(Object.is(coordinationRequestsChannelInputs.active, active) && Object.is(coordinationRequestsChannelInputs.groupId, groupId) && Object.is(coordinationRequestsChannelInputs.load, load) && Object.is(coordinationRequestsChannelInputs.scheduleReload, scheduleReload))) {
+    setCoordinationRequestsChannelInputs({ generation: coordinationRequestsChannelInputs.generation + 1, active, groupId, load, scheduleReload });
+  }
+  return createElement(CoordinationRequestsChannelCommit, { key: coordinationRequestsChannelInputs.generation, setRequests, active, groupId, setLoading, setError, lastLoadAtRef, load, channelSeqRef, scheduleReload, reloadTimerRef });
+}
+
+function CoordinationRequestsChannelCommit({ setRequests, active, groupId, setLoading, setError, lastLoadAtRef, load, channelSeqRef, scheduleReload, reloadTimerRef }: {
+  setRequests: import("react").Dispatch<import("react").SetStateAction<CoordinationRequestView[]>>;
+  active: boolean;
+  groupId: string | null;
+  setLoading: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  setError: import("react").Dispatch<import("react").SetStateAction<string | null>>;
+  lastLoadAtRef: import("react").RefObject<number>;
+  load: (mode?: "initial" | "refresh" | "silent") => Promise<void>;
+  channelSeqRef: import("react").RefObject<number>;
+  scheduleReload: () => void;
+  reloadTimerRef: import("react").RefObject<NodeJS.Timeout | null>;
+}) {
+  useMountEffect(() => {
+    setRequests([]);
+    if (!active || !groupId) {
+      setRequests([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    lastLoadAtRef.current = 0;
+    void load('initial');
+
+    const channel = supabase
+      .channel(`coordination-requests:${groupId}:${++channelSeqRef.current}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coordination_requests',
+          filter: `group_id=eq.${groupId}`,
+        },
+        scheduleReload,
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'coordination_responses',
+        },
+        scheduleReload,
+      )
+      .subscribe(status => { if (status === 'SUBSCRIBED') scheduleReload(); });
+
+    return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  });
+  return null;
 }

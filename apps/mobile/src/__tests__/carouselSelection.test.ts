@@ -31,7 +31,7 @@ describe('useCarouselSelection', () => {
         carouselRef: { current: { scrollTo } } as never,
         mapRef: { current: { centerOn } } as never,
       });
-      return null;
+      return selection.lifecycle;
     }
 
     act(() => {
@@ -68,7 +68,7 @@ describe('useCarouselSelection', () => {
         carouselRef: { current: null },
         mapRef: { current: { centerOn } } as never,
       });
-      return null;
+      return selection.lifecycle;
     }
 
     act(() => {
@@ -97,7 +97,7 @@ describe('useCarouselSelection', () => {
         mapRef: { current: { centerOn: jest.fn(), focusOblique } } as never,
         obliqueLocate: true,
       });
-      return null;
+      return selection.lifecycle;
     }
 
     act(() => { create(React.createElement(Harness)); });
@@ -124,7 +124,7 @@ describe('useCarouselSelection', () => {
         mapRef: { current: { centerOn, focusOblique } } as never,
         obliqueLocate: false,
       });
-      return null;
+      return selection.lifecycle;
     }
 
     act(() => { create(React.createElement(Harness)); });

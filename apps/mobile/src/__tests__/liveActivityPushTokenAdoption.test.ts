@@ -14,6 +14,7 @@ const mockGetOrCreateLiveActivityDeviceId = jest
 const mockUpsertDeviceActivityToken = jest.fn().mockResolvedValue('upserted');
 const mockUpdateDeviceActivityAccent = jest.fn().mockResolvedValue(undefined);
 const mockGateRecord = jest.fn();
+let mockSessionUserId = 'user-1';
 
 let pushTokenListener:
   | ((event: {
@@ -42,7 +43,7 @@ jest.mock('../api/services/LiveActivityService', () => ({
 }));
 
 jest.mock('../state/SessionContext', () => ({
-  useSession: () => ({ user: { id: 'user-1' } }),
+  useSession: () => ({ user: { id: mockSessionUserId } }),
 }));
 
 jest.mock('../state/diagnostics', () => ({
@@ -241,6 +242,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true;
     pushTokenListener = null;
+    mockSessionUserId = 'user-1';
     mockUpsertLiveActivitySession.mockClear();
     mockUpsertLiveActivitySession.mockResolvedValue(undefined);
     mockUpsertDeviceActivityToken.mockReset().mockResolvedValue('upserted');
@@ -250,7 +252,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
 
   it('fires addPushTokenListener: foreign ignored, accepted persists same pair', async () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
 
     const session = {
       groupId: 'g1',
@@ -271,8 +273,15 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     await act(async () => {
       tree = create(
         React.createElement(function Harness() {
-          useLiveActivity(true, state as never, session, true);
-          return null;
+          return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: state as never,
+    session: session,
+    liveActivitiesEnabled: true,
+  });
+
+
+
         }),
       );
     });
@@ -359,8 +368,59 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     });
   });
 
+  it('installs token ownership before synchronous existing-activity observation', async () => {
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { liveActivity } = require('../native') as { liveActivity: { observeExistingActivities: jest.Mock; startGroupActivity: jest.Mock } };
+    liveActivity.startGroupActivity.mockClear();
+    liveActivity.observeExistingActivities.mockImplementationOnce(async () => {
+      pushTokenListener!({ activityId: 'observed-inline', pushToken: 'inline-token',
+        navigationSessionId: 'inline-nav', destinationId: 'inline-stop' });
+    });
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(LiveActivityRuntime, {
+      active: true, state: { groupName: 'Team', distanceMeters: 20 },
+      session: { groupId: 'g', navigationSessionId: 'inline-nav', destinationId: 'inline-stop', initialDistanceM: 30, travelMode: 'walk' },
+    })); });
+    expect(mockUpsertLiveActivitySession).toHaveBeenCalledWith(expect.objectContaining({ activityId: 'observed-inline', pushToken: 'inline-token' }), 'user-1');
+    expect(liveActivity.startGroupActivity).not.toHaveBeenCalled();
+    await act(async () => { tree.unmount(); });
+  });
+
+  it('updates independent same-generation policy and observation jobs without reinstalling token listeners', async () => {
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { liveActivity } = require('../native') as { liveActivity: { addPushToStartTokenListener: jest.Mock; observeExistingActivities: jest.Mock } };
+    liveActivity.addPushToStartTokenListener.mockClear();
+    liveActivity.observeExistingActivities.mockClear();
+    const session = { groupId: 'g', navigationSessionId: 'one', destinationId: 'stop', initialDistanceM: 30, travelMode: 'walk' as const };
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(LiveActivityRuntime, {
+      active: undefined, state: { groupName: 'Team', accentHex: '#111111' }, session,
+    })); });
+    const listener = pushTokenListener;
+    await act(async () => { pushToStartListener?.({ token: 'account-token' }); });
+    mockSessionUserId = 'user-2';
+    await act(async () => { tree.update(React.createElement(LiveActivityRuntime, {
+      active: undefined, state: { groupName: 'Team', accentHex: '#222222' },
+      session: { ...session, navigationSessionId: 'two' }, liveActivitiesEnabled: false,
+    })); });
+    expect(liveActivity.observeExistingActivities).toHaveBeenCalledTimes(2);
+    expect(mockUpdateDeviceActivityAccent).toHaveBeenLastCalledWith('device-1', '#222222');
+    expect(mockUpsertDeviceActivityToken).toHaveBeenLastCalledWith('device-1', 'account-token', false, '#222222', 'user-2');
+    expect(liveActivity.addPushToStartTokenListener).toHaveBeenCalledTimes(1);
+    expect(pushTokenListener).toBe(listener);
+    const accents = mockUpdateDeviceActivityAccent.mock.calls.length;
+    mockSessionUserId = 'user-3';
+    await act(async () => { tree.update(React.createElement(LiveActivityRuntime, {
+      active: undefined, state: { groupName: 'Team', accentHex: '#222222' },
+      session: { ...session, navigationSessionId: 'two' }, liveActivitiesEnabled: false,
+    })); });
+    expect(mockUpdateDeviceActivityAccent).toHaveBeenCalledTimes(accents + 1);
+    expect(mockUpsertDeviceActivityToken).toHaveBeenLastCalledWith('device-1', 'account-token', false, '#222222', 'user-3');
+    await act(async () => { tree.unmount(); });
+  });
+
   it('starts one activity when active and entitled, then clears on unmount', async () => {
-    const { useLiveActivity, clearLiveActivities } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime, clearLiveActivities } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     const { liveActivity } = require('../native') as {
       liveActivity: { startGroupActivity: jest.Mock; listGroupActivities: jest.Mock };
     };
@@ -382,8 +442,13 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     await act(async () => {
       tree = create(
         React.createElement(function Harness() {
-          useLiveActivity(true, state as never, session, true);
-          return null;
+          return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: state as never,
+    session: session,
+    liveActivitiesEnabled: true,
+  });
+
         }),
       );
       await Promise.resolve();
@@ -406,7 +471,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
   });
 
   it('updates the live handle and stops when the journey ends', async () => {
-    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     const session = {
       groupId: 'g1',
       navigationSessionId: 'nav-1',
@@ -428,8 +493,13 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     function Harness() {
       const [cur, setCur] = React.useState({ active, state });
       setProps = (next) => setCur((prev) => ({ ...prev, ...next }));
-      useLiveActivity(cur.active, cur.state as never, session, true);
-      return null;
+      return React.createElement(LiveActivityRuntime, {
+    active: cur.active,
+    state: cur.state as never,
+    session: session,
+    liveActivitiesEnabled: true,
+  });
+
     }
     let tree: { unmount: () => void };
     await act(async () => {
@@ -460,7 +530,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
   });
 
   it('records token register outcomes and skips persist without a live distance', async () => {
-    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     mockUpsertDeviceActivityToken
       .mockResolvedValueOnce('reclaimed_own_token')
       .mockRejectedValueOnce(new Error('net'))
@@ -474,8 +544,13 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     await act(async () => {
       create(
         React.createElement(function Harness() {
-          useLiveActivity(true, { groupName: 'T' } as never, session, true);
-          return null;
+          return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: { groupName: 'T' } as never,
+    session: session,
+    liveActivitiesEnabled: true,
+  });
+
         }),
       );
       await Promise.resolve();
@@ -490,13 +565,13 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
   });
 
   it('leaves a hydrating journey alone and stops when destination is lost', async () => {
-    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     let dest: string | undefined = 'd1';
     function Harness({ hasSession, destinationId }: { hasSession: boolean; destinationId?: string }) {
-      useLiveActivity(
-        true,
-        { groupName: 'T', distanceMeters: 10 } as never,
-        hasSession
+      return React.createElement(LiveActivityRuntime, {
+    active: true,
+    state: { groupName: 'T', distanceMeters: 10 } as never,
+    session: hasSession
           ? {
               groupId: 'g1',
               destinationId: destinationId as string,
@@ -504,9 +579,9 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
               travelMode: 'walk',
             }
           : undefined,
-        true,
-      );
-      return null;
+    liveActivitiesEnabled: true,
+  });
+
     }
     let tree: { update: (el: React.ReactElement) => void; unmount: () => void } = {
       update: () => undefined,
@@ -529,10 +604,15 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     });
   });
   it('binds enabled-state registration and failed retries to the captured account', async () => {
-    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     function Harness({ enabled }: { enabled: boolean }) {
-      useLiveActivity(undefined, { groupName: 'T', accentHex: '#336699' } as never, undefined, enabled);
-      return null;
+      return React.createElement(LiveActivityRuntime, {
+    active: undefined,
+    state: { groupName: 'T', accentHex: '#336699' } as never,
+    session: undefined,
+    liveActivitiesEnabled: enabled,
+  });
+
     }
     let tree!: ReturnType<typeof create>;
     await act(async () => { tree = create(React.createElement(Harness, { enabled: true })); });
@@ -549,7 +629,7 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
   });
 
   it('survives failed native observation, device lookup, registration diagnostics and scoped cleanup', async () => {
-    const { useLiveActivity, clearLiveActivities } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime, clearLiveActivities } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     const { liveActivity } = require('../native') as { liveActivity: { startPushToStartTokenObservation: jest.Mock; observeExistingActivities: jest.Mock } };
     const { diagnostics } = require('../state/diagnostics') as { diagnostics: { write: jest.Mock } };
     liveActivity.startPushToStartTokenObservation.mockRejectedValueOnce(new Error('native observer unavailable'));
@@ -562,8 +642,13 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
     let tree!: ReturnType<typeof create>;
     await act(async () => {
       tree = create(React.createElement(function Harness() {
-        useLiveActivity(undefined, { groupName: 'T', accentHex: '#336699' } as never, session, true);
-        return null;
+        return React.createElement(LiveActivityRuntime, {
+    active: undefined,
+    state: { groupName: 'T', accentHex: '#336699' } as never,
+    session: session,
+    liveActivitiesEnabled: true,
+  });
+
       }));
     });
     await act(async () => { pushToStartListener?.({ token: 'pts-offline' }); });
@@ -577,12 +662,17 @@ describe('useLiveActivity push-token production seam (#146 Sol r3)', () => {
   });
 
   it('contains native update and session persistence failures while the activity remains operable', async () => {
-    const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+    const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
     const { liveActivity } = require('../native') as { liveActivity: { updateGroupActivity: jest.Mock; endAllGroupActivities: jest.Mock; startGroupActivity: jest.Mock } };
     const session = { groupId: 'g1', navigationSessionId: 'nav-1', destinationId: 'd1', initialDistanceM: 100, travelMode: 'walk' as const };
     function Harness({ active, count }: { active: boolean; count: number }) {
-      useLiveActivity(active, { groupName: 'T', distanceMeters: 90, progress: 0.1, memberCount: count } as never, session, true);
-      return null;
+      return React.createElement(LiveActivityRuntime, {
+    active: active,
+    state: { groupName: 'T', distanceMeters: 90, progress: 0.1, memberCount: count } as never,
+    session: session,
+    liveActivitiesEnabled: true,
+  });
+
     }
     liveActivity.updateGroupActivity.mockRejectedValueOnce(new Error('native update offline'));
     mockUpsertLiveActivitySession.mockRejectedValueOnce(new Error('session save offline'));
@@ -609,13 +699,16 @@ it.each([undefined, 'other-stop'])('ignores observed token adoption with matchin
 });
 
 it('an explicitly stopped hook cannot adopt a matching late PTS token', async () => {
-  const { useLiveActivity } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
+  const { LiveActivityRuntime } = require('../state/useLiveActivity') as typeof import('../state/useLiveActivity');
   mockUpsertLiveActivitySession.mockClear();
   let tree!: ReturnType<typeof create>;
   await act(async () => { tree = create(React.createElement(function StoppedHarness() {
-    useLiveActivity(false, { groupName: 'Team', distanceMeters: 80 },
-      { groupId: 'g1', destinationId: 'd1', navigationSessionId: 'nav-1', initialDistanceM: 100, travelMode: 'walk' });
-    return null;
+    return React.createElement(LiveActivityRuntime, {
+    active: false,
+    state: { groupName: 'Team', distanceMeters: 80 },
+    session: { groupId: 'g1', destinationId: 'd1', navigationSessionId: 'nav-1', initialDistanceM: 100, travelMode: 'walk' },
+  });
+
   })); });
   await act(async () => { pushTokenListener?.({ activityId: 'late-pts', pushToken: 'token',
     navigationSessionId: 'nav-1', destinationId: 'd1' }); });

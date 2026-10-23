@@ -31,6 +31,7 @@ insert into public.memberships (group_id, user_id, role, status) values
   ('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f3333333-3333-4333-8333-333333333333', 'follower', 'offline'),
   ('faaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'f5555555-5555-4555-8555-555555555555', 'follower', 'active');
 
+select public.allow_anonymous_expiry_write();
 update public.profiles
    set anonymous_expires_at = now() - interval '1 hour'
  where id = 'f5555555-5555-4555-8555-555555555555';
@@ -85,7 +86,7 @@ select has_function(
 select has_function(
   'public',
   'list_my_pending_location_refreshes',
-  array[]::text[]
+  array[]::name[]
 );
 select has_function(
   'public',

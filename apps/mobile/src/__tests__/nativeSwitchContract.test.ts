@@ -8,6 +8,7 @@ const systemToggle = read('components/SystemToggle.tsx');
 const settings = read('screens/MapScreen/components/SettingsOverlay.tsx');
 const notifCard = read('components/NotificationPreferencesCard.tsx');
 const mapScreen = read('screens/MapScreen.tsx');
+const membersPane = read('screens/MapScreen/components/MembersPane.tsx');
 
 describe('SystemToggle iOS/Android chrome', () => {
   it('renders @expo/ui Switch inside Host and is not RN Switch', () => {
@@ -23,7 +24,7 @@ describe('SystemToggle iOS/Android chrome', () => {
   it('screens use SystemToggle instead of NativeSwitch / RN Switch', () => {
     expect(settings).toContain('<SystemToggle');
     expect(notifCard).toContain('<SystemToggle');
-    expect(mapScreen).toContain('<SystemToggle');
+    expect(membersPane).toContain('<SystemToggle');
     expect(settings).not.toContain('<NativeSwitch');
     expect(notifCard).not.toContain('<NativeSwitch');
     expect(mapScreen).not.toContain('<NativeSwitch');
