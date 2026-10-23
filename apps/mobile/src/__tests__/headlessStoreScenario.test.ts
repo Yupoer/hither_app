@@ -102,10 +102,11 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
 
   it('N16 invokes actual QuickCommands role guards and persists an offline custom notification before replay', async () => {
     const world = new World();
-    world.backend.profiles.get(LEADER).preferences = { quickCommands: [{ label: 'Meet here', message: ' Please meet here ' }, null, null] };
+    world.backend.profiles.get(PEER).preferences = { quickCommands: [{ label: 'Meet here', message: ' Please meet here ' }, null, null] };
     try {
-      const device = await world.device({ id: 'commands', userId: LEADER, platform, screen: { name: 'QuickCommands', params: { groupId: GROUP_ID } } });
+      const device = await world.device({ id: 'commands', userId: PEER, platform, screen: { name: 'QuickCommands', params: { groupId: GROUP_ID } } });
       await world.waitFor(device, (value: any) => hosts(value, 'quick-command-custom-0').length === 1, 'actual command grid');
+      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42' }, role: 'follower' }] });
       expect(hosts(await device.observe(), 'quick-command-gather')).toEqual([]);
       expect(hosts(await device.observe(), 'quick-command-need_help')).toHaveLength(1);
       await device.perform('commands.custom', { slot: 1 });
@@ -115,13 +116,14 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       await device.perform('commands.custom', { slot: 0 });
       const pending = await world.waitFor(device, (value: any) => value.durable.operations.some((operation: any) => operation.operationType === 'send_command'), 'durable offline custom command');
       const operation = pending.durable.operations.find((row: any) => row.operationType === 'send_command');
+      expect(operation.actorId).toBe(PEER);
       expect(operation.payload).toMatchObject({ type: 'custom', message: 'Please meet here', expiresAt: new Date(world.now + 300000).toISOString() });
       expect(world.backend.notificationOutbox).toEqual([]);
       device.online = true;
       await world.advance(1000);
       await device.perform('commands.flush', { args: [] });
       await world.waitFor(device, () => world.backend.notificationOutbox.length === 1, 'replayed actual command');
-      expect(world.backend.notificationOutbox[0]).toMatchObject({ group_id: GROUP_ID, sender_id: LEADER, payload: { type: 'custom', message: 'Please meet here' } });
+      expect(world.backend.notificationOutbox[0]).toMatchObject({ group_id: GROUP_ID, sender_id: PEER, target_user_id: LEADER, payload: { type: 'custom', message: 'Please meet here' } });
     } finally { await world.close(); }
   });
 
