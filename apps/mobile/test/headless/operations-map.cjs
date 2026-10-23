@@ -128,7 +128,7 @@ button('map.kml.retry', ['K07'], 'reset', 'kml-retry', 'Actual failed import res
 
 identifiedButton('map.card.toggle', ['MAP-SHELL-01', 'MAP-SHELL-03'], 'toggleGatheringCard', 'gather-card-', 'destinationId',
   'Actual accessible card press expands/collapses with duplicate gesture guard and real idle timer ownership.');
-identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03', 'MAP-NAV-04', 'MAP-GATHER-04', 'MAP-GATHER-05', 'MAP-GATHER-07'],
+identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03', 'MAP-GATHER-04', 'MAP-GATHER-05', 'MAP-GATHER-07'],
   'gather-nav onPress dispatch', 'gather-nav-', 'destinationId',
   'Actual card command chooses Start, End, request-start or complete from real role, session and arrival state.');
 identifiedButton('map.arrival.mark', ['MAP-ARRIVAL-01', 'MAP-ARRIVAL-05', 'MAP-ARRIVAL-06'], 'handleSelfArrival', 'gather-arrival-', 'destinationId',
