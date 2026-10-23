@@ -300,6 +300,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-approve-${request.id}`), 'actual leader inbox');
       await run(leader, 'map.suggestion.approve', { requestId: request.id });
+      await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-approve-${request.id}`), 'approved request leaves inbox');
       expect(request.status).toBe('approved');
       expect(world.backend.itinerary.find((row: { title: string }) => row.title === 'Suggested KML')).toMatchObject({ day: null });
@@ -309,6 +310,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-reject-${rejected}`), 'next coalesced inbox request');
       await run(leader, 'map.suggestion.reject', { requestId: rejected });
+      await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-reject-${rejected}`), 'rejected request leaves inbox');
       expect(world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status).toBe('rejected');
       expect(world.backend.itinerary.some((row: { title: string }) => row.title === 'Rejected suggestion')).toBe(false);
@@ -428,7 +430,14 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(request.resolved_outcome).toBe('opt_a');
       expect(has(await device.observe(), 'coordination-option-opt_b')).toBe(false);
       await run(device, 'map.coordination.back');
+      await run(device, 'map.coordination.select', { requestId: request.id });
+      expect(has(await device.observe(), 'coordination-option-opt_b')).toBe(false);
+      await run(device, 'map.coordination.back');
       await run(device, 'map.coordination.create.open');
+      await run(device, 'map.coordination.subject', { value: 'Discard draft' });
+      await run(device, 'map.coordination.create.cancel');
+      await run(device, 'map.coordination.create.open');
+      expect(field(await device.observe(), 'coordination-subject-input')?.value).toBe('');
       await run(device, 'map.coordination.subject', { value: 'Cancel me' });
       await run(device, 'map.coordination.option-a', { value: 'One' });
       await run(device, 'map.coordination.option-b', { value: 'Two' });
