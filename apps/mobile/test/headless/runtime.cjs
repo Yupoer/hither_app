@@ -102,7 +102,7 @@ exports.run = async function run(jest) {
   for (const method of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) {
     require('node:child_process')[method] = guard(`child_process.${method}`);
   }
-  global.__DEV__ = false;
+  global.__DEV__ = spec.capabilities?.development === true;
   global.IS_REACT_ACT_ENVIRONMENT = true;
   process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://headless.supabase.co';
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'headless-fixture-only';
