@@ -5,6 +5,7 @@ const LEADER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PEER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const DESTINATION = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const EPOCH = Date.parse('2026-10-22T00:00:00Z');
+const domain = require('./backend-domain.cjs');
 
 class Backend {
   constructor(emit) {
@@ -25,12 +26,14 @@ class Backend {
       { group_id: GROUP_ID, user_id: PEER, role: 'member', status: 'active' }];
     this.itinerary = [{ id: DESTINATION, group_id: GROUP_ID, title: 'Meeting point', latitude: 25.04,
       longitude: 121.53, position: 0, day: 1, kind: 'destination', closed_at: null }];
+    domain.initialize(this, { LEADER, PEER });
   }
   snapshot(groupId) {
     return structuredClone({ group: this.groups.get(groupId), memberships: this.memberships.filter(m => m.group_id === groupId),
-      profiles: [{ id: LEADER, nickname: 'Leader' }, { id: PEER, nickname: 'Peer' }],
+      profiles: [...this.profiles.values()].filter(p => this.memberships.some(m => m.group_id === groupId && m.user_id === p.id)),
       locations: [...this.locations.values()].filter(l => l.group_id === groupId),
-      location_sharing: [], itinerary: this.itinerary.filter(d => d.group_id === groupId), subgroups: [], entity_versions: [],
+      location_sharing: this.tables.member_privacy_settings, itinerary: this.itinerary.filter(d => d.group_id === groupId),
+      subgroups: this.tables.subgroups.filter(s => s.group_id === groupId), entity_versions: [],
       generated_at: new Date(this.now).toISOString(), realtime_revision: new Date(this.now).toISOString() });
   }
   publish(table, row, eventType = 'UPDATE') {
@@ -45,6 +48,11 @@ class Backend {
       trace.result = structuredClone(result);
       return result;
     };
+    const additional = domain.execute(this, operation);
+    if (additional !== undefined) {
+      trace.result = structuredClone(additional);
+      return additional;
+    }
     if (kind === 'rpc') {
       assert.deepEqual(steps, [], `Unexpected RPC builder steps ${name}`);
       if (name === 'get_group_recovery_snapshot') {
