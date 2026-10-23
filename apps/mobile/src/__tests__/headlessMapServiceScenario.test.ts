@@ -152,6 +152,23 @@ describe.each(['ios', 'android'])('real Map callable service contracts on %s', p
     } finally { await world.close(); }
   });
 
+  it('MAP-NAV-04 the supported follower hook starts and stops a personal route without changing the shared team phase', async () => {
+    const world = new World();
+    try {
+      const actor = await device(world, PEER);
+      const before = structuredClone(world.backend.groups.get(GROUP_ID));
+      await actor.perform('journey.start', { destinationId: DESTINATION });
+      const local = await world.waitFor(actor, (value: { journey: { targetId?: string | null } }) => value.journey.targetId === DESTINATION, 'real personal route hook target');
+      expect(local.journey).toMatchObject({ targetId: DESTINATION, sharedTargetId: null, status: 'going' });
+      expect(world.backend.sessions.size).toBe(0);
+      expect(world.backend.groups.get(GROUP_ID)).toEqual(before);
+      expect(local.durable.operations).toEqual([]);
+      await actor.perform('journey.stop');
+      await world.waitFor(actor, (value: { journey: { targetId?: string | null } }) => !value.journey.targetId, 'personal stop');
+      expect(world.backend.groups.get(GROUP_ID)).toEqual(before);
+    } finally { await world.close(); }
+  });
+
   it('MAP-GATHER-01 MAP-GATHER-02 MAP-ARRIVAL-01 real suggestions and arrival services keep personal audit separate from history correction', async () => {
     const world = new World();
     try {
