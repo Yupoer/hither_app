@@ -2052,6 +2052,10 @@
     {"parent": 293, "child": 293, "acceptance": "Particle clocks pause in the background and resume with a 60 FPS frame budget.", "testFile": "starfieldPauseResume.test.ts", "testNamePattern": "freezes ball identity and phase"},
     {"parent": 293, "child": 293, "acceptance": "Native foreground updates use 5 seconds while persistence uses 15 seconds.", "testFile": "liveActivityDisplay.test.ts", "testNamePattern": "persists changed snapshots at 15 seconds"},
     {"parent": 293, "child": 293, "acceptance": "Headless background updates use 5 seconds locally and 15 seconds in the cloud.", "testFile": "backgroundJourneyCoverage.test.ts", "testNamePattern": "delivers background estimates at 5 seconds"},
-    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"}
+    {"parent": 293, "child": 293, "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.", "testFile": "liveActivityContract.test.ts", "testNamePattern": "uses native glass with a material fallback"},
+    {"parent": 320, "child": "inventory", "acceptance": "Reviewed operation families map to production entries and source changes require coverage review.", "testFile": "headlessInventoryContract.test.ts", "testNamePattern": "maps reviewed operation families|requires source review"},
+    {"parent": 320, "child": "backend", "acceptance": "External backend fixtures enforce source contracts and reject unsupported or unauthorized transitions.", "testFile": "headlessInventoryContract.test.ts", "testNamePattern": "keeps domain backend fixtures strict"},
+    {"parent": 320, "child": "store", "acceptance": "Actual Store and Premium callbacks wait for authoritative reward or purchase verification on both platforms.", "testFile": "headlessStoreScenario.test.ts", "testNamePattern": "waits for external SSV before credit|never finishes a purchase before server verification"},
+    {"parent": 320, "child": "isolation", "acceptance": "Each virtual device preserves account isolation and rejects unknown registry actions.", "testFile": "headlessHarnessContract.test.ts", "testNamePattern": "derives the callable catalog"}
   ]
 }
