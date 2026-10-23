@@ -223,4 +223,64 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     expect(readSnapshot().tripEntitlement).toEqual({ groupId: 'group-a', isPremium: false });
     expect(readSnapshot().isPro).toBe(false);
   });
+  it.each([undefined, 'group-a'])('rejects a saved old-team entitlement callback called with %s after switching groups', async (groupId) => {
+    await mount();
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-a' }, role: 'leader' } as never); await drain(); });
+    const oldRefresh = readSnapshot().refreshEntitlement;
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-b', isPremium: false });
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-b' }, role: 'leader' } as never); await drain(); });
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-a', isPremium: true });
+    mockPremiumProjection.mockResolvedValue({ personalPremiumActive: false, teamPremiumActive: true });
+    const requests = mockTripEntitlement.mock.calls.length;
+    await act(async () => { expect(await oldRefresh(groupId)).toBeNull(); await drain(); });
+    expect(mockTripEntitlement).toHaveBeenCalledTimes(requests);
+    expect(readSnapshot().membership?.group.id).toBe('group-b');
+    expect(readSnapshot().tripEntitlement).toEqual({ groupId: 'group-b', isPremium: false });
+    expect(readSnapshot().isPro).toBe(false);
+  });
+  it.each(['trip', 'projection'])('ignores a profile refresh with a delayed old-team %s response', async (stage) => {
+    await mount();
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-a' }, role: 'leader' } as never); await drain(); });
+    let resolveOld!: (value: unknown) => void;
+    const delayedRequest = stage === 'trip' ? mockTripEntitlement : mockPremiumProjection;
+    delayedRequest.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    let pending!: Promise<void>;
+    await act(async () => { pending = readSnapshot().refreshProfile(); await drain(); });
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-b', isPremium: false });
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-b' }, role: 'leader' } as never); await drain(); });
+    mockPremiumProjection.mockResolvedValue({ personalPremiumActive: false, teamPremiumActive: true });
+    const oldResult = stage === 'trip'
+      ? { groupId: 'group-a', isPremium: true }
+      : { personalPremiumActive: false, teamPremiumActive: true };
+    await act(async () => { resolveOld(oldResult); await pending; await drain(); });
+    expect(readSnapshot().membership?.group.id).toBe('group-b');
+    expect(readSnapshot().tripEntitlement).toEqual({ groupId: 'group-b', isPremium: false });
+    expect(readSnapshot().isPro).toBe(false);
+  });
+  it('preserves account profile updates but skips an old-team lookup after switching groups', async () => {
+    await mount();
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-a' }, role: 'leader' } as never); await drain(); });
+    let resolveProfile!: (value: unknown) => void;
+    mockProfile.mockImplementationOnce(() => new Promise(resolve => { resolveProfile = resolve; }));
+    let pending!: Promise<void>;
+    await act(async () => { pending = readSnapshot().refreshProfile(); await drain(); });
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-b', isPremium: false });
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-b' }, role: 'leader' } as never); await drain(); });
+    const requests = mockTripEntitlement.mock.calls.length;
+    await act(async () => { resolveProfile({ data: { nickname: 'Updated account name' }, error: null }); await pending; await drain(); });
+    expect(readSnapshot().user?.name).toBe('Updated account name');
+    expect(mockTripEntitlement).toHaveBeenCalledTimes(requests);
+    expect(readSnapshot().tripEntitlement).toEqual({ groupId: 'group-b', isPremium: false });
+  });
+  it('ignores a delayed group-free profile projection after joining a team', async () => {
+    await mount();
+    let resolveOld!: (value: unknown) => void;
+    mockPremiumProjection.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    await act(async () => { await readSnapshot().refreshProfile(); await drain(); });
+    mockTripEntitlement.mockResolvedValue({ groupId: 'group-b', isPremium: false });
+    await act(async () => { readSnapshot().setMembership({ group: { id: 'group-b' }, role: 'leader' } as never); await drain(); });
+    await act(async () => { resolveOld({ personalPremiumActive: false, teamPremiumActive: true }); await drain(); });
+    expect(readSnapshot().membership?.group.id).toBe('group-b');
+    expect(readSnapshot().isPro).toBe(false);
+  });
 });
