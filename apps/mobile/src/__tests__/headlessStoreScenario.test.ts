@@ -351,6 +351,8 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       await event('commands', { id: 'old-account-await', group_id: GROUP_ID, sender_id: LEADER, type: 'gather', message: 'Old account' });
       await world.waitFor(device, () => world.held.some((request: any) => request.operation.name === 'notification_preferences'), 'held old actor preference read');
       await device.input({ kind: 'account', userId: LEADER });
+      await world.advance(0);
+      await world.waitFor(device, (value: any) => value.presentation.session.user?.id === LEADER, 'actual replacement account committed');
       await world.release('notification_preferences');
       expect((await device.observe()).native.scheduled).toHaveLength(5);
       await device.command({ kind: 'mount', screen: { name: 'NotificationPreferences' } });
