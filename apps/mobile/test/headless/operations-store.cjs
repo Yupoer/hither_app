@@ -67,6 +67,7 @@ register('commands.fixed', 'N16', 'src/components/QuickCommandsCard.tsx', 'sendF
 register('commands.custom', 'N16', 'src/components/QuickCommandsCard.tsx', 'sendCustom', 'screen', '{ slot }',
   (app, { slot }) => app.host.call({ testId: `quick-command-custom-${slot}`, kind: 'press' }));
 control('commands.open-all', 'N16', 'src/components/QuickCommandsCard.tsx', 'onOpenAll', 'quick-commands-all');
+exported('commands.flush', 'N16', 'src/state/coreDataSync.ts', 'flushCoreOperationOutbox');
 for (const [symbol, ids] of [['upsertDeviceActivityToken', 'L05'], ['upsertLiveActivitySession', 'L06,L09'],
   ['deleteLiveActivitySession', 'L02,L09'], ['deleteMyLiveActivitySessions', 'L02,L09'],
   ['deleteMyLiveActivitySessionsForGroups', 'L02,L09'], ['updateDeviceActivityAccent', 'L08'], ['updateLiveActivityProgress', 'L09']]) {
