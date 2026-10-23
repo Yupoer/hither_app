@@ -88,6 +88,8 @@ describe.each(['ios', 'android'])('external-only Store/native scenarios on %s', 
   it('fixture contract rejects unknown nested exports and does not clear leaked listener evidence', async () => {
     expect(() => native.modules['react-native-google-mobile-ads'].AdsConsent.unknownMethod()).toThrow('Unsupported external');
     expect(fatal.splice(0)).toEqual(['react-native-google-mobile-ads.AdsConsent.unknownMethod']);
+    expect(() => native.modules['react-native-google-mobile-ads'].MobileAds().unknownMethod()).toThrow('Unsupported external');
+    expect(fatal.splice(0)).toEqual(['MobileAds.instance.unknownMethod']);
     const subscription = native.modules['expo-notifications'].addNotificationReceivedListener(() => {});
     expect(native.dispose().notification).toBe(1);
     expect(native.observe().listeners.notification).toBe(1);
