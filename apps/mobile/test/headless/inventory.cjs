@@ -30,7 +30,9 @@ function audit(actions, exclusions = [], root = path.resolve(__dirname, '../..')
     } else exempt.set(entry.id, entry);
   }
   const missing = [...coverage].filter(([id, entries]) => !entries.length && !exempt.has(id)).map(([id]) => id);
-  return { actions: actions.length, families: families.size, mapped: families.size - missing.length - exempt.size,
+  return { actions: actions.filter(entry => entry.level !== 'lifecycle').length,
+    automaticEntries: actions.filter(entry => entry.level === 'lifecycle').length,
+    families: families.size, mapped: families.size - missing.length - exempt.size,
     presentationOnly: [...exempt.values()], missing, errors,
     entries: [...families.values()].map(entry => ({ ...entry, actions: coverage.get(entry.id), exclusion: exempt.get(entry.id) ?? null })) };
 }

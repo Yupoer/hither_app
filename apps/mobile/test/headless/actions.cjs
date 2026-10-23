@@ -68,14 +68,18 @@ const actions = {
   },
 };
 
+const lifecycle = [];
 for (const module of ['./operations-account.cjs', './operations-map.cjs', './operations-store.cjs']) {
-  for (const [name, definition] of Object.entries(require(module).operations)) {
+  const domain = require(module);
+  for (const [name, definition] of Object.entries(domain.operations)) {
     assert(!Object.hasOwn(actions, name), `Duplicate action ${name}`);
     actions[name] = definition;
   }
+  lifecycle.push(...(domain.lifecycle ?? []).map(entry => ({ ...entry, level: 'lifecycle' })));
 }
 
 exports.catalog = () => Object.entries(actions).map(([name, { run, ...description }]) => ({ name, ...description }));
+exports.inventoryEntries = () => [...exports.catalog(), ...lifecycle];
 exports.has = name => Object.hasOwn(actions, name);
 exports.perform = (app, name, input = {}) => {
   assert(Object.hasOwn(actions, name), `Unsupported action ${name}`);
