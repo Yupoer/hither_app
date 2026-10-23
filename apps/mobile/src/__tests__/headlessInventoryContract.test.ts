@@ -1,13 +1,19 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
-const { inventoryEntries, exclusions } = require('../../test/headless/actions.cjs');
-const { audit } = require('../../test/headless/inventory.cjs');
+const { inventoryEntries, scenarioEntries, exclusions } = require('../../test/headless/actions.cjs');
+const { audit, auditScenarios } = require('../../test/headless/inventory.cjs');
 const { scan, compare } = require('../../test/headless/source-inventory.cjs');
 
 describe('headless operation completeness', () => {
   it('maps reviewed operation families to existing production entries', () => {
     const result = audit(inventoryEntries(), exclusions());
+    expect(result.errors).toEqual([]);
+    expect(result.missing).toEqual([]);
+  });
+
+  it('links each feasible family to observable scenarios on both platforms', () => {
+    const result = auditScenarios(scenarioEntries(), exclusions());
     expect(result.errors).toEqual([]);
     expect(result.missing).toEqual([]);
   });

@@ -70,6 +70,7 @@ const actions = {
 
 const lifecycle = [];
 const unreachable = [];
+const scenarios = [];
 for (const module of ['./operations-account.cjs', './operations-map.cjs', './operations-store.cjs']) {
   const domain = require(module);
   for (const [name, definition] of Object.entries(domain.operations)) {
@@ -78,10 +79,12 @@ for (const module of ['./operations-account.cjs', './operations-map.cjs', './ope
   }
   lifecycle.push(...(domain.lifecycle ?? []).map(entry => ({ ...entry, level: 'lifecycle' })));
   unreachable.push(...(domain.unreachable ?? []));
+  scenarios.push(...(domain.scenarios ?? []));
 }
 
 exports.catalog = () => Object.entries(actions).map(([name, { run, ...description }]) => ({ name, ...description }));
 exports.inventoryEntries = () => [...exports.catalog(), ...lifecycle];
+exports.scenarioEntries = () => scenarios;
 exports.exclusions = () => unreachable.flatMap(entry => entry.inventory.map(id => ({
   id, kind: 'unreachable', reason: entry.reason, source: entry.sources[0],
 })));

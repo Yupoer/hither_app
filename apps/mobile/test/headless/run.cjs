@@ -1,14 +1,15 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
-const { catalog, gaps, inventoryEntries, exclusions } = require('./actions.cjs');
+const { catalog, gaps, inventoryEntries, scenarioEntries, exclusions } = require('./actions.cjs');
 if (process.argv.includes('--list')) {
   const actions = catalog();
   console.log(JSON.stringify({ count: actions.length, actions, unsupported: gaps }, null, 2));
 } else if (process.argv.includes('--inventory')) {
   const result = require('./inventory.cjs').audit(inventoryEntries(), exclusions());
+  result.scenarios = require('./inventory.cjs').auditScenarios(scenarioEntries(), exclusions());
   console.log(JSON.stringify(result, null, 2));
-  process.exitCode = result.errors.length || result.missing.length ? 1 : 0;
+  process.exitCode = result.errors.length || result.missing.length || result.scenarios.errors.length || result.scenarios.missing.length ? 1 : 0;
 } else {
   const suites = fs.readdirSync(path.resolve(__dirname, '../../src/__tests__'))
     .filter(file => /^headless.*\.test\.tsx?$/.test(file)).sort().map(file => `src/__tests__/${file}`);

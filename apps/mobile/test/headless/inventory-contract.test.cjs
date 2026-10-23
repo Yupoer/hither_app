@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { audit } = require('./inventory.cjs');
+const { audit, auditScenarios } = require('./inventory.cjs');
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-inventory-'));
 try {
@@ -20,6 +20,10 @@ try {
   const dead = audit([], [{id:'A01',kind:'unreachable',reason:'No production caller after source review',source:action.sources[0]}], directory);
   assert(!dead.missing.includes('A01'));
   assert.equal(dead.mapped, 0);
+  const scenario = { inventory:['A01'], file:'screen.ts', pattern:'submitEmail', assertions:'Observed result', platforms:['ios','android'] };
+  assert(!auditScenarios([scenario], [], directory).missing.includes('A01'));
+  assert(auditScenarios([{...scenario, platforms:['ios']}], [], directory).errors.length);
+  assert(auditScenarios([{...scenario, pattern:'missing test'}], [], directory).errors.length);
   assert(audit([], [{id:'A01',kind:'presentationOnly',reason:'Example only',source:{file:'../screen.ts',symbol:'submitEmail'}}], directory).errors.length);
   console.log('Inventory detects missing operations, duplicate entries, deleted source anchors and invalid exclusions');
 } finally {
