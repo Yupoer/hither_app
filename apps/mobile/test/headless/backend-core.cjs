@@ -25,13 +25,20 @@ function addDestination(b, groupId, payload) {
   assert(Number.isFinite(payload.latitude) && Math.abs(payload.latitude) <= 90 && Number.isFinite(payload.longitude) && Math.abs(payload.longitude) <= 180, 'Destination coordinates contract');
   const row = { id: payload.destinationId ?? randomUUID(), group_id: groupId, title: payload.title, address: payload.address ?? null,
     latitude: payload.latitude, longitude: payload.longitude, day: payload.day ?? null, subgroup_id: payload.subgroupId ?? null,
-    kind: payload.kind ?? 'stop', stay_anchor: payload.stayAnchor ?? false, provider_place_id: payload.providerPlaceId ?? null,
-    position: b.itinerary.filter(d => d.group_id === groupId).length, closed_at: null };
+    kind: payload.kind ?? 'stop', stay_anchor: payload.kind === 'accommodation' && (payload.stayAnchor ?? false), provider_place_id: payload.providerPlaceId ?? null,
+    position: 0, closed_at: null };
+  const lane = b.itinerary.filter(d => d.group_id === groupId && (d.subgroup_id ?? null) === row.subgroup_id);
+  const sameDay = lane.filter(d => d.day === row.day);
+  row.position = Math.max(-1, ...(sameDay.length ? sameDay : lane.filter(d => (d.day ?? 0) < (row.day ?? 0))).map(d => d.position)) + 1;
+  if (row.kind === 'accommodation' && !row.stay_anchor) {
+    const tail = sameDay.filter(d => d.kind === 'accommodation' && d.stay_anchor).sort((a, c) => c.position - a.position)[0];
+    if (tail) row.position = tail.position;
+  }
   if (payload.placement === 'firstStop') {
     const scope = b.itinerary.filter(d => d.group_id === groupId && (d.subgroup_id ?? null) === row.subgroup_id && d.day === row.day && !d.closed_at && !d.stay_anchor);
     row.position = scope.length ? Math.min(...scope.map(d => d.position)) : row.position;
-    b.itinerary.filter(d => d.group_id === groupId && d.position >= row.position).forEach(d => d.position++);
   }
+  lane.filter(d => d.position >= row.position).forEach(d => { d.position++; b.publish('itinerary_items', d); });
   b.itinerary.push(row); b.publish('itinerary_items', row, 'INSERT'); return row;
 }
 
@@ -88,6 +95,7 @@ function apply(b, { args: a, userId }) {
     entity = { groupId: group.id, journeyPhase: 'staying', activeDestinationId: null, pointStatuses: { [session.destination_id]: 'pending' }, phaseChangedAt: b.now, entityVersion: version };
     effects = { navigationSessionId: session.id, navigationSession: result.data };
   } else if (type === 'add_destination') {
+    if (b.itinerary.some(d => d.id === p.destinationId)) return conflict('validation', 'duplicate destination id');
     addDestination(b, group.id, p);
   } else if (type === 'edit_destination' || type === 'set_destination_meet_time') {
     if (!destination) return conflict('target_deleted');
@@ -118,11 +126,12 @@ function apply(b, { args: a, userId }) {
       const d = b.itinerary.find(r => r.id === update.id && r.group_id === group.id);
       if (!d || !scopeAllowed(b, group.id, d.subgroup_id, userId)) return conflict('unauthorized');
     }
-    for (const update of p.updates) {
+    const slots = p.updates.map(update => b.itinerary.find(d => d.id === update.id).position).sort((x, y) => x - y);
+    for (const [index, update] of p.updates.entries()) {
       const d = b.itinerary.find(r => r.id === update.id);
-      d.position = update.position; d.day = update.day;
-      if (Object.hasOwn(update, 'meetAt')) d.meet_at = update.meetAt;
-      if (Object.hasOwn(update, 'stayAnchor')) d.stay_anchor = update.stayAnchor;
+      d.position = slots[index]; d.day = update.day;
+      d.meet_at = update.meetAt ?? null;
+      d.stay_anchor = update.stayAnchor ?? false;
       b.publish('itinerary_items', d);
     }
     b.itinerary.sort((x, y) => x.position - y.position);

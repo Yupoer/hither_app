@@ -323,3 +323,28 @@ assert.equal(regressionRpc('ack_my_location_refresh', { p_group_id: GROUP_ID, p_
 assert.deepEqual(regressionRpc('get_group_location_refresh_acknowledgements', { p_group_id: GROUP_ID, p_requested_at: firstRefresh.requested_at }).data, []);
 assert.deepEqual(regressionRpc('get_group_location_refresh_acknowledgements', { p_group_id: GROUP_ID, p_requested_at: nextRefresh.requested_at }).data, [PEER]);
 console.log('Backend durable refresh version contracts passed');
+
+regression = new Backend(() => {});
+const legacyDestination = regressionRpc('add_itinerary_item', { p_group_id: GROUP_ID, p_subgroup_id: null, p_title: 'Legacy stop', p_address: null,
+  p_latitude: 25, p_longitude: 121, p_day: 1, p_kind: 'stop', p_stay_anchor: false }).data;
+assert.equal(regressionRpc('reorder_itinerary_items', { p_group_id: GROUP_ID, p_updates: [{ id: legacyDestination, position: 999, day: 1 }, { id: targetId, position: -999, day: 1 }] }).data, 2);
+assert.equal(regression.itinerary.find(d => d.id === legacyDestination).position, 0);
+assert.equal(regression.itinerary.find(d => d.id === targetId).position, 1);
+assert.equal(regressionRpc('delete_destination', { p_group_id: GROUP_ID, p_destination_id: targetId }, PEER).error.code, '42501');
+assert.equal(regressionRpc('complete_gathering_stop', { p_group_id: GROUP_ID, p_destination_id: targetId }).error, null);
+assert.ok(regression.itinerary.find(d => d.id === targetId).closed_at);
+assert.equal(regression.tables.visited_waypoints.filter(w => w.destination_id === targetId).length, 2);
+assert.equal(regressionRpc('complete_gathering_stop', { p_group_id: GROUP_ID, p_destination_id: targetId }).error, null);
+regressionRpc('start_navigation_session', { p_group_id: GROUP_ID, p_destination_id: legacyDestination, p_request_id: 'legacy-delete' });
+assert.equal(regressionRpc('delete_destination', { p_group_id: GROUP_ID, p_destination_id: legacyDestination }).error, null);
+assert.equal(regression.sessions.get('legacy-delete').status, 'cancelled');
+assert.equal(regression.itinerary.some(d => d.id === legacyDestination), false);
+regression = new Backend(() => {});
+const importItems = [{ title: 'Pool one', latitude: 25, longitude: 121 }, { title: 'Pool two', latitude: 25, longitude: 121 }];
+assert.equal(regressionRpc('import_itinerary_batch', { p_group_id: GROUP_ID, p_subgroup_id: null, p_day: null, p_items: importItems }).data, 2);
+assert.equal(regressionRpc('get_kml_import_quota', {}).data, 3);
+assert.deepEqual(regression.snapshot(GROUP_ID).itinerary.map(d => d.title), ['Pool one', 'Pool two', 'Meeting point']);
+assert.equal(regressionRpc('import_itinerary_batch', { p_group_id: GROUP_ID, p_subgroup_id: null, p_day: null, p_items: [...importItems, ...importItems] }).error.code, 'P0004');
+assert.equal(regression.itinerary.length, 3);
+assert.throws(() => regressionRpc('apply_core_operation', {}), /Unsupported backend RPC/);
+console.log('Backend legacy destination and import count contracts passed');

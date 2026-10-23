@@ -192,6 +192,8 @@ function execute(b, operation) {
   if (request !== undefined) return request;
   const store = require('./backend-store.cjs').execute(b, operation);
   if (store !== undefined) return store;
+  const legacy = require('./backend-legacy.cjs').execute(b, operation);
+  if (legacy !== undefined) return legacy;
   if (kind !== 'rpc') return undefined;
   if (name === 'create_group') {
     keys(args, 'p_name');
