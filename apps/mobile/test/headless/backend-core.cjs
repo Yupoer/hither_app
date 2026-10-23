@@ -14,7 +14,7 @@ const payloadFields = {
   complete_destination: 'destinationId sessionId reason subgroupId', set_solo: 'userId solo',
   set_trip_details: 'tripDays departureDate', set_daily_accommodation: 'stayDate daily day', clear_daily_accommodation: 'stayDate daily day',
   submit_gather_point_request: 'requestId subgroupId items', resolve_gather_point_request: 'requestId approve',
-  record_arrival: 'actorId userId targetUserId arrived completeSolo arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
+  record_arrival: 'actorId userId targetUserId destination arrived completeSolo arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
   leader_correct_arrival: 'actorId targetUserId userId arrived arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
   set_navigation_response: 'sessionId userId response result',
   send_command: 'type message latitude longitude expiresAt',
@@ -60,6 +60,14 @@ function apply(b, { args: a, userId }) {
   const type = a.p_operation_type, p = a.p_payload;
   assert(Object.hasOwn(payloadFields, type), `Unsupported core operation ${type}`);
   for (const field of Object.keys(p)) assert(field === 'rebase' || payloadFields[type].split(' ').includes(field), `Unknown ${type} payload ${field}`);
+  if (type === 'record_arrival' && Object.hasOwn(p, 'destination')) {
+    const d = p.destination;
+    assert(d && typeof d === 'object' && !Array.isArray(d), 'Arrival destination object contract');
+    assert.equal(d.id, a.p_entity_id, 'Arrival destination identity contract');
+    assert(typeof d.title === 'string' && d.title.trim(), 'Arrival destination title contract');
+    assert(Number.isFinite(d.coordinates?.latitude) && Math.abs(d.coordinates.latitude) <= 90
+      && Number.isFinite(d.coordinates?.longitude) && Math.abs(d.coordinates.longitude) <= 180, 'Arrival destination coordinates contract');
+  }
   const conflict = (code, message = code) => ok({ status: 'conflict', operation_id: a.p_operation_id, conflict: { code, message } });
   const { rebase: _rebase, ...identityPayload } = p;
   const signature = { actorId: userId, groupId: a.p_group_id, entityType: a.p_entity_type, entityId: a.p_entity_id,

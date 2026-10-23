@@ -78,8 +78,19 @@ const started = core('start_gathering', { action: 'start', subgroupId: null, act
 assert.equal(started.data.status, 'accepted');
 const startedSession = started.data.effects.navigationSession;
 assert.equal(table('navigation_sessions', [['select', '*, navigation_member_states(user_id)'], ['eq', 'id', startedSession.id], ['maybeSingle']]).data.destination_id, newDestinationId);
-assert.equal(core('record_arrival', { actorId: PEER, userId: PEER, arrived: true, arrivedAt: null, occurredAt: new Date(b.now).toISOString(), navigationSessionId: startedSession.id }, PEER, { p_entity_id: newDestinationId }).data.status, 'accepted');
+const localDestination = { ...added.data.entity.destinations.find(d => d.id === newDestinationId), title: 'Cached stop title', coordinates: { latitude: 26, longitude: 122 } };
+const sourceArrival = { actorId: PEER, userId: PEER, destination: localDestination, completeSolo: false, arrivedAt: null,
+  occurredAt: new Date(b.now).toISOString(), navigationSessionId: startedSession.id };
+assert.equal(core('record_arrival', sourceArrival, PEER, { p_entity_id: newDestinationId }).data.status, 'accepted');
 assert.equal(b.tables.destination_arrivals.find(r => r.destination_id === newDestinationId).user_id, PEER);
+assert.equal(b.tables.visited_waypoints.find(r => r.destination_id === newDestinationId).name, startedSession.destination_name);
+assert.equal(b.tables.visited_waypoints.find(r => r.destination_id === newDestinationId).latitude, startedSession.destination_latitude);
+assert.throws(() => core('record_arrival', { ...sourceArrival, destination: null }, PEER, { p_entity_id: newDestinationId }), /Arrival destination object contract/);
+assert.throws(() => core('record_arrival', { ...sourceArrival, destination: { ...localDestination, id: 'other-stop' } }, PEER, { p_entity_id: newDestinationId }), /Arrival destination identity contract/);
+assert.throws(() => core('record_arrival', { ...sourceArrival, destination: { ...localDestination, coordinates: { latitude: 91, longitude: 122 } } }, PEER, { p_entity_id: newDestinationId }), /Arrival destination coordinates contract/);
+assert.throws(() => core('record_arrival', { ...sourceArrival, invented: true }, PEER, { p_entity_id: newDestinationId }), /Unknown record_arrival payload invented/);
+assert.equal(core('record_arrival', { ...sourceArrival, navigationSessionId: null }, PEER, { p_entity_id: newDestinationId }).data.conflict.code, 'session_required');
+assert.throws(() => core('record_arrival', sourceArrival, PEER, { p_actor_id: LEADER, p_entity_id: newDestinationId }), /Wire actor ownership/);
 core('end_gathering', { action: 'end', subgroupId: null, navigationSessionId: startedSession.id }, LEADER, { p_entity_type: 'active_gathering' });
 assert.equal(b.sessions.get(startedSession.id).status, 'cancelled');
 assert.equal(b.itinerary.find(d => d.id === newDestinationId).closed_at, null);
