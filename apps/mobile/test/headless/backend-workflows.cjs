@@ -10,7 +10,7 @@ function scopeAllowed(b, groupId, scope, userId) {
   return Boolean(subgroup && membership.subgroup_id === scope && (subgroup.mode === 'collab' || subgroup.leader_id === userId));
 }
 
-function startSession(b, groupId, destinationId, requestId, userId, replace = false) {
+function startSession(b, groupId, destinationId, requestId, userId, replace = false, sessionId = randomUUID()) {
   const destination = b.itinerary.find(d => d.id === destinationId && d.group_id === groupId);
   if (!destination || destination.day == null || destination.closed_at) return fail('invalid_destination', '22023');
   const scope = destination.subgroup_id ?? null;
@@ -21,7 +21,7 @@ function startSession(b, groupId, destinationId, requestId, userId, replace = fa
   if (active && !replace) return fail('active_session_exists', 'P0001');
   if (active) { active.status = 'cancelled'; active.version++; b.publish('navigation_sessions', active); }
   const roster = b.memberships.filter(m => m.group_id === groupId && !m.solo && (m.subgroup_id ?? null) === scope);
-  const session = { id: randomUUID(), group_id: groupId, scope_subgroup_id: scope, destination_id: destination.id,
+  const session = { id: sessionId, group_id: groupId, scope_subgroup_id: scope, destination_id: destination.id,
     destination_name: destination.title, destination_latitude: destination.latitude, destination_longitude: destination.longitude,
     arrival_radius_m: 50, started_by: userId, request_id: requestId, started_at: iso(b),
     expires_at: new Date(b.now + 86400000).toISOString(), status: 'active', version: 1,
@@ -160,10 +160,12 @@ function execute(b, operation) {
   }
   if (name === 'clear_anonymous_expiry_if_registered') {
     keys(args, 'p_uid'); if (args.p_uid !== userId) return fail('owner_mismatch');
-    const profile = b.profiles.get(userId); if (profile) profile.anonymous_expires_at = null; return ok(null);
+    const profile = b.profiles.get(userId); if (profile && b.authUsers?.get(userId)?.is_anonymous === false) profile.anonymous_expires_at = null; return ok(null);
   }
   if (name === 'delete_anonymous_account' || name === 'delete_account') {
-    keys(args, ''); b.profiles.delete(userId); b.memberships = b.memberships.filter(m => m.user_id !== userId); return ok(null);
+    keys(args, ''); b.profiles.delete(userId); b.memberships = b.memberships.filter(m => m.user_id !== userId);
+    if (b.authUsers) require('./backend-auth.cjs').removeUser(b, userId);
+    return ok(null);
   }
   if (name === 'revoke_installation_capabilities') {
     keys(args, 'p_device_id p_push_token p_activity_ids');

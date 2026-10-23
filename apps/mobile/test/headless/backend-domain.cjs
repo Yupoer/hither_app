@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 
-// Contracts come from api/services/*Service.ts and the SQL anchors in backend-contracts.md.
+// Wire contracts follow api/services and supabase/migrations; these fixtures do not execute SQL policies.
 const schemas = {
   profiles: { fields: 'id nickname avatar avatar_color pro created_at pro_plan pro_purchased_at pro_expires_at anonymous_expires_at preferences onboarding', write: 'nickname avatar avatar_color preferences onboarding', owner: 'id', modes: ['select', 'update', 'upsert'], conflict: 'id' },
   memberships: { fields: 'group_id user_id role status solo subgroup_id', modes: ['select', 'delete'] },
@@ -14,13 +14,13 @@ const schemas = {
   notification_preferences: { fields: 'user_id add_gathering leader_commands follower_requests journey arrival updated_at', owner: 'user_id', modes: ['select', 'upsert'], conflict: 'user_id' },
   account_favorite_places: { fields: 'id user_id title address latitude longitude lat_norm lng_norm title_norm created_at updated_at', owner: 'user_id', modes: ['select', 'upsert', 'delete'], conflict: 'user_id,title_norm,lat_norm,lng_norm' },
   daily_accommodations: { fields: 'id group_id stay_date title address latitude longitude source_destination_id created_at updated_at', modes: ['select'] },
-  destination_arrivals: { fields: 'id group_id destination_id user_id arrived_at navigation_session_id occurred_at', modes: ['select'] },
+  destination_arrivals: { fields: 'id group_id destination_id user_id arrived_at navigation_session_id occurred_at source marked_by corrected_by corrected_at', modes: ['select'] },
   gather_point_requests: { fields: 'id group_id subgroup_id requester_id items status created_at resolved_at resolved_by', modes: ['select'] },
   coordination_requests: { fields: 'id group_id subgroup_id created_by subject subject_kind options deadline policy default_outcome status resolved_outcome resolution_source resolved_at resolved_by applied_operation_id created_at updated_at', modes: ['select'] },
   coordination_responses: { fields: 'id request_id user_id option_id responded_at updated_at', modes: ['select'] },
   itinerary_operations: { fields: 'id group_id subgroup_id version operation_type payload source_request_id created_by created_at', modes: ['select'] },
   navigation_sessions: { fields: 'id group_id scope_subgroup_id destination_id destination_name destination_latitude destination_longitude arrival_radius_m started_by request_id started_at expires_at status version navigation_member_states', modes: ['select'] },
-  navigation_member_states: { fields: '*', modes: ['select'] },
+  navigation_member_states: { fields: 'navigation_session_id user_id local_status detail latest_distance_m latest_accuracy_m live_activity_id acknowledged_at arrived_at updated_at', modes: ['select'] },
   push_tokens: { fields: 'user_id device_id token platform updated_at', owner: 'user_id', modes: ['upsert'], conflict: 'user_id,token' },
   device_live_activity_tokens: { fields: 'user_id device_id push_to_start_token live_activities_enabled accent_hex updated_at', owner: 'user_id', modes: ['select', 'upsert', 'update', 'delete'], conflict: 'user_id,device_id' },
   live_activity_sessions: { fields: 'user_id device_id activity_id group_id destination_id push_token accent_hex initial_distance_m current_distance_m eta_seconds travel_mode last_progress_bucket updated_at', owner: 'user_id', modes: ['upsert', 'update', 'delete'], conflict: 'user_id,group_id' },
@@ -28,7 +28,7 @@ const schemas = {
   performance_events: { fields: 'id user_id session_id occurred_at event_type operation payload', owner: 'user_id', modes: ['upsert'], conflict: 'id' },
   visited_waypoints: { fields: 'id user_id group_id destination_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
   core_entity_versions: { fields: 'group_id entity_type entity_id entity_version state', modes: ['select'] },
-  commands: { fields: 'id group_id sender_id type payload created_at', modes: ['select'] },
+  commands: { fields: 'id group_id sender_id type message latitude longitude expires_at created_at', modes: ['select'] },
 };
 const ok = data => ({ data: structuredClone(data), error: null });
 const fail = (message, code = '42501') => ({ data: null, error: { message, code } });
@@ -81,7 +81,7 @@ function executeTable(b, { name, steps, userId }) {
     assert(['select', 'insert', 'upsert', 'update', 'delete', 'eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte', 'order', 'limit', 'single', 'maybeSingle', 'abortSignal'].includes(method), `Unsupported builder ${method}`);
     if (['eq', 'in', 'is', 'gt', 'gte', 'lt', 'lte', 'order'].includes(method)) assert(fields.includes(field) || schema.fields === '*', `Unknown ${name} filter ${field}`);
     if (method === 'select' && field !== '*') for (const selected of field.split(',').map(v => v.trim())) {
-      assert(fields.includes(selected) || selected === 'navigation_member_states(user_id)', `Unknown ${name} selection ${selected}`);
+      assert(selected === '*' || fields.includes(selected) || name === 'navigation_sessions' && selected === 'navigation_member_states(user_id)', `Unknown ${name} selection ${selected}`);
     }
   }
   const mutation = steps.find(s => s[0] === mode);
@@ -137,7 +137,10 @@ function executeTable(b, { name, steps, userId }) {
   if (limit !== undefined) rows = rows.slice(0, limit);
   const select = steps.find(s => s[0] === 'select');
   if (mode !== 'select' && !select) return ok(null);
-  if (select && select[1] !== '*') rows = rows.map(row => Object.fromEntries(select[1].split(',').map(v => v.trim()).map(field => field === 'navigation_member_states(user_id)' ? ['navigation_member_states', row.navigation_member_states ?? []] : [field, row[field] ?? null])));
+  if (select && select[1] !== '*') rows = rows.map(row => {
+    const selected = select[1].split(',').map(v => v.trim());
+    return { ...(selected.includes('*') ? row : {}), ...Object.fromEntries(selected.filter(field => field !== '*').map(field => field === 'navigation_member_states(user_id)' ? ['navigation_member_states', row.navigation_member_states ?? []] : [field, row[field] ?? null])) };
+  });
   if (steps.some(s => s[0] === 'single' || s[0] === 'maybeSingle')) {
     if (rows.length > 1 || rows.length === 0 && steps.some(s => s[0] === 'single')) return fail('JSON object requested, multiple (or no) rows returned', 'PGRST116');
     return ok(rows[0] ?? null);
@@ -148,7 +151,7 @@ function executeTable(b, { name, steps, userId }) {
 function projection(b, userId, groupId) {
   const personal = b.premium.get(userId);
   const active = grant => Boolean(grant && grant.status === 'active' && (!grant.expires_at || Date.parse(grant.expires_at) > b.now));
-  return { ok: active(personal), ...(!active(personal) ? { error: 'subscription_required' } : {}), personalPremiumActive: active(personal), teamPremiumActive: groupId ? b.memberships.some(m => m.group_id === groupId && active(b.premium.get(m.user_id))) : false,
+  return { ok: active(personal), ...(!active(personal) ? { error: 'subscription_required' } : {}), personalPremiumActive: active(personal), teamPremiumActive: groupId ? active(b.teamPremium?.get(groupId)) || b.memberships.some(m => m.group_id === groupId && active(b.premium.get(m.user_id))) : false,
     status: active(personal) ? 'active' : personal?.status ?? 'none', productId: personal?.product_id ?? null, expiresAt: personal?.expires_at ?? null,
     sourceVersion: personal?.source_version ?? null, entitlementVersion: personal?.entitlement_version ?? 1, lastSyncedAt: iso(b) };
 }
@@ -156,8 +159,13 @@ function projection(b, userId, groupId) {
 function execute(b, operation) {
   const { kind, name, userId, args = {}, steps = [] } = operation;
   if (kind === 'table') return executeTable(b, operation);
+  if (kind === 'rpc') assert(steps.every(step => name === 'ingest_diagnostic_batch' && step[0] === 'abortSignal'), `Unexpected RPC builder steps ${name}`);
   const workflow = require('./backend-workflows.cjs').execute(b, operation);
   if (workflow !== undefined) return workflow;
+  const request = require('./backend-requests.cjs').execute(b, operation);
+  if (request !== undefined) return request;
+  const store = require('./backend-store.cjs').execute(b, operation);
+  if (store !== undefined) return store;
   if (kind !== 'rpc') return undefined;
   if (name === 'create_group') {
     keys(args, 'p_name');

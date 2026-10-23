@@ -47,3 +47,82 @@ assert.equal(rpc('get_premium_projection', { p_group_id: GROUP_ID }, PEER).data.
 assert.equal(rpc('ingest_diagnostic_batch', { p_events: [{ id: 'event-1', event: 'boot', deviceId: 'device-1' }] }).data.acceptedIds[0], 'event-1');
 assert.throws(() => invoke('unknown-function', {}), /Unknown SDK request kind/);
 console.log('Backend navigation, subgroup, diagnostics and verification contracts passed');
+
+assert.throws(() => b.execute('contract', { kind: 'rpc', name: 'get_store_snapshot', args: { p_group_id: GROUP_ID }, steps: [['single']], userId: LEADER }), /Unexpected RPC builder/);
+assert.throws(() => table('navigation_member_states', [['select', '*'], ['eq', 'invented_column', 1]]), /Unknown navigation_member_states filter/);
+const core = (type, payload, userId = LEADER, extra = {}) => rpc('apply_core_operation_v3', {
+  p_operation_id: `core-${++core.sequence}`, p_group_id: GROUP_ID, p_actor_id: userId, p_entity_type: 'itinerary',
+  p_entity_id: GROUP_ID, p_entity_version: 0, p_operation_type: type, p_payload: payload, p_sequence: core.sequence,
+  p_dependency_ids: [], p_created_at: new Date(b.now).toISOString(), ...extra,
+}, userId);
+core.sequence = 0;
+assert.equal(core('set_solo', { userId: PEER, solo: true }, PEER).data.status, 'accepted');
+assert.equal(b.memberships.find(m => m.group_id === GROUP_ID && m.user_id === PEER).solo, true);
+core('set_solo', { userId: PEER, solo: false }, PEER);
+assert.equal(core('set_trip_details', { tripDays: 3, departureDate: '2026-10-23' }, PEER).data.status, 'conflict');
+assert.equal(core('set_trip_details', { tripDays: 3, departureDate: '2026-10-23' }).data.status, 'accepted');
+assert.equal(b.groups.get(GROUP_ID).trip_days, 3);
+const newDestinationId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const addPayload = { destinationId: newDestinationId, title: 'Added stop', latitude: 25.1, longitude: 121.6, day: 1, kind: 'stop', subgroupId: null, stayAnchor: false };
+const added = core('add_destination', addPayload);
+assert.equal(added.data.status, 'accepted');
+const addedWire = b.trace.at(-1).args;
+assert.equal(rpc('apply_core_operation_v3', addedWire).data.status, 'duplicate');
+assert.equal(rpc('apply_core_operation_v3', { ...addedWire, p_payload: { ...addPayload, title: 'Overwritten' } }).data.conflict.code, 'operation_identity_mismatch');
+assert.equal(b.itinerary.filter(d => d.id === newDestinationId).length, 1);
+core('edit_destination', { destinationId: newDestinationId, subgroupId: null, patch: { title: 'Edited stop' } });
+core('set_destination_meet_time', { destinationId: newDestinationId, subgroupId: null, meetAt: '2026-10-23T09:00:00Z', meetRedMinutes: 10 });
+assert.equal(b.itinerary.find(d => d.id === newDestinationId).title, 'Edited stop');
+assert.equal(b.itinerary.find(d => d.id === newDestinationId).meet_red_minutes, 10);
+const started = core('start_gathering', { action: 'start', subgroupId: null, activeDestinationId: newDestinationId, navigationRequestId: 'core-start', navigationSessionId: null }, LEADER, { p_entity_type: 'active_gathering' });
+assert.equal(started.data.status, 'accepted');
+const startedSession = started.data.effects.navigationSession;
+assert.equal(table('navigation_sessions', [['select', '*, navigation_member_states(user_id)'], ['eq', 'id', startedSession.id], ['maybeSingle']]).data.destination_id, newDestinationId);
+assert.equal(core('record_arrival', { actorId: PEER, userId: PEER, arrived: true, arrivedAt: null, occurredAt: new Date(b.now).toISOString(), navigationSessionId: startedSession.id }, PEER, { p_entity_id: newDestinationId }).data.status, 'accepted');
+assert.equal(b.tables.destination_arrivals.find(r => r.destination_id === newDestinationId).user_id, PEER);
+core('end_gathering', { action: 'end', subgroupId: null, navigationSessionId: startedSession.id }, LEADER, { p_entity_type: 'active_gathering' });
+assert.equal(b.sessions.get(startedSession.id).status, 'cancelled');
+assert.equal(b.itinerary.find(d => d.id === newDestinationId).closed_at, null);
+const daily = { id: 'stay-1', groupId: GROUP_ID, stayDate: '2026-10-23', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 }, sourceDestinationId: newDestinationId };
+core('set_daily_accommodation', { stayDate: daily.stayDate, daily, day: 1 });
+core('delete_destination', { destinationId: newDestinationId, sessionId: null, subgroupId: null });
+assert.equal(b.tables.daily_accommodations[0].title, 'Hotel');
+core('clear_daily_accommodation', { stayDate: daily.stayDate, daily: null, day: 1 });
+assert.equal(b.tables.daily_accommodations.length, 0);
+const gather = rpc('submit_gather_point_request', { p_group_id: GROUP_ID, p_subgroup_id: null, p_items: [{ title: 'Proposed', latitude: 25.2, longitude: 121.3, day: null }] }, PEER).data;
+assert.equal(rpc('resolve_gather_point_request', { p_request_id: gather, p_approve: true }, PEER).error.code, '42501');
+assert.equal(rpc('resolve_gather_point_request', { p_request_id: gather, p_approve: true }).data.inserted_count, 1);
+assert.equal(rpc('resolve_gather_point_request', { p_request_id: gather, p_approve: true }).data.inserted_count, 0);
+const request = rpc('create_coordination_request', { p_group_id: GROUP_ID, p_subgroup_id: null, p_subject: 'Stop?', p_subject_kind: 'itinerary',
+  p_options: [{ id: 'keep', label: 'Keep', kind: 'keep_current' }, { id: 'add', label: 'Add', kind: 'gathering_point', payload: { title: 'Voted stop', latitude: 25, longitude: 121 } }],
+  p_deadline: new Date(b.now + 1000).toISOString(), p_policy: 'majority', p_default_outcome: 'keep' }).data;
+rpc('respond_to_coordination_request', { p_request_id: request.id, p_option_id: 'keep' }, PEER);
+rpc('respond_to_coordination_request', { p_request_id: request.id, p_option_id: 'add' }, PEER);
+assert.equal(b.tables.coordination_responses.filter(r => r.request_id === request.id).length, 1);
+assert.equal(rpc('override_coordination_request', { p_request_id: request.id, p_option_id: 'add' }, PEER).error.code, '42501');
+b.now += 1000;
+assert.equal(rpc('resolve_coordination_request_deadline', { p_request_id: request.id }, PEER).data.resolved_outcome, 'add');
+assert.equal(b.itinerary.filter(d => d.title === 'Voted stop').length, 1);
+assert.equal(rpc('resolve_coordination_request_deadline', { p_request_id: request.id }, PEER).data.applied_operation_id, b.tables.itinerary_operations[0].id);
+const refresh = rpc('request_group_location_refresh', { p_group_id: GROUP_ID }).data;
+assert.deepEqual(rpc('list_my_pending_location_refreshes', {}, PEER).data.map(r => r.group_id), [GROUP_ID]);
+assert.equal(rpc('ack_my_location_refresh', { p_group_id: GROUP_ID, p_requested_at: refresh.requested_at }, PEER).data, true);
+assert.deepEqual(rpc('get_group_location_refresh_acknowledgements', { p_group_id: GROUP_ID, p_requested_at: refresh.requested_at }).data, [PEER]);
+assert.equal(rpc('get_kml_import_quota', {}).data, 5);
+rpc('import_itinerary_batch', { p_group_id: GROUP_ID, p_subgroup_id: null, p_day: null, p_items: [{ title: 'Imported', latitude: 25, longitude: 121 }] });
+assert.equal(rpc('get_kml_import_quota', {}).data, 4);
+assert.equal(rpc('get_store_snapshot', { p_group_id: GROUP_ID }).data.balance, 0);
+const reward = rpc('create_reward_session', { p_platform: 'ios' }).data;
+rpc('update_reward_session_status', { p_session_ref: reward.session_ref, p_status: 'verifying' });
+assert.equal(b.wallets.get(LEADER) ?? 0, 0);
+require('./backend-store.cjs').creditReward(b, reward.session_ref);
+require('./backend-store.cjs').creditReward(b, reward.session_ref);
+assert.equal(b.wallets.get(LEADER), 1);
+assert.equal(rpc('redeem_store_product', { p_product_code: 'team_premium_1d', p_group_id: GROUP_ID, p_client_request_key: 'redeem-1' }).data.shortfall, 4);
+b.wallets.set(LEADER, 10);
+assert.equal(rpc('redeem_store_product', { p_product_code: 'team_premium_1d', p_group_id: GROUP_ID, p_client_request_key: 'redeem-1' }).data.balance, 5);
+assert.equal(rpc('redeem_store_product', { p_product_code: 'team_premium_1d', p_group_id: GROUP_ID, p_client_request_key: 'redeem-1' }).data.balance, 5);
+assert.equal(b.wallets.get(LEADER), 5);
+assert.throws(() => core('unimplemented_operation', {}), /Unsupported core operation/);
+assert.throws(() => core('set_solo', { userId: LEADER, solo: false, invented: true }), /Unknown set_solo payload/);
+console.log('Backend durable core, requests, location refresh and store contracts passed');
