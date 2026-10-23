@@ -134,9 +134,13 @@ button('map.kml.retry', ['K07'], 'reset', 'kml-retry', 'Actual failed import res
 
 identifiedButton('map.card.toggle', ['MAP-SHELL-01', 'MAP-SHELL-03'], 'toggleGatheringCard', 'gather-card-', 'destinationId',
   'Actual accessible card press expands/collapses with duplicate gesture guard and real idle timer ownership.');
-identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03', 'MAP-GATHER-04', 'MAP-GATHER-05', 'MAP-GATHER-07'],
+identifiedButton('map.journey.command', ['MAP-NAV-01', 'MAP-NAV-02', 'MAP-NAV-03', 'MAP-GATHER-07'],
   'gather-nav onPress dispatch', 'gather-nav-', 'destinationId',
-  'Actual card command chooses Start, End, request-start or complete from real role, session and arrival state.');
+  'Actual card dispatches the rendered Start, End or follower request. Active-session manual force completion is not exposed by the current card; see entryLimits.');
+operations['map.journey.command'].entryLimits = [{ branch: 'manual-force-completion',
+  sources: [...source('src/utils/gatherCommand.ts', 'if (flockNavigatingThis)'), ...source(screen, 'promptComplete: false'),
+    ...source(screen, 'resolveCurrentNavigationSessionId')],
+  reason: 'Active team travel always renders End. Personal arrival does not schedule the force prompt. Complete appears only after travel ends, when the resolver no longer supplies an active session; canonical completion rejects cancelled sessions. Actual all-arrived completion is a separate verified lifecycle.' }];
 identifiedButton('map.arrival.mark', ['MAP-ARRIVAL-01', 'MAP-ARRIVAL-05', 'MAP-ARRIVAL-06'], 'handleSelfArrival', 'gather-arrival-', 'destinationId',
   'Actual card writes device-now personal arrival after the pending-Start barrier; arrival alone never completes a stop.');
 identifiedButton('map.arrival.undo', ['MAP-ARRIVAL-03', 'MAP-ARRIVAL-04'], 'handleArrival', 'gather-arrival-undo-', 'destinationId',
@@ -339,6 +343,7 @@ for (const [name, [module, symbol, inventory]] of Object.entries(services)) {
       return service[symbol](...args);
     }, 'service');
 }
+operations['map.service.destination.complete'].precondition = 'Editor with the original active/completed destination session; forced service completion is callable, but is not a reachable active-session Map card button.';
 
 const controlOwners = {
   AddPlaceConfirmCard: ['map.place.rename', 'map.place.cancel', 'map.place.pool', 'map.place.first-stop', 'map.place.favorite', 'map.place.center'],
@@ -366,6 +371,10 @@ exports.operations = operations;
 exports.scenarios = require('./scenarios-map.cjs');
 exports.catalog = () => Object.entries(operations).map(([name, { run, ...metadata }]) => ({ name, ...metadata }));
 exports.lifecycle = [
+  { name: 'map.gathering.auto-complete', inventory: ['MAP-GATHER-04', 'MAP-GATHER-05'],
+    sources: source('src/screens/MapScreen/hooks/useGatheringCompletion.ts', 'executeAutoCompleteStop'),
+    trigger: 'Real Map workflow receives arrivals for every eligible frozen-session member, enqueues completion and closes the matching stop.',
+    scenarios: ['headlessMapScenario.test.ts::real self arrival undo and all-arrived completion'] },
   { name: 'map.journey.reconcile', inventory: ['MAP-NAV-05'],
     sources: source('src/screens/MapScreen/hooks/useJourneyNavigation.ts', 'useJourneyNavigation'),
     trigger: 'Mount actual MapScreen, deliver held Start/End ACK, durable snapshots and session events, then restart actor.',
