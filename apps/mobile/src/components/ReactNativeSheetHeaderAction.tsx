@@ -36,12 +36,14 @@ export default function SheetHeaderAction({
   action,
   onPress,
   accessibilityLabel,
+  testID,
   disabled = false,
   style,
 }: {
   action: SheetHeaderActionKind;
   onPress: () => void;
   accessibilityLabel: string;
+  testID?: string;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -49,6 +51,7 @@ export default function SheetHeaderAction({
   return (
     <Pressable
       style={({ pressed }) => [styles.hit, style, pressed && styles.pressed]}
+      testID={testID}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
       accessible

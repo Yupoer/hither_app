@@ -35,16 +35,19 @@ export default function SheetHeaderActionContent({
   action,
   onPress,
   accessibilityLabel: label,
+  testID,
   disabled = false,
 }: {
   action: SheetHeaderActionKind;
   onPress: () => void;
   accessibilityLabel: string;
+  testID?: string;
   disabled?: boolean;
 }) {
   return (
     <Button
       role={action === 'commit' ? 'default' : 'cancel'}
+      testID={testID}
       onPress={onPress}
       modifiers={[
         buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'plain' : 'bordered'),

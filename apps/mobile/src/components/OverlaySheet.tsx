@@ -294,6 +294,7 @@ export default function OverlaySheet({
               {title}
             </Text>
             <SheetHeaderAction
+              testID={onDone ? "overlay-done" : "overlay-header-close"}
               action={isCloseAction ? 'close' : 'commit'}
               onPress={handleDone}
               accessibilityLabel={doneLabel}

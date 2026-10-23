@@ -146,6 +146,7 @@ function NativeSettingsChildSheet({
                 {title}
               </SwiftText>
               <SheetHeaderActionContent
+                testID="settings-child-back"
                 action={action}
                 onPress={action === 'commit' ? () => onCommit?.() : closeOnce}
                 accessibilityLabel={doneLabel}

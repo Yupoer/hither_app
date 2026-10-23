@@ -159,6 +159,7 @@ export default function SettingsSheetPanel({
       ) : <View style={styles.headerActionSlot} />}
       <Text style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]} numberOfLines={titleFontSize != null ? 2 : 1}>{title}</Text>
       <SheetHeaderAction
+        testID={singleStage ? "settings-root-close" : "settings-child-back"}
         action={action}
         onPress={action === 'commit' ? () => onCommit?.() : onClose}
         accessibilityLabel={doneLabel}

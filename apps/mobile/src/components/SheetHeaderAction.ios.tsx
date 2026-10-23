@@ -15,21 +15,24 @@ export default function SheetHeaderAction({
   action,
   onPress,
   accessibilityLabel,
+  testID,
   disabled = false,
   style,
 }: {
   action: SheetHeaderActionKind;
   onPress: () => void;
   accessibilityLabel: string;
+  testID?: string;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   if (!liquidGlass.isLiquidGlassAvailable()) {
-    return <ReactNativeSheetHeaderAction {...{ action, onPress, accessibilityLabel, disabled, style }} />;
+    return <ReactNativeSheetHeaderAction {...{ action, onPress, accessibilityLabel, testID, disabled, style }} />;
   }
   return (
     <Pressable
       style={({ pressed }) => [styles.hit, style, pressed && styles.pressed]}
+      testID={testID}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
       accessible

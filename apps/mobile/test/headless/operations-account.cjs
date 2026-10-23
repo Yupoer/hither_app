@@ -90,8 +90,8 @@ for (const [name, ids, id, kind] of [['email', 'P01', 'account-email', 'changeTe
 }
 for (const [name, ids, id, kind] of [['name', 'P06,P07', 'profile-name', 'changeText'],
   ['save', 'P07', 'overlay-done'], ['cancel', 'P06', 'overlay-close']]) {
-  if (name === 'save') register('profile.save', ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', 'handleSave', 'screen', '{}', app => app.host.call({ kind: 'press', label: 'Done' }));
-  else control(`profile.${name}`, ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', 'handleCancel', id, kind);
+  if (name === 'save') register('profile.save', ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', 'handleSave', 'screen', '{}', app => app.host.call({ kind: 'press', testId: 'overlay-done' }));
+  else control(`profile.${name}`, ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', name === 'name' ? 'setProfileName' : 'handleCancel', id, kind);
 }
 for (const field of ['avatar', 'color']) register(`profile.${field}`, 'P06,P07', 'src/screens/MapScreen/components/ProfileOverlay.tsx',
   field === 'avatar' ? 'setProfileAvatar' : 'setProfileColor', 'screen', '{ value }',
@@ -126,7 +126,7 @@ for (const page of ['account', 'language', 'theme', 'textSize', 'groupAvatar', '
 control('settings.diagnostic', 'V16', 'src/screens/MapScreen/components/SettingsOverlay.tsx', 'onDiagnosticSwitchChange', 'settings-diagnostic-upload', 'toggle');
 control('settings.ota', 'X01,X02', 'src/screens/MapScreen/components/SettingsOverlay.tsx', 'handleApplyOta', 'settings-apply-ota');
 control('settings.reset', 'V19', 'src/screens/MapScreen/components/SettingsOverlay.tsx', 'onConfirmResetPrefs', 'settings-reset-preferences');
-register('settings.back', 'V18', 'src/screens/MapScreen/components/SettingsSheetPanel.tsx', 'onClose', 'screen', '{}', app => app.host.call({ kind: 'press', label: 'close' }));
+register('settings.back', 'V18', 'src/screens/MapScreen/components/SettingsSheetPanel.tsx', 'onClose', 'screen', '{}', app => app.host.call({ kind: 'press', testId: 'settings-child-back' }));
 
 control('onboarding.continue', 'O01,O02,O03,O04,O05,O06,O07,O08,O09,O10,O12', 'src/onboarding/steps/PrimaryButton.tsx', 'onPress', 'onboarding-continue');
 control('onboarding.back', 'O11', 'src/onboarding/steps/StepShell.tsx', 'onBack', 'onboarding-back');
@@ -145,9 +145,12 @@ for (const [name, id, kind] of [['description', 'feedback-description', 'changeT
 }
 register('feedback.category', 'D01', 'src/components/FeedbackSheet.tsx', 'setCategory', 'screen', '{ value }',
   (app, { value }) => app.host.call({ kind: 'press', testId: `feedback-category-${value}` }));
-for (const symbol of ['uploadMetricPayload', 'uploadMetricPayloadBatch']) {
+for (const symbol of ['uploadMetricPayload']) {
   exported(`diagnostics.${symbol}`, 'D05', 'src/api/services/DiagnosticService.ts', symbol);
 }
+register('diagnostics.uploadMetricPayloadBatch', 'D05', 'src/api/services/DiagnosticService.ts', 'uploadMetricPayloadBatch',
+  'service', '{ payloads, current? }', (_app, { payloads, current = true }) =>
+    require('../../src/api/services/DiagnosticService.ts').uploadMetricPayloadBatch(payloads, () => current));
 for (const symbol of ['applyOtaUpdate', 'consumeOtaAppliedNotice']) {
   exported(`ota.${symbol}`, 'X02,X03', 'src/utils/otaUpdates.ts', symbol);
 }
@@ -172,9 +175,42 @@ for (const operation of Object.values(operations)) {
 exports.operations = operations;
 exports.lifecycle = [
   { name: 'session.bootstrap', inventory: ['A20'], sources: [{ file: 'src/state/SessionContext.tsx', symbol: 'SessionProvider' }],
-    trigger: 'Boot an app or real screen device and await SessionProvider hydration.', scenarios: ['real providers hydrated', 'signed out Login'] },
+    trigger: 'Boot an app or real screen device and await SessionProvider hydration.',
+    scenarios: [{ file: 'src/__tests__/headlessAuthScenario.test.ts', pattern: 'restores durable identity' }] },
   { name: 'session.foreground', inventory: ['A21'], sources: [{ file: 'src/state/SessionContext.tsx', symbol: 'restoreSession' }],
-    trigger: 'Send background then active through the external AppState subscription.', scenarios: ['foreground session recovery'] },
+    trigger: 'Send background then active through the external AppState subscription.',
+    scenarios: [{ file: 'src/__tests__/headlessAuthScenario.test.ts', pattern: 'restores durable identity' }] },
   { name: 'preferences.hydrate', inventory: ['V17'], sources: [{ file: 'src/state/PreferencesContext.tsx', symbol: 'PreferencesProvider' }],
-    trigger: 'Restart the same device and await actual preferences.ready.', scenarios: ['persists every preference through real provider setters and rehydrates the same device'] },
+    trigger: 'Restart the same device and await actual preferences.ready.',
+    scenarios: [{ file: 'src/__tests__/headlessAccountScenario.test.ts', pattern: 'persists every preference' }] },
+];
+
+const testFile = 'src/__tests__/headlessAccountScenario.test.ts';
+const scenario = (ids, pattern, assertions) => ({ inventory: ids.split(','), testFile, pattern,
+  platforms: ['ios', 'android'], assertions });
+exports.scenarios = [
+  scenario('P06,P07,P08,P09', 'cancels a profile draft', 'Draft cancellation writes nothing; changed profile fields commit; missing profile nickname upserts; custom command trims and preserves its selected slot.'),
+  scenario('P06,P07', 'blocks profile cancel', 'Pending writes block cancellation; failed saves retain the draft; retry commits; no-change save closes without another write.'),
+  scenario('P01,P05', 'upgrades an anonymous account', 'Pending email confirmation preserves UID, memberships and expiry; authoritative registration clears expiry.'),
+  scenario('P02,P03,P04', 'links', 'Cancelled linking preserves anonymity; real Google and Apple adapters link the same UID; password confirmation blocks mismatch and successful fields clear.'),
+  scenario('B09', 'older same-account team lookup', 'An older same-account team response cannot replace the current group entitlement or premium projection.'),
+  scenario('D01,D02', 'submits trimmed feedback', 'Invalid and duplicate sends are disabled; exact trimmed feedback reaches transport; auto-close fires once after 1000ms.'),
+  scenario('D01,D02', 'retains failed feedback', 'Network failure keeps the form; retry succeeds; manual close and unmount cancel the deferred close.'),
+  scenario('G01,G02,G03,G04,G05,G06,G07,G08,G09,G10', 'runs group lifecycle services', 'Create/join, safe avatar projection, actor-scoped lite reads, owner-scoped verified leave, kick-code rotation, journey fields and leader-only straggler transport retain unrelated membership.'),
+  scenario('T01,T02,T03,T04,T05,T06,T09,T10,T11,T12,T13', 'routes home actions', 'Home routes and team badge reflect real reads; failed refresh retains cards; retry recovers; card expansion toggles; confirmed leave/clear and empty-list routes follow actual controls.'),
+  scenario('T07,T08', 'retries a failed nickname fallback', 'Failed nickname write prevents membership and navigation; retry uses the email prefix; the global entry guard blocks a second team until the first is adopted.'),
+  scenario('G12,S01,S02,S03,S04,S05', 'sends, enriches, declines and accepts', 'Split maps a real subgroup; invitation reads enrich names; decline preserves membership; accept updates membership; merge restores the parent scope.'),
+  scenario('S02,S03,S06', 'debounces real subgroup subscriptions', 'Initial invites do not notify; new IDs notify after 300ms once; duplicate events do not notify; offline foreground refresh retains the list; real hook decisions refresh it.'),
+  scenario('G11,G12', 'enqueues trip and solo changes', 'Trip and solo actions update actual durable SQLite projections while offline and replay into the external backend after reconnection.'),
+  scenario('V01,V02,V03,V04,V05,V06,V07,V08,V09,V10,V11,V12,V13,V14,V15,V17', 'persists every preference', 'Actual provider setters apply normalization, preserve day colors and rehydrate persisted values after device restart.'),
+  scenario('V06,V17', 'ignores malformed persisted preferences', 'Malformed enums and JSON retain defaults; legacy sharing migrates only when the current key is absent.'),
+  scenario('V16,D03,D04,D05,D06', 'writes sanitized diagnostics', 'Consent gates real SQLite records; exports omit sensitive fields; upload acknowledges owned records; revocation purges pending records; metric batches stop at invalid or stale inputs.'),
+  scenario('X02,X03', 'shares one OTA apply flight', 'Concurrent manual applies share check/fetch/reload; failures stay failures; each changed update notice is consumed once; foreground bootstrap unsubscribes.'),
+  scenario('X01,X02', 'checks OTA when settings opens', 'Visible settings checks the external update SDK and the actual support button performs check/fetch/reload in order.'),
+  scenario('V02,V03,V04,V16,V18,V19', 'navigates real settings children', 'Actual child controls persist language/theme/text size and diagnostics; child close returns to root; reopening resets the page; reset routes to its caller boundary.'),
+  scenario('X04', 'recovers a resolved render fault', 'The real error boundary recovers a resolved fault, offers retry for a new episode and stops retrying a persistent fault without clearing the session.'),
+  scenario('X04', 'blocks a loading group retry', 'The actual GroupLoadError control blocks while loading and invokes recovery after loading ends.'),
+  scenario('O01,O02,O03,O04,O05,O06,O07,O08,O09,O10,O11,O12', 'finishes the actual', 'Rendered leader/follower/browser steps enforce selection, preserve branch answers and write completed onboarding once.'),
+  scenario('O11,O13,V19', 'preserves partial onboarding answers', 'Skip persists answers; failed profile sync remains retryable; successful sync is idempotent; replay waits for the home boundary and blocks the group tour.'),
+  scenario('O02,O05,O06,O12', 'continues after permission denial', 'Denied permissions do not block progression; days stop at the maximum; dismissed date selection does not enable continue; confirmed native dates persist as ISO.'),
 ];

@@ -164,6 +164,7 @@ export default function AuthScreen({ navigation, route }: Props) {
             <View style={styles.topChrome}>
               {navigation.canGoBack() ? (
                 <NativeGlassButton
+                  testID="auth-back"
                   onPress={() => navigation.goBack()}
                   accessibilityLabel={t('common.back')}
                   systemImage="chevron.left"
