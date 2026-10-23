@@ -172,6 +172,25 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     expect(values.has(configKey)).toBe(false);
   });
 
+  it('MAP-LOC-07 respects a denied or failed native activity preparation and never promotes it to GPS', async () => {
+    load();
+    await native.input({ kind: 'nativeLocationConfigure', patch: { permission: 'denied' } });
+    await expect(wrapper.prepareNativeBackgroundLocation(true)).resolves.toBe(platform === 'android');
+    expect(native.observe().location).toMatchObject({ running: false, prepared: false });
+    state.currentState = 'background';
+    sdk.background = 'denied';
+    await expect(owner.start(config())).rejects.toThrow('passive_background_permission_denied');
+    expect(values.has(configKey)).toBe(false);
+    state.currentState = 'active';
+    await native.input({ kind: 'nativeLocationConfigure', patch: { permission: 'granted', prepareError: 'native_prepare_failed' } });
+    if (platform === 'ios') await expect(wrapper.prepareNativeBackgroundLocation(true)).rejects.toThrow('native_prepare_failed');
+    else await expect(wrapper.prepareNativeBackgroundLocation(true)).resolves.toBe(true);
+    await native.input({ kind: 'nativeLocationConfigure', patch: { prepareError: null } });
+    state.currentState = 'background';
+    await expect(wrapper.prepareNativeBackgroundLocation(true)).resolves.toBe(platform === 'android');
+    expect(native.observe().location).toMatchObject({ running: false, prepared: false });
+  });
+
   it('MAP-LOC-07 retains the durable owner after a stop error and supports an explicit retry', async () => {
     load();
     await startJourney();
@@ -256,5 +275,26 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     expect(native.observe().location.listeners).toBe(0);
     await expect(owner.start(config())).resolves.toBe('started');
     expect(native.observe().location.running).toBe(true);
+  });
+
+  it('native location fixture rejects unknown contracts and retains subscription evidence until removal', async () => {
+    load();
+    expect(createExternalNative({ platform, strict }).nativeModules.HitherLocation).toBeNull();
+    expect(() => native.nativeModules.HitherLocation.unknownLocationMethod()).toThrow('Unsupported external HitherLocation.unknownLocationMethod');
+    expect(failures.splice(0)).toEqual(['Unsupported external HitherLocation.unknownLocationMethod']);
+    await expect(native.input({ kind: 'nativeLocationConfigure', patch: { inventedSuccess: true } })).rejects.toThrow('Unsupported fixture setting inventedSuccess');
+    await expect(native.input({ kind: 'nativeLocation', sample: { timestamp: Date.now(), coords: { latitude: 25, longitude: 121, accuracy: 5 } } })).rejects.toThrow('No native background location owner');
+    if (platform === 'ios') {
+      const subscription = native.nativeModules.HitherLocation.addListener('onBackgroundLocation', () => {});
+      expect(native.dispose().location.processListeners).toBe(1);
+      expect(native.observe().location.listeners).toBe(1);
+      subscription.remove();
+      expect(native.dispose().location.processListeners).toBe(0);
+      expect(() => native.nativeModules.HitherLocation.addListener('inventedEvent', () => {})).toThrow('Unsupported native event inventedEvent');
+    } else {
+      expect(native.nativeModules.HitherLocation.supportsBackgroundLiveUpdates).toBeUndefined();
+      expect(native.nativeModules.HitherLocation.startBackgroundLocation).toBeUndefined();
+      await expect(native.nativeModules.HitherLocation.getCurrentLocation()).resolves.toBeNull();
+    }
   });
 });
