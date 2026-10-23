@@ -1,5 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import assert from 'node:assert/strict';
 
 const { inventoryEntries, scenarioEntries, exclusions } = require('../../test/headless/actions.cjs');
 const { audit, auditScenarios } = require('../../test/headless/inventory.cjs');
@@ -31,5 +33,13 @@ describe('headless operation completeness', () => {
 
   it('keeps domain backend fixtures strict and validates observable state transitions', () => {
     require('../../test/headless/backend-contracts.test.cjs');
+  });
+
+  it('enforces host guards, explicit completion and navigation ownership', () => {
+    const root = path.resolve(__dirname, '../..');
+    const result = spawnSync(process.execPath, ['--test', 'test/headless/host-contracts.test.cjs'], {
+      cwd: root, encoding: 'utf8', timeout: 30000,
+    });
+    assert.equal(result.status, 0, result.error?.message ?? `${result.stdout}\n${result.stderr}`);
   });
 });
