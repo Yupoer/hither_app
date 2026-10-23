@@ -38,6 +38,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     initError: null, fetchError: null, requestError: null, finishError: null, restoreError: null,
   };
   const iapModule = boundary('expo-iap', {
+    __esModule: true,
     initConnection: async () => { effect('iap.initConnection'); fail(iap, 'initError'); return true; },
     purchaseUpdatedListener: (listener, options) => {
       assert.deepEqual(options, { dedupeTransactionIOS: true });
@@ -96,6 +97,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     effect('ads.initialize'); fail(ads, 'initializeError'); return [];
   } });
   const adsModule = boundary('react-native-google-mobile-ads', {
+    __esModule: true,
     MobileAds: mobileAdsFactory, mobileAds: mobileAdsFactory, default: mobileAdsFactory,
     AdsConsent: {
       requestInfoUpdate: async () => {
@@ -138,6 +140,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   let nextNotification = 0;
   const scheduled = new Map();
   const notificationsModule = boundary('expo-notifications', {
+    __esModule: true,
     SchedulableTriggerInputTypes: { DATE: 'date' },
     registerTaskAsync: async taskName => {
       assert.equal(typeof taskName, 'string');

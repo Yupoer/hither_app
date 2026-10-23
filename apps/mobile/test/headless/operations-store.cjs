@@ -29,11 +29,11 @@ for (const [symbol, ids] of [['getStoreSnapshot', 'W01,W17'], ['createRewardSess
 
 const premium = 'src/components/PremiumPresentation.tsx';
 for (const plan of ['annual', 'monthly', 'trip']) {
-  control(`premium.select.${plan}`, 'B01', premium, 'setSelectedPlan', `premium-presentation-plan-${plan}`);
+  control(`premium.select.${plan}`, 'B01', premium, 'setSelectedPlan', `paywall-premium-presentation-plan-${plan}`);
 }
-control('premium.purchase', 'B02,B03,B04,B05', premium, 'handlePurchase', 'premium-presentation-purchase');
-control('premium.restore', 'B06', premium, 'handleRestore', 'premium-presentation-restore');
-control('premium.promo.open', 'B08', premium, 'setRedeemOpen', 'premium-presentation-redeem');
+control('premium.purchase', 'B02,B03,B04,B05', premium, 'handlePurchase', 'paywall-premium-presentation-purchase');
+control('premium.restore', 'B06', premium, 'handleRestore', 'paywall-premium-presentation-restore');
+control('premium.promo.open', 'B08', premium, 'setRedeemOpen', 'paywall-premium-presentation-redeem');
 control('premium.promo.edit', 'B08', premium, 'setPromoCode', 'paywall-redeem-input', 'changeText');
 control('premium.promo.submit', 'B08', premium, 'handleRedeem', 'paywall-redeem-submit');
 for (const [symbol, ids] of [['loadPremiumStoreProducts', 'B01'], ['purchasePremiumSubscription', 'B03,B04,B05'],
