@@ -261,17 +261,12 @@ export function GatheringCarousel({
             const distParts = splitDistanceParts(d);
             const etaParts = splitEtaParts(etaSeconds);
             const cardExpanded = isCardExpanded(dest.id);
-            // Progressive density (single row always):
-            // - compact: narrow phone OR large Dynamic Type → smaller squares
-            // - tight: xl OR (narrow + large) → nav icon-only, smaller countdown
-            // Never multi-row. Not tied to sheet stage.
             // a11y-layout:commandRowCompact
             const chromeCompact =
               narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
             const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
             // Use active itinerary (carousel list), not raw history-inclusive
             // scope — past-day open rows must not hide the arrive control.
-            const navIconOnly = false;
             const personallyArrived = myCompletedDestinationIds.has(dest.id);
             const navCmd = resolveNavCommand({
               isLeader: canEditItinerary,
@@ -282,6 +277,8 @@ export function GatheringCarousel({
               isNextTeamPending: true,
               teamStartBlocked: false,
             });
+            const navButtonIconOnly = navCmd.kind === 'leader_start'
+              || navCmd.kind === 'leader_mark_complete';
             const navLabel = navCmd.kind === 'leader_stop' ? t('nav.endNavigation') : navCommandDisplayLabel(navCmd.kind, t);
             const startAccessibilityHint = isLeader
               ? navCmd.kind === 'leader_stop'
@@ -609,7 +606,7 @@ export function GatheringCarousel({
                           navCmd.kind === 'member_waiting_complete'
                             || navCmd.kind === 'member_request_start'
                             ? styles.navBtnWide
-                            : navIconOnly
+                            : navButtonIconOnly
                               ? styles.navBtnIconOnly
                               : null,
                           navCmd.kind === 'leader_stop'
@@ -673,9 +670,7 @@ export function GatheringCarousel({
                                   : '#0c1a12'
                           }
                         />
-                        {navCmd.kind === 'member_waiting_complete'
-                          || navCmd.kind === 'member_request_start'
-                          || !navIconOnly ? (
+                        {!navButtonIconOnly ? (
                           <Text
                             style={[
                               styles.navBtnText,
@@ -709,7 +704,7 @@ export function GatheringCarousel({
     
                     {navCmd.canComplete ? (
                       <Pressable
-                        style={[styles.navBtn, { backgroundColor: accent }]}
+                        style={[styles.navBtn, styles.navBtnIconOnly, { backgroundColor: accent }]}
                         testID={`gather-complete-${dest.id}`}
                         accessibilityRole="button"
                         accessibilityLabel={t('nav.completeJourney')}
@@ -721,8 +716,6 @@ export function GatheringCarousel({
                         }}
                       >
                         <Ionicons name="checkmark-done" size={16} color={colors.accentText} />
-                        <Text style={[styles.navBtnText, { color: colors.accentText }]} numberOfLines={1}
-                          adjustsFontSizeToFit minimumFontScale={0.75}>{t('nav.completeJourney')}</Text>
                       </Pressable>
                     ) : null}
 
