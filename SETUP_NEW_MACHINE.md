@@ -41,8 +41,11 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_xxx
 ## 4. 開發與發布流程
 
 依 [README](README.md#development-and-release-workflow) 在本地實作、審查與驗證，再交付 `master` 並確認 CI。
-完整 iOS 產品發布使用現有 `hither-release` 入口，先判斷 OTA 相容性；需要新 binary 時經 `mac-codex` 執行 EAS local build 和 TestFlight 上傳。
-新電腦須另行設定 SSH、EAS 與 Apple 登入；不複製既有電腦的私密金鑰。
+完整 iOS 產品發布先判斷 OTA 相容性；需要新 binary 時優先手動使用
+GitHub Actions `CD iOS TestFlight` 的 Xcode runner 建置／上傳流程。
+目前分支 CI 不等於已驗證雲端簽署、冷啟動、Apple processing 或實機驗收；
+雲端流程失敗時先回報，不自動改用使用者的 Mac。舊 `mac-codex` 交接僅在明確要求時使用。
+不可複製既有電腦的私密金鑰；必要的 EAS 與 Apple 授權須另行設定。
 
 ## 5. Supabase CLI 重新 link（要跑 migration 時才需要）
 
