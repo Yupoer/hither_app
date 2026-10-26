@@ -31,8 +31,8 @@ describe('responsive gather card tokens (#176)', () => {
     expect(layout).not.toMatch(/iPhone|deviceModel/);
   });
 
-  it('keeps the navigation label after removing the manual arrival control', () => {
-    expect(carousel).toContain('const navIconOnly = false;');
+  it('keeps the navigation command after removing the manual arrival control', () => {
+    expect(carousel).toContain('testID={`gather-nav-${dest.id}`}');
     expect(carousel).not.toContain('showArrivalControl');
   });
 });
