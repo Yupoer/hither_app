@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       mode:
-        description: Preflight, signed IPA only, or signed IPA plus TestFlight upload
+        description: Preflight, signed build validation, or signed build plus TestFlight upload
         required: true
         default: preflight
         type: choice
@@ -111,13 +111,12 @@ jobs:
             > "$RUNNER_TEMP/hither-receipt.txt"
           cat "$RUNNER_TEMP/hither-receipt.txt" >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Upload build receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: inputs.mode != 'preflight'
         with:
-          name: hither-ios-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/Hither-production.ipa
-            ${{ runner.temp }}/hither-receipt.txt
+          name: hither-ios-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-receipt.txt
           if-no-files-found: error
           retention-days: 14
 
