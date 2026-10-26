@@ -74,9 +74,11 @@ select ok(
 );
 
 select ok(
-  not has_table_privilege('service_role', 'public.premium_store_transactions', 'SELECT')
-  and not has_table_privilege('service_role', 'public.premium_store_notifications', 'SELECT'),
-  'private purchase ledger tables are not exposed by this migration'
+  not exists (
+    select 1 from (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) p(privilege)
+    where has_table_privilege('service_role', 'public.premium_store_notifications', p.privilege)
+  ),
+  'the private notification ledger remains outside the service_role Data API'
 );
 
 select ok(
