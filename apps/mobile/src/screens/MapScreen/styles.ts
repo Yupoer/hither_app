@@ -36,11 +36,16 @@ export const makeStyles = (
   boldText = false,
 ) => {
   const s = (n: number, min = 0) => Math.max(min, Math.round(n * scale));
+  // Density ladder (single-row only):
+  // regular → full labels + larger meet
+  // compact → smaller squares (narrow OR large type OR Bold Text via bucket)
+  // tight   → icon-only nav + smallest meet type (xl OR narrow+large)
   // Bold Text is already reflected in `scale`/`bucket` (layoutFontScale factor).
   const tight = bucket === 'xl' || (narrow && bucket === 'large');
   const compact = tight || narrow || bucket === 'large';
   const cardPad = compact ? s(14, 10) : s(18, 14);
   const cmdGap = tight ? s(5, 4) : compact ? s(6, 4) : s(8, 6);
+  // Every control is at least 48pt; mode/arrived stay exact squares (#148).
   const cmdSize = Math.max(
     GATHER_CMD_MIN_HIT_PT,
     tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52),
@@ -455,7 +460,7 @@ export const makeStyles = (
       backgroundColor: 'rgba(255,255,255,0.12)',
       opacity: 0.85,
     },
-    // Icon-only Start and Complete use exact squares so meet keeps countdown width.
+    // Tight density: exact square so meet keeps countdown width.
     navBtnIconOnly: {
       flexGrow: 0,
       flexShrink: 0,
