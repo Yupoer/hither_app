@@ -6,8 +6,15 @@
 
 ```bash
 cd apps/mobile
-npm install
+npm ci
 ```
+
+儲存的 Linux 雲端 checkout 若 `node_modules` 與 lockfile 不一致，從 repo 根目錄執行
+`bash scripts/bootstrap-cloud-js.sh`；它會重裝已鎖定的 JS 依賴、套用既有 patches，
+並檢查 Expo／React Native／Hermes 版本、iOS runtime 設定及 TypeScript。
+只想檢查目前安裝時用 `bash scripts/bootstrap-cloud-js.sh --check`。
+此入口只處理 JS 工具鏈；Supabase 本地資料庫、Deno 遠端匯入與原生裝置建置
+仍須各自可用的執行環境。
 
 ## 2. 重建 `apps/mobile/.env`
 
