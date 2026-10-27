@@ -19,6 +19,15 @@ def production_branch(channel):
     if (record.get("name") != "production" or record.get("isPaused") is not False
             or len(branches) != 1 or branches[0].get("name") != "production"):
         raise ValueError("production channel must be active and map only to production")
+    mapping = json.loads(record["branchMapping"])
+    if not isinstance(mapping, dict):
+        raise ValueError("production channel branch mapping is invalid")
+    entries = mapping.get("data")
+    if (mapping.get("version") != 0 or not isinstance(entries, list)
+            or len(entries) != 1 or not isinstance(entries[0], dict)
+            or entries[0].get("branchId") != branches[0].get("id")
+            or entries[0].get("branchMappingLogic") != "true"):
+        raise ValueError("production channel must unconditionally serve its production branch")
     return branches[0]
 
 

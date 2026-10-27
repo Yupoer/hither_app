@@ -11,11 +11,11 @@ for block in re.split(r"(?=^      - (?:name:|uses:))", source, flags=re.MULTILIN
     name = re.search(r"^      - name: (.+)$", block, flags=re.MULTILINE)
     if name:
         condition = re.search(r"^        if: (.+)$", block, flags=re.MULTILINE)
-        steps[name.group(1)] = condition.group(1) if condition else None
+        steps[name.group(1)] = {"if": condition.group(1) if condition else None, "body": block}
 
 
 def runs(name, mode):
-    condition = steps[name]
+    condition = steps[name]["if"]
     if condition is None:
         return True
     def evaluate(atom):
@@ -37,5 +37,10 @@ for mode in ("ota", "preflight", "build-only", "submit"):
     assert all(runs(name, mode) == (mode in ("build-only", "submit")) for name in native), mode
     assert runs("Upload this IPA to TestFlight", mode) == (mode == "submit"), mode
     assert runs("Verify production release prerequisites", mode) == (mode in ("ota", "submit")), mode
+
+ota_publish = steps["Publish and verify production iOS OTA"]["body"]
+assert "env:exec production" in ota_publish
+assert "EAS_BUILD_PROFILE=production npx --yes eas-cli@21.0.2 update" in ota_publish
+assert "          EAS_BUILD_PROFILE: production" not in ota_publish
 
 print("iOS CD route isolation checks passed")

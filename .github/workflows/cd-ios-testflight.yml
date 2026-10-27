@@ -109,7 +109,6 @@ jobs:
         if: inputs.mode == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          EAS_BUILD_PROFILE: production
         run: |
           test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
@@ -120,9 +119,9 @@ jobs:
           [[ "$(git ls-remote origin refs/heads/master | cut -f1)" == "$SOURCE_SHA" ]] || {
             echo 'Master moved before OTA publication'; exit 1;
           }
-          npx --yes eas-cli@21.0.2 update --channel production --platform ios \
-            --environment production --message "hither release $SOURCE_SHA" \
-            --non-interactive --json > "$RUNNER_TEMP/hither-ota-published.json"
+          npx --yes eas-cli@21.0.2 env:exec production \
+            "EAS_BUILD_PROFILE=production npx --yes eas-cli@21.0.2 update --channel production --platform ios --environment production --message 'hither release $SOURCE_SHA' --non-interactive --json" \
+            --non-interactive > "$RUNNER_TEMP/hither-ota-published.json"
           group=$(python3 ../../scripts/verify-ios-ota-publication.py published \
             --published "$RUNNER_TEMP/hither-ota-published.json" \
             --source-sha "$SOURCE_SHA" \

@@ -26,9 +26,11 @@ Set `backend_verified=true` for `ota` or `submit` only after checking that every
 backend change required by the pinned source is applied in production. The input
 records the release operator's verification; it does not deploy the backend.
 The OTA step uses the existing `EXPO_TOKEN` GitHub secret and the EAS production
-environment. It publishes iOS only, then reads back the update ID, group, runtime,
-branch, and source. A failed readback means the publication outcome needs direct
-inspection before any retry. The workflow keeps a small receipt for 14 days.
+environment. It loads that environment before evaluating the production app config,
+which requires valid HTTPS privacy and terms URLs. It publishes iOS only, then reads
+back the update ID, group, runtime, branch, and source. A failed readback
+requires direct inspection before any retry. The workflow keeps a small
+receipt for 14 days.
 
 ## Native build and TestFlight
 

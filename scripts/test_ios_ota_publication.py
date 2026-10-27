@@ -9,6 +9,8 @@ SCRIPT = Path(__file__).resolve().with_name("verify-ios-ota-publication.py")
 SOURCE = "a" * 40
 GROUP = "d43fbe84-a532-4b3b-91ab-cf69d3b4536c"
 UPDATE = "a723f44d-2dc7-49ab-b07b-f0d3563ab413"
+BRANCH = "fdb9d41f-c394-4a0b-841a-4e4cbf2c4bdb"
+MAPPING = json.dumps({"version": 0, "data": [{"branchId": BRANCH, "branchMappingLogic": "true"}]})
 
 
 def run(stage, files, *extra):
@@ -29,8 +31,9 @@ def run(stage, files, *extra):
         return result, receipt
 
 
-channel = {"currentPage": {"name": "production", "isPaused": False,
-                           "updateBranches": [{"name": "production", "updateGroups": [{"group": GROUP}]}]}}
+channel = {"currentPage": {"name": "production", "isPaused": False, "branchMapping": MAPPING,
+                           "updateBranches": [{"id": BRANCH, "name": "production",
+                                               "updateGroups": [{"group": GROUP}]}]}}
 published = [{"id": UPDATE, "group": GROUP, "branch": "production", "runtimeVersion": "0.1.13",
               "platform": "IOS", "gitCommitHash": SOURCE, "message": f"hither release {SOURCE}",
               "isRollBackToEmbedded": False}]
@@ -52,12 +55,21 @@ result, _ = run("published", {"published": wrong_runtime}, "--source-sha", SOURC
 assert result.returncode != 0
 
 wrong_channel = {"currentPage": {"name": "production", "isPaused": False,
-                                 "updateBranches": [{"name": "preview", "updateGroups": []}]}}
+                                 "branchMapping": MAPPING,
+                                 "updateBranches": [{"id": BRANCH, "name": "preview", "updateGroups": []}]}}
 result, _ = run("before", {"channel": wrong_channel})
 assert result.returncode != 0
 
+conditional_channel = {"currentPage": {**channel["currentPage"],
+                                       "branchMapping": json.dumps({"version": 0, "data": [
+                                           {"branchId": BRANCH, "branchMappingLogic": ["==", "platform", "ios"]}
+                                       ]})}}
+result, _ = run("before", {"channel": conditional_channel})
+assert result.returncode != 0
+
 stale_channel = {"currentPage": {"name": "production", "isPaused": False,
-                                 "updateBranches": [{"name": "production", "updateGroups": []}]}}
+                                 "branchMapping": MAPPING,
+                                 "updateBranches": [{"id": BRANCH, "name": "production", "updateGroups": []}]}}
 result, receipt = run("after", {"published": published, "view": published, "channel": stale_channel},
                       "--source-sha", SOURCE, "--runtime", "0.1.13")
 assert result.returncode != 0 and receipt is None
