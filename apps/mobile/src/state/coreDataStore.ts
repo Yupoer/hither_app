@@ -880,6 +880,20 @@ export function createCoreDataStore(
           });
 
           if (actor) snapshot.ownerActorId = actor;
+          if (existing && options.itineraryVersion !== undefined
+            && options.itineraryVersion < (existing.itineraryVersion ?? 0)) {
+            // An older read can finish after an acknowledged local itinerary write.
+            // Auto-add has an independent RPC, so keep its incoming value.
+            snapshot.group = { ...snapshot.group,
+              tripDays: existing.group.tripDays,
+              departureDate: existing.group.departureDate };
+            snapshot.destinations = existing.destinations;
+            snapshot.dailyAccommodations = existing.dailyAccommodations;
+            snapshot.projectedDestinationOperationIds = existing.projectedDestinationOperationIds;
+            snapshot.itineraryVersion = existing.itineraryVersion;
+            snapshot.source = existing.source;
+            snapshot.syncedAt = existing.syncedAt;
+          }
           if (
             existing
             && existing.activeGathering.entityVersion >= snapshot.activeGathering.entityVersion
@@ -915,7 +929,8 @@ export function createCoreDataStore(
             op.groupId === state.group.id && (actor === undefined || (actor != null && (!op.actorId || op.actorId === actor)))) : [];
           if (pendingOperations.length > 0) {
             const projected = projectOperationGroupState({ ...state, group: snapshot.group,
-              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations }, pendingOperations, [snapshot.activeGathering.activeDestinationId]);
+              destinations: snapshot.destinations, dailyAccommodations: snapshot.dailyAccommodations,
+              projectedDestinationOperationIds: snapshot.projectedDestinationOperationIds }, pendingOperations, [snapshot.activeGathering.activeDestinationId]);
             snapshot.group = projected.group;
             snapshot.dailyAccommodations = projected.dailyAccommodations;
             snapshot.destinations = projected.destinations;
