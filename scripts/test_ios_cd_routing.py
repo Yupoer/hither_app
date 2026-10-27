@@ -32,9 +32,11 @@ ota = ("Verify OTA compatibility and current master", "Publish and verify produc
 native = ("Build signed production IPA on this runner", "Verify IPA and record source",
           "Upload build receipt")
 
-for mode in ("ota", "preflight", "build-only", "submit"):
+for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-only", "submit"):
     assert all(runs(name, mode) == (mode == "ota") for name in ota), mode
     assert all(runs(name, mode) == (mode in ("build-only", "submit")) for name in native), mode
+    assert runs("Build and cold-launch full Release simulator app", mode) == (mode in ("validate-release", "build-only", "submit")), mode
+    assert runs("Upload Release launch receipt", mode) == (mode in ("validate-release", "build-only", "submit")), mode
     assert runs("Upload this IPA to TestFlight", mode) == (mode == "submit"), mode
     assert runs("Verify production release prerequisites", mode) == (mode in ("ota", "submit")), mode
 
@@ -42,5 +44,8 @@ ota_publish = steps["Publish and verify production iOS OTA"]["body"]
 assert "env:exec production" in ota_publish
 assert "EAS_BUILD_PROFILE=production npx --yes eas-cli@21.0.2 update" in ota_publish
 assert "          EAS_BUILD_PROFILE: production" not in ota_publish
+assert "EXUpdatesRequestHeaders" in steps["Verify IPA and record source"]["body"]
+assert "    if: inputs.mode == 'inspect-release'" in source
+assert "    if: inputs.mode != 'inspect-release'" in source
 
 print("iOS CD route isolation checks passed")

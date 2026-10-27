@@ -53,6 +53,8 @@ jobs:
           python3 -B scripts/test_ios_ota_compatibility.py
           python3 -B scripts/test_ios_ota_publication.py
           python3 -B scripts/test_ios_cd_routing.py
+          python3 -B scripts/test_ios_release_inventory.py
+          python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
           node --test apps/mobile/scripts/check-changed-coverage.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh

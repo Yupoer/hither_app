@@ -34,14 +34,31 @@ receipt for 14 days.
 
 ## Native build and TestFlight
 
-`preflight` checks Xcode and dependencies without signing. `build-only` builds
-and validates a signed IPA; `submit` builds and uploads it to TestFlight.
+`inspect-release` uses a Linux GitHub runner and the existing `EXPO_TOKEN`
+secret to read production iOS EAS build, channel, and update metadata. It
+uploads only a sanitized receipt. A finished EAS build is a candidate binary;
+the receipt leaves Apple processing and installed-device status unknown. IPA
+files built locally on a GitHub Xcode runner may not appear in EAS Build history.
+
+`preflight` checks Xcode and dependencies without signing. `validate-release`
+builds the complete Release simulator app and requires two 45-second cold
+launches before returning a sanitized receipt. Both `build-only` and `submit`
+run the same full App gate before signing; `build-only` then builds and
+validates a signed IPA, while `submit` builds and uploads it to TestFlight.
 These modes remain available when the binary record does not permit OTA.
-The workflow uploads a build receipt, not the signed IPA, as a GitHub artifact.
-Before treating a native release as complete, perform the full Release simulator
-cold-launch check in [iOS startup validation](ios-release-startup-validation.md),
-read back Apple processing, and verify the installed build on a real device.
-The CI actor probes and `preflight` do not perform those checks.
+The workflow uploads receipts, not the signed IPA, screenshots, or native logs,
+as GitHub artifacts. The simulator gate applies the full cold-launch check in
+[iOS startup validation](ios-release-startup-validation.md). It verifies real
+App startup and records screenshot hashes. The simulator build injects the
+production update-channel header in a temporary copy of `Expo.plist`, restores
+the checked-in file, and verifies the compiled App. EAS uses a remote auto
+incrementing build number for the signed device IPA, so the simulator receipt
+proves a source-equivalent Release launch rather than launching that IPA. The
+workflow compares source and app version with the IPA and separately verifies
+its embedded update runtime and production channel. Visual screenshot review remains
+pending. Read back Apple processing and verify the installed build on a real
+device before treating a native release as complete. The CI actor probes and
+quick `preflight` do not perform these checks.
 
 The historical `scripts/ota-auto-ship.sh` and `scripts/task-end-ship.sh` are
 retired compatibility stubs. A Git push alone does not publish an update.

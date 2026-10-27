@@ -8,13 +8,15 @@ on:
         required: true
         type: string
       mode:
-        description: Verified production OTA, preflight, signed build, or TestFlight upload
+        description: Inspect release state, verified OTA, quick preflight, full Release validation, signed build, or TestFlight upload
         required: true
         default: preflight
         type: choice
         options:
+          - inspect-release
           - ota
           - preflight
+          - validate-release
           - build-only
           - submit
       backend_verified:
@@ -31,7 +33,85 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  inventory:
+    if: inputs.mode == 'inspect-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Validate inventory dispatch
+        working-directory: .
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/master ]] || exit 1
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify pinned inventory source
+        working-directory: .
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/master
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.16.0
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - name: Install inventory dependencies
+        run: |
+          npm ci
+          npx patch-package --error-on-fail
+      - name: Read EAS production iOS metadata
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          npx --yes eas-cli@21.0.2 whoami
+          npx --yes eas-cli@21.0.2 build:list --platform ios --build-profile production \
+            --status finished --distribution store --limit 20 --json --non-interactive \
+            > "$RUNNER_TEMP/hither-ios-builds.json"
+          npx --yes eas-cli@21.0.2 channel:view production --json --non-interactive \
+            > "$RUNNER_TEMP/hither-ios-channel.json"
+          npx --yes eas-cli@21.0.2 update:list --branch production --platform ios \
+            --limit 1 --json --non-interactive > "$RUNNER_TEMP/hither-ios-updates.json"
+          group=$(python3 - "$RUNNER_TEMP/hither-ios-updates.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as stream:
+              page = json.load(stream).get('currentPage', [])
+          print(page[0]['group'] if page else '')
+          PY
+          )
+          view_args=()
+          if [[ -n "$group" ]]; then
+            npx --yes eas-cli@21.0.2 update:view "$group" --json \
+              > "$RUNNER_TEMP/hither-ios-update-view.json"
+            view_args=(--view "$RUNNER_TEMP/hither-ios-update-view.json")
+          fi
+          python3 ../../scripts/inspect-ios-release-inventory.py \
+            --builds "$RUNNER_TEMP/hither-ios-builds.json" \
+            --channel "$RUNNER_TEMP/hither-ios-channel.json" \
+            --updates "$RUNNER_TEMP/hither-ios-updates.json" \
+            "${view_args[@]}" \
+            --receipt "$RUNNER_TEMP/hither-ios-inventory.json"
+          cat "$RUNNER_TEMP/hither-ios-inventory.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload sanitized inventory receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-inventory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-ios-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+
   ios:
+    if: inputs.mode != 'inspect-release'
     runs-on: xcode-27
     timeout-minutes: 180
     defaults:
@@ -49,7 +129,7 @@ jobs:
         run: |
           [[ "$GITHUB_REF" == refs/heads/master ]] || { echo 'Dispatch from master only'; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'source_sha must be a full lowercase SHA'; exit 1; }
-          [[ "$RELEASE_MODE" == ota || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]] || exit 1
+          [[ "$RELEASE_MODE" == ota || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == validate-release || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]] || exit 1
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -149,6 +229,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Build and cold-launch full Release simulator app
+        if: inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          npx --yes eas-cli@21.0.2 env:exec production \
+            "EAS_BUILD_PROFILE=production python3 ../../scripts/run-ios-release-launch.py --source-sha $SOURCE_SHA --receipt $RUNNER_TEMP/hither-release-launch-receipt.json" \
+            --non-interactive
+          cat "$RUNNER_TEMP/hither-release-launch-receipt.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Release launch receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
+        with:
+          name: hither-ios-release-launch-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-release-launch-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Build signed production IPA on this runner
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         env:
@@ -176,6 +276,24 @@ jobs:
           widget=${widgets[0]}
           [[ "$(plutil -extract CFBundleIdentifier raw "$widget/Info.plist")" == app.hither.mobile.widget ]]
           codesign --verify --deep --strict "$app"
+          python3 - "$app/Expo.plist" "$app/Info.plist" "$RUNNER_TEMP/hither-release-launch-receipt.json" <<'PY'
+          import json, os, plistlib, sys
+          from pathlib import Path
+          config = json.loads(Path('app.json').read_text())['expo']
+          with open(sys.argv[1], 'rb') as stream:
+              updates = plistlib.load(stream)
+          with open(sys.argv[2], 'rb') as stream:
+              info = plistlib.load(stream)
+          launch = json.loads(Path(sys.argv[3]).read_text())
+          assert updates.get('EXUpdatesEnabled') is True
+          assert updates.get('EXUpdatesRuntimeVersion') == config['runtimeVersion']
+          assert updates.get('EXUpdatesURL') == config['updates']['url']
+          assert updates.get('EXUpdatesRequestHeaders', {}).get('expo-channel-name') == 'production'
+          assert info.get('CFBundleShortVersionString') == config['version'] == launch['appVersion']
+          assert launch['sourceSha'] == os.environ['SOURCE_SHA']
+          assert launch['validationScope'] == 'source_equivalent_release_simulator'
+          print('Signed IPA source version, updates channel, and runtime match Release simulator gate')
+          PY
           version=$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")
           build=$(plutil -extract CFBundleVersion raw "$app/Info.plist")
           [[ "$build" =~ ^[0-9]+$ ]]
