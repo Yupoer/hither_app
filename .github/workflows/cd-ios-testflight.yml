@@ -8,14 +8,20 @@ on:
         required: true
         type: string
       mode:
-        description: Preflight, signed build validation, or signed build plus TestFlight upload
+        description: Verified production OTA, preflight, signed build, or TestFlight upload
         required: true
         default: preflight
         type: choice
         options:
+          - ota
           - preflight
           - build-only
           - submit
+      backend_verified:
+        description: Confirm required production backend changes are applied and verified before OTA or submit
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -43,7 +49,7 @@ jobs:
         run: |
           [[ "$GITHUB_REF" == refs/heads/master ]] || { echo 'Dispatch from master only'; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'source_sha must be a full lowercase SHA'; exit 1; }
-          [[ "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]] || exit 1
+          [[ "$RELEASE_MODE" == ota || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]] || exit 1
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -75,8 +81,77 @@ jobs:
           npm run verify:runtime
           npx --yes eas-cli@21.0.2 --version
 
+      - name: Verify production release prerequisites
+        if: inputs.mode == 'ota' || inputs.mode == 'submit'
+        env:
+          BACKEND_VERIFIED: ${{ inputs.backend_verified }}
+        run: |
+          [[ "$BACKEND_VERIFIED" == true ]] || { echo 'Verify production backend deployment before publishing'; exit 1; }
+
+      - name: Verify OTA compatibility and current master
+        if: inputs.mode == 'ota'
+        working-directory: .
+        run: |
+          [[ "$(git ls-remote origin refs/heads/master | cut -f1)" == "$SOURCE_SHA" ]] || {
+            echo 'OTA source must still be the current master commit'; exit 1;
+          }
+          python3 scripts/check-ios-ota-compatibility.py \
+            --source-sha "$SOURCE_SHA" \
+            --manifest release/ios-production-binary.json \
+            > "$RUNNER_TEMP/hither-ota-compatibility.json" || {
+              cat "$RUNNER_TEMP/hither-ota-compatibility.json" >> "$GITHUB_STEP_SUMMARY"
+              cat "$RUNNER_TEMP/hither-ota-compatibility.json" >&2
+              exit 1
+            }
+          cat "$RUNNER_TEMP/hither-ota-compatibility.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish and verify production iOS OTA
+        if: inputs.mode == 'ota'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_BUILD_PROFILE: production
+        run: |
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          npx --yes eas-cli@21.0.2 whoami
+          npx --yes eas-cli@21.0.2 channel:view production --non-interactive --json \
+            > "$RUNNER_TEMP/hither-production-channel-before.json"
+          python3 ../../scripts/verify-ios-ota-publication.py before \
+            --channel "$RUNNER_TEMP/hither-production-channel-before.json"
+          [[ "$(git ls-remote origin refs/heads/master | cut -f1)" == "$SOURCE_SHA" ]] || {
+            echo 'Master moved before OTA publication'; exit 1;
+          }
+          npx --yes eas-cli@21.0.2 update --channel production --platform ios \
+            --environment production --message "hither release $SOURCE_SHA" \
+            --non-interactive --json > "$RUNNER_TEMP/hither-ota-published.json"
+          group=$(python3 ../../scripts/verify-ios-ota-publication.py published \
+            --published "$RUNNER_TEMP/hither-ota-published.json" \
+            --source-sha "$SOURCE_SHA" \
+            --runtime "$(node -p 'require("./app.json").expo.runtimeVersion')")
+          printf 'Published OTA group %s; verifying remote state\n' "$group" >> "$GITHUB_STEP_SUMMARY"
+          npx --yes eas-cli@21.0.2 update:view "$group" --json \
+            > "$RUNNER_TEMP/hither-ota-view.json"
+          npx --yes eas-cli@21.0.2 channel:view production --non-interactive --json \
+            > "$RUNNER_TEMP/hither-production-channel-after.json"
+          python3 ../../scripts/verify-ios-ota-publication.py after \
+            --published "$RUNNER_TEMP/hither-ota-published.json" \
+            --view "$RUNNER_TEMP/hither-ota-view.json" \
+            --channel "$RUNNER_TEMP/hither-production-channel-after.json" \
+            --source-sha "$SOURCE_SHA" \
+            --runtime "$(node -p 'require("./app.json").expo.runtimeVersion')" \
+            --receipt "$RUNNER_TEMP/hither-ota-receipt.json"
+          cat "$RUNNER_TEMP/hither-ota-receipt.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload OTA receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: inputs.mode == 'ota'
+        with:
+          name: hither-ios-ota-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-ota-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Build signed production IPA on this runner
-        if: inputs.mode != 'preflight'
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
@@ -86,7 +161,7 @@ jobs:
             --non-interactive --output "$RUNNER_TEMP/Hither-production.ipa"
 
       - name: Verify IPA and record source
-        if: inputs.mode != 'preflight'
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         run: |
           ipa="$RUNNER_TEMP/Hither-production.ipa"
           test -s "$ipa"
@@ -113,7 +188,7 @@ jobs:
 
       - name: Upload build receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: inputs.mode != 'preflight'
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         with:
           name: hither-ios-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hither-receipt.txt
