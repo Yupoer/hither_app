@@ -92,7 +92,9 @@ def production_channel(channel):
         mapping = json.loads(record["branchMapping"])
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("EAS branch mapping is invalid") from error
-    entries = mapping.get("data") if isinstance(mapping, dict) else None
+    if not isinstance(mapping, dict):
+        raise ValueError("EAS branch mapping is invalid")
+    entries = mapping.get("data")
     unconditional = (mapping.get("version") == 0 and isinstance(entries, list)
                      and len(entries) == 1 and isinstance(entries[0], dict)
                      and len(branches) == 1 and isinstance(branches[0], dict)
@@ -171,6 +173,87 @@ def inventory(builds, channel, updates, view):
     }
 
 
+def platform_shape(value):
+    if value is None:
+        return {"kind": "missing"}
+    if not isinstance(value, str):
+        return {"kind": "other_type"}
+    parts = [part.strip().upper() for part in value.split(",")]
+    if not 0 < len(parts) <= 4 or any(part not in ("ANDROID", "IOS") for part in parts):
+        return {"kind": "other_string"}
+    return {
+        "kind": "recognized_string",
+        "iosCount": parts.count("IOS"),
+        "androidCount": parts.count("ANDROID"),
+        "canonical": value == ", ".join(sorted(parts)),
+    }
+
+
+def valid_uuid(value):
+    try:
+        UUID(value)
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return True
+
+
+def blocked_inventory(builds, channel, updates, view):
+    try:
+        safe_builds = build_candidates(builds)
+    except (TypeError, ValueError):
+        safe_builds = None
+    try:
+        safe_channel = production_channel(channel)
+    except (KeyError, TypeError, ValueError):
+        safe_channel = None
+
+    groups = updates.get("currentPage") if isinstance(updates, dict) else None
+    group = groups[0] if isinstance(groups, list) and groups and isinstance(groups[0], dict) else None
+    records = view if isinstance(view, list) else []
+    group_id = group.get("group") if group else None
+    runtime = metadata_text(group, "runtimeVersion") if group else None
+    ios_records = [record for record in records if isinstance(record, dict)
+                   and str(record.get("platform", "")).upper() == "IOS"]
+    ios_group_records = [record for record in ios_records
+                         if group_id is not None and record.get("group") == group_id]
+    ios_production_records = [record for record in ios_group_records
+                              if record.get("branch") == "production"]
+    matching_ios = [record for record in ios_records
+                    if group_id is not None and runtime is not None
+                    and record.get("group") == group_id
+                    and record.get("branch") == "production"
+                    and metadata_text(record, "runtimeVersion") == runtime]
+    diagnostic = {
+        "buildsValid": safe_builds is not None,
+        "channelValid": safe_channel is not None,
+        "updateListType": "object" if isinstance(updates, dict) else "other",
+        "updateBranchIsProduction": isinstance(updates, dict) and updates.get("name") == "production",
+        "groupCount": len(groups) if isinstance(groups, list) else None,
+        "groupIsObject": group is not None,
+        "groupIdValid": valid_uuid(group_id),
+        "groupBranchIsProduction": group is not None and group.get("branch") == "production",
+        "groupPlatforms": platform_shape(group.get("platforms")) if group else {"kind": "missing"},
+        "groupRuntimePresent": runtime is not None,
+        "viewType": "list" if isinstance(view, list) else "missing" if view is None else "other",
+        "viewCount": len(records) if isinstance(view, list) else None,
+        "viewIosCount": len(ios_records),
+        "viewIosGroupCount": len(ios_group_records),
+        "viewIosProductionCount": len(ios_production_records),
+        "viewMatchingIosCount": len(matching_ios),
+    }
+    return {
+        "queriedAt": datetime.now(timezone.utc).isoformat(),
+        "inventoryStatus": "blocked",
+        "easBuilds": safe_builds,
+        "productionChannel": safe_channel,
+        "latestIosUpdate": None,
+        "installedBinary": "unknown",
+        "appleProcessing": "unknown",
+        "diagnostic": diagnostic,
+        "note": "Independent EAS build metadata does not prove Apple processing, installation, or OTA compatibility.",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--builds", required=True)
@@ -180,11 +263,26 @@ def main():
     parser.add_argument("--receipt", required=True)
     args = parser.parse_args()
     try:
-        result = inventory(read_json(args.builds), read_json(args.channel),
-                           read_json(args.updates), read_json(args.view) if args.view else None)
+        builds, channel, updates = (read_json(path) for path in
+                                   (args.builds, args.channel, args.updates))
+        view = read_json(args.view) if args.view else None
+    except (OSError, ValueError):
+        print("EAS release inventory unavailable: input JSON could not be read", file=sys.stderr)
+        return 1
+    try:
+        result = inventory(builds, channel, updates, view)
+        blocked = False
+    except (KeyError, TypeError, ValueError):
+        result = blocked_inventory(builds, channel, updates, view)
+        blocked = True
+    try:
         Path(args.receipt).write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
-    except (OSError, KeyError, TypeError, ValueError) as error:
-        print(f"EAS release inventory unavailable: {error}", file=sys.stderr)
+    except OSError:
+        print("EAS release inventory unavailable: receipt could not be written", file=sys.stderr)
+        return 1
+    if blocked:
+        print("EAS release inventory blocked; sanitized independent inventory follows", file=sys.stderr)
+        print(json.dumps(result, sort_keys=True), file=sys.stderr)
         return 1
     print(f"Sanitized release inventory written to {args.receipt}")
     return 0

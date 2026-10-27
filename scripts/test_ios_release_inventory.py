@@ -173,6 +173,70 @@ class ReleaseInventoryTest(unittest.TestCase):
             self.assertNotIn("private.example", content)
             self.assertEqual(json.loads(content)["easBuilds"][0]["buildNumber"], "42")
 
+    def test_rejected_update_still_reports_safe_independent_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in ("builds", "channel", "updates", "view")]
+            builds, channel, updates, view = responses()
+            updates["currentPage"][0]["platforms"] = "ANDROID"
+            updates["currentPage"][0]["message"] = "private-message"
+            for path, data in zip(paths, (builds, channel, updates, view)):
+                path.write_text(json.dumps(data), encoding="utf-8")
+            receipt = Path(directory) / "receipt.json"
+            command = [sys.executable, str(SCRIPT), "--builds", str(paths[0]),
+                       "--channel", str(paths[1]), "--updates", str(paths[2]),
+                       "--view", str(paths[3]), "--receipt", str(receipt)]
+            completed = subprocess.run(command, check=False, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 1)
+            data = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(data["inventoryStatus"], "blocked")
+            self.assertEqual(data["easBuilds"][0]["sourceSha"], SHA)
+            self.assertEqual(data["productionChannel"]["branch"], "production")
+            self.assertIsNone(data["latestIosUpdate"])
+            self.assertEqual(data["diagnostic"]["groupPlatforms"], {
+                "kind": "recognized_string", "iosCount": 0, "androidCount": 1,
+                "canonical": True})
+            self.assertEqual(data["diagnostic"]["viewMatchingIosCount"], 1)
+            self.assertNotIn("private.example", receipt.read_text(encoding="utf-8") + completed.stderr)
+            self.assertNotIn("private-message", receipt.read_text(encoding="utf-8") + completed.stderr)
+
+    def test_rejected_unknown_platform_never_echoes_raw_value(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in ("builds", "channel", "updates", "view")]
+            builds, channel, updates, view = responses()
+            updates["currentPage"][0]["platforms"] = "https://private.example/secret-platform"
+            for path, data in zip(paths, (builds, channel, updates, view)):
+                path.write_text(json.dumps(data), encoding="utf-8")
+            receipt = Path(directory) / "receipt.json"
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--builds", str(paths[0]),
+                 "--channel", str(paths[1]), "--updates", str(paths[2]),
+                 "--view", str(paths[3]), "--receipt", str(receipt)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 1)
+            data = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(data["diagnostic"]["groupPlatforms"]["kind"], "other_string")
+            self.assertNotIn("private.example", receipt.read_text(encoding="utf-8") + completed.stderr)
+
+    def test_invalid_channel_mapping_still_keeps_safe_build_facts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / name for name in ("builds", "channel", "updates", "view")]
+            builds, channel, updates, view = responses()
+            channel["currentPage"]["branchMapping"] = "[]"
+            updates["currentPage"][0]["platforms"] = "ANDROID"
+            for path, data in zip(paths, (builds, channel, updates, view)):
+                path.write_text(json.dumps(data), encoding="utf-8")
+            receipt = Path(directory) / "receipt.json"
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--builds", str(paths[0]),
+                 "--channel", str(paths[1]), "--updates", str(paths[2]),
+                 "--view", str(paths[3]), "--receipt", str(receipt)],
+                check=False, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 1)
+            data = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(data["easBuilds"][0]["sourceSha"], SHA)
+            self.assertFalse(data["diagnostic"]["channelValid"])
+            self.assertIsNone(data["productionChannel"])
+
 
 if __name__ == "__main__":
     unittest.main()
