@@ -57,7 +57,7 @@ export function groupPollIntervalMs(realtimeSubscribed: boolean): number {
 }
 
 /**
- * Stable key of the co-member ids whose `profiles` rows this group watches.
+ * Stable key of the co-member ids whose `public_profiles` rows this group watches.
  * Location patches replace `members` often; the key changes only when the
  * id set does, so the profiles channel does not resubscribe per patch.
  */
@@ -861,7 +861,7 @@ function GroupProfilesChannel({ owner }: { owner: GroupStateOwner }) {
       .channel(`group-profiles:${groupId}:${++channelSeq}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=in.(${memberIdsKey})` },
+        { event: 'UPDATE', schema: 'public', table: 'public_profiles', filter: `id=in.(${memberIdsKey})` },
         (payload) => { if (!cancelled) scheduleReloadRef.current?.('profile_update', payload as { commit_timestamp?: string }); },
       )
       .subscribe();

@@ -43,7 +43,7 @@ const mockSupabase = {
       eq: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       maybeSingle: jest.fn(async () => {
-        if (table === 'profiles') return { data: { nickname: 'Ada' }, error: null };
+        if (table === 'public_profiles') return { data: { nickname: 'Ada' }, error: null };
         if (table === 'itinerary_items') return { data: { title: 'Museum' }, error: null };
         if (table === 'memberships') {
           return {

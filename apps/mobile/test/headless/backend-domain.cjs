@@ -1,7 +1,10 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 
+const publicProfile = row => ({ id: row.id, nickname: row.nickname, avatar: row.avatar ?? null, avatar_color: row.avatar_color ?? null });
+
 const schemas = {
+  public_profiles: { fields: 'id nickname avatar avatar_color', modes: ['select'] },
   profiles: { fields: 'id nickname avatar avatar_color pro created_at pro_plan pro_purchased_at pro_expires_at anonymous_expires_at preferences onboarding', write: 'nickname avatar avatar_color preferences onboarding', owner: 'id', modes: ['select', 'update', 'upsert'], conflict: 'id' },
   memberships: { fields: 'group_id user_id role status solo subgroup_id created_at', modes: ['select', 'delete'] },
   groups: { fields: 'id name invite_code avatar avatar_color created_by created_at journey_status active_destination_id journey_started_at straggler_alerts straggler_threshold_m trip_days departure_date accommodation_auto_add', write: 'avatar avatar_color journey_status straggler_alerts straggler_threshold_m', modes: ['select', 'update'] },
@@ -71,6 +74,7 @@ function initialize(b, { LEADER, PEER }) {
 }
 
 function tableRows(b, name) {
+  if (name === 'public_profiles') return [...b.profiles.values()].map(publicProfile);
   if (name === 'profiles') return [...b.profiles.values()];
   if (name === 'groups') return [...b.groups.values()];
   if (name === 'memberships') return b.memberships;
@@ -116,8 +120,10 @@ function executeTable(b, operation) {
   const filters = steps.filter(s => ['eq', 'in', 'is', 'not', 'gt', 'gte', 'lt', 'lte'].includes(s[0]));
   const matches = row => filters.every(([op, field, value]) => op === 'in' ? value.includes(row[field]) : op === 'eq' ? row[field] === value : op === 'is' ? (row[field] ?? null) === value : op === 'not' ? row[field] != null : op === 'gt' ? row[field] > value : op === 'gte' ? row[field] >= value : op === 'lt' ? row[field] < value : row[field] <= value);
   let all = tableRows(b, name);
+  const previousPublicProfiles = name === 'profiles' && mode !== 'select' ? new Map(all.map(row => [row.id, publicProfile(row)])) : null;
   let rows = all.filter(matches);
   if (schema.owner && name !== 'profiles' && mode === 'select') rows = rows.filter(row => row[schema.owner] === userId);
+  if (name === 'public_profiles' && mode === 'select') rows = rows.filter(p => userId && (p.id === userId || b.memberships.some(m => m.user_id === p.id && member(b, m.group_id, userId))));
   if (name === 'profiles' && mode === 'select') rows = rows.filter(p => p.id === userId || b.memberships.some(m => m.user_id === userId && b.memberships.some(n => n.group_id === m.group_id && n.user_id === p.id)));
   if (name === 'subgroup_invites') rows = rows.filter(r => r.invitee_id === userId || r.inviter_id === userId);
   if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
@@ -155,6 +161,11 @@ function executeTable(b, operation) {
       rows.forEach(row => b.publish(name, row, mode === 'update' ? 'UPDATE' : 'INSERT'));
     }
     storeRows(b, name, all);
+    if (previousPublicProfiles) for (const row of rows) {
+      const projected = publicProfile(row);
+      const previous = previousPublicProfiles.get(row.id);
+      if (JSON.stringify(previous) !== JSON.stringify(projected)) b.publish('public_profiles', projected, previous ? 'UPDATE' : 'INSERT');
+    }
     if (name === 'member_privacy_settings') for (const row of rows) if (!row.sharing_enabled) {
       for (const [key, location] of b.locations) if (location.user_id === row.user_id) b.locations.delete(key);
     }
@@ -254,4 +265,4 @@ function execute(b, operation) {
   return undefined;
 }
 
-module.exports = { initialize, execute, schemas, ok, fail, keys, member, leader, iso, projection, anonymousExpired };
+module.exports = { publicProfile, initialize, execute, schemas, ok, fail, keys, member, leader, iso, projection, anonymousExpired };

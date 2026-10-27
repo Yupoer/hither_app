@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const rpcArguments = { get_premium_projection: 'p_group_id', delete_anonymous_account: '', delete_account: '', clear_anonymous_expiry_if_registered: 'p_uid' };
+const rpcArguments = { get_group_public_recovery_snapshot: 'p_group_id', get_group_recovery_snapshot: 'p_group_id', get_premium_projection: 'p_group_id', delete_anonymous_account: '', delete_account: '', clear_anonymous_expiry_if_registered: 'p_uid' };
 
 function failNext(b, match, error) {
   assert(match && Object.keys(match).every(key => ['kind', 'name', 'mode', 'userId'].includes(key)), 'Fault match contract');

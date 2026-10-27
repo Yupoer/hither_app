@@ -15,6 +15,7 @@ const MUTATION_QUERY_METHODS = new Set([
 /** RPCs whose names describe reads and therefore do not need a mutation gate. */
 const DEFAULT_READ_ONLY_RPC_NAMES = new Set([
   'get_group_recovery_snapshot',
+  'get_group_public_recovery_snapshot',
   'get_kml_import_quota',
   'get_premium_projection',
   'get_trip_entitlement',

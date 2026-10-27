@@ -52,7 +52,7 @@ export async function fetchMyInvites(userId: string): Promise<PendingInvite[]> {
 
   const [sgRes, profRes] = await Promise.all([
     supabase.from('subgroups').select('id, name').in('id', subgroupIds),
-    supabase.from('profiles').select('id, nickname').in('id', inviterIds),
+    supabase.from('public_profiles').select('id, nickname').in('id', inviterIds),
   ]);
   orThrow(sgRes.error);
   orThrow(profRes.error);
@@ -85,7 +85,7 @@ export async function fetchSentInvites(
   if (rows.length === 0) return [];
 
   const { data: profiles, error: profError } = await supabase
-    .from('profiles')
+    .from('public_profiles')
     .select('id, nickname')
     .in(
       'id',

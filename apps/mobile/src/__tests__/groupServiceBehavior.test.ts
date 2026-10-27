@@ -18,6 +18,7 @@ const mockDemoSetJourneyTarget = jest.fn();
 const mockDemoSetSolo = jest.fn();
 const mockDemoSelfSplit = jest.fn();
 const mockDemoSelfMerge = jest.fn();
+const mockDemoInviteToSubgroup = jest.fn();
 jest.mock('../api/demo', () => ({
   isDemoGroup: mockIsDemoGroup,
   getDemoState: mockGetDemoState,
@@ -26,6 +27,7 @@ jest.mock('../api/demo', () => ({
   demoSetSolo: mockDemoSetSolo,
   demoSelfSplit: mockDemoSelfSplit,
   demoSelfMerge: mockDemoSelfMerge,
+  demoInviteToSubgroup: mockDemoInviteToSubgroup,
 }));
 
 const mockListDailyAccommodations = jest.fn();
@@ -195,7 +197,7 @@ describe('GroupService snapshots and joined-group cache', () => {
       memberships: { data: [{ user_id: 'user-1', role: 'leader', status: 'active' }], error: null },
       itinerary_items: { data: [{ id: 'd-1', title: 'Next', position: 0, day: 1, address: null, latitude: 25, longitude: 121, closed_at: null }], error: null },
       member_locations: { data: [{ user_id: 'user-1', latitude: 25, longitude: 121, updated_at: 'now' }], error: null },
-      profiles: { data: [{ id: 'user-1', nickname: 'Ada', avatar: '🦊', avatar_color: '#E8543F' }], error: null },
+      public_profiles: { data: [{ id: 'user-1', nickname: 'Ada', avatar: '🦊', avatar_color: '#E8543F' }], error: null },
       subgroups: { data: [{ id: 'sg', name: 'Team', mode: 'collab', leader_id: 'user-1', parent_subgroup_id: null }], error: null },
     });
     mockListDailyAccommodations.mockResolvedValue([{ id: 'stay', groupId: 'g-1', stayDate: '2026-10-01', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } }]);
@@ -203,6 +205,9 @@ describe('GroupService snapshots and joined-group cache', () => {
       group: { id: 'g-1' }, members: [{ userId: 'user-1', name: 'Ada' }],
       destinations: [{ id: 'd-1' }], subgroups: [{ id: 'sg' }], dailyAccommodations: [{ id: 'stay' }],
     });
+
+    expect(mockedSupabase.from).toHaveBeenCalledWith('public_profiles');
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('profiles');
 
     setTables({
       groups: { data: row(), error: null },
@@ -212,6 +217,18 @@ describe('GroupService snapshots and joined-group cache', () => {
       subgroups: { data: null, error: { message: 'optional unavailable' } },
     });
     await expect(getGroupState('g-1')).resolves.toMatchObject({ members: [], subgroups: [] });
+  });
+
+
+  it.each(['42501', 'PGRST205', 'transport'])('propagates public identity failure %s without a legacy profile read', async (code) => {
+    const memberships = { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }], error: null };
+    setTables({ groups: { data: row(), error: null }, memberships,
+      public_profiles: { data: null, error: { code, message: 'public identity unavailable' } } });
+    await expect(getGroupState('g-1')).rejects.toMatchObject({ code });
+    setTables({ groups: { data: [row()], error: null }, memberships,
+      public_profiles: { data: null, error: { code, message: 'public identity unavailable' } } });
+    await expect(getMyJoinedGroups({ includeProfiles: true })).rejects.toMatchObject({ code });
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('profiles');
   });
 
   it('uses the demo snapshot path without remote group queries', async () => {
@@ -259,7 +276,7 @@ describe('GroupService snapshots and joined-group cache', () => {
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader' }], error: null },
       groups: { data: [row()], error: null },
-      profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
+      public_profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
     });
     storage.getItem.mockResolvedValueOnce(JSON.stringify({}));
     // The second memberships query is selected by call order/table; the table
@@ -268,7 +285,7 @@ describe('GroupService snapshots and joined-group cache', () => {
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }, { group_id: 'g-1', role: 'leader', user_id: 'user-2' }], error: null },
       groups: { data: [row()], error: null },
-      profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
+      public_profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
     });
     const rich = await getMyJoinedGroups({ includeProfiles: true });
     expect(rich[0]).toMatchObject({ group: { id: 'g-1' }, memberCount: 2, role: 'leader' });
@@ -292,7 +309,7 @@ describe('GroupService snapshots and joined-group cache', () => {
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }, { group_id: 'g-1', role: 'leader', user_id: 'user-2' }], error: null },
       groups: { data: [row()], error: null },
-      profiles: { data: [{ id: 'user-2', avatar: '🐺', avatar_color: '#4A90D9' }], error: null },
+      public_profiles: { data: [{ id: 'user-2', avatar: '🐺', avatar_color: '#4A90D9' }], error: null },
     });
     storage.getItem.mockRejectedValueOnce(new Error('disk read'));
     storage.setItem.mockRejectedValueOnce(new Error('disk write'));
@@ -415,5 +432,49 @@ describe('GroupService mutations and demo branches', () => {
     expect(mockDemoSetSolo).toHaveBeenCalledWith(false);
     expect(mockDemoSelfSplit).toHaveBeenCalledWith('Demo team');
     expect(mockDemoSelfMerge).toHaveBeenCalled();
+  });
+});
+
+
+describe('public subgroup identity reads', () => {
+  const service = require('../api/services/SubgroupService') as typeof import('../api/services/SubgroupService');
+
+  it('preserves invitation values and empty names when a public identity is absent', async () => {
+    setTables({ subgroup_invites: { data: [{ id: 'invite-1', group_id: 'g-1', subgroup_id: 'sg-1', inviter_id: 'user-2', invitee_id: 'user-1', status: 'pending', created_at: null }], error: null },
+      subgroups: { data: [{ id: 'sg-1', name: 'Lunch' }], error: null },
+      public_profiles: { data: [{ id: 'user-2', nickname: 'Ada' }], error: null } });
+    await expect(service.fetchMyInvites('user-1')).resolves.toEqual([expect.objectContaining({ id: 'invite-1', inviterName: 'Ada', subgroupName: 'Lunch' })]);
+    setTables({ subgroup_invites: { data: [{ id: 'invite-2', invitee_id: 'missing' }], error: null } });
+    await expect(service.fetchSentInvites('sg-1')).resolves.toEqual([{ id: 'invite-2', inviteeName: '' }]);
+    await expect(service.fetchMyInvites('user-1')).resolves.toEqual([expect.objectContaining({ inviterName: '', subgroupName: '' })]);
+    expect(mockedSupabase.from).toHaveBeenCalledWith('public_profiles');
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('profiles');
+  });
+
+  it('skips empty identity batches and propagates denied public lookups', async () => {
+    setTables({});
+    await expect(service.fetchMyInvites('user-1')).resolves.toEqual([]);
+    await expect(service.fetchSentInvites('sg-1')).resolves.toEqual([]);
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('public_profiles');
+    const denied = { code: '42501', message: 'public identity denied' };
+    setTables({ subgroup_invites: { data: [{ id: 'invite', invitee_id: 'u-2', inviter_id: 'u-1', subgroup_id: 'sg-1' }], error: null },
+      public_profiles: { data: null, error: denied } });
+    await expect(service.fetchMyInvites('u-2')).rejects.toMatchObject(denied);
+    await expect(service.fetchSentInvites('sg-1')).rejects.toMatchObject(denied);
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('profiles');
+  });
+
+  it('preserves send accept decline RPCs and the local demo route', async () => {
+    await service.inviteToSubgroup('sg-1', 'u-2');
+    await service.acceptSubgroupInvite('invite');
+    await service.declineSubgroupInvite('invite');
+    expect(mockedSupabase.rpc.mock.calls).toEqual([
+      ['invite_to_subgroup', { p_subgroup: 'sg-1', p_invitee: 'u-2' }],
+      ['accept_subgroup_invite', { p_invite: 'invite' }],
+      ['decline_subgroup_invite', { p_invite: 'invite' }],
+    ]);
+    await service.inviteToSubgroup('demo-sg-1', 'u-2');
+    expect(mockDemoInviteToSubgroup).toHaveBeenCalledWith('demo-sg-1', 'u-2');
+    expect(mockedSupabase.rpc).toHaveBeenCalledTimes(3);
   });
 });

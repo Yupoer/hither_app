@@ -346,7 +346,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
   let profileRows: ProfileRow[] = [];
   if (userIds.length > 0) {
     const { data: profiles, error: profileError } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id, nickname, avatar, avatar_color')
       .in('id', userIds);
     orThrow(profileError);
@@ -398,7 +398,7 @@ export async function getGroupRecoverySnapshot(
   }
   await requireUserId();
   const [{ data, error }, dailyAccommodations] = await Promise.all([
-    supabase.rpc('get_group_recovery_snapshot', { p_group_id: groupId }),
+    supabase.rpc('get_group_public_recovery_snapshot', { p_group_id: groupId }),
     listDailyAccommodations(groupId),
   ]);
   orThrow(error);
@@ -606,7 +606,7 @@ export async function getMyJoinedGroups(
   if (includeProfiles && members.length > 0) {
     const userIdsToFetch = Array.from(new Set(members.map((m) => m.user_id)));
     const { data: profileRows, error: profileError } = await supabase
-      .from('profiles')
+      .from('public_profiles')
       .select('id, avatar, avatar_color')
       .in('id', userIdsToFetch);
     orThrow(profileError);
