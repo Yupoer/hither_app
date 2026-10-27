@@ -11,6 +11,14 @@ select ok(has_function_privilege('authenticated', 'public.get_group_public_recov
   'authenticated can request public recovery subject to membership');
 select ok(not has_function_privilege('service_role', 'public.get_group_public_recovery_snapshot(uuid)', 'EXECUTE'),
   'service role has no additional public recovery execute grant');
+select is((select array_agg(case when acl.grantee = p.proowner then 'owner'
+  else pg_get_userbyid(acl.grantee)::text end order by
+  (case when acl.grantee = p.proowner then 'owner' else pg_get_userbyid(acl.grantee)::text end) collate "C")
+  from pg_proc p cross join lateral aclexplode(p.proacl) acl
+  where p.oid = 'public.get_group_public_recovery_snapshot(uuid)'::regprocedure
+    and acl.privilege_type = 'EXECUTE'),
+  array['authenticated', 'owner']::text[],
+  'public recovery execute ACL contains only authenticated and its owner');
 select is((select jsonb_build_object('security_definer',prosecdef,'volatility',provolatile,
   'configuration',proconfig,'return_type',prorettype::regtype::text)
   from pg_proc where oid='public.get_group_public_recovery_snapshot(uuid)'::regprocedure),
