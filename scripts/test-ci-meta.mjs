@@ -64,6 +64,10 @@ const direct = await run({ ref: 'refs/heads/deliver/local-workflow', eventName: 
 assert.deepEqual(direct.outputs, { parent: '' });
 assert.deepEqual(direct.calls, []);
 
+const manualDirect = await run({ ref: 'refs/heads/deliver/local-workflow', eventName: 'workflow_dispatch', prs: [] });
+assert.deepEqual(manualDirect.outputs, { parent: '' }, 'a manual direct-delivery run validates the whole map');
+assert.deepEqual(manualDirect.calls, []);
+
 const dispatch = await run({ ref: 'refs/heads/feature/ci', eventName: 'workflow_dispatch' });
 assert.deepEqual(dispatch.outputs, { parent: 'pure-chore' });
 assert.deepEqual(dispatch.calls, [['list', {

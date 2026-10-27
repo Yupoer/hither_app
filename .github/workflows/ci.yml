@@ -50,6 +50,7 @@ jobs:
         run: |
           python3 scripts/test_workflow_scope.py
           python3 scripts/test_ci_required.py
+          python3 -B scripts/test_ci_trigger_matrix.py
           python3 -B scripts/test_ios_ota_compatibility.py
           python3 -B scripts/test_ios_ota_publication.py
           python3 -B scripts/test_ios_cd_routing.py
