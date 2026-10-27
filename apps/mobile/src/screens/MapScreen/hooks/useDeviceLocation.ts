@@ -3,7 +3,8 @@ import { createElement, useState, useCallback, useRef, type ReactElement, type R
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { AppState, type AppStateStatus } from 'react-native';
 import { location } from '../../../native';
-import { setLocationAccessContext, captureLocationAccess, isLocationAccessCurrent } from '../../../state/locationPrivacy';
+import { getLocalAuthActorId } from '../../../api/supabase';
+import { setLocationAccessContext, captureLocationAccess, isLocationAccessCurrent, locationConsentRevision } from '../../../state/locationPrivacy';
 import { energyObservability } from '../../../state/energyObservability';
 import {
   isDebugRouteActive,
@@ -86,6 +87,12 @@ export function useDeviceLocation({
   const foregroundLocationAvailable = isForegroundLocationState(appState);
   const lastSampleAtRef = useRef(0);
   const latestSampleRef = useRef<LocationSample | null>(null);
+  const latestUploadRef = useRef<{
+    sample: LocationSample;
+    groupId: string;
+    accessRevision: number;
+    completion: Promise<void>;
+  } | null>(null);
   const onIncomingSampleRef = useRef(onIncomingSample);
   onIncomingSampleRef.current = onIncomingSample;
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
@@ -127,6 +134,7 @@ export function useDeviceLocation({
       || sample.timestamp <= lastSampleAtRef.current || sample.timestamp > now + 120_000) return false;
     lastSampleAtRef.current = sample.timestamp;
     latestSampleRef.current = sample;
+    latestUploadRef.current = null;
     try {
       onIncomingSampleRef.current?.(sample, Math.min(now, sample.timestamp));
     } catch {
@@ -235,12 +243,10 @@ export function useDeviceLocation({
         // reservation they would all pass the same stale gate.
         uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
         const requestedGroup = groupIdRef.current;
-        void enqueueUpload(
-          sample,
-          now,
-          { immediate: true },
-          requestedGroup,
-        ).catch(() => undefined);
+        const accessRevision = locationConsentRevision();
+        const completion = enqueueUpload(sample, now, { immediate: true }, requestedGroup);
+        latestUploadRef.current = { sample, groupId: requestedGroup, accessRevision, completion };
+        void completion.catch(() => undefined);
       }
     },
     [acceptIncomingSample, applySampleToUi, enqueueUpload],
@@ -257,39 +263,55 @@ export function useDeviceLocation({
   const refreshDeviceLocation = useCallback(async (options?: {
     requireUpload?: boolean;
   }): Promise<Coordinates | null> => {
+    const sampleAtRequest = lastSampleAtRef.current;
     energyObservability.increment('location_callback');
     const requestedGroup = groupIdRef.current;
     if (!requestedGroup || !sharingEnabledRef.current || !hasMembershipRef.current || !isForegroundLocationState(AppState.currentState)) return null;
+    const requestedActor = await getLocalAuthActorId();
     const access = await captureLocationAccess(requestedGroup);
     if (!access) return null;
-    const fix = await location.getCurrentLocation(
+    const acquiredFix = await location.getCurrentLocation(
       highAccuracyRef.current,
       powerModeRef.current,
     );
-    if (!fix || !isLocationAccessCurrent(access) || !sharingEnabledRef.current || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || !isForegroundLocationState(AppState.currentState)) return null;
+    if (!acquiredFix || await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || !sharingEnabledRef.current || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || !isForegroundLocationState(AppState.currentState)) return null;
     const now = Date.now();
-    if (!acceptIncomingSample(fix, now)) {
+    const accepted = acceptIncomingSample(acquiredFix, now);
+    const latest = latestSampleRef.current;
+    // Expo's final permission read can finish after the continuous owner advances.
+    const observedDuringRequest = isUsableLocationSample(acquiredFix)
+      && acquiredFix.timestamp > sampleAtRequest && acquiredFix.timestamp <= now + 120_000
+      && latest != null && (latest.timestamp > acquiredFix.timestamp
+        || (latest.timestamp === acquiredFix.timestamp
+          && acquiredFix.coordinates.latitude === latest.coordinates.latitude
+          && acquiredFix.coordinates.longitude === latest.coordinates.longitude
+          && acquiredFix.accuracy === latest.accuracy));
+    if (!accepted && !observedDuringRequest) {
       if (options?.requireUpload) throw new Error('no_new_location_sample');
       return null;
     }
-    energyObservability.increment('location_accepted');
-    energyObservability.event('location_acquisition');
+    const fix = latest && observedDuringRequest ? latest : acquiredFix;
+    if (accepted) {
+      energyObservability.increment('location_accepted');
+      energyObservability.event('location_acquisition');
+      motionRef.current = reduceMotionState(
+        motionRef.current, fix.coordinates, now, policyNow(), fix.accuracy ?? 0,
+      );
+    }
     applySampleToUi(fix, now, { immediate: true });
-    motionRef.current = reduceMotionState(
-      motionRef.current,
-      fix.coordinates,
-      now,
-      policyNow(),
-      fix.accuracy ?? 0,
-    );
     if (groupIdRef.current && sharingEnabledRef.current && hasMembershipRef.current) {
       uploadGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
-      if (options?.requireUpload) {
-        await enqueueUpload(fix, now, { immediate: true }, requestedGroup);
-      } else {
-        await enqueueUpload(fix, now, { immediate: true }, requestedGroup).catch(() => undefined);
-      }
+      const receipt = latestUploadRef.current;
+      const upload = receipt?.sample === latest && receipt.groupId === requestedGroup
+        && receipt.accessRevision === access.generation
+        ? receipt.completion
+        : enqueueUpload(fix, now, { immediate: true }, requestedGroup);
+      if (options?.requireUpload) await upload;
+      else await upload.catch(() => undefined);
     }
+    if (await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || requestedGroup !== groupIdRef.current
+      || !sharingEnabledRef.current || !hasMembershipRef.current
+      || !isForegroundLocationState(AppState.currentState)) return null;
     return fix.coordinates;
   }, [acceptIncomingSample, applySampleToUi, enqueueUpload]);
 
