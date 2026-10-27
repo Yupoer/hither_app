@@ -1,3 +1,4 @@
+import { fetchArrivalCorrections } from './GatheringWorkflowService';
 import type {
   MemberNavigationState,
   NavigationMemberStatus,
@@ -227,6 +228,7 @@ export async function getBackgroundNavigationContext(groupId: string, scopeSubgr
   actorId: string; hasMembership: boolean; sharingEnabled: boolean;
   session: NavigationSession | null; target: Destination | null;
   navigationMemberIds?: string[]; arrivedMemberIds?: string[]; leaderId?: string;
+  arrivalCorrections?: import('../../state/arrivalSync').EffectiveArrival[];
 }> {
   const actorId = await requireUserId();
   const [memberResult, sharingEnabled] = await Promise.all([
@@ -250,12 +252,13 @@ export async function getBackgroundNavigationContext(groupId: string, scopeSubgr
     .eq('group_id', groupId).eq('id', session.destinationId).maybeSingle();
   orThrow(error);
   if (!data || data.day == null || data.closed_at || (data.subgroup_id ?? null) !== (member.subgroup_id ?? null)) return { ...result, session };
-  const [rosterResult, arrivalsResult, subgroupResult] = await Promise.all([
+  const [rosterResult, arrivalsResult, subgroupResult, arrivalCorrections] = await Promise.all([
     supabase.from('memberships').select('user_id, role, subgroup_id, solo').eq('group_id', groupId),
     supabase.from('destination_arrivals').select('user_id').eq('group_id', groupId)
       .eq('destination_id', session.destinationId).eq('navigation_session_id', session.id),
     resolvedScope == null ? Promise.resolve({ data: null, error: null })
       : supabase.from('subgroups').select('leader_id').eq('group_id', groupId).eq('id', resolvedScope).maybeSingle(),
+    fetchArrivalCorrections(groupId),
   ]);
   orThrow(rosterResult.error);
   orThrow(arrivalsResult.error);
@@ -263,7 +266,7 @@ export async function getBackgroundNavigationContext(groupId: string, scopeSubgr
   const scopedMembers = (rosterResult.data ?? []).filter(row => !row.solo
     && (row.subgroup_id ?? null) === resolvedScope
     && (session.memberIds === undefined || session.memberIds.includes(row.user_id)));
-  return { ...result, session,
+  return { ...result, session, arrivalCorrections,
     navigationMemberIds: scopedMembers.map(row => row.user_id),
     arrivedMemberIds: (arrivalsResult.data ?? []).map(row => row.user_id),
     leaderId: resolvedScope == null ? scopedMembers.find(row => row.role === 'leader')?.user_id

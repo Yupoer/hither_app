@@ -69,6 +69,7 @@ export interface GroupActivityState {
   personalArrived?: boolean;
   personalArrivalAtMs?: number;
   personalArrivalSequence?: number;
+  personalArrivalCorrectionAtMs?: number;
   status?: string;
   gatheringTitle?: string;
   /** Distance from the user to the gathering point, in metres. */

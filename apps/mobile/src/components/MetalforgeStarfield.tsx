@@ -33,8 +33,9 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
   const now = useSharedValue(0);
   const lastFrameAt = useSharedValue(-1);
   const appActive = useForegroundUi();
-  const visible = active && appActive && windows.length > 0;
   const policy = getMetalforgeStarfieldAnimationPolicy({ active: active && windows.length > 0, appActive, reducedMotion, lowPowerMode, thermalState });
+  const visible = policy.shouldAnimate && windows.length > 0;
+  const retireStopped = active && appActive && !policy.shouldAnimate;
 
   const frame = useFrameCallback(({ timestamp }) => {
     if (!policy.shouldAnimate) return;
@@ -58,7 +59,7 @@ export default function MetalforgeStarfield({ emitting = false, active = true, l
   return <View onLayout={({ nativeEvent }) => setWidth(current => current === nativeEvent.layout.width ? current : nativeEvent.layout.width)}
     pointerEvents="none" accessibilityElementsHidden style={[StyleSheet.absoluteFill, styles.container, style]}>
     <ChargeEmissionIntent key={String(emitting)} emitting={emitting} now={now} setWindows={setWindows} />
-    <ChargeWindowResources emissions={emissions} windows={windows} shouldAnimate={policy.shouldAnimate} now={now} setWindows={setWindows} />
+    <ChargeWindowResources emissions={emissions} windows={windows} shouldAnimate={policy.shouldAnimate} retireStopped={retireStopped} now={now} setWindows={setWindows} />
     <ChargeFrameMotion shouldAnimate={policy.shouldAnimate} frame={frame} lastFrameAt={lastFrameAt} />
     <StarfieldWorkload key={`${visible}:${policy.shouldAnimate}`} visible={visible} shouldAnimate={policy.shouldAnimate} />
     {visible && <Canvas style={StyleSheet.absoluteFill}>
@@ -87,11 +88,15 @@ function ChargeEmissionPublication({ emissions, windows }: { emissions: ReturnTy
   return null;
 }
 
-function ChargeDrainDeadline({ windows, shouldAnimate, now, setWindows }: { windows: ChargeEmission[]; shouldAnimate: boolean; now: ReturnType<typeof useSharedValue<number>>; setWindows: React.Dispatch<React.SetStateAction<ChargeEmission[]>> }) {
+function ChargeDrainDeadline({ windows, shouldAnimate, retireStopped, now, setWindows }: { windows: ChargeEmission[]; shouldAnimate: boolean; retireStopped: boolean; now: ReturnType<typeof useSharedValue<number>>; setWindows: React.Dispatch<React.SetStateAction<ChargeEmission[]>> }) {
   useMountEffect(() => {
-    if (!shouldAnimate) return;
     const stopped = windows.filter(window => window.stoppedAt != null);
     if (!stopped.length) return;
+    if (retireStopped) {
+      setWindows(current => current.filter(window => window.stoppedAt == null));
+      return;
+    }
+    if (!shouldAnimate) return;
     const deadline = Math.min(...stopped.map(window => window.stoppedAt! + CHARGE_BALL_MAX_TRAVEL_MS));
     const timer = setTimeout(() => {
       setWindows(current => current.filter(window => window.stoppedAt == null || now.value < window.stoppedAt + CHARGE_BALL_MAX_TRAVEL_MS));
@@ -115,14 +120,14 @@ function StarfieldWorkload({ visible, shouldAnimate }: { visible: boolean; shoul
   return null;
 }
 
-function ChargeWindowResources({ emissions, windows, shouldAnimate, now, setWindows }: React.ComponentProps<typeof ChargeDrainDeadline> & Pick<React.ComponentProps<typeof ChargeEmissionPublication>, 'emissions'>) {
+function ChargeWindowResources({ emissions, windows, shouldAnimate, retireStopped, now, setWindows }: React.ComponentProps<typeof ChargeDrainDeadline> & Pick<React.ComponentProps<typeof ChargeEmissionPublication>, 'emissions'>) {
   const [emissionInput, setEmissionInput] = useState({ windows, generation: 0 });
   if (!Object.is(emissionInput.windows, windows)) {
     setEmissionInput({ windows, generation: emissionInput.generation + 1 });
   }
   return <>
     <ChargeEmissionPublication key={`emissions-${emissionInput.generation}`} emissions={emissions} windows={windows} />
-    <ChargeDrainDeadline key={`drain-${emissionInput.generation}:${shouldAnimate}`} windows={windows} shouldAnimate={shouldAnimate} now={now} setWindows={setWindows} />
+    <ChargeDrainDeadline key={`drain-${emissionInput.generation}:${shouldAnimate}:${retireStopped}`} windows={windows} shouldAnimate={shouldAnimate} retireStopped={retireStopped} now={now} setWindows={setWindows} />
   </>;
 }
 function ChargeFrameMotion(props: React.ComponentProps<typeof ChargeFrameActivation>) {

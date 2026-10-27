@@ -26,6 +26,7 @@ export interface BackgroundJourneyConfig {
   /** Full scoped roster, independent of the Live Activity avatar limit. */
   navigationMemberIds?: string[];
   arrivedMemberIds?: string[];
+  arrivalCorrections?: import('./arrivalSync').EffectiveArrival[];
   leaderId?: string;
   /** Last accepted native timestamp, retained across a background relaunch. */
   lastProcessedLocationAt?: number;
@@ -61,8 +62,10 @@ export interface BackgroundJourneyConfig {
   etaTargetAtMs?: number;
   etaSampledAtMs?: number;
   lastEtaDistanceM?: number;
+  personalArrived?: boolean;
   personalArrivalAtMs?: number;
   personalArrivalSequence?: number;
+  personalArrivalCorrectionAtMs?: number;
   /**
    * Only meaningful for `powerMode: 'journey'`.
    * All-day presence always uses the Low-accuracy budget profile.
@@ -99,8 +102,9 @@ export function backgroundPresenceConfig(config: BackgroundJourneyConfig): Backg
   return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, journeyEntityVersion: undefined, journeyPhaseChangedAtMs: undefined, destinationId: 'group-presence',
     target: undefined, powerMode: 'allDay', teamNavigationActive: false,
     arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
-    navigationMemberIds: undefined, arrivedMemberIds: undefined, leaderId: undefined,
-    lastProcessedLocationAt: undefined,
+    navigationMemberIds: undefined, arrivedMemberIds: undefined, arrivalCorrections: undefined, leaderId: undefined,
+    lastProcessedLocationAt: undefined, personalArrived: undefined, personalArrivalAtMs: undefined,
+    personalArrivalSequence: undefined, personalArrivalCorrectionAtMs: undefined,
     manualUndoOperationId: undefined, manualUndoOccurredAt: undefined,
     manualUndoSuppressed: undefined,
     previousProgressMax: undefined, routeAnchorGps: undefined, routeAnchorRemainingM: undefined,
@@ -259,7 +263,7 @@ export function createBackgroundJourneyController(
         if (!isCurrent(config)) return false;
         const raw = await storage.getItem(BACKGROUND_JOURNEY_KEY);
         const current = raw ? JSON.parse(raw) as BackgroundJourneyConfig : null;
-        if (!isCurrent(config) || !current || current.sequence > next.sequence) return false;
+        if (!isCurrent(config) || !current || current.sequence !== config.sequence || current.sequence > next.sequence) return false;
         await storage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(next));
         return true;
       });
@@ -314,6 +318,13 @@ export function createBackgroundJourneyController(
           previous.navigationSessionId === config.navigationSessionId
           ? {
               ...config,
+              ...(previous.personalArrivalCorrectionAtMs != null && typeof previous.personalArrived === 'boolean'
+                && (config.personalArrivalCorrectionAtMs == null
+                  || previous.personalArrivalCorrectionAtMs >= config.personalArrivalCorrectionAtMs)
+                ? { personalArrived: previous.personalArrived,
+                  personalArrivalCorrectionAtMs: previous.personalArrivalCorrectionAtMs,
+                  personalArrivalAtMs: previous.personalArrivalAtMs,
+                  personalArrivalSequence: previous.personalArrivalSequence } : {}),
               sequence: Math.max(config.sequence, previous.sequence),
               arrivalState: config.arrivalState ?? previous.arrivalState,
               lastProcessedLocationAt: previous.lastProcessedLocationAt,

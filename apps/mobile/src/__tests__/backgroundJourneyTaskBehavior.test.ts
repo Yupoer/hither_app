@@ -170,7 +170,7 @@ describe('background journey native task wiring', () => {
     }));
     expect(mockFlush).toHaveBeenCalled();
     expect(mockAckNavigation).not.toHaveBeenCalledWith('session-1', 'arrived', expect.anything());
-    expect(require('../state/arrivalSync').enqueueArrival).toHaveBeenCalled();
+    expect(require('../state/arrivalSync').enqueueAutomaticArrival).toHaveBeenCalled();
     expect(mockClearLiveActivities).not.toHaveBeenCalled();
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
       event: 'background_op_timeline',
@@ -186,7 +186,7 @@ describe('background journey native task wiring', () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
     expect(mockAckNavigation).not.toHaveBeenCalled();
     expect(mockLiveActivity.updateAllGroupActivities).not.toHaveBeenCalled();
-    expect(require('../state/arrivalSync').enqueueArrival).not.toHaveBeenCalled();
+    expect(require('../state/arrivalSync').enqueueAutomaticArrival).not.toHaveBeenCalled();
   });
 
   it('keeps a terminal personal receipt local without duplicating it and fences the next account', async () => {
@@ -199,7 +199,7 @@ describe('background journey native task wiring', () => {
     }]);
     await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
     await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() }] } });
-    expect(require('../state/arrivalSync').enqueueArrival).not.toHaveBeenCalled();
+    expect(require('../state/arrivalSync').enqueueAutomaticArrival).not.toHaveBeenCalled();
     expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
       progress: 1, destinationId: 'stop-1', personalArrived: true,
       personalArrivalAtMs: 1, personalArrivalSequence: 1,
@@ -208,7 +208,7 @@ describe('background journey native task wiring', () => {
     jest.clearAllMocks();
     await startBackgroundJourney({ ...baseConfig, actorId: 'another-user', permissionsPrepared: true });
     await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() + 1 }] } });
-    expect(require('../state/arrivalSync').enqueueArrival).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'another-user' }));
+    expect(require('../state/arrivalSync').enqueueAutomaticArrival).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'another-user' }));
   });
 
   it('does not reuse an acknowledged arrival belonging to an earlier navigation session', async () => {
@@ -219,7 +219,7 @@ describe('background journey native task wiring', () => {
     }]);
     await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'new-session', permissionsPrepared: true });
     await mockTaskCallback!({ data: { locations: [{ ...locationSample, timestamp: Date.now() }] }, error: null });
-    expect(require('../state/arrivalSync').enqueueArrival).toHaveBeenCalledWith(expect.objectContaining({
+    expect(require('../state/arrivalSync').enqueueAutomaticArrival).toHaveBeenCalledWith(expect.objectContaining({
       navigationSessionId: 'new-session', actorId: 'self',
     }));
   });
@@ -255,8 +255,12 @@ it('background route progress matches foreground; duplicate samples do not repro
   expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(count);
   expect((await loadBackgroundJourney())?.navigationSessionId).toBe('session-1');
 });
-jest.mock('../state/arrivalSync', () => ({ enqueueArrival: jest.fn(async (input) => ({
-  status: 'pending', payload: input, createdAt: Date.parse(input.occurredAt),
-})) }));
+jest.mock('../state/arrivalSync', () => ({
+  ...jest.requireActual('../state/arrivalSync'),
+  enqueueAutomaticArrival: jest.fn(async input => ({ status: 'pending', createdAt: input.sampledAtMs,
+    payload: { ...input, actorId: input.actorId, userId: input.actorId, source: 'automatic',
+      occurredAt: new Date(input.sampledAtMs).toISOString(), arrivedAt: new Date(input.sampledAtMs).toISOString() },
+  })),
+}));
 jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
 jest.mock('../state/coreDataSync', () => ({ readLocalJourneyProjection: jest.fn(async () => null), getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));

@@ -31,7 +31,7 @@ describe('group feature tour step order', () => {
     expect(ids).toContain('externalMaps');
     expect(ids).toContain('navCommand');
     expect(ids).toContain('transport');
-    expect(ids).toContain('personalArrive');
+    expect(ids).not.toContain('personalArrive');
     expect(ids).toContain('meetTime');
     expect(ids).toContain('paneMembers');
     expect(ids).toContain('paneRoute');
@@ -44,16 +44,16 @@ describe('group feature tour step order', () => {
     expect(ids.indexOf('search')).toBeLessThan(ids.indexOf('getStarted'));
     expect(ids[ids.length - 1]).toBe('getStarted');
     expect(stepCount()).toBe(TOUR_STEPS.length);
-    expect(stepCount()).toBeGreaterThanOrEqual(16);
+    expect(stepCount()).toBeGreaterThanOrEqual(15);
   });
 
-  it('omits nav and personal-arrive when those controls are unavailable', () => {
+  it('omits unavailable navigation and never includes the removed personal-arrive control', () => {
     const leaderHiddenNav = buildTourSteps({
       navCommandVisible: false,
       personalArriveVisible: true,
     });
     expect(stepOrder(leaderHiddenNav)).not.toContain('navCommand');
-    expect(stepOrder(leaderHiddenNav)).toContain('personalArrive');
+    expect(stepOrder(leaderHiddenNav)).not.toContain('personalArrive');
     expect(stepOrder(leaderHiddenNav)).toContain('paneMembers');
 
     const memberNoArrive = buildTourSteps({
@@ -67,7 +67,7 @@ describe('group feature tour step order', () => {
       navCommandVisible: false,
       personalArriveVisible: false,
     });
-    expect(stepCount(bothMissing)).toBe(TOUR_STEPS.length - 2);
+    expect(stepCount(bothMissing)).toBe(TOUR_STEPS.length - 1);
     // Controller advances only over the filtered plan.
     let state = startTour();
     while (state.active && !isFinalStep(state, bothMissing)) {

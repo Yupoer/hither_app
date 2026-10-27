@@ -31,7 +31,8 @@ describe('responsive gather card tokens (#176)', () => {
     expect(layout).not.toMatch(/iPhone|deviceModel/);
   });
 
-  it('Start is not forced square when Arrived is absent', () => {
-    expect(carousel).toContain('navIconOnly = chromeTight && showArrivalControl');
+  it('keeps the navigation command after removing the manual arrival control', () => {
+    expect(carousel).toContain('testID={`gather-nav-${dest.id}`}');
+    expect(carousel).not.toContain('showArrivalControl');
   });
 });

@@ -1,0 +1,10 @@
+{
+  "platform": "ios",
+  "channel": "production",
+  "sourceSha": "164ca5ce3476753a5d86ae0cc679fb841ec58414",
+  "runtimeVersion": "0.1.11",
+  "appVersion": "0.1.11",
+  "buildNumber": "76",
+  "appleState": "IN_BETA_TESTING",
+  "evidence": "docs/local-first-foreground-map-validation-20261008.md"
+}

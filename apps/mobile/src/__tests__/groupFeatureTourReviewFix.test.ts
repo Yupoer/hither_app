@@ -39,7 +39,7 @@ describe('REVIEW_FIX: optional control step plan', () => {
     expect(
       stepOrder(buildTourSteps({ navCommandVisible: false, personalArriveVisible: true })),
     ).not.toContain('navCommand');
-    // Arrival control gated off (not shared target / cannot mark).
+    // The active card exposes no manual-arrival tour target.
     expect(
       stepOrder(buildTourSteps({ navCommandVisible: true, personalArriveVisible: false })),
     ).not.toContain('personalArrive');
@@ -49,7 +49,7 @@ describe('REVIEW_FIX: optional control step plan', () => {
     const map = read('screens/MapScreen.tsx');
     expect(map).toContain('tourControlAvailability');
     expect(map).toContain('navCommandVisible:');
-    expect(map).toContain('personalArriveVisible:');
+    expect(map).toContain('personalArriveVisible: false');
     expect(map).toContain('navCmd.kind !== \'hidden\'');
     // Plan/expand/refs share one destination (not hard-coded destinations[0] expand only).
     expect(map).toContain('tourDestinationId');

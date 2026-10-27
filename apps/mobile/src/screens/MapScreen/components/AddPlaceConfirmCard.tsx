@@ -117,14 +117,6 @@ export function AddPlaceConfirmCard({
             tintColor={Platform.OS === 'android' ? glass.cardActive : undefined}
             style={styles.confirmCardInner}
           >
-            <Pressable style={styles.confirmCloseTarget} disabled={confirmPlaceBusy}
-              accessibilityRole="button" accessibilityLabel={t('common.cancel')}
-              testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }}>
-              <View pointerEvents="none" accessible={false}>
-                <NativeGlassButton systemImage="xmark" shape="circle" size={36.3}
-                  imageSize={14.85} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')} />
-              </View>
-            </Pressable>
             <View style={styles.confirmTitleRow}>
               <View style={styles.confirmTextCol}>
                 {/* Inline rename — single draft; no separate Modal. */}
@@ -180,7 +172,7 @@ export function AddPlaceConfirmCard({
                     ) : (
                       <Ionicons
                         name={pendingIsFavorite ? 'star' : 'star-outline'}
-                        size={31.5}
+                        size={28}
                         color={accent}
                       />
                     )}
@@ -207,9 +199,18 @@ export function AddPlaceConfirmCard({
                     accessibilityRole="button"
                     accessibilityLabel={t('stay.centerPlaceA11y')}
                   >
-                    <Ionicons name="navigate" size={31.5} color={accent} />
+                    <Ionicons name="navigate" size={28} color={accent} />
                   </Pressable>
                 </View>
+                <Pressable style={styles.confirmCloseTarget} disabled={confirmPlaceBusy}
+                  accessibilityRole="button" accessibilityLabel={t('common.cancel')}
+                  accessibilityState={{ disabled: confirmPlaceBusy }}
+                  testID="confirm-place-cancel" onPress={() => { selectionTick(); dismissConfirmCard(); }}>
+                  <View pointerEvents="none" accessible={false}>
+                    <NativeGlassButton systemImage="xmark" shape="circle" size={36.3}
+                      imageSize={14.85} disabled={confirmPlaceBusy} accessibilityLabel={t('common.cancel')} />
+                  </View>
+                </Pressable>
               </View>
             </View>
             <View style={styles.confirmTopRow}>

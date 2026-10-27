@@ -33,7 +33,7 @@ export async function fetchVisitedWaypoints(groupId?: string): Promise<VisitedWa
 
   let query = supabase
     .from('visited_waypoints')
-    .select('id, user_id, destination_id, name, latitude, longitude, arrived_at, group_id')
+    .select('id, user_id, destination_id, name, latitude, longitude, arrived_at, group_id, navigation_session_id, arrival:destination_arrivals!arrival_id(corrected_at)')
     .order('arrived_at', { ascending: false });
 
   if (groupId) {
@@ -52,7 +52,9 @@ export async function fetchVisitedWaypoints(groupId?: string): Promise<VisitedWa
     name: string;
     latitude: number;
     longitude: number;
-    arrived_at: string;
+    arrived_at: string | null;
+    navigation_session_id?: string | null;
+    arrival?: { corrected_at?: string | null } | null;
   }[]).map((row) => ({
     id: row.id,
     userId: row.user_id,
@@ -60,6 +62,8 @@ export async function fetchVisitedWaypoints(groupId?: string): Promise<VisitedWa
     name: row.name,
     coordinates: { latitude: row.latitude, longitude: row.longitude },
     arrivedAt: row.arrived_at,
+    ...(row.arrival?.corrected_at ? { updatedAt: row.arrival.corrected_at } : {}),
+    ...(row.navigation_session_id ? { navigationSessionId: row.navigation_session_id } : {}),
   }));
 }
 

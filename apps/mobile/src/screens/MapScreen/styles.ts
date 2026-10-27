@@ -622,9 +622,9 @@ export const makeStyles = (
     // ancestor of its Liquid Glass surface.
     sheetHidden: { display: 'none' },
     sheetBodyHidden: { display: 'none' },
-    confirmTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+    confirmTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     confirmTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+    confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
     confirmTextCol: { flex: 1, minWidth: 0, gap: 2 },
     confirmTitleInput: {
       color: '#fff',
@@ -643,16 +643,16 @@ export const makeStyles = (
     },
     confirmEtaRow: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', gap: 8, minHeight: 49.5 },
     confirmArrow: {
-      width: 49.5,
-      height: 49.5,
-      borderRadius: 24.75,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       alignItems: 'center',
       justifyContent: 'center',
     },
     confirmControl: {
-      width: 49.5,
-      height: 49.5,
-      borderRadius: 24.75,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',
@@ -674,7 +674,7 @@ export const makeStyles = (
       justifyContent: 'space-around',
       marginTop: 6,
     },
-    confirmCloseTarget: { width: 44, height: 44, marginTop: -8, marginRight: -8, alignSelf: 'flex-end', alignItems: 'center', justifyContent: 'center' },
+    confirmCloseTarget: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
     confirmBtnSlot: { flex: 1, alignItems: 'center' },
     confirmPool: {
       width: '90%', height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',

@@ -5,6 +5,8 @@ import { fetchDestinationArrivals, fetchPendingGatherPointRequests } from '../..
 import { isDemoGroup } from '../../../api/demo';
 import { supabase } from '../../../api/supabase';
 import type { TranslationKey } from '../../../i18n';
+import { fetchArrivalCorrections } from '../../../api/services/GatheringWorkflowService';
+import { effectiveArrivalForOperation, serverTimestampMs, type EffectiveArrival } from '../../../state/arrivalSync';
 import { getCoreOperationOutbox } from '../../../state/coreDataSync';
 import { useForegroundReconcile } from '../../../state/useForegroundReconcile';
 import type { Destination, DestinationArrival, GatherPointRequest } from '../../../types';
@@ -43,6 +45,7 @@ export function useGatheringWorkflow({
   arrivalSessionScope,
   rawDestinations,
 }: UseGatheringWorkflowInput) {
+  const [remoteArrivalCorrections, setRemoteArrivalCorrections] = useState<EffectiveArrival[]>([]);
   const [remoteArrivals, setDestinationArrivals] = useState<DestinationArrival[]>([]);
   const [gatherPointRequests, setGatherPointRequests] = useState<GatherPointRequest[]>([]);
   // Keep translator out of effect deps — unstable `t` historically re-subscribed
@@ -89,14 +92,17 @@ export function useGatheringWorkflow({
     do {
       workflowPendingRef.current = false;
       const run = (async () => {
-        const [arrivals, requests] = await Promise.all([
+        const [arrivals, requests, corrections] = await Promise.all([
           fetchDestinationArrivals(groupId),
           isScopeLeaderRef.current
             ? fetchPendingGatherPointRequests(groupId)
             : Promise.resolve([]),
+          fetchArrivalCorrections(groupId),
         ]);
         if (!isCurrent()) return;
+        workflowLastLoadAtRef.current = Date.now();
         setDestinationArrivals(arrivals);
+        setRemoteArrivalCorrections(corrections);
         const scopedRequests = isSubgroupLeaderRef.current
           ? requests.filter((request) => request.subgroupId === myScopeIdRef.current)
           : requests.filter((request) => request.subgroupId == null);
@@ -145,7 +151,7 @@ export function useGatheringWorkflow({
     });
   }, [groupId, userId]);
 
-  const arrivalReceiptCompactionLifecycle = createElement(ArrivalReceiptCompaction, { arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations });
+  const arrivalReceiptCompactionLifecycle = createElement(ArrivalReceiptCompaction, { remoteReadAt: workflowLastLoadAtRef.current, arrivalOperations, userId, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, rawDestinations });
 
   const scheduleWorkflowReload = useCallback(() => {
     if (workflowReloadRef.current) return;
@@ -161,6 +167,7 @@ export function useGatheringWorkflow({
   return {
     lifecycle: createElement(Fragment, { key: 'gathering-workflow-runtime' }, foregroundLifecycle, arrivalReceiptCompactionLifecycle, gatheringWorkflowChannelLifecycle),
     remoteArrivals,
+    remoteArrivalCorrections,
     gatherPointRequests,
     setGatherPointRequests,
     loadGatheringWorkflow,
@@ -172,25 +179,29 @@ export function useGatheringWorkflow({
   };
 }
 
-function ArrivalReceiptCompaction({ arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations }: {
+function ArrivalReceiptCompaction({ arrivalOperations, userId, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, rawDestinations, remoteReadAt }: {
+  remoteReadAt: number;
   arrivalOperations: CoreOperation[];
   userId: string | undefined;
   arrivalSessionScope: string[];
   remoteArrivals: DestinationArrival[];
+  remoteArrivalCorrections: EffectiveArrival[];
   rawDestinations: Destination[];
 }) {
-  const [arrivalReceiptCompactionInputs, setArrivalReceiptCompactionInputs] = useState(() => ({ generation: 0, arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, userId }));
-  if (!(Object.is(arrivalReceiptCompactionInputs.arrivalOperations, arrivalOperations) && Object.is(arrivalReceiptCompactionInputs.arrivalSessionScope, arrivalSessionScope) && Object.is(arrivalReceiptCompactionInputs.remoteArrivals, remoteArrivals) && Object.is(arrivalReceiptCompactionInputs.rawDestinations, rawDestinations) && Object.is(arrivalReceiptCompactionInputs.userId, userId))) {
-    setArrivalReceiptCompactionInputs({ generation: arrivalReceiptCompactionInputs.generation + 1, arrivalOperations, arrivalSessionScope, remoteArrivals, rawDestinations, userId });
+  const [arrivalReceiptCompactionInputs, setArrivalReceiptCompactionInputs] = useState(() => ({ generation: 0, arrivalOperations, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, rawDestinations, userId, remoteReadAt }));
+  if (!(Object.is(arrivalReceiptCompactionInputs.remoteReadAt, remoteReadAt) && Object.is(arrivalReceiptCompactionInputs.arrivalOperations, arrivalOperations) && Object.is(arrivalReceiptCompactionInputs.arrivalSessionScope, arrivalSessionScope) && Object.is(arrivalReceiptCompactionInputs.remoteArrivals, remoteArrivals) && Object.is(arrivalReceiptCompactionInputs.remoteArrivalCorrections, remoteArrivalCorrections) && Object.is(arrivalReceiptCompactionInputs.rawDestinations, rawDestinations) && Object.is(arrivalReceiptCompactionInputs.userId, userId))) {
+    setArrivalReceiptCompactionInputs({ generation: arrivalReceiptCompactionInputs.generation + 1, arrivalOperations, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, rawDestinations, userId, remoteReadAt });
   }
-  return createElement(ArrivalReceiptCompactionCommit, { key: arrivalReceiptCompactionInputs.generation, arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations });
+  return createElement(ArrivalReceiptCompactionCommit, { key: arrivalReceiptCompactionInputs.generation, arrivalOperations, userId, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, rawDestinations, remoteReadAt });
 }
 
-function ArrivalReceiptCompactionCommit({ arrivalOperations, userId, arrivalSessionScope, remoteArrivals, rawDestinations }: {
+function ArrivalReceiptCompactionCommit({ arrivalOperations, userId, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, rawDestinations, remoteReadAt }: {
+  remoteReadAt: number;
   arrivalOperations: CoreOperation[];
   userId: string | undefined;
   arrivalSessionScope: string[];
   remoteArrivals: DestinationArrival[];
+  remoteArrivalCorrections: EffectiveArrival[];
   rawDestinations: Destination[];
 }) {
   useMountEffect(() => {
@@ -242,6 +253,37 @@ function ArrivalReceiptCompactionCommit({ arrivalOperations, userId, arrivalSess
       const matching = remoteArrivals.find(a => a.destinationId === op.entityId
         && a.userId === targetUserId
         && (sessionId == null || a.navigationSessionId === sessionId));
+      const effective = effectiveArrivalForOperation(op);
+      if (effective) {
+        const newerCorrection = Boolean(matching?.source === 'leader_correction' && matching.updatedAt
+          && (!effective.updatedAt || serverTimestampMs(matching.updatedAt) > serverTimestampMs(effective.updatedAt)))
+          || remoteArrivalCorrections.some(row => row.destinationId === effective.destinationId
+          && row.userId === effective.userId && row.sessionId === effective.sessionId
+          && row.updatedAt && (!effective.updatedAt
+            || serverTimestampMs(row.updatedAt) > serverTimestampMs(effective.updatedAt)));
+        if (remoteReadAt > op.updatedAt && newerCorrection) {
+          void getCoreOperationOutbox().removeArrival(op.id);
+          continue;
+        }
+        if (!effective.arrived && arrivalSessionScope.includes(effective.sessionId)) continue;
+        if (remoteReadAt <= op.updatedAt) continue;
+        const correctionVersionReflected = effective.source !== 'leader_correction'
+          || remoteArrivalCorrections.some(row => row.destinationId === effective.destinationId
+            && row.userId === effective.userId && row.sessionId === effective.sessionId
+            && row.arrived === effective.arrived && row.updatedAt && effective.updatedAt
+            && serverTimestampMs(row.updatedAt) >= serverTimestampMs(effective.updatedAt))
+          || Boolean(effective.arrived && matching?.source === 'leader_correction'
+            && matching.updatedAt && effective.updatedAt
+            && serverTimestampMs(matching.updatedAt) >= serverTimestampMs(effective.updatedAt));
+        const reflected = correctionVersionReflected && (effective.arrived
+          ? Boolean(matching && ((matching.updatedAt && effective.updatedAt
+            && serverTimestampMs(matching.updatedAt) > serverTimestampMs(effective.updatedAt))
+            || (matching.arrivedAt === effective.arrivedAt && matching.source === effective.source
+              && matching.markedBy === effective.markedBy)))
+          : !matching);
+        if (reflected) void getCoreOperationOutbox().removeArrival(op.id);
+        continue;
+      }
       const isCorrection = op.operationType === 'leader_correct_arrival'
         || op.payload.source === 'leader_correction';
       const closed = !op.payload.completeSolo || rawDestinations.some(d => d.id === op.entityId && d.closedAt);
@@ -317,6 +359,9 @@ function GatheringWorkflowChannelCommit({ setDestinationArrivals, setGatherPoint
       .channel(`gathering-workflow:${groupId}:${++workflowChannelSeqRef.current}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'destination_arrivals', filter: `group_id=eq.${groupId}`,
+      }, scheduleWorkflowReload)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'navigation_session_history', filter: `group_id=eq.${groupId}`,
       }, scheduleWorkflowReload)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'gather_point_requests', filter: `group_id=eq.${groupId}`,

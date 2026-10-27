@@ -196,12 +196,12 @@ describe('R2: measure retry + stable parent', () => {
     });
     const rect = await measureTargetWithRetry({
       measure,
-      target: 'personalArrive',
+      target: 'arrivalProgress',
       maxAttempts: 2,
       sleep: async () => undefined,
     });
     expect(rect).toEqual({ x: 0, y: 100, width: 300, height: 120 });
-    expect(measure).toHaveBeenCalledWith('personalArrive');
+    expect(measure).toHaveBeenCalledWith('arrivalProgress');
     expect(measure).toHaveBeenCalledWith('gatherCard');
   });
 });

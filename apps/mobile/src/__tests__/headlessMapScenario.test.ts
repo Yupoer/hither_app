@@ -7,7 +7,7 @@ type Presentation = { hosts: Host[]; receipts: { host: string; method: string; a
 type MapObservation = { presentation: Presentation; external: { alerts: number; watches: number; alertDetails: { title: string; message?: string; buttons: string[] }[] };
   durable: { snapshot: { destinations: { id: string; title: string; day: number | null; closedAt?: string; kind?: string }[];
     dailyAccommodations: { title: string; sourceDestinationId?: string | null; stayDate: string }[] };
-    locations: unknown[]; operations: { operationType: string; entityId: string }[] } };
+    locations: unknown[]; operations: { operationType: string; entityId: string; payload: { actorId?: string; navigationSessionId?: string; source?: string; occurredAt?: string; arrivedAt?: string } }[] } };
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 const has = (value: { presentation: Presentation }, id: string) => value.presentation.hosts.some(host => host.testId === id);
 const field = (value: { presentation: Presentation }, id: string) => value.presentation.hosts.find(host => host.testId === id);
@@ -514,8 +514,14 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     const world = new World();
     try {
       const device = await map(world);
+      expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      expect(has(await device.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'actual shared Start');
+      const active = await world.waitFor(device, (value: MapObservation) => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active') && has(value, `gather-complete-${DESTINATION}`), 'actual shared Start exposes End and Complete journey');
+      expect(field(active, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(field(active, `gather-complete-${DESTINATION}`)?.label).toBe('完成行程');
+        expect(active.presentation.hosts.filter((host: Host) => host.testId === `gather-complete-${DESTINATION}`)).toHaveLength(1);
+      expect(active.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.disabled).toBe(false);
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
@@ -524,6 +530,46 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect((await device.observe()).durable.snapshot.destinations.find((row: { id: string }) => row.id === DESTINATION).closedAt).toBeFalsy();
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       expect(has(await device.observe(), `gather-arrival-${DESTINATION}`)).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it.each(['leader', 'member', 'subgroup-leader'])('MAP-NAV-01 MAP-GATHER-07 active card omits manual arrival and undo for %s', async role => {
+    const world = new World();
+    try {
+      const subgroup = role === 'subgroup-leader';
+      if (subgroup) {
+        const subgroupId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+        world.backend.tables.subgroups.push({ id: subgroupId, group_id: GROUP_ID, name: 'Peer subgroup', mode: 'led', leader_id: PEER, parent_subgroup_id: null });
+        world.backend.memberships.find((row: { user_id: string }) => row.user_id === PEER).subgroup_id = subgroupId;
+        world.backend.itinerary[0].subgroup_id = subgroupId;
+      }
+      const leader = await map(world, subgroup ? PEER : LEADER, 'leader');
+      await run(leader, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(leader, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'scoped leader Start');
+      const device = role === 'member' ? await map(world, PEER, 'member') : leader;
+      const active = await device.observe();
+      expect(active.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
+      if (role === 'member') {
+        expect(field(active, `gather-nav-${DESTINATION}`)?.label).toBe('前往中');
+        expect(has(active, `gather-complete-${DESTINATION}`)).toBe(false);
+      } else {
+        expect(field(active, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+        expect(field(active, `gather-complete-${DESTINATION}`)?.label).toBe('完成行程');
+        expect(active.presentation.hosts.filter((host: Host) => host.testId === `gather-complete-${DESTINATION}`)).toHaveLength(1);
+      }
+      expect(world.backend.tables.destination_arrivals).toEqual([]);
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      if (role === 'member') {
+        await world.advance(1000);
+        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        else await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')), 'member automatic arrival reflected');
+        expect(field(arrived, `gather-nav-${DESTINATION}`)?.label).toBe('前往中');
+        expect(field(arrived, `gather-nav-${DESTINATION}`)?.disabled).toBe(true);
+        expect(has(arrived, `gather-complete-${DESTINATION}`)).toBe(false);
+        expect(arrived.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
+        expect(world.backend.itinerary[0].closed_at).toBeNull();
+      }
     } finally { await world.close(); }
   });
 
@@ -592,12 +638,13 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
-  it('MAP-ARRIVAL-02 MAP-ARRIVAL-03 MAP-ARRIVAL-05 actual GPS arrival ignores poor fixes and manual undo suppresses inside-radius reentry until exit', async () => {
+  it('MAP-ARRIVAL-02 MAP-ARRIVAL-05 actual GPS arrival ignores poor fixes and projects one durable automatic receipt without manual controls', async () => {
     const world = new World();
     try {
       const device = await map(world);
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
       await world.settle();
+      const session = [...world.backend.sessions.values()][0];
       const sample = async (latitude: number, accuracy: number) => {
         await world.advance(1000);
         if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy, timestamp: world.now });
@@ -606,49 +653,55 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       };
       await sample(25.04, 200);
       expect(world.backend.tables.destination_arrivals).toEqual([]);
+      expect((await device.observe()).durable.operations.filter((row: { operationType: string }) => row.operationType === 'record_arrival')).toEqual([]);
+      world.hold('apply_core_operation_v3', { deviceId: 'map', phase: 'execution' });
       await sample(25.04, 5);
-      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'automatic personal arrival');
-      expect(world.backend.tables.destination_arrivals).toHaveLength(1);
-      expect(world.backend.itinerary[0].closed_at).toBeNull();
-      await run(device, 'map.arrival.undo', { destinationId: DESTINATION });
-      await device.input({ kind: 'alert', index: 1 });
-      await world.settle();
-      await sample(25.04, 5);
+      const pending = await world.waitFor(device, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'record_arrival') && value.presentation.hosts.some(host => host.label?.endsWith('1/2')), 'automatic arrival projects count before ACK');
+      expect(pending.durable.operations.find((row: { operationType: string }) => row.operationType === 'record_arrival')?.payload).toMatchObject({ actorId: LEADER, source: 'automatic', navigationSessionId: session.id, arrivedAt: new Date(world.now).toISOString() });
       expect(world.backend.tables.destination_arrivals).toEqual([]);
+      expect(pending.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
+      expect(field(pending, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(field(pending, `gather-complete-${DESTINATION}`)?.label).toBe('完成行程');
+      await world.release('apply_core_operation_v3');
+      await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 0 && world.backend.tables.destination_arrivals.length === 1, 'automatic arrival accepted');
+      const arrival = { ...world.backend.tables.destination_arrivals[0] };
+      expect(arrival).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, source: 'automatic' });
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      await sample(25.04, 5);
       await sample(25.05, 5);
       await sample(25.04, 5);
-      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'reentry after leaving radius');
-      expect(world.backend.tables.destination_arrivals).toHaveLength(1);
+      expect(world.backend.tables.destination_arrivals).toEqual([arrival]);
+      expect((await device.observe()).presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
     } finally { await world.close(); }
   });
 
-  it('MAP-ARRIVAL-01 MAP-ARRIVAL-03 MAP-ARRIVAL-04 MAP-GATHER-04 MAP-GATHER-05 real self arrival undo and all-arrived completion preserve session audit', async () => {
+  it('MAP-ARRIVAL-01 MAP-ARRIVAL-04 MAP-GATHER-04 MAP-GATHER-05 automatic arrivals and all-arrived completion preserve session audit', async () => {
     const world = new World();
     try {
       world.backend.itinerary.push({ ...world.backend.itinerary[0], id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: 'Next open stop', position: 1, latitude: 25.05 });
       const device = await map(world);
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-${DESTINATION}`), 'active self-arrival control');
-      await run(device, 'map.arrival.mark', { destinationId: DESTINATION });
-      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'personal arrival reflected');
+      await world.settle();
       const session = [...world.backend.sessions.values()][0];
-      expect(world.backend.tables.destination_arrivals[0]).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, arrived_at: new Date(world.now).toISOString() });
+      await world.advance(1000);
+      if (platform === 'ios') await world.waitFor(device, (value: MapObservation) => has(value, 'group-map-native'), 'leader native map before automatic arrival');
+      if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      else await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')) && world.backend.tables.destination_arrivals.length === 1, 'automatic personal arrival reflected');
+      expect(world.backend.tables.destination_arrivals[0]).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, arrived_at: new Date(world.now).toISOString(), source: 'automatic' });
+      expect(field(arrived, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(field(arrived, `gather-complete-${DESTINATION}`)?.label).toBe('完成行程');
+      expect(arrived.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
       expect(world.backend.itinerary[0].closed_at).toBeNull();
-      await run(device, 'map.arrival.undo', { destinationId: DESTINATION });
-      await device.input({ kind: 'alert', index: 0 });
-      expect(world.backend.tables.destination_arrivals).toHaveLength(1);
-      await run(device, 'map.arrival.undo', { destinationId: DESTINATION });
-      await device.input({ kind: 'alert', index: 1 });
-      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-${DESTINATION}`), 'confirmed undo reflected');
-      expect(world.backend.tables.destination_arrivals).toEqual([]);
-      await run(device, 'map.arrival.mark', { destinationId: DESTINATION });
-      await world.waitFor(device, (value: MapObservation) => has(value, `gather-arrival-undo-${DESTINATION}`), 'second personal arrival reflected');
-      expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('結束');
-      expect(world.backend.itinerary[0].closed_at).toBeNull();
-      const peer = await world.device({ id: 'peer', userId: PEER, platform });
-      await peer.perform('group.observe', { groupId: GROUP_ID });
-      await run(peer, 'map.service.gathering.arrival', { args: [DESTINATION, PEER, true, session.id] });
-      await world.waitFor(peer, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'last roster member arrival accepted');
+      const peer = await map(world, PEER, 'peer');
+      expect(has(await peer.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
+      expect((await peer.observe()).presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
+      await world.advance(1000);
+      if (platform === 'ios') await world.waitFor(peer, (value: MapObservation) => has(value, 'group-map-native'), 'member native map before automatic arrival');
+      if (platform === 'ios') await run(peer, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      else await peer.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      await world.waitFor(peer, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'last roster member automatic arrival accepted');
+      expect(world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER)).toMatchObject({ navigation_session_id: session.id, source: 'automatic' });
       await world.advance(2500);
       await world.waitFor(device, (value: MapObservation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'all-arrived completion local history');
       expect(world.backend.itinerary[0]).toMatchObject({ closed_by_session_id: session.id });

@@ -122,7 +122,7 @@ struct HitherLiveActivityWidget: Widget {
               Text(d).font(.system(size: 12)).foregroundStyle(.white)
             }
           }
-          .modifier(MetricPlate())
+          .foregroundStyle(.white)
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
@@ -143,7 +143,7 @@ struct HitherLiveActivityWidget: Widget {
         DynamicIslandExpandedRegion(.bottom) {
           // BUG-19: match Lock Screen — progress+percent, then avatar stack.
           VStack(spacing: 10) {
-            ProgressRow(value: context.state.clampedProgress, accent: accent)
+            ProgressRow(value: context.state.clampedProgress, accent: accent, textColor: .white)
             HStack {
               AvatarStack(
                 emojis: context.state.avatarEmojis,
@@ -168,7 +168,7 @@ struct HitherLiveActivityWidget: Widget {
           .font(.system(size: 13, weight: .semibold))
           .lineLimit(1)
           .minimumScaleFactor(0.75)
-          .modifier(MetricPlate(horizontalInset: 4, verticalInset: 2))
+          .foregroundStyle(.white)
       } minimal: {
         Image(systemName: context.state.modeSymbol)
           .font(.system(size: 12, weight: .semibold))
@@ -177,21 +177,6 @@ struct HitherLiveActivityWidget: Widget {
       }
       .keylineTint(accent)
     }
-  }
-}
-
-/// Critical values stay pure white on an opaque dark plate in every appearance.
-/// Glass and wallpaper can change luminance; the metric surface cannot.
-private struct MetricPlate: ViewModifier {
-  var horizontalInset: CGFloat = 8
-  var verticalInset: CGFloat = 6
-
-  func body(content: Content) -> some View {
-    content
-      .foregroundStyle(.white)
-      .padding(.horizontal, horizontalInset)
-      .padding(.vertical, verticalInset)
-      .background(Color.black, in: RoundedRectangle(cornerRadius: 10))
   }
 }
 
@@ -262,20 +247,19 @@ private struct LockScreenView: View {
           if context.state.etaSeconds != nil {
             EstimatedEta(state: context.state)
               .font(.system(size: 18, weight: .bold))
-              .foregroundStyle(.white)
+              .foregroundStyle(primary)
               .lineLimit(2)
               .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
           }
           if let distance = context.state.formattedDistance {
             Text(distance).font(.system(size: 12))
-              .foregroundStyle(.white)
+              .foregroundStyle(primary)
               .lineLimit(2)
               .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
           }
         }
-        .modifier(MetricPlate())
       }
-      ProgressRow(value: context.state.clampedProgress, accent: accent,
+      ProgressRow(value: context.state.clampedProgress, accent: accent, textColor: primary,
         trackColor: Color(white: light ? 0.55 : 0.4))
       HStack(spacing: 8) {
         AvatarStack(emojis: context.state.avatarEmojis, arrived: context.state.avatarArrived, outline: background)
@@ -354,6 +338,7 @@ private struct ProgressBar: View {
 private struct ProgressRow: View {
   let value: Double?
   let accent: Color
+  let textColor: Color
   var trackColor: Color = Brand.track
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -364,7 +349,7 @@ private struct ProgressRow: View {
       Text(pct.map { "\($0)%" } ?? "—")
         .font(.system(size: 12, weight: .semibold).monospacedDigit())
         .frame(minWidth: 34, alignment: .trailing)
-        .modifier(MetricPlate(horizontalInset: 6, verticalInset: 3))
+        .foregroundStyle(textColor)
         .contentTransition(.numericText())
         .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: pct)
     }

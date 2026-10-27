@@ -310,6 +310,8 @@ export interface PendingInvite extends SubgroupInvite {
  * status missed/incomplete when the viewer never arrived.
  */
 export interface VisitedWaypoint {
+  updatedAt?: string;
+  navigationSessionId?: string | null;
   pendingSync?: boolean;
   id: string;
   userId?: string;
@@ -355,6 +357,7 @@ export interface DestinationArrival {
   arrivedAt: string | null;
   /** Session scope prevents an old trip from reappearing after a restart. */
   navigationSessionId?: string | null;
+  updatedAt?: string;
   source: 'automatic' | 'manual' | 'leader_correction';
   markedBy: string;
 }

@@ -84,6 +84,19 @@ describe('background journey controller state transitions', () => {
     expect(await storage.getItem(BACKGROUND_JOURNEY_KEY)).toBeNull();
   });
 
+  it('rejects an equal-sequence write derived from a superseded config', async () => {
+    const { controller } = harness();
+    await controller.start(base);
+    const original = (await controller.load())!;
+    const gps = { ...original, sequence: original.sequence + 1, lastProcessedLocationAt: 200,
+      personalArrived: true };
+    expect(await controller.update(original, gps)).toBe(true);
+    expect(await controller.update(original, { ...original, sequence: gps.sequence,
+      lastProcessedLocationAt: 100, personalArrived: false })).toBe(false);
+    expect(await controller.load()).toMatchObject({ sequence: gps.sequence,
+      lastProcessedLocationAt: 200, personalArrived: true });
+  });
+
   it('recovers invalid persisted JSON and restarts when the power profile changes', async () => {
     const { controller, location, storage } = harness(true);
     storage.corrupt();

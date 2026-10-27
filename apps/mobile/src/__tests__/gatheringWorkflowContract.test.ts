@@ -88,11 +88,11 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('setDestinationArrival');
     expect(client).toContain('setDestinationArrivalAt');
     expect(mapScreen).toContain('destinationArrivals');
-    expect(carousel).toContain("t('arrival.mark')");
+    expect(arrivalManageSheet).toContain("arrival.mark");
     expect(mapScreen).toContain("t('common.confirm')");
     expect(mapScreen).toContain('arrivalErrorMessage');
     expect(arrivalManageSheet).toContain('arrivalMemberRow');
-    expect(carousel).toContain('checkmark-circle');
+    expect(carousel).toContain('checkmark-done');
     expect(i18n).toContain("'arrival.errFuture'");
     expect(i18n).toContain("'arrival.failedTitle'");
   });

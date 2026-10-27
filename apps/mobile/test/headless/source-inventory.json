@@ -909,7 +909,7 @@
     "file": "src/api/services/GatheringWorkflowService.ts",
     "kind": "export",
     "name": "fetchDestinationArrivals",
-    "hash": "db11fc907635880ac74b2c3d9d7bde80db486a48eb585c7126d9d235abb84898"
+    "hash": "9afd40fd1eee80baf966abe9d4ea514bc8a8c76ed4173faa15de76c1bd933bf6"
   },
   {
     "file": "src/api/services/GatheringWorkflowService.ts",
@@ -928,6 +928,12 @@
     "kind": "export",
     "name": "correctDestinationArrival",
     "hash": "9b42d25f93471bccfa5eb2a0e030060e556019752ba09df0eb55d870672aebe4"
+  },
+  {
+    "file": "src/api/services/GatheringWorkflowService.ts",
+    "kind": "export",
+    "name": "fetchArrivalCorrections",
+    "hash": "14cc5441ea422dcddb3ac05cc11d51d8f9e0e6c1d14b40fd17f9a957d08e224d"
   },
   {
     "file": "src/api/services/GroupService.ts",
@@ -1215,7 +1221,7 @@
     "file": "src/api/services/NavigationService.ts",
     "kind": "export",
     "name": "getBackgroundNavigationContext",
-    "hash": "862328576ddab0bb6cce94b66ee236ce8bd0a4fbfea8d3eed7522571452424d8"
+    "hash": "9cbbdae92b12d18191697658f82a5d1eb9d2c7db808e4d5b953ea834866eb4e3"
   },
   {
     "file": "src/api/services/NavigationService.ts",
@@ -1371,7 +1377,7 @@
     "file": "src/api/services/WaypointService.ts",
     "kind": "export",
     "name": "fetchVisitedWaypoints",
-    "hash": "92c3750b132cef195f2a75288a7b4c055eb168ee4a7f6fbaaece691f4ec81549"
+    "hash": "35e90af5abea936fc30c509a75385ec4699f7bead3bbee0699f3c612922e3a26"
   },
   {
     "file": "src/api/services/WaypointService.ts",
@@ -2625,7 +2631,7 @@
     "file": "src/components/MetalforgeStarfield.tsx",
     "kind": "export",
     "name": "MetalforgeStarfield",
-    "hash": "a79479877c9af26b4cd9e5db16894d868aea62c8d20d460966dd1a55444a150b"
+    "hash": "856e66c5ea149693f42c652d4f7b4d2c8f9d1da8c94e2d3a371005b58d846798"
   },
   {
     "file": "src/components/MetalforgeStarfield.tsx",
@@ -2649,7 +2655,7 @@
     "file": "src/components/MetalforgeStarfield.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "459b271c366618e5f1123ea8b214cdad6d1a4b29b9453ca150435454dd5a8037"
+    "hash": "4c3d3b135984ce13af4b43c6e034b8544af7227cd3614659f14d9235233039c5"
   },
   {
     "file": "src/components/MetalforgeStarfield.tsx",
@@ -4089,13 +4095,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "8922efd73990bba9ad17372f570fa71c05b076840886533f8f86f25d53a735b9"
+    "hash": "be26993aecaa4da14b8c4086950d0a0648c67b854fe39efc390e6151cfecce9d"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "7b86b2e564fe14dbdc3feaf88b55621c5fc84f84441fe34b1dbe7f00cfef929b"
+    "hash": "918e2fe40cf1dc9d1ce916c202d60f5737b141c2b05e5795d62412f789cd42eb"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -5673,7 +5679,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "88f3ba93efa328ea875d27989f6e1dac5fae2d4261ed54ca85d8b10b29653dcd"
+    "hash": "284999cfbb1a1fc77f70aea181f8720ec3e5fd7a0c6ec012ccf1a2b881c70508"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6561,19 +6567,13 @@
     "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
     "kind": "export",
     "name": "AddPlaceConfirmCard",
-    "hash": "675983d614cd4b3d91bcb61b30fdba4a0fef251b402457376a9031f2688543c1"
+    "hash": "7065fa8a10db14859a302863061432c378e1c6b62c58cc33ed5e7ab5eb8231c3"
   },
   {
     "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
     "kind": "lifecycle",
     "name": "runUiAction",
     "hash": "591ad7819fc35fa2e9603c338086decd66d38a7f95567870657bba3d7396e0e9"
-  },
-  {
-    "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "00b971bd6681398ca38de4b0ffc6f17c8bef1a3b46ecda5ba7f967e61d4608d6"
   },
   {
     "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
@@ -6598,6 +6598,12 @@
     "kind": "callback",
     "name": "onPress",
     "hash": "4934086311d9774d6a9581905246f4e0249ab54ed31834f4f4f6d167a3ea5f2e"
+  },
+  {
+    "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "00b971bd6681398ca38de4b0ffc6f17c8bef1a3b46ecda5ba7f967e61d4608d6"
   },
   {
     "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
@@ -6777,7 +6783,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "e5f2bae0db03037fb01cbe167e27d01cbe56e18e15d9533d5b2754c56d82c296"
+    "hash": "67c1d31aaf19e091bc9fa27613dd89f04ae480f45799398d7ebd628e91f7c003"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -6825,13 +6831,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "callback",
     "name": "onPress",
-    "hash": "e215763f4c2a095679b74c6ce0df0056aff1e9dd005b4802e967703db3f88b4d"
-  },
-  {
-    "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "44fb0821be4d398600154454d4478dd53ba12c427fcfa19a6d7f9deb81731fc3"
+    "hash": "b113139c8f68915603f7cd78bb40d8dabc59b9e0c82c33c5f45e45166d30bc94"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -6844,12 +6844,6 @@
     "kind": "callback",
     "name": "onPress",
     "hash": "c91125312de06fd4726b5f74b50f48d6ca742a3b18ce1be89432fca8e2552c7c"
-  },
-  {
-    "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "b113139c8f68915603f7cd78bb40d8dabc59b9e0c82c33c5f45e45166d30bc94"
   },
   {
     "file": "src/screens/MapScreen/components/HistorySheet.tsx",
@@ -7977,7 +7971,7 @@
     "file": "src/screens/MapScreen/hooks/useGatheringWorkflow.ts",
     "kind": "export",
     "name": "useGatheringWorkflow",
-    "hash": "05b78308a0111210b093b77d45f331ffb0167c0e92a4b4f66fdd38599e298854"
+    "hash": "480b1af746a69ff34cc63863a2e0b6969e8b6c3e132fd8a74f20dcda225437c2"
   },
   {
     "file": "src/screens/MapScreen/hooks/useGatheringWorkflow.ts",
@@ -7989,13 +7983,13 @@
     "file": "src/screens/MapScreen/hooks/useGatheringWorkflow.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "6d30d8ca44730276cf10ad52b6ec676006d502eb5209fbfea7ce161744fb5659"
+    "hash": "8d932f21145eac2ce83605b5cb158a8f7def88584e123fd2ea042532341b9dc5"
   },
   {
     "file": "src/screens/MapScreen/hooks/useGatheringWorkflow.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "181ba1b88a0dda0f42e09c8d7cb188cf567f38487b0e1b7f060870f284ef1b2e"
+    "hash": "c6364dcccd298f8e39da6ddcdac24f12ed1d3965ea8853f12f2de6c9114e8add"
   },
   {
     "file": "src/screens/MapScreen/hooks/useGroupActions.ts",
@@ -8307,13 +8301,19 @@
     "file": "src/screens/MapScreen/hooks/useVisitHistory.ts",
     "kind": "export",
     "name": "useVisitHistory",
-    "hash": "b672c76ed3ab4e1a7d259fbe2083cdc9cb53aea30d82f82a218f6f50c879d919"
+    "hash": "4647356ce9e0645f59bb911ca1d96d9170d661b0fa942983f79a6dcf8da591aa"
   },
   {
     "file": "src/screens/MapScreen/hooks/useVisitHistory.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "d1d14ee0833d5ba2874129e42826d33cdb28a0ce2d021227758cb7832625542d"
+    "hash": "c0961f3143b39a60bdf5174a1ccff1b712691cb2096fab34dee80e83bd9f0d6a"
+  },
+  {
+    "file": "src/screens/MapScreen/hooks/useVisitHistory.ts",
+    "kind": "lifecycle",
+    "name": "AppState.addEventListener",
+    "hash": "192b94e22c2c9b53eae877488950637a73a2ab82cd1ab2e840c66a8a71d3bdef"
   },
   {
     "file": "src/screens/MapScreen/itineraryReorder.ts",
@@ -8343,7 +8343,7 @@
     "file": "src/screens/MapScreen/styles.ts",
     "kind": "export",
     "name": "makeStyles",
-    "hash": "e759ff3497179f4d83f5d12df01dbbc4245c8da4e5ff916bb5110015f99a4915"
+    "hash": "4f05883c6918fe9fa720a108faacbec22ce9dc1db00a53e7588a904eecfff23f"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
@@ -8715,7 +8715,25 @@
     "file": "src/state/arrivalSync.ts",
     "kind": "export",
     "name": "enqueueArrival",
-    "hash": "dc865a847c13fe6aa7f326354352eca9b3db4c4b4ee835d2311224cda0b27e97"
+    "hash": "87b5a7084c4ead9de7d83e283a372621b7882cc5329f0a96dd067054e7572ff7"
+  },
+  {
+    "file": "src/state/arrivalSync.ts",
+    "kind": "export",
+    "name": "enqueueAutomaticArrival",
+    "hash": "0356745ba47b9f5f74178759dfa9ee7991bd7adaf4d0981583830671a9158375"
+  },
+  {
+    "file": "src/state/arrivalSync.ts",
+    "kind": "export",
+    "name": "effectiveArrivalForOperation",
+    "hash": "5dffbb07bb532e29fe4f8727321be65a548ae4d94051bde7d7c12eb652a23bcf"
+  },
+  {
+    "file": "src/state/arrivalSync.ts",
+    "kind": "export",
+    "name": "serverTimestampMs",
+    "hash": "2bee3f503694e21ff1affff3679e336dae6fa8992457b4c80aadc38b3b3a2bfa"
   },
   {
     "file": "src/state/arrivalSync.ts",
@@ -8727,19 +8745,19 @@
     "file": "src/state/arrivalSync.ts",
     "kind": "export",
     "name": "projectArrivals",
-    "hash": "e37d729a967e2bfee000faa4f72023fd353911c6069b83ac8aa39aa52dd485cb"
+    "hash": "f5bad150027f20f07f6e4444403b7076c87702b454d8520d126ba2e1df65c6c3"
   },
   {
     "file": "src/state/arrivalSync.ts",
     "kind": "export",
     "name": "projectPersonalArrivals",
-    "hash": "de31d50f69b519f8e222f7d7fd7b302bbf9a3d167fa9d7d45eb1056dd34cbf38"
+    "hash": "7d6e535a1b382dac828c81385fc425751ed58869000729eea4dbbc78a5070141"
   },
   {
     "file": "src/state/arrivalSync.ts",
     "kind": "export",
     "name": "personalArrivalEvent",
-    "hash": "fbadaa89e1588c541ee1c2e28e9fcd69ec99d8462a4596886b501d6fcccbd655"
+    "hash": "1f0576c20c5027235ac470a09cf4ec23cc4914a8266ba7533c9e8e1170ca9028"
   },
   {
     "file": "src/state/arrivalSync.ts",
@@ -8775,7 +8793,7 @@
     "file": "src/state/backgroundJourney.ts",
     "kind": "export",
     "name": "handleBackgroundLocations",
-    "hash": "f7f773c3e803e6090b041db0b54699b679b5d283fc919271a4034a6e16518f8f"
+    "hash": "ace2b4fca47df4cbd364801179f99236fa5bf58d5a7a93affe90aef38bca1cba"
   },
   {
     "file": "src/state/backgroundJourney.ts",
@@ -8811,7 +8829,7 @@
     "file": "src/state/backgroundJourney.ts",
     "kind": "export",
     "name": "reconcileBackgroundNavigation",
-    "hash": "e2b083534769834c4d3c40375e75b0dbe8a7fed62ed0834924c4ac000e4a6531"
+    "hash": "ed346d839a32b4929b07d319e89c2aa57982d94382c14fd012f93c950c15ab21"
   },
   {
     "file": "src/state/backgroundJourneyController.ts",
@@ -8823,7 +8841,7 @@
     "file": "src/state/backgroundJourneyController.ts",
     "kind": "export",
     "name": "backgroundPresenceConfig",
-    "hash": "a36cf8decdb86018f16b7e54799ffaa68e2683c41a4dd84c3e38aa4cf4ce412f"
+    "hash": "10d30c4d84519255b67e6a2c155aad8e6c0923077a304f0e681fc564d94975d7"
   },
   {
     "file": "src/state/backgroundJourneyController.ts",
@@ -8841,7 +8859,7 @@
     "file": "src/state/backgroundJourneyController.ts",
     "kind": "export",
     "name": "createBackgroundJourneyController",
-    "hash": "4571b5c23a873cfe005e38cea31bcfbd3a613e08a98c1cb446895017365af3fe"
+    "hash": "9f5f604557677e838885f168f1e98964cdeb4a7f7b822b6a32993f5b3c6aca33"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -9171,7 +9189,7 @@
     "file": "src/state/coreOperationOutbox.ts",
     "kind": "export",
     "name": "createCoreOperationOutbox",
-    "hash": "b2334f2f52330031d38f768d9a794c757e73b89a0bb77d2c3da733b7c5b44503"
+    "hash": "7074d127cac0761d88ea022f0a020ccad8efee99155e8fe09c895bb083fe21ed"
   },
   {
     "file": "src/state/coreOperationOutbox.ts",
@@ -9993,7 +10011,7 @@
     "file": "src/state/useLiveActivity.ts",
     "kind": "export",
     "name": "LiveActivityRuntime",
-    "hash": "2c21829f97398d60fccf5b9fe4cedda50cd1c00792b81c61e05933d56a9dc303"
+    "hash": "186955f5d4b750087d70fda610f297ac75b62b5935c7f4aa257a92542559d3a9"
   },
   {
     "file": "src/state/useLiveActivity.ts",
@@ -10041,7 +10059,7 @@
     "file": "src/state/useLiveActivity.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "860c061480d5f87672f7a415bae735940499b71aa65ce9d419932ea65b70dd97"
+    "hash": "db089f50026de24d7049cd30934f66e01f952276ddcc972da696a1d8d558c5e9"
   },
   {
     "file": "src/state/useNavigationSession.ts",
@@ -11013,7 +11031,7 @@
     "file": "src/utils/gatherCommand.ts",
     "kind": "export",
     "name": "resolveNavCommand",
-    "hash": "93a80b0afe92ef61d094620b8d5b49de2d9e8417dd771afad7f4bdfd8d5a506d"
+    "hash": "a35eeb73ce15265d8c94c5adef28a634edff6a4d00d7b1c91c80e846e8d801af"
   },
   {
     "file": "src/utils/gatherCommand.ts",
@@ -11235,7 +11253,7 @@
     "file": "src/utils/history.ts",
     "kind": "export",
     "name": "historyFromDestinationArrivals",
-    "hash": "9872865c0b54a86566611d8115abccb0df5930a0422228673d32f03287b1359d"
+    "hash": "065fe69b74f01eaa8efd6810feaa78e1933dcecb595e07aef37c64365aa1b112"
   },
   {
     "file": "src/utils/history.ts",

@@ -37,7 +37,7 @@ import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
 import { showAppNotice } from '../state/appNotice';
-import { captureLocationAccess } from '../state/locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent } from '../state/locationPrivacy';
 
 import { rememberLocationSharing, syncLocationSharing } from '../state/locationSharingSync';
 import React, {
@@ -126,11 +126,10 @@ import {
   ARRIVAL_RADIUS_MAX_M,
 } from '../state/PreferencesContext';
 import { displayMemberAvatar } from '../constants/avatars';
-import { canMarkDestinationArrival } from '../utils/arrivalMarking';
 import { useIsFocused } from '@react-navigation/native';
 import type { CoreOperation } from '../types/coreData';
 import { getCoreOperationOutbox } from '../state/coreDataSync';
-import { enqueueArrival, syncArrival, projectArrivals, projectPersonalArrivals, personalArrivalEvent } from '../state/arrivalSync';
+import { effectiveArrivalForOperation, enqueueAutomaticArrival, enqueueArrival, syncArrival, projectArrivals, projectPersonalArrivals, personalArrivalEvent } from '../state/arrivalSync';
 import { buildPassiveCompanionModel } from '../utils/passiveCompanion';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -548,6 +547,7 @@ export default function MapScreen({ route, navigation }: Props) {
   );
   const { lifecycle: gatheringWorkflowLifecycle,
     remoteArrivals,
+    remoteArrivalCorrections,
     gatherPointRequests,
     setGatherPointRequests,
     loadGatheringWorkflow,
@@ -566,16 +566,16 @@ export default function MapScreen({ route, navigation }: Props) {
     arrivalSessionScope,
     rawDestinations,
   });
-  const destinationArrivals = useMemo(() => projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? ''), [remoteArrivals, arrivalOperations, user?.id]);
+  const destinationArrivals = useMemo(() => projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', undefined, remoteArrivalCorrections), [remoteArrivals, remoteArrivalCorrections, arrivalOperations, user?.id]);
   const activeDestinationArrivals = useMemo(
     () => arrivalSessionScope.length > 0
-      ? projectArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope)
+      ? projectArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope, false, remoteArrivalCorrections)
       : [],
-    [arrivalOperations, arrivalSessionScope, remoteArrivals, user?.id],
+    [arrivalOperations, arrivalSessionScope, remoteArrivals, remoteArrivalCorrections, user?.id],
   );
   const personalDestinationArrivals = useMemo(() => arrivalSessionScope.length > 0
-    ? projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope) : [],
-    [remoteArrivals, arrivalOperations, user?.id, arrivalSessionScope]);
+    ? projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope, remoteArrivalCorrections) : [],
+    [remoteArrivals, remoteArrivalCorrections, arrivalOperations, user?.id, arrivalSessionScope]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
   /** Selected request id for Route pane horizontal FIFO inbox (#173). */
   const [selectedGatherRequestId, setSelectedGatherRequestId] = useState<string | null>(null);
@@ -764,6 +764,7 @@ export default function MapScreen({ route, navigation }: Props) {
     historyGroups,
     loadHistory,
   } = useVisitHistory({
+    arrivalCorrections: remoteArrivalCorrections,
     allScopedDestinations,
     arrivalOperations,
     destinationArrivals,
@@ -1378,7 +1379,6 @@ export default function MapScreen({ route, navigation }: Props) {
    * prevents effect re-fire storms. Cleared on failure so retry is possible.
    */
   const remoteAutoCompleteDestIdsRef = useRef<Set<string>>(new Set());
-  const arrivalSplitSeenRef = useRef<Set<string>>(new Set());
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
 
@@ -1524,6 +1524,8 @@ export default function MapScreen({ route, navigation }: Props) {
     ? resolveCurrentNavigationSessionId(navTarget) ?? 'local'
     : localNavigationSessionId ?? navigationSessionId ?? 'local';
   const arrivalContext = `${groupId ?? ''}:${user?.id ?? ''}:${myScopeId ?? 'main'}:${arrivalSessionKey}`;
+  const automaticArrivalEnabledRef = useRef(false);
+  automaticArrivalEnabledRef.current = journeyActive && sharingEnabled;
   const arrivalContextRef = useRef(arrivalContext);
   arrivalContextRef.current = arrivalContext;
   const foregroundUndoHydrationRef = useRef<{ key: string; pending: boolean }>({ key: '', pending: false });
@@ -1548,20 +1550,26 @@ export default function MapScreen({ route, navigation }: Props) {
     if (arrivalSubmitInFlight.current.has(key)) return;
     arrivalSubmitInFlight.current.add(key);
     try {
-      if (automatic && !await captureLocationAccess(groupId, true)) {
+      const access = automatic ? await captureLocationAccess(groupId, true) : null;
+      if (automatic && (!access || !isLocationAccessCurrent(access))) {
         if (!stillCurrent()) return;
         if (autoArrivalMarkedRef.current === destination.id) autoArrivalMarkedRef.current = null;
         automaticArrivalRetryAt.current = Date.now() + 60_000;
         return;
       }
-      if (stillCurrent()) setLocalActionError(null);
-      const operation = await enqueueArrival({ groupId, actorId: user.id, userId: targetUserId, destination, arrivedAt,
+      if (!stillCurrent() || (automatic && !automaticArrivalEnabledRef.current)) return;
+      const sessionId = resolveCurrentNavigationSessionId(destination);
+      if (automatic && !sessionId) return;
+      setLocalActionError(null);
+      const operation = automatic ? await enqueueAutomaticArrival({
+        groupId, actorId: user.id, destination, navigationSessionId: sessionId!, navigationSessionAliases: arrivalSessionScope, sampledAtMs: Date.parse(arrivedAt),
+      }) : await enqueueArrival({ groupId, actorId: user.id, userId: targetUserId, destination, arrivedAt,
         occurredAt: arrivedAt,
         navigationSessionId: resolveCurrentNavigationSessionId(destination),
         // Arrival never completes a gathering stop.  Completion is an
         // explicit leader action, including a one-person subgroup.
         completeSolo: false });
-      if (stillCurrent() && targetUserId === user.id) afterPersonalArrivalRef.current(destination, { promptComplete: false });
+      if (stillCurrent() && targetUserId === user.id && effectiveArrivalForOperation(operation)?.arrived !== false) afterPersonalArrivalRef.current(destination, { promptComplete: false });
       // The receipt is durable now. Transport failure must not undo the local
       // arrival or keep the button busy while offline; outbox state owns errors.
       void syncArrival(operation)
@@ -1587,7 +1595,7 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       arrivalSubmitInFlight.current.delete(key);
     }
-  }, [arrivalContext, groupId, user?.id, pendingLeaderTargetId, loadGatheringWorkflow, refresh, t, resolveCurrentNavigationSessionId]);
+  }, [arrivalContext, arrivalSessionScope, groupId, user?.id, pendingLeaderTargetId, loadGatheringWorkflow, refresh, t, resolveCurrentNavigationSessionId]);
 
   const evaluateForegroundArrival = useCallback(() => {
     // Raw fixes stay current while stationary without forcing a map rerender.
@@ -1605,7 +1613,7 @@ export default function MapScreen({ route, navigation }: Props) {
       foregroundArrivalRef.current = null;
       return;
     }
-    if (pendingLeaderTargetId === navTarget.id && !currentArrivalNavigationSessionId) return;
+    if (!currentArrivalNavigationSessionId) return;
     if (foregroundUndoHydrationRef.current.pending
       && foregroundUndoHydrationRef.current.key === foregroundUndoHydrationKey) return;
     if (myCompletedDestinationIds.has(navTarget.id)) {
@@ -1616,8 +1624,6 @@ export default function MapScreen({ route, navigation }: Props) {
       && (serverSession.scopeSubgroupId ?? null) === (navTarget.subgroupId ?? null)
       && (serverSession.id === currentArrivalNavigationSessionId
         || serverSession.requestId === currentArrivalNavigationSessionId) ? serverSession : null;
-    const memberStatus = navigationSessionState.memberState?.localStatus;
-    if (session && !isLeader && !['activity_started', 'tracking_active', 'arriving', 'arrived'].includes(memberStatus ?? '')) return;
     const key = synchronizedArrivalTargetKey(session?.id, navTarget, localArrivalRadiusM);
     if (session?.id && foregroundAckRef.current && !foregroundAckRef.current.startsWith(`${session.id}:`)) {
       foregroundAckRef.current = null;
@@ -1707,7 +1713,7 @@ export default function MapScreen({ route, navigation }: Props) {
       && Date.now() >= automaticArrivalRetryAt.current) {
       // One automatic attempt per destination; manual retry remains available after rejection.
       autoArrivalMarkedRef.current = navTarget.id;
-      void commitPersonalArrival(navTarget, user.id, new Date().toISOString(), true);
+      void commitPersonalArrival(navTarget, user.id, new Date(deviceCoordsAcceptedAtMs!).toISOString(), true);
     }
     if (!arrivedNow) autoArrivalMarkedRef.current = null;
   }, [
@@ -1857,7 +1863,7 @@ export default function MapScreen({ route, navigation }: Props) {
     />
   );
 
-  const backgroundEtaRef = useRef<{ etaToPinSeconds?: number; etaTargetAtMs?: number; etaSampledAtMs?: number; lastEtaDistanceM?: number; personalArrivalAtMs?: number; personalArrivalSequence?: number }>({});
+  const backgroundEtaRef = useRef<{ etaToPinSeconds?: number; etaTargetAtMs?: number; etaSampledAtMs?: number; lastEtaDistanceM?: number; personalArrivalAtMs?: number; personalArrivalSequence?: number; personalArrivalCorrectionAtMs?: number; personalArrived?: boolean }>({});
   const backgroundJourneyWantedRef = useRef<string | null>(null);
   const backgroundSharingScope = preferencesReady && sharingEnabled && groupId && user?.id
     && members.some(member => member.userId === user.id) ? `${user.id}:${groupId}` : null;
@@ -2052,10 +2058,11 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveGathered = navTarget ? liveMemberArrived.filter(Boolean).length : undefined;
   const localNavigationArrived = Boolean(navTarget && myCompletedDestinationIds.has(navTarget.id));
   const personalArrivalEventSnapshot = navTarget && user?.id
-    ? personalArrivalEvent(remoteArrivals, arrivalOperations, user.id, navTarget.id, arrivalSessionScope)
+    ? personalArrivalEvent(remoteArrivals, arrivalOperations, user.id, navTarget.id, arrivalSessionScope, remoteArrivalCorrections)
     : undefined;
   const personalArrivalAtMs = personalArrivalEventSnapshot?.atMs;
   const personalArrivalSequence = personalArrivalEventSnapshot?.sequence;
+  const personalArrivalCorrectionAtMs = personalArrivalEventSnapshot?.correctionAtMs;
   // Near the pin, force 100% even if MapKit route distance still lags.
   const liveProgress =
     localNavigationArrived
@@ -2164,7 +2171,7 @@ export default function MapScreen({ route, navigation }: Props) {
   backgroundEtaRef.current = { etaToPinSeconds: personalProgress.etaToPinSeconds ?? undefined,
     etaTargetAtMs: progressSurfaces.liveActivityPayload.etaTargetAtMs ?? undefined,
     etaSampledAtMs: progressSurfaces.liveActivityPayload.etaSampledAtMs ?? undefined,
-    lastEtaDistanceM: personalDistanceM ?? undefined, personalArrivalAtMs, personalArrivalSequence };
+    lastEtaDistanceM: personalDistanceM ?? undefined, personalArrivalAtMs, personalArrivalSequence, personalArrivalCorrectionAtMs, personalArrived: localNavigationArrived };
   const personalEtaSeconds = progressSurfaces.gatheringCard.etaSeconds;
   const personalProgressRatio = progressSurfaces.gatheringCard.progress;
 
@@ -2265,6 +2272,7 @@ export default function MapScreen({ route, navigation }: Props) {
     personalArrived: localNavigationArrived,
     personalArrivalAtMs,
     personalArrivalSequence,
+    personalArrivalCorrectionAtMs,
     navigationSessionId: currentArrivalNavigationSessionId ?? undefined,
     status: navigationSessionState.session ? 'active' : undefined,
     // Gathering point title when a target exists; team name is fallback only.
@@ -2975,11 +2983,6 @@ export default function MapScreen({ route, navigation }: Props) {
     void commitPersonalArrival(destination, targetUserId, arrivedAt ?? new Date().toISOString());
   }, [commitPersonalArrival]);
 
-  /** Self Arrive: always write device-now — no multi-option time picker. */
-  const handleSelfArrival = useCallback((destination: Destination, targetUserId: string) => {
-    submitArrivalWithTimestamp(destination, targetUserId, new Date().toISOString());
-  }, [submitArrivalWithTimestamp]);
-
   const handleDeleteHistory = useCallback((item: VisitedWaypoint) => {
     confirmAction({
       title: t('history.deleteTitle'),
@@ -3529,21 +3532,6 @@ export default function MapScreen({ route, navigation }: Props) {
       pendingLeaderTargetId,
       journeyBusy,
     });
-    const canMarkArrival = canMarkDestinationArrival({
-      destId: dest.id,
-      destOrder: dest.order,
-      destSubgroupId: dest.subgroupId,
-      scopedDestinations: destinations,
-      myArrivedDestinationIds: myCompletedDestinationIds,
-      activeDestinationId: navigationSessionState.session?.destinationId,
-    });
-    // Product: 「已抵達」only while team nav is active on this card
-    // (Start splits it out; End swallows it back into Start width).
-    const showArrivalControl =
-      Boolean(user?.id)
-      && canMarkArrival
-      && !dest.closedAt
-      && flockNavigatingThis;
     const navCmd = resolveNavCommand({
       isLeader,
       personallyArrived: myCompletedDestinationIds.has(dest.id),
@@ -3553,7 +3541,7 @@ export default function MapScreen({ route, navigation }: Props) {
     });
     return {
       navCommandVisible: navCmd.kind !== 'hidden',
-      personalArriveVisible: showArrivalControl,
+      personalArriveVisible: false,
     };
   }, [
     tourDestination,
@@ -4374,7 +4362,6 @@ export default function MapScreen({ route, navigation }: Props) {
         appState={appState}
         arrivalCelebrateDestId={arrivalCelebrateDestId}
         arrivalExitRecords={arrivalExitRecords}
-        arrivalSplitSeenRef={arrivalSplitSeenRef}
         atFull={atFull}
         canEditItinerary={canEditItinerary}
         carouselMaxHeight={carouselMaxHeight}
@@ -4387,10 +4374,8 @@ export default function MapScreen({ route, navigation }: Props) {
         gatherCardMarqueeSpeed={gatherCardMarqueeSpeed}
         gatherCardRadius={gatherCardRadius}
         gatherCardTitleMarquee={gatherCardTitleMarquee}
-        handleArrival={handleArrival}
         handleMomentumEnd={handleMomentumEnd}
         handleScrollBeginDrag={handleScrollBeginDrag}
-        handleSelfArrival={handleSelfArrival}
         insets={insets}
         isCardExpanded={isCardExpanded}
         isLeader={isLeader}
@@ -4425,6 +4410,7 @@ export default function MapScreen({ route, navigation }: Props) {
         setOverlay={setOverlay}
         setTourTargetRef={setTourTargetRef}
         setTravelMode={setTravelMode}
+        navigationSessionId={currentArrivalNavigationSessionId}
         sharedTargetId={sharedTargetId}
         showDenseChrome={showDenseChrome}
         startNavigation={startNavigation}
