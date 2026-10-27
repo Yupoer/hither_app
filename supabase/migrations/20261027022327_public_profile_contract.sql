@@ -53,7 +53,7 @@ select id, nickname, avatar, avatar_color from public.profiles;
 
 alter publication supabase_realtime add table public.public_profiles;
 
-create or replace function public.get_group_recovery_snapshot(p_group_id uuid)
+create function public.get_group_public_recovery_snapshot(p_group_id uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -139,10 +139,10 @@ begin
 end;
 $$;
 
-revoke all on function public.get_group_recovery_snapshot(uuid) from public, anon;
-grant execute on function public.get_group_recovery_snapshot(uuid) to authenticated;
+revoke all on function public.get_group_public_recovery_snapshot(uuid) from public, anon;
+grant execute on function public.get_group_public_recovery_snapshot(uuid) to authenticated;
 
-comment on function public.get_group_recovery_snapshot(uuid) is
-  'Single read snapshot for recovery; callers must merge by realtime_revision/entity_version.';
+comment on function public.get_group_public_recovery_snapshot(uuid) is
+  'Recovery snapshot with four-field public profiles; callers must merge by realtime_revision/entity_version.';
 
 commit;

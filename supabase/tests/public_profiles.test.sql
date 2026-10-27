@@ -70,13 +70,19 @@ select is((select preferences->>'secret' from public.profiles where id='d2700000
  'peer-preferences','legacy co-member base read is explicitly retained until a separately authorized cutoff');
 select is(
   public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010')->'profiles',
+  (select jsonb_agg(to_jsonb(p) order by p.id) from public.profiles p where p.id in (
+    'd2700000-0000-4000-8000-000000000001','d2700000-0000-4000-8000-000000000002',
+    'd2700000-0000-4000-8000-000000000004')),
+  'legacy snapshot still returns full rows including private peer values');
+select is(
+  public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010')->'profiles',
   '[{"id":"d2700000-0000-4000-8000-000000000001","nickname":"Owner","avatar":"O","avatar_color":"#112233"},
     {"id":"d2700000-0000-4000-8000-000000000002","nickname":"Peer","avatar":"P","avatar_color":null},
     {"id":"d2700000-0000-4000-8000-000000000004","nickname":"Expired","avatar":null,"avatar_color":null}]'::jsonb,
   'recovery returns exact public identity values with no synthetic private secrets'
 );
 select is((select array_agg(key order by key collate "C") from jsonb_object_keys(
-  public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010')) key),
+  public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010')) key),
   array['entity_versions','generated_at','group','itinerary','location_sharing','locations','memberships','profiles','realtime_revision','schema_version','subgroups']::text[],
   'recovery envelope retains every existing data family and version fence');
 select throws_ok($$select preferences from public.public_profiles$$,'42703',null,'private columns do not exist in projection');
@@ -132,14 +138,14 @@ select is((select count(*) from public.public_profiles where id in
  ('d2700000-0000-4000-8000-000000000001','d2700000-0000-4000-8000-000000000002')),0::bigint,
  'outsider sees no group member public profiles');
 select is((select nickname from public.public_profiles where id=auth.uid()),'Outsider','outsider retains own public profile');
-select throws_ok($$select public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010')$$,
+select throws_ok($$select public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010')$$,
  '42501',null,'outsider cannot bypass policy through recovery');
 select set_config('request.jwt.claim.sub','d2700000-0000-4000-8000-000000000004',true);
 select is((select count(*) from public.public_profiles where id in
  ('d2700000-0000-4000-8000-000000000001','d2700000-0000-4000-8000-000000000002')),0::bigint,
  'expired anonymous requester cannot read peers despite stored membership');
 select is((select nickname from public.public_profiles where id=auth.uid()),'Expired','expired anonymous requester retains own profile');
-select throws_ok($$select public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010')$$,
+select throws_ok($$select public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010')$$,
  '42501',null,'expired anonymous requester cannot bypass through recovery');
 
 reset role;
