@@ -9,6 +9,13 @@ select ok(not has_function_privilege('anon', 'public.get_group_public_recovery_s
   'anon cannot execute public recovery');
 select ok(has_function_privilege('authenticated', 'public.get_group_public_recovery_snapshot(uuid)', 'EXECUTE'),
   'authenticated can request public recovery subject to membership');
+select ok(not has_function_privilege('service_role', 'public.get_group_public_recovery_snapshot(uuid)', 'EXECUTE'),
+  'service role has no additional public recovery execute grant');
+select is((select jsonb_build_object('security_definer',prosecdef,'volatility',provolatile,
+  'configuration',proconfig,'return_type',prorettype::regtype::text)
+  from pg_proc where oid='public.get_group_public_recovery_snapshot(uuid)'::regprocedure),
+  '{"security_definer":true,"volatility":"s","configuration":["search_path=\"\""],"return_type":"jsonb"}'::jsonb,
+  'public recovery retains guarded definer execution and empty search path');
 
 insert into auth.users (id, email, is_anonymous) values
   ('b1111111-1111-4111-8111-111111111111', 'snap-leader@example.test', false),
@@ -57,7 +64,9 @@ insert into public.itinerary_items (
   0
 );
 
-reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 select throws_ok(
   $$select public.get_group_public_recovery_snapshot(
     'baaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
