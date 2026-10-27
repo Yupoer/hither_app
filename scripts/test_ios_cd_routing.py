@@ -39,6 +39,10 @@ for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-o
         "preflight", "validate-release", "build-only", "submit")), mode
     assert runs("Build and cold-launch full Release simulator app", mode) == (mode in ("validate-release", "build-only", "submit")), mode
     assert runs("Upload Release launch receipt", mode) == (mode in ("validate-release", "build-only", "submit")), mode
+    diagnostic_condition = steps["Upload sanitized Release launch failure diagnostic"]["if"]
+    assert "failure()" in diagnostic_condition
+    assert (f"inputs.mode == '{mode}'" in diagnostic_condition) == (mode in (
+        "validate-release", "build-only", "submit")), mode
     assert runs("Upload this IPA to TestFlight", mode) == (mode == "submit"), mode
     assert runs("Verify production release prerequisites", mode) == (mode in ("ota", "submit")), mode
 

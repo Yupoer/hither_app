@@ -22,6 +22,17 @@ SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 BOOT_PHASES = {"session_resolved", "navigation_ready", "stable"}
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 PRIVACY_PATH = Path("apps/mobile/ios/Hither/PrivacyInfo.xcprivacy")
+LAUNCH_FAILURE_STAGES = {"install", "launch", "app_container", "startup_breadcrumb", "screenshot"}
+LAUNCH_FAILURE_TYPES = {"AssertionError", "CommandFailure", "FileNotFoundError",
+                        "InvalidFileException", "OSError", "PermissionError",
+                        "ProcessLookupError", "ValueError"}
+
+
+class ReleaseCommandFailure(RuntimeError):
+    def __init__(self, command, returncode, output):
+        self.returncode = returncode
+        detail = f"; see {output}" if output else ""
+        super().__init__(f"{command} failed with exit code {returncode}{detail}")
 
 
 def run(*command, cwd=None, timeout=600, output=None):
@@ -33,8 +44,7 @@ def run(*command, cwd=None, timeout=600, output=None):
         result = subprocess.run(command, cwd=cwd, capture_output=True, text=True,
                                 timeout=timeout)
     if result.returncode:
-        detail = f"; see {output}" if output else f": {result.stdout}{result.stderr}"
-        raise RuntimeError(f"{' '.join(command)} failed{detail}")
+        raise ReleaseCommandFailure(command[0], result.returncode, output)
     return result.stdout.strip() if result.stdout else ""
 
 
@@ -133,7 +143,27 @@ def receipt_from_launch(source_sha, app_version, build, runtime, simulator, resu
             "verifiedAt": datetime.now(timezone.utc).isoformat()}
 
 
-def main():
+def safe_launch_diagnostic(payload):
+    if not isinstance(payload, dict):
+        return {}
+    safe = {}
+    for key, choices in (("failureStage", LAUNCH_FAILURE_STAGES),
+                         ("failureType", LAUNCH_FAILURE_TYPES),
+                         ("lastObservedPhase", BOOT_PHASES | {"other"})):
+        value = payload.get(key)
+        if isinstance(value, str) and value in choices:
+            safe[key] = value
+    if type(payload.get("attempt")) is int and payload["attempt"] in (1, 2):
+        safe["attempt"] = payload["attempt"]
+    if type(payload.get("processAlive")) is bool:
+        safe["processAlive"] = payload["processAlive"]
+    code = payload.get("simctlExitCode")
+    if type(code) is int and 1 <= code <= 255:
+        safe["simctlExitCode"] = code
+    return safe
+
+
+def main(diagnostic):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--receipt", type=Path, required=True)
@@ -141,6 +171,7 @@ def main():
     if not SOURCE_SHA.fullmatch(args.source_sha):
         raise ValueError("source SHA must be a full lowercase Git commit")
     require_production_environment(os.environ)
+    diagnostic["stage"] = "runner_preflight"
     runner_temp = Path(os.environ["RUNNER_TEMP"]).resolve()
     receipt = args.receipt.resolve()
     receipt.relative_to(runner_temp)
@@ -159,18 +190,23 @@ def main():
     app_config = json.loads((MOBILE / "app.json").read_text(encoding="utf-8"))["expo"]
     output = runner_temp / "hither-release-launch"
     output.mkdir(exist_ok=False)
+    diagnostic["stage"] = "simulator_create"
     simulator = run("xcrun", "simctl", "create", f"Hither-Release-{args.source_sha[:8]}",
                     "com.apple.CoreSimulator.SimDeviceType.iPhone-12-Pro", runtime["identifier"])
     UUID(simulator)
+    diagnostic["stage"] = "simulator_boot"
     run("xcrun", "simctl", "boot", simulator, timeout=300)
     run("xcrun", "simctl", "bootstatus", simulator, "-b", timeout=600)
+    diagnostic["stage"] = "pod_install"
     run("pod", "install", "--deployment", cwd=MOBILE / "ios", timeout=1800,
         output=output / "pod-install.log")
+    diagnostic["stage"] = "source_equivalence"
     verify_ios_source_equivalence()
     derived = runner_temp / "hither-release-derived"
     plist = MOBILE / "ios/Hither/Supporting/Expo.plist"
     original_plist = plist.read_bytes()
     try:
+        diagnostic["stage"] = "xcodebuild"
         plist.write_bytes(production_simulator_plist(original_plist))
         run("xcodebuild", "-workspace", str(MOBILE / "ios/Hither.xcworkspace"),
             "-scheme", "Hither", "-configuration", "Release", "-sdk", "iphonesimulator",
@@ -179,6 +215,7 @@ def main():
             cwd=MOBILE, timeout=5400, output=output / "xcodebuild.log")
     finally:
         plist.write_bytes(original_plist)
+    diagnostic["stage"] = "app_metadata"
     verify_ios_source_equivalence()
     app = derived / "Build/Products/Release-iphonesimulator/Hither.app"
     with (app / "Info.plist").open("rb") as handle:
@@ -196,11 +233,13 @@ def main():
     if not isinstance(headers, dict) or headers.get("expo-channel-name") != "production":
         raise ValueError("Release simulator app does not embed the production update channel")
     build = str(info["CFBundleVersion"])
+    diagnostic["stage"] = "cold_launch"
     run(sys.executable, str(MOBILE / "scripts/verify-ios-release-launch.py"),
         "--app", str(app), "--simulator", simulator, "--build", build,
         "--output", str(output), cwd=MOBILE, timeout=300,
         output=output / "cold-launch-run.log")
     launch = json.loads((output / "launch-result.json").read_text(encoding="utf-8"))
+    diagnostic["stage"] = "launch_receipt"
     data = receipt_from_launch(args.source_sha, app_config["version"], build,
                                runtime, simulator, launch, output)
     receipt.write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
@@ -208,8 +247,24 @@ def main():
 
 
 if __name__ == "__main__":
+    diagnostic = {"stage": "arguments"}
     try:
-        main()
+        main(diagnostic)
     except (KeyError, OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+        diagnostic["failureType"] = type(error).__name__
+        if isinstance(error, ReleaseCommandFailure):
+            diagnostic["exitCode"] = error.returncode
+        if isinstance(error, subprocess.TimeoutExpired):
+            diagnostic["timeoutSeconds"] = error.timeout
+        output = Path(os.environ.get("RUNNER_TEMP", "")) / "hither-release-launch/launch-result.json"
+        if diagnostic["stage"] == "cold_launch" and output.is_file():
+            try:
+                diagnostic.update(safe_launch_diagnostic(json.loads(output.read_text(encoding="utf-8"))))
+            except (OSError, ValueError):
+                pass
+        temp = os.environ.get("RUNNER_TEMP")
+        if temp:
+            (Path(temp) / "hither-release-launch-diagnostic.json").write_text(
+                json.dumps(diagnostic, sort_keys=True) + "\n", encoding="utf-8")
         print(f"iOS Release launch gate failed: {error}", file=sys.stderr)
         sys.exit(1)

@@ -1,19 +1,82 @@
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import plistlib
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 
 SCRIPT = Path(__file__).resolve().with_name("run-ios-release-launch.py")
 SPEC = importlib.util.spec_from_file_location("ios_release_launch", SCRIPT)
 GATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GATE)
+VERIFY_SCRIPT = GATE.MOBILE / "scripts/verify-ios-release-launch.py"
+VERIFY_SPEC = importlib.util.spec_from_file_location("verify_ios_release_launch", VERIFY_SCRIPT)
+VERIFY = importlib.util.module_from_spec(VERIFY_SPEC)
+VERIFY_SPEC.loader.exec_module(VERIFY)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def test_failed_cold_launch_records_stage_without_runtime_log_contents(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "Hither.app"
+            app.mkdir()
+            (app / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "app.hither.mobile", "CFBundleVersion": "77",
+                "CFBundleSupportedPlatforms": ["iPhoneSimulator"],
+                "CFBundleExecutable": "Hither"}))
+            output = root / "result"
+
+            def command(*args, check=True):
+                if args[2] == "launch":
+                    return SimpleNamespace(stdout="app.hither.mobile: 123\n", stderr="")
+                if args[2] == "get_app_container":
+                    return SimpleNamespace(stdout=str(root / "data"), stderr="")
+                return SimpleNamespace(stdout="private user data and token", stderr="")
+
+            argv = ["verify-ios-release-launch.py", "--app", str(app),
+                    "--simulator", "test-simulator", "--build", "77", "--output", str(output)]
+            for error, expected_alive in ((ProcessLookupError, False), (PermissionError, None)):
+                with self.subTest(error=error), patch.object(VERIFY, "run", side_effect=command), \
+                        patch.object(VERIFY.os, "kill", side_effect=error), \
+                        patch.object(VERIFY.time, "sleep"), patch("sys.argv", argv):
+                    with self.assertRaises(error):
+                        VERIFY.main()
+
+                result = (output / "launch-result.json").read_text(encoding="utf-8")
+                self.assertNotIn("private user data and token", result)
+                expected = {"failureStage": "startup_breadcrumb", "failureType": error.__name__,
+                            "attempt": 1}
+                if expected_alive is not None:
+                    expected["processAlive"] = expected_alive
+                self.assertEqual(GATE.safe_launch_diagnostic(json.loads(result)), expected)
+
+    def test_runner_writes_sanitized_diagnostic_on_preflight_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(("python3", str(SCRIPT), "--source-sha", "invalid",
+                                     "--receipt", str(Path(directory) / "receipt.json")),
+                                    env={"RUNNER_TEMP": directory}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            diagnostic = json.loads((Path(directory) / "hither-release-launch-diagnostic.json")
+                                    .read_text(encoding="utf-8"))
+            self.assertEqual(diagnostic, {"stage": "arguments", "failureType": "ValueError"})
+            self.assertNotIn("invalid", json.dumps(diagnostic))
+
+    def test_failure_diagnostic_rejects_unexpected_values(self):
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "failureStage": "launch", "failureType": "CommandFailure", "attempt": 2,
+            "processAlive": True, "simctlExitCode": 2, "error": "secret"}), {
+                "failureStage": "launch", "failureType": "CommandFailure", "attempt": 2,
+                "processAlive": True, "simctlExitCode": 2})
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "failureStage": ["secret"], "failureType": "secret", "attempt": True,
+            "processAlive": "secret", "simctlExitCode": "secret"}), {})
+
     def test_pod_install_may_reorder_only_privacy_api_categories(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
