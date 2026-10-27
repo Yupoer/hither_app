@@ -26,9 +26,9 @@
     {
       "parent": 316,
       "child": 316,
-      "acceptance": "The callable manual-refresh action exposes the existing continuous-watch rejection together with the actual successful watch upload and peer observation.",
+      "acceptance": "The callable manual-refresh action resolves the fresh watcher-accepted fix only after its exact durable event ACK, with one ingestion and peer publication.",
       "testFile": "headlessScenario.test.ts",
-      "testNamePattern": "existing manual-refresh rejection"
+      "testNamePattern": "resolves manual refresh"
     },
     {
       "parent": 316,
@@ -2563,6 +2563,55 @@
       "acceptance": "A leader can explicitly complete the original active session despite missing members on iOS and Android; cancellation and stale confirmation leave navigation and arrival records intact.",
       "testFile": "headlessForceCompletionScenario.test.ts",
       "testNamePattern": "manual force completion confirms before closing|stale force confirmation cannot complete"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "A pending manual refresh resolves a fresh fix consumed by the continuous watcher, waits for exact durable ACK and publishes once to a peer on iOS and Android.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "resolves manual refresh"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "Manual refresh preserves strict upload failure, forces upload below the watcher cadence and does not double-count a raw sample.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "waits for the watcher event ACK|keeps required-upload failure|forces an upload"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "Refresh still rejects a sample accepted before the request.",
+      "testFile": "localLocationFeed.test.ts",
+      "testNamePattern": "manual refresh requires"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "Consent, group and owner disposal fence shared upload completion; mismatched same-timestamp fixes remain rejected.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "fences a shared upload completion|rejects a different fix"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "A held refresh upload from the original account cannot complete for a replacement account, and the accepted event retains its original actor.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "held manual refresh for a replacement account"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "A newer watcher fix supersedes an older one-shot result without rolling back UI; when upload cadence skipped the newer fix, refresh waits for its own ACK after the earlier in-flight event.",
+      "testFile": "headlessScenario.test.ts",
+      "testNamePattern": "confirms the newest watcher fix"
+    },
+    {
+      "parent": 318,
+      "child": 318,
+      "acceptance": "Refresh preserves stable absent local identity and rejects an account change before raw sample acceptance.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "local actor remains unavailable|account changes during GPS"
     }
   ]
 }

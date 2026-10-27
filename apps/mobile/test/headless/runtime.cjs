@@ -132,6 +132,15 @@ exports.run = async function run(jest) {
   const channels = new Set();
   const handles = new Map();
   const permission = { status: 'granted', canAskAgain: true, granted: true };
+  let holdNextPermissionRead = false;
+  const heldPermissionReads = [];
+  const readForegroundPermission = async () => {
+    if (holdNextPermissionRead) {
+      holdNextPermissionRead = false;
+      await new Promise(resolve => heldPermissionReads.push(resolve));
+    }
+    return { ...permission };
+  };
   const backgroundTasks = new Map();
   let sdk;
   let session;
@@ -184,7 +193,7 @@ exports.run = async function run(jest) {
     __esModule: true,
     Accuracy: { High: 6, Balanced: 3, Low: 2 },
     requestForegroundPermissionsAsync: async () => ({ ...permission }),
-    getForegroundPermissionsAsync: async () => ({ ...permission }),
+    getForegroundPermissionsAsync: readForegroundPermission,
     getBackgroundPermissionsAsync: async () => ({ ...permission }),
     requestBackgroundPermissionsAsync: async () => ({ ...permission }),
     hasStartedLocationUpdatesAsync: async name => backgroundTasks.has(name),
@@ -368,7 +377,7 @@ exports.run = async function run(jest) {
         snapshot: app.groupId ? await require('../../src/state/coreDataStore').readCoreSnapshot(app.groupId) : null },
       external: { watches: watches.size, channels: channels.size, listeners: appListeners.size, alerts: alertQueue.length,
         alertDetails: alertQueue.map(([title, message, buttons]) => ({ title, message, buttons: buttons?.map(button => button.text) ?? [] })),
-        backgroundTasks: [...backgroundTasks].map(([name, options]) => ({ name, options })), heldActTurn: Boolean(releaseActTurn) },
+        backgroundTasks: [...backgroundTasks].map(([name, options]) => ({ name, options })), heldActTurn: Boolean(releaseActTurn), heldPermissionReads: heldPermissionReads.length },
       pending: [...requests.keys()], timers: jest.getTimerCount(), fatal: [...failures], now: Date.now(),
     };
   }
@@ -435,6 +444,15 @@ exports.run = async function run(jest) {
         } else if (input.kind === 'linking') {
           assert.equal(typeof input.url, 'string'); assert(host, 'Linking input requires native host');
           for (const listener of host.linkingListeners) listener({ url: input.url });
+        } else if (input.kind === 'permissionRead') {
+          assert(['holdNext', 'release'].includes(input.action));
+          if (input.action === 'holdNext') {
+            assert(!holdNextPermissionRead && heldPermissionReads.length === 0, 'Permission read already held');
+            holdNextPermissionRead = true;
+          } else {
+            assert(heldPermissionReads.length === 1, 'No held permission read');
+            heldPermissionReads.pop()();
+          }
         } else if (input.kind === 'permission') {
           assert(['granted', 'denied'].includes(input.status));
           permission.status = input.status;
@@ -498,6 +516,8 @@ exports.run = async function run(jest) {
     if (kind === 'close') {
       if (hangShutdown) await new Promise(() => {});
       disposing = true;
+      holdNextPermissionRead = false;
+      for (const release of heldPermissionReads.splice(0)) release();
       await act(async () => root.unmount());
       externalNative.dispose();
       for (const [id, pending] of requests) {
@@ -509,11 +529,12 @@ exports.run = async function run(jest) {
       requests.clear();
       await turn();
       const residual = { watches: watches.size, channels: channels.size, listeners: appListeners.size,
-        pending: requests.size, timers: jest.getTimerCount(), fatal: [...failures], native: externalNative.dispose(), maps: externalMap.dispose(), updates: externalUpdates.observe() };
+        pending: requests.size, heldPermissionReads: heldPermissionReads.length, timers: jest.getTimerCount(), fatal: [...failures], native: externalNative.dispose(), maps: externalMap.dispose(), updates: externalUpdates.observe() };
       for (const db of handles.values()) await db.closeAsync();
       jest.clearAllTimers();
       jest.useRealTimers();
       assert.equal(residual.watches, 0, 'GPS listener leaked');
+      assert.equal(residual.heldPermissionReads, 0, 'Permission read leaked');
       assert.equal(residual.channels, 0, 'Realtime channel leaked');
       assert.equal(residual.listeners, 0, `AppState listener leaked ${[...appListeners].map(listener => listener.stack).join('\n')}`);
       assert.equal(authListeners.size, 0, 'Auth listener leaked');

@@ -99,6 +99,23 @@ describe('headless harness contract', () => {
     } finally { await db.closeAsync(); }
   });
 
+  it('releases a held external permission read during clean owned-process disposal', async () => {
+    const world = new World();
+    try {
+      const a = await world.device({ id: 'a', userId: LEADER });
+      await a.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(a, (value: any) => value.external.watches >= 2, 'startup location owners');
+      await a.input({ kind: 'permissionRead', action: 'holdNext' });
+      await a.gps(25.03, 121.53);
+      await world.waitFor(a, (value: any) => value.external.heldPermissionReads === 1, 'held native permission result');
+      await world.close();
+      expect(a.disposal.heldPermissionReads).toBe(0);
+      expect(a.disposal.watches).toBe(0);
+      expect(a.disposal.pending).toBe(0);
+      expect(a.child).toBeNull();
+    } finally { await world.close(); }
+  });
+
   it('finishes concurrent foreground transitions before unmounting the real native location owners', async () => {
     const world = new World();
     try {

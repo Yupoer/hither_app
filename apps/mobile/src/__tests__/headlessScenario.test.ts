@@ -2,6 +2,14 @@ const { World } = require('../../test/headless/world.cjs');
 const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
 const SUBSCRIBED_GROUP_POLL_MS = 120_000;
 
+async function settleLocationStartup(world: any, device: any) {
+  await device.gps(25, 121.5);
+  await world.waitFor(device, (value: any) => value.external.watches === 1 && value.pending.length === 0
+    && value.durable.locations.length === 0, 'startup one-shot completed and acknowledged');
+  await world.advance(5_000);
+  return world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').length;
+}
+
 describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platform => {
   jest.setTimeout(90000);
 
@@ -397,7 +405,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
     } finally { await world.close(); }
   });
 
-  it('surfaces the existing manual-refresh rejection when the continuous watcher accepts the same fresh fix first', async () => {
+  it('confirms the newest watcher fix after an earlier one-shot result while the first upload is held', async () => {
     const world = new World();
     try {
       const a = await world.device({ id: 'leader', userId: LEADER, platform });
@@ -405,19 +413,92 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.perform('group.observe', { groupId: GROUP_ID });
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
-      const refresh = a.perform('location.refresh').catch((error: Error) => error);
-      await world.waitFor(a, (value: any) => value.external.watches >= 3, 'one-shot plus continuous observers');
+      const previousUploads = await settleLocationStartup(world, a);
+      world.hold('ingest_location_batch', { deviceId: 'leader' });
+      await a.input({ kind: 'permissionRead', action: 'holdNext' });
+      let refreshFinished = false;
+      const refresh = a.perform('location.refresh').then((value: unknown) => { refreshFinished = true; return value; },
+        (error: Error) => { refreshFinished = true; return error; });
+      await world.waitFor(a, (value: any) => value.external.watches === 2, 'manual one-shot plus continuous observers');
       await a.gps(25.06, 121.56);
+      await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1
+        && value.external.heldPermissionReads === 1, 'first event held while one-shot permission waits');
+      await a.gps(25.07, 121.57, { timestamp: world.now + 1 });
+      expect((await a.observe()).durable.locations).toHaveLength(1);
+      await a.input({ kind: 'permissionRead', action: 'release' });
+      expect(refreshFinished).toBe(false);
+      await world.release('ingest_location_batch', { keep: true });
+      const pending = await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1
+        && value.durable.locations[0].captured_at === world.now + 1, 'newest event awaiting its own ACK');
+      expect({ refreshFinished, outcome: refreshFinished ? await refresh : undefined }).toEqual({ refreshFinished: false, outcome: undefined });
+      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(previousUploads + 1);
+      await world.advance(1);
+      await world.release('ingest_location_batch');
+      expect(await refresh).toEqual({ latitude: 25.07, longitude: 121.57 });
+      await world.advance(250);
+      await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.07, 'newest peer fix');
+      expect((await a.observe()).location.coordinates).toEqual({ latitude: 25.07, longitude: 121.57 });
+      expect((await a.observe()).durable.locations).toEqual([]);
+      const uploads = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').slice(previousUploads);
+      expect(uploads).toHaveLength(2);
+      expect(uploads[1].result.data.acceptedIds).toEqual([pending.durable.locations[0].id]);
+      expect(uploads.map((call: any) => call.args.p_events[0].coords.latitude)).toEqual([25.06, 25.07]);
+    } finally { await world.close(); }
+  });
+
+  it('does not complete a held manual refresh for a replacement account', async () => {
+    const world = new World();
+    try {
+      const a = await world.device({ id: 'switching', userId: LEADER, platform });
+      await a.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'original account ready');
+      const previousUploads = await settleLocationStartup(world, a);
+      world.hold('ingest_location_batch', { phase: 'delivery', deviceId: 'switching' });
+      const refresh = a.perform('location.refresh').catch((error: Error) => error);
+      await world.waitFor(a, (value: any) => value.external.watches === 2, 'manual one-shot plus continuous observers');
+      await a.gps(25.06, 121.56);
+      await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'original actor ACK held');
+      await a.input({ kind: 'account', userId: PEER, platform });
+      expect((await a.observe()).actorId).toBe(PEER);
+      await world.release('ingest_location_batch');
+      expect(await refresh).toBeNull();
+      const uploads = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').slice(previousUploads);
+      expect(uploads).toHaveLength(1);
+      expect(uploads[0].userId).toBe(LEADER);
+      expect(uploads[0].args.p_events[0].actorId).toBe(LEADER);
+      expect((await a.observe()).durable.locations).toEqual([]);
+    } finally { await world.close(); }
+  });
+
+  it('resolves manual refresh after its fresh fix is accepted by the continuous watcher first', async () => {
+    const world = new World();
+    try {
+      const a = await world.device({ id: 'leader', userId: LEADER, platform });
+      const b = await world.device({ id: 'peer', userId: PEER, platform });
+      await a.perform('group.observe', { groupId: GROUP_ID });
+      await b.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
+      const previousUploads = await settleLocationStartup(world, a);
+      world.hold('ingest_location_batch');
+      let refreshFinished = false;
+      const refresh = a.perform('location.refresh').then((value: unknown) => {
+        refreshFinished = true;
+        return value;
+      }, (error: Error) => { refreshFinished = true; return error; });
+      await world.waitFor(a, (value: any) => value.external.watches === 2, 'manual one-shot plus continuous observers');
+      await a.gps(25.06, 121.56);
+      await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'watcher event waiting for ACK');
+      expect(refreshFinished).toBe(false);
+      await world.release('ingest_location_batch');
       const outcome = await refresh;
-      expect(outcome).toBeInstanceOf(Error);
-      expect(outcome.message).toContain('no_new_location_sample');
+      expect(outcome).toEqual({ latitude: 25.06, longitude: 121.56 });
       await world.settle();
       await world.advance(250);
-      const peer = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.06, 'watch publication despite refresh rejection');
+      const peer = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.06, 'watch publication and refresh confirmation');
       expect(peer.group.state.members.find((m: any) => m.userId === LEADER).coordinates.longitude).toBe(121.56);
       expect((await a.observe()).location.coordinates.latitude).toBe(25.06);
       expect((await a.observe()).durable.locations).toEqual([]);
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(1);
+      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(previousUploads + 1);
     } finally { await world.close(); }
   });
 });

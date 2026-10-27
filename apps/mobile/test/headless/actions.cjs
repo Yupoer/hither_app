@@ -19,8 +19,7 @@ const actions = {
   'location.refresh': {
     inventory: ['MAP-LOC-03'], sources: [{ file: 'src/screens/MapScreen/hooks/useDeviceLocation.ts', symbol: 'refreshDeviceLocation' }],
     entry: 'useDeviceLocation.refreshDeviceLocation', level: 'hook', input: '{}',
-    knownIssue: 'https://github.com/Yupoer/hither_app/issues/318',
-    completion: 'Supply GPS while pending. The existing continuous-watch race may reject no_new_location_sample after the watch publishes the fix.',
+    completion: 'Supply fresh GPS while pending. Resolves coordinates only after the exact location event is acknowledged, including when the continuous watcher receives the fix first.',
     run: app => app.location.refreshDeviceLocation({ requireUpload: true }),
   },
   'journey.start': {
