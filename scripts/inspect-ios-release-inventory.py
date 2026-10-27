@@ -123,13 +123,14 @@ def latest_ios_update(updates, view):
     if identifier is None:
         raise ValueError("EAS update group ID is missing")
     UUID(identifier)
-    platforms = group.get("platforms")
+    platforms = platform_shape(group.get("platforms"))
     if group.get("branch") != "production":
         raise ValueError("EAS latest update group is not on production")
-    if platforms not in ("IOS", "ANDROID, IOS"):
+    if (platforms.get("kind") != "recognized_string" or platforms.get("iosCount") != 1
+            or platforms.get("androidCount", 0) > 1):
         raise ValueError("EAS latest update group has no verified iOS platform")
-    if platforms == "ANDROID, IOS" and view is None:
-        raise ValueError("EAS mixed-platform group needs iOS update verification")
+    if (not platforms["canonical"] or platforms["androidCount"] != 0) and view is None:
+        raise ValueError("EAS noncanonical or mixed-platform group needs iOS update verification")
     runtime = metadata_text(group, "runtimeVersion")
     if view is None:
         source = None
@@ -178,6 +179,8 @@ def platform_shape(value):
         return {"kind": "missing"}
     if not isinstance(value, str):
         return {"kind": "other_type"}
+    if not value.isascii():
+        return {"kind": "other_string"}
     parts = [part.strip().upper() for part in value.split(",")]
     if not 0 < len(parts) <= 4 or any(part not in ("ANDROID", "IOS") for part in parts):
         return {"kind": "other_string"}

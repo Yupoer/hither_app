@@ -131,6 +131,27 @@ class ReleaseInventoryTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             MODULE.inventory(builds, channel, updates, view)
 
+    def test_noncanonical_single_ios_label_requires_matching_view(self):
+        builds, channel, updates, view = responses()
+        updates["currentPage"][0]["platforms"] = "iOS"
+        with self.assertRaises(ValueError):
+            MODULE.inventory(builds, channel, updates, None)
+        result = MODULE.inventory(builds, channel, updates, view)
+        self.assertEqual(result["latestIosUpdate"]["iosUpdateId"], UPDATE_ID)
+        updates["currentPage"][0]["platforms"] = " IOS "
+        self.assertEqual(MODULE.inventory(builds, channel, updates, view)
+                         ["latestIosUpdate"]["sourceSha"], SHA)
+        view[0]["group"] = "123e4567-e89b-12d3-a456-426614174005"
+        with self.assertRaises(ValueError):
+            MODULE.inventory(builds, channel, updates, view)
+
+    def test_unknown_or_android_only_platform_cannot_use_ios_view(self):
+        builds, channel, updates, view = responses()
+        for platforms in ("ANDROID", "IOS, IOS", "IOS, UNKNOWN", "https://private.example", "ıOS"):
+            updates["currentPage"][0]["platforms"] = platforms
+            with self.assertRaises(ValueError):
+                MODULE.inventory(builds, channel, updates, view)
+
     def test_url_shaped_metadata_is_removed(self):
         builds, channel, updates, view = responses()
         builds[0]["runtimeVersion"] = "https://private.example/secret-runtime"
