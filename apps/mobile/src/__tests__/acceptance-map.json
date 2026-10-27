@@ -2612,6 +2612,55 @@
       "acceptance": "Refresh preserves stable absent local identity and rejects an account change before raw sample acceptance.",
       "testFile": "deviceLocationLifecycle.test.ts",
       "testNamePattern": "local actor remains unavailable|account changes during GPS"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Teammate identity reads and joined-group avatars use the public contract and never fall back after permission, schema, or network failures.",
+      "testFile": "groupServiceBehavior.test.ts",
+      "testNamePattern": "propagates public identity failure|loads a complete group state|profile-rich"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Invitation enrichment uses public identities, preserves empty-name fallback, and propagates denied reads without legacy fallback.",
+      "testFile": "headlessPublicProfiles.test.ts",
+      "testNamePattern": "enriches invitation names"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "All four notification name paths preserve labels and public lookup failures retain fallback names without querying private profiles.",
+      "testFile": "headlessPublicProfileNotifications.test.ts",
+      "testNamePattern": "uses only public nicknames|keeps notification fallbacks"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The member-ID-filtered public profile UPDATE channel reloads teammate identity while private-only writes produce no public event.",
+      "testFile": "headlessPublicProfiles.test.ts",
+      "testNamePattern": "converges teammate identity"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The profile subscription retains member filtering, lifecycle cleanup, and recovery cadence.",
+      "testFile": "useGroupStateRealtimeCadence.test.ts",
+      "testNamePattern": "subscribes to profile updates"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Actual PostgreSQL enforces exact fields, current co-member authorization, expiry fences, no client projection writes, and preserved own and legacy contracts.",
+      "testFile": "supabase/tests/public_profiles.test.sql",
+      "testNamePattern": "public profile storage exposes exactly four fields|co-member receives|private-only update writes no public row"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The recovery RPC emits only explicit public identity keys while preserving its existing authorization and envelope.",
+      "testFile": "supabase/tests/group_recovery_snapshot.test.sql",
+      "testNamePattern": "every recovery profile contains exactly the public fields"
     }
   ]
 }
