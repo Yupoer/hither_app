@@ -32,5 +32,8 @@ for (event, ref), expected in matrix.items():
     assert actual is expected, (event, ref, expected, actual)
 
 assert "  ci-required:" in source, "required aggregate status is missing"
-assert "  open-issue:" in source, "master failure reporting is missing"
+manual_base = "startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master'"
+assert source.count(manual_base) == 2, "manual deliver scope and coverage must compare against master"
+assert "    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'" in source, (
+    "master failure reporting must stay limited to master pushes")
 print("CI trigger matrix checks passed")
