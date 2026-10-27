@@ -7917,7 +7917,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "408abfa2fe6f5521e9bf645983ae9d09851e8081d0860261fca592269d790094"
+    "hash": "aeb9e3dc072fafa6966561ff1e1b576c7970d2e14fe9d99a6367cb144999b74f"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",

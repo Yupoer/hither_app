@@ -1,3 +1,4 @@
+jest.mock('../api/supabase', () => ({ getLocalAuthActorId: jest.fn(async () => 'location-actor') }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
 jest.mock('expo-crypto', () => ({ randomUUID: () => 'sample-id' }));
 import React from 'react';

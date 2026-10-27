@@ -33,8 +33,8 @@ class World {
     assert(['execution', 'delivery'].includes(phase));
     this.holds.set(rpcName, { phase, deviceId });
   }
-  async release(rpcName) {
-    this.holds.delete(rpcName);
+  async release(rpcName, { keep = false } = {}) {
+    if (!keep) this.holds.delete(rpcName);
     const ready = this.held.filter(item => item.operation.name === rpcName);
     this.held = this.held.filter(item => item.operation.name !== rpcName);
     for (const item of ready) this.respond(item);

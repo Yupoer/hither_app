@@ -4,6 +4,7 @@ const mockAppState = { currentState: 'active' };
 let mockAppListener: (state: string) => void;
 const mockStop = jest.fn();
 const mockWatch = jest.fn(async (_callback: unknown, _accuracy: unknown, _mode: unknown) => mockStop);
+jest.mock('../api/supabase', () => ({ getLocalAuthActorId: jest.fn(async () => 'location-actor') }));
 jest.mock('react-native', () => ({ AppState: { get currentState() { return mockAppState.currentState; },
   addEventListener: (_: string, listener: typeof mockAppListener) => { mockAppListener = listener; return { remove() {} }; } } }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
