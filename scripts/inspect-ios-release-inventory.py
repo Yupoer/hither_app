@@ -121,8 +121,13 @@ def latest_ios_update(updates, view):
     if identifier is None:
         raise ValueError("EAS update group ID is missing")
     UUID(identifier)
-    if group.get("branch") != "production" or group.get("platforms") != "IOS":
-        raise ValueError("EAS latest update group is not iOS on production")
+    platforms = group.get("platforms")
+    if group.get("branch") != "production":
+        raise ValueError("EAS latest update group is not on production")
+    if platforms not in ("IOS", "ANDROID, IOS"):
+        raise ValueError("EAS latest update group has no verified iOS platform")
+    if platforms == "ANDROID, IOS" and view is None:
+        raise ValueError("EAS mixed-platform group needs iOS update verification")
     runtime = metadata_text(group, "runtimeVersion")
     if view is None:
         source = None

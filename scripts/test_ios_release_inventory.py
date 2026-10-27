@@ -105,6 +105,32 @@ class ReleaseInventoryTest(unittest.TestCase):
         result = MODULE.inventory(builds, channel, updates, None)
         self.assertIsNone(result["latestIosUpdate"]["sourceSha"])
 
+    def test_mixed_platform_group_keeps_verified_ios_update(self):
+        builds, channel, updates, view = responses()
+        updates["currentPage"][0]["platforms"] = "ANDROID, IOS"
+        view.append({**view[0], "id": "123e4567-e89b-12d3-a456-426614174004",
+                     "platform": "ANDROID"})
+        result = MODULE.inventory(builds, channel, updates, view)
+        self.assertEqual(result["latestIosUpdate"]["iosUpdateId"], UPDATE_ID)
+        self.assertEqual(result["latestIosUpdate"]["sourceSha"], SHA)
+
+    def test_mixed_platform_group_requires_matching_ios_view(self):
+        builds, channel, updates, view = responses()
+        updates["currentPage"][0]["platforms"] = "ANDROID, IOS"
+        with self.assertRaises(ValueError):
+            MODULE.inventory(builds, channel, updates, None)
+        view[0]["platform"] = "ANDROID"
+        with self.assertRaises(ValueError):
+            MODULE.inventory(builds, channel, updates, view)
+        updates["currentPage"][0]["platforms"] = "ANDROID"
+        view[0]["platform"] = "IOS"
+        with self.assertRaises(ValueError):
+            MODULE.inventory(builds, channel, updates, view)
+        updates["currentPage"][0]["platforms"] = "ANDROID, IOS"
+        updates["currentPage"][0]["branch"] = "preview"
+        with self.assertRaises(ValueError):
+            MODULE.inventory(builds, channel, updates, view)
+
     def test_url_shaped_metadata_is_removed(self):
         builds, channel, updates, view = responses()
         builds[0]["runtimeVersion"] = "https://private.example/secret-runtime"
