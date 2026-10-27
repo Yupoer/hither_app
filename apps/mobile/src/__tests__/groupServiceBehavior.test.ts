@@ -195,7 +195,7 @@ describe('GroupService snapshots and joined-group cache', () => {
       memberships: { data: [{ user_id: 'user-1', role: 'leader', status: 'active' }], error: null },
       itinerary_items: { data: [{ id: 'd-1', title: 'Next', position: 0, day: 1, address: null, latitude: 25, longitude: 121, closed_at: null }], error: null },
       member_locations: { data: [{ user_id: 'user-1', latitude: 25, longitude: 121, updated_at: 'now' }], error: null },
-      profiles: { data: [{ id: 'user-1', nickname: 'Ada', avatar: '🦊', avatar_color: '#E8543F' }], error: null },
+      public_profiles: { data: [{ id: 'user-1', nickname: 'Ada', avatar: '🦊', avatar_color: '#E8543F' }], error: null },
       subgroups: { data: [{ id: 'sg', name: 'Team', mode: 'collab', leader_id: 'user-1', parent_subgroup_id: null }], error: null },
     });
     mockListDailyAccommodations.mockResolvedValue([{ id: 'stay', groupId: 'g-1', stayDate: '2026-10-01', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } }]);
@@ -203,6 +203,9 @@ describe('GroupService snapshots and joined-group cache', () => {
       group: { id: 'g-1' }, members: [{ userId: 'user-1', name: 'Ada' }],
       destinations: [{ id: 'd-1' }], subgroups: [{ id: 'sg' }], dailyAccommodations: [{ id: 'stay' }],
     });
+
+    expect(mockedSupabase.from).toHaveBeenCalledWith('public_profiles');
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('profiles');
 
     setTables({
       groups: { data: row(), error: null },
@@ -212,6 +215,18 @@ describe('GroupService snapshots and joined-group cache', () => {
       subgroups: { data: null, error: { message: 'optional unavailable' } },
     });
     await expect(getGroupState('g-1')).resolves.toMatchObject({ members: [], subgroups: [] });
+  });
+
+
+  it.each(['42501', 'PGRST205', 'transport'])('propagates public identity failure %s without a legacy profile read', async (code) => {
+    const memberships = { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }], error: null };
+    setTables({ groups: { data: row(), error: null }, memberships,
+      public_profiles: { data: null, error: { code, message: 'public identity unavailable' } } });
+    await expect(getGroupState('g-1')).rejects.toMatchObject({ code });
+    setTables({ groups: { data: [row()], error: null }, memberships,
+      public_profiles: { data: null, error: { code, message: 'public identity unavailable' } } });
+    await expect(getMyJoinedGroups({ includeProfiles: true })).rejects.toMatchObject({ code });
+    expect(mockedSupabase.from).not.toHaveBeenCalledWith('profiles');
   });
 
   it('uses the demo snapshot path without remote group queries', async () => {
@@ -259,7 +274,7 @@ describe('GroupService snapshots and joined-group cache', () => {
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader' }], error: null },
       groups: { data: [row()], error: null },
-      profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
+      public_profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
     });
     storage.getItem.mockResolvedValueOnce(JSON.stringify({}));
     // The second memberships query is selected by call order/table; the table
@@ -268,7 +283,7 @@ describe('GroupService snapshots and joined-group cache', () => {
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }, { group_id: 'g-1', role: 'leader', user_id: 'user-2' }], error: null },
       groups: { data: [row()], error: null },
-      profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
+      public_profiles: { data: [{ id: 'user-1', avatar: '🦊', avatar_color: '#E8543F' }, { id: 'user-2', avatar: null, avatar_color: null }], error: null },
     });
     const rich = await getMyJoinedGroups({ includeProfiles: true });
     expect(rich[0]).toMatchObject({ group: { id: 'g-1' }, memberCount: 2, role: 'leader' });
@@ -292,7 +307,7 @@ describe('GroupService snapshots and joined-group cache', () => {
     setTables({
       memberships: { data: [{ group_id: 'g-1', role: 'leader', user_id: 'user-1' }, { group_id: 'g-1', role: 'leader', user_id: 'user-2' }], error: null },
       groups: { data: [row()], error: null },
-      profiles: { data: [{ id: 'user-2', avatar: '🐺', avatar_color: '#4A90D9' }], error: null },
+      public_profiles: { data: [{ id: 'user-2', avatar: '🐺', avatar_color: '#4A90D9' }], error: null },
     });
     storage.getItem.mockRejectedValueOnce(new Error('disk read'));
     storage.setItem.mockRejectedValueOnce(new Error('disk write'));

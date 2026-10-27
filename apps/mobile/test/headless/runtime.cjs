@@ -263,7 +263,7 @@ exports.run = async function run(jest) {
           on(type, filter, callback) {
             assert.equal(type, 'postgres_changes');
             assert.equal(filter.schema, 'public');
-            assert(['member_locations', 'memberships', 'itinerary_items', 'daily_accommodations', 'groups', 'profiles',
+            assert(['member_locations', 'memberships', 'itinerary_items', 'daily_accommodations', 'groups', 'public_profiles',
               'navigation_sessions', 'navigation_session_history', 'navigation_member_states', 'subgroup_invites', 'subgroups', 'gather_point_requests',
               'coordination_requests', 'coordination_responses', 'destination_arrivals', 'visited_waypoints', 'itinerary_operations', 'commands', 'group_alerts'].includes(filter.table), `Unknown realtime table ${filter.table}`);
             bindings.push({ filter, callback });
@@ -467,8 +467,10 @@ exports.run = async function run(jest) {
           const event = message.command.event;
           if (filter.table !== event.table || (filter.event !== '*' && filter.event !== event.eventType)) continue;
           if (filter.filter) {
-            const [column, value] = filter.filter.split('=eq.');
-            if ((event.new?.[column] ?? event.old?.[column]) !== value) continue;
+            const match = /^(\w+)=(eq\.(.+)|in\.\(([^()]+)\))$/.exec(filter.filter);
+            assert(match, `Unsupported realtime filter ${filter.filter}`);
+            const value = event.new?.[match[1]] ?? event.old?.[match[1]];
+            if (match[3] ? value !== match[3] : !match[4].split(',').includes(value)) continue;
           }
           callback(event);
         }

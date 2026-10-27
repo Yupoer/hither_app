@@ -224,7 +224,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       const beforeLite = world.backend.trace.length;
       const joined = await leader.perform('group.getMyJoinedGroups', { args: [{ expectedActorId: LEADER, includeProfiles: false }] });
       expect(joined.map((group: any) => group.group.id).sort()).toEqual([GROUP_ID, created.id].sort());
-      expect(world.backend.trace.slice(beforeLite).filter((call: any) => call.name === 'profiles')).toEqual([]);
+      expect(world.backend.trace.slice(beforeLite).filter((call: any) => ['profiles', 'public_profiles'].includes(call.name))).toEqual([]);
       await leader.perform('group.updateGroupAvatar', { args: [created.id, '🦊', '#E8543F'] });
       expect(world.backend.groups.get(created.id)).toMatchObject({ avatar: '🦊', avatar_color: '#E8543F' });
       const safeAvatar = await leader.perform('group.updateGroupAvatar', { args: [created.id, 'invalid', 'invalid'] });

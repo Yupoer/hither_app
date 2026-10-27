@@ -30,7 +30,7 @@ class Backend {
   }
   snapshot(groupId) {
     return structuredClone({ group: this.groups.get(groupId), memberships: this.memberships.filter(m => m.group_id === groupId),
-      profiles: [...this.profiles.values()].filter(p => this.memberships.some(m => m.group_id === groupId && m.user_id === p.id)),
+      profiles: [...this.profiles.values()].filter(p => this.memberships.some(m => m.group_id === groupId && m.user_id === p.id)).map(domain.publicProfile),
       locations: [...this.locations.values()].filter(l => l.group_id === groupId && this.tables.member_privacy_settings.find(p => p.user_id === l.user_id)?.sharing_enabled !== false),
       location_sharing: this.memberships.filter(m => m.group_id === groupId).map(m => ({ user_id: m.user_id, sharing_enabled: this.tables.member_privacy_settings.find(p => p.user_id === m.user_id)?.sharing_enabled !== false })), itinerary: this.itinerary.filter(d => d.group_id === groupId).sort((a, c) => a.position - c.position),
       subgroups: this.tables.subgroups.filter(s => s.group_id === groupId), entity_versions: this.tables.core_entity_versions.filter(r => r.group_id === groupId),

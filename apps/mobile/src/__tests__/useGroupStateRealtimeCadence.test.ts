@@ -136,7 +136,7 @@ describe('useGroupState realtime cadence', () => {
     const { root } = await mount();
     expect(groupChannel().bindings.some(b => b.filter.table === 'profiles')).toBe(false);
     expect(liveProfileChannel()?.bindings.map(b => b.filter)).toEqual([
-      { event: 'UPDATE', schema: 'public', table: 'profiles', filter: 'id=in.(me,peer-b)' },
+      { event: 'UPDATE', schema: 'public', table: 'public_profiles', filter: 'id=in.(me,peer-b)' },
     ]);
 
     mockRecovery.mockImplementation(async () => recovery(['me', 'peer-b'], 26));

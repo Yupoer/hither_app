@@ -371,3 +371,26 @@ assert.equal(regressionRpc('import_itinerary_batch', { p_group_id: GROUP_ID, p_s
 assert.equal(regression.itinerary.length, 3);
 assert.throws(() => regressionRpc('apply_core_operation', {}), /Unsupported backend RPC/);
 console.log('Backend legacy destination and import count contracts passed');
+
+const identityEvents = [];
+const identities = new Backend(event => identityEvents.push(event));
+const identityTable = (name, steps, userId = LEADER) => identities.execute('public-contract', { kind: 'table', name, steps, userId });
+Object.assign(identities.profiles.get(PEER), { preferences: { secret: 'private' }, onboarding: { private: true }, pro: true });
+const safeKeys = ['avatar', 'avatar_color', 'id', 'nickname'];
+assert.deepEqual(Object.keys(identityTable('public_profiles', [['select', '*'], ['eq', 'id', PEER]], LEADER).data[0]).sort(), safeKeys);
+assert.deepEqual(Object.keys(identities.snapshot(GROUP_ID).profiles[0]).sort(), safeKeys);
+assert.deepEqual(identityTable('public_profiles', [['select', '*']], 'outsider').data, []);
+assert.deepEqual(identityTable('public_profiles', [['select', '*']], null).data, []);
+assert.throws(() => identityTable('public_profiles', [['select', 'preferences']]), /Unknown public_profiles selection/);
+assert.throws(() => identityTable('public_profiles', [['update', { nickname: 'forbidden' }]]), /Unsupported public_profiles.update/);
+identityTable('profiles', [['update', { preferences: { language: 'en' } }], ['eq', 'id', LEADER]]);
+assert.deepEqual(identityEvents.filter(event => event.table === 'public_profiles'), []);
+identityTable('profiles', [['update', { nickname: 'Public nickname' }], ['eq', 'id', LEADER]]);
+assert.equal(identityEvents.filter(event => event.table === 'public_profiles').length, 1);
+assert.deepEqual(Object.keys(identityEvents.find(event => event.table === 'public_profiles').new).sort(), safeKeys);
+assert.equal(identityTable('profiles', [['select', '*'], ['eq', 'id', LEADER]]).data[0].preferences.language, 'en');
+identities.configureAuth({ accounts: [{ id: LEADER, is_anonymous: true }] });
+identities.profiles.get(LEADER).anonymous_expires_at = new Date(identities.now - 1).toISOString();
+assert.deepEqual(identityTable('public_profiles', [['select', '*'], ['eq', 'id', PEER]]).data, []);
+assert.equal(identityTable('public_profiles', [['select', '*'], ['eq', 'id', LEADER]]).data.length, 1);
+console.log('Backend public identity fixture contracts passed');

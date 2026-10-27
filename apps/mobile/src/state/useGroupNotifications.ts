@@ -266,7 +266,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
                   .eq('user_id', row.sender_id)
                   .maybeSingle()
                 : Promise.resolve({ data: { role: isLeaderCommand(row.type) ? 'leader' : 'follower' } }),
-              supabase.from('profiles').select('nickname').eq('id', row.sender_id).maybeSingle(),
+              supabase.from('public_profiles').select('nickname').eq('id', row.sender_id).maybeSingle(),
             ]);
             const role = (senderMem as { role?: string } | null)?.role;
             // Only explicit leader; missing/error must not drift to leaderCommands.
@@ -306,7 +306,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
           if (row.created_by === myUserId) return;
           void (async () => {
             const { data: senderProfile } = row.created_by
-              ? await supabase.from('profiles').select('nickname').eq('id', row.created_by).maybeSingle()
+              ? await supabase.from('public_profiles').select('nickname').eq('id', row.created_by).maybeSingle()
               : { data: null };
             const senderName = (senderProfile as { nickname?: string } | null)?.nickname?.trim();
             await fire({
@@ -386,7 +386,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
             ]);
             const leaderId = (leader as { user_id?: string } | null)?.user_id ?? 'leader';
             const { data: leaderProfile } = leaderId !== 'leader'
-              ? await supabase.from('profiles').select('nickname').eq('id', leaderId).maybeSingle()
+              ? await supabase.from('public_profiles').select('nickname').eq('id', leaderId).maybeSingle()
               : { data: null };
             const name = (leaderProfile as { nickname?: string } | null)?.nickname?.trim() || tRef.current('notif.leaderTitle', { label: '' }).replace(/[:：]\s*$/, '');
             const title = (destination as { title?: string } | null)?.title?.trim() || tRef.current('map.gatheringPoints');
@@ -428,7 +428,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
           if (!ownArrival && !isLeaderRef.current) return;
           void (async () => {
             const [{ data: memberProfile }, { data: destination }] = await Promise.all([
-              supabase.from('profiles').select('nickname').eq('id', arriverId).maybeSingle(),
+              supabase.from('public_profiles').select('nickname').eq('id', arriverId).maybeSingle(),
               row.destination_id
                 ? supabase.from('itinerary_items').select('title').eq('id', row.destination_id).maybeSingle()
                 : Promise.resolve({ data: null }),
