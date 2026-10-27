@@ -397,7 +397,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
     } finally { await world.close(); }
   });
 
-  it('surfaces the existing manual-refresh rejection when the continuous watcher accepts the same fresh fix first', async () => {
+  it('resolves manual refresh after its fresh fix is accepted by the continuous watcher first', async () => {
     const world = new World();
     try {
       const a = await world.device({ id: 'leader', userId: LEADER, platform });
@@ -409,11 +409,10 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await world.waitFor(a, (value: any) => value.external.watches >= 3, 'one-shot plus continuous observers');
       await a.gps(25.06, 121.56);
       const outcome = await refresh;
-      expect(outcome).toBeInstanceOf(Error);
-      expect(outcome.message).toContain('no_new_location_sample');
+      expect(outcome).toEqual({ latitude: 25.06, longitude: 121.56 });
       await world.settle();
       await world.advance(250);
-      const peer = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.06, 'watch publication despite refresh rejection');
+      const peer = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.06, 'watch publication and refresh confirmation');
       expect(peer.group.state.members.find((m: any) => m.userId === LEADER).coordinates.longitude).toBe(121.56);
       expect((await a.observe()).location.coordinates.latitude).toBe(25.06);
       expect((await a.observe()).durable.locations).toEqual([]);
