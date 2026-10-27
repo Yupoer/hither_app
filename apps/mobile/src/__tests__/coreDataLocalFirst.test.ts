@@ -154,6 +154,32 @@ describe('OTA-04 active gathering semantics (OTA-01)', () => {
 });
 
 describe('OTA-04 core snapshot store (ticket 01)', () => {
+  it('retains an acknowledged stay when an older itinerary read arrives later', async () => {
+    const store = createCoreDataStore(new MemoryCoreDataDatabase(), () => 10_000);
+    const stay = { id: 'stay-1', groupId: 'group-1', stayDate: '2026-10-22',
+      title: 'Night one', coordinates: { latitude: 25.3, longitude: 121.7 } };
+    const current = makeState({ group: makeGroup({ tripDays: 3, departureDate: '2026-10-22',
+      accommodationAutoAdd: false }), dailyAccommodations: [stay] });
+    await store.saveRemoteGroupState(current, { itineraryVersion: 2, gatheringVersion: 1 });
+
+    const older = makeState({ group: makeGroup({ name: 'Renamed trip', tripDays: 1,
+      departureDate: '2026-10-21', accommodationAutoAdd: true }),
+      destinations: [], dailyAccommodations: [] });
+    const retained = await store.saveRemoteGroupState(older,
+      { itineraryVersion: 1, gatheringVersion: 1 });
+    expect(retained.itineraryVersion).toBe(2);
+    expect(retained.dailyAccommodations).toEqual([stay]);
+    expect(retained.destinations).toEqual(current.destinations);
+    expect(retained.group).toMatchObject({ name: 'Renamed trip', tripDays: 3,
+      departureDate: '2026-10-22', accommodationAutoAdd: true });
+
+    const newer = await store.saveRemoteGroupState(older,
+      { itineraryVersion: 3, gatheringVersion: 1 });
+    expect(newer.itineraryVersion).toBe(3);
+    expect(newer.dailyAccommodations).toEqual([]);
+    expect(newer.destinations).toEqual([]);
+  });
+
   it('seeds entity version at 0 (server empty entity contract)', async () => {
     const store = createCoreDataStore(new MemoryCoreDataDatabase(), () => 10_000);
     const saved = await store.saveRemoteGroupState(makeState());
