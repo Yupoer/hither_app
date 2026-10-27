@@ -6,7 +6,7 @@ This source change prepares the backend and client for an additive rollout. It d
 
 `public.public_profiles` contains exactly `id`, `nickname`, `avatar`, and `avatar_color`. The authoritative row remains in `public.profiles`. A transactionally installed server trigger synchronizes the projection. Client roles cannot write it. A foreign key removes the projection when its authoritative profile is deleted. The trigger changes the public row only when public values change, so preferences, onboarding, premium, and anonymous-expiry changes do not generate public identity updates.
 
-Authenticated callers can read their own public identity and identities of co-members authorized by existing membership visibility. The policy preserves the existing expiry-aware membership semantics. The table name describes a restricted display contract, not unrestricted internet visibility. Anonymous and unrelated callers gain no identity access.
+Authenticated callers can read their own public identity and identities of co-members authorized by existing membership visibility. The policy preserves the existing expiry-aware membership semantics. The table name describes a restricted display contract, not unrestricted internet visibility. Anonymous and unrelated callers gain no additional SELECT access.
 
 The recovery RPC emits an explicit four-key profile object. Its existing authorization, `group-recovery-v1` envelope, revisions, locations, sharing settings, itinerary, subgroups, and version data remain in place. The direct own-profile wildcard reads, lifecycle upserts, preference writes, onboarding, premium guards, and service functions continue to use `profiles`.
 
@@ -35,5 +35,7 @@ Before cutoff, a client rollback can use the retained legacy contract. After cut
 ## Verification scope
 
 Local PostgreSQL tests exercise the actual migration and SQL role boundaries. Strict headless fixtures exercise real application modules with controlled external adapters on iOS and Android. They cover public identity reads, invitations, all four notification nickname paths, event-driven teammate reloads, private-only write suppression, and failure handling. Their Realtime delivery is a controlled fixture, not a live Supabase Realtime server.
+
+Supabase Postgres Changes handles DELETE differently from UPDATE. Row policy does not establish confidentiality for arbitrary DELETE subscriptions, which may receive primary-key tombstones. This client subscribes only to public-profile UPDATE events. Malicious DELETE subscriptions and membership revocation on an already-open channel remain unverified.
 
 Production payloads, physical devices, complete old-client adoption, and a live local Realtime socket remain separate verification work. The source acceptance map links issue 270 to executable checks. Local test commands and outcomes are recorded with the implementation handoff.
