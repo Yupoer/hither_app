@@ -1,6 +1,6 @@
 # Public profile contract for issue 270
 
-This source change prepares the backend and client for an additive rollout. Issue 270 remains open while legacy co-member access to `profiles` and the full-row recovery RPC remain available. No production migration, policy, permission, account, publication, or release change is part of this work.
+This source change prepares the backend and client for an additive rollout. Issue 270 remains open while legacy co-member access to `profiles` and the full-row recovery RPC remain available. Applying the backend source requires explicit production approval. Client release and legacy cutoff remain separate operations.
 
 ## Contract and ownership
 
