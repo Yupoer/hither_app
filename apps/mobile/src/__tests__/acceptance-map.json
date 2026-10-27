@@ -2658,9 +2658,37 @@
     {
       "parent": 270,
       "child": 270,
-      "acceptance": "The recovery RPC emits only explicit public identity keys while preserving its existing authorization and envelope.",
-      "testFile": "supabase/tests/group_recovery_snapshot.test.sql",
+      "acceptance": "The separate public recovery RPC emits exactly four identity keys while the legacy recovery RPC retains full rows and its existing response and permissions.",
+      "testFile": "supabase/tests/group_public_recovery_snapshot.test.sql",
       "testNamePattern": "every recovery profile contains exactly the public fields"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Public recovery keeps read classification and retries an expired token once with unchanged RPC body, URL, and abort signal.",
+      "testFile": "authenticatedTransportRecovery.test.ts",
+      "testNamePattern": "refreshes %s once"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Both recovery endpoints traverse the real SDK authentication and tracing wrappers as read operations while writes retain mutation classification.",
+      "testFile": "supabaseTransportIntegration.test.ts",
+      "testNamePattern": "preserves %s as an authenticated read alongside writes"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Public recovery schema, permission, and network failures surface in the current application without calling the legacy recovery RPC or private profile table.",
+      "testFile": "headlessPublicProfiles.test.ts",
+      "testNamePattern": "propagates public recovery schema"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Legacy recovery function body, signature, ACL, comment, authorization, full profiles, and metadata remain unchanged from the baseline.",
+      "testFile": "supabase/tests/group_recovery_snapshot_legacy_contract.test.sql",
+      "testNamePattern": "legacy function body remains byte-identical|legacy execute ACL remains unchanged|legacy snapshot retains full authoritative rows"
     }
   ]
 }

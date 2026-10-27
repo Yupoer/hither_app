@@ -987,7 +987,7 @@
     "file": "src/api/services/GroupService.ts",
     "kind": "export",
     "name": "getGroupRecoverySnapshot",
-    "hash": "da9e52678cfa6dd06bc1abb6d07d997b899c8a7ee9c6f3683ca4415f7f940531"
+    "hash": "576086dcc34e56bc2183938797651edff6bcbb1daa8fc4148f704054c433e6fc"
   },
   {
     "file": "src/api/services/GroupService.ts",

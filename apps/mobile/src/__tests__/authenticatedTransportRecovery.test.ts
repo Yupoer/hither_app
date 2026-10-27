@@ -3,7 +3,7 @@ import { createAuthRecovery } from '../api/authRecovery';
 import { withAuthenticatedTransport } from '../api/authenticatedTransport';
 
 describe('real PostgREST builder authentication recovery', () => {
-  it.each(['read', 'rpc', 'write'])('refreshes %s once with new Authorization while preserving request modifiers', async kind => {
+  it.each(['read', 'rpc', 'publicRpc', 'write'])('refreshes %s once with new Authorization while preserving request modifiers', async kind => {
     const requests: { url: string; token: string | null }[] = [];
     const fetcher = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const token = new Headers(init?.headers).get('Authorization');
@@ -23,7 +23,8 @@ describe('real PostgREST builder authentication recovery', () => {
     });
     const client = withAuthenticatedTransport(raw, { authRecovery: recovery });
     const signal = new AbortController().signal;
-    const builder = kind === 'rpc' ? client.rpc('get_store_snapshot')
+    const builder = kind === 'publicRpc' ? client.rpc('get_group_public_recovery_snapshot', { p_group_id: 'g-1' })
+      : kind === 'rpc' ? client.rpc('get_group_recovery_snapshot', { p_group_id: 'g-1' })
       : kind === 'write' ? client.from('profiles').update({ nickname: 'fresh' }).select('*')
       : client.from('profiles').select('*');
     const result = await builder.eq('id', 'same').order('id').limit(1).abortSignal(signal);
@@ -33,6 +34,8 @@ describe('real PostgREST builder authentication recovery', () => {
     expect(requests[1].url).toContain('id=eq.same');
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[1][1]?.signal).toBe(signal);
+    expect(fetcher.mock.calls[1][1]?.body).toBe(fetcher.mock.calls[0][1]?.body);
+    if (kind === 'publicRpc' || kind === 'rpc') expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ p_group_id: 'g-1' });
   });
   it('does not retry an authorization or business error as token expiry', async () => {
     const refresh = jest.fn();

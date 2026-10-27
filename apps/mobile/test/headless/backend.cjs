@@ -28,9 +28,9 @@ class Backend {
       longitude: 121.53, position: 0, day: 1, kind: 'destination', closed_at: null }];
     domain.initialize(this, { LEADER, PEER });
   }
-  snapshot(groupId) {
+  snapshot(groupId, publicIdentity = false) {
     return structuredClone({ group: this.groups.get(groupId), memberships: this.memberships.filter(m => m.group_id === groupId),
-      profiles: [...this.profiles.values()].filter(p => this.memberships.some(m => m.group_id === groupId && m.user_id === p.id)).map(domain.publicProfile),
+      profiles: [...this.profiles.values()].filter(p => this.memberships.some(m => m.group_id === groupId && m.user_id === p.id)).map(p => publicIdentity ? domain.publicProfile(p) : p),
       locations: [...this.locations.values()].filter(l => l.group_id === groupId && this.tables.member_privacy_settings.find(p => p.user_id === l.user_id)?.sharing_enabled !== false),
       location_sharing: this.memberships.filter(m => m.group_id === groupId).map(m => ({ user_id: m.user_id, sharing_enabled: this.tables.member_privacy_settings.find(p => p.user_id === m.user_id)?.sharing_enabled !== false })), itinerary: this.itinerary.filter(d => d.group_id === groupId).sort((a, c) => a.position - c.position),
       subgroups: this.tables.subgroups.filter(s => s.group_id === groupId), entity_versions: this.tables.core_entity_versions.filter(r => r.group_id === groupId),
@@ -57,10 +57,11 @@ class Backend {
     }
     if (kind === 'rpc') {
       assert.deepEqual(steps, [], `Unexpected RPC builder steps ${name}`);
-      if (name === 'get_group_recovery_snapshot') {
+      if (name === 'get_group_recovery_snapshot' || name === 'get_group_public_recovery_snapshot') {
         assert.deepEqual(Object.keys(args), ['p_group_id']);
+        if (!userId) return domain.fail('not authenticated', '28000');
         if (!domain.member(this, args.p_group_id, userId)) return domain.fail('not_member');
-        return ok(this.snapshot(args.p_group_id));
+        return ok(this.snapshot(args.p_group_id, name === 'get_group_public_recovery_snapshot'));
       }
       if (name === 'ingest_location_batch') {
         assert.deepEqual(Object.keys(args), ['p_events']);

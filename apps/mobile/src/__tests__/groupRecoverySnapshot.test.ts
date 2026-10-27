@@ -31,7 +31,7 @@ describe('Ticket 2 single recovery snapshot contract', () => {
   });
 
   it('uses the single RPC and guards stale responses with revisions', () => {
-    expect(service).toContain("supabase.rpc('get_group_recovery_snapshot'");
+    expect(service).toContain("supabase.rpc('get_group_public_recovery_snapshot'");
     expect(hook).toContain('latestRevisionRef');
     expect(hook).toContain('isOlderRevision');
     expect(hook).not.toContain('getGroupState(groupId)');

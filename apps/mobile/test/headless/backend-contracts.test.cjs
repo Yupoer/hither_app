@@ -378,7 +378,17 @@ const identityTable = (name, steps, userId = LEADER) => identities.execute('publ
 Object.assign(identities.profiles.get(PEER), { preferences: { secret: 'private' }, onboarding: { private: true }, pro: true });
 const safeKeys = ['avatar', 'avatar_color', 'id', 'nickname'];
 assert.deepEqual(Object.keys(identityTable('public_profiles', [['select', '*'], ['eq', 'id', PEER]], LEADER).data[0]).sort(), safeKeys);
-assert.deepEqual(Object.keys(identities.snapshot(GROUP_ID).profiles[0]).sort(), safeKeys);
+const identityRpc = (name, userId = LEADER) => identities.execute('public-contract', { kind: 'rpc', name, args: { p_group_id: GROUP_ID }, steps: [], userId });
+const publicRecovery = identityRpc('get_group_public_recovery_snapshot');
+assert.equal(publicRecovery.error, null);
+assert.equal(publicRecovery.data.profiles.length, 2);
+for (const profile of publicRecovery.data.profiles) assert.deepEqual(Object.keys(profile).sort(), safeKeys);
+assert.deepEqual(identityRpc('get_group_recovery_snapshot').data.profiles.find(profile => profile.id === PEER), identities.profiles.get(PEER));
+for (const name of ['get_group_recovery_snapshot', 'get_group_public_recovery_snapshot']) {
+  assert.deepEqual(identityRpc(name, null).error, { message: 'not authenticated', code: '28000' });
+  assert.equal(identityRpc(name, 'outsider').error.message, 'not_member');
+}
+assert.throws(() => identityRpc('get_group_public_recovery_snapshot_v3'), /Unsupported backend RPC/);
 assert.deepEqual(identityTable('public_profiles', [['select', '*']], 'outsider').data, []);
 assert.deepEqual(identityTable('public_profiles', [['select', '*']], null).data, []);
 assert.throws(() => identityTable('public_profiles', [['select', 'preferences']]), /Unknown public_profiles selection/);
@@ -393,4 +403,5 @@ identities.configureAuth({ accounts: [{ id: LEADER, is_anonymous: true }] });
 identities.profiles.get(LEADER).anonymous_expires_at = new Date(identities.now - 1).toISOString();
 assert.deepEqual(identityTable('public_profiles', [['select', '*'], ['eq', 'id', PEER]]).data, []);
 assert.equal(identityTable('public_profiles', [['select', '*'], ['eq', 'id', LEADER]]).data.length, 1);
+for (const name of ['get_group_recovery_snapshot', 'get_group_public_recovery_snapshot']) assert.equal(identityRpc(name).error.message, 'not_member');
 console.log('Backend public identity fixture contracts passed');

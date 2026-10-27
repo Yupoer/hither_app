@@ -398,7 +398,7 @@ export async function getGroupRecoverySnapshot(
   }
   await requireUserId();
   const [{ data, error }, dailyAccommodations] = await Promise.all([
-    supabase.rpc('get_group_recovery_snapshot', { p_group_id: groupId }),
+    supabase.rpc('get_group_public_recovery_snapshot', { p_group_id: groupId }),
     listDailyAccommodations(groupId),
   ]);
   orThrow(error);

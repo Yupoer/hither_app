@@ -145,11 +145,11 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await device.perform('map.profile.open');
       await device.input({ kind: 'animation', finished: true });
       await device.perform('profile.name', { value: '  Map traveler  ' });
-      const refreshes = world.backend.trace.filter((call: any) => call.name === 'get_group_recovery_snapshot').length;
+      const refreshes = world.backend.trace.filter((call: any) => call.name === 'get_group_public_recovery_snapshot').length;
       await device.perform('profile.save');
       await world.waitFor(device, (value: Observation) => value.presentation.session.user.name === 'Map traveler', 'actual saved profile');
       expect(world.backend.profiles.get(LEADER).nickname).toBe('Map traveler');
-      expect(world.backend.trace.filter((call: any) => call.name === 'get_group_recovery_snapshot').length).toBeGreaterThan(refreshes);
+      expect(world.backend.trace.filter((call: any) => call.name === 'get_group_public_recovery_snapshot').length).toBeGreaterThan(refreshes);
       await device.input({ kind: 'animation', finished: true });
       expect(has(await device.observe(), 'profile-name')).toBe(false);
     } finally { await world.close(); }
