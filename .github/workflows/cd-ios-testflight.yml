@@ -148,6 +148,23 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           xcrun simctl list runtimes
 
+      - name: Pin CocoaPods to checked-in lockfile
+        if: inputs.mode == 'preflight' || inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
+        run: |
+          [[ "$(tail -n 1 ios/Podfile.lock)" == 'COCOAPODS: 1.16.2' ]] || exit 1
+          if ! gem list -i cocoapods -v 1.16.2; then
+            gem install cocoapods --version 1.16.2 --user-install --no-document
+          fi
+          tool_dir="$RUNNER_TEMP/hither-cocoapods"
+          mkdir -p "$tool_dir"
+          cat > "$tool_dir/pod" <<'SH'
+          #!/bin/sh
+          exec ruby -e 'require "rubygems"; gem "cocoapods", "= 1.16.2"; load Gem.bin_path("cocoapods", "pod", "= 1.16.2")' -- "$@"
+          SH
+          chmod +x "$tool_dir/pod"
+          printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
+          PATH="$tool_dir:$PATH" pod --version | grep -Fx '1.16.2'
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.16.0
