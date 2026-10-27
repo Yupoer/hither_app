@@ -71,9 +71,9 @@ jobs:
           npx patch-package --error-on-fail
       - name: Read EAS production iOS metadata
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
-          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
           npx --yes eas-cli@21.0.2 build:list --platform ios --build-profile production \
             --status finished --distribution store --limit 20 --json --non-interactive \
@@ -188,9 +188,9 @@ jobs:
       - name: Publish and verify production iOS OTA
         if: inputs.mode == 'ota'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
-          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
           npx --yes eas-cli@21.0.2 channel:view production --non-interactive --json \
             > "$RUNNER_TEMP/hither-production-channel-before.json"
@@ -232,9 +232,9 @@ jobs:
       - name: Build and cold-launch full Release simulator app
         if: inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
-          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 env:exec production \
             "EAS_BUILD_PROFILE=production python3 ../../scripts/run-ios-release-launch.py --source-sha $SOURCE_SHA --receipt $RUNNER_TEMP/hither-release-launch-receipt.json" \
             --non-interactive
@@ -252,9 +252,9 @@ jobs:
       - name: Build signed production IPA on this runner
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
-          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions EXPO_TOKEN secret is required'; exit 1; }
+          test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
           npx --yes eas-cli@21.0.2 build --platform ios --profile production --local \
             --non-interactive --output "$RUNNER_TEMP/Hither-production.ipa"
@@ -315,7 +315,7 @@ jobs:
       - name: Upload this IPA to TestFlight
         if: inputs.mode == 'submit'
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
           npx --yes eas-cli@21.0.2 submit --platform ios --profile production \
             --path "$RUNNER_TEMP/Hither-production.ipa" --non-interactive --wait

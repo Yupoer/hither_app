@@ -20,7 +20,7 @@ name: CI
 
 on:
   push:
-    branches: ["master", "deliver/**"]
+    branches: ["master"]
   pull_request:
   workflow_dispatch:
 
@@ -50,6 +50,7 @@ jobs:
         run: |
           python3 scripts/test_workflow_scope.py
           python3 scripts/test_ci_required.py
+          python3 -B scripts/test_ci_trigger_matrix.py
           python3 -B scripts/test_ios_ota_compatibility.py
           python3 -B scripts/test_ios_ota_publication.py
           python3 -B scripts/test_ios_cd_routing.py
@@ -110,9 +111,9 @@ jobs:
             const marker = /<!--\s*hither-test-meta\s+parent:\s*([A-Za-z0-9_-]+)\s*-->/i;
             const ref = context.ref || '';
             if (ref === 'refs/heads/master' || ref === 'refs/heads/main' ||
-                (context.eventName === 'push' && ref.startsWith('refs/heads/deliver/'))) {
+                (context.eventName === 'workflow_dispatch' && ref.startsWith('refs/heads/deliver/'))) {
               core.setOutput('parent', '');
-              core.info('direct-delivery push: META_PARENT unset (validate whole map)');
+              core.info('master or manual direct delivery: META_PARENT unset (validate whole map)');
               return;
             }
             let body = '';

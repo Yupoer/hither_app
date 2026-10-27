@@ -48,4 +48,11 @@ assert "EXUpdatesRequestHeaders" in steps["Verify IPA and record source"]["body"
 assert "    if: inputs.mode == 'inspect-release'" in source
 assert "    if: inputs.mode != 'inspect-release'" in source
 
+expo_steps = ("Read EAS production iOS metadata", "Publish and verify production iOS OTA",
+              "Build and cold-launch full Release simulator app",
+              "Build signed production IPA on this runner", "Upload this IPA to TestFlight")
+for name in expo_steps:
+    assert "EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}" in steps[name]["body"], name
+assert "secrets.EXPO_TOKEN" not in source
+
 print("iOS CD route isolation checks passed")

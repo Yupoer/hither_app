@@ -25,8 +25,9 @@ native route after completing its release checks.
 Set `backend_verified=true` for `ota` or `submit` only after checking that every
 backend change required by the pinned source is applied in production. The input
 records the release operator's verification; it does not deploy the backend.
-The OTA step uses the existing `EXPO_TOKEN` GitHub secret and the EAS production
-environment. It loads that environment before evaluating the production app config,
+The OTA step maps the existing `HITHER_GITHUB_ACTIONS` GitHub secret to the
+`EXPO_TOKEN` environment variable. It loads the EAS production environment
+before evaluating the production app config,
 which requires valid HTTPS privacy and terms URLs. It publishes iOS only, then reads
 back the update ID, group, runtime, branch, and source. A failed readback
 requires direct inspection before any retry. The workflow keeps a small
@@ -34,11 +35,12 @@ receipt for 14 days.
 
 ## Native build and TestFlight
 
-`inspect-release` uses a Linux GitHub runner and the existing `EXPO_TOKEN`
-secret to read production iOS EAS build, channel, and update metadata. It
-uploads only a sanitized receipt. A finished EAS build is a candidate binary;
-the receipt leaves Apple processing and installed-device status unknown. IPA
-files built locally on a GitHub Xcode runner may not appear in EAS Build history.
+`inspect-release` uses a Linux GitHub runner and the existing
+`HITHER_GITHUB_ACTIONS` secret as `EXPO_TOKEN` to read production iOS EAS
+build, channel, and update metadata. The job uploads only a sanitized receipt.
+A finished EAS build is a candidate binary; the receipt leaves Apple processing
+and installed-device status unknown. IPA files built locally on a GitHub Xcode
+runner may not appear in EAS Build history.
 
 `preflight` checks Xcode and dependencies without signing. `validate-release`
 builds the complete Release simulator app and requires two 45-second cold
