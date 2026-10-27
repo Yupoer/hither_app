@@ -21,6 +21,7 @@ MOBILE = REPO / "apps/mobile"
 SOURCE_SHA = re.compile(r"[0-9a-f]{40}\Z")
 BOOT_PHASES = {"session_resolved", "navigation_ready", "stable"}
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+PRIVACY_PATH = Path("apps/mobile/ios/Hither/PrivacyInfo.xcprivacy")
 
 
 def run(*command, cwd=None, timeout=600, output=None):
@@ -74,6 +75,36 @@ def production_simulator_plist(contents):
         raise ValueError("Release simulator app has a non-production update channel")
     updates["EXUpdatesRequestHeaders"] = {**headers, "expo-channel-name": "production"}
     return plistlib.dumps(updates)
+
+
+def privacy_disclosures(contents):
+    try:
+        data = plistlib.loads(contents)
+        categories = data["NSPrivacyAccessedAPITypes"]
+        if not isinstance(data, dict) or not isinstance(categories, list):
+            raise ValueError("invalid privacy disclosures")
+        names = [entry["NSPrivacyAccessedAPIType"] for entry in categories]
+        if any(not isinstance(name, str) for name in names) or len(names) != len(set(names)):
+            raise ValueError("invalid privacy API categories")
+        return {**data, "NSPrivacyAccessedAPITypes": sorted(
+            categories, key=lambda entry: entry["NSPrivacyAccessedAPIType"])}
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError("iOS privacy disclosures are invalid") from error
+
+
+def verify_ios_source_equivalence(repo=REPO):
+    changed = run("git", "diff", "--name-only", "HEAD", "--", "apps/mobile/ios",
+                  cwd=repo).splitlines()
+    if not changed:
+        return
+    if changed != [PRIVACY_PATH.as_posix()]:
+        run("git", "diff", "--exit-code", "HEAD", "--", "apps/mobile/ios", cwd=repo)
+    if run("git", "diff", "--summary", "HEAD", "--", "apps/mobile/ios", cwd=repo):
+        raise RuntimeError("pod install changed iOS file metadata")
+    original = run("git", "show", f"HEAD:{PRIVACY_PATH.as_posix()}", cwd=repo).encode()
+    generated = (repo / PRIVACY_PATH).read_bytes()
+    if plistlib.dumps(privacy_disclosures(original)) != plistlib.dumps(privacy_disclosures(generated)):
+        raise RuntimeError("pod install changed iOS privacy disclosures")
 
 
 def receipt_from_launch(source_sha, app_version, build, runtime, simulator, result, output_dir):
@@ -135,7 +166,7 @@ def main():
     run("xcrun", "simctl", "bootstatus", simulator, "-b", timeout=600)
     run("pod", "install", "--deployment", cwd=MOBILE / "ios", timeout=1800,
         output=output / "pod-install.log")
-    run("git", "diff", "--exit-code", "HEAD", "--", "apps/mobile/ios", cwd=REPO)
+    verify_ios_source_equivalence()
     derived = runner_temp / "hither-release-derived"
     plist = MOBILE / "ios/Hither/Supporting/Expo.plist"
     original_plist = plist.read_bytes()
@@ -148,7 +179,7 @@ def main():
             cwd=MOBILE, timeout=5400, output=output / "xcodebuild.log")
     finally:
         plist.write_bytes(original_plist)
-    run("git", "diff", "--exit-code", "HEAD", "--", "apps/mobile/ios", cwd=REPO)
+    verify_ios_source_equivalence()
     app = derived / "Build/Products/Release-iphonesimulator/Hither.app"
     with (app / "Info.plist").open("rb") as handle:
         info = plistlib.load(handle)

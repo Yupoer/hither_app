@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import unittest
 
@@ -13,6 +14,58 @@ SPEC.loader.exec_module(GATE)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def test_pod_install_may_reorder_only_privacy_api_categories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            privacy = repo / GATE.PRIVACY_PATH
+            privacy.parent.mkdir(parents=True)
+            source = plistlib.loads((GATE.MOBILE / "ios/Hither/PrivacyInfo.xcprivacy").read_bytes())
+            privacy.write_bytes(plistlib.dumps(source))
+            other = repo / "apps/mobile/ios/Podfile.lock"
+            other.write_text("locked\n", encoding="utf-8")
+            subprocess.run(("git", "init", "-q"), cwd=repo, check=True)
+            subprocess.run(("git", "add", "."), cwd=repo, check=True)
+            subprocess.run(("git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                            "commit", "-qm", "baseline"), cwd=repo, check=True)
+
+            source["NSPrivacyAccessedAPITypes"].reverse()
+            privacy.write_bytes(plistlib.dumps(source))
+            GATE.verify_ios_source_equivalence(repo)
+
+            source["NSPrivacyAccessedAPITypes"][3]["NSPrivacyAccessedAPITypeReasons"].reverse()
+            privacy.write_bytes(plistlib.dumps(source))
+            with self.assertRaises(RuntimeError):
+                GATE.verify_ios_source_equivalence(repo)
+
+            source["NSPrivacyAccessedAPITypes"][3]["NSPrivacyAccessedAPITypeReasons"].reverse()
+            source["NSPrivacyAccessedAPITypes"][0]["NSPrivacyAccessedAPITypeReasons"].append("NEW.1")
+            privacy.write_bytes(plistlib.dumps(source))
+            with self.assertRaises(RuntimeError):
+                GATE.verify_ios_source_equivalence(repo)
+
+            source["NSPrivacyAccessedAPITypes"][0]["NSPrivacyAccessedAPITypeReasons"].pop()
+            source["NSPrivacyAccessedAPITypes"].pop()
+            privacy.write_bytes(plistlib.dumps(source))
+            with self.assertRaises(RuntimeError):
+                GATE.verify_ios_source_equivalence(repo)
+
+            source = plistlib.loads((GATE.MOBILE / "ios/Hither/PrivacyInfo.xcprivacy").read_bytes())
+            source["NSPrivacyTracking"] = 0
+            privacy.write_bytes(plistlib.dumps(source))
+            with self.assertRaises(RuntimeError):
+                GATE.verify_ios_source_equivalence(repo)
+
+            privacy.write_bytes(plistlib.dumps(plistlib.loads(
+                (GATE.MOBILE / "ios/Hither/PrivacyInfo.xcprivacy").read_bytes())))
+            other.write_text("changed\n", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                GATE.verify_ios_source_equivalence(repo)
+
+            other.write_text("locked\n", encoding="utf-8")
+            privacy.chmod(0o755)
+            with self.assertRaises(RuntimeError):
+                GATE.verify_ios_source_equivalence(repo)
+
     def test_simulator_build_embeds_production_channel_without_changing_other_updates(self):
         original = plistlib.dumps({"EXUpdatesEnabled": True, "EXUpdatesRuntimeVersion": "0.1.13"})
         configured = plistlib.loads(GATE.production_simulator_plist(original))
