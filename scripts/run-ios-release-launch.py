@@ -26,6 +26,7 @@ LAUNCH_FAILURE_STAGES = {"install", "launch", "app_container", "startup_breadcru
 LAUNCH_FAILURE_TYPES = {"AssertionError", "CommandFailure", "FileNotFoundError",
                         "InvalidFileException", "OSError", "PermissionError",
                         "ProcessLookupError", "ValueError"}
+RUNTIME_LOG_SIGNALS = {"dyld_failure", "uncaught_exception", "fatal_error", "assertion_failure"}
 
 
 class ReleaseCommandFailure(RuntimeError):
@@ -149,17 +150,44 @@ def safe_launch_diagnostic(payload):
     safe = {}
     for key, choices in (("failureStage", LAUNCH_FAILURE_STAGES),
                          ("failureType", LAUNCH_FAILURE_TYPES),
-                         ("lastObservedPhase", BOOT_PHASES | {"other"})):
+                         ("lastObservedPhase", BOOT_PHASES | {"other"}),
+                         ("exceptionType", {"EXC_BAD_ACCESS", "EXC_CRASH", "EXC_BREAKPOINT",
+                                            "EXC_ARITHMETIC", "EXC_BAD_INSTRUCTION", "EXC_GUARD",
+                                            "EXC_RESOURCE", "EXC_CORPSE_NOTIFY"}),
+                         ("exceptionSignal", {"SIGABRT", "SIGBUS", "SIGILL", "SIGKILL",
+                                              "SIGSEGV", "SIGTRAP", "SIGTERM"}),
+                         ("crashReportProbe", {"unavailable"})):
         value = payload.get(key)
         if isinstance(value, str) and value in choices:
             safe[key] = value
     if type(payload.get("attempt")) is int and payload["attempt"] in (1, 2):
         safe["attempt"] = payload["attempt"]
-    if type(payload.get("processAlive")) is bool:
-        safe["processAlive"] = payload["processAlive"]
+    for key in ("processAlive", "hostPidAliveAtLaunch", "crashReportFound"):
+        if type(payload.get(key)) is bool:
+            safe[key] = payload[key]
     code = payload.get("simctlExitCode")
     if type(code) is int and 1 <= code <= 255:
         safe["simctlExitCode"] = code
+    code = payload.get("terminationCode")
+    if type(code) is int and 0 <= code < 2**64:
+        safe["terminationCode"] = code
+    namespace = payload.get("terminationNamespace")
+    if isinstance(namespace, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,31}", namespace):
+        safe["terminationNamespace"] = namespace
+    module = payload.get("faultingModule")
+    if isinstance(module, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.+-]{0,63}", module):
+        safe["faultingModule"] = module
+    for key in ("faultingModules", "lastExceptionModules"):
+        modules = payload.get(key)
+        if (isinstance(modules, list) and len(modules) <= 8
+                and all(isinstance(module, str)
+                        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.+-]{0,63}", module)
+                        for module in modules)):
+            safe[key] = modules
+    signals = payload.get("runtimeLogSignals")
+    if isinstance(signals, list) and all(isinstance(item, str) and item in RUNTIME_LOG_SIGNALS
+                                         for item in signals):
+        safe["runtimeLogSignals"] = sorted(set(signals))
     return safe
 
 
