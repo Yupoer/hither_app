@@ -10,6 +10,8 @@ Authenticated callers can read their own public identity and identities of co-me
 
 `get_group_public_recovery_snapshot(uuid)` emits an explicit four-key profile object. Its authentication and expiry-aware membership guards match the legacy endpoint. The `group-recovery-v1` envelope, revisions, locations, sharing settings, itinerary, subgroups, and version data remain in place. The existing `get_group_recovery_snapshot(uuid)` response, full profile rows, signature, function body, grants, and comment remain unchanged. The direct own-profile wildcard reads, lifecycle upserts, preference writes, onboarding, premium guards, and service functions continue to use `profiles`.
 
+The new RPC explicitly revokes inherited PUBLIC, anonymous, and service-role execution before granting authenticated execution. Its ACL is deterministic under pre-existing function default privileges. This does not change any legacy grant or default privilege.
+
 ## Design decision
 
 The client keeps its existing Postgres Changes UPDATE subscription and reload behavior. A four-column table supports that protocol and limits the published row shape at the database boundary. An invoker view would inherit future own-only base access and lose teammate visibility. A privileged view or RPC would need its own caller checks and a separate safe event mechanism because an ordinary view cannot join a logical publication. This larger interface has no benefit for the current four-field consumers.

@@ -139,7 +139,7 @@ begin
 end;
 $$;
 
-revoke all on function public.get_group_public_recovery_snapshot(uuid) from public, anon;
+revoke all on function public.get_group_public_recovery_snapshot(uuid) from public, anon, service_role;
 grant execute on function public.get_group_public_recovery_snapshot(uuid) to authenticated;
 
 comment on function public.get_group_public_recovery_snapshot(uuid) is
