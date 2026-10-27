@@ -5,7 +5,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(8);
+select plan(9);
 
 insert into auth.users (id, email, is_anonymous) values
   ('b1111111-1111-4111-8111-111111111111', 'snap-leader@example.test', false),
@@ -90,6 +90,18 @@ select is(
     -> 'group' ->> 'id',
   'baaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'member snapshot group id matches'
+);
+
+select ok(
+  not exists (
+    select 1
+    from jsonb_array_elements(public.get_group_recovery_snapshot(
+      'baaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    )->'profiles') profile
+    where (select array_agg(key order by key) from jsonb_object_keys(profile) key)
+      is distinct from array['avatar', 'avatar_color', 'id', 'nickname']::text[]
+  ),
+  'every recovery profile contains exactly the public fields, including self'
 );
 
 -- Non-member denied
