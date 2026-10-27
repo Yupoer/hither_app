@@ -41,20 +41,70 @@ class ReleaseLaunchGateTests(unittest.TestCase):
 
             argv = ["verify-ios-release-launch.py", "--app", str(app),
                     "--simulator", "test-simulator", "--build", "77", "--output", str(output)]
-            for error, expected_alive in ((ProcessLookupError, False), (PermissionError, None)):
-                with self.subTest(error=error), patch.object(VERIFY, "run", side_effect=command), \
-                        patch.object(VERIFY.os, "kill", side_effect=error), \
+            cases = (
+                ([ProcessLookupError(), ProcessLookupError()], "launch", False, False, False),
+                ([None, ProcessLookupError(), ProcessLookupError()], "startup_breadcrumb", True, False, False),
+                ([None, ProcessLookupError(), ProcessLookupError()], "startup_breadcrumb", True, False, True),
+                ([None, PermissionError(), PermissionError()], "startup_breadcrumb", True, None, False),
+            )
+            for checks, stage, initially_alive, finally_alive, probe_error in cases:
+                with self.subTest(stage=stage, probe_error=probe_error), \
+                        patch.object(VERIFY, "run", side_effect=command), \
+                        patch.object(VERIFY.os, "kill", side_effect=checks), \
+                        patch.object(VERIFY, "find_crash_report", return_value=None,
+                                     side_effect=OSError if probe_error else None), \
                         patch.object(VERIFY.time, "sleep"), patch("sys.argv", argv):
+                    error = type(checks[1] if initially_alive else checks[0])
                     with self.assertRaises(error):
                         VERIFY.main()
 
                 result = (output / "launch-result.json").read_text(encoding="utf-8")
                 self.assertNotIn("private user data and token", result)
-                expected = {"failureStage": "startup_breadcrumb", "failureType": error.__name__,
-                            "attempt": 1}
-                if expected_alive is not None:
-                    expected["processAlive"] = expected_alive
+                expected = {"failureStage": stage, "failureType": error.__name__,
+                            "attempt": 1, "hostPidAliveAtLaunch": initially_alive,
+                            "runtimeLogSignals": []}
+                if finally_alive is not None:
+                    expected["processAlive"] = finally_alive
+                    if probe_error:
+                        expected["crashReportProbe"] = "unavailable"
+                    else:
+                        expected["crashReportFound"] = False
                 self.assertEqual(GATE.safe_launch_diagnostic(json.loads(result)), expected)
+
+    def test_only_matching_recent_apple_crash_report_contributes_safe_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reports = root / "Library/Logs/DiagnosticReports"
+            reports.mkdir(parents=True)
+            report = {"pid": 123, "procName": "Hither",
+                      "bundleInfo": {"CFBundleIdentifier": "app.hither.mobile"},
+                      "exception": {"type": "EXC_CRASH", "signal": "SIGKILL (Code Signature Invalid)"},
+                      "termination": {"namespace": "CODESIGNING", "code": 1,
+                                      "indicator": "private user information"},
+                      "faultingThread": 0,
+                      "threads": [{"frames": [{"imageIndex": 0, "symbol": "private user information"},
+                                              {"imageIndex": 1}]}],
+                      "lastExceptionBacktrace": [{"imageIndex": 1}, {"imageIndex": 0}],
+                      "usedImages": [{"path": "/private/runner/Hither.app/Hither"},
+                                     {"name": "libswiftCore.dylib"}]}
+            path = reports / "Hither-test.ips"
+            path.write_text(json.dumps({"bug_type": "309"}) + "\n" + json.dumps(report),
+                            encoding="utf-8")
+            with patch.object(VERIFY.Path, "home", return_value=root):
+                summary = VERIFY.find_crash_report(123, "Hither", "app.hither.mobile",
+                                                   "test-simulator", path.stat().st_mtime)
+                self.assertIsNone(VERIFY.find_crash_report(124, "Hither", "app.hither.mobile",
+                                                        "test-simulator", path.stat().st_mtime))
+            self.assertEqual(GATE.safe_launch_diagnostic(summary), {
+                "crashReportFound": True, "exceptionType": "EXC_CRASH",
+                "exceptionSignal": "SIGKILL", "terminationNamespace": "CODESIGNING",
+                "terminationCode": 1, "faultingModule": "Hither",
+                "faultingModules": ["Hither", "libswiftCore.dylib"],
+                "lastExceptionModules": ["libswiftCore.dylib", "Hither"]})
+            self.assertNotIn("private user information", json.dumps(summary))
+            self.assertEqual(VERIFY.runtime_log_signals(
+                "private user information; Library not loaded; uncaught exception"),
+                ["dyld_failure", "uncaught_exception"])
 
     def test_runner_writes_sanitized_diagnostic_on_preflight_failure(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -75,7 +125,8 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 "processAlive": True, "simctlExitCode": 2})
         self.assertEqual(GATE.safe_launch_diagnostic({
             "failureStage": ["secret"], "failureType": "secret", "attempt": True,
-            "processAlive": "secret", "simctlExitCode": "secret"}), {})
+            "processAlive": "secret", "simctlExitCode": "secret",
+            "faultingModule": "../../private", "runtimeLogSignals": ["secret"]}), {})
 
     def test_pod_install_may_reorder_only_privacy_api_categories(self):
         with tempfile.TemporaryDirectory() as directory:
