@@ -75,7 +75,7 @@ select is(
     {"id":"d2700000-0000-4000-8000-000000000004","nickname":"Expired","avatar":null,"avatar_color":null}]'::jsonb,
   'recovery returns exact public identity values with no synthetic private secrets'
 );
-select is((select array_agg(key order by key) from jsonb_object_keys(
+select is((select array_agg(key order by key collate "C") from jsonb_object_keys(
   public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010')) key),
   array['entity_versions','generated_at','group','itinerary','location_sharing','locations','memberships','profiles','realtime_revision','schema_version','subgroups']::text[],
   'recovery envelope retains every existing data family and version fence');
