@@ -151,6 +151,13 @@
     },
     {
       "parent": 298,
+      "child": "gather-card-followup",
+      "acceptance": "Start receives a fresh location fix while a delayed location upload continues without blocking the durable journey command.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "returns a fresh Start fix before a delayed location upload completes|keeps a fresh Start fix available when its location upload fails offline"
+    },
+    {
+      "parent": 298,
       "child": 298,
       "acceptance": "Start and same-day promotion commit atomically, persist across restart, replay in order, and roll back together on rejection.",
       "testFile": "coreSQLiteStorage.test.ts",

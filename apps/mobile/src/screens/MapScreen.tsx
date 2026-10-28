@@ -1218,7 +1218,7 @@ export default function MapScreen({ route, navigation }: Props) {
   });
   navigationOriginRef.current = deviceCoords ?? undefined;
   acquireNavigationFixRef.current = async () => {
-    if (!await refreshDeviceLocation()) return null;
+    if (!await refreshDeviceLocation({ waitForUpload: false })) return null;
     return latestLocationSampleRef.current;
   };
   const navigationStartFrameLifecycle = (

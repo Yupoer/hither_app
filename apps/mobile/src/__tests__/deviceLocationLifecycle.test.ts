@@ -174,6 +174,38 @@ it('waits for the watcher event ACK when a pending refresh receives the same fre
   await expect(refresh).resolves.toEqual(fix.coordinates);
 });
 
+it('returns a fresh Start fix before a delayed location upload completes', async () => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe)); });
+  const fix = sample(26);
+  mockRead.mockResolvedValueOnce(fix);
+  const previousUploads = jest.mocked(flushLocationOutbox).mock.calls.length;
+  let finishUpload!: (result: { acceptedIds: string[] }) => void;
+  jest.mocked(flushLocationOutbox).mockImplementationOnce(() =>
+    new Promise(resolve => { finishUpload = resolve as typeof finishUpload; }));
+  let result: { latitude: number; longitude: number } | null | undefined;
+  await act(async () => {
+    result = await probe.feed.refreshDeviceLocation({ waitForUpload: false });
+  });
+  expect(result).toEqual(fix.coordinates);
+  expect(flushLocationOutbox).toHaveBeenCalledTimes(previousUploads + 1);
+  expect(probe.feed.latestLocationSampleRef.current).toEqual(fix);
+  await act(async () => { finishUpload({ acceptedIds: ['location-sample'] }); });
+});
+
+it('keeps a fresh Start fix available when its location upload fails offline', async () => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe)); });
+  const fix = sample(26);
+  mockRead.mockResolvedValueOnce(fix);
+  jest.mocked(flushLocationOutbox).mockRejectedValueOnce(new Error('offline'));
+  await act(async () => {
+    await expect(probe.feed.refreshDeviceLocation({ waitForUpload: false }))
+      .resolves.toEqual(fix.coordinates);
+  });
+  expect(probe.feed.latestLocationSampleRef.current).toEqual(fix);
+});
+
 it('keeps required-upload failure when the shared watcher event is not acknowledged', async () => {
   const probe = createLocationProbe();
   const { Probe } = probe;

@@ -546,6 +546,25 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     } finally { await world.close(); }
   });
 
+  it('MAP-NAV-01 starts with fresh GPS while its location upload ACK is delayed', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      world.hold('ingest_location_batch', { phase: 'delivery' });
+      await startTrip(world, device);
+      const active = await world.waitFor(device, (value: MapObservation) =>
+        [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active')
+          && field(value, `gather-nav-${DESTINATION}`)?.label === '結束導航',
+      'Start accepted before location upload ACK');
+      expect(active.external.alertDetails).toEqual([]);
+      expect(world.held.some((item: { operation: { name: string } }) =>
+        item.operation.name === 'ingest_location_batch')).toBe(true);
+    } finally {
+      await world.release('ingest_location_batch');
+      await world.close();
+    }
+  });
+
   it.each(['leader', 'member', 'subgroup-leader'])('MAP-NAV-01 MAP-GATHER-07 active card omits manual arrival and undo for %s', async role => {
     const world = new World();
     try {

@@ -5679,7 +5679,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "b60166c707ff1461db3dba35a2ff5c5e5ed421390eb1ef6b9ee47285044c9357"
+    "hash": "1e975b8d405e2113dc4babd4f53f58990d0cc46aaf6a17280b9eea37fab6c6d7"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -7917,7 +7917,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "aeb9e3dc072fafa6966561ff1e1b576c7970d2e14fe9d99a6367cb144999b74f"
+    "hash": "d4b698c6ee22fa9ade62523fa9ef5d0ef92bda1d55437dc12c57c988db476bdc"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
