@@ -125,9 +125,34 @@ def system_termination_signals(contents):
     patterns = {'jetsam': ('jetsam', 'memorystatus'),
                 'watchdog': ('watchdog', '0x8badf00d'),
                 'codesigning': ('code signature', 'codesigning'),
-                'process_exit': ('exit status', 'exit code', 'termination reason')}
+                'process_exit': ('exit status', 'exit code', 'termination reason',
+                                 'process exited', 'termination reported by launchd')}
     return sorted(name for name, terms in patterns.items()
                   if any(term in text for term in terms))
+
+
+def targets_app_termination(message, bundle, target_pid):
+    if type(target_pid) is not int or target_pid <= 0:
+        return False
+    text = message.lstrip()
+    lower = text.casefold()
+    if lower.startswith('process exited:'):
+        subject = text[len('process exited:'):][:256]
+    elif lower.startswith('received termination request'):
+        on_target = re.search(r'\bon\s+<RBS', text, re.IGNORECASE)
+        if on_target is None:
+            return False
+        subject = text[on_target.end():][:256]
+    elif re.match(r'^\[application<[^>]+>:[0-9]+\]\s+'
+                  r'(?:received termination request|termination reported by launchd)\b',
+                  text, re.IGNORECASE):
+        subject = text[:256]
+    else:
+        return False
+    first_app = re.search(r'application<([A-Za-z0-9.-]+)>:([0-9]+)(?![0-9])',
+                          subject, re.IGNORECASE)
+    return (first_app is not None and first_app.group(1).casefold() == bundle.casefold()
+            and int(first_app.group(2)) == target_pid)
 
 
 def probe_system_termination(simulator, bundle, started, ended, target_pid):
@@ -140,7 +165,8 @@ def probe_system_termination(simulator, bundle, started, ended, target_pid):
                  'AND eventMessage CONTAINS[c] "' + bundle + '"')
     try:
         since = datetime.fromtimestamp(started).astimezone().strftime('%Y-%m-%d %H:%M:%S')
-        until = datetime.fromtimestamp(ended + 1).astimezone().strftime('%Y-%m-%d %H:%M:%S')
+        window_end = min(ended + 1, started + 120)
+        until = datetime.fromtimestamp(math.ceil(window_end)).astimezone().strftime('%Y-%m-%d %H:%M:%S')
         result = subprocess.run(('xcrun', 'simctl', 'spawn', simulator, 'log', 'show',
                                  '--style', 'ndjson', '--start', since, '--end', until,
                                  '--predicate', predicate), capture_output=True,
@@ -149,7 +175,6 @@ def probe_system_termination(simulator, bundle, started, ended, target_pid):
             return {'systemLogProbe': 'unavailable'}
         bundle_pattern = re.compile(r'(?<![A-Za-z0-9_.-])' + re.escape(bundle)
                                     + r'(?![A-Za-z0-9_.-])', re.IGNORECASE)
-        pid_pattern = re.compile(r'\bpid\s*(?::|=|\s)\s*([^\s,;]+)', re.IGNORECASE)
         contextual = set()
         correlated = set()
         for line in result.stdout.splitlines():
@@ -158,7 +183,7 @@ def probe_system_termination(simulator, bundle, started, ended, target_pid):
             record = json.loads(line)
             if not isinstance(record, dict):
                 return {'systemLogProbe': 'unavailable'}
-            if record.get('finished') is True:
+            if 'finished' in record:
                 continue
             message = record.get('eventMessage')
             timestamp = record.get('timestamp')
@@ -167,21 +192,18 @@ def probe_system_termination(simulator, bundle, started, ended, target_pid):
             observed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
             if observed.tzinfo is None:
                 return {'systemLogProbe': 'unavailable'}
-            if not started <= observed.timestamp() <= ended or not bundle_pattern.search(message):
+            if not started <= observed.timestamp() <= window_end or not bundle_pattern.search(message):
                 continue
             signals = system_termination_signals(message)
             contextual.update(signals)
-            # processID identifies the logging daemon; only an explicit PID in
-            # this same eventMessage can identify the launched App process.
-            mentioned_pids = pid_pattern.findall(message)
-            if (type(target_pid) is int and target_pid > 0 and mentioned_pids
-                    and all(value.isdecimal() and int(value) == target_pid
-                            for value in mentioned_pids)):
+            # processID is the logger PID. Require the App's bundle and PID in
+            # a known termination-subject position within the same message.
+            if targets_app_termination(message, bundle, target_pid):
                 correlated.update(signals)
         return {'systemLogProbe': 'available',
                 'systemTerminationSignals': sorted(contextual),
                 'pidCorrelatedSystemSignals': sorted(correlated),
-                'systemLogWindowSeconds': math.ceil(ended - started)}
+                'systemLogWindowSeconds': math.ceil(window_end - started)}
     except (OSError, ValueError, TypeError, OverflowError, UnicodeError,
             subprocess.TimeoutExpired):
         return {'systemLogProbe': 'unavailable'}

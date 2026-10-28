@@ -68,14 +68,14 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                    "hostPid": 456, "log": "private user data", "systemLogProbe": "available",
                    "systemTerminationSignals": ["watchdog"],
                    "pidCorrelatedSystemSignals": ["jetsam"],
-                   "systemLogWindowSeconds": 6, "runtimeLogProbe": "available"}
+                   "systemLogWindowSeconds": 7, "runtimeLogProbe": "available"}
         self.assertEqual(GATE.safe_launch_diagnostic(payload), {
             "failureStage": "startup_breadcrumb", "failureType": "ProcessLookupError",
             "attempt": 1, "processAlive": False, "appProcessState": "replacement_pid",
             "simulatorState": "booted", "systemLogProbe": "available",
             "systemTerminationSignals": ["watchdog"],
             "pidCorrelatedSystemSignals": ["jetsam"],
-            "systemLogWindowSeconds": 6, "runtimeLogProbe": "available"})
+            "systemLogWindowSeconds": 7, "runtimeLogProbe": "available"})
         self.assertEqual(GATE.safe_launch_diagnostic({
             "appProcessState": "/private/app/Hither", "simulatorState": "secret",
             "systemTerminationSignals": ["private user data"],
@@ -86,16 +86,16 @@ class ReleaseLaunchGateTests(unittest.TestCase):
         def record(message, at=1002, **fields):
             return json.dumps({"timestamp": datetime.fromtimestamp(at, timezone.utc).isoformat(),
                                "eventMessage": message, "processID": 123, **fields})
-        rows = [record("app.hither.mobile watchdog PID: 123 private user data"),
-                record("app.hither.mobile jetsam PID: 456"),
-                json.dumps({"finished": True})]
+        rows = [record("[application<app.hither.mobile>:123] Received termination request: watchdog private user data"),
+                record("[application<app.hither.mobile>:456] Received termination request: jetsam"),
+                json.dumps({"finished": "2026-10-28T14:23:00Z"})]
         with patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
                 returncode=0, stdout="\n".join(rows))) as query:
             observed = VERIFY.probe_system_termination(
                 "simulator", "app.hither.mobile", started, ended, 123)
             self.assertEqual(observed, {
                     "systemLogProbe": "available", "systemTerminationSignals": ["jetsam", "watchdog"],
-                    "pidCorrelatedSystemSignals": ["watchdog"], "systemLogWindowSeconds": 6})
+                    "pidCorrelatedSystemSignals": ["watchdog"], "systemLogWindowSeconds": 7})
             self.assertNotIn("private user data", json.dumps(observed))
             command = query.call_args.args[0]
             self.assertIn("--start", command)
@@ -117,18 +117,22 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             {"systemLogProbe": "unavailable"})
 
         no_match = {"systemLogProbe": "available", "systemTerminationSignals": [],
-                    "pidCorrelatedSystemSignals": [], "systemLogWindowSeconds": 6}
+                    "pidCorrelatedSystemSignals": [], "systemLogWindowSeconds": 7}
         for name, rows in {
-            "other PID": [record("app.hither.mobile watchdog PID: 456")],
-            "PID prefix": [record("app.hither.mobile watchdog PID: 1234")],
-            "prefix bundle": [record("app.hither.mobile.extra watchdog PID: 123")],
-            "suffix bundle": [record("other.app.hither.mobile watchdog PID: 123")],
+            "other PID": [record("[application<app.hither.mobile>:456] Received termination request: watchdog")],
+            "PID prefix": [record("[application<app.hither.mobile>:1234] Received termination request: watchdog")],
+            "prefix bundle": [record("[application<app.hither.mobile.extra>:123] Received termination request: watchdog")],
+            "suffix bundle": [record("[application<other.app.hither.mobile>:123] Received termination request: watchdog")],
             "logging daemon PID": [record("app.hither.mobile watchdog")],
-            "split records": [record("app.hither.mobile watchdog"), record("PID: 123")],
-            "outside window": [record("app.hither.mobile watchdog PID: 123", at=999)],
-            "redacted PID": [record("app.hither.mobile watchdog PID: <private>")],
-            "mixed redacted PID": [record("app.hither.mobile watchdog PID: 123 PID: <private>")],
-            "ambiguous PIDs": [record("app.hither.mobile watchdog PID: 123 PID: 456")],
+            "split records": [record("app.hither.mobile watchdog"), record("[application<app.hither.mobile>:123]")],
+            "outside window": [record("[application<app.hither.mobile>:123] Received termination request: watchdog", at=999)],
+            "after grace window": [record("[application<app.hither.mobile>:123] Received termination request: watchdog", at=1007.5)],
+            "redacted PID": [record("[application<app.hither.mobile>:<private>] Received termination request: watchdog")],
+            "other termination subject": [record("Received termination request from [application<app.hither.mobile>:123] on <RBSProcess application<other.app>:456> with context watchdog")],
+            "other exited process": [record("Process exited: <FBApplicationProcess: application<other.app>:456> -> requested by application<app.hither.mobile>:123 watchdog")],
+            "requester on behalf": [record("Received termination request on behalf of application<app.hither.mobile>:123> for other.app watchdog")],
+            "requester prefix": [record("[application<app.hither.mobile>:123] requested exit for other.app; other.app Received termination request: watchdog")],
+            "unrelated labeled PID": [record("termination reason for other.app PID: 123 requested by app.hither.mobile")],
         }.items():
             with self.subTest(name=name), patch.object(VERIFY.subprocess, "run",
                                                     return_value=SimpleNamespace(
@@ -137,8 +141,21 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                     "simulator", "app.hither.mobile", started, ended, 123)
                 self.assertEqual(result["pidCorrelatedSystemSignals"], [])
                 self.assertNotIn("private user data", json.dumps(result))
-                if name in {"outside window", "prefix bundle", "suffix bundle"}:
+                if name in {"outside window", "after grace window", "prefix bundle", "suffix bundle"}:
                     self.assertEqual(result, no_match)
+        with patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout="\n".join([
+                    record("Process exited: <FBApplicationProcess: application<app.hither.mobile>:123> -> watchdog", at=1006.4),
+                    json.dumps({"finished": "complete"})]))):
+            result = VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", started, ended, 123)
+            self.assertEqual(result["pidCorrelatedSystemSignals"], ["process_exit", "watchdog"])
+        with patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=record(
+                    "Received termination request from [osservice<com.apple.SpringBoard>:33] on <RBSProcess application<app.hither.mobile>:123> with context watchdog"))):
+            result = VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", started, ended, 123)
+            self.assertEqual(result["pidCorrelatedSystemSignals"], ["watchdog"])
         for rows in (["{malformed"],
                      [record("app.hither.mobile watchdog PID: 123"), "{malformed"],
                      [json.dumps({"eventMessage": "app.hither.mobile watchdog PID: 123"})],

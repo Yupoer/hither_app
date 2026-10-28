@@ -101,10 +101,11 @@ whose executable path matches this simulator's installed App has the original
 PID, a replacement PID, or no matching PID, plus simulator state and allowlisted
 system termination signals. `systemTerminationSignals` contains bundle-only
 contextual hints and does not attribute them to the launched App. The separate
-`pidCorrelatedSystemSignals` list requires the exact bundle ID, an explicitly
-labeled launched App PID, and a signal in one Apple NDJSON log record whose
-timestamp falls within the failed launch attempt. `systemLogWindowSeconds`
-records the bounded attempt duration used to check record timestamps. The logging daemon's
+`pidCorrelatedSystemSignals` list requires the exact bundle ID and launched App
+PID in a recognized termination-target form such as `application<bundle>:PID`.
+The signal must occur in the same Apple NDJSON record, with a timestamp inside
+the launch interval or the following one-second log grace period.
+`systemLogWindowSeconds` records that bounded interval. The logging daemon's
 `processID` field is not the App PID. A correlated signal is still an observation,
 not proof of why the App stopped. `unavailable` means the probe failed; an empty
 signal list means no matching evidence was found in that window, not proof of a
