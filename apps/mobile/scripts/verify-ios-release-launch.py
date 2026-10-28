@@ -138,19 +138,21 @@ def targets_app_termination(message, bundle, target_pid):
     lower = text.casefold()
     on_target = re.search(r'\bon\s+<RBSProcess', text, re.IGNORECASE)
     if on_target and 'received termination request' in lower[:128]:
-        subject = text[on_target.end():][:256]
+        target = re.match(r'\s+application<([A-Za-z0-9.-]+)>:([0-9]+)>',
+                          text[on_target.end():], re.IGNORECASE)
     elif lower.startswith('process exited:'):
-        subject = text[len('process exited:'):].split(' -> ', 1)[0][:256]
-    elif re.match(r'^\[application<[^>]+>:[0-9]+\]\s+'
-                  r'(?:received termination request|termination reported by launchd)\b',
-                  text, re.IGNORECASE):
-        subject = text[:256]
+        target = re.match(r'^process exited:\s*<FBApplicationProcess:\s+'
+                          r'application<([A-Za-z0-9.-]+)>:([0-9]+)>',
+                          text, re.IGNORECASE)
     else:
-        return False
-    app_refs = re.findall(r'application<([A-Za-z0-9.-]+)>:([0-9]+)(?![0-9])',
-                          subject, re.IGNORECASE)
-    return (len(app_refs) == 1 and app_refs[0][0].casefold() == bundle.casefold()
-            and int(app_refs[0][1]) == target_pid)
+        target = re.match(r'^\[application<([A-Za-z0-9.-]+)>:([0-9]+)\]\s+'
+                          r'(?:received termination request|termination reported by launchd)\b',
+                          text, re.IGNORECASE)
+    app_refs = re.findall(r'application<([A-Za-z0-9.-]+)>:([0-9]+)', text,
+                          re.IGNORECASE)
+    return (target is not None and len(app_refs) == 1
+            and target.group(1).casefold() == bundle.casefold()
+            and int(target.group(2)) == target_pid)
 
 
 def probe_system_termination(simulator, bundle, started, ended, target_pid):

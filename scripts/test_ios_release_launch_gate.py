@@ -131,6 +131,8 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             "other termination subject": [record("Received termination request from [application<app.hither.mobile>:123] on <RBSProcess application<other.app>:456> with context watchdog")],
             "prefix overridden by target": [record("[application<app.hither.mobile>:123] Received termination request on <RBSProcess application<other.app>:456> watchdog")],
             "multiple target references": [record("Received termination request on <RBSProcess application<app.hither.mobile>:123> wrapping application<other.app>:456 watchdog")],
+            "xpc target requester": [record("Received termination request on <RBSProcess xpcservice<com.example.helper>:456> requested by application<app.hither.mobile>:123 with context watchdog")],
+            "xpc process exited": [record("Process exited: <FBProcess: xpcservice<com.example.helper>:456> requested by application<app.hither.mobile>:123 watchdog")],
             "other exited process": [record("Process exited: <FBApplicationProcess: application<other.app>:456> -> requested by application<app.hither.mobile>:123 watchdog")],
             "requester on behalf": [record("Received termination request on behalf of application<app.hither.mobile>:123> for other.app watchdog")],
             "requester prefix": [record("[application<app.hither.mobile>:123] requested exit for other.app; other.app Received termination request: watchdog")],
