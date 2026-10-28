@@ -11,10 +11,14 @@ Use `mode=ota` only after the installed production binary is verified. The revie
 runtime, build, production channel, Apple state, and evidence. Update this record
 only after checking the real build and its installability. The repository currently
 records build 76, runtime `0.1.11`, from `164ca5c`. It does not establish an
-installed `0.1.13` binary. A TestFlight build can predate both this workflow
-and the binary record; neither supplies its missing source, runtime, or channel
-retroactively. Recover the original signed IPA or equivalent build provenance
-before updating the record.
+installed `0.1.13` binary. GitHub `master` is the code baseline for comparing
+changes. A TestFlight build can predate both this workflow and the binary record;
+neither supplies its runtime or channel retroactively. A historical IPA is not
+required when other trustworthy evidence establishes the installed binary's
+runtime, channel, and native compatibility with that GitHub baseline. Update the
+record with the evidence actually checked, including a verifiable ancestor
+source SHA required by the current compatibility gate. Do not invent a source
+receipt when it is absent.
 
 The OTA route requires the pinned source to still be the current `master` commit.
 It compares every mobile change since the binary source with a conservative
