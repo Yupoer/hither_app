@@ -22,6 +22,17 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     await run(device, 'map.card.toggle', { destinationId: DESTINATION });
     return device;
   }
+  async function finishFreshStart(world: InstanceType<typeof World>, device: Device, previousWatches: number, latitude = 25.03) {
+    await world.waitFor(device, (value: MapObservation) => value.external.watches > previousWatches,
+      'Start requests a new location fix');
+    await world.advance(1000);
+    await device.gps(latitude, 121.53, { accuracy: 5, timestamp: world.now });
+  }
+  async function startTrip(world: InstanceType<typeof World>, device: Device, destinationId = DESTINATION, latitude = 25.03) {
+    const previousWatches = (await device.observe()).external.watches;
+    await run(device, 'map.journey.command', { destinationId });
+    await finishFreshStart(world, device, previousWatches, latitude);
+  }
   async function drop(device: Device, title: string, latitude = 25.05) {
     await run(device, 'map.pin.drop', { latitude, longitude: 121.54 });
     await device.world.advance(0);
@@ -426,7 +437,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
         await world.settle();
       };
       await sample(25.03);
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, device);
       await world.waitFor(device, (value: MapObservation) => field(value, `gather-travel-mode-${DESTINATION}`)?.label?.includes('10 min') === true, 'real route metrics');
       expect(field(await device.observe(), `gather-travel-mode-${DESTINATION}`)?.label).toContain('1.0 km');
       await world.settle();
@@ -516,7 +527,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const device = await map(world);
       expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('開始');
       expect(has(await device.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, device);
       const active = await world.waitFor(device, (value: MapObservation) => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active') && has(value, `gather-complete-${DESTINATION}`), 'actual shared Start exposes End and Complete journey');
       expect(field(active, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
       expect(field(active, `gather-complete-${DESTINATION}`)?.label).toBe('完成行程');
@@ -530,6 +541,8 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect((await device.observe()).durable.snapshot.destinations.find((row: { id: string }) => row.id === DESTINATION).closedAt).toBeFalsy();
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       expect(has(await device.observe(), `gather-arrival-${DESTINATION}`)).toBe(false);
+      expect(has(await device.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
+      expect(field(await device.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('開始');
     } finally { await world.close(); }
   });
 
@@ -544,7 +557,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
         world.backend.itinerary[0].subgroup_id = subgroupId;
       }
       const leader = await map(world, subgroup ? PEER : LEADER, 'leader');
-      await run(leader, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, leader);
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'scoped leader Start');
       const device = role === 'member' ? await map(world, PEER, 'member') : leader;
       const active = await device.observe();
@@ -591,7 +604,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     try {
       const device = await map(world);
       world.hold('apply_core_operation_v3', { phase: 'delivery' });
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, device);
       await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 1, 'durable Start before ACK');
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
       const ended = await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 2, 'durable End follows Start');
@@ -616,7 +629,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     try {
       world.backend.itinerary.push({ ...world.backend.itinerary[0], id: secondId, title: 'Second stop', position: 1, latitude: 25.06 });
       const device = await map(world);
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, device);
       await world.settle();
       await run(device, 'map.carousel.begin');
       await run(device, 'map.carousel.end', { x: 390 });
@@ -630,7 +643,9 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await device.input({ kind: 'alert', index: 0 });
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(DESTINATION);
       await run(device, 'map.journey.command', { destinationId: secondId });
+      const previousWatches = (await device.observe()).external.watches;
       await device.input({ kind: 'alert', index: 1 });
+      await finishFreshStart(world, device, previousWatches);
       await world.waitFor(device, () => [...world.backend.sessions.values()].some((row: { status: string; destination_id: string }) => row.status === 'active' && row.destination_id === secondId), 'accepted switch target');
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(secondId);
       expect(world.backend.itinerary.find((row: { id: string }) => row.id === secondId).position).toBeLessThan(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION).position);
@@ -642,7 +657,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     const world = new World();
     try {
       const device = await map(world);
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, device);
       await world.settle();
       const session = [...world.backend.sessions.values()][0];
       const sample = async (latitude: number, accuracy: number) => {
@@ -680,7 +695,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     try {
       world.backend.itinerary.push({ ...world.backend.itinerary[0], id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: 'Next open stop', position: 1, latitude: 25.05 });
       const device = await map(world);
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
+      await startTrip(world, device);
       await world.settle();
       const session = [...world.backend.sessions.values()][0];
       await world.advance(1000);

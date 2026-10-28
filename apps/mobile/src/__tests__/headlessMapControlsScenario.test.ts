@@ -4,7 +4,7 @@ const { creditReward } = require('../../test/headless/backend-store.cjs');
 
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = { presentation: { hosts: { testId?: string; text?: string; value?: unknown; checked?: boolean; disabled?: boolean }[];
-  preferences: Record<string, unknown>; session: any; route: { route: string }; receipts: any[] }; native: any; external: { alerts: number; backgroundTasks: { name: string; options: unknown }[] }; durable: any };
+  preferences: Record<string, unknown>; session: any; route: { route: string }; receipts: any[] }; native: any; external: { alerts: number; watches: number; backgroundTasks: { name: string; options: unknown }[] }; durable: any };
 const field = (value: Observation, id: string) => value.presentation.hosts.find(host => host.testId === id);
 const has = (value: Observation, id: string) => Boolean(field(value, id));
 const press = (device: Device, testId: string) => device.host.call({ kind: 'press', testId });
@@ -331,11 +331,16 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     const world = new World();
     try {
       const device = await map(world, LEADER, { nativeLocation: true });
+      const previousWatches = (await device.observe()).external.watches;
       await device.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(device, (value: Observation) => value.external.watches > previousWatches, 'fresh Start location request');
+      await world.advance(1000);
+      await device.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
       await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: any) => session.status === 'active'), 'actual Map navigation start');
       await world.settle();
       await device.input({ kind: 'appState', value: 'background' });
       const running = await world.waitFor(device, (value: Observation) => platform === 'ios' ? value.native.location.running : value.external.backgroundTasks.length === 1, 'Map background owner');
+      await world.advance(1000);
       const sample = { timestamp: world.now, coords: { latitude: 25.021, longitude: 121.511, accuracy: 5 }, stationary: false };
       if (platform === 'ios') await device.input({ kind: 'nativeLocation', sample });
       else await device.input({ kind: 'task', name: running.external.backgroundTasks[0].name, value: { data: { locations: [sample] }, error: null } });

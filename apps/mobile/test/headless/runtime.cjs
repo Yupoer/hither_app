@@ -325,6 +325,11 @@ exports.run = async function run(jest) {
       groupId: app.groupId, actorId: app.userId, state: app.group.state,
       isLeader: app.group.state?.members.some(m => m.userId === app.userId && m.role === 'leader') ?? false,
       destinations, selectedDestination: destinations[0], fromCoords: app.location?.deviceCoords ?? undefined,
+      acquireStartFix: async () => {
+        const coordinates = await app.location.refreshDeviceLocation();
+        return coordinates ? app.location.latestLocationSampleRef.current : null;
+      },
+      arrivalRadiusM: 50,
       refresh: app.group.refresh, t, mapRef, carouselRef, setSelectedIndex,
       navigationSession: app.navigation?.session, terminalSession: app.navigation.terminalSession,
       startSession: app.navigation.start, cancelSession: app.navigation.cancel,

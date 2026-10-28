@@ -24,6 +24,8 @@ import { Alert } from 'react-native';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
 import * as sync from '../state/coreDataSync';
 import type { Coordinates, Destination, GroupState } from '../types';
+import type { LocationSample } from '../native/location';
+import { distanceMeters } from '../utils/geo';
 import type { NavigationSession } from '../types/navigation';
 // This harness has no native views and belongs in the node test runner.
 const { act, create } = require('react-test-renderer');
@@ -48,7 +50,7 @@ const pauseConfirm = jest.fn();
 const localSessionChanges: Array<string | null> = [];
 const onLocalSessionIdChange = (sessionId: string | null) => localSessionChanges.push(sessionId);
 function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSession = null, groupState, hasPendingTeamOperation = true,
-  camera, origin, selectIndex, suspend }: {
+  camera, origin, selectIndex, suspend, acquireStartFix = testStartFix, arrivalRadiusM = 50 }: {
   groupId?: string;
   actorId?: string;
   terminalSession?: NavigationSession | null;
@@ -57,12 +59,15 @@ function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSes
   hasPendingTeamOperation?: boolean;
   camera?: { fitRoute: jest.Mock; centerOn: jest.Mock };
   origin?: Coordinates;
+  acquireStartFix?: () => Promise<LocationSample | null>;
+  arrivalRadiusM?: number;
   selectIndex?: jest.Mock;
   suspend?: boolean;
 }) {
   const currentState = groupState ?? (groupId === 'g' ? state : { ...state, group: { ...state.group, id: groupId } });
   const currentApi = useJourneyNavigation({ state: currentState, groupId, actorId, terminalSession, isLeader: true, destinations: currentState.destinations,
     selectedDestination: first, fromCoords: origin, refresh: jest.fn(),
+    acquireStartFix, arrivalRadiusM,
     t: (key, params) => params ? `${key}:${params.currentName}:${params.newName}` : key,
     mapRef: { current: camera as any ?? null }, carouselRef: { current: null }, setSelectedIndex: selectIndex ?? jest.fn(),
     navigationSession, startSession, cancelSession, hasPendingTeamOperation,
@@ -80,6 +85,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => root.unmount()); });
 
+const testStartFix = async () => ({ coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5 });
 it('keeps selection on confirmed B when an earlier delayed Start A snapshot arrives', async () => {
   const selectIndex = jest.fn();
   let releaseA!: (value: any) => void;
@@ -197,22 +203,132 @@ it('does not let the previous local Start terminal cancel a newer queued switch'
   expect(getJourneyApi().navTargetId).toBe('b');
 });
 
-it('frames the device and destination once, including after a missing GPS fix returns', async () => {
+it('frames the newly acquired origin and destination once', async () => {
   const camera = { fitRoute: jest.fn(), centerOn: jest.fn() };
   const origin = { latitude: 24, longitude: 120 };
   jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('b', 1) as any);
   await act(async () => { root.update(React.createElement(Harness, { camera })); });
   await act(async () => { await getJourneyApi().startNavigation(second, 1); });
-  expect(camera.centerOn).toHaveBeenCalledTimes(1);
-  expect(camera.fitRoute).not.toHaveBeenCalled();
+  expect(camera.centerOn).not.toHaveBeenCalled();
+  expect(camera.fitRoute).toHaveBeenCalledWith([origin, second.coordinates]);
   const reordered = { ...state, destinations: [{ ...second, order: 0 }, { ...first, order: 1 }] };
   await act(async () => { root.update(React.createElement(Harness, { camera, origin, groupState: reordered })); });
   expect(camera.fitRoute).toHaveBeenCalledTimes(1);
   expect(camera.fitRoute).toHaveBeenCalledWith([origin, second.coordinates]);
-  expect(camera.centerOn).toHaveBeenCalledTimes(1);
+  expect(camera.centerOn).not.toHaveBeenCalled();
   await act(async () => { root.update(React.createElement(Harness, { camera, origin: { latitude: 24.1, longitude: 120.1 }, groupState: reordered })); });
   expect(camera.fitRoute).toHaveBeenCalledTimes(1);
-  expect(camera.centerOn).toHaveBeenCalledTimes(1);
+  expect(camera.centerOn).not.toHaveBeenCalled();
+});
+
+it('refuses Start below the configured arrival radius but allows the exact boundary', async () => {
+  const near = { latitude: 25.0001, longitude: 121 };
+  const distance = distanceMeters(near, first.coordinates);
+  const acquireStartFix = jest.fn(async () => ({ coordinates: near, timestamp: Date.now(), accuracy: 5 }));
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
+  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix, arrivalRadiusM: distance + 0.01 })); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(Alert.alert).toHaveBeenCalledWith('nav.startUnavailableTitle', 'nav.alreadyWithinArrivalRange');
+  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
+  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix, arrivalRadiusM: distance })); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(1);
+  expect(acquireStartFix).toHaveBeenCalledTimes(2);
+});
+
+it('does not use an old route origin when fresh location is missing or unreliable', async () => {
+  const camera = { fitRoute: jest.fn(), centerOn: jest.fn() };
+  const staleOrigin = { latitude: 24, longitude: 120 };
+  const missing = jest.fn(async () => null);
+  await act(async () => { root.update(React.createElement(Harness, { camera, origin: staleOrigin, acquireStartFix: missing })); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(Alert.alert).toHaveBeenCalledWith('nav.startUnavailableTitle', 'nav.startLocationUnavailable');
+  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
+  expect(camera.fitRoute).not.toHaveBeenCalled();
+  const inaccurate = jest.fn(async () => ({ coordinates: staleOrigin, timestamp: Date.now(), accuracy: 500 }));
+  await act(async () => { root.update(React.createElement(Harness, { camera, origin: staleOrigin, acquireStartFix: inaccurate })); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
+  expect(camera.fitRoute).not.toHaveBeenCalled();
+});
+
+it('rejects a cached fix sampled before Start even when it is still recent', async () => {
+  const acquireStartFix = jest.fn(async () => ({
+    coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now() - 10_000, accuracy: 5,
+  }));
+  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix })); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
+  expect(Alert.alert).toHaveBeenCalledWith('nav.startUnavailableTitle', 'nav.startLocationUnavailable');
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
+  acquireStartFix.mockImplementation(async () => ({
+    coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5,
+  }));
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(1);
+});
+
+it('marks End synchronously so a callback from the prior render cannot use its session', async () => {
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValue(saved(null, 1) as any);
+  const beforeEnd = getJourneyApi();
+  expect(beforeEnd.hasRequestedEnd(first.id)).toBe(false);
+  let pending!: Promise<boolean>;
+  act(() => { pending = beforeEnd.requestTeamEnd(first, 0); });
+  expect(beforeEnd.hasRequestedEnd(first.id)).toBe(true);
+  await act(async () => { await pending; });
+  expect(sync.enqueueLeaderGatheringEnd).toHaveBeenCalledTimes(1);
+});
+
+it('acquires a new route origin after End before starting again', async () => {
+  const origins = [{ latitude: 24, longitude: 120 }, { latitude: 24.1, longitude: 120.1 }];
+  const acquireStartFix = jest.fn(async () => ({ coordinates: origins.shift()!, timestamp: Date.now(), accuracy: 5 }));
+  const camera = { fitRoute: jest.fn(), centerOn: jest.fn() };
+  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValue(saved(null, 2) as any);
+  await act(async () => { root.update(React.createElement(Harness, { camera, acquireStartFix })); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  await act(async () => { await getJourneyApi().requestTeamEnd(first, 0); });
+  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
+  expect(acquireStartFix).toHaveBeenCalledTimes(2);
+  expect(camera.fitRoute.mock.calls.map(([points]) => points[0])).toEqual([
+    { latitude: 24, longitude: 120 }, { latitude: 24.1, longitude: 120.1 },
+  ]);
+  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(2);
+});
+
+it('ignores repeated Start taps and a late fix after End', async () => {
+  let releaseFix!: (fix: LocationSample) => void;
+  const acquireStartFix = jest.fn(() => new Promise<LocationSample>(resolve => { releaseFix = resolve; }));
+  jest.mocked(sync.enqueueLeaderGatheringEnd).mockResolvedValue(saved(null, 1) as any);
+  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix })); });
+  await act(async () => {
+    const firstTap = getJourneyApi().startNavigation(first, 0);
+    const repeatedTap = getJourneyApi().startNavigation(first, 0);
+    await getJourneyApi().requestTeamEnd(first, 0);
+    releaseFix({ coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5 });
+    await Promise.all([firstTap, repeatedTap]);
+  });
+  expect(acquireStartFix).toHaveBeenCalledTimes(1);
+  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
+  expect(Alert.alert).not.toHaveBeenCalled();
+});
+
+it('reads a fresh origin only after confirming a destination switch', async () => {
+  const active: NavigationSession = {
+    id: 'active-a', groupId: 'g', destinationId: first.id, scopeSubgroupId: null,
+    destination: { name: first.title, coordinates: first.coordinates, arrivalRadiusMeters: 50 },
+    startedBy: 'leader', requestId: 'old-request', startedAt: '2026-10-01T00:00:00Z',
+    expiresAt: '2026-10-01T08:00:00Z', status: 'active', version: 1,
+  };
+  const acquireStartFix = jest.fn(testStartFix);
+  jest.mocked(sync.enqueueLeaderGatheringSwitch).mockResolvedValue(saved('b', 1) as any);
+  await act(async () => { root.update(React.createElement(Harness, { navigationSession: active, acquireStartFix })); });
+  await act(async () => { await getJourneyApi().startNavigation(second, 1); });
+  expect(acquireStartFix).not.toHaveBeenCalled();
+  expect(sync.enqueueLeaderGatheringSwitch).not.toHaveBeenCalled();
+  await act(async () => { jest.mocked(Alert.alert).mock.calls.at(-1)![2]![1]?.onPress?.(); });
+  expect(acquireStartFix).toHaveBeenCalledTimes(1);
+  expect(sync.enqueueLeaderGatheringSwitch).toHaveBeenCalledTimes(1);
 });
 
 it('persists every Start End Start in tap order before projection without legacy online mutations', async () => {
@@ -516,8 +632,8 @@ it('ends the offline Start session instead of an older server session', async ()
   await act(async () => {
     await getJourneyApi().startNavigation(second, 1);
     (jest.mocked(Alert.alert).mock.calls.at(-1)?.[2]?.[1] as any).onPress();
-    await getJourneyApi().stopNavigation();
   });
+  await act(async () => { await getJourneyApi().stopNavigation(); });
   expect(jest.mocked(sync.enqueueLeaderGatheringEnd).mock.calls[0][1]?.navigationSessionId)
     .toBe('op-1');
 });
