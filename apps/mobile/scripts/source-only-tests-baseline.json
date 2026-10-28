@@ -25,7 +25,6 @@
     "fiveScreensRedesignContract.test.ts",
     "gatheringWorkflowContract.test.ts",
     "glassChromeContract.test.ts",
-    "googleMapsProxyValidation.test.ts",
     "groupNotificationsLeaderFallback.test.ts",
     "groupRecoverySnapshot.test.ts",
     "groupSyncContract.test.ts",
