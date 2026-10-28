@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import plistlib
 import subprocess
@@ -65,33 +66,89 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                    "attempt": 1, "processAlive": False, "appProcessState": "replacement_pid",
                    "simulatorState": "booted", "path": "/private/app/Hither",
                    "hostPid": 456, "log": "private user data", "systemLogProbe": "available",
-                   "systemTerminationSignals": ["watchdog"], "runtimeLogProbe": "available"}
+                   "systemTerminationSignals": ["watchdog"],
+                   "pidCorrelatedSystemSignals": ["jetsam"],
+                   "systemLogWindowSeconds": 6, "runtimeLogProbe": "available"}
         self.assertEqual(GATE.safe_launch_diagnostic(payload), {
             "failureStage": "startup_breadcrumb", "failureType": "ProcessLookupError",
             "attempt": 1, "processAlive": False, "appProcessState": "replacement_pid",
             "simulatorState": "booted", "systemLogProbe": "available",
-            "systemTerminationSignals": ["watchdog"], "runtimeLogProbe": "available"})
+            "systemTerminationSignals": ["watchdog"],
+            "pidCorrelatedSystemSignals": ["jetsam"],
+            "systemLogWindowSeconds": 6, "runtimeLogProbe": "available"})
         self.assertEqual(GATE.safe_launch_diagnostic({
             "appProcessState": "/private/app/Hither", "simulatorState": "secret",
-            "systemTerminationSignals": ["private user data"]}), {})
+            "systemTerminationSignals": ["private user data"],
+            "pidCorrelatedSystemSignals": ["private user data"],
+            "systemLogWindowSeconds": 100000}), {})
 
+        started, ended = 1000.1, 1005.9
+        def record(message, at=1002, **fields):
+            return json.dumps({"timestamp": datetime.fromtimestamp(at, timezone.utc).isoformat(),
+                               "eventMessage": message, "processID": 123, **fields})
+        rows = [record("app.hither.mobile watchdog PID: 123 private user data"),
+                record("app.hither.mobile jetsam PID: 456"),
+                json.dumps({"finished": True})]
         with patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
-                returncode=0, stdout="app.hither.mobile watchdog private user data")) as query:
-            self.assertEqual(VERIFY.probe_system_termination(
-                "simulator", "app.hither.mobile", 1000), {
-                    "systemLogProbe": "available", "systemTerminationSignals": ["watchdog"]})
-            self.assertIn("--start", query.call_args.args[0])
+                returncode=0, stdout="\n".join(rows))) as query:
+            observed = VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", started, ended, 123)
+            self.assertEqual(observed, {
+                    "systemLogProbe": "available", "systemTerminationSignals": ["jetsam", "watchdog"],
+                    "pidCorrelatedSystemSignals": ["watchdog"], "systemLogWindowSeconds": 6})
+            self.assertNotIn("private user data", json.dumps(observed))
+            command = query.call_args.args[0]
+            self.assertIn("--start", command)
+            self.assertIn("--end", command)
+            self.assertEqual(command[command.index("--style") + 1], "ndjson")
             self.assertNotIn("--last", query.call_args.args[0])
             self.assertEqual(query.call_args.kwargs["timeout"], 15)
         with patch.object(VERIFY.subprocess, "run", side_effect=OSError):
             self.assertEqual(VERIFY.probe_system_termination(
-                "simulator", "app.hither.mobile", 1000), {"systemLogProbe": "unavailable"})
+                "simulator", "app.hither.mobile", started, ended, 123),
+                {"systemLogProbe": "unavailable"})
         invalid_utf8 = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
         with patch.object(VERIFY.subprocess, "run", side_effect=invalid_utf8):
             self.assertEqual(VERIFY.probe_system_termination(
-                "simulator", "app.hither.mobile", 1000), {"systemLogProbe": "unavailable"})
+                "simulator", "app.hither.mobile", started, ended, 123),
+                {"systemLogProbe": "unavailable"})
         self.assertEqual(VERIFY.probe_system_termination(
-            "simulator", "app.hither.mobile", None), {"systemLogProbe": "unavailable"})
+            "simulator", "app.hither.mobile", None, ended, 123),
+            {"systemLogProbe": "unavailable"})
+
+        no_match = {"systemLogProbe": "available", "systemTerminationSignals": [],
+                    "pidCorrelatedSystemSignals": [], "systemLogWindowSeconds": 6}
+        for name, rows in {
+            "other PID": [record("app.hither.mobile watchdog PID: 456")],
+            "PID prefix": [record("app.hither.mobile watchdog PID: 1234")],
+            "prefix bundle": [record("app.hither.mobile.extra watchdog PID: 123")],
+            "suffix bundle": [record("other.app.hither.mobile watchdog PID: 123")],
+            "logging daemon PID": [record("app.hither.mobile watchdog")],
+            "split records": [record("app.hither.mobile watchdog"), record("PID: 123")],
+            "outside window": [record("app.hither.mobile watchdog PID: 123", at=999)],
+            "redacted PID": [record("app.hither.mobile watchdog PID: <private>")],
+            "mixed redacted PID": [record("app.hither.mobile watchdog PID: 123 PID: <private>")],
+            "ambiguous PIDs": [record("app.hither.mobile watchdog PID: 123 PID: 456")],
+        }.items():
+            with self.subTest(name=name), patch.object(VERIFY.subprocess, "run",
+                                                    return_value=SimpleNamespace(
+                                                        returncode=0, stdout="\n".join(rows))):
+                result = VERIFY.probe_system_termination(
+                    "simulator", "app.hither.mobile", started, ended, 123)
+                self.assertEqual(result["pidCorrelatedSystemSignals"], [])
+                self.assertNotIn("private user data", json.dumps(result))
+                if name in {"outside window", "prefix bundle", "suffix bundle"}:
+                    self.assertEqual(result, no_match)
+        for rows in (["{malformed"],
+                     [record("app.hither.mobile watchdog PID: 123"), "{malformed"],
+                     [json.dumps({"eventMessage": "app.hither.mobile watchdog PID: 123"})],
+                     [json.dumps({"timestamp": "not-a-time",
+                                  "eventMessage": "app.hither.mobile watchdog PID: 123"})]):
+            with patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
+                    returncode=0, stdout="\n".join(rows))):
+                self.assertEqual(VERIFY.probe_system_termination(
+                    "simulator", "app.hither.mobile", started, ended, 123),
+                    {"systemLogProbe": "unavailable"})
 
     def test_failure_before_launch_pid_still_reports_unavailable_probes(self):
         with tempfile.TemporaryDirectory() as directory:
