@@ -133,7 +133,28 @@
       "child": 298,
       "acceptance": "Start frames the device and destination together, including when GPS becomes available later.",
       "testFile": "journeyDurableCommands.test.ts",
-      "testNamePattern": "frames the device and destination once"
+      "testNamePattern": "frames the newly acquired origin and destination once"
+    },
+    {
+      "parent": 298,
+      "child": "gather-card-followup",
+      "acceptance": "The gathering card shows Start only before navigation, then flexible End and square icon-only Complete while the session is active.",
+      "testFile": "gatheringCarouselIconButtons.test.tsx",
+      "testNamePattern": "shows a flexible Start button|gives End the remaining width"
+    },
+    {
+      "parent": 298,
+      "child": "gather-card-followup",
+      "acceptance": "Every Start uses a new location sample and refuses an unreliable or within-range origin; End invalidates the prior session before stale completion can run.",
+      "testFile": "journeyDurableCommands.test.ts",
+      "testNamePattern": "refuses Start below|rejects a cached fix|marks End synchronously|acquires a new route origin"
+    },
+    {
+      "parent": 298,
+      "child": "gather-card-followup",
+      "acceptance": "Start receives a fresh location fix while a delayed location upload continues without blocking the durable journey command.",
+      "testFile": "deviceLocationLifecycle.test.ts",
+      "testNamePattern": "returns a fresh Start fix before a delayed location upload completes|keeps a fresh Start fix available when its location upload fails offline"
     },
     {
       "parent": 298,

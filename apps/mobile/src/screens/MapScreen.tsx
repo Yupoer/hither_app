@@ -207,7 +207,7 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
-import { requestPermission as requestLocationPermission } from '../native/location';
+import { requestPermission as requestLocationPermission, type LocationSample } from '../native/location';
 import {
   recoverPendingLocationRefreshes,
 } from '../state/backgroundLocationRefresh';
@@ -312,6 +312,10 @@ export default function MapScreen({ route, navigation }: Props) {
     setArrivalRadiusM,
     setPassiveCompanionMode,
   } = usePreferences();
+  const localArrivalRadiusM = Math.max(
+    ARRIVAL_RADIUS_MIN_M,
+    Math.min(ARRIVAL_RADIUS_MAX_M, arrivalRadiusM),
+  );
   const { lifecycle: gatherCardExpansionLifecycle,
     isCardExpanded,
     toggleCard,
@@ -1121,6 +1125,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // Commands read this bridge at tap time, after the current render has settled.
   const navigationOriginRef = useRef<Coordinates | undefined>(undefined);
   const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
+  const acquireNavigationFixRef = useRef<() => Promise<LocationSample | null>>(async () => null);
+  const acquireNavigationFix = useCallback(() => acquireNavigationFixRef.current(), []);
   const {
     lifecycle: journeyNavigationLifecycle,
     navigationStoppedLocally,
@@ -1134,6 +1140,7 @@ export default function MapScreen({ route, navigation }: Props) {
     openExternalNavigation,
     startNavigation,
     requestTeamEnd,
+    hasRequestedEnd,
     stopNavigation,
     stopRemovedDestination,
     refreshStartFrame,
@@ -1150,6 +1157,8 @@ export default function MapScreen({ route, navigation }: Props) {
     selectedDestination,
     fromCoords: undefined,
     getFromCoords: getNavigationOrigin,
+    acquireStartFix: acquireNavigationFix,
+    arrivalRadiusM: localArrivalRadiusM,
     refresh,
     t,
     mapRef,
@@ -1159,7 +1168,7 @@ export default function MapScreen({ route, navigation }: Props) {
       const fix = latestLocationSampleRef.current;
       if (fix && canEvaluateSynchronizedArrival({ sampledAt: fix.timestamp,
         now: Date.now(), accuracyM: fix.accuracy, radiusM: localArrivalRadiusM })
-        && distanceMeters(fix.coordinates, dest.coordinates) <= localArrivalRadiusM) return;
+        && distanceMeters(fix.coordinates, dest.coordinates) < localArrivalRadiusM) return;
       void notifyJourneyOperator('start', dest.id, eventId, t).catch(() => undefined);
     },
     onOperatorPauseConfirm: (dest, eventId) => {
@@ -1208,6 +1217,10 @@ export default function MapScreen({ route, navigation }: Props) {
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
   navigationOriginRef.current = deviceCoords ?? undefined;
+  acquireNavigationFixRef.current = async () => {
+    if (!await refreshDeviceLocation({ waitForUpload: false })) return null;
+    return latestLocationSampleRef.current;
+  };
   const navigationStartFrameLifecycle = (
     <MapNavigationStartFrameResource
       deviceCoords={deviceCoords}
@@ -1364,10 +1377,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Foreground arrival: tools slider is the product geofence (30/50/100/300).
   // Session rows default to 50 m and must not shrink a user-chosen 300 m.
-  const localArrivalRadiusM = Math.max(
-    ARRIVAL_RADIUS_MIN_M,
-    Math.min(ARRIVAL_RADIUS_MAX_M, arrivalRadiusM),
-  );
   const foregroundArrivalRef = useRef<{ key: string; state: ArrivalState; sampledAtMs: number | null } | null>(null);
   const foregroundAckRef = useRef<string | null>(null);
   const autoArrivalMarkedRef = useRef<string | null>(null);
@@ -1503,6 +1512,8 @@ export default function MapScreen({ route, navigation }: Props) {
    * is acknowledged or settled, allowing a later remote session to win.
    */
   const resolveCurrentNavigationSessionId = useCallback((destination: Destination): string | null => {
+    if (navigationStoppedLocally || hasRequestedEnd(destination.id)
+      || sharedTargetId !== destination.id) return null;
     // A Start tap is visible before its local receipt/session alias commits.
     // Do not bind arrivals to the previous local/server session in that gap.
     if (journeyBusy && pendingLeaderTargetId === destination.id) return null;
@@ -1516,7 +1527,8 @@ export default function MapScreen({ route, navigation }: Props) {
       return session.id;
     }
     return null;
-  }, [localNavigationSessionId, navTarget?.id, journeyBusy, pendingLeaderTargetId, navigationSessionState.session]);
+  }, [localNavigationSessionId, navTarget?.id, journeyBusy, pendingLeaderTargetId,
+    navigationSessionState.session, navigationStoppedLocally, sharedTargetId, hasRequestedEnd]);
   // Prefer the local Start operation as the stable identity while its server
   // session alias is hydrating; adding the server id must not reset an undo
   // suppression inside the same trip.

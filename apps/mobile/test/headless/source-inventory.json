@@ -4095,13 +4095,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "be26993aecaa4da14b8c4086950d0a0648c67b854fe39efc390e6151cfecce9d"
+    "hash": "ddc8dc9b6ee07b288124a6905cddbfb5c1d33c2de0633192d2361fa439ebfa3f"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "918e2fe40cf1dc9d1ce916c202d60f5737b141c2b05e5795d62412f789cd42eb"
+    "hash": "f04a467c8f70bcc6c693c5cc481e504ea452c916a2f10178edd03dcb000fecf1"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -5679,7 +5679,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "284999cfbb1a1fc77f70aea181f8720ec3e5fd7a0c6ec012ccf1a2b881c70508"
+    "hash": "1e975b8d405e2113dc4babd4f53f58990d0cc46aaf6a17280b9eea37fab6c6d7"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6783,7 +6783,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "67c1d31aaf19e091bc9fa27613dd89f04ae480f45799398d7ebd628e91f7c003"
+    "hash": "3b69d9aba9f8e6da9b636a4bf7088797e38c6f3f3410dbe4725b66f06bc422ca"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -6825,7 +6825,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "callback",
     "name": "onPress",
-    "hash": "85ec06d309a8abf7877cc56f542cb63f4f40e3022fecf22727b799ed2e93eaea"
+    "hash": "6dbdbfbd5a5c66685ddb5592984e77d50e4efd7442a4d98d54a2d2f023b19130"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -7917,7 +7917,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "aeb9e3dc072fafa6966561ff1e1b576c7970d2e14fe9d99a6367cb144999b74f"
+    "hash": "d4b698c6ee22fa9ade62523fa9ef5d0ef92bda1d55437dc12c57c988db476bdc"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -8043,7 +8043,7 @@
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
     "kind": "export",
     "name": "useJourneyNavigation",
-    "hash": "47cd4551a6142493d121b5a5a22f84e5e5b916372b75ae582daa4ec64bec717c"
+    "hash": "6888a6cf61bb57ef0cf62a815c40493f521926d52713b68f069fca9ec96d4c01"
   },
   {
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
@@ -8343,7 +8343,7 @@
     "file": "src/screens/MapScreen/styles.ts",
     "kind": "export",
     "name": "makeStyles",
-    "hash": "4f05883c6918fe9fa720a108faacbec22ce9dc1db00a53e7588a904eecfff23f"
+    "hash": "e854cb7762b9862f680d1b38dd204335770489c9ab3c50bf62a60e8158ea6c96"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
@@ -11031,7 +11031,7 @@
     "file": "src/utils/gatherCommand.ts",
     "kind": "export",
     "name": "resolveNavCommand",
-    "hash": "a35eeb73ce15265d8c94c5adef28a634edff6a4d00d7b1c91c80e846e8d801af"
+    "hash": "cdd31e8ac4d6ea98f52ddd9e8654b840ed3cb6809837fa51bb76018c174a34de"
   },
   {
     "file": "src/utils/gatherCommand.ts",
@@ -11703,7 +11703,7 @@
     "file": "src/utils/mapFormatters.ts",
     "kind": "export",
     "name": "navCommandDisplayLabel",
-    "hash": "0b99c549ed031ca95c1b4394cdd9dcc3a97c63e47864e0f6159f6f23ac5234d4"
+    "hash": "acb50a9bbf03c064e367b878d591d1603820b1399d063100cc11daec8a1ed8ba"
   },
   {
     "file": "src/utils/mapMarkerMerge.ts",

@@ -126,8 +126,7 @@ describe('resolveNavCommand', () => {
     ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: false, action: 'start_nav' });
   });
 
-  it('after personal arrival without flock nav, offers Complete (not Start)', () => {
-    // 「先不要完成」 must leave mark_complete available — never restore Start.
+  it('after personal arrival without flock nav, offers Start without Complete', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
@@ -136,10 +135,10 @@ describe('resolveNavCommand', () => {
         teamStartBlocked: true,
       }),
     ).toMatchObject({
-      kind: 'leader_mark_complete',
-      label: '完成',
+      kind: 'leader_start',
+      label: '開始',
       disabled: false,
-      action: 'mark_complete',
+      action: 'start_nav',
     });
   });
 

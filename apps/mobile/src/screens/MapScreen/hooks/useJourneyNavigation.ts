@@ -6,9 +6,11 @@ import { createElement, Fragment, useState, useMemo, useCallback, useRef, type D
 import { Alert, type ScrollView } from 'react-native';
 import { getOperationErrorMessage } from '../../../utils/operationError';
 import { distanceMeters } from '../../../utils/geo';
+import { canEvaluateSynchronizedArrival } from '../../../utils/synchronizedArrival';
 import { followCarouselIndexAfterPromote } from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
+import type { LocationSample } from '../../../native/location';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 import { presentExternalMapsChooser } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
@@ -34,6 +36,7 @@ interface TeamCommandIntent {
   expectedSessionStartedAt?: string | null;
   destination: Destination;
   index: number;
+  startOrigin?: Coordinates;
 }
 
 interface TeamCommandJob {
@@ -54,6 +57,8 @@ interface UseJourneyNavigationParams {
   fromCoords: Coordinates | undefined;
   /** Read the latest device fix when location ownership is declared later. */
   getFromCoords?: () => Coordinates | undefined;
+  acquireStartFix: () => Promise<LocationSample | null>;
+  arrivalRadiusM: number;
   refresh: () => void;
   t: (key: string, params?: Record<string, any>) => string;
   mapRef: RefObject<GroupMapHandle | null>;
@@ -97,6 +102,8 @@ export function useJourneyNavigation({
   selectedDestination,
   fromCoords,
   getFromCoords,
+  acquireStartFix,
+  arrivalRadiusM,
   refresh: _refresh,
   t,
   mapRef,
@@ -153,11 +160,11 @@ export function useJourneyNavigation({
   }, [onLocalSessionIdChange]);
   const lastFollowerCenterKeyRef = useRef<string | null>(null);
   const startFrameRef = useRef<{ context: string; destination: Destination; fitted: boolean } | null>(null);
-  const frameStartedDestination = useCallback((destination: Destination) => {
+  const frameStartedDestination = useCallback((destination: Destination, startOrigin?: Coordinates) => {
     const previous = startFrameRef.current;
     const sameFrame = previous?.context === endedContext && previous.destination.id === destination.id;
     if (sameFrame && previous.fitted) return;
-    const origin = getFromCoords?.() ?? fromCoords;
+    const origin = startOrigin ?? getFromCoords?.() ?? fromCoords;
     if (origin && mapRef.current) {
       mapRef.current.fitRoute([origin, destination.coordinates]);
     } else if (!sameFrame) {
@@ -184,6 +191,13 @@ export function useJourneyNavigation({
   currentActorRef.current = actorId;
   const currentGroupRef = useRef(groupId);
   currentGroupRef.current = groupId;
+  const currentLeaderRef = useRef(isLeader);
+  currentLeaderRef.current = isLeader;
+  const arrivalRadiusRef = useRef(arrivalRadiusM);
+  arrivalRadiusRef.current = arrivalRadiusM;
+  const startAttemptRef = useRef<{ id: number; destinationId: string;
+    groupId: string | null | undefined; actorId: string | null | undefined } | null>(null);
+  const startAttemptSequenceRef = useRef(0);
   const mountedRef = useRef(true);
 
   const serverOrStartedSessionRef = useRef(Boolean(authoritativeSharedTargetId));
@@ -348,7 +362,7 @@ export function useJourneyNavigation({
       // transition. No second online-only cancel can race it.
       void flushCoreOperationOutbox().then(async () => {
         if (!isCurrent()) return;
-        // Confirm only an accepted current command. Do not replay an old Pause
+        // Confirm only an accepted current command. Do not replay an old End
         // sound when a later Start is already queued, or while still offline.
         if (onOperatorPauseConfirm) {
           const pending = await getCoreOperationOutbox().getOperation(operationId);
@@ -426,7 +440,7 @@ export function useJourneyNavigation({
       if (teamCommandSequenceRef.current === intent.sequence) {
         onOptimisticGathering?.(enqueued.local);
         setOptimisticTeamTargetId(dest.id);
-        frameStartedDestination(dest);
+        frameStartedDestination(dest, intent.startOrigin);
         const currentIndex = navigationDestinations.findIndex(item => item.id === dest.id);
         setSelectedIndex(currentIndex >= 0 ? currentIndex : index);
         pendingCarouselTargetIdRef.current = dest.id;
@@ -462,7 +476,7 @@ export function useJourneyNavigation({
   }, [groupId, actorId, state, navigationSession?.id, navigationDestinations, mapRef, onOptimisticGathering,
     setSelectedIndex, createRequestId, _refresh, refreshNavigationSession, publishLocalSessionId, gatheringCacheKey, t, frameStartedDestination]);
 
-  const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number, switchFromDestinationId?: string): Promise<boolean> => {
+  const enqueueTeamCommand = useCallback((action: 'start' | 'end', dest: Destination, index: number, switchFromDestinationId?: string, startOrigin?: Coordinates): Promise<boolean> => {
     const latestTap = latestTeamTapRef.current;
     const ownLatestTap = latestTap?.groupId === groupId && latestTap?.actorId === actorId ? latestTap : null;
     if (action === 'start' && isLeader
@@ -491,6 +505,7 @@ export function useJourneyNavigation({
       operationId: createRequestId(),
       destination: dest,
       switchFromDestinationId,
+      startOrigin,
       index,
       previousServerSession: (() => {
         const previous = navigationSession ?? (lastVisibleServerSessionRef.current?.context === endedContext
@@ -515,7 +530,7 @@ export function useJourneyNavigation({
       setPendingLeaderTargetId(dest.id);
       setOptimisticTeamTargetId(dest.id);
       setSelectedIndex(index);
-      frameStartedDestination(dest);
+      frameStartedDestination(dest, startOrigin);
     } else {
       pendingTeamStartIntentRef.current = null;
     }
@@ -556,6 +571,42 @@ export function useJourneyNavigation({
     return result;
   }, [isLeader, locallyStopped, navTargetId, groupId, actorId, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession, endedContext, setSelectedIndex, mapRef, onLocalSessionIdChange, frameStartedDestination]);
 
+  const acquireAndStart = useCallback(async (dest: Destination, index: number, switchFromDestinationId?: string) => {
+    if (startAttemptRef.current?.destinationId === dest.id
+      && startAttemptRef.current.groupId === groupId && startAttemptRef.current.actorId === actorId) return;
+    const attemptId = ++startAttemptSequenceRef.current;
+    const requestedAt = Date.now();
+    startAttemptRef.current = { id: attemptId, destinationId: dest.id, groupId, actorId };
+    try {
+      const fix = await acquireStartFix();
+      if (startAttemptRef.current?.id !== attemptId || !mountedRef.current
+        || currentGroupRef.current !== groupId || currentActorRef.current !== actorId
+        || !currentLeaderRef.current) return;
+      const radius = arrivalRadiusRef.current;
+      const coords = fix?.coordinates;
+      if (!fix || !coords || fix.timestamp < requestedAt
+        || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
+        || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180
+        || !canEvaluateSynchronizedArrival({ sampledAt: fix.timestamp, now: Date.now(),
+          accuracyM: fix.accuracy, radiusM: radius })) {
+        Alert.alert(t('nav.startUnavailableTitle'), t('nav.startLocationUnavailable'));
+        return;
+      }
+      if (distanceMeters(coords, dest.coordinates) < radius) {
+        Alert.alert(t('nav.startUnavailableTitle'), t('nav.alreadyWithinArrivalRange'));
+        return;
+      }
+      void enqueueTeamCommand('start', dest, index, switchFromDestinationId, coords);
+    } catch {
+      if (startAttemptRef.current?.id === attemptId && mountedRef.current
+        && currentGroupRef.current === groupId && currentActorRef.current === actorId) {
+        Alert.alert(t('nav.startUnavailableTitle'), t('nav.startLocationUnavailable'));
+      }
+    } finally {
+      if (startAttemptRef.current?.id === attemptId) startAttemptRef.current = null;
+    }
+  }, [acquireStartFix, actorId, enqueueTeamCommand, groupId, t]);
+
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
       if (isLeader) {
@@ -570,6 +621,7 @@ export function useJourneyNavigation({
           : navigationSession?.status === 'active' ? navigationSession.destinationId
           : cached?.journeyPhase === 'en_route' ? cached.activeDestinationId
           : legacySharedTargetId;
+        if (currentId === dest.id && !locallyStopped) return;
         if (currentId && currentId !== dest.id) {
           const promptKey = JSON.stringify([actorId, groupId, currentId, dest.id]);
           if (switchPromptRef.current === promptKey) return;
@@ -582,24 +634,25 @@ export function useJourneyNavigation({
             { text: t('map.switchJourneyConfirm'), onPress: () => {
               dismiss();
               if (mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId) {
-                void enqueueTeamCommand('start', dest, index, currentId);
+                void acquireAndStart(dest, index, currentId);
               }
             } },
           ], { cancelable: true, onDismiss: dismiss });
           return;
         }
       }
-      // Start taps are intentionally fire-and-forget at the UI boundary. The
-      // FIFO still awaits each durable command internally, but callers must be
-      // able to enqueue End/Start taps while the first local write is pending.
-      void enqueueTeamCommand('start', dest, index);
+      // Location acquisition precedes the durable command. The queue still
+      // accepts End and later Start taps while the first write is pending.
+      if (isLeader) await acquireAndStart(dest, index);
+      else void enqueueTeamCommand('start', dest, index);
     },
-    [enqueueTeamCommand, isLeader, groupId, actorId, gatheringCacheKey, optimisticTeamTargetId,
+    [acquireAndStart, enqueueTeamCommand, isLeader, locallyStopped, groupId, actorId, gatheringCacheKey, optimisticTeamTargetId,
       navigationSession, legacySharedTargetId, navigationDestinations, t],
   );
 
   const requestTeamEnd = useCallback(
     async (dest: Destination, index: number) => {
+      startAttemptRef.current = null;
       const wasBusy = teamCommandRunnerRef.current !== null;
       const pending = enqueueTeamCommand('end', dest, index);
       // Preserve the tap API's non-blocking behavior when an earlier Start is
@@ -610,7 +663,14 @@ export function useJourneyNavigation({
     [enqueueTeamCommand],
   );
 
+  const hasRequestedEnd = useCallback((destinationId: string) => {
+    const latest = latestTeamTapRef.current;
+    return latest?.action === 'end' && latest.destinationId === destinationId
+      && latest.groupId === currentGroupRef.current && latest.actorId === currentActorRef.current;
+  }, []);
+
   const stopNavigation = useCallback(async () => {
+    startAttemptRef.current = null;
     if (isLeader) {
       const dest = pendingTeamStartIntentRef.current?.destination
         ?? navTarget
@@ -678,6 +738,7 @@ export function useJourneyNavigation({
     startNavigation,
     refreshStartFrame,
     requestTeamEnd,
+    hasRequestedEnd,
     stopNavigation,
     stopRemovedDestination,
     startLocalRoutePlan,

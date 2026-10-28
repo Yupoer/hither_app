@@ -259,9 +259,13 @@ export function useDeviceLocation({
    * @param options.requireUpload When true (Force Refresh), upload failures
    *   propagate so callers can report upload failure independently of reads.
    *   Background/foreground auto paths keep soft-fail upload.
+   * @param options.waitForUpload When false, return the accepted fix while its
+   *   upload continues. Journey Start uses this so network latency cannot
+   *   turn a fresh GPS fix stale before the durable command is queued.
    */
   const refreshDeviceLocation = useCallback(async (options?: {
     requireUpload?: boolean;
+    waitForUpload?: boolean;
   }): Promise<Coordinates | null> => {
     const sampleAtRequest = lastSampleAtRef.current;
     energyObservability.increment('location_callback');
@@ -307,6 +311,7 @@ export function useDeviceLocation({
         ? receipt.completion
         : enqueueUpload(fix, now, { immediate: true }, requestedGroup);
       if (options?.requireUpload) await upload;
+      else if (options?.waitForUpload === false) void upload.catch(() => undefined);
       else await upload.catch(() => undefined);
     }
     if (await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || requestedGroup !== groupIdRef.current

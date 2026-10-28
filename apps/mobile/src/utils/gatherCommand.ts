@@ -11,7 +11,6 @@
 export type NavCommandKind =
   | 'leader_start'
   | 'leader_stop'
-  | 'leader_mark_complete'
   | 'member_request_start'
   | 'member_navigating'
   | 'member_waiting_complete'
@@ -47,11 +46,10 @@ export interface NavCommandResult {
   disabled: boolean;
   /**
    * Whether pressing starts shared nav, requests a leader start,
-   * ends (pauses) flock travel, or completes after personal arrival.
-   * Leader End = pause navigation only (point stays on itinerary).
+   * ends flock navigation while leaving the point on the itinerary.
    * Completing a stop is a separate prompt/RPC (complete_gathering_stop).
    */
-  action: 'start_nav' | 'request_start' | 'mark_complete' | 'end_point' | 'none';
+  action: 'start_nav' | 'request_start' | 'end_point' | 'none';
 }
 
 /**
@@ -93,7 +91,7 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
   } = input;
 
   if (isLeader) {
-    // Active flock travel always offers End first (pause team navigation).
+    // Active flock travel always offers End first.
     if (flockNavigatingThis) {
       return {
         kind: 'leader_stop',
@@ -101,16 +99,6 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
         label: '結束',
         disabled: false,
         action: 'end_point',
-      };
-    }
-    // After personal arrival + 「取消」on complete confirm, keep Complete available.
-    // Must not fall back to Start for the same arrived stop.
-    if (personallyArrived) {
-      return {
-        kind: 'leader_mark_complete',
-        label: '完成',
-        disabled: false,
-        action: 'mark_complete',
       };
     }
     return {

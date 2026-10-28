@@ -206,7 +206,7 @@ export function GatheringCarousel({
             // Shared navigation is distinct from any member-only route preview.
             const { flockNavigatingThis } = deriveCardNavFlags({
               destId: dest.id,
-              isLeader,
+              isLeader: canEditItinerary,
               sharedTargetId,
               pendingLeaderTargetId,
               journeyBusy,
@@ -265,8 +265,6 @@ export function GatheringCarousel({
             const chromeCompact =
               narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
             const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
-            // Use active itinerary (carousel list), not raw history-inclusive
-            // scope — past-day open rows must not hide the arrive control.
             const personallyArrived = myCompletedDestinationIds.has(dest.id);
             const navCmd = resolveNavCommand({
               isLeader: canEditItinerary,
@@ -277,17 +275,13 @@ export function GatheringCarousel({
               isNextTeamPending: true,
               teamStartBlocked: false,
             });
-            const navButtonIconOnly = navCmd.kind === 'leader_start'
-              || navCmd.kind === 'leader_mark_complete';
             const navLabel = navCmd.kind === 'leader_stop' ? t('nav.endNavigation') : navCommandDisplayLabel(navCmd.kind, t);
-            const startAccessibilityHint = isLeader
+            const startAccessibilityHint = canEditItinerary
               ? navCmd.kind === 'leader_stop'
                 ? t('nav.a11yEndHint')
-                : navCmd.kind === 'leader_mark_complete'
-                  ? t('nav.a11yCompleteHint')
-                  : t('nav.a11yStartHint')
+                : t('nav.a11yStartHint')
               : undefined;
-            const commandDisabled = !isLeader && (
+            const commandDisabled = !canEditItinerary && (
               journeyBusy
               || navCmd.disabled
               || Boolean(requestingStartDestId)
@@ -592,7 +586,7 @@ export function GatheringCarousel({
     
                   </GatheringCardPressable>
                   {/* a11y-layout:commandRow — always one row.
-                      Order: [Start / End + Complete] [Countdown] [Transport]
+                      Order: [Start / End + Complete] [Transport] [Countdown]
                       Outside expand Pressable so Start never toggles the card.
                       Density tracks narrow + Dynamic Type. */}
                   {cardExpanded && (
@@ -606,9 +600,7 @@ export function GatheringCarousel({
                           navCmd.kind === 'member_waiting_complete'
                             || navCmd.kind === 'member_request_start'
                             ? styles.navBtnWide
-                            : navButtonIconOnly
-                              ? styles.navBtnIconOnly
-                              : null,
+                            : null,
                           navCmd.kind === 'leader_stop'
                             ? styles.navBtnEnd
                             : commandDisabled
@@ -626,10 +618,6 @@ export function GatheringCarousel({
                             requestLeaderStart(dest);
                           } else if (navCmd.action === 'end_point') {
                             void requestTeamEnd(dest, index);
-                          } else if (navCmd.action === 'mark_complete') {
-                            // Leader manual complete while personally arrived
-                            // (someone still missing → confirm; all arrived → auto).
-                            promptCompleteAfterArrival(dest);
                           } else if (navCmd.disabled) {
                             logEvent('nav_command_ignored', {
                               reason: navCmd.kind,
@@ -647,17 +635,15 @@ export function GatheringCarousel({
                           name={
                             navCmd.kind === 'leader_stop'
                               ? 'stop'
-                              : navCmd.kind === 'leader_mark_complete'
-                                ? 'checkmark-done'
-                                : navCmd.kind === 'member_waiting_complete'
-                                  ? 'hourglass-outline'
-                                  : navCmd.kind === 'member_navigating'
-                                    ? 'navigate'
-                                    : navCmd.kind === 'member_request_start'
-                                      ? 'paper-plane-outline'
-                                    : isLeader
-                                      ? 'play'
-                                      : 'navigate'
+                              : navCmd.kind === 'member_waiting_complete'
+                                ? 'hourglass-outline'
+                                : navCmd.kind === 'member_navigating'
+                                  ? 'navigate'
+                                  : navCmd.kind === 'member_request_start'
+                                    ? 'paper-plane-outline'
+                                  : canEditItinerary
+                                    ? 'play'
+                                    : 'navigate'
                           }
                           size={chromeCompact ? 16 : 15}
                           color={
@@ -665,40 +651,38 @@ export function GatheringCarousel({
                               ? glass.danger
                               : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
                                 ? glass.textSecondary
-                                : isLeader
+                                : canEditItinerary
                                   ? colors.accentText
                                   : '#0c1a12'
                           }
                         />
-                        {!navButtonIconOnly ? (
-                          <Text
-                            style={[
-                              styles.navBtnText,
-                              {
-                                color:
-                                  navCmd.kind === 'leader_stop'
-                                    ? glass.danger
-                                    : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
-                                      ? glass.textSecondary
-                                      : isLeader
-                                        ? colors.accentText
-                                        : '#0c1a12',
-                                flexShrink: 1,
-                              },
-                            ]}
-                            numberOfLines={
-                              navCmd.kind === 'member_waiting_complete'
-                                || navCmd.kind === 'member_request_start'
-                                ? 2
-                                : 1
-                            }
-                            ellipsizeMode="tail"
-                            adjustsFontSizeToFit
-                            minimumFontScale={0.75}
-                          >
-                            {navLabel}
-                          </Text>
-                        ) : null}
+                        <Text
+                          style={[
+                            styles.navBtnText,
+                            {
+                              color:
+                                navCmd.kind === 'leader_stop'
+                                  ? glass.danger
+                                  : navCmd.kind === 'member_navigating' || navCmd.kind === 'member_waiting_complete'
+                                    ? glass.textSecondary
+                                    : canEditItinerary
+                                      ? colors.accentText
+                                      : '#0c1a12',
+                              flexShrink: 1,
+                            },
+                          ]}
+                          numberOfLines={
+                            navCmd.kind === 'member_waiting_complete'
+                              || navCmd.kind === 'member_request_start'
+                              ? 2
+                              : 1
+                          }
+                          ellipsizeMode="tail"
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.75}
+                        >
+                          {navLabel}
+                        </Text>
                       </Pressable>
                     ) : null}
     

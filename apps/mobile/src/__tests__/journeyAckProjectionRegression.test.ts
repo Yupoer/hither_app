@@ -58,6 +58,7 @@ function Harness({ state = groupState(), pending = true, session = null }: {
   const [, setLocalSessionId] = React.useState<string | null>(null);
   const next = useJourneyNavigation({ state, groupId: 'g', actorId: 'actor-a', isLeader: true,
     destinations: state.destinations, selectedDestination: destination, fromCoords: undefined,
+    acquireStartFix: testStartFix, arrivalRadiusM: 50,
     refresh: noop, t: key => key, mapRef, carouselRef, setSelectedIndex: noop,
     navigationSession: session, hasPendingTeamOperation: pending, onLocalSessionIdChange: setLocalSessionId });
   return React.createElement(JourneyProbe, { api: next });
@@ -71,6 +72,7 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => { renderer.unmount(); }); });
 
+const testStartFix = async () => ({ coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5 });
 it('keeps quick-add Start going after a delayed ACK until the separate session projection becomes visible', async () => {
   // The newly added local card exists, but no server session row has arrived.
   await act(async () => { await getJourneyApi().startNavigation(destination, 0); });

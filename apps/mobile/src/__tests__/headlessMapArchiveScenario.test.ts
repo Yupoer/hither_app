@@ -2,7 +2,7 @@ const { World } = require('../../test/headless/world.cjs');
 const { LEADER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
 
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
-type Observation = { presentation: { hosts: { testId?: string }[] }; external: { alerts: number };
+type Observation = { presentation: { hosts: { testId?: string }[] }; external: { alerts: number; watches: number };
   durable: { snapshot: { destinations: { id: string }[]; group: { journeyStatus: string } }; operations: unknown[] } };
 const has = (value: Observation, id: string) => value.presentation.hosts.some(host => host.testId === id);
 const SECOND = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -16,7 +16,11 @@ describe.each(['ios', 'android'])('actual development Map archive on %s', platfo
       screen: { name: 'Map', params: { groupId: GROUP_ID } } });
     await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'actual archive Map');
     await device.perform('map.card.toggle', { destinationId: DESTINATION });
+    const previousWatches = (await device.observe()).external.watches;
     await device.perform('map.journey.command', { destinationId: DESTINATION });
+    await world.waitFor(device, (value: Observation) => value.external.watches > previousWatches, 'fresh Start location request');
+    await world.advance(1000);
+    await device.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
     await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'active route before archive');
     await device.perform('map.settings.open');
     await device.input({ kind: 'animation', finished: true });
