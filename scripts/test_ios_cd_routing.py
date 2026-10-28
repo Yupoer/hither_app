@@ -51,6 +51,11 @@ assert "env:exec production" in ota_publish
 assert "EAS_BUILD_PROFILE=production npx --yes eas-cli@21.0.2 update" in ota_publish
 assert "          EAS_BUILD_PROFILE: production" not in ota_publish
 assert "EXUpdatesRequestHeaders" in steps["Verify IPA and record source"]["body"]
+build_receipt = steps["Verify IPA and record source"]["body"]
+assert "runtime=%s\\nchannel=%s\\n" in build_receipt
+assert 'runtime=$(plutil -extract EXUpdatesRuntimeVersion raw "$app/Expo.plist")' in build_receipt
+assert "assert updates.get('EXUpdatesRuntimeVersion') == config['runtimeVersion']" in build_receipt
+assert "assert updates.get('EXUpdatesRequestHeaders', {}).get('expo-channel-name') == 'production'" in build_receipt
 assert "    if: inputs.mode == 'inspect-release'" in source
 assert "    if: inputs.mode != 'inspect-release'" in source
 assert source.index("- name: Pin CocoaPods to checked-in lockfile") < source.index(
