@@ -199,6 +199,14 @@ def safe_launch_diagnostic(payload):
                                          and item in SYSTEM_TERMINATION_SIGNALS
                                          for item in signals):
         safe["systemTerminationSignals"] = sorted(set(signals))
+    signals = payload.get("pidCorrelatedSystemSignals")
+    if isinstance(signals, list) and all(isinstance(item, str)
+                                         and item in SYSTEM_TERMINATION_SIGNALS
+                                         for item in signals):
+        safe["pidCorrelatedSystemSignals"] = sorted(set(signals))
+    window = payload.get("systemLogWindowSeconds")
+    if type(window) is int and 0 <= window <= 120:
+        safe["systemLogWindowSeconds"] = window
     return safe
 
 

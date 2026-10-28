@@ -86,6 +86,12 @@ artifact or log before dispatching another build.
 | [40471132413](https://github.com/Yupoer/hither_app/actions/runs/40471132413) | Runner CocoaPods version disagreed with `Podfile.lock`. | PR #336 pinned the version; the next run passed this gate. |
 | [40474400700](https://github.com/Yupoer/hither_app/actions/runs/40474400700) | Generated privacy categories had the same disclosures in a different order. | PR #337 compares the disclosures while still rejecting changed content; the next run passed this gate. |
 | [40479104034](https://github.com/Yupoer/hither_app/actions/runs/40479104034), [40486179433](https://github.com/Yupoer/hither_app/actions/runs/40486179433), [40538498115](https://github.com/Yupoer/hither_app/actions/runs/40538498115) | The full Release simulator did not reach the startup breadcrumb. | The [last run's sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40538498115/artifacts/12752148731) shows `ProcessLookupError`, no matching crash report, and no runtime log signal. The cause remains unproven. PRs #339 and #340 added diagnostics, not a root-cause fix. |
+| [40696292714](https://github.com/Yupoer/hither_app/actions/runs/40696292714) | The full Release simulator did not reach the startup breadcrumb. | The sanitized diagnostic reports `appProcessState=absent`, `processAlive=false`, and `simulatorState=booted`. Bundle-only system log hints include `jetsam` and `watchdog`; the earlier probe could not attribute either signal to the launched App PID. The cause remains unknown. |
+
+Latest-source review also found that App startup checks for a production OTA
+and can call `Updates.reloadAsync`, which intentionally restarts the process.
+That is an unproven possibility for this run, alongside OS termination or an
+early native failure. The retained diagnostic does not distinguish them.
 
 For a cold-launch failure, read the sanitized diagnostic artifact for that exact
 attempt and compare the process, breadcrumb, crash, and runtime-log fields.
@@ -93,8 +99,16 @@ Do not call `ProcessLookupError` an App crash or a PID-check bug without evidenc
 that distinguishes them. The failure artifact also reports whether a process
 whose executable path matches this simulator's installed App has the original
 PID, a replacement PID, or no matching PID, plus simulator state and allowlisted
-system termination signals. `unavailable` means the probe failed; an empty signal
-list is not proof of a clean exit. These are advisory observations and never turn
+system termination signals. `systemTerminationSignals` contains bundle-only
+contextual hints and does not attribute them to the launched App. The separate
+`pidCorrelatedSystemSignals` list requires the exact bundle ID, an explicitly
+labeled launched App PID, and a signal in one Apple NDJSON log record whose
+timestamp falls within the failed launch attempt. `systemLogWindowSeconds`
+records the bounded attempt duration used to check record timestamps. The logging daemon's
+`processID` field is not the App PID. A correlated signal is still an observation,
+not proof of why the App stopped. `unavailable` means the probe failed; an empty
+signal list means no matching evidence was found in that window, not proof of a
+clean exit. These are advisory observations and never turn
 a failed launch into a pass. If a source-equivalent simulator `.app` remains on a
 trusted macOS host, run `apps/mobile/scripts/verify-ios-release-launch.py` against
 that App and simulator to repeat only the two cold starts. GitHub runners do not
