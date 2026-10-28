@@ -5,12 +5,15 @@ No uninstall or simulator erase: this also exercises upgrades over existing data
 Screenshots still require review; simulator success does not certify a device IPA.
 """
 import argparse
+import ctypes
+from datetime import datetime
 import json
 import os
 from pathlib import Path
 import plistlib
 import re
 import subprocess
+import sys
 import time
 
 
@@ -116,8 +119,101 @@ def runtime_log_signals(contents):
     return sorted(name for name, pattern in patterns.items() if pattern in text)
 
 
-def run(*args, check=True):
-    result = subprocess.run(args, capture_output=True, text=True)
+def system_termination_signals(contents):
+    text = contents.casefold()
+    patterns = {'jetsam': ('jetsam', 'memorystatus'),
+                'watchdog': ('watchdog', '0x8badf00d'),
+                'codesigning': ('code signature', 'codesigning'),
+                'process_exit': ('exit status', 'exit code', 'termination reason')}
+    return sorted(name for name, terms in patterns.items()
+                  if any(term in text for term in terms))
+
+
+def probe_system_termination(simulator, bundle, started):
+    if started is None or not re.fullmatch(r'[A-Za-z0-9.-]+', bundle):
+        return {'systemLogProbe': 'unavailable'}
+    predicate = ('(process == "runningboardd" OR process == "SpringBoard") '
+                 'AND eventMessage CONTAINS[c] "' + bundle + '"')
+    try:
+        since = datetime.fromtimestamp(started).astimezone().strftime('%Y-%m-%d %H:%M:%S')
+        result = subprocess.run(('xcrun', 'simctl', 'spawn', simulator, 'log', 'show',
+                                 '--style', 'compact', '--start', since, '--predicate',
+                                 predicate), capture_output=True, text=True, timeout=15)
+        if result.returncode:
+            return {'systemLogProbe': 'unavailable'}
+        return {'systemLogProbe': 'available',
+                'systemTerminationSignals': system_termination_signals(result.stdout)}
+    except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
+        return {'systemLogProbe': 'unavailable'}
+
+
+def probe_simulator_state(simulator):
+    try:
+        result = run('xcrun', 'simctl', 'list', 'devices', '--json',
+                     check=False, timeout=10)
+        if result.returncode:
+            return 'unavailable'
+        devices = json.loads(result.stdout)['devices']
+        matches = [device.get('state') for group in devices.values() for device in group
+                   if device.get('udid') == simulator]
+        if len(matches) != 1:
+            return 'unavailable'
+        return {'Booted': 'booted', 'Shutdown': 'shutdown'}.get(matches[0], 'other')
+    except (OSError, ValueError, KeyError, TypeError, AttributeError,
+            subprocess.TimeoutExpired):
+        return 'unavailable'
+
+
+def host_executable_path(pid):
+    if sys.platform != 'darwin':
+        return None
+    try:
+        libproc = ctypes.CDLL('/usr/lib/libproc.dylib')
+        libproc.proc_pidpath.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32)
+        libproc.proc_pidpath.restype = ctypes.c_int
+        buffer = ctypes.create_string_buffer(4096)
+        if libproc.proc_pidpath(pid, buffer, len(buffer)) <= 0:
+            return None
+        return os.fsdecode(buffer.value)
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def probe_app_process_state(simulator, bundle, executable, launched_pid):
+    try:
+        container = run('xcrun', 'simctl', 'get_app_container', simulator, bundle,
+                        'app', check=False, timeout=10)
+        if container.returncode or not Path(container.stdout.strip()).is_absolute():
+            return 'unavailable'
+        expected = (Path(container.stdout.strip()) / executable).resolve()
+        candidates = run('pgrep', '-x', executable, check=False, timeout=10)
+        if candidates.returncode == 1:
+            return 'absent'
+        if candidates.returncode:
+            return 'unavailable'
+        pids = [int(line) for line in candidates.stdout.splitlines()]
+        if not pids or len(pids) > 32 or any(pid <= 0 for pid in pids):
+            return 'unavailable'
+        matches = set()
+        unknown = False
+        for pid in pids:
+            path = host_executable_path(pid)
+            if path is None:
+                unknown = True
+            elif Path(path).resolve() == expected:
+                matches.add(pid)
+        if launched_pid in matches:
+            return 'original_pid'
+        if matches:
+            return 'replacement_pid'
+        return 'unavailable' if unknown else 'absent'
+    except (OSError, ValueError, TypeError, AttributeError,
+            subprocess.TimeoutExpired):
+        return 'unavailable'
+
+
+def run(*args, check=True, timeout=None):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
     if check and result.returncode:
         raise CommandFailure(args, result)
     return result
@@ -142,6 +238,7 @@ def main():
     attempt = None
     pid = None
     phase = None
+    started = None
     try:
         run('xcrun', 'simctl', 'install', options.simulator, str(options.app))
         for attempt in range(1, 3):
@@ -189,6 +286,7 @@ def main():
         evidence['failureType'] = type(error).__name__
         if attempt is not None:
             evidence['attempt'] = attempt
+        evidence['appProcessState'] = 'unavailable'
         if pid is not None:
             try:
                 os.kill(pid, 0)
@@ -197,12 +295,26 @@ def main():
                 evidence['processAlive'] = False
             except OSError:
                 pass
+            try:
+                evidence['appProcessState'] = probe_app_process_state(
+                    options.simulator, bundle, info['CFBundleExecutable'], pid)
+            except Exception:
+                evidence['appProcessState'] = 'unavailable'
+        try:
+            evidence['simulatorState'] = probe_simulator_state(options.simulator)
+        except Exception:
+            evidence['simulatorState'] = 'unavailable'
+        try:
+            evidence.update(probe_system_termination(options.simulator, bundle, started))
+        except Exception:
+            evidence['systemLogProbe'] = 'unavailable'
         if phase is not None:
             evidence['lastObservedPhase'] = phase if phase in {
                 'session_resolved', 'navigation_ready', 'stable'} else 'other'
         if isinstance(error, CommandFailure):
             evidence['simctlExitCode'] = error.returncode
-        if evidence.get('processAlive') is False and pid is not None:
+        if (pid is not None and (evidence.get('processAlive') is False
+                                or evidence.get('appProcessState') in {'absent', 'replacement_pid'})):
             try:
                 for _ in range(10):
                     report = find_crash_report(pid, info['CFBundleExecutable'], bundle,
@@ -220,12 +332,17 @@ def main():
         try:
             logs = run('xcrun', 'simctl', 'spawn', options.simulator, 'log', 'show',
                        '--style', 'compact', '--last', '3m', '--predicate',
-                       'process == "' + info['CFBundleExecutable'] + '"', check=False)
-            (options.output / 'native-launch.log').write_text(logs.stdout + logs.stderr)
-            if evidence.get('passed') is False:
-                evidence['runtimeLogSignals'] = runtime_log_signals(logs.stdout + logs.stderr)
-        except OSError:
-            pass
+                       'process == "' + info['CFBundleExecutable'] + '"',
+                       check=False, timeout=15)
+            if logs.returncode == 0:
+                evidence['runtimeLogProbe'] = 'available'
+                (options.output / 'native-launch.log').write_text(logs.stdout + logs.stderr)
+                if evidence.get('passed') is False:
+                    evidence['runtimeLogSignals'] = runtime_log_signals(logs.stdout + logs.stderr)
+            else:
+                evidence['runtimeLogProbe'] = 'unavailable'
+        except (OSError, UnicodeError, subprocess.TimeoutExpired):
+            evidence['runtimeLogProbe'] = 'unavailable'
         (options.output / 'launch-result.json').write_text(json.dumps(evidence, indent=2) + '\n')
 
 

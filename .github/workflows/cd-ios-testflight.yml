@@ -322,10 +322,11 @@ jobs:
           PY
           version=$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")
           build=$(plutil -extract CFBundleVersion raw "$app/Info.plist")
+          runtime=$(plutil -extract EXUpdatesRuntimeVersion raw "$app/Expo.plist")
           [[ "$build" =~ ^[0-9]+$ ]]
           digest=$(shasum -a 256 "$ipa" | cut -d ' ' -f 1)
-          printf 'source_sha=%s\nmode=%s\nversion=%s\nbuild=%s\nipa_sha256=%s\nrun_id=%s\n' \
-            "$SOURCE_SHA" "$RELEASE_MODE" "$version" "$build" "$digest" "$GITHUB_RUN_ID" \
+          printf 'source_sha=%s\nmode=%s\nversion=%s\nbuild=%s\nruntime=%s\nchannel=%s\nipa_sha256=%s\nrun_id=%s\n' \
+            "$SOURCE_SHA" "$RELEASE_MODE" "$version" "$build" "$runtime" production "$digest" "$GITHUB_RUN_ID" \
             > "$RUNNER_TEMP/hither-receipt.txt"
           cat "$RUNNER_TEMP/hither-receipt.txt" >> "$GITHUB_STEP_SUMMARY"
 
