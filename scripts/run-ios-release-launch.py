@@ -27,6 +27,7 @@ LAUNCH_FAILURE_TYPES = {"AssertionError", "CommandFailure", "FileNotFoundError",
                         "InvalidFileException", "OSError", "PermissionError",
                         "ProcessLookupError", "ValueError"}
 RUNTIME_LOG_SIGNALS = {"dyld_failure", "uncaught_exception", "fatal_error", "assertion_failure"}
+SYSTEM_TERMINATION_SIGNALS = {"jetsam", "watchdog", "codesigning", "process_exit"}
 
 
 class ReleaseCommandFailure(RuntimeError):
@@ -156,7 +157,12 @@ def safe_launch_diagnostic(payload):
                                             "EXC_RESOURCE", "EXC_CORPSE_NOTIFY"}),
                          ("exceptionSignal", {"SIGABRT", "SIGBUS", "SIGILL", "SIGKILL",
                                               "SIGSEGV", "SIGTRAP", "SIGTERM"}),
-                         ("crashReportProbe", {"unavailable"})):
+                         ("crashReportProbe", {"unavailable"}),
+                         ("appProcessState", {"original_pid", "replacement_pid", "absent",
+                                              "unavailable"}),
+                         ("simulatorState", {"booted", "shutdown", "other", "unavailable"}),
+                         ("systemLogProbe", {"available", "unavailable"}),
+                         ("runtimeLogProbe", {"available", "unavailable"})):
         value = payload.get(key)
         if isinstance(value, str) and value in choices:
             safe[key] = value
@@ -188,6 +194,11 @@ def safe_launch_diagnostic(payload):
     if isinstance(signals, list) and all(isinstance(item, str) and item in RUNTIME_LOG_SIGNALS
                                          for item in signals):
         safe["runtimeLogSignals"] = sorted(set(signals))
+    signals = payload.get("systemTerminationSignals")
+    if isinstance(signals, list) and all(isinstance(item, str)
+                                         and item in SYSTEM_TERMINATION_SIGNALS
+                                         for item in signals):
+        safe["systemTerminationSignals"] = sorted(set(signals))
     return safe
 
 

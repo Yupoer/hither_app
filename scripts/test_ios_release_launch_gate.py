@@ -21,6 +21,111 @@ VERIFY_SPEC.loader.exec_module(VERIFY)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def test_failure_probe_distinguishes_replacement_app_from_stale_host_pid(self):
+        app = "/sim/Containers/Hither.app"
+        def command(*args, check=True, timeout=None):
+            if args[2] == "get_app_container":
+                return SimpleNamespace(returncode=0, stdout=app + "\n")
+            if args[0] == "pgrep":
+                return SimpleNamespace(returncode=0, stdout="123\n456\n")
+            raise AssertionError(args)
+
+        with patch.object(VERIFY, "run", side_effect=command), \
+                patch.object(VERIFY, "host_executable_path", side_effect={
+                    123: "/other/Hither.app/Hither", 456: app + "/Hither"}.get):
+            self.assertEqual(VERIFY.probe_app_process_state(
+                "simulator", "app.hither.mobile", "Hither", 123), "replacement_pid")
+            self.assertEqual(VERIFY.probe_app_process_state(
+                "simulator", "app.hither.mobile", "Hither", 456), "original_pid")
+
+        with patch.object(VERIFY, "run", side_effect=command), \
+                patch.object(VERIFY, "host_executable_path", return_value=None):
+            self.assertEqual(VERIFY.probe_app_process_state(
+                "simulator", "app.hither.mobile", "Hither", 123), "unavailable")
+
+    def test_failure_probe_reports_exact_simulator_and_missing_tools(self):
+        devices = {"devices": {"iOS 27": [
+            {"udid": "other", "state": "Booted"},
+            {"udid": "target", "state": "Shutdown"}]}}
+        with patch.object(VERIFY, "run", return_value=SimpleNamespace(
+                returncode=0, stdout=json.dumps(devices))):
+            self.assertEqual(VERIFY.probe_simulator_state("target"), "shutdown")
+            self.assertEqual(VERIFY.probe_simulator_state("missing"), "unavailable")
+        with patch.object(VERIFY, "run", side_effect=OSError):
+            self.assertEqual(VERIFY.probe_simulator_state("target"), "unavailable")
+            self.assertEqual(VERIFY.probe_app_process_state(
+                "target", "app.hither.mobile", "Hither", 123), "unavailable")
+        with patch.object(VERIFY, "run", side_effect=subprocess.TimeoutExpired("simctl", 10)):
+            self.assertEqual(VERIFY.probe_simulator_state("target"), "unavailable")
+            self.assertEqual(VERIFY.probe_app_process_state(
+                "target", "app.hither.mobile", "Hither", 123), "unavailable")
+
+    def test_failure_probe_is_advisory_and_sanitized(self):
+        payload = {"failureStage": "startup_breadcrumb", "failureType": "ProcessLookupError",
+                   "attempt": 1, "processAlive": False, "appProcessState": "replacement_pid",
+                   "simulatorState": "booted", "path": "/private/app/Hither",
+                   "hostPid": 456, "log": "private user data", "systemLogProbe": "available",
+                   "systemTerminationSignals": ["watchdog"], "runtimeLogProbe": "available"}
+        self.assertEqual(GATE.safe_launch_diagnostic(payload), {
+            "failureStage": "startup_breadcrumb", "failureType": "ProcessLookupError",
+            "attempt": 1, "processAlive": False, "appProcessState": "replacement_pid",
+            "simulatorState": "booted", "systemLogProbe": "available",
+            "systemTerminationSignals": ["watchdog"], "runtimeLogProbe": "available"})
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "appProcessState": "/private/app/Hither", "simulatorState": "secret",
+            "systemTerminationSignals": ["private user data"]}), {})
+
+        with patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout="app.hither.mobile watchdog private user data")) as query:
+            self.assertEqual(VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", 1000), {
+                    "systemLogProbe": "available", "systemTerminationSignals": ["watchdog"]})
+            self.assertIn("--start", query.call_args.args[0])
+            self.assertNotIn("--last", query.call_args.args[0])
+            self.assertEqual(query.call_args.kwargs["timeout"], 15)
+        with patch.object(VERIFY.subprocess, "run", side_effect=OSError):
+            self.assertEqual(VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", 1000), {"systemLogProbe": "unavailable"})
+        invalid_utf8 = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
+        with patch.object(VERIFY.subprocess, "run", side_effect=invalid_utf8):
+            self.assertEqual(VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", 1000), {"systemLogProbe": "unavailable"})
+        self.assertEqual(VERIFY.probe_system_termination(
+            "simulator", "app.hither.mobile", None), {"systemLogProbe": "unavailable"})
+
+    def test_failure_before_launch_pid_still_reports_unavailable_probes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "Hither.app"
+            app.mkdir()
+            (app / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "app.hither.mobile", "CFBundleVersion": "77",
+                "CFBundleSupportedPlatforms": ["iPhoneSimulator"],
+                "CFBundleExecutable": "Hither"}))
+            output = root / "result"
+            argv = ["verify-ios-release-launch.py", "--app", str(app),
+                    "--simulator", "test-simulator", "--build", "77", "--output", str(output)]
+
+            def command(*args, check=True, timeout=None):
+                if args[2] == "install":
+                    raise VERIFY.CommandFailure(args, SimpleNamespace(
+                        returncode=1, stdout="private user data", stderr=""))
+                if args[2] == "spawn":
+                    raise subprocess.TimeoutExpired(args, 15)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with patch.object(VERIFY, "run", side_effect=command), \
+                    patch.object(VERIFY, "probe_simulator_state", return_value="shutdown"), \
+                    patch("sys.argv", argv), self.assertRaises(VERIFY.CommandFailure):
+                VERIFY.main()
+            result = json.loads((output / "launch-result.json").read_text(encoding="utf-8"))
+            self.assertEqual(GATE.safe_launch_diagnostic(result), {
+                "failureStage": "install", "failureType": "CommandFailure",
+                "simctlExitCode": 1, "appProcessState": "unavailable",
+                "simulatorState": "shutdown", "systemLogProbe": "unavailable",
+                "runtimeLogProbe": "unavailable"})
+            self.assertNotIn("private user data", json.dumps(result))
+
     def test_failed_cold_launch_records_stage_without_runtime_log_contents(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -32,27 +137,35 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 "CFBundleExecutable": "Hither"}))
             output = root / "result"
 
-            def command(*args, check=True):
+            def command(*args, check=True, timeout=None):
                 if args[2] == "launch":
-                    return SimpleNamespace(stdout="app.hither.mobile: 123\n", stderr="")
+                    return SimpleNamespace(returncode=0, stdout="app.hither.mobile: 123\n", stderr="")
                 if args[2] == "get_app_container":
-                    return SimpleNamespace(stdout=str(root / "data"), stderr="")
-                return SimpleNamespace(stdout="private user data and token", stderr="")
+                    return SimpleNamespace(returncode=0, stdout=str(root / "data"), stderr="")
+                return SimpleNamespace(returncode=0, stdout="private user data and token", stderr="")
 
             argv = ["verify-ios-release-launch.py", "--app", str(app),
                     "--simulator", "test-simulator", "--build", "77", "--output", str(output)]
             cases = (
-                ([ProcessLookupError(), ProcessLookupError()], "launch", False, False, False),
-                ([None, ProcessLookupError(), ProcessLookupError()], "startup_breadcrumb", True, False, False),
-                ([None, ProcessLookupError(), ProcessLookupError()], "startup_breadcrumb", True, False, True),
-                ([None, PermissionError(), PermissionError()], "startup_breadcrumb", True, None, False),
+                ([ProcessLookupError(), ProcessLookupError()], "launch", False, False, False, "unavailable"),
+                ([None, ProcessLookupError(), ProcessLookupError()],
+                 "startup_breadcrumb", True, False, False, "unavailable"),
+                ([None, ProcessLookupError(), ProcessLookupError()],
+                 "startup_breadcrumb", True, False, False, "replacement_pid"),
+                ([None, ProcessLookupError(), ProcessLookupError()],
+                 "startup_breadcrumb", True, False, True, "unavailable"),
+                ([None, PermissionError(), PermissionError()],
+                 "startup_breadcrumb", True, None, False, "unavailable"),
             )
-            for checks, stage, initially_alive, finally_alive, probe_error in cases:
+            for checks, stage, initially_alive, finally_alive, probe_error, app_state in cases:
                 with self.subTest(stage=stage, probe_error=probe_error), \
                         patch.object(VERIFY, "run", side_effect=command), \
                         patch.object(VERIFY.os, "kill", side_effect=checks), \
+                        patch.object(VERIFY, "probe_app_process_state", return_value=app_state), \
                         patch.object(VERIFY, "find_crash_report", return_value=None,
                                      side_effect=OSError if probe_error else None), \
+                        patch.object(VERIFY, "probe_system_termination",
+                                     return_value={"systemLogProbe": "unavailable"}), \
                         patch.object(VERIFY.time, "sleep"), patch("sys.argv", argv):
                     error = type(checks[1] if initially_alive else checks[0])
                     with self.assertRaises(error):
@@ -62,7 +175,9 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 self.assertNotIn("private user data and token", result)
                 expected = {"failureStage": stage, "failureType": error.__name__,
                             "attempt": 1, "hostPidAliveAtLaunch": initially_alive,
-                            "runtimeLogSignals": []}
+                            "runtimeLogSignals": [], "appProcessState": app_state,
+                            "simulatorState": "unavailable", "systemLogProbe": "unavailable",
+                            "runtimeLogProbe": "available"}
                 if finally_alive is not None:
                     expected["processAlive"] = finally_alive
                     if probe_error:

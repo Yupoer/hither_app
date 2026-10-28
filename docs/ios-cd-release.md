@@ -90,11 +90,22 @@ artifact or log before dispatching another build.
 For a cold-launch failure, read the sanitized diagnostic artifact for that exact
 attempt and compare the process, breadcrumb, crash, and runtime-log fields.
 Do not call `ProcessLookupError` an App crash or a PID-check bug without evidence
-that distinguishes them. Keep the full Release gate; make a specific diagnosis
-and test a targeted fix before another expensive native run. `ota` does not run
-this simulator gate. Select it only when the verified binary record and all
-changes since that binary pass compatibility checks. A successful `submit` still
-needs separate Apple processing and installed-build evidence.
+that distinguishes them. The failure artifact also reports whether a process
+whose executable path matches this simulator's installed App has the original
+PID, a replacement PID, or no matching PID, plus simulator state and allowlisted
+system termination signals. `unavailable` means the probe failed; an empty signal
+list is not proof of a clean exit. These are advisory observations and never turn
+a failed launch into a pass. If a source-equivalent simulator `.app` remains on a
+trusted macOS host, run `apps/mobile/scripts/verify-ios-release-launch.py` against
+that App and simulator to repeat only the two cold starts. GitHub runners do not
+retain that App, so the next cloud check requires `mode=validate-release` with
+the reviewed current `master` SHA and `backend_verified=false`. It rebuilds the
+full Release simulator App, then uploads only a sanitized receipt or failure
+diagnostic; it does not sign an IPA, submit to TestFlight, or publish OTA. Review
+the new evidence before any further native retry. `ota` does not run this
+simulator gate. Select it only when the verified binary record and all changes
+since that binary pass compatibility checks. A successful `submit` still needs
+separate Apple processing and installed-build evidence.
 
 The historical `scripts/ota-auto-ship.sh` and `scripts/task-end-ship.sh` are
 retired compatibility stubs. A Git push alone does not publish an update.
