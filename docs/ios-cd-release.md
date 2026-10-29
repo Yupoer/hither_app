@@ -228,6 +228,7 @@ with its own retained evidence before another dispatch.
 | [40837853209](https://github.com/Yupoer/hither_app/actions/runs/40837853209), source `1ddd65a85e55462f023aaa8c00d02b4a1f7b50b2` | Help preflight and full Release compilation passed; cold launch failed on attempt 1. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40837853209/artifacts/12883846272) attributes signal 5 to the original executable-checked PID during launch observation. The App was then absent, the simulator remained booted, and no matching report, fixed console/runtime pattern or PID-correlated system hint was observed. This establishes SIGTRAP termination, not its trap site or a link to historical phone reports. |
 | [40898632385](https://github.com/Yupoer/hither_app/actions/runs/40898632385), source `a608d6356b0ca78804414c7fdab8954c78ba7cbb` | The host debugger self-check failed before simulator creation or App build. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40898632385/artifacts/12909020858) reports `debuggerCheck.probe=exited` at `continue`, without an exit status. This is an LLDB-reported state; it does not establish a new App failure or uniquely identify the fixture failure. |
 | [40911535088](https://github.com/Yupoer/hither_app/actions/runs/40911535088), source `1e59472809f67f8bbc4b4156ab8b0c707546f631` | The host check captured the expected named trap frames and completed its release sequence, then failed cleanup before App build. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40911535088/artifacts/12913723304) reports stopped/exception, `fixtureRelease=sent` and `cleanupFailed=true`. These are fixture frames, not an App crash stack. The old diagnostic does not identify the failing cleanup operation. |
+| [40925347925](https://github.com/Yupoer/hither_app/actions/runs/40925347925), source `1c63c3fb6456befb4900657327971f57aa70d2bf` | Host preflight, pods, Release compilation and App metadata passed; the original App again terminated with signal 5 during cold-launch observation. | The dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40925347925/artifacts/12922421361) reports an absent App and no matching report or frames. The separate replay reached its collector deadline with inferred stage `continue`. That stage was derived from an attach marker; it cannot distinguish a running replay, a blocked debugger call or cleanup. Contextual termination keywords remain unattributed. |
 
 The last run was dispatched separately from this patch. No rerun or guessed
 native fix is part of the contract repair. Future logs contain fixed UTC stage
@@ -300,7 +301,9 @@ report. Other failures receive no replay. The original JSON and failed command
 status remain unchanged, even if the replay succeeds or its tooling fails.
 
 Before the expensive App build, a selected-Xcode LLDB check must capture a named
-frame from a tiny host C trap fixture. The check also verifies the selected
+frame from a tiny host C trap fixture and interrupt/sample a separate continuously
+running host fixture. The sample is expected diagnostic evidence, never a trap.
+The check also verifies the selected
 simctl advertises wait-for-debugger and stdout/stderr capture. A denied debugger,
 missing capability, empty fixture stack or reported cleanup failure fails before
 App build. This checks the collector, not App startup or simulator-App debugging
@@ -314,7 +317,9 @@ test maps the Clang-only trap intrinsic to `raise(SIGTRAP)`; selected-Xcode
 LLDB capture remains a separate native check. Apple
 documents interrupted reads in [read(2)](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/read.2.html).
 The named trap frame, successful release write sequence and successful cleanup
-are all required for the self-check to pass.
+are all required for the trap self-check to pass. The running-target check must
+also collect its explicitly labeled sample and complete cleanup. These host
+checks do not establish simulator App launch/attach behavior.
 
 After an eligible failure, the helper exclusively reserves a separate directory
 and attempts at most one launch of the existing installed App. It verifies the
@@ -325,10 +330,23 @@ can be resolved. Debugger execution has an external deadline and cleanup targets
 only the diagnostic processes. No debugger permissions, TCC settings or crash
 reporting preferences are changed.
 
+Attach remains synchronous. Continue uses asynchronous process-state observation,
+excluding the initial attach stop and automatically restarted events. If the
+replay does not stop before the sampling deadline, the collector requests one
+asynchronous interrupt and waits only a bounded interval for a sample. A stop
+after that request is labeled `captureKind=timeout_sample`; a preceding
+spontaneous stop is labeled `spontaneous_stop`. A timeout sample is a snapshot of
+another lifetime, not the original trap stack, and cannot pass the trap check or
+the original App gate. LLDB documents
+[asynchronous execution](https://lldb.llvm.org/python_api/lldb.SBDebugger.html)
+and [process interrupts](https://lldb.llvm.org/python_api/lldb.SBProcess.html).
+
 The safe failure artifact retains `debuggerCheck` or `diagnosticReplay` as
 separate evidence. Its allowlist contains finite probe/stage/stop-reason values,
 a bounded signal, and at most 16 static frames with module basename, image UUID,
-image-relative offset and an optional static function name. `cleanupFailed`
+image-relative offset and an optional static function name. Bounded additional
+thread stacks distinguish the selected, initial and recognized React JavaScript
+threads without exporting thread or queue names. `cleanupFailed`
 records whether LLDB target cleanup reported failure; captured frames survive
 that failure, while the diagnostic command still fails. Raw debugger output,
 argument values, variable values, memory and source paths are excluded. Raw
@@ -346,9 +364,12 @@ with status -1 after debugserver or connection loss, as shown in its
 The host check also records `fixtureRelease` as `sent`, `write_failed` or
 `not_observed`. `sent` means write, flush and close completed, not that the
 fixture consumed the byte. A broken pipe cannot discard capture evidence or
-skip cleanup. The debugger writes a separate runner-local `lldb-capture.json`;
-the outer helper writes the final sanitized `replay-result.json` once after
-guarded cleanup. Neither file replaces the original launch result.
+skip cleanup. The debugger commits a sanitized observation before potentially
+blocking cleanup and writes its completed capture separately. A finite
+phase/state progress record identifies the last completed boundary if a native
+API stalls. The outer helper writes the final sanitized `replay-result.json`
+once after guarded cleanup; an observation recovered after watchdog termination
+retains failure status. None of these files replaces the original launch result.
 
 Cleanup diagnostics retain at most six `cleanupErrors` with finite operation,
 kind and phase values, bounded `errno` or SBError type/code, and an optional
@@ -367,10 +388,18 @@ independently observed OS exit evidence. This mechanism is a candidate for the
 recorded cleanup failure, not a proven attribution. Its Darwin regression and
 the selected-Xcode host check require native execution before merge.
 
-`collectorTimedOut=true` preserves any capture already committed when the
-debugger command reaches its deadline. Cleanup errors remain attached to that
-capture. The host check and replay command require explicit timeout-free
-completion; retained frames cannot turn a timeout into success. For CI,
+`collectorTimedOut=true` preserves an available observation when the collector
+requests a timeout sample or reaches its outer deadline. Cleanup errors remain
+attached. A successful expected-sample self-check is separate from the strict
+named-trap predicate; a diagnostic replay that exhausts its observation budget
+still fails its command. `lldbCommandTimedOut` records only the outer watchdog;
+`lldbCommandExitStatus` describes the debugger command's `Popen` status, not the
+inferior or the original App's OS exit. Both host proofs require that command to
+complete before its watchdog with status zero. A saved sample followed by a
+blocked or unsuccessful debugger command cannot pass the self-check.
+`resumeObserved` and `stopAdvanced` retain only booleans, without raw thread or
+stop identifiers. A sample of an unchanged attach stop cannot pass either host
+proof. Retained frames cannot turn the App gate into success. For CI,
 `check --print-result` prints only a reconstructed safe result while raw
 debugger output remains runner-local. The default command stays quiet.
 `launchHelp` retains only the help command's bounded exit code and three

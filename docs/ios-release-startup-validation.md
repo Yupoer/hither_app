@@ -80,7 +80,9 @@ host 子程序驗證 exit 37 與 SIGTERM 觀測。此自測不代表 App 通過�
 對已確認的原 PID SIGTRAP、App 已不存在且沒有匹配 crash report 的失敗，wrapper
 會在保存原始結果後，使用同一份已安裝 binary 最多加一次限時 LLDB 診斷 launch。
 此 replay 不計入兩次冷啟動驗收；其成功或工具失敗都不能覆蓋原 gate 失敗。
-完整 App build 前會先用小型 host trap fixture 驗證 debugger 能取得命名 frame。
+完整 App build 前會先用小型 host trap fixture 驗證 debugger 能取得命名 frame，
+再以持續執行的 host fixture 驗證限時 interrupt／sample；這仍不代表 Simulator
+App 的 launch／attach 已驗證。
 fixture 的讀取只會在 `EINTR` 時重試，EOF 與其他錯誤仍失敗。自測還必須完成
 release write／flush／close；`fixtureRelease=sent` 不代表已證實子程序消費了 byte。
 若 LLDB 回報 `exited`，會保留 `lldbExitStatus` 與 `sigtrapStopConfigured`。
@@ -92,8 +94,18 @@ release write／flush／close；`fixtureRelease=sent` 不代表已證實子程�
 LLDB Kill／Detach、debugger group 與 fixture group；不保留原始錯誤文字。
 Group cleanup 先嘗試 reap 已退出的直接子程序，再處理 group signals；即使
 leader 已退出仍清理 descendants，真實 permission error 與最終 timeout 都失敗。
-Debugger command deadline 不會丟掉已取得的 capture；`collectorTimedOut=true`
-仍使自測與 replay 指令失敗。CI 可使用 `check --print-result` 取得重新過濾的
+Attach 後以非同步 continue 與有界 state 觀測等待自然 stop，排除舊 attach stop。
+若觀測期限內沒有 stop，最多要求一次 interrupt，取得的 snapshot 明確標為
+`captureKind=timeout_sample`；自然 stop 則為 `spontaneous_stop`。Sample 不能當成
+原 App trap stack，也不能通過 named-trap predicate 或原始冷啟動 gate。
+安全 observation 在可能阻塞的 cleanup 前保存；watchdog 可保留它及有限 phase／state，
+但不能把未完成 cleanup 改判成功。只保留有界靜態 thread stacks，不輸出 thread names。
+`collectorTimedOut=true` 仍使 replay 指令失敗；預期 timeout sample 的獨立自測則要求
+sample 與 cleanup 都完成。`lldbCommandTimedOut` 只表示外層 watchdog；
+`lldbCommandExitStatus` 是 debugger 指令的 `Popen` 狀態，不能當成 App exit status。
+兩項 host proof 都要求 command 在期限內正常結束且狀態為 0。`resumeObserved`／
+`stopAdvanced` 只有布林值，停在舊 attach stop 的 sample 不能通過自測。
+CI 可使用 `check --print-result` 取得重新過濾的
 安全 JSON，原始 LLDB 輸出留在 runner。
 只把有限的靜態 module／UUID／offset／function 欄位放入診斷 artifact，原始
 debugger 輸出留在 runner。相同 native binary 仍不保證選到相同 OTA bundle。

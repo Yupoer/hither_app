@@ -25,6 +25,9 @@ import uuid
 BUNDLE = 'app.hither.mobile'
 RESULT_NAME = 'replay-result.json'
 CAPTURE_RESULT_NAME = 'lldb-capture.json'
+OBSERVATION_NAME = 'lldb-observation.json'
+PROGRESS_NAME = 'collector-progress.json'
+SAMPLE_REQUEST_NAME = 'sample.request'
 PROBES = frozenset(('stopped', 'exited', 'timeout', 'unavailable',
                     'not_eligible', 'identity_mismatch'))
 STOP_REASONS = frozenset(('signal', 'exception', 'other'))
@@ -35,7 +38,16 @@ CLEANUP_OPERATIONS = frozenset(('lldb_inspect', 'lldb_kill', 'lldb_detach',
 CLEANUP_KINDS = frozenset(('api_error', 'os_error', 'exception'))
 CLEANUP_PHASES = frozenset(('reap', 'term', 'kill', 'wait'))
 EXCEPTION_TYPES = frozenset(('AttributeError', 'RuntimeError', 'TypeError', 'ValueError', 'other'))
+CAPTURE_KINDS = frozenset(('spontaneous_stop', 'timeout_sample'))
+COLLECTOR_PHASES = frozenset(('identity', 'attach', 'configure', 'continue', 'wait_stop',
+                              'interrupt', 'frames', 'cleanup'))
+PROCESS_STATES = frozenset(('invalid', 'unloaded', 'connected', 'attaching', 'launching',
+                            'stopped', 'running', 'stepping', 'crashed', 'detached',
+                            'exited', 'suspended', 'unknown'))
+THREAD_ROLES = frozenset(('selected', 'initial', 'react_js'))
+REACT_JS_THREAD_NAMES = frozenset(('com.facebook.react.JavaScript',))
 DEBUGGER_TIMEOUT = 50
+SAMPLE_WAIT = 3
 COMMAND_TIMEOUT = 8
 MAX_JSON_BYTES = 512_000
 MAX_COMMAND_BYTES = 128_000
@@ -46,13 +58,15 @@ FUNCTION_NAME = re.compile(r'[A-Za-z_$~+?\-][A-Za-z0-9_$~+\-.:(), <>\[\]*&|!?^%{
 FIXTURE_SOURCE = '''#include <errno.h>
 #include <unistd.h>
 __attribute__((noinline)) void hither_lldb_probe(void) { __builtin_debugtrap(); }
+__attribute__((noinline)) void hither_lldb_running_probe(void) { for (;;) pause(); }
 int main(void) {
   char token;
   ssize_t count;
   do { count = read(STDIN_FILENO, &token, 1); } while (count == -1 && errno == EINTR);
   if (count == 0) return 2;
   if (count != 1) return 3;
-  hither_lldb_probe();
+  if (token == 's') hither_lldb_running_probe();
+  else hither_lldb_probe();
   return 0;
 }
 '''
@@ -121,6 +135,26 @@ def safe_result(payload):
         result['cleanupFailed'] = payload['cleanupFailed']
     if type(payload.get('collectorTimedOut')) is bool:
         result['collectorTimedOut'] = payload['collectorTimedOut']
+    for key in ('sampleRequested', 'resumeObserved', 'stopAdvanced', 'lldbCommandTimedOut'):
+        if type(payload.get(key)) is bool:
+            result[key] = payload[key]
+    command_status = payload.get('lldbCommandExitStatus')
+    if type(command_status) is int and -127 <= command_status <= 255:
+        result['lldbCommandExitStatus'] = command_status
+    for key, choices in (('captureKind', CAPTURE_KINDS), ('collectorPhase', COLLECTOR_PHASES),
+                         ('processState', PROCESS_STATES)):
+        if isinstance(payload.get(key), str) and payload[key] in choices:
+            result[key] = payload[key]
+    sample = payload.get('runningSample')
+    if isinstance(sample, dict):
+        safe = safe_result({key: sample[key] for key in (
+            'scope', 'probe', 'stage', 'captureKind', 'collectorPhase', 'processState',
+            'collectorTimedOut', 'sampleRequested', 'resumeObserved', 'stopAdvanced', 'cleanupFailed', 'cleanupErrors',
+            'lldbCommandTimedOut', 'lldbCommandExitStatus',
+            'stopReason', 'signal', 'frames', 'fixtureRelease', 'lldbExitStatus',
+            'sigtrapStopConfigured') if key in sample})
+        if safe:
+            result['runningSample'] = safe
     help_result = payload.get('launchHelp')
     if (isinstance(help_result, dict) and type(help_result.get('exitCode')) is int
             and -127 <= help_result['exitCode'] <= 255):
@@ -156,6 +190,15 @@ def safe_result(payload):
     frames = payload.get('frames')
     if isinstance(frames, list):
         result['frames'] = [safe for value in frames[:16] if (safe := _safe_frame(value)) is not None]
+    threads = payload.get('threadFrames')
+    if isinstance(threads, list):
+        safe_threads = []
+        for thread in threads[:3]:
+            if (isinstance(thread, dict) and isinstance(thread.get('role'), str)
+                    and thread['role'] in THREAD_ROLES and isinstance(thread.get('frames'), list)):
+                safe_threads.append({'role': thread['role'], 'frames': [safe for value in thread['frames'][:16]
+                                     if (safe := _safe_frame(value)) is not None]})
+        result['threadFrames'] = safe_threads
     return result
 
 
@@ -221,6 +264,20 @@ def _write_result(output, payload, name=RESULT_NAME):
     finally:
         temporary.unlink(missing_ok=True)
     return result
+
+
+def _write_progress(output, stage, phase, state='unknown', sample_requested=False):
+    payload = safe_result({'scope': 'diagnostic_replay', 'probe': 'unavailable', 'stage': stage,
+                           'collectorPhase': phase, 'processState': state,
+                           'sampleRequested': sample_requested})
+    temporary = Path(output) / ('.collector-progress-' + str(os.getpid()) + '.pending')
+    try:
+        with temporary.open('x', encoding='utf-8') as stream:
+            json.dump(payload, stream, sort_keys=True)
+            stream.write('\n')
+        os.replace(temporary, Path(output) / PROGRESS_NAME)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _read_json(path):
@@ -426,6 +483,11 @@ def _frame_from_lldb(frame, target, lldb):
                         'function': frame.GetFunctionName()})
 
 
+def _thread_frames(thread, target, lldb):
+    return [frame for index in range(min(thread.GetNumFrames(), 16))
+            if (frame := _frame_from_lldb(thread.GetFrameAtIndex(index), target, lldb)) is not None]
+
+
 def _stopped_result(process, target, lldb):
     thread = process.GetSelectedThread()
     for index in range(min(process.GetNumThreads(), 256)):
@@ -441,11 +503,97 @@ def _stopped_result(process, target, lldb):
     result = dict(_result('stopped'), stopReason=reason, frames=[])
     if reason == 'signal' and thread.GetStopReasonDataCount():
         result['signal'] = thread.GetStopReasonDataAtIndex(0)
-    for index in range(min(thread.GetNumFrames(), 16)):
-        frame = _frame_from_lldb(thread.GetFrameAtIndex(index), target, lldb)
-        if frame is not None:
-            result['frames'].append(frame)
+    result['frames'] = _thread_frames(thread, target, lldb)
+    candidates = [('selected', thread)]
+    if process.GetNumThreads():
+        candidates.append(('initial', process.GetThreadAtIndex(0)))
+    for index in range(min(process.GetNumThreads(), 256)):
+        candidate = process.GetThreadAtIndex(index)
+        if (isinstance(candidate, lldb.SBThread) and candidate.IsValid()
+                and candidate.GetName() in REACT_JS_THREAD_NAMES):
+            candidates.append(('react_js', candidate))
+            break
+    seen = set()
+    result['threadFrames'] = []
+    for role, candidate in candidates:
+        if not isinstance(candidate, lldb.SBThread) or not candidate.IsValid():
+            continue
+        identity = candidate.GetThreadID()
+        if identity not in seen:
+            seen.add(identity)
+            result['threadFrames'].append({'role': role, 'frames': result['frames'] if role == 'selected'
+                                          else _thread_frames(candidate, target, lldb)})
     return safe_result(result)
+
+
+def _state_name(state, lldb):
+    return next((name for name in PROCESS_STATES
+                 if hasattr(lldb, 'eState' + name.capitalize())
+                 and state == getattr(lldb, 'eState' + name.capitalize())), 'unknown')
+
+
+def _drain_process_events(listener, process, lldb, restarted=False, resumed=False, stopped_id=None):
+    for _ in range(256):
+        event = lldb.SBEvent()
+        if not listener.GetNextEvent(event):
+            return restarted, resumed, stopped_id
+        if (lldb.SBProcess.EventIsProcessEvent(event)
+                and event.GetType() & lldb.SBProcess.eBroadcastBitStateChanged):
+            restarted = lldb.SBProcess.GetRestartedFromEvent(event)
+            state = lldb.SBProcess.GetStateFromEvent(event)
+            resumed = resumed or state in (lldb.eStateRunning, lldb.eStateStepping)
+            stopped_id = (process.GetStopID() if state in (lldb.eStateStopped, lldb.eStateCrashed)
+                          and not restarted else None)
+    raise _CommandFailure()
+
+
+def _continued_result(process, target, lldb, listener, baseline, output, stop_configured):
+    requested, sample_deadline, restarted, resumed, previous_state = False, None, False, False, None
+    stopped_id = None
+    _write_progress(output, 'continue', 'wait_stop')
+    while True:
+        restarted, resumed, stopped_id = _drain_process_events(listener, process, lldb, restarted, resumed, stopped_id)
+        state = process.GetState()
+        resumed = resumed or state in (lldb.eStateRunning, lldb.eStateStepping)
+        name = _state_name(state, lldb)
+        if name != previous_state:
+            _write_progress(output, 'continue', 'wait_stop', name, requested)
+            previous_state = name
+        if state == lldb.eStateExited:
+            return dict(_result('exited', 'continue'), lldbExitStatus=process.GetExitStatus(),
+                        sigtrapStopConfigured=stop_configured, sampleRequested=requested,
+                        collectorTimedOut=requested, processState=name, resumeObserved=resumed)
+        if (state in (lldb.eStateStopped, lldb.eStateCrashed)
+                and stopped_id is not None and stopped_id > baseline
+                and process.GetStopID() == stopped_id and not restarted):
+            _write_progress(output, 'frames', 'frames', name, requested)
+            return dict(_stopped_result(process, target, lldb), stage='frames',
+                        captureKind='timeout_sample' if requested else 'spontaneous_stop',
+                        sampleRequested=requested, collectorTimedOut=requested, processState=name,
+                        resumeObserved=resumed, stopAdvanced=True)
+        if not requested and (Path(output) / SAMPLE_REQUEST_NAME).is_file():
+            restarted, resumed, stopped_id = _drain_process_events(listener, process, lldb, restarted, resumed, stopped_id)
+            state = process.GetState()
+            if state in (lldb.eStateExited, lldb.eStateStopped, lldb.eStateCrashed):
+                if state == lldb.eStateExited or (stopped_id is not None and stopped_id > baseline
+                        and process.GetStopID() == stopped_id and not restarted):
+                    continue
+                if process.GetStopID() == baseline and not restarted:
+                    _write_progress(output, 'frames', 'frames', _state_name(state, lldb))
+                    return dict(_stopped_result(process, target, lldb), stage='frames',
+                                captureKind='timeout_sample', collectorTimedOut=True,
+                                sampleRequested=False, resumeObserved=resumed, stopAdvanced=False,
+                                processState=_state_name(state, lldb))
+            if state in (lldb.eStateRunning, lldb.eStateStepping):
+                requested = True
+                _write_progress(output, 'continue', 'interrupt', _state_name(state, lldb), True)
+                process.SendAsyncInterrupt()
+                sample_deadline = time.monotonic() + SAMPLE_WAIT
+                previous_state = None
+        if sample_deadline is not None and time.monotonic() >= sample_deadline:
+            return dict(_result('timeout', 'continue'), sampleRequested=True,
+                        collectorTimedOut=True, processState=name, resumeObserved=resumed)
+        time.sleep(0.05)
 
 
 def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
@@ -457,47 +605,63 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
     stage = 'identity'
     result = _result('unavailable', stage)
     try:
+        _write_progress(output, stage, 'identity')
         if not _same_executable(pid, executable):
             raise _IdentityMismatch()
         if symbol_executable is not None:
             if _executable_digest(symbol_executable) != _executable_digest(executable):
                 raise _IdentityMismatch()
         stage = 'attach'
+        _write_progress(output, stage, 'attach')
         debugger.SetAsync(False)
         target = debugger.CreateTarget(str(symbol_executable or executable))
         if not isinstance(target, lldb.SBTarget) or not target.IsValid():
             raise _CommandFailure()
         error = lldb.SBError()
-        process = target.AttachToProcessWithID(debugger.GetListener(), pid, error)
+        listener = lldb.SBListener('hither.launch.capture')
+        process = target.AttachToProcessWithID(listener, pid, error)
         if (error.Fail() or not isinstance(process, lldb.SBProcess)
                 or not process.IsValid()):
             raise _CommandFailure()
         stage = 'identity'
+        _write_progress(output, stage, 'identity')
         if process.GetProcessID() != pid or not _same_executable(pid, executable):
             raise _IdentityMismatch()
         owned = True
+        _write_progress(output, stage, 'configure')
         signals = process.GetUnixSignals()
         stop_configured = False
         if signals.IsValid():
             stop_configured = signals.SetShouldStop(5, True)
+        _drain_process_events(listener, process, lldb)
+        baseline = process.GetStopID()
         (Path(output) / 'attached.ready').touch(exist_ok=False)
         stage = 'continue'
+        _write_progress(output, stage, 'continue', 'stopped')
+        debugger.SetAsync(True)
         error = process.Continue()
         if error.Fail():
             raise _CommandFailure()
-        state = process.GetState()
-        if state in (lldb.eStateStopped, lldb.eStateCrashed):
-            stage = 'frames'
-            result = _stopped_result(process, target, lldb)
-        elif state == lldb.eStateExited:
-            result = dict(_result('exited'), lldbExitStatus=process.GetExitStatus(),
-                          sigtrapStopConfigured=stop_configured)
+        result = _continued_result(process, target, lldb, listener, baseline, output, stop_configured)
+        stage = result.get('stage', stage)
     except _IdentityMismatch:
         result = _result('identity_mismatch')
     except Exception:
         result = _result('unavailable')
     finally:
         result['stage'] = stage
+        observation = dict(result, cleanupFailed=True)
+        try:
+            _write_result(output, observation, OBSERVATION_NAME)
+        finally:
+            _finish_capture_cleanup(process, owned, pid, executable, output, result, lldb)
+
+
+def _finish_capture_cleanup(process, owned, pid, executable, output, result, lldb):
+    try:
+        _write_progress(output, 'cleanup', 'cleanup', result.get('processState', 'unknown'),
+                        result.get('sampleRequested') is True)
+    finally:
         operation, identity = 'lldb_inspect', None
         try:
             if process is not None and process.IsValid() and process.GetState() != lldb.eStateExited:
@@ -517,7 +681,7 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
         _write_result(output, result, CAPTURE_RESULT_NAME)
 
 
-def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
+def _run_lldb(pid, executable, output, attached=None, symbol_executable=None, *, timeout=None, sample_after=None):
     module_path = str(Path(__file__).resolve())
     symbols = str(symbol_executable) if symbol_executable is not None else None
     code = ('import importlib.util, lldb; '
@@ -529,15 +693,27 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
     with (Path(output) / 'lldb.stdout.log').open('xb') as stdout, (Path(output) / 'lldb.stderr.log').open('xb') as stderr:
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
                                    start_new_session=True)
-        deadline = time.monotonic() + DEBUGGER_TIMEOUT
+        limit = DEBUGGER_TIMEOUT if timeout is None else min(timeout, DEBUGGER_TIMEOUT)
+        deadline = time.monotonic() + limit
+        sample_at = deadline - min(12, limit / 2)
+        sample_sent, attach_seen = False, False
         cleanup_error = None
         timeout_stage = None
         try:
             while process.poll() is None:
-                if attached is not None and (Path(output) / 'attached.ready').is_file():
-                    callback, attached = attached, None
-                    callback()
-                if time.monotonic() >= deadline:
+                now = time.monotonic()
+                if (Path(output) / 'attached.ready').is_file():
+                    if not attach_seen:
+                        attach_seen = True
+                        if sample_after is not None:
+                            sample_at = min(sample_at, now + sample_after)
+                    if attached is not None:
+                        callback, attached = attached, None
+                        callback()
+                if not sample_sent and now >= sample_at:
+                    (Path(output) / SAMPLE_REQUEST_NAME).touch(exist_ok=False)
+                    sample_sent = True
+                if now >= deadline:
                     raise _CommandTimeout('continue' if (Path(output) / 'attached.ready').is_file() else 'attach')
                 time.sleep(0.05)
         except _CommandTimeout as error:
@@ -548,14 +724,70 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
             except OSError as error:
                 cleanup_error = error
     result = _read_result(output, CAPTURE_RESULT_NAME)
+    if result.get('probe') == 'unavailable' and 'stage' not in result:
+        observation = _read_result(output, OBSERVATION_NAME)
+        if observation.get('probe') != 'unavailable' or 'stage' in observation:
+            result = observation
+        result['cleanupFailed'] = True
+    progress = _read_result(output, PROGRESS_NAME)
+    for field in ('collectorPhase', 'processState'):
+        if field in progress:
+            result[field] = progress[field]
     if timeout_stage is not None and result.get('probe') == 'unavailable' and 'stage' not in result:
         result.update(probe='timeout', stage=timeout_stage)
-    result['collectorTimedOut'] = timeout_stage is not None
+    result['collectorTimedOut'] = timeout_stage is not None or result.get('collectorTimedOut') is True
+    result['lldbCommandTimedOut'] = timeout_stage is not None
+    command_status = process.returncode
+    if type(command_status) is int and -127 <= command_status <= 255:
+        result['lldbCommandExitStatus'] = command_status
     if cleanup_error is not None:
         _record_cleanup_error(result, 'lldb_command_group', cleanup_error)
     if 'stage' not in result:
         result['stage'] = 'continue' if (Path(output) / 'attached.ready').is_file() else 'attach'
     return result
+
+
+def _check_running_target(executable, output):
+    output = _reserve_output(Path(output) / 'running-sample')
+    fixture, released = None, 'not_observed'
+    result = _result('unavailable', 'fixture_launch')
+    try:
+        with (output / 'probe.stdout.log').open('xb') as stdout, (output / 'probe.stderr.log').open('xb') as stderr:
+            fixture = subprocess.Popen((str(executable),), stdin=subprocess.PIPE,
+                                       stdout=stdout, stderr=stderr, start_new_session=True)
+            if not _same_executable(fixture.pid, executable):
+                raise _IdentityMismatch()
+
+            def release():
+                nonlocal released
+                try:
+                    fixture.stdin.write(b's')
+                    fixture.stdin.flush()
+                    fixture.stdin.close()
+                    released = 'sent'
+                except OSError:
+                    released = 'write_failed'
+
+            result = _run_lldb(fixture.pid, executable, output, attached=release,
+                               timeout=15, sample_after=0.5)
+    except _IdentityMismatch:
+        result = _result('identity_mismatch', 'identity')
+    except (OSError, ValueError, _CommandFailure):
+        result = _result('unavailable', 'fixture_launch')
+    finally:
+        if fixture is not None:
+            try:
+                if fixture.stdin is not None and not fixture.stdin.closed:
+                    fixture.stdin.close()
+            except OSError:
+                released = 'write_failed'
+            finally:
+                try:
+                    _stop_group(fixture)
+                except OSError as error:
+                    _record_cleanup_error(result, 'fixture_group', error)
+        result['fixtureRelease'] = released
+    return safe_result(result)
 
 
 def check(output):
@@ -623,6 +855,8 @@ def check(output):
         result['fixtureRelease'] = released
         if launch_help is not None:
             result['launchHelp'] = launch_help
+    if _fixture_captured(result):
+        result['runningSample'] = _check_running_target(executable, output)
     return _write_result(output, result)
 
 
@@ -689,12 +923,28 @@ def _launch_pid(contents):
 
 def _fixture_captured(result):
     return (result.get('probe') == 'stopped'
+            and result.get('captureKind') == 'spontaneous_stop'
+            and _collector_completed(result)
             and result.get('cleanupFailed') is False
             and result.get('collectorTimedOut') is False
             and result.get('fixtureRelease') == 'sent'
             and (result.get('stopReason') == 'exception'
                  or (result.get('stopReason') == 'signal' and result.get('signal') == 5))
             and any(frame.get('function') == 'hither_lldb_probe' for frame in result.get('frames', [])))
+
+
+def _running_sample_captured(result):
+    return (result.get('probe') == 'stopped' and result.get('captureKind') == 'timeout_sample'
+            and result.get('sampleRequested') is True and result.get('collectorTimedOut') is True
+            and result.get('resumeObserved') is True and result.get('stopAdvanced') is True
+            and _collector_completed(result)
+            and result.get('cleanupFailed') is False and result.get('fixtureRelease') == 'sent'
+            and any(frame.get('function') == 'hither_lldb_running_probe' for frame in result.get('frames', [])))
+
+
+def _collector_completed(result):
+    return (result.get('lldbCommandTimedOut') is False
+            and type(result.get('lldbCommandExitStatus')) is int and result['lldbCommandExitStatus'] == 0)
 
 
 def _interrupt(signum, frame):
@@ -719,12 +969,14 @@ def main(argv=None):
             result = check(options.output)
             if options.print_result:
                 print(json.dumps(safe_result(result), sort_keys=True))
-            return 0 if _fixture_captured(result) else 1
+            return 0 if (_fixture_captured(result)
+                         and _running_sample_captured(result.get('runningSample', {}))) else 1
         result = replay(options.app, options.simulator, options.build,
                         options.original_result, options.output)
-        return 0 if (result.get('probe') in ('stopped', 'exited')
+        return 0 if ((result.get('probe') == 'exited' or (result.get('probe') == 'stopped'
+                         and result.get('captureKind') == 'spontaneous_stop'))
                      and result.get('cleanupFailed') is not True
-                     and result.get('collectorTimedOut') is False) else 1
+                     and result.get('collectorTimedOut') is False and _collector_completed(result)) else 1
     except (OSError, ValueError):
         return 1
 
