@@ -194,6 +194,8 @@ def safe_launch_diagnostic(payload):
                                               "unavailable"}),
                          ("simulatorState", {"booted", "shutdown", "other", "unavailable"}),
                          ("systemLogProbe", {"available", "unavailable"}),
+                         ("processExitProbe", {"observed", "not_observed", "unavailable"}),
+                         ("consoleProbe", {"available", "unavailable"}),
                          ("runtimeLogProbe", {"available", "unavailable"})):
         value = payload.get(key)
         if isinstance(value, str) and value in choices:
@@ -203,6 +205,30 @@ def safe_launch_diagnostic(payload):
     for key in ("processAlive", "hostPidAliveAtLaunch", "crashReportFound"):
         if type(payload.get(key)) is bool:
             safe[key] = payload[key]
+    if safe.get("processExitProbe") == "observed":
+        during = payload.get("appExitObservedDuring")
+        if isinstance(during, str) and during in {"launch_observation", "failure_collection"}:
+            safe["appExitObservedDuring"] = during
+        kind = payload.get("appExitKind")
+        if isinstance(kind, str) and kind in {"exited", "signaled", "unknown"}:
+            safe["appExitKind"] = kind
+        else:
+            kind = None
+        key = {"exited": "appExitCode", "signaled": "appExitSignal"}.get(kind)
+        code = payload.get(key)
+        if key and type(code) is int and (0 <= code <= 255 if kind == "exited" else 1 <= code <= 127):
+            safe[key] = code
+        details = payload.get("appExitDetails")
+        if (isinstance(details, list) and all(isinstance(item, str)
+                and item in {"memory", "code_signing", "decryption"} for item in details)):
+            safe["appExitDetails"] = sorted(set(details))
+    if safe.get("consoleProbe") == "available":
+        signals = payload.get("consoleSignals")
+        if isinstance(signals, list) and all(isinstance(item, str)
+                and item in RUNTIME_LOG_SIGNALS for item in signals):
+            safe["consoleSignals"] = sorted(set(signals))
+        if type(payload.get("consoleTruncated")) is bool:
+            safe["consoleTruncated"] = payload["consoleTruncated"]
     code = payload.get("simctlExitCode")
     if type(code) is int and 1 <= code <= 255:
         safe["simctlExitCode"] = code
@@ -267,6 +293,11 @@ def main(diagnostic):
     xcode = run("xcodebuild", "-version")
     if not re.search(r"^Xcode 27\.0(?:\.[0-9]+)?$", xcode, re.M):
         raise RuntimeError("Xcode 27.0 is required for the Release launch gate")
+    launch_help = run("xcrun", "simctl", "help", "launch", timeout=15)
+    if not all(flag in launch_help for flag in ("--stdout", "--stderr")):
+        raise RuntimeError("simctl launch must support stdout/stderr capture")
+    run(sys.executable, str(MOBILE / "scripts/verify-ios-release-launch.py"),
+        "--check-exit-observer", timeout=20)
     runtime = select_ios_27_runtime(json.loads(run("xcrun", "simctl", "list", "runtimes", "--json")))
     app_config = json.loads((MOBILE / "app.json").read_text(encoding="utf-8"))["expo"]
     output = runner_temp / "hither-release-launch"
@@ -334,7 +365,7 @@ if __name__ == "__main__":
     except (KeyError, OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         diagnostic["failureType"] = type(error).__name__
         if isinstance(error, ReleaseCommandFailure):
-            diagnostic["exitCode"] = error.returncode
+            diagnostic["commandExitCode"] = error.returncode
         if isinstance(error, subprocess.TimeoutExpired):
             diagnostic["timeoutSeconds"] = error.timeout
         output = Path(os.environ.get("RUNNER_TEMP", "")) / "hither-release-launch/launch-result.json"

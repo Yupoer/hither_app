@@ -242,6 +242,46 @@ not the App PID. A correlated hint remains an observation rather than a cause.
 An unavailable probe failed; an empty list proves only no matching evidence was
 found. Advisory diagnostics never turn failed launch into success.
 
+The original launch now redirects stdout/stderr to separate per-attempt files.
+Only allowlisted `consoleSignals`, `consoleProbe` and `consoleTruncated` reach
+the diagnostic artifact. Parsing reads at most 1 MB per stream. Capture is
+runner-local and can continue until App or runner teardown, including after a
+successful second launch. Regular log files do not impose a byte limit on App
+output. Raw console and unified logs
+remain on the runner and are not uploaded. The existing bounded crash-report
+wait runs before system-log readback so delayed log flushing can be observed.
+
+A passive Darwin kqueue observer registers the returned launch PID after
+checking its installed executable path, then checks that path again. A matching
+kernel exit event produces `processExitProbe=observed`; `appExitCode` is present
+only for a normal exit with an OS wait status, and `appExitSignal` only for a
+signal termination. Kernel exit detail is reported separately as
+`appExitDetails`. An exit notification without status leaves `appExitKind`
+unknown. `not_observed` means registration succeeded but no exit event was read;
+`unavailable` covers unsupported, failed or raced registration. Early exits
+before attachment can be missed. Executable-path checks do not establish a
+process generation if the same executable replaces a reused PID. These limits
+preserve uncertainty. `appExitObservedDuring` distinguishes observation during
+the launch check from later failure collection. It records when evidence was
+read, not the exact OS exit time; an exit collected after failure does not prove
+it preceded or caused that failure. Kernel flags and status follow Apple's public
+[event definitions](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/event.h)
+and [process filter implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_event.c).
+
+Before the single Release App build, runner preflight checks that `simctl help
+launch` exposes stdout/stderr capture and tests actual host exit code 37 and
+SIGTERM through the observer. A failed self-check stops before App build.
+The self-check launches the current interpreter's observed executable, including
+framework Python installations whose command is a launcher stub.
+Child-process success does not prove permission to observe the launchd-owned
+simulator App. Its own registration result remains explicit.
+Neither self-check nor offline fixtures establish native App acceptance. The
+two original 45-second cold launches, fresh breadcrumb/build requirements and
+screenshots remain required. No diagnostic relaunch or build retry is added.
+The wrapper now calls its failed child return code `commandExitCode`; historical
+`exitCode` values still describe the gate command. No unobserved App exit code
+or current startup cause is inferred from either field.
+
 The repair's offline checks are separate evidence. Canonical EAS-shaped CLI
 fixtures reproduce the nested-list crash and exercise strict latest readback.
 SDK-shaped JS behavior tests exercise rollback, races, failures and shared

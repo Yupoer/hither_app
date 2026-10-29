@@ -17,6 +17,13 @@
       "testNamePattern": "shares one rollback|preserves rollback|embedded rollback"
     },
     {
+      "parent": 346,
+      "child": 346,
+      "acceptance": "Automatic and manual OTA callers both wait for their shared runtime reload to complete before reporting success.",
+      "testFile": "otaTeamEntryLifecycle.test.ts",
+      "testNamePattern": "holds automatic and manual callers"
+    },
+    {
       "parent": 316,
       "child": 316,
       "acceptance": "Concurrent IPC commands finish real React foreground and native location cleanup in order without overlapping act scopes.",

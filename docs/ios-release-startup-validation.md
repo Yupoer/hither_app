@@ -64,3 +64,15 @@ npm run verify:ios-release-launch -- \
 封裝 metadata、簽章、Jest、typecheck 或 archive 成功均不能取代冷啟動驗證。
 模擬器結果仍不能代替實機 TestFlight binary 驗收。原生 JSI 修正需要新 IPA，
 純 OTA 不會更新 framework。
+
+檢查器以同次啟動的 stdout/stderr 檔案補充 console 證據，每個 stream 最多解析
+1 MB，原始檔保留在 runner，不上傳。第二次成功後 App 仍可寫入，直到 App／runner
+結束；一般檔案沒有 byte 上限。
+Darwin kqueue 只在核對已安裝 executable 路徑後，對 simctl 回傳的 PID 註冊 exit
+事件；沒有 OS wait status 時不填 App exit code。註冊前退出、工具失敗或 PID
+generation 無法確認時保留未知。`commandExitCode` 是 verifier 子指令的結果，
+`appExitCode`／`appExitSignal` 才是觀測到的 App 狀態。
+
+完整 runner 在唯一一次 App build 前，會檢查 Xcode 的 console flags，並以小型
+host 子程序驗證 exit 37 與 SIGTERM 觀測。此自測不代表 App 通過冷啟動。
+原始失敗仍使 gate 失敗，不會因診斷或自測成功改判，也不自動重建或重新 launch。

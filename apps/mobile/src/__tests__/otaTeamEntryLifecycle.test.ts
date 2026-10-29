@@ -43,10 +43,11 @@ describe('OTA apply single-flight + team entry lifecycle', () => {
       const automatic = applyOtaUpdateIfAvailable();
       await started;
       const manual = applyOtaUpdate({ manual: true, skipCheck: true });
-      let settled = false;
-      void automatic.then(() => { settled = true; });
+      const settled: string[] = [];
+      void automatic.then(() => { settled.push('automatic'); });
+      void manual.then(() => { settled.push('manual'); });
       await Promise.resolve();
-      expect(settled).toBe(false);
+      expect(settled).toEqual([]);
       expect(isOtaApplyInFlight()).toBe(true);
       finishReload();
       await expect(Promise.all([automatic, manual])).resolves.toEqual([

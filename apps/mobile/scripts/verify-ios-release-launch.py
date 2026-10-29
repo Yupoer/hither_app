@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import plistlib
 import re
+import select
 import subprocess
 import sys
 import time
@@ -241,6 +242,117 @@ def host_executable_path(pid):
         return None
 
 
+class ProcessExitObserver:
+    # Darwin event.h flags are not all exported by Python's select module.
+    EXIT_STATUS = 0x04000000
+    EXIT_DETAIL = 0x02000000
+
+    def __init__(self, pid, executable):
+        self.queue = None
+        self.pid = pid
+        self.observation = {'processExitProbe': 'unavailable'}
+        if sys.platform != 'darwin':
+            return
+        try:
+            expected = executable.resolve()
+            path = host_executable_path(pid)
+            if path is None or Path(path).resolve() != expected:
+                return
+            self.queue = select.kqueue()
+            event = select.kevent(pid, filter=select.KQ_FILTER_PROC,
+                                  flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                  fflags=select.KQ_NOTE_EXIT | self.EXIT_STATUS | self.EXIT_DETAIL)
+            self.queue.control([event], 0, 0)
+            path = host_executable_path(pid)
+            if path is None or Path(path).resolve() != expected:
+                self.close()
+                return
+            self.observation = {'processExitProbe': 'not_observed'}
+        except (OSError, ValueError, AttributeError):
+            self.close()
+
+    def poll(self, stage=None):
+        if self.queue is None or self.observation['processExitProbe'] != 'not_observed':
+            return dict(self.observation)
+        try:
+            for event in self.queue.control(None, 1, 0):
+                if (event.ident != self.pid or event.filter != select.KQ_FILTER_PROC
+                        or event.flags & select.KQ_EV_ERROR
+                        or not event.fflags & select.KQ_NOTE_EXIT):
+                    raise ValueError('unexpected process observation')
+                self.observation = {'processExitProbe': 'observed', 'appExitKind': 'unknown'}
+                if stage in {'launch_observation', 'failure_collection'}:
+                    self.observation['appExitObservedDuring'] = stage
+                if type(event.data) is int and event.fflags & self.EXIT_STATUS:
+                    status = event.data & 0xffff
+                    if os.WIFEXITED(status):
+                        self.observation.update(appExitKind='exited', appExitCode=os.WEXITSTATUS(status))
+                    elif os.WIFSIGNALED(status):
+                        self.observation.update(appExitKind='signaled', appExitSignal=os.WTERMSIG(status))
+                if type(event.data) is int and event.fflags & self.EXIT_DETAIL:
+                    self.observation['appExitDetails'] = [
+                        name for flag, name in ((0x10000, 'decryption'), (0x20000, 'memory'),
+                                                (0x40000, 'code_signing')) if event.data & flag]
+        except (OSError, ValueError, AttributeError):
+            self.observation = {'processExitProbe': 'unavailable'}
+        return dict(self.observation)
+
+    def close(self):
+        if self.queue is not None:
+            queue = self.queue
+            self.queue = None
+            try:
+                queue.close()
+            except OSError:
+                pass
+
+
+def check_exit_observer():
+    executable = host_executable_path(os.getpid())
+    if executable is None:
+        raise RuntimeError('Running interpreter executable is unavailable')
+    for code, expected in ((37, {'appExitKind': 'exited', 'appExitCode': 37}),
+                           (-15, {'appExitKind': 'signaled', 'appExitSignal': 15})):
+        child = subprocess.Popen((executable, '-c',
+                                  'import os,sys; sys.stdin.buffer.read(1); '
+                                  + ('sys.exit(37)' if code > 0 else 'os.kill(os.getpid(),15)')),
+                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        observer = ProcessExitObserver(child.pid, Path(executable))
+        try:
+            if observer.poll()['processExitProbe'] == 'unavailable':
+                raise RuntimeError('Native exit observer is unavailable')
+            child.stdin.write(b'x')
+            child.stdin.flush()
+            child.wait(timeout=5)
+            result = observer.poll()
+            if (result.get('processExitProbe') != 'observed'
+                    or any(result.get(key) != value for key, value in expected.items())):
+                raise RuntimeError('Native exit observer self-check failed')
+        finally:
+            observer.close()
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+            child.stdin.close()
+    print('PASS native exit observer self-check', flush=True)
+
+
+def probe_console(paths):
+    try:
+        chunks = []
+        truncated = False
+        for path in paths:
+            with path.open('rb') as stream:
+                chunk = stream.read(1_000_001)
+            truncated |= len(chunk) > 1_000_000
+            chunks.append(chunk[:1_000_000].decode('utf-8', errors='replace'))
+        return {'consoleProbe': 'available', 'consoleSignals': runtime_log_signals('\n'.join(chunks)),
+                'consoleTruncated': truncated}
+    except OSError:
+        return {'consoleProbe': 'unavailable'}
+
+
 def probe_app_process_state(simulator, bundle, executable, launched_pid):
     try:
         container = run('xcrun', 'simctl', 'get_app_container', simulator, bundle,
@@ -301,17 +413,28 @@ def main():
     pid = None
     phase = None
     started = None
+    observer = None
+    console_paths = []
     try:
         run('xcrun', 'simctl', 'install', options.simulator, str(options.app))
+        stage = 'app_container'
+        installed = run('xcrun', 'simctl', 'get_app_container', options.simulator, bundle, 'app').stdout.strip()
+        executable = Path(installed) / info['CFBundleExecutable']
         for attempt in range(1, 3):
             stage = 'launch'
             pid = None
             phase = None
             run('xcrun', 'simctl', 'terminate', options.simulator, bundle, check=False)
+            console_paths = [options.output.resolve() / f'cold-start-{attempt}.{name}.log'
+                             for name in ('stdout', 'stderr')]
+            for path in console_paths:
+                path.write_bytes(b'')
             started = time.time()
             stage = 'launch'
-            launched = run('xcrun', 'simctl', 'launch', options.simulator, bundle)
+            launched = run('xcrun', 'simctl', 'launch', '--stdout=' + str(console_paths[0]),
+                           '--stderr=' + str(console_paths[1]), options.simulator, bundle)
             pid = int(launched.stdout.strip().rsplit(': ', 1)[1])
+            observer = ProcessExitObserver(pid, executable)
             try:
                 os.kill(pid, 0)
                 evidence['hostPidAliveAtLaunch'] = True
@@ -325,6 +448,9 @@ def main():
             record = {}
             # A fresh timestamp prevents an earlier successful launch passing this run.
             while time.time() - started < 45:
+                evidence.update(observer.poll('launch_observation'))
+                if evidence.get('processExitProbe') == 'observed':
+                    raise ProcessLookupError('App exited during cold-launch observation')
                 os.kill(pid, 0)
                 try:
                     with preferences.open('rb') as handle:
@@ -334,16 +460,24 @@ def main():
                 except (FileNotFoundError, plistlib.InvalidFileException):
                     pass
                 time.sleep(1)
+            evidence.update(observer.poll('launch_observation'))
+            if evidence.get('processExitProbe') == 'observed':
+                raise ProcessLookupError('App exited during cold-launch observation')
+            os.kill(pid, 0)
             assert phase in {'session_resolved', 'navigation_ready', 'stable'}, 'JS startup incomplete: ' + str(phase)
             assert record.get('hither.launch.build.v1') == options.build, 'Wrong launch breadcrumb build'
             screenshot = options.output / ('cold-start-' + str(attempt) + '.png')
             stage = 'screenshot'
             run('xcrun', 'simctl', 'io', options.simulator, 'screenshot', str(screenshot))
             evidence['launches'].append({'pid': pid, 'phase': phase, 'screenshot': str(screenshot)})
+            observer.close()
+            observer = None
             print('PASS cold start', attempt, phase, flush=True)
         evidence['passed'] = True
     except Exception as error:
         failed_at = time.time()
+        if observer is not None:
+            evidence.update(observer.poll('failure_collection'))
         evidence['passed'] = False
         evidence['failureStage'] = stage
         evidence['failureType'] = type(error).__name__
@@ -367,11 +501,6 @@ def main():
             evidence['simulatorState'] = probe_simulator_state(options.simulator)
         except Exception:
             evidence['simulatorState'] = 'unavailable'
-        try:
-            evidence.update(probe_system_termination(
-                options.simulator, bundle, started, failed_at, pid))
-        except Exception:
-            evidence['systemLogProbe'] = 'unavailable'
         if phase is not None:
             evidence['lastObservedPhase'] = phase if phase in {
                 'session_resolved', 'navigation_ready', 'stable'} else 'other'
@@ -391,8 +520,18 @@ def main():
                     evidence['crashReportFound'] = False
             except Exception:
                 evidence['crashReportProbe'] = 'unavailable'
+        try:
+            evidence.update(probe_system_termination(
+                options.simulator, bundle, started, failed_at, pid))
+        except Exception:
+            evidence['systemLogProbe'] = 'unavailable'
         raise
     finally:
+        if observer is not None:
+            evidence.update(observer.poll('failure_collection'))
+            observer.close()
+        if console_paths:
+            evidence.update(probe_console(console_paths))
         try:
             logs = run('xcrun', 'simctl', 'spawn', options.simulator, 'log', 'show',
                        '--style', 'compact', '--last', '3m', '--predicate',
@@ -411,4 +550,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['--check-exit-observer']:
+        check_exit_observer()
+    else:
+        main()
