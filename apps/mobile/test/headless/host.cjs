@@ -209,7 +209,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       return {
         mapMembers: map ? structuredClone(map.props.members) : null,
         flockRows: flock.map(node => ({ userId: node.props.userId, name: node.props.name,
-          lastUpdated: node.props.lastUpdated, solo: node.props.solo, sharingEnabled: node.props.sharingEnabled,
+          lastUpdated: node.props.lastUpdated, serverTimeOffsetMs: node.props.serverTimeOffsetMs, solo: node.props.solo, sharingEnabled: node.props.sharingEnabled,
           text: node.findAll(child => child.type === 'host:Text').map(child =>
             child.children.filter(value => typeof value === 'string').join('')).join(' ') })),
       };

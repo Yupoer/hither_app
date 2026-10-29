@@ -146,6 +146,7 @@ function apply(b, { args: a, userId }) {
   } else if (type === 'set_solo') {
     if (p.userId !== userId || a.p_entity_type !== 'itinerary' || a.p_entity_id !== userId) return conflict('unauthorized');
     if (typeof p.solo !== 'boolean') return conflict('validation');
+    if (m.solo !== p.solo) require('./backend-domain.cjs').publishMembershipNotice(b, m, p.solo ? 'member_solo' : 'member_follow');
     m.solo = p.solo; entity = { userId, solo: p.solo }; b.publish('memberships', m);
   } else if (type === 'set_trip_details') {
     const oldGroup = structuredClone(group);

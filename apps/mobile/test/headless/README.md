@@ -79,14 +79,20 @@ Run the three-traveler scenario from `apps/mobile`. Choose a new output director
 node test/headless/tokyo-trip.cjs ./tokyo-run-1
 ```
 
-The runner saves every action and each traveler's observations in `observations.jsonl`, a readable `transcript.md`, and named behavior checks in `summary.json`. It mounts the real App in iOS and Android modes, records local notification receipts and live map inputs, and covers an abrupt offline process restart and a powered-off overnight clock gap. An exit code of 1 can mean a behavior mismatch; inspect `harnessFailure` separately. These records do not establish real push delivery, map drawing, or overnight operating-system behavior.
+The same scenario is automatically discovered as `headlessTokyoTripScenario.test.ts`. Set `HITHER_HEADLESS_TOKYO_OUTPUT` to a new directory when detailed records are required. CLI and Jest refuse an existing directory. Without an output path the Jest case keeps its checks in memory.
+
+The runner saves exact command inputs with actor generation in `inputs.jsonl`, and every action and each traveler's observations in `observations.jsonl`, a readable `transcript.md`, and named behavior checks in `summary.json`. It mounts the real App in iOS and Android modes, records local notification receipts and live map inputs, and covers an abrupt offline process restart and a powered-off overnight clock gap. An exit code of 1 can mean a behavior mismatch; inspect `harnessFailure` separately. These records do not establish real push delivery, map drawing, or overnight operating-system behavior.
 
 ## Coverage and limits
 
 Functional scenarios specify iOS and Android platform modes. The resolver selects production platform files as well as Platform.OS branches; inspect `presentation.resolved` when asserting this distinction. A mixed-platform scenario publishes from iOS to an Android peer. Existing location and journey cases cover pending-before-ACK, missed-event recovery at the subscribed 120 second fallback poll, offline persistence/restart/retry, account/privacy fences and Start/End ordering. Domain scenario suites add actual screen and provider operations. Run the current suites and report their results; historical test counts do not establish a new head's coverage.
+
+`functional-scenarios.json` defines a separate finite execution denominator. Run `node test/headless/scenario-coverage.cjs <same-source-jest-results.json> [report.md]` after the complete run. It requires all referenced cases on their declared platforms and all critical families; skipped or unexecuted cases cannot pass. See [functional coverage and disconnection tolerances](../../../../docs/headless-functional-coverage.md).
 
 `operation-inventory.json` records reviewed behavior families. Registry source anchors connect those families to actual entries. `source-inventory.json` fingerprints exported functions, callbacks and lifecycle owners so source changes require a fresh coverage review. Only refresh that snapshot after reviewing the changed behavior and its scenarios. It is a review gate, not execution coverage.
 
 Map rendering, gestures, native sensor accuracy, Swift/Kotlin execution, OS background restrictions, real pushes/purchases, Supabase security/SQL and physical device behavior require separate verification. Child Jest coverage is not merged into the parent report; this suite makes no changed-function coverage claim for child-loaded modules. Stable test identifiers in production views identify actual callback hosts without replacing business logic.
 
 The location fixture follows the bounded ingestion contract in `supabase/migrations/20260929173500_location_rejection_idempotency.sql`. A new event must have a strictly newer captured timestamp; an equal timestamp returns `stale_sample`. An existing accepted event ID with the same actor, group, captured timestamp and coordinates is ACKed without another Realtime update. Device-local sequence is not a cross-device ordering authority.
+
+Membership participation alerts mirror `supabase/migrations/20261029164903_journey_membership_notification_events.sql`. A changed solo flag emits one durable solo/follow row; an unchanged flag emits none. Self membership deletion emits leave only while the group still exists. Fixture execution does not prove that the SQL trigger has been deployed.

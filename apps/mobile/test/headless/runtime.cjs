@@ -66,7 +66,7 @@ exports.run = async function run(jest) {
       };
       requests.set(id, { resolve, reject, cleanup: () => signal?.removeEventListener('abort', abort) });
       signal?.addEventListener('abort', abort, { once: true });
-      send({ type: 'request', id, operation });
+      send({ type: 'request', id, operation, requestedAt: Date.now() });
     });
   }
   const receive = message => {
@@ -371,7 +371,7 @@ exports.run = async function run(jest) {
       auth: { user: authFixture.currentSession()?.user ?? null, autoRefresh: authFixture.inspection().autoRefresh, listeners: authListeners.size },
       renderErrors: renderErrors.slice(-10),
       group: { state: app.group?.state, loading: app.group?.loading, error: app.group?.error,
-        dataSource: app.group?.dataSource, snapshotFreshness: app.group?.snapshotFreshness,
+        dataSource: app.group?.dataSource, serverTimeOffsetMs: app.group?.serverTimeOffsetMs, snapshotFreshness: app.group?.snapshotFreshness,
         emptyLocalSnapshot: app.group?.emptyLocalSnapshot, refreshing: app.group?.refreshing },
       location: { coordinates: app.location?.deviceCoords, accuracy: app.location?.deviceAccuracyM,
         acceptedAt: app.location?.deviceCoordsAcceptedAtMs, appState: app.location?.appState },

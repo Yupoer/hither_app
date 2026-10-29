@@ -2,9 +2,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { World } = require('./world.cjs');
-const output = path.resolve(process.argv[2] || 'C:/Users/alexs/Desktop/BZ/hither/qa-runs/2026-10-30-tokyo-headless');
-fs.mkdirSync(output, { recursive: true });
-const world = new World();
+async function runTokyoTrip({ output: requestedOutput, quiet = false } = {}) {
+const output = requestedOutput ? path.resolve(requestedOutput) : null;
+if (output) fs.mkdirSync(output);
+const save = (name, content) => { if (output) fs.writeFileSync(path.join(output, name), content); };
+const log = value => { if (!quiet) console.log(value); };
+const world = new World({ recordInput: record => {
+  if (output) fs.appendFileSync(path.join(output, 'inputs.jsonl'), `${JSON.stringify(record)}\n`);
+} });
 const devices = {};
 const checks = [];
 const records = [];
@@ -34,9 +39,10 @@ async function capture(actor, operation, input = {}, result = null, verify) {
   for (const [name, device] of Object.entries(devices)) {
     if (!device.child?.connected) continue;
     observations[name] = await device.observe();
+    assert.equal(observations[name].now, world.now, `${name} actor clock matches the World`);
     observations[name].derivedLocationEvidence = (observations[name].presentation.mapMembers || []).map(row => ({
       userId: row.userId, name: row.name, coordinates: row.coordinates, capturedAt: row.capturedAt,
-      uploadedAt: row.uploadedAt, ageMs: row.capturedAt ? world.now - Date.parse(row.capturedAt) : null,
+      uploadedAt: row.uploadedAt, ageMs: row.capturedAt ? observations[name].now - Date.parse(row.capturedAt) : null,
       locationAvailability: row.locationAvailability }));
     const received = notifications(observations[name]);
     notificationsDelta[name] = received.slice(cursors[name] || 0);
@@ -47,8 +53,8 @@ async function capture(actor, operation, input = {}, result = null, verify) {
   const record = { step: records.length + 1, time: new Date(world.now).toISOString(), actor, operation, input, result,
     observations, notificationsDelta, checks: checks.slice(first) };
   records.push(record);
-  fs.appendFileSync(path.join(output, 'observations.jsonl'), `${JSON.stringify(record)}\n`);
-  console.log(`${record.step}. ${actor} ${operation} ${record.checks.map(c => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}`).join('; ')}`);
+  if (output) fs.appendFileSync(path.join(output, 'observations.jsonl'), `${JSON.stringify(record)}\n`);
+  log(`${record.step}. ${actor} ${operation} ${record.checks.map(c => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}`).join('; ')}`);
   return record;
 }
 async function inject(actor, input) {
@@ -76,7 +82,7 @@ async function advance(ms, reason) {
 async function expand(actor) {
   for (const phase of ['onBegin', 'onUpdate', 'onEnd']) await devices[actor].host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase,
     value: phase === 'onBegin' ? {} : { translationY: -250, velocityY: 0 }, success: true });
-  await capture(actor, 'sheet.gesture.expand', { phases: ['onBegin','onUpdate','onEnd'], translationY: -250, velocityY: 0 });
+  await capture(actor, 'sheet.gesture.expand', { testId: 'map-bottom-sheet', events: [{ phase: 'onBegin', value: {} }, ...['onUpdate','onEnd'].map(phase => ({ phase, value: { translationY: -250, velocityY: 0 }, success: true }))] });
 }
 async function route(actor) {
   await expand(actor);
@@ -112,7 +118,7 @@ async function add(actor, point, first = true, muted = []) {
 }
 async function showCard(actor, destinationId) {
   for (const phase of ['onBegin', 'onUpdate', 'onEnd']) await devices[actor].host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase, value: phase === 'onBegin' ? {} : { translationY: 500, velocityY: 0 }, success: true });
-  await capture(actor, 'sheet.gesture.collapse', { phases: ['onBegin','onUpdate','onEnd'], translationY: 500, velocityY: 0 });
+  await capture(actor, 'sheet.gesture.collapse', { testId: 'map-bottom-sheet', events: [{ phase: 'onBegin', value: {} }, ...['onUpdate','onEnd'].map(phase => ({ phase, value: { translationY: 500, velocityY: 0 }, success: true }))] });
   await inject(actor, { kind: 'animation', finished: true });
   await world.settle();
   if (!has(await devices[actor].observe(), `gather-nav-${destinationId}`)) await act(actor, 'map.card.toggle', { destinationId });
@@ -169,7 +175,7 @@ async function enterRestored(actor) {
   await press(actor, 'team-enter');
 }
 async function main() {
-  fs.writeFileSync(path.join(output, 'observations.jsonl'), '');
+  save('observations.jsonl', '');
   try {
     for (const [actor, platform, name] of [['leader', 'ios', 'Tokyo Leader'], ['memberA', 'android', 'Tokyo A'], ['memberB', 'ios', 'Tokyo B']]) {
       devices[actor] = await world.device({ id: actor, userId: null, platform, mode: 'app' });
@@ -268,7 +274,7 @@ async function main() {
         const received = notifications(o[receiver]).slice(notifications(soloBefore[receiver]).length);
         const alerts = o[receiver].external.alertDetails.filter(row => !soloBefore[receiver].external.alertDetails.some(old => JSON.stringify(old) === JSON.stringify(row)));
         const visibleNotices = o[receiver].presentation.hosts.filter(row => /notice|toast|banner|alert/i.test(row.testId || '') && !soloBefore[receiver].presentation.hosts.some(old => JSON.stringify(old) === JSON.stringify(row))); 
-        check('EXPECTATION GAP: ' + receiver + ' receives member B solo departure notice', received.some(row => /離開|脫隊|自由行動|left|solo/i.test(row.body + row.title)) || alerts.some(row => /離開|脫隊|自由行動|left|solo/i.test(row.message + row.title)) || visibleNotices.some(row => /離開|脫隊|自由行動|left|solo/i.test(row.text + row.label)), { received, newAlerts: alerts, newVisibleNotices: visibleNotices, actualBehavior: 'Roster change checked separately; dedicated notice path not established.' });
+        check(receiver + ' receives member B solo departure notice', received.some(row => row.data?.category === 'journey' && row.data.senderId === o.memberB.actorId && row.body.includes('Tokyo B') && /離開|脫隊|自由行動|left|solo/i.test(row.body)), { received, newAlerts: alerts, newVisibleNotices: visibleNotices, expected: 'Named local journey notice from the acting member' });
       }
     });
     await add('leader', { title: 'Solo-time Shibuya idea', latitude: 35.6595, longitude: 139.7005 }, false, ['memberB']);
@@ -296,9 +302,10 @@ async function main() {
         check(`${receiver} offline member A fix is older than 120s`, world.now - Date.parse(received.capturedAt) > 120000, o[receiver].derivedLocationEvidence);
         const row = o[receiver].presentation.flockRows.find(row => row.userId === identity);
         check(`${receiver} renders aged member A location`, row?.lastUpdated === received.capturedAt && /分鐘前更新/.test(row.text), row);
+        check(`${receiver} uses synchronized server time for member A age`, row?.serverTimeOffsetMs === 0, { actorTime: o[receiver].now, worldTime: world.now, row });
       }
     });
-    fs.writeFileSync(path.join(output, 'memberA-generation1.log'), devices.memberA.logs);
+    save('memberA-generation1.log', devices.memberA.logs);
     await capture('memberA', 'process.force-stop.request', { online: false, ReactUnmount: false });
     await world.settle();
     world.check();
@@ -336,15 +343,15 @@ async function main() {
     devices.memberB.realtime = false;
     await capture('memberB', 'external.realtime', { value: false });
     await gps('leader', { latitude: 35.7138, longitude: 139.7773 });
-    await capture('leader', 'realtime.source-accepted', {}, null, o => check('leader accepts fallback test fix', member(o.leader, o.leader.actorId)?.coordinates?.latitude === 35.7138, member(o.leader, o.leader.actorId)));
+    await capture('leader', 'realtime.source-accepted', {}, null, o => check('leader accepts fallback test fix', member(o.leader, o.leader.actorId)?.coordinates?.latitude === 35.7138 && member(o.leader, o.leader.actorId)?.capturedAt === new Date(samples.leader.timestamp).toISOString(), member(o.leader, o.leader.actorId)));
     await capture('memberB', 'realtime.drop.before-poll', { realtime: false }, null, o => check('member B still shows old fix before fallback', member(o.memberB, o.leader.actorId)?.capturedAt === beforeDrop.capturedAt, member(o.memberB, o.leader.actorId)));
     await advance(120000, 'Missed Realtime configured fallback and stale-fix interval');
-    await capture('memberB', 'realtime.fallback.reactions', {}, null, o => check('member B recovers leader fix by poll', member(o.memberB, o.leader.actorId)?.coordinates?.latitude === 35.7138, member(o.memberB, o.leader.actorId)));
+    await capture('memberB', 'realtime.fallback.reactions', {}, null, o => check('member B recovers leader fix by poll', member(o.memberB, o.leader.actorId)?.coordinates?.latitude === 35.7138 && member(o.memberB, o.leader.actorId)?.capturedAt === new Date(samples.leader.timestamp).toISOString(), member(o.memberB, o.leader.actorId)));
     devices.memberB.realtime = true;
     await capture('memberB', 'external.realtime', { value: true });
     await capture('world', 'night.power-off', { reason: 'Bounded powered-off overnight clock gap, not background endurance' });
     for (const [actor, device] of Object.entries(devices)) {
-      fs.writeFileSync(path.join(output, `${actor}-before-night.log`), device.logs);
+      save(`${actor}-before-night.log`, device.logs);
       await device.dispose();
     }
     const gap = 24 * 60 * 60 * 1000;
@@ -353,6 +360,13 @@ async function main() {
     for (const [name, device] of Object.entries(devices)) { cursors[name] = 0; await device.boot(); }
     await capture('world', 'night.power-on', { gap, mode: 'powered-off clock gap' });
     for (const actor of Object.keys(devices)) await enterRestored(actor);
+    await capture('world', 'day-two.identity-preserved', {}, null, o => {
+      for (const actor of Object.keys(devices)) {
+        const expectedName = { leader: 'Tokyo Leader', memberA: 'Tokyo A', memberB: 'Tokyo B' }[actor];
+        check(`${actor} preserves traveler display identity on day two`, o[actor].presentation.session.user.name === expectedName, o[actor].presentation.session);
+        for (const receiver of Object.keys(devices)) check(`${receiver} still sees ${actor} display name on day two`, member(o[receiver], o[actor].actorId)?.name === expectedName, member(o[receiver], o[actor].actorId));
+      }
+    });
     await start(ueno, 'Day two final distinct leg');
     await arriveAll(ueno, points.ueno);
     await capture('world', 'journey.end', {}, null, o => {
@@ -374,29 +388,29 @@ async function main() {
         const received = notifications(o[receiver]).slice(notifications(leaveBefore[receiver]).length);
         const alerts = o[receiver].external.alertDetails.filter(row => !leaveBefore[receiver].external.alertDetails.some(old => JSON.stringify(old) === JSON.stringify(row)));
         const visibleNotices = o[receiver].presentation.hosts.filter(row => /notice|toast|banner|alert/i.test(row.testId || '') && !leaveBefore[receiver].presentation.hosts.some(old => JSON.stringify(old) === JSON.stringify(row))); 
-        check('EXPECTATION GAP: ' + receiver + ' receives member B group departure notice', received.some(row => /離開|脫隊|退出|left|leave/i.test(row.body + row.title)) || alerts.some(row => /離開|脫隊|退出|left|leave/i.test(row.message + row.title)) || visibleNotices.some(row => /離開|脫隊|退出|left|leave/i.test(row.text + row.label)), { received, newAlerts: alerts, newVisibleNotices: visibleNotices, actualBehavior: 'Membership removal checked separately; dedicated notice path not established.' });
+        check(receiver + ' receives member B group departure notice', received.some(row => row.data?.category === 'journey' && row.data.senderId === o.memberB.actorId && row.body.includes('Tokyo B') && /離開|脫隊|退出|left|leave/i.test(row.body)), { received, newAlerts: alerts, newVisibleNotices: visibleNotices, expected: 'Named local journey notice from the departing member' });
       }
     });
   } catch (error) {
     failure = error.stack || String(error);
-    fs.writeFileSync(path.join(output, 'harness-error.txt'), failure);
+    save('harness-error.txt', failure);
     console.error(failure);
   } finally {
     try { await capture('world', 'pre-cleanup', {}, { failure: failure || null }); }
     catch (error) { failure = [failure, error.stack || String(error)].filter(Boolean).join('\n'); }
-    for (const [name, device] of Object.entries(devices)) fs.writeFileSync(path.join(output, `${name}.log`), device.logs || '');
-    fs.writeFileSync(path.join(output, 'backend-evidence.json'), JSON.stringify({ groups: [...world.backend.groups.values()], memberships: world.backend.memberships, itinerary: world.backend.itinerary, locations: [...world.backend.locations.values()], sessions: [...world.backend.sessions.values()], notificationOutbox: world.backend.notificationOutbox, trace: world.backend.trace, realtimeTrace: world.realtimeTrace }, null, 2));
+    for (const [name, device] of Object.entries(devices)) save(`${name}.log`, device.logs || '');
+    save('backend-evidence.json', JSON.stringify({ groups: [...world.backend.groups.values()], memberships: world.backend.memberships, itinerary: world.backend.itinerary, locations: [...world.backend.locations.values()], sessions: [...world.backend.sessions.values()], notificationOutbox: world.backend.notificationOutbox, trace: world.backend.trace, realtimeTrace: world.realtimeTrace }, null, 2));
     try { await world.close(); }
     catch (error) { failure = [failure, error.stack || String(error)].filter(Boolean).join('\n'); }
     const limits = ['Real production App/providers/screens/hooks in isolated child React runtimes; external native views and SDK/backend contracts are fixtures.',
       'Notifications prove local scheduling/content, not APNs/FCM. Server notificationOutbox is routing only.',
       'Overnight is a powered-off 24-hour clock gap, not 24-hour OS/background endurance.',
       'No simulator/device, GPU/MapKit, native Swift/Kotlin, real SQL/RLS, GPS hardware, external network, or live services.',
-      'Feature tours were visibly present and settings leave was exercised; no exhaustive tour/settings acceptance. The ambiguous torus term is not resolved. Actual host notices/toasts/alerts are retained.',
-      'User-requested solo/leave departure notices are checked as expectation gaps; absence is a failure of that expectation, not automatically a proven regression.'];
+      'Route-tour behavior is verified in its dedicated discoverable scenario. This trip records actual host notices/toasts/alerts separately from tour controls.',
+      'Solo/leave receiver notices are required behavior. Empty sender queues alone never count as delivery.'];
     const summary = { output, command: `node test/headless/tokyo-trip.cjs ${output}`, platforms: { leader: 'ios', memberA: 'android', memberB: 'ios' }, overnight: 'powered-off 24h clock gap', checks, passed: checks.filter(c => c.pass).length, failed: checks.filter(c => !c.pass).length,
       harnessFailure: failure || null, steps: records.length, finalTime: new Date(world.now).toISOString(), limits };
-    fs.writeFileSync(path.join(output, 'summary.json'), JSON.stringify(summary, null, 2));
+    save('summary.json', JSON.stringify(summary, null, 2));
     const lines = ['# Tokyo two-day / one-night headless journey', '', `Passed ${summary.passed}; failed ${summary.failed}; steps ${summary.steps}.`,
       `Harness failure: ${failure ? failure.split('\n')[0] : 'none'}.`, '', '## Independent behavior checks', '',
       ...checks.map(c => `- ${c.pass ? 'PASS' : 'FAIL'} ${c.name}. Evidence ${JSON.stringify(c.evidence)}`), '', '## Chronological actor transcript', ''];
@@ -410,9 +424,16 @@ async function main() {
       }
     }
     lines.push('## Limits', '', ...limits.map(l => `- ${l}`));
-    fs.writeFileSync(path.join(output, 'transcript.md'), lines.join('\n'));
-    console.log(JSON.stringify({ passed: summary.passed, failed: summary.failed, harnessFailure: summary.harnessFailure?.split('\n')[0], output }));
-    if (failure || summary.failed) process.exitCode = 1;
+    save('transcript.md', lines.join('\n'));
+    log(JSON.stringify({ passed: summary.passed, failed: summary.failed, harnessFailure: summary.harnessFailure?.split('\n')[0], output }));
+    return summary;
   }
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+return main();
+}
+module.exports = { runTokyoTrip };
+if (require.main === module) {
+  const output = process.argv[2] || path.join('C:/Users/alexs/Desktop/BZ/hither/qa-runs/2026-10-30-tokyo-headless', `run-${Date.now()}`);
+  runTokyoTrip({ output }).then(summary => { if (summary.harnessFailure || summary.failed) process.exitCode = 1; })
+    .catch(error => { console.error(error); process.exitCode = 1; });
+}

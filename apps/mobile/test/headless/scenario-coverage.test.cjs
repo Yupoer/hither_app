@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const { evaluate } = require('./scenario-coverage.cjs');
+const family = { id: 'delivery', critical: true, cases: [{ file: 'src/__tests__/delivery.test.ts', pattern: 'receives payload', platforms: ['ios', 'android'] }] };
+const results = assertions => ({ testResults: [{ name: '/project/src/__tests__/delivery.test.ts', assertionResults: assertions }] });
+const ios = { fullName: 'receiver on ios receives payload', status: 'passed' };
+const android = { fullName: 'receiver on android receives payload', status: 'passed' };
+assert.equal(evaluate(results([ios]), [family]).accepted, false);
+assert.equal(evaluate(results([ios, android]), [family]).accepted, true);
+assert.equal(evaluate(results([ios, { ...android, status: 'pending' }]), [family]).passed, 0);
+assert.equal(evaluate(results([ios, android, { ...android, status: 'failed' }]), [family]).passed, 0);
+const criticalGap = Array.from({ length: 100 }, (_, index) => index ? { ...family, id: String(index), critical: false } : { ...family, gap: 'Receiver evidence missing' });
+const nearlyAll = evaluate(results([ios, android]), criticalGap);
+assert.equal(nearlyAll.percent, 99);
+assert.equal(nearlyAll.accepted, false);
+console.log('Scenario evidence requires both platforms, executed passes and every critical family.');

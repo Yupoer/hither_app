@@ -17,6 +17,7 @@ assert.equal(rpc('join_group', { p_code: group.invite_code }, PEER).data.id, gro
 assert.equal(b.memberships.find(m => m.group_id === group.id && m.user_id === PEER).role, 'follower');
 table('memberships', [['delete'], ['eq', 'user_id', PEER], ['in', 'group_id', [group.id]]], PEER);
 assert.deepEqual(table('memberships', [['select', 'group_id'], ['eq', 'user_id', PEER], ['in', 'group_id', [group.id]]], PEER).data, []);
+assert.deepEqual(b.tables.group_alerts.at(-1), { id: b.tables.group_alerts.at(-1).id, group_id: group.id, kind: 'member_left', sender_id: PEER, member_id: PEER, member_name: 'Peer', distance_m: null, created_at: new Date(b.now).toISOString() });
 assert.throws(() => table('profiles', [['select', 'secret']]), /Unknown profiles selection/);
 assert.throws(() => rpc('invented_rpc', {}), /Unsupported backend RPC/);
 assert.throws(() => table('invented_table', [['select', '*']]), /Unsupported backend table/);
@@ -63,7 +64,12 @@ const core = (type, payload, userId = LEADER, extra = {}) => rpc('apply_core_ope
 core.sequence = 0;
 assert.equal(core('set_solo', { userId: PEER, solo: true }, PEER).data.status, 'accepted');
 assert.equal(b.memberships.find(m => m.group_id === GROUP_ID && m.user_id === PEER).solo, true);
+assert.equal(b.tables.group_alerts.at(-1).kind, 'member_solo');
+const beforeNoopSolo = b.tables.group_alerts.length;
+core('set_solo', { userId: PEER, solo: true }, PEER);
+assert.equal(b.tables.group_alerts.length, beforeNoopSolo);
 core('set_solo', { userId: PEER, solo: false }, PEER);
+assert.equal(b.tables.group_alerts.at(-1).kind, 'member_follow');
 assert.equal(core('set_trip_details', { tripDays: 3, departureDate: '2026-10-23' }, PEER).data.status, 'conflict');
 assert.equal(core('set_trip_details', { tripDays: 3, departureDate: '2026-10-23' }).data.status, 'accepted');
 assert.equal(b.groups.get(GROUP_ID).trip_days, 3);
