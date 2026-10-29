@@ -273,7 +273,7 @@ async function main() {
       for (const receiver of ['leader','memberA']) {
         const received = notifications(o[receiver]).slice(notifications(soloBefore[receiver]).length);
         const alerts = o[receiver].external.alertDetails.filter(row => !soloBefore[receiver].external.alertDetails.some(old => JSON.stringify(old) === JSON.stringify(row)));
-        const visibleNotices = o[receiver].presentation.hosts.filter(row => /notice|toast|banner|alert/i.test(row.testId || '') && !soloBefore[receiver].presentation.hosts.some(old => JSON.stringify(old) === JSON.stringify(row))); 
+        const visibleNotices = o[receiver].presentation.hosts.filter(row => /notice|toast|banner|alert/i.test(row.testId || '') && !soloBefore[receiver].presentation.hosts.some(old => JSON.stringify(old) === JSON.stringify(row)));
         check(receiver + ' receives member B solo departure notice', received.some(row => row.data?.category === 'journey' && row.data.senderId === o.memberB.actorId && row.body.includes('Tokyo B') && /離開|脫隊|自由行動|left|solo/i.test(row.body)), { received, newAlerts: alerts, newVisibleNotices: visibleNotices, expected: 'Named local journey notice from the acting member' });
       }
     });
@@ -388,7 +388,7 @@ async function main() {
         check(receiver + ' sees two-member roster after leave', o[receiver].durable.snapshot.members.length === 2 && !member(o[receiver], o.memberB.actorId), o[receiver].durable.snapshot.members);
         const received = notifications(o[receiver]).slice(notifications(leaveBefore[receiver]).length);
         const alerts = o[receiver].external.alertDetails.filter(row => !leaveBefore[receiver].external.alertDetails.some(old => JSON.stringify(old) === JSON.stringify(row)));
-        const visibleNotices = o[receiver].presentation.hosts.filter(row => /notice|toast|banner|alert/i.test(row.testId || '') && !leaveBefore[receiver].presentation.hosts.some(old => JSON.stringify(old) === JSON.stringify(row))); 
+        const visibleNotices = o[receiver].presentation.hosts.filter(row => /notice|toast|banner|alert/i.test(row.testId || '') && !leaveBefore[receiver].presentation.hosts.some(old => JSON.stringify(old) === JSON.stringify(row)));
         check(receiver + ' receives member B group departure notice', received.some(row => row.data?.category === 'journey' && row.data.senderId === o.memberB.actorId && row.body.includes('Tokyo B') && /離開|脫隊|退出|left|leave/i.test(row.body)), { received, newAlerts: alerts, newVisibleNotices: visibleNotices, expected: 'Named local journey notice from the departing member' });
       }
     });
