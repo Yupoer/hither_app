@@ -298,9 +298,11 @@ jobs:
       - name: Verify Release debugger capture and cleanup
         working-directory: ${{ github.workspace }}
         timeout-minutes: 3
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
         run: |
+          python3 -B -c 'import json; from pathlib import Path; print(json.dumps({"releaseXcodeBundlePresent": Path("/Applications/Xcode_27.0.app/Contents/Developer").is_dir()}))'
+          xcodebuild -version > "$RUNNER_TEMP/hither-debugger-xcode-version.txt"
+          cat "$RUNNER_TEMP/hither-debugger-xcode-version.txt"
+          grep -Eq '^Xcode 27\.0(\.[0-9]+)?$' "$RUNNER_TEMP/hither-debugger-xcode-version.txt"
           probe_status=0
           python3 -B apps/mobile/scripts/ios_launch_debugger.py check --output "$RUNNER_TEMP/hither-release-debugger-ci" --print-result || probe_status=$?
           python3 -B scripts/test_ios_launch_debugger.py NativeCleanupTests.test_real_darwin_zombie_group_is_reaped_before_signaling || probe_status=1
