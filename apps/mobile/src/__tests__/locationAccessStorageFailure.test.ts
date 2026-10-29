@@ -49,11 +49,11 @@ it.each(['flush access', 'upload access'])('retains queued GPS through one faile
   mockReceived.length = 0;
   const database = open(':memory:');
   mockOpen.mockResolvedValue(database);
+  let currentTime = Date.now();
+  jest.spyOn(Date, 'now').mockImplementation(() => currentTime);
   const privacy = jest.requireActual<typeof import('../state/locationPrivacy')>('../state/locationPrivacy');
   const outbox = jest.requireActual<typeof import('../state/locationOutbox')>('../state/locationOutbox');
   mockSharingKey = privacy.LOCATION_SHARING_KEY;
-  let currentTime = Date.now();
-  jest.spyOn(Date, 'now').mockImplementation(() => currentTime);
   const original: LocationUploadEvent = { actorId: 'user-1', id: '00000000-0000-4000-8000-000000000001',
     groupId: 'group-a', navigationSessionId: null, capturedAt: currentTime,
     coords: { latitude: 35.7148, longitude: 139.7967, accuracy: 5 },

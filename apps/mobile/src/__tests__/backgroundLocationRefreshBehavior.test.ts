@@ -231,6 +231,35 @@ describe('durable location refresh recovery', () => {
     }));
   });
 
+  it('ignores a delayed group A push without deleting group B queued locations', async () => {
+    const original = { id: 'group-b-pending-gps', groupId: 'group-b' };
+    const queued = [original];
+    mockPurgeOutbox.mockImplementation(async () => { queued.length = 0; });
+    mockAppState.currentState = 'background';
+    setLocationAccessContext('group-b', true, true);
+    try {
+      await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-a' } }, error: null });
+      expect(queued).toEqual([original]);
+      expect(mockPurgeOutbox).not.toHaveBeenCalled();
+      expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+      expect(mockListPending).not.toHaveBeenCalled();
+      expect(mockIngest).not.toHaveBeenCalled();
+      expect(mockAck).not.toHaveBeenCalled();
+    } finally { mockPurgeOutbox.mockImplementation(async () => undefined); }
+  });
+
+  it('skips a registered push while preference storage is unavailable without purging or acquiring GPS', async () => {
+    mockAppState.currentState = 'background';
+    mockAsyncStorage.getItem.mockRejectedValueOnce(new Error('preference storage temporarily unavailable'));
+    await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
+    expect(mockPurgeOutbox).not.toHaveBeenCalled();
+    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+    expect(mockListPending).not.toHaveBeenCalled();
+    expect(mockIngest).not.toHaveBeenCalled();
+    expect(mockAck).not.toHaveBeenCalled();
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'location_rejected_sharing_disabled' }));
+  });
+
   it('consumes permission markers exactly once and ignores malformed refresh data', async () => {
     await expect(consumePendingLocationPermission()).resolves.toBe(false);
     await rememberPendingLocationPermission();
