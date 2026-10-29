@@ -398,17 +398,6 @@ export async function finishPremiumPurchase(
   await iap.finishTransaction({ purchase: purchase.purchase, isConsumable: options.isConsumable });
 }
 
-/** Compatibility boundary for old callers; no product is guessed or unlocked. */
-export async function purchasePro(): Promise<PurchaseResult> {
-  return { status: 'unavailable', reason: 'use_premium_subscription_flow' };
-}
-
-/** Compatibility restore entry point; callers should use the coordinator. */
-export async function restorePurchases(): Promise<PurchaseResult> {
-  const [purchase] = await restorePremiumPurchases();
-  return purchase ?? { status: 'unavailable', reason: 'no_active_subscription' };
-}
-
 /** True when a store event contains the opaque token and stable transaction ID. */
 export function isVerifiedPurchase(result: PurchaseResult): result is StorePurchase {
   return (

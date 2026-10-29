@@ -28,7 +28,6 @@ import {
 } from '../api/services/EntitlementService';
 import { joinGroup } from '../api/services/GroupService';
 import { addDestination } from '../api/services/DestinationService';
-import { isVerifiedPurchase, purchasePro, restorePurchases } from '../native/purchases';
 import { supabase } from '../api/supabase';
 
 jest.mock('../api/supabase', () => ({
@@ -527,17 +526,6 @@ describe('addDestination itinerary_point_limit', () => {
         coordinates: { latitude: 0, longitude: 0 },
       }),
     ).rejects.toMatchObject({ code: 'itinerary_point_limit' });
-  });
-});
-
-describe('native purchases stub (BUILD-02 boundary)', () => {
-  it('does not unlock premium without verified outcome', async () => {
-    const purchased = await purchasePro();
-    const restored = await restorePurchases();
-    expect(purchased.status).toBe('unavailable');
-    expect(restored.status).toBe('unavailable');
-    expect(isVerifiedPurchase(purchased)).toBe(false);
-    expect(isVerifiedPurchase(restored)).toBe(false);
   });
 });
 

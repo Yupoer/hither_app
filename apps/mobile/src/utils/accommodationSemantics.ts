@@ -620,27 +620,6 @@ export function dragTargetIndexFromOffset(
   return order.length;
 }
 
-/**
- * @deprecated Prefer dragTargetIndexFromOffset (geometry-aware).
- * Kept for tests that assert header-crossing correction.
- */
-export function crossDayGapCorrection(
-  order: readonly ReorderListEntry[],
-  startIndex: number,
-  rawAim: number,
-  extraPerHeader: number = 1,
-): number {
-  if (extraPerHeader === 0 || order.length === 0) return 0;
-  const lo = Math.min(startIndex, rawAim);
-  const hi = Math.max(startIndex, rawAim);
-  let headers = 0;
-  for (let i = lo + 1; i <= hi && i < order.length; i++) {
-    if (order[i]?.type === 'header') headers += 1;
-  }
-  const signed = rawAim >= startIndex ? headers : -headers;
-  return signed * extraPerHeader;
-}
-
 /** Continuous min/max over legal full-list indices. */
 export function dragIndexBoundsForList(
   order: readonly ReorderListEntry[],

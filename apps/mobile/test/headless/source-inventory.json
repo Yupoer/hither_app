@@ -4658,18 +4658,6 @@
   {
     "file": "src/native/purchases.ts",
     "kind": "export",
-    "name": "purchasePro",
-    "hash": "cd076f435cff8553c43bb2eb90910a0e38c804b782f75229326a081b6584e138"
-  },
-  {
-    "file": "src/native/purchases.ts",
-    "kind": "export",
-    "name": "restorePurchases",
-    "hash": "b9faec9d175cc6f508c1c687f9cb662d88bd8e044a4ab49b4b9b4ed8a8d027d7"
-  },
-  {
-    "file": "src/native/purchases.ts",
-    "kind": "export",
     "name": "isVerifiedPurchase",
     "hash": "03453b000f78f08a72a63f2c1978d468f59ecef866ece30ae078cd90e46d3a27"
   },
@@ -4690,12 +4678,6 @@
     "kind": "export",
     "name": "productionAdUnitsEnabled",
     "hash": "daab542954438375cd7d0af30e17c93adbaf57713681bc216a5e46ae9eb160e0"
-  },
-  {
-    "file": "src/native/rewardedAds.ts",
-    "kind": "export",
-    "name": "useProductionAdUnits",
-    "hash": "b569938a83b5a28070c147015c22823c4d70335c929d9031655c06eec9e98677"
   },
   {
     "file": "src/native/rewardedAds.ts",
@@ -10466,12 +10448,6 @@
   {
     "file": "src/utils/accommodationSemantics.ts",
     "kind": "export",
-    "name": "crossDayGapCorrection",
-    "hash": "99029fa61be4791b2cedcbb60acfa05687ab527960230d4ddde0258cc4bb838f"
-  },
-  {
-    "file": "src/utils/accommodationSemantics.ts",
-    "kind": "export",
     "name": "dragIndexBoundsForList",
     "hash": "b2d0708593edbbf04beb10261e61f1d2eb48ceb9c480a7a5f3956f26159f96bc"
   },
@@ -10618,12 +10594,6 @@
     "kind": "export",
     "name": "groupStateFromSnapshotParts",
     "hash": "d4454dd910cf46bfe33d62d06051a60c4364cc9f64707600272ddedb38ca3883"
-  },
-  {
-    "file": "src/utils/activityLog.ts",
-    "kind": "export",
-    "name": "enqueue",
-    "hash": "c80030e16ad3edd58385277de9cd2b5ef1bc6e02de703d67356efca18ca0c34b"
   },
   {
     "file": "src/utils/activityLog.ts",
