@@ -10,7 +10,7 @@ const source = fs.readFileSync(new URL('./check-changed-coverage.mjs', import.me
 function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85', status = 0,
   signal = null, error = false, pct = '90', summary = true, malformed = false,
   ci = false, stale = false, tripleDotFails = false, diffFails = false,
-  baseEnv = { COVERAGE_BASE: 'event-base-sha' }, raw = true } = {}) {
+  baseEnv = { COVERAGE_BASE: 'event-base-sha' }, raw = true, zeroSuites = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coverage gate '));
   try {
     const app = path.join(root, 'apps/mobile');
@@ -49,9 +49,9 @@ function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85'
           fs.mkdirSync(path.join(options.cwd, 'test-artifacts'), {recursive: true});
           fs.writeFileSync(path.join(options.cwd, 'test-artifacts/node-jest.raw.json'), JSON.stringify({
             success: ${status === 0}, numTotalTests: 3, numPassedTests: 1, numFailedTests: 0, numPendingTests: 1, numTodoTests: 1,
-            testResults: [{name: path.join(options.cwd, 'src/__tests__/example.test.ts'), status: 'passed',
+            testResults: ${zeroSuites ? '[]' : `[{name: path.join(options.cwd, 'src/__tests__/example.test.ts'), status: 'passed',
               assertionResults: [{status: 'passed'}, {status: 'pending'}, {status: 'todo'}],
-              failureMessage: 'PRIVATE_ASSERTION_MESSAGE', console: ['PRIVATE_CONSOLE']}],
+              failureMessage: 'PRIVATE_ASSERTION_MESSAGE', console: ['PRIVATE_CONSOLE']}]`},
             environment: 'PRIVATE_ENVIRONMENT'
           }));
         }
@@ -75,7 +75,7 @@ function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85'
 const invocations = result => result.stdout.split('\n').filter(line => line.startsWith('COLLECTED ')).map(line => JSON.parse(line.slice(10)));
 
 test('preserves original source eligibility, trimming, excluded directories and deleted paths', () => {
-  const eligible = ['src/screens/helpers.ts', 'src/components/hooks/useThing.tsx', 'src/services/api.tsx', 'src/deleted.ts'];
+  const eligible = ['src/screens/helpers.ts', 'src/components/hooks/useThing.tsx', 'src/services/api.tsx', 'src/deleted.ts', 'src/screens/MapScreen/styles.ts'];
   const excluded = ['src/screens/Page.tsx', 'src/components/UI.tsx', 'src/assets/a.ts', 'src/__tests__/a.ts',
     'src/foo__tests__bar.ts', 'src/__mocks__/a.ts', 'src/types/a.ts', 'src/constants/a.ts', 'src/i18n/a.ts',
     'src/theme/a.ts', 'src/styles/a.ts', 'src/file.d.ts', 'src/file.style.ts', 'src/file.styles.tsx', 'src/a.js', 'other/a.ts'];
@@ -106,7 +106,7 @@ test('runs the full node suite exactly once in CI with or without eligible sourc
     assert.equal(args.includes('--coverage'), files[0] !== 'README.md');
     assert.equal(args.includes('--runInBand'), files[0] !== 'README.md');
     assert.equal(args.includes('--forceExit'), files[0] !== 'README.md');
-    assert.ok(args.includes('--silent'));
+    assert.equal(args.includes('--silent'), files[0] !== 'README.md');
     assert.ok(args.includes('--json'));
     assert.ok(args.includes('--outputFile=test-artifacts/node-jest.raw.json'));
     assert.ok(args.every(arg => !/findRelatedTests|runTestsByPath|testPath|onlyChanged|changedSince|--config/.test(arg)));
@@ -180,6 +180,16 @@ test('rejects missing, malformed and nonnumeric coverage summaries', () => {
   }
 });
 
+test('invalid CI input cannot retain a previous passing receipt', () => {
+  assert.equal(run({ ci: true, stale: true, threshold: 'invalid' }).receipt, null);
+  assert.equal(run({ ci: true, stale: true, diffFails: true }).receipt, null);
+});
+
 test('CI cannot accept a missing fresh Jest result', () => {
   assert.notEqual(run({ ci: true, raw: false }).status, 0);
+});
+
+test('full CI rejects zero discovered suites while standalone retains passWithNoTests', () => {
+  assert.notEqual(run({ ci: true, zeroSuites: true, pct: '100' }).status, 0);
+  assert.equal(run({ zeroSuites: true, pct: '100' }).status, 0);
 });

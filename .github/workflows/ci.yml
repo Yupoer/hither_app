@@ -3,7 +3,7 @@ name: CI
 # Hither CI — gates required before store/TestFlight release:
 #   1. Logic and component regressions       -> jest + jest-expo
 #   2. Test meta (acceptance map L1 + anti-fake L2)
-#   3. Changed-function coverage ≥85%        -> test:coverage:changed
+#   3. Changed-function coverage ≥85%        -> test:ci
 #   4. TypeScript regressions                -> tsc --noEmit
 #   5. iOS runtime / OTA alignment           -> verify:runtime
 #   6. Expo dependency version drift         -> expo install --check
@@ -95,14 +95,6 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Test (jest)
-        run: npm test --silent
-
-      - name: Component tests (jest-expo)
-        run: npm test -- --config jest.config.components.js --runInBand --silent
-        env:
-          NODE_OPTIONS: --experimental-vm-modules
-
       - name: Resolve META_PARENT
         id: test_meta
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -157,11 +149,27 @@ jobs:
         env:
           META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
-      - name: Coverage changed functions ≥85%
-        run: npm run test:coverage:changed
+      - name: Node tests and changed functions ≥85%
+        run: npm run test:ci
         env:
           COVERAGE_BASE: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
+
+      - name: Component tests (jest-expo)
+        run: npm test -- --config jest.config.components.js --runInBand --silent
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+      - name: Upload safe node evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/mobile/test-artifacts/node-receipt.json
+            apps/mobile/coverage-changed/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Lint (eslint — full tree; featureTour at error severity)
         run: npm run lint
