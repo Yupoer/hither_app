@@ -161,7 +161,7 @@
       "child": "gather-card-followup",
       "acceptance": "The gathering card shows Start only before navigation, then flexible End and square icon-only Complete while the session is active.",
       "testFile": "gatheringCarouselIconButtons.test.tsx",
-      "testNamePattern": "shows a flexible Start button|gives End the remaining width"
+      "testNamePattern": "keeps Start separate from in-place card expansion|gives End the remaining width"
     },
     {
       "parent": 298,
