@@ -86,10 +86,134 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             "consoleProbe": "available", "consoleSignals": ["uncaught_exception"]}), {
                 "processExitProbe": "observed", "appExitKind": "exited", "appExitCode": 37,
                 "consoleProbe": "available", "consoleSignals": ["uncaught_exception"]})
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "processExitProbe": "observed", "appExitKind": ["private"], "appExitCode": True,
+            "appExitSignal": 10000, "appExitDetails": ["private token"],
+            "consoleProbe": "unavailable", "consoleSignals": ["fatal_error"]}),
+            {"processExitProbe": "observed", "consoleProbe": "unavailable"})
+
+    def test_console_probe_bounds_parsing_and_keeps_raw_output_local(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stdout, stderr = (Path(directory) / name for name in ("stdout", "stderr"))
+            stdout.write_bytes(b"private token; uncaught exception\n" + b"x" * 1_000_000)
+            stderr.write_bytes(b"fatal error\xff")
+            result = VERIFY.probe_console([stdout, stderr])
+            self.assertEqual(result, {"consoleProbe": "available", "consoleTruncated": True,
+                                      "consoleSignals": ["fatal_error", "uncaught_exception"]})
+            self.assertNotIn("private token", json.dumps(result))
+            stderr.unlink()
+            self.assertEqual(VERIFY.probe_console([stdout, stderr]), {"consoleProbe": "unavailable"})
+
+    def test_observed_normal_exit_still_fails_original_launch_without_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / "Hither.app"
+            app.mkdir()
+            (app / "Info.plist").write_bytes(plistlib.dumps({
+                "CFBundleIdentifier": "app.hither.mobile", "CFBundleVersion": "77",
+                "CFBundleSupportedPlatforms": ["iPhoneSimulator"], "CFBundleExecutable": "Hither"}))
+            output = root / "result"
+            launches = []
+            def command(*args, check=True, timeout=None):
+                if args[2] == "launch":
+                    launches.append(args)
+                    return SimpleNamespace(returncode=0, stdout="app.hither.mobile: 123\n", stderr="")
+                if args[2] == "get_app_container":
+                    return SimpleNamespace(returncode=0, stdout=str(root / args[-1]), stderr="")
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            observer = Mock()
+            observer.poll.return_value = {"processExitProbe": "observed", "appExitKind": "exited",
+                                          "appExitCode": 0, "appExitObservedDuring": "launch_observation"}
+            argv = ["verify-ios-release-launch.py", "--app", str(app), "--simulator", "test-simulator",
+                    "--build", "77", "--output", str(output)]
+            with patch.object(VERIFY, "run", side_effect=command), patch("sys.argv", argv), \
+                    patch.object(VERIFY, "ProcessExitObserver", return_value=observer), \
+                    patch.object(VERIFY.os, "kill"), patch.object(VERIFY.time, "sleep"), \
+                    patch.object(VERIFY, "probe_app_process_state", return_value="replacement_pid"), \
+                    patch.object(VERIFY, "find_crash_report", return_value=None), \
+                    patch.object(VERIFY, "probe_simulator_state", return_value="booted"), \
+                    patch.object(VERIFY, "probe_system_termination", return_value={}), \
+                    self.assertRaises(ProcessLookupError):
+                VERIFY.main()
+            result = json.loads((output / "launch-result.json").read_text())
+            self.assertIs(result["passed"], False)
+            self.assertEqual(result["launches"], [])
+            self.assertEqual(result["failureStage"], "startup_breadcrumb")
+            self.assertEqual(result["appExitCode"], 0)
+            self.assertEqual(GATE.safe_launch_diagnostic(result)["appExitObservedDuring"], "launch_observation")
+            self.assertEqual(len(launches), 1)
+            observer.close.assert_called_once()
 
     @unittest.skipUnless(sys.platform == "darwin", "requires Darwin kqueue")
     def test_real_host_exit_observer_reads_exact_exit_and_signal(self):
         VERIFY.check_exit_observer()
+
+    def test_host_self_check_uses_running_macho_instead_of_framework_launcher(self):
+        binary = "/Frameworks/Python/Resources/Python.app/Contents/MacOS/Python"
+        children = [Mock(pid=123), Mock(pid=456)]
+        observers = [Mock(), Mock()]
+        for child, observer, result in zip(children, observers, (
+                {"appExitKind": "exited", "appExitCode": 37},
+                {"appExitKind": "signaled", "appExitSignal": 15})):
+            child.poll.return_value = 0
+            observer.poll.side_effect = [{"processExitProbe": "not_observed"},
+                                         {"processExitProbe": "observed", **result}]
+        with patch.object(VERIFY.sys, "executable", "/Frameworks/Python/bin/python3"), \
+                patch.object(VERIFY, "host_executable_path", return_value=binary), \
+                patch.object(VERIFY.subprocess, "Popen", side_effect=children) as spawn, \
+                patch.object(VERIFY, "ProcessExitObserver", side_effect=observers) as observe:
+            VERIFY.check_exit_observer()
+        self.assertEqual([call.args[0][0] for call in spawn.call_args_list], [binary, binary])
+        self.assertEqual([call.args for call in observe.call_args_list],
+                         [(123, Path(binary)), (456, Path(binary))])
+
+    def test_cli_rejects_unsupported_console_or_failed_observer_before_app_build(self):
+        for console_supported in (False, True):
+            with self.subTest(console_supported=console_supported), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                script = root / "scripts/run-ios-release-launch.py"
+                script.parent.mkdir()
+                script.write_bytes(SCRIPT.read_bytes())
+                mobile = root / "apps/mobile"
+                (mobile / "ios").mkdir(parents=True)
+                (mobile / "scripts").mkdir()
+                (mobile / "eas.json").write_text(json.dumps({"build": {"production": {}}}))
+                (mobile / "ios/Podfile.lock").write_text("COCOAPODS: 1.16.2\n")
+                tools = root / "bin"
+                tools.mkdir()
+                trace = root / "commands.jsonl"
+                for name, response in {"git": "a" * 40, "pod": "1.16.2",
+                                       "xcodebuild": "Xcode 27.0\nBuild version test",
+                                       "xcrun": "--stdout=<path> --stderr=<path>" if console_supported else "--console"}.items():
+                    command = tools / name
+                    command.write_text(f"#!{sys.executable}\nimport json,os,pathlib,sys\n"
+                                       "with pathlib.Path(os.environ['HITHER_TEST_TRACE']).open('a') as stream:\n"
+                                       " stream.write(json.dumps(sys.argv)+'\\n')\n"
+                                       f"print({response!r})\n")
+                    command.chmod(0o755)
+                helper = mobile / "scripts/verify-ios-release-launch.py"
+                helper.write_text("import os,pathlib,sys\n"
+                                  "pathlib.Path(os.environ['RUNNER_TEMP'],'self-check-ran').touch()\n"
+                                  "print('private console sentinel')\nsys.exit(7)\n")
+                result = subprocess.run((sys.executable, str(script), "--source-sha", "a" * 40,
+                                         "--receipt", str(root / "receipt.json")), capture_output=True,
+                                        text=True, env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+                                        "RUNNER_TEMP": str(root), "EAS_BUILD_PROFILE": "production",
+                                        "HITHER_TEST_TRACE": str(trace),
+                                        "EXPO_PUBLIC_PRIVACY_URL": "https://hither.example.net/privacy",
+                                        "EXPO_PUBLIC_TERMS_URL": "https://hither.example.net/terms"})
+                self.assertEqual(result.returncode, 1)
+                diagnostic = json.loads((root / "hither-release-launch-diagnostic.json").read_text())
+                self.assertEqual(diagnostic["stage"], "runner_preflight")
+                self.assertEqual((root / "self-check-ran").exists(), console_supported)
+                if console_supported:
+                    self.assertEqual(diagnostic["commandExitCode"], 7)
+                    self.assertNotIn("exitCode", diagnostic)
+                    self.assertNotIn("appExitCode", diagnostic)
+                calls = [json.loads(line)[1:] for line in trace.read_text().splitlines()]
+                self.assertNotIn(["install", "--deployment"], calls)
+                self.assertFalse(any("build" in call or "create" in call for call in calls))
+                self.assertNotIn("private console sentinel", result.stdout + result.stderr + json.dumps(diagnostic))
 
     def run_profile_boundary(self, production, inherited):
         with tempfile.TemporaryDirectory() as directory:
@@ -349,6 +473,13 @@ class ReleaseLaunchGateTests(unittest.TestCase):
 
             def command(*args, check=True, timeout=None):
                 if args[2] == "launch":
+                    for name in ("stdout", "stderr"):
+                        captures = [arg.removeprefix(f"--{name}=") for arg in args
+                                    if arg.startswith(f"--{name}=")]
+                        self.assertEqual(len(captures), 1)
+                        capture = Path(captures[0])
+                        self.assertEqual(capture, output / f"cold-start-1.{name}.log")
+                        capture.write_text("private user data and token; uncaught exception")
                     return SimpleNamespace(returncode=0, stdout="app.hither.mobile: 123\n", stderr="")
                 if args[2] == "get_app_container":
                     return SimpleNamespace(returncode=0, stdout=str(root / "data"), stderr="")
@@ -387,7 +518,9 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                             "attempt": 1, "hostPidAliveAtLaunch": initially_alive,
                             "runtimeLogSignals": [], "appProcessState": app_state,
                             "simulatorState": "unavailable", "systemLogProbe": "unavailable",
-                            "runtimeLogProbe": "available"}
+                            "runtimeLogProbe": "available", "processExitProbe": "unavailable",
+                            "consoleProbe": "available", "consoleTruncated": False,
+                            "consoleSignals": ["uncaught_exception"]}
                 if finally_alive is not None:
                     expected["processAlive"] = finally_alive
                     if probe_error:
