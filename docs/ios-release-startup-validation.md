@@ -81,6 +81,11 @@ host 子程序驗證 exit 37 與 SIGTERM 觀測。此自測不代表 App 通過�
 會在保存原始結果後，使用同一份已安裝 binary 最多加一次限時 LLDB 診斷 launch。
 此 replay 不計入兩次冷啟動驗收；其成功或工具失敗都不能覆蓋原 gate 失敗。
 完整 App build 前會先用小型 host trap fixture 驗證 debugger 能取得命名 frame。
+fixture 的讀取只會在 `EINTR` 時重試，EOF 與其他錯誤仍失敗。自測還必須完成
+release write／flush／close；`fixtureRelease=sent` 不代表已證實子程序消費了 byte。
+若 LLDB 回報 `exited`，會保留 `lldbExitStatus` 與 `sigtrapStopConfigured`。
+這是 debugger 狀態，不能當成原 App 的 OS exit code；debugserver 失聯也可能
+回報 exited／-1。Broken pipe 或 cleanup 失敗都會保留已取得的安全診斷。
 若 LLDB cleanup 回報失敗，會保留已取得的 frames 並標記 `cleanupFailed`，
 診斷指令與 build 前自測仍判失敗。
 只把有限的靜態 module／UUID／offset／function 欄位放入診斷 artifact，原始

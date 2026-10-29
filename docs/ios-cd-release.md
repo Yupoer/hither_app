@@ -226,6 +226,7 @@ with its own retained evidence before another dispatch.
 | [40816052797](https://github.com/Yupoer/hither_app/actions/runs/40816052797), source `57d91e882a0f8fb3e2798c4fe2e5243624b0a0f1` | Source CI and toolchain passed; cold launch failed on attempt 1 while waiting to observe the startup breadcrumb. | The [sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40816052797/artifacts/12873064423) reports original host PID alive at launch, App absent, simulator booted, no matching crash report or runtime signal, empty PID-correlated signals, and bundle-only `jetsam`/`process_exit` hints in a seven-second window. `exitCode=1` belongs to the failed gate command, not the App. Cause remains unknown. |
 | [40834930383](https://github.com/Yupoer/hither_app/actions/runs/40834930383), source `3fe702a3c55dc726cf661bbba288e62cb6727615` | Runner preflight rejected the launch capture capability check before any App build. | The help reader inspected stdout only. Real child-command fixtures reproduce rejection when identical supported help is on stderr or split between streams. The correction reads both streams for this help call; exact Xcode 27 stream routing still requires native observation. This run supplies no new App crash evidence. |
 | [40837853209](https://github.com/Yupoer/hither_app/actions/runs/40837853209), source `1ddd65a85e55462f023aaa8c00d02b4a1f7b50b2` | Help preflight and full Release compilation passed; cold launch failed on attempt 1. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40837853209/artifacts/12883846272) attributes signal 5 to the original executable-checked PID during launch observation. The App was then absent, the simulator remained booted, and no matching report, fixed console/runtime pattern or PID-correlated system hint was observed. This establishes SIGTRAP termination, not its trap site or a link to historical phone reports. |
+| [40898632385](https://github.com/Yupoer/hither_app/actions/runs/40898632385), source `a608d6356b0ca78804414c7fdab8954c78ba7cbb` | The host debugger self-check failed before simulator creation or App build. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40898632385/artifacts/12909020858) reports `debuggerCheck.probe=exited` at `continue`, without an exit status. This is an LLDB-reported state; it does not establish a new App failure or uniquely identify the fixture failure. |
 
 The last run was dispatched separately from this patch. No rerun or guessed
 native fix is part of the contract repair. Future logs contain fixed UTC stage
@@ -304,6 +305,16 @@ missing capability, empty fixture stack or reported cleanup failure fails before
 App build. This checks the collector, not App startup or simulator-App debugging
 permission.
 
+The fixture retries `read()` only for `EINTR`; EOF still exits 2 and another
+read error exits 3. A real C regression reproduces the former premature exit 2
+after a signal interrupts the pending read. This proves the fixture defect on
+Linux, not that Darwin attach caused the recorded runner failure. The Linux
+test maps the Clang-only trap intrinsic to `raise(SIGTRAP)`; selected-Xcode
+LLDB capture remains a separate native check. Apple
+documents interrupted reads in [read(2)](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/read.2.html).
+The named trap frame, successful release write sequence and successful cleanup
+are all required for the self-check to pass.
+
 After an eligible failure, the helper exclusively reserves a separate directory
 and attempts at most one launch of the existing installed App. It verifies the
 bundle/build/platform and installed/compiled executable digest, preserves App
@@ -325,6 +336,18 @@ promote the original gate or replace its failure.
 When an original matching IPS exists, `crashFrames` retains the same bounded
 static image/symbol fields from its faulting thread. Report argument values and
 source paths remain excluded.
+
+For `probe=exited`, `lldbExitStatus` retains LLDB's integer status from -1
+through 255, and `sigtrapStopConfigured` records its signal-stop setter result.
+This is not independently observed OS exit evidence: LLDB can report exited
+with status -1 after debugserver or connection loss, as shown in its
+[remote-process implementation](https://github.com/llvm/llvm-project/blob/main/lldb/source/Plugins/Process/gdb-remote/ProcessGDBRemote.cpp).
+The host check also records `fixtureRelease` as `sent`, `write_failed` or
+`not_observed`. `sent` means write, flush and close completed, not that the
+fixture consumed the byte. A broken pipe cannot discard capture evidence or
+skip cleanup. The debugger writes a separate runner-local `lldb-capture.json`;
+the outer helper writes the final sanitized `replay-result.json` once after
+guarded cleanup. Neither file replaces the original launch result.
 
 A replay observes another lifetime. The same installed native executable does
 not establish the same OTA selection; replay evidence must retain that limit.

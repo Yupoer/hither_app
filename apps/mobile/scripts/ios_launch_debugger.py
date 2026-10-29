@@ -23,6 +23,7 @@ import uuid
 
 BUNDLE = 'app.hither.mobile'
 RESULT_NAME = 'replay-result.json'
+CAPTURE_RESULT_NAME = 'lldb-capture.json'
 PROBES = frozenset(('stopped', 'exited', 'timeout', 'unavailable',
                     'not_eligible', 'identity_mismatch'))
 STOP_REASONS = frozenset(('signal', 'exception', 'other'))
@@ -36,11 +37,15 @@ UINT64_LIMIT = 2**64
 MODULE_NAME = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.+\-]{0,127}')
 UUID_TEXT = re.compile(r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}')
 FUNCTION_NAME = re.compile(r'[A-Za-z_$~+?\-][A-Za-z0-9_$~+\-.:(), <>\[\]*&|!?^%{}#@]*')
-FIXTURE_SOURCE = '''#include <unistd.h>
+FIXTURE_SOURCE = '''#include <errno.h>
+#include <unistd.h>
 __attribute__((noinline)) void hither_lldb_probe(void) { __builtin_debugtrap(); }
 int main(void) {
   char token;
-  if (read(STDIN_FILENO, &token, 1) != 1) return 2;
+  ssize_t count;
+  do { count = read(STDIN_FILENO, &token, 1); } while (count == -1 && errno == EINTR);
+  if (count == 0) return 2;
+  if (count != 1) return 3;
   hither_lldb_probe();
   return 0;
 }
@@ -91,6 +96,15 @@ def safe_result(payload):
         result['stage'] = stage
     if type(payload.get('cleanupFailed')) is bool:
         result['cleanupFailed'] = payload['cleanupFailed']
+    release = payload.get('fixtureRelease')
+    if isinstance(release, str) and release in ('sent', 'write_failed', 'not_observed'):
+        result['fixtureRelease'] = release
+    if payload['probe'] == 'exited':
+        code = payload.get('lldbExitStatus')
+        if type(code) is int and -1 <= code <= 255:
+            result['lldbExitStatus'] = code
+        if type(payload.get('sigtrapStopConfigured')) is bool:
+            result['sigtrapStopConfigured'] = payload['sigtrapStopConfigured']
     if payload['probe'] != 'stopped':
         return result
     reason = payload.get('stopReason')
@@ -129,14 +143,14 @@ def _reserve_output(output):
     return output.resolve()
 
 
-def _write_result(output, payload):
+def _write_result(output, payload, name=RESULT_NAME):
     result = safe_result(payload) or _result('unavailable')
     temporary = Path(output) / ('.replay-result-' + str(os.getpid()) + '.pending')
     try:
         with temporary.open('x', encoding='utf-8') as stream:
             json.dump(result, stream, sort_keys=True)
             stream.write('\n')
-        os.link(temporary, Path(output) / RESULT_NAME)
+        os.link(temporary, Path(output) / name)
     finally:
         temporary.unlink(missing_ok=True)
     return result
@@ -149,9 +163,9 @@ def _read_json(path):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def _read_result(output):
+def _read_result(output, name=RESULT_NAME):
     try:
-        return safe_result(_read_json(Path(output) / RESULT_NAME)) or _result('unavailable')
+        return safe_result(_read_json(Path(output) / name)) or _result('unavailable')
     except (OSError, ValueError, UnicodeError):
         return _result('unavailable')
 
@@ -385,8 +399,9 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
             raise _IdentityMismatch()
         owned = True
         signals = process.GetUnixSignals()
+        stop_configured = False
         if signals.IsValid():
-            signals.SetShouldStop(5, True)
+            stop_configured = signals.SetShouldStop(5, True)
         (Path(output) / 'attached.ready').touch(exist_ok=False)
         stage = 'continue'
         error = process.Continue()
@@ -397,7 +412,8 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
             stage = 'frames'
             result = _stopped_result(process, target, lldb)
         elif state == lldb.eStateExited:
-            result = _result('exited')
+            result = dict(_result('exited'), lldbExitStatus=process.GetExitStatus(),
+                          sigtrapStopConfigured=stop_configured)
     except _IdentityMismatch:
         result = _result('identity_mismatch')
     except Exception:
@@ -420,7 +436,7 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
             result['cleanupFailed'] = cleanup_failed
         elif cleanup_failed:
             result = _result('unavailable', 'cleanup')
-        _write_result(output, result)
+        _write_result(output, result, CAPTURE_RESULT_NAME)
 
 
 def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
@@ -436,6 +452,7 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
                                    start_new_session=True)
         deadline = time.monotonic() + DEBUGGER_TIMEOUT
+        cleanup_failed = False
         try:
             while process.poll() is None:
                 if attached is not None and (Path(output) / 'attached.ready').is_file():
@@ -445,17 +462,16 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
                     raise _CommandTimeout('continue' if (Path(output) / 'attached.ready').is_file() else 'attach')
                 time.sleep(0.05)
         finally:
-            _stop_group(process)
-    result = _read_result(output)
+            try:
+                _stop_group(process)
+            except OSError:
+                cleanup_failed = True
+    result = _read_result(output, CAPTURE_RESULT_NAME)
+    if cleanup_failed:
+        result['cleanupFailed'] = True
     if 'stage' not in result:
         result['stage'] = 'continue' if (Path(output) / 'attached.ready').is_file() else 'attach'
     return result
-
-
-def _finish_result(output, result):
-    if not (Path(output) / RESULT_NAME).exists():
-        return _write_result(output, result)
-    return _read_result(output)
 
 
 def check(output):
@@ -464,9 +480,10 @@ def check(output):
     fixture = None
     stage = 'launch_help'
     result = _result('unavailable', stage)
+    released = 'not_observed'
     try:
         if not _is_darwin():
-            return _write_result(output, result)
+            raise _CommandFailure()
         help_result = _run_command(('xcrun', 'simctl', 'help', 'launch'), output, 'launch-help')
         help_text = help_result.stdout + '\n' + help_result.stderr
         for option in ('--wait-for-debugger', '--stdout', '--stderr'):
@@ -486,9 +503,14 @@ def check(output):
                 raise _IdentityMismatch()
 
             def release():
-                fixture.stdin.write(b'x')
-                fixture.stdin.flush()
-                fixture.stdin.close()
+                nonlocal released
+                try:
+                    fixture.stdin.write(b'x')
+                    fixture.stdin.flush()
+                    fixture.stdin.close()
+                    released = 'sent'
+                except OSError:
+                    released = 'write_failed'
 
             result = _run_lldb(fixture.pid, executable, output, attached=release)
     except _CommandTimeout as error:
@@ -499,10 +521,18 @@ def check(output):
         result = _result('unavailable', stage)
     finally:
         if fixture is not None:
-            if fixture.stdin is not None and not fixture.stdin.closed:
-                fixture.stdin.close()
-            _stop_group(fixture)
-    return _finish_result(output, result)
+            try:
+                if fixture.stdin is not None and not fixture.stdin.closed:
+                    fixture.stdin.close()
+            except OSError:
+                released = 'write_failed'
+            finally:
+                try:
+                    _stop_group(fixture)
+                except OSError:
+                    result['cleanupFailed'] = True
+        result['fixtureRelease'] = released
+    return _write_result(output, result)
 
 
 def replay(app, simulator, build, original_result, output):
@@ -542,7 +572,10 @@ def replay(app, simulator, build, original_result, output):
         result = _result('unavailable', stage)
     finally:
         if owned is not None:
-            owned.close()
+            try:
+                owned.close()
+            except OSError:
+                result['cleanupFailed'] = True
         elif executable is not None:
             # A launch command can print its PID and then time out. Its exact
             # returned PID remains the only cleanup candidate in that case.
@@ -555,7 +588,7 @@ def replay(app, simulator, build, original_result, output):
                         _OwnedAppProcess(pid, executable).close()
             except (OSError, ValueError):
                 pass
-    return _finish_result(output, result)
+    return _write_result(output, result)
 
 
 def _launch_pid(contents):
@@ -566,6 +599,7 @@ def _launch_pid(contents):
 def _fixture_captured(result):
     return (result.get('probe') == 'stopped'
             and result.get('cleanupFailed') is False
+            and result.get('fixtureRelease') == 'sent'
             and (result.get('stopReason') == 'exception'
                  or (result.get('stopReason') == 'signal' and result.get('signal') == 5))
             and any(frame.get('function') == 'hither_lldb_probe' for frame in result.get('frames', [])))
