@@ -63,8 +63,9 @@ class ReleaseLaunchGateTests(unittest.TestCase):
         for inherited in ({}, {"EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "minimal"},
                           {"EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "conflicting-private-sentinel"}):
             with self.subTest(inherited=inherited):
-                child, _ = self.run_profile_boundary(profile, inherited)
+                child, result = self.run_profile_boundary(profile, inherited)
                 self.assertEqual(child, {**profile["env"], "HITHER_TEST_INHERITED": "inherited-private-sentinel"})
+                self.assertIn("hither-ios-release-stage=runner_preflight at=", result.stdout)
 
     def test_cli_rejects_unsupported_or_malformed_profiles_before_child_commands(self):
         for profile in (None, [], {"env": []}, {"env": {"KEY": 1}},
