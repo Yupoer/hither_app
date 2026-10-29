@@ -423,7 +423,6 @@ export default function App() {
               <ThemedNavigation />
               <PremiumPurchaseRecovery />
               <SessionNotifications />
-              {/* Global: any screen — brief top toast after an OTA apply. */}
               <OtaUpdateToast />
             </SessionProvider>
           </PreferencesProvider>

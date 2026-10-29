@@ -1069,12 +1069,10 @@ export const StorePane = React.memo(function StorePane({
 
       {!personalPremiumActive ? (
         <>
-          {/* Premium first; full-screen paywall sheet (restore stays on Settings). */}
           <View style={styles.premiumBlock} testID="store-premium-section">
             <PremiumBanner onPress={() => onOpenSubscribe?.()} testID="store-open-subscribe" />
           </View>
 
-          {/* Divider between Premium and the ad / economy block. */}
           <View style={styles.sectionDivider} testID="store-premium-ad-divider" />
         </>
       ) : null}
@@ -1102,7 +1100,6 @@ export const StorePane = React.memo(function StorePane({
         </View>
       ) : (
         <>
-          {/* Premium → divider → balance → ad (#store layout). */}
           <View style={styles.balanceAdRow}>
             <View style={styles.balanceInline} testID="store-balance">
               <Text style={styles.coinGlyph} accessibilityLabel="coin">🪙</Text>

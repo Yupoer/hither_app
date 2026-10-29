@@ -1507,7 +1507,6 @@ export default function DestinationReorderList({
             <Text style={styles.emojiSheetTitle}>{t('destEmoji.title')}</Text>
             <Text style={styles.emojiSheetHint}>{t('destEmoji.preview')}</Text>
 
-            {/* Large map-pin style preview (matches design mockup). */}
             <View style={styles.emojiPinPreviewWrap} testID="dest-emoji-preview">
               <View style={styles.emojiPinPreview}>
                 <View style={styles.emojiPinHead}>
@@ -1518,7 +1517,6 @@ export default function DestinationReorderList({
               </View>
             </View>
 
-            {/* Category tabs: 常用 / 餐飲 / 景點 / 交通 / 自然 / 活動 */}
             <View style={styles.emojiCategoryRow}>
               {DESTINATION_EMOJI_CATEGORIES.map((cat) => {
                 const selected = cat.id === emojiCategory;
@@ -1821,7 +1819,6 @@ const HeaderRow = memo(function HeaderRow({
       }
       {...(canSwipeToggleAffordance ? swipeResponder.panHandlers : {})}
     >
-      {/* Row 1: day title, date, collapse OR drag (swipe toggles). */}
       <Animated.View
         style={[
           styles.headerRow,
@@ -1909,7 +1906,6 @@ const HeaderRow = memo(function HeaderRow({
           </View>
         </View>
       </Animated.View>
-      {/* Row 2: accommodation place + remove (only when stay is set). */}
       {hasStay ? (
         <View style={styles.headerStayRow}>
           <View style={styles.stayBadge}>

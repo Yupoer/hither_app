@@ -4,7 +4,6 @@ export const zh = {
   'arrival.timeLeader': '使用隊長抵達時間',
   'arrival.timeNow': '套用當下時間',
   'arrival.timeAutomatic': '與隊長時間同步',
-  // Common
   'common.cancel': '取消',
   'common.close': '關閉',
   'map.refreshReceiptsUnavailable': '刷新請求已送出，目前無法確認成員回覆；請查看各成員的最後定位時間。',
@@ -18,7 +17,6 @@ export const zh = {
   'common.delete': '刪除',
   'common.or': '或',
 
-  // Interaction recovery (shared action runner)
   'interaction.timeout': '操作等待逾時，結果尚未確認。請先查看目前狀態，避免重複操作。',
   'interaction.signOutTimeout': '登出連線逾時，請檢查 Wi‑Fi 或行動網路後再試，目前仍保持登入。',
   'interaction.error': '操作失敗，請再試一次',
@@ -27,7 +25,6 @@ export const zh = {
   'interaction.mapReload': '重新載入地圖',
   'interaction.mapGoHome': '回到主畫面',
 
-  // OTA-04 local-first core data
   'coreData.offlineCache': '目前離線，顯示上次同步的旅團與行程',
   'coreData.staleSnapshot': '本地資料可能過期，連線後會自動更新',
   'coreData.emptySnapshot': '尚無本地旅團快照，請連線後再試',
@@ -59,13 +56,11 @@ export const zh = {
   'navResponse.needsHelp': '需要協助',
   'navResponse.sent': '已回報',
 
-  // Auth
   'auth.nameLabel': '暱稱',
   'auth.namePlaceholder': '例如：迷路的貓',
   'auth.signInFailed': '登入失敗，請再試一次',
   'auth.googleCta': '使用 Google 帳號註冊',
 
-  // Login gate
   'login.welcomeTitle': 'Hither',
   'login.welcomeSub': '登入以同步你的群組，或以訪客身分快速開始。',
   'login.tabSignIn': '登入',
@@ -146,13 +141,11 @@ export const zh = {
     '匿名隊長的旅團最多 5 人（含自己）。邀請第 6 人之前，請先完成註冊；註冊後會保留現有帳號、成員與旅程資料。',
   'anon.registrationRequiredCta': '前往註冊',
 
-  // Role select
   'role.tagline': '讓大家不走散，隨時知道下一個集合點。',
   'role.lead': '帶領一個群組',
   'role.join': '用代碼加入',
   'role.footer': '免註冊 · 只要一個暱稱',
 
-  // Auth (role-scoped)
   'auth.leaderKicker': '你是隊長',
   'auth.leaderTitle': '建立群組',
   'auth.leaderSub': '取一個名字，成員會在你的圖釘旁看到它。',
@@ -164,7 +157,6 @@ export const zh = {
   'auth.followerCta': '加入並開啟地圖',
   'auth.followerFoot': '向隊長索取 6 碼群組代碼。',
 
-  // Group
   'group.travelerFallback': '旅人',
   'group.codeLabel': '群組代碼',
   'group.leave': '離開群組',
@@ -184,7 +176,6 @@ export const zh = {
   'group.kickedMsg': '隊長已將你移出此隊伍，請重新加入或建立新隊伍。',
   'group.copied': '已複製代碼',
 
-  // Settings
   'settings.nickname': '暱稱',
   'settings.language': '語言',
   'settings.theme': '主題背景',
@@ -292,7 +283,6 @@ export const zh = {
   'settings.customQuickCommandSlot': '自訂快捷 {n}',
   'settings.customQuickCommandEditHint': '自訂格長按可重新編輯（有震動）。',
 
-  // Map
   'role.demo': '測試模式 · 虛擬團隊',
   'profile.title': '個人資料',
   'profile.avatar': '頭像',
@@ -373,7 +363,6 @@ export const zh = {
     'Android 大概位置仍可顯示與粗略進度；抵達確認會依定位精度判斷，不會假裝精確。',
   'location.openSettings': '前往設定',
   'map.destinationCounter': '第 {index} / {total} 個集合點',
-  // Map · journey (start/pause) + arrival
   'map.journeyFailed': '無法更新行程狀態，請稍後再試。',
 
   'operationError.offline': '網路連線中斷或無法連線。請檢查網路；已儲存的離線操作會另行顯示待同步。',
@@ -395,7 +384,6 @@ export const zh = {
   'map.autoAdvanceBody': '已抵達「{title}」，自動前往下一站「{next}」',
   'map.journeyCompleteBody': '已抵達「{title}」，行程結束',
 
-  // Map · new design (Hither iOS Flow)
   'map.searchPlaces': '搜尋地點',
   'confirmGather.kicker': '加入這個集合點？',
   'confirmGather.going': '前往 {name}',
@@ -542,7 +530,6 @@ export const zh = {
   'arrival.manage': '標記抵達',
   'arrival.failedTitle': '無法標記抵達',
   'arrival.failedMsg': '無法更新抵達狀態，請稍後再試。',
-  // Organizer exception center (leader)
   'exception.centerTitle': '例外處理',
   'exception.centerEmpty': '目前沒有需要處理的例外',
   'exception.openCount': '{count} 件待處理',
@@ -561,7 +548,6 @@ export const zh = {
   'exception.type.force_quit_suspected': '疑似強制結束 App',
   'exception.gathering': '集合點：{title}',
   'exception.lastSeen': '最近：{time}',
-  // OTA-09 coordination requests
   'coordination.title': '協調請求',
   'coordination.openCount': '{count} 件進行中',
   'coordination.empty': '目前沒有協調請求',
@@ -656,7 +642,6 @@ export const zh = {
   'flock.here': '就在這',
   'flock.you': '你',
 
-  // Map · meet time (countdown / set / clear) + member status
   'meetTime.redSection': '倒數提醒',
   'meetTime.quickSection': '快速設定',
   'meetTime.timeSection': '集合時間',
@@ -684,7 +669,6 @@ export const zh = {
   'locationUpdate.hours': '{hours} 小時前更新',
   'locationUpdate.stale': '過久未更新',
 
-  // Commands (quick buttons) · labels
   'command.gather': '集合',
   'command.find_gathering': '找集合點',
   'command.depart': '出發',
@@ -703,7 +687,6 @@ export const zh = {
   'command.sent': '已通知大家',
   'command.sendFailed': '通知傳送失敗，請再試一次。',
 
-  // Local notification copy (received-side)
   'notif.addGatheringTitle': '新的集合點',
   'notif.addGatheringBody': '集合點：{title}',
   'notif.commandTitle': '快捷指令：{label}',
@@ -714,7 +697,6 @@ export const zh = {
   'notif.journeyPausedTitle': '暫停',
   'notif.journeyPausedBody': '{name} 已暫停前往「{title}」',
 
-  // Settings · quick notifications + per-category toggles
   'settings.quickHintAll': '點一下即時通知自己以外的所有人。',
   'settings.quickHintLeader': '點一下即時通知自己以外的所有人。',
   'settings.quickHintFollower': '點一下即時通知自己以外的所有人。',
@@ -727,7 +709,6 @@ export const zh = {
   'notif.operatorPauseTitle': '行程已暫停',
   'notif.operatorPauseBody': '你已暫停前往集合點',
 
-  // Settings · location tracking
   'settings.locationSection': '定位追蹤',
   'settings.mapSection': '地圖',
   'settings.highAccuracy': '高精準模式',
@@ -749,10 +730,8 @@ export const zh = {
   'passive.title': '被動模式',
   'passive.switchBack': '切回完整介面',
   'passive.enter': '被動模式',
-  // Auto-complete local notification (this device only)
   'gathering.autoCompleteTitle': '集合點已完成',
   'gathering.autoCompleteBody': '「{title}」已自動完成（全員抵達）',
-  // Manual complete confirm (someone still missing)
   'gathering.completeMissingTitle': '完成集合點',
   'gathering.completeMissingMessage': '已抵達成員（{arrived}/{total}），是否要完成此集合點？',
   'gathering.completeConfirm': '完成',
@@ -793,7 +772,6 @@ export const zh = {
   'settings.gatherCardMarqueeSpeedSlow': '慢',
   'settings.gatherCardMarqueeSpeedFast': '快',
 
-  // Destination search
   'search.placeholder': '輸入地址或地點名稱',
   'search.sheetTitle': '搜尋地點',
   'search.searching': '搜尋中…',
@@ -805,22 +783,18 @@ export const zh = {
   'search.quota': '搜尋額度已用完，可長按地圖標記',
   'search.longPressHint': '長按地圖也可以標記並新增地點',
 
-  // Group map (web fallback)
   'web.note':
     '🗺️ 互動地圖只在原生 App 顯示（iPhone 上的 Expo Go）。\n以下為 web 預覽用的即時資料。',
   'web.membersSection': '成員 · {count}',
   'web.unknownLocation': '位置未知',
 
-  // Settings · theme (forest, added by Onboarding)
   'settings.themeForest': '森林',
 
-  // Onboarding
   'onboarding.skip': '跳過',
   'onboarding.next': '下一步',
   'onboarding.back': '返回',
   'onboarding.continue': '繼續',
 
-  // Step kickers (small uppercase accent label above each title)
   'onboarding.theme.kicker': '選一個主題',
   'onboarding.theme.subtitle': '之後隨時能改。',
   'onboarding.role.kicker': '選擇身分',
@@ -929,7 +903,6 @@ export const zh = {
   'onboarding.c3.sharedItinerary': '行程共編',
   'onboarding.c3.tripRecap': '旅程回顧',
 
-  // History (visited waypoints)
   'history.title': '歷史行程',
   'history.deleteTitle': '刪除歷史紀錄？',
   'history.open': '查看歷史行程',
@@ -939,7 +912,6 @@ export const zh = {
   'history.statusIncomplete': '未完成',
   'history.timeUnknown': '時間未知（隊長校正）',
 
-  // Straggler alerts
   'straggler.section': '脫隊示警',
   'straggler.notifyTitle': '脫隊提醒',
   'straggler.banner': '{name} 已脫隊 {distance}',
@@ -947,7 +919,6 @@ export const zh = {
   'straggler.freeNote': '免費版預設 500 公尺',
   'straggler.threshold': '警示距離',
 
-  // Paywall / Free Plan + account-owned auto-renewable Premium
   'paywall.title': 'Premium 訂閱',
   'paywall.premiumTitle': 'Premium 訂閱',
   'paywall.premiumHint': '月訂閱或年訂閱；價格與試用資格由 App Store 顯示。',
@@ -1040,7 +1011,6 @@ export const zh = {
   'paywall.rowThemesFree': '主題：4 種',
   'paywall.rowThemesPro': '更多主題',
 
-  // KML import
   'kml.entry': '匯入',
   'kml.step1': '在 Google 我的地圖規劃景點',
   'kml.step2': '匯出 KML 或 KMZ 檔案',
@@ -1093,7 +1063,6 @@ export const zh = {
   'feedback.sent': '已送出，謝謝回報',
   'feedback.failed': '送出失敗，請稍後再試',
 
-  // My teams / role entry
   'teams.title': '我的隊伍',
   'teams.clear': '清空',
   'teams.clearAllTitle': '清空隊伍',
@@ -1110,7 +1079,6 @@ export const zh = {
   'teams.leave': '離開',
   'role.myTeams': '查看隊伍',
 
-  // Nav command labels (MapScreen display; gatherCommand keeps zh for pure tests)
   'nav.leaderStart': '開始',
   'nav.leaderStop': '結束',
   'nav.leaderComplete': '完成',
@@ -1128,7 +1096,6 @@ export const zh = {
   'gather.cardExpandHint': '展開集合點卡片',
   'gather.cardCollapseHint': '收合集合點卡片',
 
-  // Map residuals
   'map.tripDay': '第 {day} 天',
   'map.tripDayDate': '{month}月{day}號',
   'map.bgLocationTitle': '需要背景定位',
@@ -1143,7 +1110,6 @@ export const zh = {
   'map.meetInHours': '{n}小時後',
   'map.mainTeamLabel': '主團隊',
 
-  // Account sheet registration / subscription blocks
   'account.regSection': '註冊資訊',
   'account.regMethod': '註冊方式',
   'account.regDays': '已註冊天數',
@@ -1173,7 +1139,6 @@ export const zh = {
   'account.deleteConfirm': '刪除帳號',
   'account.deleteFailed': '無法刪除帳號，請稍後再試。',
 
-  // Trip day / reorder
   'trip.setDaysAndDate': '天數與日期',
   'trip.setDaysTitle': '設定行程天數',
   'trip.departureDate': '出發日期',
@@ -1182,7 +1147,6 @@ export const zh = {
   'trip.dayFlagColor': '選擇第 {day} 天的旗幟顏色',
   'trip.dayTitle': '第 {day} 天',
 
-  // Error boundary + FGS
   'errorBoundary.title': '發生錯誤',
   'errorBoundary.body': '畫面發生未預期錯誤，你可以再試一次。',
   'errorBoundary.retry': '重試',
@@ -1194,7 +1158,6 @@ export const zh = {
   'fgs.groupBody': '以省電模式更新你在群組中的位置',
   'fgs.navBody': '持續更新你與集合點的距離',
 
-  // Group feature tour
   'tour.next': '下一個',
   'tour.prev': '上一個',
   'tour.getStarted': '開始使用',

@@ -362,14 +362,6 @@ export function GatheringCarousel({
                       cardExpanded ? t('gather.cardCollapseHint') : t('gather.cardExpandHint')
                     }
                   >
-                  {/* Layout (expanded):
-                      kicker · dots
-                      title full-width
-                      day line ····· people N/M
-                      小隊行程 badge (subgroup only)
-                      📍 dist | 🚗 eta | map
-                      [導航] [移動] [抵達?] [交通] [集合倒數]
-                     Collapsed: title marquee + compact ETA·dist only. */}
                   <View style={styles.cardHead}>
                     <View style={styles.grow}>
                       <View style={styles.cardKickerRow}>
@@ -703,7 +695,6 @@ export function GatheringCarousel({
                       </Pressable>
                     ) : null}
 
-                    {/* Transport before meet countdown (product: swap order). */}
                     {cardExpanded ? (
                     <>
                     <Pressable

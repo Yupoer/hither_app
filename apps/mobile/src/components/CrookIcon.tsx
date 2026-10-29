@@ -46,7 +46,6 @@ export default function CrookIcon({
       accessible={false}
       pointerEvents="none"
     >
-      {/* Hook: a ∩ half-ring whose right leg merges into the stem top. */}
       <View
         style={{
           position: 'absolute',
@@ -64,7 +63,6 @@ export default function CrookIcon({
           ...glowStyle,
         }}
       />
-      {/* Stem: rounded vertical bar from the hook down to the tip. */}
       <View
         style={{
           position: 'absolute',

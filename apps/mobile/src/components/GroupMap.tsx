@@ -860,9 +860,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // The native boundary owns provider selection and platform callback wiring;
   // GroupMap only supplies intent/diagnostic callbacks and spreads its result.
   const mapPlatformProps = useMemo(
-    // The callbacks are stored by the boundary and invoked only by MapView
-    // events; they are not executed while this render-time builder runs.
-    // eslint-disable-next-line react-hooks/refs
     () => ({
       ...platformizedMapViewProps({
         chrome: mapChrome,
