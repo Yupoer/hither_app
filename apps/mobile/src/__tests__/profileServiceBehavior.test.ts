@@ -121,8 +121,8 @@ describe('ProfileService', () => {
     });
   });
 
-  it('forwards the legacy entitlement exports without weakening their server boundary', async () => {
-    const { redeemPromoCode, setProStatus } = await import('../api/services/ProfileService');
+  it('forwards promo redemption through the entitlement service', async () => {
+    const { redeemPromoCode } = await import('../api/services/ProfileService');
     mockedSupabase.rpc.mockResolvedValueOnce({
       data: { success: true, plan_name: 'Premium', plan_code: 'premium' }, error: null,
     });
@@ -132,6 +132,5 @@ describe('ProfileService', () => {
     expect(mockedSupabase.rpc).toHaveBeenCalledWith('redeem_promo_code', {
       p_code: 'promo', p_group_id: 'g-1',
     });
-    await expect(setProStatus('user-1')).rejects.toThrow('entitlement_write_forbidden');
   });
 });

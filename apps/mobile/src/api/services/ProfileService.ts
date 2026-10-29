@@ -78,8 +78,4 @@ export async function saveOnboardingProfile(answers: object): Promise<void> {
   orThrow(error);
 }
 
-// Re-export entitlement entry points so existing ProfileService consumers keep working.
-export {
-  redeemPromoCode,
-  setProStatus,
-} from './EntitlementService';
+export { redeemPromoCode } from './EntitlementService';

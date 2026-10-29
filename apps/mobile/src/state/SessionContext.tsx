@@ -174,11 +174,6 @@ export interface SessionContextValue {
   /** Record the group the user just created (as leader) or joined (as follower). */
   setMembership: (membership: Membership) => void;
   leaveGroup: () => void;
-  /**
-   * @deprecated Do not use as proof of payment. Prefer refreshEntitlement /
-   * refreshProfile after a server-validated purchase or redemption.
-   */
-  setProStatusLocal: (pro: boolean) => void;
   /** Refresh the user profile from the database (e.g. after a promo code). */
   refreshProfile: () => Promise<void>;
   /**
@@ -906,8 +901,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setCustomQuickCommand,
       setMembership,
       leaveGroup: leaveGroupWithJourneyCleanup,
-      // Deprecated compatibility API: local writes cannot grant Premium.
-      setProStatusLocal: () => undefined,
       refreshProfile,
       refreshEntitlement,
       ensurePremiumAccess,

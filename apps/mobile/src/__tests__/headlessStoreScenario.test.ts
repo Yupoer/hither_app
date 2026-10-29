@@ -294,7 +294,6 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       const revoked = await device.perform('premium.flow.ensurePersonalPremiumAccess', { args: [{ userId: LEADER, groupId: GROUP_ID, cacheStale: true, cachedLive: false }] });
       expect(revoked.allowed).toBe(false);
       expect(revoked.projection).toMatchObject({ personalPremiumActive: false, teamPremiumActive: true });
-      await expect(device.perform('premium.direct-write-rejected', { args: [LEADER] })).rejects.toThrow('entitlement_write_forbidden');
     } finally { await world.close(); }
   });
 
