@@ -1,4 +1,16 @@
-import { createSyncHandler } from './index.ts';
+import { createSyncHandler, type SyncHandlerDependencies } from './index.ts';
+
+type AdminQuery = ReturnType<
+  ReturnType<NonNullable<SyncHandlerDependencies['createAdmin']>>['from']
+>;
+
+function queryWithResult(maybeSingle: AdminQuery['maybeSingle']): AdminQuery {
+  return {
+    select() { return this; },
+    eq() { return this; },
+    maybeSingle,
+  };
+}
 
 const ACCOUNT_TOKEN = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -146,13 +158,10 @@ Deno.test('user JWT + missing ledger JWS applies durably without ASN V2', async 
           }
           return { data: { ok: true }, error: null };
         },
-        from: () => ({
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: { app_account_token: ACCOUNT_TOKEN }, error: null }),
-            }),
-          }),
-        }),
+        from: () => queryWithResult(async () => ({
+          data: { app_account_token: ACCOUNT_TOKEN },
+          error: null,
+        })),
       }),
     });
     const response = await handler(request({ signed_transaction: 'device-jws' }));
@@ -203,18 +212,10 @@ Deno.test('service_role bound originalTransactionId apply is idempotent', async 
         }
         return { data: { ok: true }, error: null };
       },
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      }),
+      from: () => queryWithResult(async () => ({
+        data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+        error: null,
+      })),
     }),
   });
   const first = await handler(request(
@@ -256,18 +257,10 @@ Deno.test('new secret key API auth preserves bound service sync without anon key
         data: { ok: true, durable: true, duplicate: false, status: 'active' },
         error: null,
       }),
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      }),
+      from: () => queryWithResult(async () => ({
+        data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+        error: null,
+      })),
     }),
   });
   const response = await handler(requestWithCredentials(
@@ -310,18 +303,10 @@ Deno.test('signed service JWT remains accepted while expired service JWT is reje
     }),
     createAdmin: () => ({
       rpc: async () => ({ data: { ok: true, durable: true }, error: null }),
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      }),
+      from: () => queryWithResult(async () => ({
+        data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+        error: null,
+      })),
     }),
   });
   const valid = await signedServiceJwt();
@@ -364,15 +349,10 @@ Deno.test('user JWT cannot sync another user originalTransactionId', async () =>
     }),
     createAdmin: () => ({
       rpc: async () => ({ data: { ok: true }, error: null }),
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => {
-              return { data: { app_account_token: ACCOUNT_TOKEN, user_id: OTHER_USER }, error: null };
-            },
-          }),
-        }),
-      }),
+      from: () => queryWithResult(async () => ({
+        data: { app_account_token: ACCOUNT_TOKEN, user_id: OTHER_USER },
+        error: null,
+      })),
     }),
   });
   const body = { originalTransactionId: ORIGINAL };
@@ -421,18 +401,10 @@ Deno.test('missing Connect API secrets fail closed without logging P8', async ()
       now: () => 1_800_000_010_000,
       createAdmin: () => ({
         rpc: async () => ({ data: { ok: true }, error: null }),
-        from: () => ({
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({
-                  data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        }),
+        from: () => queryWithResult(async () => ({
+          data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+          error: null,
+        })),
       }),
     });
     const response = await handler(request(
@@ -455,15 +427,7 @@ Deno.test('unbound service_role originalTransactionId stays 503 for later retry'
     now: () => 1_800_000_010_000,
     createAdmin: () => ({
       rpc: async () => ({ data: { ok: true }, error: null }),
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({ data: null, error: null }),
-            }),
-          }),
-        }),
-      }),
+      from: () => queryWithResult(async () => ({ data: null, error: null })),
     }),
   });
   const response = await handler(request(
@@ -500,22 +464,10 @@ Deno.test('forged unsigned service_role JWT is rejected with 401', async () => {
         if (name === 'apply_storekit_transaction') applyCalls += 1;
         return { data: { ok: true, durable: true }, error: null };
       },
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
-                error: null,
-              }),
-            }),
-            maybeSingle: async () => ({
-              data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
-              error: null,
-            }),
-          }),
-        }),
-      }),
+      from: () => queryWithResult(async () => ({
+        data: { user_id: USER_ID, app_account_token: ACCOUNT_TOKEN, environment: 'Sandbox' },
+        error: null,
+      })),
     }),
   });
   const response = await handler(request(

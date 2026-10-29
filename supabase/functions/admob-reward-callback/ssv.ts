@@ -140,7 +140,7 @@ export function parseSsvQueryString(queryString: string): ParsedSsvQuery | null 
   };
 }
 
-export function base64UrlToBytes(input: string): Uint8Array {
+export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {
   let b64 = input.replace(/-/g, "+").replace(/_/g, "/");
   const pad = b64.length % 4;
   if (pad) b64 += "=".repeat(4 - pad);
@@ -156,7 +156,7 @@ export function bytesToBase64Url(bytes: Uint8Array): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function spkiFromBase64Key(base64: string): Uint8Array {
+function spkiFromBase64Key(base64: string): Uint8Array<ArrayBuffer> {
   // Google provides SPKI (SubjectPublicKeyInfo) base64 for EC keys.
   return base64UrlToBytes(base64.replace(/\s+/g, ""));
 }
@@ -169,7 +169,7 @@ function spkiFromBase64Key(base64: string): Uint8Array {
 export function derEcdsaSignatureToP1363(
   der: Uint8Array,
   componentLen = 32,
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   let offset = 0;
   if (der[offset++] !== 0x30) {
     throw new Error("der_not_sequence");
@@ -238,7 +238,9 @@ export function p1363EcdsaSignatureToDer(
 /**
  * Normalize signature bytes for Web Crypto: accept DER or already-P1363 (64B).
  */
-export function signatureToP1363(signature: Uint8Array): Uint8Array {
+export function signatureToP1363<TBuffer extends ArrayBufferLike>(
+  signature: Uint8Array<TBuffer>,
+): Uint8Array<TBuffer | ArrayBuffer> {
   if (signature.length === 64) {
     // Already raw r‖s (some stacks); still accept.
     return signature;
