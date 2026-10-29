@@ -12,7 +12,7 @@ import type { TrackingMode } from '../utils/locationPolicy';
 import { createSingleFlightFlush } from '../utils/locationOutboxFlush';
 import { normalizeLocationSequence } from '../utils/locationSequence';
 import { getHitherDatabase } from './hitherDatabase';
-import { captureLocationAccess, isLocationAccessCurrent } from './locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessPending } from './locationPrivacy';
 
 export const LOCATION_OUTBOX_KEY = '@hither/location-outbox';
 const TTL_MS = 24 * 60 * 60 * 1_000;
@@ -426,6 +426,10 @@ export function createLocationOutbox(
       return singleFlight.flush();
     },
 
+    count(): Promise<number> {
+      return runSerial(async () => { await initialize(); return database.count(); });
+    },
+
     purge(): Promise<void> {
       return runSerial(async () => {
         await initialize();
@@ -465,8 +469,8 @@ export async function flushLocationOutbox(
   maxEntries = MAX_BATCH,
 ): Promise<LocationFlushResult> {
   if (!await captureLocationAccess()) {
-    await outbox.purge();
-    return { sent: 0, discarded: 0, remaining: 0, retryScheduled: 0 };
+    if (!isLocationAccessPending()) await outbox.purge();
+    return { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   }
   const result = await outbox.flush(maxEntries);
   clearTimeout(retryTimer);

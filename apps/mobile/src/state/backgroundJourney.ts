@@ -2,7 +2,7 @@ import { notifyJourneyApproach } from './journeyNotifications';
 import { resolveEtaSnapshot } from '../utils/liveActivityEta';
 import { AppState } from 'react-native';
 import type { LocationAccess } from './locationPrivacy';
-import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, isLocationAccessPending, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
 import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
 import { enqueueAutomaticArrival, effectiveArrivalForOperation, personalArrivalEvent, projectPersonalArrivals, projectArrivals, serverTimestampMs, type EffectiveArrival } from './arrivalSync';
 import { enqueueJourneyCompletion } from './journeyCompletion';
@@ -673,7 +673,7 @@ subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) {
     pendingBatches.length = 0;
     void stopBackgroundJourney().catch(() => undefined);
-    void purgeLocationOutbox().catch(() => undefined);
+    if (!isLocationAccessPending()) void purgeLocationOutbox().catch(() => undefined);
   }
 });
 

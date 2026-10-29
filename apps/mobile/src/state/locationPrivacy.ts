@@ -8,7 +8,8 @@ export const LEGACY_LOCATION_SHARING_KEY = 'pref.locationSharing';
 
 // Process-local on purpose: a background cold launch must never resurrect GPS.
 let foregroundSeen = false;
-let group: string | null = null;
+// Undefined suspends access while the authenticated Map restores its inputs.
+let group: string | null | undefined;
 let consent = false;
 let generation = 0;
 let cancellation = new AbortController();
@@ -23,7 +24,9 @@ function invalidateAccess() {
 }
 
 export function setLocationSharingConsent(enabled: boolean): void {
-  if (consent === enabled) return;
+  const pendingRevocation = !enabled && group === undefined;
+  if (consent === enabled && !pendingRevocation) return;
+  if (pendingRevocation) group = null;
   consent = enabled;
   invalidateAccess();
   for (const listener of consentListeners) listener(enabled);
@@ -37,7 +40,7 @@ export function subscribeLocationSharingConsent(listener: (enabled: boolean) => 
 export function locationConsentRevision(): number { return generation; }
 
 /** Called only by a mounted, authenticated foreground/team screen. */
-export function setLocationAccessContext(groupId: string | null, enabled: boolean, foreground = false): void {
+export function setLocationAccessContext(groupId: string | null | undefined, enabled: boolean, foreground = false): void {
   if (foreground) foregroundSeen = true;
   const changed = group !== groupId || consent !== enabled;
   group = groupId;
@@ -56,8 +59,10 @@ export interface LocationAccess {
   signal: AbortSignal;
 }
 
+export function isLocationAccessPending(): boolean { return group === undefined; }
+
 export function isLocationAccessEnabled(): boolean {
-  return foregroundSeen && consent && group !== null;
+  return foregroundSeen && consent && group != null;
 }
 
 export function isLocationAccessCurrent(access: LocationAccess): boolean {

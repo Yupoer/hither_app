@@ -264,3 +264,23 @@ jest.mock('../state/arrivalSync', () => ({
 }));
 jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
 jest.mock('../state/coreDataSync', () => ({ readLocalJourneyProjection: jest.fn(async () => null), getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));
+
+
+it('stops background acquisition while access hydrates and purges only after confirmed revocation', async () => {
+  const { setLocationAccessContext, setLocationSharingConsent, captureLocationAccess } = require('../state/locationPrivacy');
+  setLocationAccessContext('group-1', true, true);
+  const previousAccess = await captureLocationAccess('group-1');
+  mockPurge.mockClear();
+  setLocationAccessContext(undefined, true);
+  expect(previousAccess.signal.aborted).toBe(true);
+  expect(await captureLocationAccess()).toBeNull();
+  expect(mockPurge).not.toHaveBeenCalled();
+  setLocationAccessContext('group-1', true, true);
+  expect(await captureLocationAccess('group-1')).not.toBeNull();
+  setLocationAccessContext(null, false);
+  await Promise.resolve();
+  expect(mockPurge).toHaveBeenCalledTimes(1);
+  setLocationAccessContext(undefined, false);
+  setLocationSharingConsent(false);
+  expect(mockPurge).toHaveBeenCalledTimes(2);
+});
