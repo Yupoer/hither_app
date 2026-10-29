@@ -173,7 +173,9 @@ describe('otaUpdates', () => {
   it('shares one rollback fetch and reload across automatic and manual callers', async () => {
     __setOtaUsableForTests(true);
     let resolveCheck!: (value: Updates.UpdateCheckResult) => void;
-    checkForUpdateAsync.mockImplementation(() => new Promise((resolve) => { resolveCheck = resolve; }));
+    checkForUpdateAsync
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveCheck = resolve; }))
+      .mockResolvedValue(rollbackCheck);
     fetchUpdateAsync.mockResolvedValue(rollbackFetch);
     const automatic = applyOtaUpdate();
     const manual = applyOtaUpdate({ manual: true });
