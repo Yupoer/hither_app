@@ -59,7 +59,7 @@ result, receipt = run("after", {"published": published, "view": published, "chan
 assert result.returncode == 0 and receipt["iosUpdateId"] == UPDATE, result.stderr
 
 for changed in ({"id": "46e781f0-5efc-4028-b84c-2fa87f30ae30"},
-                {"id": "invalid"}, {"group": "invalid"},
+                {"id": "invalid"}, {"id": None}, {"group": []}, {"group": "invalid"},
                 {"runtimeVersion": "0.1.12"}, {"gitCommitHash": "b" * 40},
                 {"message": "different"}, {"isRollBackToEmbedded": True},
                 {"isRollBackToEmbedded": None}, {"platform": "OTHER"},
@@ -90,6 +90,11 @@ for malformed in (None, [], "invalid", {"currentPage": None}, {"currentPage": []
 
 for malformed in (None, [None], [[]], [{}], [{**published[0], "isRollBackToEmbedded": True}]):
     result, _ = run("published", {"published": malformed},
+                    "--source-sha", SOURCE, "--runtime", "0.1.13")
+    assert result.returncode != 0 and "Traceback" not in result.stderr, result.stderr
+
+for bad_id in (None, True, [], {}, "invalid"):
+    result, _ = run("published", {"published": [{**published[0], "id": bad_id}]},
                     "--source-sha", SOURCE, "--runtime", "0.1.13")
     assert result.returncode != 0 and "Traceback" not in result.stderr, result.stderr
 
