@@ -134,3 +134,32 @@ test('navigation replacement, reset and a new account navigator retain only the 
     assert.equal(f.host.navigation.canGoBack(), false);
   } finally { await act(async () => root.unmount()); }
 });
+
+test('view observations retain committed map inputs and each rendered member timestamp', async () => {
+  const { host, modules } = fixture();
+  const rn = modules.get('react-native');
+  const MapView = modules.get('react-native-maps').default;
+  const GroupMap = React.forwardRef(function GroupMap({ members }, _ref) {
+    return React.createElement(MapView, { testID: 'group-map-native' });
+  });
+  const FlockRow = React.memo(function FlockRow({ name, lastUpdated }) {
+    return React.createElement(rn.Text, null, name + ' updated ' + lastUpdated);
+  });
+  const sample = { userId: 'traveler', name: 'Traveler', coordinates: { latitude: 35.7, longitude: 139.7 }, capturedAt: '2026-10-22T00:00:00Z' };
+  const element = member => React.createElement(React.Fragment, null,
+    React.createElement(GroupMap, { members: [member] }),
+    React.createElement(FlockRow, { ...member, lastUpdated: member.capturedAt }));
+  let root;
+  await act(async () => { root = create(element(sample)); });
+  try {
+    assert.deepEqual(host.observeViews(root).mapMembers, [sample]);
+    assert.equal(host.observeViews(root).flockRows[0].lastUpdated, sample.capturedAt);
+    assert.equal(host.observeViews(root).flockRows[0].text, 'Traveler updated ' + sample.capturedAt);
+    const next = { ...sample, coordinates: { latitude: 35.8, longitude: 139.8 }, capturedAt: '2026-10-22T00:01:00Z' };
+    await act(async () => root.update(element(next)));
+    assert.deepEqual(host.observeViews(root).mapMembers, [next]);
+    assert.equal(host.observeViews(root).flockRows[0].lastUpdated, next.capturedAt);
+    await act(async () => root.update(React.createElement(rn.View)));
+    assert.deepEqual(host.observeViews(root), { mapMembers: null, flockRows: [] });
+  } finally { await act(async () => root.unmount()); }
+});

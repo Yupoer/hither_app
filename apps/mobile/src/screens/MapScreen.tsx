@@ -1200,6 +1200,7 @@ export default function MapScreen({ route, navigation }: Props) {
     latestLocationSampleRef,
     lifecycle: deviceLocationLifecycle,
   } = useDeviceLocation({
+    accessReady: preferencesReady && (state !== null || groupStateError === 'not_member'),
     groupId: mapFocused || effectiveNavigationActive ? groupId : null,
     highAccuracy: foregroundLocation.highAccuracy,
     powerMode: foregroundLocation.powerMode,

@@ -2,7 +2,7 @@ import { notifyJourneyApproach } from './journeyNotifications';
 import { resolveEtaSnapshot } from '../utils/liveActivityEta';
 import { AppState } from 'react-native';
 import type { LocationAccess } from './locationPrivacy';
-import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, isLocationAccessPending, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
 import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
 import { enqueueAutomaticArrival, effectiveArrivalForOperation, personalArrivalEvent, projectPersonalArrivals, projectArrivals, serverTimestampMs, type EffectiveArrival } from './arrivalSync';
 import { enqueueJourneyCompletion } from './journeyCompletion';
@@ -207,9 +207,12 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (!config || generation !== trackingGeneration || !controller.isCurrent(config)) return;
         const access = await captureLocationAccess(config.groupId, true);
         if (generation !== trackingGeneration || !controller.isCurrent(config)) return;
+        if (access === undefined && config.sharingEnabled && config.hasMembership !== false) return;
         if (!access || !config.sharingEnabled || config.hasMembership === false) {
           await stopBackgroundJourney(false, config);
-          await purgeLocationOutbox();
+          if (!isLocationAccessPending() || !config.sharingEnabled || config.hasMembership === false) {
+            await purgeLocationOutbox();
+          }
           return;
         }
         if (AppState.currentState !== 'background' || generation !== trackingGeneration || !controller.isCurrent(config)) return;
@@ -673,7 +676,7 @@ subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) {
     pendingBatches.length = 0;
     void stopBackgroundJourney().catch(() => undefined);
-    void purgeLocationOutbox().catch(() => undefined);
+    if (!isLocationAccessPending()) void purgeLocationOutbox().catch(() => undefined);
   }
 });
 
@@ -685,6 +688,7 @@ export async function startBackgroundJourney(
   const generation = ++trackingGeneration;
   const access = await captureLocationAccess(config.groupId);
   if (generation !== trackingGeneration) return 'cancelled';
+  if (access === undefined && config.sharingEnabled && config.hasMembership !== false) return 'cancelled';
   if (!access || !config.sharingEnabled || config.hasMembership === false) {
     await stopBackgroundJourney(true);
     return 'hidden';

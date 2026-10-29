@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import {
   buildAlignedNotificationEventId,
   mapPushCategoryToEventKey,
+  eventIdFromPushData,
 } from '../utils/notificationDeliveryPolicy';
 
 const sendPushDir = join(__dirname, '../../../../supabase/functions/send-push');
@@ -24,6 +25,7 @@ type Vector = {
   mobile: Parameters<typeof buildAlignedNotificationEventId>[0];
   deno: Record<string, unknown>;
   expected: string;
+  push: { eventId: string; eventIdV2?: string };
 };
 
 const vectors: Vector[] = JSON.parse(readFileSync(vectorsPath, 'utf8'));
@@ -40,6 +42,7 @@ describe('notification event identity parity (mobile ↔ send-push production)',
     'mobile matches golden expected for %s',
     (_name, v) => {
       expect(buildAlignedNotificationEventId(v.mobile)).toBe(v.expected);
+      expect(eventIdFromPushData(v.push)).toBe(v.expected);
     },
   );
 
@@ -47,7 +50,7 @@ describe('notification event identity parity (mobile ↔ send-push production)',
     const indexSrc = readFileSync(indexPath, 'utf8');
     const eventIdSrc = readFileSync(eventIdModulePath, 'utf8');
     expect(indexSrc).toMatch(/from ["']\.\/eventId\.ts["']/);
-    expect(indexSrc).toContain('eventIdFromPayload');
+    expect(indexSrc).toContain('...eventIdsFromPayload(payload)');
     // Helpers must not be re-declared inline in index.ts
     expect(indexSrc).not.toMatch(/function mapPushCategoryToEventKey\s*\(/);
     expect(indexSrc).not.toMatch(/function eventIdFromPayload\s*\(/);

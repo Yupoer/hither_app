@@ -35,6 +35,7 @@ jest.mock('../state/locationPrivacy', () => ({
   captureLocationAccess: async () => mockAllowed ? mockAccess : null,
   isLocationAccessCurrent: () => mockAllowed,
   isLocationAccessEnabled: () => mockAllowed,
+  isLocationAccessPending: () => false,
   subscribeLocationAccessChanges: (listener: () => void) => { mockAccessChanged = listener; return () => undefined; },
 }));
 import { backgroundLocationAdapter, nextBackgroundLocation, observeNativeBackgroundLocation, prepareNativeBackgroundLocation } from '../native/backgroundLocation';

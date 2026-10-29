@@ -1119,7 +1119,7 @@
     "file": "src/api/services/LocationService.ts",
     "kind": "export",
     "name": "ingestLocationBatch",
-    "hash": "5e2c6b33cbe4130f8b7f31d4858b77280887356a4d532a89d5d38e76e5c7e3f5"
+    "hash": "e1401c9b8d84e4dfa1f9fa89a1a1ee1321237e45a56b526eff73460eb63ae736"
   },
   {
     "file": "src/api/services/LocationService.ts",
@@ -4077,13 +4077,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "ddc8dc9b6ee07b288124a6905cddbfb5c1d33c2de0633192d2361fa439ebfa3f"
+    "hash": "e48f9365f3b3f5a43da6063b4e1f3b35deaa411722b258c47b43a91fc602b4b3"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "f04a467c8f70bcc6c693c5cc481e504ea452c916a2f10178edd03dcb000fecf1"
+    "hash": "3e70b94075d09b94a129f7a6657ffec54716fa2bbe500500d50bcc12502ae2a6"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -5643,7 +5643,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "74a8bed02d5076ac11a127e31abb0257b5e4653f07ea43088bc2a35171d599f2"
+    "hash": "442498eb70454d5b43a32adf204cf976c8a5ad27e3dac9ad19e972848c71b712"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -7881,7 +7881,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "d4b698c6ee22fa9ade62523fa9ef5d0ef92bda1d55437dc12c57c988db476bdc"
+    "hash": "f50270c5633868a641cbd396a0272874976307641caf890cee8474aea01ac377"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -7893,7 +7893,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "56e3e2edbb69319e6b726072419e3424a2ac5d5a7ba30e0abf532c64e63cc9ab"
+    "hash": "dcbc608a35cc7456e23fcae2d39a40be8218fedc9fa59ab0a8875bce35e66e0f"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -8313,7 +8313,7 @@
     "file": "src/screens/MyTeamsScreen.tsx",
     "kind": "export",
     "name": "MyTeamsScreen",
-    "hash": "8d6021d28de6335da0979b05a0c14dbde09c780adc0b92161ce7b9dcca5dce8e"
+    "hash": "00cd5f61fa8eb9cab3ed8dc74ddd79ee67b0dc3394d3f4d1795ea8c8a39bc2eb"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
@@ -8325,7 +8325,7 @@
     "file": "src/screens/MyTeamsScreen.tsx",
     "kind": "lifecycle",
     "name": "runUiAction",
-    "hash": "c028729261a3950e49511c8972c4cd06f71769245babaf8054dbed1da9bf33c8"
+    "hash": "5b57e8fb87e15b92c66963cafedee0cf8b2e44372893cf32a4fd85f78457541e"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
@@ -8769,7 +8769,7 @@
     "file": "src/state/backgroundJourney.ts",
     "kind": "export",
     "name": "startBackgroundJourney",
-    "hash": "98fe7b275db1949840b53a3a920c4612780f384cb66897f5755f36f50bb807a0"
+    "hash": "b0c2f8ed516da068dd719d9b6f786a5d9410503866a4209740ca928d4fd760ff"
   },
   {
     "file": "src/state/backgroundJourney.ts",
@@ -8847,7 +8847,7 @@
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "lifecycle",
     "name": "TaskManager.defineTask",
-    "hash": "32532233ee01b5993482b38389d2af35467ff2fd78f01286bac56e7780d8643c"
+    "hash": "c62ad1229c6ba6ad6a029e8ed2fbe2af30ce1f389470e096d5d33f85aa2a10e6"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -9525,7 +9525,7 @@
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "createLocationOutbox",
-    "hash": "59e237bdd27d0a63f4ce4f56059c1f9117af79795fd2c708d3369bd9a8cc5124"
+    "hash": "5bab6cd329431d8ac64c149bea40901ebe3ec69fb4e0b4d84095488efd1c9697"
   },
   {
     "file": "src/state/locationOutbox.ts",
@@ -9537,7 +9537,7 @@
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "flushLocationOutbox",
-    "hash": "bac83e6b15d1684aa843eab21b6c78bcd5edf24728878d1f4fb7eb6714d4d714"
+    "hash": "d0d37cf94fcce009c27f8b2727dd12fecc70d89c387c86e2413f946c1c02868d"
   },
   {
     "file": "src/state/locationOutbox.ts",
@@ -9549,7 +9549,7 @@
     "file": "src/state/locationPrivacy.ts",
     "kind": "export",
     "name": "setLocationSharingConsent",
-    "hash": "6e3af325cc7a858a3226247477f4effdfbb878b08e2eb2fa64564189304fd2d7"
+    "hash": "9cb67c111005088d85bdb38324c21c9d55340b162336b6a06a66286df287cd50"
   },
   {
     "file": "src/state/locationPrivacy.ts",
@@ -9567,7 +9567,7 @@
     "file": "src/state/locationPrivacy.ts",
     "kind": "export",
     "name": "setLocationAccessContext",
-    "hash": "d498e045e9e5484236f892dfa1144043ba780aef2893cc6aec1c575648fd3d7d"
+    "hash": "e9d56ca4ddf4e7780998dc1d9b56f5d1f59667a57fa7c637bd7ddfb8a517c46f"
   },
   {
     "file": "src/state/locationPrivacy.ts",
@@ -9578,8 +9578,14 @@
   {
     "file": "src/state/locationPrivacy.ts",
     "kind": "export",
+    "name": "isLocationAccessPending",
+    "hash": "49849b2457bfe128017ada6595098fa23e491709cd098d5eaa347f0bdb272f2e"
+  },
+  {
+    "file": "src/state/locationPrivacy.ts",
+    "kind": "export",
     "name": "isLocationAccessEnabled",
-    "hash": "203264ce3bb10e51835f477c4b12d6ed3960bd9558ee1e3d6540e6c834f110a3"
+    "hash": "5e4b4e969742f1f854fb4b61be9a637c20b0fd122001aba43f292e832399be51"
   },
   {
     "file": "src/state/locationPrivacy.ts",
@@ -9591,7 +9597,7 @@
     "file": "src/state/locationPrivacy.ts",
     "kind": "export",
     "name": "captureLocationAccess",
-    "hash": "9652b5bae752462042b16d48d6740700a444a7be907ab4803b1b6730a3272147"
+    "hash": "91d1860a73b256609972cbe6b92e166ab25d478447f37d7bfad36b907a3d02ae"
   },
   {
     "file": "src/state/locationSharingSync.ts",
@@ -9879,7 +9885,7 @@
     "file": "src/state/useGroupNotifications.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "69f47fa5ed0584531de6e39fe13e0ee3ad4e0a0ce61ab37467a6cadf83a8e1bd"
+    "hash": "780280c24c7a9bea6522f47f0e41c19a91504f84e2e70cdb4b4946c7f2a4a009"
   },
   {
     "file": "src/state/useGroupState.ts",
@@ -11751,7 +11757,7 @@
     "file": "src/utils/notificationDeliveryPolicy.ts",
     "kind": "export",
     "name": "resolveNotificationRecipients",
-    "hash": "31edb02641064428d082a568177fbcec4ace09b8a9f36a4df44a7e8bd3295aac"
+    "hash": "6f3cc0ef94cc6eb857d0c8ec6367f216d2a6f4dc09d847c8d25164ac4fd20db8"
   },
   {
     "file": "src/utils/notificationDeliveryPolicy.ts",
@@ -11787,13 +11793,13 @@
     "file": "src/utils/notificationDeliveryPolicy.ts",
     "kind": "export",
     "name": "buildAlignedNotificationEventId",
-    "hash": "912eecd3a8676c09c1074a00ff1ffffe04a6d3edfed52c26fa298a0923b7fc5c"
+    "hash": "b6ac39f6c354e3a1b40127875f50896b1f605fbf3ba2385a684b0a0cbe8ec116"
   },
   {
     "file": "src/utils/notificationDeliveryPolicy.ts",
     "kind": "export",
     "name": "eventIdFromPushData",
-    "hash": "69685324a5192c3f2159bbdb1fee78520a88ab3b5fa521945bd10ad2fb12fa4a"
+    "hash": "442cd204015a0d01495eae40957a2f7b953a78231462a2a5eb5f2b2eda9ce7ee"
   },
   {
     "file": "src/utils/notificationDeliveryPolicy.ts",

@@ -40,7 +40,9 @@ describe('useGroupNotifications leader fallback + dual-path (BUG-5 / SUG-3)', ()
   it('straggler Realtime uses sender_id (not reporter_id) for dual-path (BUG-7)', () => {
     const alertsStart = source.indexOf("table: 'group_alerts'");
     expect(alertsStart).toBeGreaterThanOrEqual(0);
-    const alertsBlock = source.slice(alertsStart, alertsStart + 1200);
+    const alertsEnd = source.indexOf("table: 'groups'", alertsStart);
+    expect(alertsEnd).toBeGreaterThan(alertsStart);
+    const alertsBlock = source.slice(alertsStart, alertsEnd);
     expect(alertsBlock).toContain('sender_id');
     expect(alertsBlock).toContain('senderId: row.sender_id');
     expect(alertsBlock).not.toContain('reporter_id');

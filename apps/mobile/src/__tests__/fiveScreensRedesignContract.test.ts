@@ -53,14 +53,15 @@ describe('five-screen Liquid Glass redesign contract', () => {
     expect(read('screens/AuthScreen.tsx')).toContain('systemImage="chevron.left"');
   });
 
-  it('keeps signup nickname-free and persists the nickname at create/join entry', () => {
+  it('keeps signup nickname-free and preserves names when entering an existing team', () => {
     const login = read('screens/LoginScreen.tsx');
     const authFlow = read('state/useAuthFlow.ts');
     const teams = read('screens/MyTeamsScreen.tsx');
     expect(login).not.toContain('login-nickname');
     expect(login).not.toContain('termsAccepted');
     expect(authFlow).not.toContain('data: { nickname: trimmed }');
-    expect(teams).toContain('updateNickname(fallback)');
+    expect(teams).not.toContain('updateNickname');
+    expect(read('screens/AuthScreen.tsx')).toContain('updateNickname(nickname)');
     expect(read('api/services/ProfileService.ts')).toContain('.upsert(');
   });
 });
