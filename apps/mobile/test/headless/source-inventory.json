@@ -1131,7 +1131,7 @@
     "file": "src/api/services/LocationService.ts",
     "kind": "export",
     "name": "ingestLocationBatch",
-    "hash": "5e2c6b33cbe4130f8b7f31d4858b77280887356a4d532a89d5d38e76e5c7e3f5"
+    "hash": "e1401c9b8d84e4dfa1f9fa89a1a1ee1321237e45a56b526eff73460eb63ae736"
   },
   {
     "file": "src/api/services/LocationService.ts",
@@ -8805,7 +8805,7 @@
     "file": "src/state/backgroundJourney.ts",
     "kind": "export",
     "name": "startBackgroundJourney",
-    "hash": "98fe7b275db1949840b53a3a920c4612780f384cb66897f5755f36f50bb807a0"
+    "hash": "b0c2f8ed516da068dd719d9b6f786a5d9410503866a4209740ca928d4fd760ff"
   },
   {
     "file": "src/state/backgroundJourney.ts",
@@ -8883,7 +8883,7 @@
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "lifecycle",
     "name": "TaskManager.defineTask",
-    "hash": "bc8c04bd3634550b23deaedcc1048a1016fab4b2c7b1e6c6ffadbe6b82eb4d22"
+    "hash": "c62ad1229c6ba6ad6a029e8ed2fbe2af30ce1f389470e096d5d33f85aa2a10e6"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -9573,7 +9573,7 @@
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "flushLocationOutbox",
-    "hash": "7bc061c5e6de19b33d881409fadf96f36169dbb10f380a4d62acd68f97713067"
+    "hash": "d0d37cf94fcce009c27f8b2727dd12fecc70d89c387c86e2413f946c1c02868d"
   },
   {
     "file": "src/state/locationOutbox.ts",
@@ -9633,7 +9633,7 @@
     "file": "src/state/locationPrivacy.ts",
     "kind": "export",
     "name": "captureLocationAccess",
-    "hash": "9652b5bae752462042b16d48d6740700a444a7be907ab4803b1b6730a3272147"
+    "hash": "91d1860a73b256609972cbe6b92e166ab25d478447f37d7bfad36b907a3d02ae"
   },
   {
     "file": "src/state/locationSharingSync.ts",

@@ -34,6 +34,14 @@ Evaluate the JSON produced by a complete run on the same source under review. Fi
 
 The harness advances time in chunks of at most 5s and settles real IPC between chunks. Each external request is stamped with the actor clock and the synchronous backend contract executes at that timestamp. This prevents a 120-second fake timer jump from manufacturing network deadlines or future server offsets. Held execution and held delivery keep their existing distinct semantics. The clock regression and full trip test both observe the real production clock consumers.
 
+## Access-check failure and stale-team follow-up
+
+A preference-storage or native permission-query error is unavailable access, distinct from a confirmed denial. Capture suspends location work without revoking existing consent. The foreground outbox retains the exact durable event and reuses its existing retry timer; the upload service classifies an unavailable check as retryable. An established background owner remains configured, and a new background start returns cancelled before teardown. An explicit stored sharing=false still denies access before any optional permission query.
+
+The background push handler captures the current authorized context once, then rejects a different payload group without purging the current group queue. A late prior-team push is not evidence that current consent was revoked.
+
+Supplementary focused regressions execute real SQLite, privacy, outbox and service code at both failed-read boundaries, plus the registered GPS/push and start owners. They are required by the acceptance map and complete Node CI alongside the fixed 58-family matrix. They do not add duplicate platform cases for shared JavaScript behavior. Unchanged successful trip evidence is reused after a source delta review; only affected recovery checks run again locally.
+
 ## Known limits and baseline gaps
 
 The original Tokyo baseline produced 105 passed and 22 failed checks with no harness failure. After the bounded clock repair, 106 passed and 21 failed. Missed-Realtime fallback changed to pass. Exact offline location recovery still failed for both receivers. Pause content, repeated/new-leg receiver notices, solo/leave notices and next-day names also failed before the corresponding product fixes were integrated. These are diagnostic checks, not the family coverage numerator. Final family evidence must come from the combined source run.

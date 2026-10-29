@@ -2794,6 +2794,41 @@
       "acceptance": "Team entry during deferred profile restoration cannot replace a saved nickname with a temporary fallback.",
       "testFile": "headlessAccountScenario.test.ts",
       "testNamePattern": "enters a saved team while profile enrichment is pending"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Unavailable preference reads at the flush and upload boundaries retain the exact SQLite event and deliver it once after recovery.",
+      "testFile": "locationAccessStorageFailure.test.ts",
+      "testNamePattern": "retains queued GPS through one failed preference read"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "An unavailable access check cancels background preparation without reporting hidden access, stopping the established owner or clearing its queued intent.",
+      "testFile": "backgroundJourneyTaskBehavior.test.ts",
+      "testNamePattern": "cancels a new background start on unavailable preference storage"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "A registered GPS callback suspends acquisition on unavailable consent storage and accepts the next authorized sample without tearing down the owner.",
+      "testFile": "backgroundJourneyTaskBehavior.test.ts",
+      "testNamePattern": "keeps the registered GPS owner and queue through an unavailable preference read"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "A delayed prior-team push cannot purge the current team GPS queue or acquire, upload or acknowledge a location for the wrong team.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "ignores a delayed group A push"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Unavailable preference storage in a registered push preserves queued GPS and does not misreport sharing revocation.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "skips a registered push while preference storage is unavailable"
     }
   ]
 }
