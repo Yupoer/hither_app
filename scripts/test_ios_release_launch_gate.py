@@ -1,10 +1,12 @@
 import hashlib
 import importlib.util
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -22,6 +24,57 @@ VERIFY_SPEC.loader.exec_module(VERIFY)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def run_profile_boundary(self, production, inherited):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "scripts/run-ios-release-launch.py"
+            script.parent.mkdir()
+            script.write_bytes(SCRIPT.read_bytes())
+            mobile = root / "apps/mobile"
+            mobile.mkdir(parents=True)
+            (mobile / "eas.json").write_text(json.dumps({"build": {"production": production}}))
+            tools = root / "bin"
+            tools.mkdir()
+            capture = root / "child-environment.json"
+            git = tools / "git"
+            git.write_text(f"#!{sys.executable}\n" +
+                           "import json, os, pathlib, sys\n" +
+                           "names = ('EXPO_PUBLIC_DIAGNOSTIC_LEVEL', 'EXPO_PUBLIC_DIAGNOSTICS_ENABLED', 'HITHER_TEST_INHERITED')\n" +
+                           "pathlib.Path(os.environ['HITHER_TEST_CAPTURE']).write_text(json.dumps({name: os.environ.get(name) for name in names}))\n" +
+                           "sys.exit(1)\n")
+            git.chmod(0o755)
+            environment = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+                           "RUNNER_TEMP": str(root), "EAS_BUILD_PROFILE": "production",
+                           "EXPO_PUBLIC_PRIVACY_URL": "https://hither.example.net/privacy",
+                           "EXPO_PUBLIC_TERMS_URL": "https://hither.example.net/terms",
+                           "HITHER_TEST_CAPTURE": str(capture),
+                           "HITHER_TEST_INHERITED": "inherited-private-sentinel", **inherited}
+            result = subprocess.run([sys.executable, str(script), "--source-sha", "a" * 40,
+                                     "--receipt", str(root / "receipt.json")],
+                                    env=environment, capture_output=True, text=True)
+            child = json.loads(capture.read_text()) if capture.exists() else None
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("private-sentinel", result.stdout + result.stderr)
+            return child, result
+
+    def test_cli_profile_environment_overrides_inherited_values_before_child_commands(self):
+        profile = {"env": {"EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "minimal",
+                           "EXPO_PUBLIC_DIAGNOSTICS_ENABLED": "true"}}
+        for inherited in ({}, {"EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "minimal"},
+                          {"EXPO_PUBLIC_DIAGNOSTIC_LEVEL": "conflicting-private-sentinel"}):
+            with self.subTest(inherited=inherited):
+                child, _ = self.run_profile_boundary(profile, inherited)
+                self.assertEqual(child, {**profile["env"], "HITHER_TEST_INHERITED": "inherited-private-sentinel"})
+
+    def test_cli_rejects_unsupported_or_malformed_profiles_before_child_commands(self):
+        for profile in (None, [], {"env": []}, {"env": {"KEY": 1}},
+                        {"extends": "base"}, {"ios": {"env": {"KEY": "private-sentinel"}}},
+                        {"ios": []}, {"environment": "preview"}):
+            with self.subTest(profile=profile):
+                child, result = self.run_profile_boundary(profile, {})
+                self.assertIsNone(child)
+                self.assertIn("production profile", result.stderr)
+
     def test_failure_probe_distinguishes_replacement_app_from_stale_host_pid(self):
         app = "/sim/Containers/Hither.app"
         def command(*args, check=True, timeout=None):
