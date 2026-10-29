@@ -75,9 +75,17 @@ def production_profile_environment(inherited, eas):
     if not isinstance(profile, dict):
         raise ValueError("production profile must be an object")
     ios = profile.get("ios", {})
-    if ("extends" in profile or not isinstance(ios, dict) or "env" in ios
-            or profile.get("environment", "production") != "production"):
-        raise ValueError("production profile inheritance, iOS env, or other environment is unsupported")
+    if ("extends" in profile or not isinstance(ios, dict)
+            or any(key in ios for key in ("env", "environment", "distribution", "developmentClient"))):
+        raise ValueError("production profile inheritance or iOS environment overrides are unsupported")
+    distribution = profile.get("distribution", "store")
+    development = profile.get("developmentClient", False)
+    if (not isinstance(distribution, str) or distribution not in {"store", "internal"}
+            or type(development) is not bool):
+        raise ValueError("production profile distribution or developmentClient is invalid")
+    suggested = "production" if distribution == "store" else "development" if development else "preview"
+    if profile.get("environment", suggested) != "production":
+        raise ValueError("production profile must select the production environment")
     values = profile.get("env", {})
     if not isinstance(values, dict) or any(not isinstance(value, str) for value in values.values()):
         raise ValueError("production profile env must contain string values")
