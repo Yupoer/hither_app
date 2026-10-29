@@ -71,6 +71,16 @@ Set `device.online = false` to reject external SDK requests and suppress deliver
 
 Each device serializes React `act` scopes while continuing to receive IPC and await transport outside that queue. Concurrent commands therefore cannot overlap foreground effects with unmount. React's unsupported-overlap warning remains a sticky harness failure.
 
+## Recorded Tokyo trip
+
+Run the three-traveler scenario from `apps/mobile`. Choose a new output directory for each run.
+
+```sh
+node test/headless/tokyo-trip.cjs ./tokyo-run-1
+```
+
+The runner saves every action and each traveler's observations in `observations.jsonl`, a readable `transcript.md`, and named behavior checks in `summary.json`. It mounts the real App in iOS and Android modes, records local notification receipts and live map inputs, and covers an abrupt offline process restart and a powered-off overnight clock gap. An exit code of 1 can mean a behavior mismatch; inspect `harnessFailure` separately. These records do not establish real push delivery, map drawing, or overnight operating-system behavior.
+
 ## Coverage and limits
 
 Functional scenarios specify iOS and Android platform modes. The resolver selects production platform files as well as Platform.OS branches; inspect `presentation.resolved` when asserting this distinction. A mixed-platform scenario publishes from iOS to an Android peer. Existing location and journey cases cover pending-before-ACK, missed-event recovery at the subscribed 120 second fallback poll, offline persistence/restart/retry, account/privacy fences and Start/End ordering. Domain scenario suites add actual screen and provider operations. Run the current suites and report their results; historical test counts do not establish a new head's coverage.

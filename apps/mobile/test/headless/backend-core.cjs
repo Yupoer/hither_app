@@ -20,13 +20,13 @@ const payloadFields = {
   send_command: 'type message latitude longitude expiresAt',
 };
 
-function addDestination(b, groupId, payload) {
+function addDestination(b, groupId, payload, userId) {
   assert(typeof payload.title === 'string' && payload.title.trim(), 'Destination title contract');
   assert(Number.isFinite(payload.latitude) && Math.abs(payload.latitude) <= 90 && Number.isFinite(payload.longitude) && Math.abs(payload.longitude) <= 180, 'Destination coordinates contract');
   const row = { id: payload.destinationId ?? randomUUID(), group_id: groupId, title: payload.title, address: payload.address ?? null,
     latitude: payload.latitude, longitude: payload.longitude, day: payload.day ?? null, subgroup_id: payload.subgroupId ?? null,
     kind: payload.kind ?? 'stop', stay_anchor: payload.kind === 'accommodation' && (payload.stayAnchor ?? false), provider_place_id: payload.providerPlaceId ?? null,
-    position: 0, closed_at: null };
+    position: 0, closed_at: null, created_by: userId };
   const lane = b.itinerary.filter(d => d.group_id === groupId && (d.subgroup_id ?? null) === row.subgroup_id);
   const sameDay = lane.filter(d => d.day === row.day);
   row.position = Math.max(-1, ...(sameDay.length ? sameDay : lane.filter(d => (d.day ?? 0) < (row.day ?? 0))).map(d => d.position)) + 1;
@@ -104,7 +104,7 @@ function apply(b, { args: a, userId }) {
     effects = { navigationSessionId: session.id, navigationSession: result.data };
   } else if (type === 'add_destination') {
     if (b.itinerary.some(d => d.id === p.destinationId)) return conflict('validation', 'duplicate destination id');
-    addDestination(b, group.id, p);
+    addDestination(b, group.id, p, userId);
   } else if (type === 'edit_destination' || type === 'set_destination_meet_time') {
     if (!destination) return conflict('target_deleted');
     const patch = type === 'edit_destination' ? p.patch : { meetAt: p.meetAt, meetRedMinutes: p.meetRedMinutes };
@@ -148,7 +148,8 @@ function apply(b, { args: a, userId }) {
     if (typeof p.solo !== 'boolean') return conflict('validation');
     m.solo = p.solo; entity = { userId, solo: p.solo }; b.publish('memberships', m);
   } else if (type === 'set_trip_details') {
-    group.trip_days = p.tripDays; group.departure_date = p.departureDate; b.publish('groups', group);
+    const oldGroup = structuredClone(group);
+    group.trip_days = p.tripDays; group.departure_date = p.departureDate; b.publish('groups', group, 'UPDATE', oldGroup);
   } else if (type === 'set_daily_accommodation' || type === 'clear_daily_accommodation') {
     const before = b.tables.daily_accommodations.find(r => r.group_id === group.id && r.stay_date === p.stayDate);
     if (type === 'clear_daily_accommodation') {
@@ -160,7 +161,8 @@ function apply(b, { args: a, userId }) {
       const row = before ?? { id: d.id, group_id: group.id, stay_date: p.stayDate, created_at: iso(b) };
       Object.assign(row, { title: d.title, address: d.address ?? null, latitude: d.coordinates.latitude, longitude: d.coordinates.longitude, source_destination_id: d.sourceDestinationId ?? null, updated_at: iso(b) });
       if (!before) b.tables.daily_accommodations.push(row); b.publish('daily_accommodations', row, before ? 'UPDATE' : 'INSERT');
-      group.accommodation_auto_add = false; b.publish('groups', group);
+      const oldGroup = structuredClone(group);
+      group.accommodation_auto_add = false; b.publish('groups', group, 'UPDATE', oldGroup);
     }
   } else if (type === 'record_arrival' || type === 'leader_correct_arrival') {
     const result = require('./backend-arrivals.cjs').apply(b, a, userId);

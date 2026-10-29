@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { Backend, LEADER, PEER, GROUP_ID } = require('./backend.cjs');
-const b = new Backend(() => {});
+const published = [];
+const b = new Backend(event => published.push(event));
 const table = (name, steps, userId = LEADER) => b.execute('contract', { kind: 'table', name, steps, userId });
 const rpc = (name, args, userId = LEADER) => b.execute('contract', { kind: 'rpc', name, args, steps: [], userId });
 assert.equal(table('profiles', [['select', '*'], ['eq', 'id', LEADER], ['maybeSingle']]).data.nickname, 'Leader');
@@ -30,6 +31,10 @@ assert.equal(rpc('set_destination_arrival_at', { p_destination_id: b.itinerary[0
 assert.equal(table('destination_arrivals', [['select', '*'], ['eq', 'group_id', GROUP_ID]]).data[0].user_id, PEER);
 assert.equal(rpc('cancel_navigation_session', { p_session_id: session.id, p_expected_version: 1 }, PEER).error.code, '42501');
 assert.equal(rpc('cancel_navigation_session', { p_session_id: session.id, p_expected_version: 1 }).data.status, 'cancelled');
+const pausedGroup = published.findLast(event => event.table === 'groups');
+assert.equal(pausedGroup.old.journey_status, 'going');
+assert.equal(pausedGroup.old.active_destination_id, session.destination_id);
+assert.equal(pausedGroup.new.journey_status, 'paused');
 const subgroup = rpc('self_split', { p_group: GROUP_ID, p_name: 'Peer subgroup' }, PEER).data;
 rpc('invite_to_subgroup', { p_subgroup: subgroup.id, p_invitee: LEADER }, PEER);
 const invite = b.tables.subgroup_invites[0];
@@ -62,10 +67,14 @@ core('set_solo', { userId: PEER, solo: false }, PEER);
 assert.equal(core('set_trip_details', { tripDays: 3, departureDate: '2026-10-23' }, PEER).data.status, 'conflict');
 assert.equal(core('set_trip_details', { tripDays: 3, departureDate: '2026-10-23' }).data.status, 'accepted');
 assert.equal(b.groups.get(GROUP_ID).trip_days, 3);
+const metadataGroup = published.findLast(event => event.table === 'groups');
+assert.equal(metadataGroup.old.journey_status, metadataGroup.new.journey_status);
+assert.notEqual(metadataGroup.old.trip_days, metadataGroup.new.trip_days);
 const newDestinationId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const addPayload = { destinationId: newDestinationId, title: 'Added stop', latitude: 25.1, longitude: 121.6, day: 1, kind: 'stop', subgroupId: null, stayAnchor: false };
 const added = core('add_destination', addPayload);
 assert.equal(added.data.status, 'accepted');
+assert.equal(b.itinerary.find(d => d.id === newDestinationId).created_by, LEADER);
 const addedWire = b.trace.at(-1).args;
 assert.equal(rpc('apply_core_operation_v3', addedWire).data.status, 'duplicate');
 assert.equal(rpc('apply_core_operation_v3', { ...addedWire, p_payload: { ...addPayload, title: 'Overwritten' } }).data.conflict.code, 'operation_identity_mismatch');
@@ -108,6 +117,7 @@ assert.equal(b.tables.daily_accommodations.length, 0);
 const gather = rpc('submit_gather_point_request', { p_group_id: GROUP_ID, p_subgroup_id: null, p_items: [{ title: 'Proposed', latitude: 25.2, longitude: 121.3, day: null }] }, PEER).data;
 assert.equal(rpc('resolve_gather_point_request', { p_request_id: gather, p_approve: true }, PEER).error.code, '42501');
 assert.equal(rpc('resolve_gather_point_request', { p_request_id: gather, p_approve: true }).data.inserted_count, 1);
+assert.equal(b.itinerary.find(d => d.title === 'Proposed').created_by, LEADER);
 assert.equal(rpc('resolve_gather_point_request', { p_request_id: gather, p_approve: true }).data.inserted_count, 0);
 const request = rpc('create_coordination_request', { p_group_id: GROUP_ID, p_subgroup_id: null, p_subject: 'Stop?', p_subject_kind: 'itinerary',
   p_options: [{ id: 'keep', label: 'Keep', kind: 'keep_current' }, { id: 'add', label: 'Add', kind: 'gathering_point', payload: { title: 'Voted stop', latitude: 25, longitude: 121 } }],

@@ -203,6 +203,17 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       node.props[property](kind === 'press' ? { nativeEvent: {}, stopPropagation() {} } : event);
       return { invoked: true };
     },
+    observeViews(root) {
+      const map = root.root.findAll(node => node.type?.render?.name === 'GroupMap')[0];
+      const flock = root.root.findAll(node => node.type?.name === 'FlockRow' && !availability(node).hidden);
+      return {
+        mapMembers: map ? structuredClone(map.props.members) : null,
+        flockRows: flock.map(node => ({ userId: node.props.userId, name: node.props.name,
+          lastUpdated: node.props.lastUpdated, solo: node.props.solo, sharingEnabled: node.props.sharingEnabled,
+          text: node.findAll(child => child.type === 'host:Text').map(child =>
+            child.children.filter(value => typeof value === 'string').join('')).join(' ') })),
+      };
+    },
     observe(root) {
       return root.root.findAll(node => typeof node.type === 'string' && node.type.startsWith('host:')).map(node => ({
         ...availability(node),

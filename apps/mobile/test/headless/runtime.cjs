@@ -357,6 +357,7 @@ exports.run = async function run(jest) {
     return {
       pid: process.pid, generation: spec.generation, actorId: await getLocalAuthActorId(),
       presentation: presentationMode ? {
+        ...host.observeViews(root),
         hosts: (() => { try { return host.observe(root); } catch (error) { return fatal(`Presentation renderer failed: ${error.message}\n${renderErrors.join('\n')}`); } })(), route: host.route,
         session: presentation.observation.session ? JSON.parse(JSON.stringify(presentation.observation.session)) : null,
         preferences: presentation.observation.preferences ? JSON.parse(JSON.stringify(presentation.observation.preferences)) : null,
