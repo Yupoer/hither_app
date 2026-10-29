@@ -1,7 +1,6 @@
 jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
 jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(), consumeAuthCallback: jest.fn(), cancelAuthCallback: jest.fn() }));
 const mockGetGoogleAuthCredentials = jest.fn();
-const mockGetGoogleIdToken = jest.fn();
 const mockSignInWithIdToken = jest.fn();
 const mockMaybeSingle = jest.fn();
 const mockProfileUpsert = jest.fn();
@@ -27,7 +26,6 @@ jest.mock('../constants/avatars', () => ({
 }));
 jest.mock('../state/googleSignIn', () => ({
   getGoogleAuthCredentials: (...args: unknown[]) => mockGetGoogleAuthCredentials(...args),
-  getGoogleIdToken: (...args: unknown[]) => mockGetGoogleIdToken(...args),
   usesNativeGoogleSignIn: true,
 }));
 jest.mock('../api/supabase', () => ({

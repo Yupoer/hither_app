@@ -125,9 +125,11 @@ function expectIconOnly(button: Parameters<typeof within>[0], icon: string) {
 }
 
 describe('gathering card navigation commands', () => {
-  it('shows a flexible Start button with icon and visible text, without Complete', () => {
+  it('keeps Start separate from in-place card expansion', () => {
     const startNavigation = jest.fn(async () => undefined);
-    const screen = render(<GatheringCarousel {...props({ startNavigation })} />);
+    const toggleGatheringCard = jest.fn();
+    const screen = render(<GatheringCarousel {...props({ startNavigation, toggleGatheringCard })} />);
+    const card = screen.getByTestId('gather-card-meeting-point');
     const button = screen.getByTestId('gather-nav-meeting-point');
     expect(button.props.accessibilityLabel).toBe('開始');
     expect(within(button).getByTestId('icon-play')).toBeTruthy();
@@ -136,6 +138,20 @@ describe('gathering card navigation commands', () => {
     expect(screen.queryByTestId('gather-complete-meeting-point')).toBeNull();
     fireEvent.press(button);
     expect(startNavigation).toHaveBeenCalledWith(destination, 0);
+    expect(toggleGatheringCard).not.toHaveBeenCalled();
+    fireEvent.press(card);
+    expect(toggleGatheringCard).toHaveBeenCalledWith(destination.id);
+    screen.rerender(<GatheringCarousel {...props({
+      startNavigation,
+      toggleGatheringCard,
+      isCardExpanded: () => false,
+    })} />);
+    expect(screen.getByTestId('gather-card-meeting-point')).toBe(card);
+    expect(screen.queryByTestId('gather-nav-meeting-point')).toBeNull();
+    expect(screen.queryByTestId('gather-external-meeting-point')).toBeNull();
+    screen.rerender(<GatheringCarousel {...props({ startNavigation, toggleGatheringCard })} />);
+    expect(screen.getByTestId('gather-card-meeting-point')).toBe(card);
+    expect(screen.getByTestId('gather-nav-meeting-point')).toBeTruthy();
   });
 
   it('still shows only Start after personal arrival when navigation has ended', () => {

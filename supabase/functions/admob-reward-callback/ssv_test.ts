@@ -151,7 +151,6 @@ Deno.test("handler credits once after successful verify (injected key + credit)"
     "https://example.test/functions/v1/admob-reward-callback?" + qs,
   );
   const res = await handleAdmobRewardRequest(req, {
-    keys: undefined,
     fetchKeys: async () => ({ keys: [{ keyId: 9, base64: publicKeyB64 }] }),
     credit,
   });

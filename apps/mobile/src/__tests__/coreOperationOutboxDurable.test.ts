@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('expo-sqlite', () => ({ openDatabaseAsync: jest.fn() }));
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'generated-id') }));
@@ -399,6 +400,10 @@ describe('durable core operation outbox', () => {
       { code: 'session_missing_or_expired', status: 401 },
     );
     mockedSupabase.auth.getSession.mockRejectedValue(sessionError);
+    configureDefaultAuthRecovery({
+      getSession: () => mockedSupabase.auth.getSession(),
+      refreshSession: () => mockedSupabase.auth.getSession(),
+    });
     const operation = {
       id: 'service-session-op',
       actorId: 'actor-a',

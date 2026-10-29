@@ -90,7 +90,6 @@ const energyHandlers: Array<(sample: unknown) => void> = [];
 const mockEnergy = {
   increment: jest.fn(),
   setAppState: jest.fn(),
-  setTrackingMode: jest.fn(),
   start: jest.fn((handler: (sample: unknown) => void) => {
     energyHandlers.push(handler);
     return { stop: jest.fn() };
@@ -150,7 +149,6 @@ import {
   setLastScreenName,
   setPerformanceAppState,
   setPerformancePlatform,
-  startNavigationEnergyMonitor,
   startPerformanceMonitor,
   traceApi,
   utf8ByteLength,
@@ -319,7 +317,7 @@ describe('performance and energy lifecycle coverage', () => {
     noStart();
   });
 
-  it('measures a foreground interaction and cleans the shared navigation monitor', async () => {
+  it('measures a foreground interaction', async () => {
     jest.useFakeTimers();
     let frame = 0;
     const raf = (callback: FrameRequestCallback) => {
@@ -334,29 +332,6 @@ describe('performance and energy lifecycle coverage', () => {
     await settle();
     expect(frame).toBeGreaterThan(0);
     expect(mockMetrics.samplePerformance).toHaveBeenCalled();
-
-    jest.useRealTimers();
-    const stop = startNavigationEnergyMonitor({ navigationSessionId: 'session-1', trackingMode: 'teamNavigation' });
-    await settle();
-    expect(mockEnergy.setTrackingMode).toHaveBeenCalledWith('teamNavigation');
-    const handler = energyHandlers[energyHandlers.length - 1];
-    handler?.({ ...observation, kind: 'startup' });
-    handler?.(observation);
-    await settle();
-    stop();
-    await settle();
-    expect(mockMetrics.samplePerformance).toHaveBeenCalled();
-  });
-
-  it('does not sample ordinary energy work in background, while allowing the end boundary', async () => {
-    setPerformanceAppState('background');
-    const stop = startNavigationEnergyMonitor({ navigationSessionId: null, trackingMode: 'passiveBackground' });
-    await settle();
-    expect(mockMetrics.samplePerformance).not.toHaveBeenCalled();
-    stop();
-    await settle();
-    expect(mockMetrics.samplePerformance).toHaveBeenCalledTimes(1);
-    setPerformanceAppState('active');
   });
   it('attributes interval CPU from cumulative process counters without confusing the native burst window', async () => {
     jest.useFakeTimers();

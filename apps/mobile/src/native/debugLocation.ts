@@ -7,7 +7,6 @@
 import type { Coordinates } from '../types';
 import type { LocationSample } from './location';
 
-// ponytail: straight 600 m route; use a MapKit polyline only if route-shape testing becomes necessary.
 const DEBUG_START_LATITUDE_OFFSET = 0.0054;
 const EMIT_INTERVAL_MS = 1_000;
 const DEBUG_ACCURACY_M = 5;

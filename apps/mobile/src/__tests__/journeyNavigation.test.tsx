@@ -551,8 +551,7 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.navTarget).toBeUndefined();
   });
 
-  it('End navigation pauses flock travel and cancels session without completing the stop', async () => {
-    const cancelSession = jest.fn().mockResolvedValue({ id: 'session-1', version: 2, status: 'cancelled' });
+  it('End navigation persists a paused journey without completing the stop', async () => {
     const onOperatorPauseConfirm = jest.fn();
     const goingState = {
       ...pausedState,
@@ -590,7 +589,6 @@ describe('useJourneyNavigation', () => {
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
         navigationSession: activeSession,
-        cancelSession,
         onOperatorPauseConfirm,
       });
       return navigation.lifecycle;
@@ -607,7 +605,6 @@ describe('useJourneyNavigation', () => {
       'group-1',
       expect.objectContaining({ groupState: goingState }),
     );
-    expect(cancelSession).not.toHaveBeenCalled();
     expect(onOperatorPauseConfirm).toHaveBeenCalledWith(destination, expect.stringMatching(/^pause:group-1:/));
     expect(navigation?.journeyStatus).toBe('paused');
     expect(navigation?.navTarget).toBeUndefined();

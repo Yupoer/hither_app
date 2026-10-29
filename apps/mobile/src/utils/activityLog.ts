@@ -6,18 +6,6 @@ function performanceModule(): typeof Performance {
   return require('../state/performance');
 }
 
-interface QueuedEvent {
-  event: string;
-  payload?: Record<string, unknown>;
-  ts: string;
-}
-
-/** Pure queue helper kept for compatibility with existing unit coverage. */
-export function enqueue(queue: QueuedEvent[], entry: QueuedEvent): QueuedEvent[] {
-  const next = [...queue, entry];
-  return next.length > 100 ? next.slice(next.length - 100) : next;
-}
-
 /** Convert the old action log call sites into bounded performance spans. */
 export function logEvent(event: string, payload?: Record<string, unknown>): void {
   performanceModule().markInteraction(event, payload);

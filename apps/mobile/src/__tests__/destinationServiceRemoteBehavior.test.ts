@@ -46,6 +46,12 @@ describe('DestinationService remote adapter', () => {
       p_day: 3, p_kind: 'stop', p_stay_anchor: false,
     }));
 
+    mockedSupabase.rpc.mockResolvedValueOnce({ data: 'quick-add', error: null });
+    await expect(addDestination('g-1', {
+      title: 'Quick', coordinates: { latitude: 1, longitude: 2 }, day: 2, placement: 'firstStop',
+    })).resolves.toBe('quick-add');
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith('quick_add_itinerary_item', expect.objectContaining({ p_day: 2 }));
+
     mockedSupabase.rpc.mockResolvedValueOnce({ data: null, error: { code: 'P0004', message: 'limit' } });
     await expect(addDestination('g-1', {
       title: 'Too many', coordinates: { latitude: 1, longitude: 2 },

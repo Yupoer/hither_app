@@ -137,12 +137,6 @@ export function normalizeAccountPreferences(prefs: unknown): AccountPreferences 
   });
 }
 
-/**
- * The signed-in user. Auth is Supabase anonymous sign-in: `id` is the
- * Supabase `auth.uid()` and `name` is the anonymous nickname (per the MVP
- * design). `email` is unused in the anonymous flow but kept for the sign-in
- * input shape.
- */
 export interface User {
   id: string;
   name: string;
@@ -222,7 +216,6 @@ export type MembershipStatus = 'active' | 'idle' | 'arrived' | 'offline';
 /** A group member together with their latest location. */
 export interface MemberLocation {
   userId: string;
-  /** Anonymous nickname, per the MVP design. */
   name: string;
   role: MemberRole;
   /** Server-authoritative presence for the active gathering point. */

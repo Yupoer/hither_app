@@ -98,13 +98,11 @@ function handlerFor(options: {
         error: options.applyError ?? null,
       }),
       from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: { app_account_token: ACCOUNT_TOKEN },
-              error: null,
-            }),
-          }),
+        select() { return this; },
+        eq() { return this; },
+        maybeSingle: async () => ({
+          data: { app_account_token: ACCOUNT_TOKEN },
+          error: null,
         }),
       }),
     }),

@@ -42,7 +42,6 @@ describe('five-screen Liquid Glass redesign contract', () => {
     expect(teams).toContain('<NativeTeamCard');
     expect(teams).toContain('<NativeGlassButton');
     expect(read('components/NativeRoleActionButton.ios.tsx')).toContain("buttonBorderShape('roundedRectangle', 30)");
-    expect(read('components/NativeTeamCard.ios.tsx')).toContain("buttonBorderShape('roundedRectangle', 24)");
     const teamsButton = read('components/NativeTeamsButton.ios.tsx');
     expect(teamsButton).toContain('<Button onPress={onPress}');
     expect(teamsButton).not.toContain('<Pressable');

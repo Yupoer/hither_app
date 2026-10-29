@@ -196,11 +196,6 @@ export interface GroupMapProps {
   /** Bottom offset of the floating recenter capsule for compass placement. */
   chromeBottomOffset?: number;
   /**
-   * @deprecated MapView is edge-to-edge; peek translate/oversize is removed.
-   * Kept so callers can pass 0 without a type break.
-   */
-  halfPeek?: number;
-  /**
    * MapKit user-location samples for the single foreground owner path.
    * Does not redraw the self marker — native blue dot stays system-owned.
    */
@@ -700,7 +695,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     bottomOverlap = 0,
     chromeStage = 'peek',
     chromeBottomOffset = 0,
-    halfPeek: _halfPeek = 0,
     onUserLocationSample,
     onLongPressCoordinate,
     onRequestGoHome,
@@ -860,9 +854,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // The native boundary owns provider selection and platform callback wiring;
   // GroupMap only supplies intent/diagnostic callbacks and spreads its result.
   const mapPlatformProps = useMemo(
-    // The callbacks are stored by the boundary and invoked only by MapView
-    // events; they are not executed while this render-time builder runs.
-    // eslint-disable-next-line react-hooks/refs
     () => ({
       ...platformizedMapViewProps({
         chrome: mapChrome,

@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('../api/supabase', () => ({
   supabase: {
     auth: { getSession: jest.fn() },
@@ -47,6 +48,10 @@ beforeEach(() => {
   mockedSupabase.auth.getSession.mockResolvedValue({
     data: { session: { access_token: 'token', user: { id: 'actor-1' } } },
     error: null,
+  });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedSupabase.auth.getSession(),
+    refreshSession: () => mockedSupabase.auth.getSession(),
   });
 });
 

@@ -68,11 +68,6 @@ export async function readTourAccountSyncPending(): Promise<TourAccountSyncPendi
   }
 }
 
-/** @deprecated Prefer readTourAccountSyncPending; kept for test compatibility. */
-export async function isTourAccountSyncPending(): Promise<boolean> {
-  return (await readTourAccountSyncPending()) != null;
-}
-
 export async function readTourResetIntent(): Promise<boolean> {
   try {
     const raw = await AsyncStorage.getItem(GROUP_FEATURE_TOUR_RESET_INTENT_KEY);

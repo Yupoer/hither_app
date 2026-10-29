@@ -104,7 +104,7 @@ describe('resolveNavCommand', () => {
         personallyArrived: false,
         flockNavigatingThis: false,
       }),
-    ).toMatchObject({ kind: 'leader_start', label: '開始', action: 'start_nav' });
+    ).toMatchObject({ kind: 'leader_start', label: '開始', action: 'start_nav', disabled: false });
 
     expect(
       resolveNavCommand({
@@ -115,24 +115,12 @@ describe('resolveNavCommand', () => {
     ).toMatchObject({ kind: 'leader_stop', label: '結束', action: 'end_point' });
   });
 
-  it('keeps leader Start pressable while the latest-intent queue owns gates', () => {
-    expect(
-      resolveNavCommand({
-        isLeader: true,
-        personallyArrived: false,
-        flockNavigatingThis: false,
-        isNextTeamPending: false,
-      }),
-    ).toMatchObject({ kind: 'leader_start', label: '開始', disabled: false, action: 'start_nav' });
-  });
-
   it('after personal arrival without flock nav, offers Start without Complete', () => {
     expect(
       resolveNavCommand({
         isLeader: true,
         personallyArrived: true,
         flockNavigatingThis: false,
-        teamStartBlocked: true,
       }),
     ).toMatchObject({
       kind: 'leader_start',
@@ -237,7 +225,6 @@ describe('resolveCompletePrompt', () => {
     // Old all-arrived confirm copy must not reappear.
     expect(r.message).not.toContain('是否要完成？');
     expect(r.confirmLabel).toBe('');
-    expect(r.deferLabel).toBeNull();
     expect(r.cancelLabel).toBeNull();
   });
 
@@ -294,7 +281,6 @@ describe('resolveCompletePrompt', () => {
     expect(r.title).toBe('完成集合點');
     expect(r.confirmLabel).toBe('完成');
     expect(r.cancelLabel).toBe('取消');
-    expect(r.deferLabel).toBe('取消');
     // Superseded legacy copy.
     expect(r.message).not.toContain('先不要完成');
     expect(r.message).not.toContain('小明');

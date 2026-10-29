@@ -173,7 +173,6 @@ export function GatheringCarousel({
   return (
     <>{uiVisible && showDenseChrome && destinations.length > 0 && !atFull && (
       <Animated.View
-        // a11y-layout:carouselCapsuleClearance
         style={[
           styles.carouselWrap,
           { top: insets.top + 8, maxHeight: carouselMaxHeight },
@@ -261,7 +260,6 @@ export function GatheringCarousel({
             const distParts = splitDistanceParts(d);
             const etaParts = splitEtaParts(etaSeconds);
             const cardExpanded = isCardExpanded(dest.id);
-            // a11y-layout:commandRowCompact
             const chromeCompact =
               narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
             const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
@@ -272,8 +270,6 @@ export function GatheringCarousel({
               stopClosed: Boolean(dest.closedAt),
               personallyArrived,
               flockNavigatingThis,
-              isNextTeamPending: true,
-              teamStartBlocked: false,
             });
             const navLabel = navCmd.kind === 'leader_stop' ? t('nav.endNavigation') : navCommandDisplayLabel(navCmd.kind, t);
             const startAccessibilityHint = canEditItinerary
@@ -362,14 +358,6 @@ export function GatheringCarousel({
                       cardExpanded ? t('gather.cardCollapseHint') : t('gather.cardExpandHint')
                     }
                   >
-                  {/* Layout (expanded):
-                      kicker · dots
-                      title full-width
-                      day line ····· people N/M
-                      小隊行程 badge (subgroup only)
-                      📍 dist | 🚗 eta | map
-                      [導航] [移動] [抵達?] [交通] [集合倒數]
-                     Collapsed: title marquee + compact ETA·dist only. */}
                   <View style={styles.cardHead}>
                     <View style={styles.grow}>
                       <View style={styles.cardKickerRow}>
@@ -405,7 +393,6 @@ export function GatheringCarousel({
                           />
                         )}
                       </View>
-                      {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                       {cardExpanded ? (
                         <View>
                           <Text
@@ -585,10 +572,6 @@ export function GatheringCarousel({
                   </View>
     
                   </GatheringCardPressable>
-                  {/* a11y-layout:commandRow — always one row.
-                      Order: [Start / End + Complete] [Transport] [Countdown]
-                      Outside expand Pressable so Start never toggles the card.
-                      Density tracks narrow + Dynamic Type. */}
                   {cardExpanded && (
                   <View style={styles.commandRow} pointerEvents="box-none">
                     {cardExpanded && navCmd.kind !== 'hidden' ? (
@@ -703,7 +686,6 @@ export function GatheringCarousel({
                       </Pressable>
                     ) : null}
 
-                    {/* Transport before meet countdown (product: swap order). */}
                     {cardExpanded ? (
                     <>
                     <Pressable

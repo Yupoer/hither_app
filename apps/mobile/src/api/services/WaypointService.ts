@@ -1,6 +1,6 @@
 /**
  * WaypointService — visited waypoint history (record + fetch).
- * BUG-17: history is team-scoped via group_id (user_id still records who arrived).
+ * History is team-scoped via group_id (user_id still records who arrived).
  */
 import { supabase } from '../supabase';
 import { isDemoGroup } from '../demo';

@@ -1,17 +1,9 @@
 import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Host, Button } from '@expo/ui/swift-ui';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { HitherText } from './HitherText';
-import {
-  buttonBorderShape,
-  buttonStyle,
-  frame,
-} from '@expo/ui/swift-ui/modifiers';
 import { Ionicons } from '@expo/vector-icons';
-import { liquidGlass } from '../native';
 import type { NativeTeamCardProps } from './NativeTeamCard';
 
-/** Native SwiftUI team-card header. Expanded actions stay RN siblings so each remains independently tappable. */
 export default function NativeTeamCard({
   teamName,
   subtitle,
@@ -30,7 +22,6 @@ export default function NativeTeamCard({
   const shownMembers = members.slice(0, 4);
   return (
     <View style={[styles.card, style]}>
-      {/* Card shape: buttonBorderShape('roundedRectangle', 24) */}
       <Pressable
         onPress={onPress}
         accessibilityRole="button"

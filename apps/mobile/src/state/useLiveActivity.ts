@@ -158,7 +158,6 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
   };
 
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
-  // BUG-05: emoji changes must also push a Live Activity update.
   const emojiSignature = state.memberEmojis?.join(',') ?? '';
   const destinationEmojiSig = state.destinationEmoji ?? '';
 

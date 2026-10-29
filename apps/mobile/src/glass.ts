@@ -23,8 +23,6 @@ export const glass = {
   /** Sheet header veil — thin, so content visibly blurs through beneath it. */
   headerVeil: 'rgba(22, 26, 34, 0.35)',
   /** Floating pills (group pill, role chip, recenter, FABs). */
-  // ≥0.85 so liquidGlass underlayForTint uses full tint (not half-alpha wash).
-  // BUG-24: near-opaque so light system map / sky doesn't show through.
   pill: 'rgba(40, 44, 52, 0.9)',
   /** Carousel card, inactive. Near-opaque so the card reads over any map. */
   card: 'rgba(28, 32, 40, 0.9)',

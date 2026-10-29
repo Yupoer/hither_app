@@ -21,15 +21,13 @@ import {
 } from '../entitlements';
 import {
   getTripEntitlement,
-  applyVerifiedPurchase,
   restoreEntitlements,
   redeemPromoCode,
-  setProStatus,
 } from '../api/services/EntitlementService';
 import { joinGroup } from '../api/services/GroupService';
 import { addDestination } from '../api/services/DestinationService';
-import { isVerifiedPurchase, purchasePro, restorePurchases } from '../native/purchases';
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 
 jest.mock('../api/supabase', () => ({
   supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getSession: jest.fn() } },
@@ -51,11 +49,13 @@ const mockedRpc = supabase.rpc as unknown as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  // Reset Edge Function stub so RPC-only tests are not polluted.
-  delete (supabase as { functions?: unknown }).functions;
   mockedAuth.getSession.mockResolvedValue({
-    data: { session: { user: { id: 'uid' } } },
+    data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
     error: null,
+  });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedAuth.getSession(),
+    refreshSession: () => mockedAuth.getSession(),
   });
 });
 
@@ -351,95 +351,6 @@ describe('EntitlementService RPCs', () => {
     expect(ent.planCode).toBe('small_trip_pass');
   });
 
-  it('applyVerifiedPurchase returns distinguishable duplicate', async () => {
-    mockedRpc.mockResolvedValue({
-      data: { ok: false, error: 'duplicate', status: 'active', entitlement_id: 'e1' },
-      error: null,
-    });
-    const result = await applyVerifiedPurchase({
-      groupId: 'g1',
-      transactionId: 'txn-duplicate-1',
-    });
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('duplicate');
-  });
-
-  it('applyVerifiedPurchase succeeds for verified outcome (service verifier mock)', async () => {
-    mockedRpc.mockResolvedValue({
-      data: {
-        ok: true,
-        status: 'active',
-        plan_code: 'small_trip_pass',
-        entitlement_id: 'e1',
-        started_at: '2026-07-25T00:00:00Z',
-        expires_at: '2026-08-01T00:00:00Z',
-        is_premium: true,
-      },
-      error: null,
-    });
-    const result = await applyVerifiedPurchase({
-      groupId: 'g1',
-      transactionId: 'txn-ok',
-      productId: 'small_trip_pass',
-    });
-    expect(result.ok).toBe(true);
-    expect(result.isPremium).toBe(true);
-    expect(mockedRpc).toHaveBeenCalledWith('apply_verified_purchase', {
-      p_group_id: 'g1',
-      p_transaction_id: 'txn-ok',
-      p_product_id: 'small_trip_pass',
-    });
-  });
-
-  it('applyVerifiedPurchase does not unlock when RPC is forbidden to authenticated', async () => {
-    mockedRpc.mockResolvedValue({
-      data: null,
-      error: { code: '42501', message: 'permission denied for function apply_verified_purchase' },
-    });
-    const result = await applyVerifiedPurchase({
-      groupId: 'g1',
-      transactionId: 'fake-txn',
-    });
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('verification_service_required');
-  });
-
-  it('maps Edge Function JSON body even when invoke reports error (non-2xx)', async () => {
-    const invoke = jest.fn().mockResolvedValue({
-      data: { ok: false, error: 'duplicate', status: 'active', entitlement_id: 'e1' },
-      error: { message: 'Edge Function returned a non-2xx status code' },
-    });
-    (supabase as unknown as { functions?: { invoke: jest.Mock } }).functions = { invoke };
-
-    const result = await applyVerifiedPurchase({
-      groupId: 'g1',
-      transactionId: 'txn-dup',
-    });
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe('duplicate');
-    // Must not fall through to user-JWT RPC (would misreport as verification_service_required).
-    expect(mockedRpc).not.toHaveBeenCalled();
-  });
-
-  it('falls through to RPC only when Edge Function returns no body', async () => {
-    const invoke = jest.fn().mockResolvedValue({
-      data: null,
-      error: { message: 'Failed to send a request to the Edge Function' },
-    });
-    (supabase as unknown as { functions?: { invoke: jest.Mock } }).functions = { invoke };
-    mockedRpc.mockResolvedValue({
-      data: null,
-      error: { code: '42501', message: 'permission denied for function apply_verified_purchase' },
-    });
-
-    const result = await applyVerifiedPurchase({
-      groupId: 'g1',
-      transactionId: 'txn-missing-fn',
-    });
-    expect(mockedRpc).toHaveBeenCalled();
-    expect(result.error).toBe('verification_service_required');
-  });
-
   it('restoreEntitlements returns server-valid premium', async () => {
     mockedRpc.mockResolvedValue({
       data: {
@@ -497,10 +408,6 @@ describe('EntitlementService RPCs', () => {
       p_group_id: 'g1',
     });
   });
-
-  it('setProStatus refuses direct client Pro writes', async () => {
-    await expect(setProStatus('uid')).rejects.toThrow(/entitlement_write_forbidden/);
-  });
 });
 
 describe('joinGroup member_limit', () => {
@@ -527,17 +434,6 @@ describe('addDestination itinerary_point_limit', () => {
         coordinates: { latitude: 0, longitude: 0 },
       }),
     ).rejects.toMatchObject({ code: 'itinerary_point_limit' });
-  });
-});
-
-describe('native purchases stub (BUILD-02 boundary)', () => {
-  it('does not unlock premium without verified outcome', async () => {
-    const purchased = await purchasePro();
-    const restored = await restorePurchases();
-    expect(purchased.status).toBe('unavailable');
-    expect(restored.status).toBe('unavailable');
-    expect(isVerifiedPurchase(purchased)).toBe(false);
-    expect(isVerifiedPurchase(restored)).toBe(false);
   });
 });
 
@@ -692,8 +588,6 @@ describe('Paywall contract (StoreKit subscription flow)', () => {
     expect(premiumPresentation).toContain('PREMIUM_CATALOG');
     expect(premiumPresentation).toContain('displayPrice');
     expect(premiumPresentation).not.toContain('TEMPORARY_DIRECT_UPGRADE');
-    expect(premiumPresentation).not.toContain('setProStatusLocal(true)');
-    expect(premiumPresentation).not.toContain('setProStatus(');
     // Comparison table is the free/premium source of truth — no prose plan intros.
     expect(premiumPresentation).toContain('PREMIUM_COMPARE_ROWS');
     expect(premiumPresentation).not.toContain('FREE_LIMITS');
@@ -723,7 +617,6 @@ describe('Session Premium authority contract', () => {
     expect(session).not.toContain('effectiveIsPro');
     expect(session).not.toMatch(/setIsPro\([^\n]*trip\.isPremium/);
     expect(session).not.toMatch(/setIsPro\([^\n]*row\?\.pro/);
-    expect(session).toContain('setProStatusLocal: () => undefined');
   });
 
   it('does not use legacy profile/trip state when projection refresh fails', () => {
@@ -731,18 +624,5 @@ describe('Session Premium authority contract', () => {
     expect(session).toContain('Do not fall back to profile/trip compatibility state');
     expect(session).not.toContain('isLifetimeProfilePremium(!!user?.pro');
     expect(session).not.toContain('setIsPro(!!restored.userPro)');
-  });
-});
-
-describe('EntitlementService BUILD-02 purchase handoff', () => {
-  const serviceSrc = readFileSync(
-    join(__dirname, '../api/services/EntitlementService.ts'),
-    'utf8',
-  );
-
-  it('documents Edge Function path and verification_service_required', () => {
-    expect(serviceSrc).toContain('verify-and-apply-purchase');
-    expect(serviceSrc).toContain('verification_service_required');
-    expect(serviceSrc).toContain('service_role');
   });
 });

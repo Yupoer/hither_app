@@ -2,16 +2,10 @@ import ExpoModulesCore
 import MapKit
 import Contacts
 
-// Phase B — Apple MapKit search / directions native module.
-//
-// Backs `apps/mobile/src/native/maps.ts`. On a Dev Build this replaces the
-// JS Nominatim fallback with MKLocalSearch / MKDirections (Apple Maps),
-// which gives far better quality search and real walking routes.
-//
-// Failure contract (so the JS layer can degrade gracefully):
-//   - searchPlaces: reject() on error -> JS falls back to Nominatim.
+// Failure contract:
+//   - searchPlaces: reject() on error.
 //                   resolve([]) only when MapKit genuinely found nothing.
-//   - getDirections: reject() on error / no route -> JS straight-line fallback.
+//   - getDirections: reject() on error / no route.
 public class HitherMapsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("HitherMaps")

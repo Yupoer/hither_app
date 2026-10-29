@@ -154,8 +154,6 @@ export const makeStyles = (
       zIndex: 50,
     },
 
-    // a11y-layout:carouselCapsuleClearance — cards above capsules; maxHeight inline.
-    // Must stay below sheetLayer (70).
     carouselWrap: {
       position: 'absolute',
       left: 0,
@@ -428,8 +426,6 @@ export const makeStyles = (
       marginTop: -1,
     },
 
-    // a11y-layout:commandRow — single row always; density via cmdSize/labels.
-    // Start and End grow while Complete stays square.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
@@ -1544,7 +1540,6 @@ export const makeStyles = (
       justifyContent: 'center',
       flexShrink: 0,
     },
-    // a11y-layout:inviteRow
     inviteRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
     invitePromptFull: { flex: 0, width: '100%' },
     inviteActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -1749,12 +1744,10 @@ export const makeStyles = (
       borderColor: glass.hairline,
     },
     reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
-  };
-  // applyAppTextScale / applyBoldTextWeights spread style objects; cast keeps
-  // StyleSheet.create happy with the wide inferred defs shape.
+  } satisfies StyleSheet.NamedStyles<Record<string, unknown>>;
   const scaled = applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS);
   return StyleSheet.create(
-    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS) as any,
+    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS),
   );
 };
 

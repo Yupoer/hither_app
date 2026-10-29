@@ -70,7 +70,6 @@ export function RoutePane({
 }: RoutePaneProps) {
   return (
     <>
-      {/* #173: leader pending gather requests — FIFO horizontal cards at Route top. */}
       {canEditItinerary && sortedGatherRequests.length > 0 ? (
         <View testID="route-gather-request-inbox" style={{ marginBottom: 12 }}>
           <Text style={[styles.sheetHeading, styles.sheetHeadingFirst]}>
@@ -207,7 +206,6 @@ export function RoutePane({
           {t('store.extraCreditsRemaining', { count: extraPointCredits })}
         </Text>
       ) : null}
-      {/* 下一站 — 唯一完整卡片；底部只顯示距離 */}
       {nextStopTitle ? (
         <View style={styles.tripSummaryCard}>
           <Text style={styles.tripCardKicker}>{t('map.nextTag')}</Text>
@@ -233,7 +231,6 @@ export function RoutePane({
             scopeId: myScopeId,
           })
         : null}
-      {/* 導航入口 = 普通 List Row，無圖示色塊 */}
       <View style={styles.listGroup}>
         {canEditItinerary && destinations.length > 0 ? (
           <Pressable

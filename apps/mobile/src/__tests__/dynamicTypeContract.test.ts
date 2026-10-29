@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { makeStyles } from '../screens/MapScreen/styles';
 import {
   BOLD_TEXT_LAYOUT_FACTOR,
   GLOBAL_FONT_SCALE_CAP,
@@ -9,6 +10,11 @@ import {
   fontScaleBucket,
   layoutFontScale,
 } from '../theme/typeScale';
+
+jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+}));
 
 const root = join(__dirname, '..');
 const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
@@ -49,20 +55,27 @@ describe('Dynamic Type contract', () => {
     expect(appTsx).not.toMatch(/maxFontSizeMultiplier\s*:\s*1\b/);
   });
 
-  it('marks MapScreen commandRow single-row density branches', () => {
-    expect(mapScreen).toContain('a11y-layout:commandRow');
-    expect(mapScreen).toContain('a11y-layout:narrowScreen');
+  it('keeps command controls in one row across narrow and large-text layouts', () => {
     expect(membersPane).toContain("fontBucket === 'large'");
     expect(membersPane).toContain("fontBucket === 'xl'");
     expect(mapScreen).toContain('narrowScreen');
     // Always one row — no multi-row stack styles in the gather card.
     expect(mapScreen).not.toContain('commandCol');
     expect(mapScreen).not.toContain('commandSecondaryRow');
-    expect(mapStyles).toContain('flexWrap: \'nowrap\'');
+    const regular = makeStyles('#68d391', 1);
+    const dense = makeStyles('#68d391', layoutFontScale(1.25, 1.2, true), true, 'xl', 1.2, true);
+    for (const styles of [regular, dense]) {
+      expect(styles.commandRow).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
+      expect(styles.navBtn.minHeight).toBeGreaterThanOrEqual(44);
+      expect(styles.cmdSquare.width).toBeGreaterThanOrEqual(44);
+      expect(styles.cmdSquare.minHeight).toBeGreaterThanOrEqual(44);
+      expect(styles.meetBtn.minHeight).toBeGreaterThanOrEqual(44);
+      expect(styles.meetBtn.overflow).toBe('visible');
+    }
+    expect(dense.commandRow.gap).toBeLessThanOrEqual(regular.commandRow.gap);
   });
 
-  it('marks QuickCommandsCard bucket-aware grid', () => {
-    expect(quickCommands).toContain('a11y-layout:quickCommands');
+  it('keeps QuickCommandsCard bucket-aware grid', () => {
     expect(quickCommands).toContain('useFontLayout');
     expect(quickCommands).toMatch(/bucket === 'xl'/);
   });
@@ -118,7 +131,6 @@ describe('Dynamic Type contract', () => {
     expect(carousel).toContain("map.localEstimate");
     expect(carousel).toContain("map.meetCountdown");
     expect(carousel).toContain("subgroup.itineraryBadge");
-    expect(carousel).toContain('a11y-layout:commandRowCompact');
     expect(carousel).toContain('meetBtn');
     expect(meetTimeChip).toContain('meetBtnStack');
     // Apple Maps only after expand, in metrics row (not in the command row).
@@ -132,24 +144,22 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).not.toMatch(/styles\.cardIcon/);
   });
 
-  it('marks invite-row stacked layout for large Dynamic Type', () => {
-    expect(mapStyles).toContain('a11y-layout:inviteRow');
+  it('stacks the invite row for large Dynamic Type', () => {
+    const styles = makeStyles('#68d391', 1.25, true, 'xl');
+    expect(styles.inviteRowStacked).toMatchObject({ flexDirection: 'column', alignItems: 'stretch' });
     expect(membersPane).toContain('inviteRowStacked');
   });
 
   it('stacks gathering cards above capsules and below the sheet layer', () => {
-    expect(carousel).toContain('a11y-layout:carouselCapsuleClearance');
     expect(mapScreen).toContain('carouselMaxHeight');
     expect(mapScreen).toContain('CAPSULE_CLEARANCE');
-    // cards (58) > capsules (50); sheet wrapper sibling must beat carousel.
-    expect(mapStyles).toMatch(/carouselWrap:\s*\{[\s\S]*?zIndex:\s*58/);
-    expect(mapStyles).toMatch(/recenter:\s*\{[^}]*zIndex:\s*50/);
-    expect(mapStyles).toMatch(/teamCapsuleWrap:\s*\{[\s\S]*?zIndex:\s*50/);
-    expect(mapStyles).toMatch(/sheetLayer:\s*\{[\s\S]*?zIndex:\s*70/);
+    const styles = makeStyles('#68d391', 1);
+    expect(styles.carouselWrap.zIndex).toBeGreaterThan(styles.recenter.zIndex);
+    expect(styles.carouselWrap.zIndex).toBeGreaterThan(styles.teamCapsuleWrap.zIndex);
+    expect(styles.carouselWrap.zIndex).toBeLessThan(styles.sheetLayer.zIndex);
     // No permanent black fog strip under the carousel.
     expect(mapScreen).not.toContain('carouselFog');
     // Command row density follows device/font — never multi-row / never detent.
-    expect(carousel).toContain('a11y-layout:commandRowCompact');
     expect(mapScreen).not.toMatch(/stacked\s*=/);
     expect(mapScreen).not.toMatch(/detent\s*>\s*0\s*&&/);
   });

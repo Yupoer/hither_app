@@ -23,7 +23,6 @@ export const en: Record<keyof ZhDict, string> = {
   'interaction.mapReload': 'Reload map',
   'interaction.mapGoHome': 'Back to home',
 
-  // OTA-04 local-first core data
   'coreData.offlineCache': 'You are offline. Showing the last synced group and itinerary.',
   'coreData.staleSnapshot': 'Local data may be outdated. It will refresh when you reconnect.',
   'coreData.emptySnapshot': 'No local trip snapshot yet. Connect and try again.',
@@ -532,7 +531,6 @@ export const en: Record<keyof ZhDict, string> = {
   'arrival.manage': 'Mark arrivals',
   'arrival.failedTitle': "Couldn't mark arrival",
   'arrival.failedMsg': "Couldn't update arrival status. Please try again.",
-  // Organizer exception center (leader)
   'exception.centerTitle': 'Exceptions',
   'exception.centerEmpty': 'No exceptions need attention',
   'exception.openCount': '{count} open',
@@ -551,7 +549,6 @@ export const en: Record<keyof ZhDict, string> = {
   'exception.type.force_quit_suspected': 'App force-quit suspected',
   'exception.gathering': 'Gathering: {title}',
   'exception.lastSeen': 'Last: {time}',
-  // OTA-09 coordination requests
   'coordination.title': 'Coordination',
   'coordination.openCount': '{count} open',
   'coordination.empty': 'No coordination requests yet',
@@ -813,7 +810,6 @@ export const en: Record<keyof ZhDict, string> = {
   'onboarding.back': 'Back',
   'onboarding.continue': 'Continue',
 
-  // Step kickers (small uppercase accent label above each title)
   'onboarding.theme.kicker': 'Choose a theme',
   'onboarding.theme.subtitle': 'Change it anytime.',
   'onboarding.role.kicker': 'Pick your role',
@@ -922,7 +918,6 @@ export const en: Record<keyof ZhDict, string> = {
   'onboarding.c3.sharedItinerary': 'Shared itinerary',
   'onboarding.c3.tripRecap': 'Trip recap',
 
-  // History (visited waypoints)
   'history.title': 'Trip history',
   'history.deleteTitle': 'Delete this history entry?',
   'history.open': 'View trip history',
@@ -932,7 +927,6 @@ export const en: Record<keyof ZhDict, string> = {
   'history.statusIncomplete': 'Incomplete',
   'history.timeUnknown': 'Time unknown (leader correction)',
 
-  // Straggler alerts
   'straggler.section': 'Straggler alerts',
   'straggler.notifyTitle': 'Straggler alert',
   'straggler.banner': '{name} fell behind ({distance})',
@@ -940,7 +934,6 @@ export const en: Record<keyof ZhDict, string> = {
   'straggler.freeNote': 'Free plan defaults to 500 m',
   'straggler.threshold': 'Alert distance',
 
-  // Paywall / Free Plan + account-owned auto-renewable Premium
   'paywall.title': 'Premium subscription',
   'paywall.premiumTitle': 'Premium subscription',
   'paywall.premiumHint': 'Choose monthly or annual billing. StoreKit supplies the price and offer eligibility.',
@@ -1033,7 +1026,6 @@ export const en: Record<keyof ZhDict, string> = {
   'paywall.rowThemesFree': 'Themes: 4',
   'paywall.rowThemesPro': 'More themes',
 
-  // KML import
   'kml.entry': 'Import',
   'kml.step1': 'Plan your spots in Google My Maps',
   'kml.step2': 'Export as a KML/KMZ file',
@@ -1086,7 +1078,6 @@ export const en: Record<keyof ZhDict, string> = {
   'feedback.sent': "Sent — thanks for the report",
   'feedback.failed': "Couldn't send — try again later",
 
-  // My teams / role entry
   'teams.title': 'My teams',
   'teams.clear': 'Clear',
   'teams.clearAllTitle': 'Leave all teams',
@@ -1103,7 +1094,6 @@ export const en: Record<keyof ZhDict, string> = {
   'teams.leave': 'Leave',
   'role.myTeams': 'View teams',
 
-  // Nav command labels
   'nav.leaderStart': 'Start',
   'nav.leaderStop': 'End',
   'nav.leaderComplete': 'Complete',
@@ -1121,7 +1111,6 @@ export const en: Record<keyof ZhDict, string> = {
   'gather.cardExpandHint': 'Expand gathering card',
   'gather.cardCollapseHint': 'Collapse gathering card',
 
-  // Map residuals
   'map.tripDay': 'Day {day}',
   'map.tripDayDate': '{month}/{day}',
   'map.bgLocationTitle': 'Background location needed',
@@ -1136,7 +1125,6 @@ export const en: Record<keyof ZhDict, string> = {
   'map.meetInHours': 'in {n} hr',
   'map.mainTeamLabel': 'Main team',
 
-  // Account sheet
   'account.regSection': 'Registration',
   'account.regMethod': 'Sign-up method',
   'account.regDays': 'Days registered',
@@ -1166,7 +1154,6 @@ export const en: Record<keyof ZhDict, string> = {
   'account.deleteConfirm': 'Delete account',
   'account.deleteFailed': 'Could not delete the account. Please try again.',
 
-  // Trip day / reorder
   'trip.setDaysAndDate': 'Days & date',
   'trip.setDaysTitle': 'Trip length',
   'trip.departureDate': 'Departure date',
@@ -1175,7 +1162,6 @@ export const en: Record<keyof ZhDict, string> = {
   'trip.dayFlagColor': 'Flag color for day {day}',
   'trip.dayTitle': 'Day {day}',
 
-  // Error boundary + FGS
   'errorBoundary.title': 'Something went wrong',
   'errorBoundary.body': 'The screen hit an unexpected error. You can try again.',
   'errorBoundary.retry': 'Retry',
@@ -1187,7 +1173,6 @@ export const en: Record<keyof ZhDict, string> = {
   'fgs.groupBody': 'Updating your group location in power-saving mode',
   'fgs.navBody': 'Continuously updating your distance to the gathering point',
 
-  // Group feature tour
   'tour.next': 'Next',
   'tour.prev': 'Previous',
   'tour.getStarted': 'Get started',
