@@ -47,7 +47,6 @@
     "noHardcodedUserCopy.test.ts",
     "notificationSemanticsContract.test.ts",
     "notificationsBoundary.test.ts",
-    "otaTeamEntryLifecycle.test.ts",
     "performanceTracingContract.test.ts",
     "productionConfig.test.ts",
     "productionPushMigration.test.ts",
