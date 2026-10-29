@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Behavior checks for the bounded, separate iOS launch debugger replay."""
 import copy
+import errno
 from contextlib import contextmanager
 import importlib.util
 import json
@@ -82,6 +83,48 @@ class EligibilityTests(unittest.TestCase):
 
 
 class SafeResultTests(unittest.TestCase):
+    def test_launch_help_diagnostics_keep_only_exit_status_and_capability_booleans(self):
+        help_result = {'exitCode': 64, 'stdoutCapture': True, 'stderrCapture': False,
+                       'waitForDebugger': True, 'raw': 'private help text'}
+        result = DEBUGGER.safe_result({'scope': 'diagnostic_replay', 'probe': 'unavailable',
+                                      'launchHelp': help_result})
+        self.assertEqual(result['launchHelp'], {key: help_result[key] for key in
+                         ('exitCode', 'stdoutCapture', 'stderrCapture', 'waitForDebugger')})
+        self.assertNotIn('private', json.dumps(result))
+        for code in (True, -128, 256, '64', None):
+            self.assertNotIn('launchHelp', DEBUGGER.safe_result({
+                'scope': 'diagnostic_replay', 'probe': 'unavailable',
+                'launchHelp': dict(help_result, exitCode=code)}))
+    def test_cleanup_provenance_is_bounded_and_cannot_clear_failure(self):
+        item = {'operation': 'fixture_group', 'kind': 'os_error', 'phase': 'term',
+                'errno': 1, 'message': 'private error path'}
+        source = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'cleanupFailed': False,
+                  'cleanupErrors': [item] * 10}
+        result = DEBUGGER.safe_result(source)
+        self.assertIs(result['cleanupFailed'], True)
+        self.assertEqual(result['cleanupErrors'], [
+            {'operation': 'fixture_group', 'kind': 'os_error', 'phase': 'term', 'errno': 1}] * 6)
+        self.assertFalse(source['cleanupFailed'])
+        self.assertNotIn('private', json.dumps(result))
+        for invalid in ('private', None, [{'operation': 'private', 'kind': 'os_error'}]):
+            result = DEBUGGER.safe_result({'scope': 'diagnostic_replay', 'probe': 'stopped',
+                                          'cleanupFailed': False, 'cleanupErrors': invalid})
+            self.assertIs(result['cleanupFailed'], True)
+            self.assertNotIn('private', json.dumps(result))
+        api = {'operation': 'lldb_kill', 'kind': 'api_error', 'identityMatched': True,
+               'errorType': 2, 'errorCode': 5}
+        result = DEBUGGER.safe_result({'scope': 'diagnostic_replay', 'probe': 'stopped',
+                                      'cleanupErrors': [api]})
+        self.assertEqual(result['cleanupErrors'], [api])
+        for key, values in {'errno': (True, -1, 4096, '1'),
+                            'errorType': (True, -1, 2**32, '2'),
+                            'errorCode': (True, -1, 2**32, '5'),
+                            'phase': ('private', True), 'identityMatched': (0, 'true')}.items():
+            for value in values:
+                with self.subTest(key=key, value=value):
+                    result = DEBUGGER.safe_result({'scope': 'diagnostic_replay', 'probe': 'stopped',
+                                                  'cleanupErrors': [dict(api, **{key: value})]})
+                    self.assertNotIn(key, result['cleanupErrors'][0])
     def test_exited_status_is_bounded_and_never_mistaken_for_os_exit_evidence(self):
         for value in (-1, 0, 2, 255, -2, 256, True, 2.0, 'private detail'):
             source = {'scope': 'diagnostic_replay', 'probe': 'exited',
@@ -405,20 +448,28 @@ class CaptureTests(unittest.TestCase):
                     lldb_fixture() as (debugger, process, _), \
                     mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
                 process.Kill.return_value.Fail.return_value = True
+                process.Kill.return_value.GetType.return_value = 2
+                process.Kill.return_value.GetError.return_value = 5
                 if raises:
                     process.Kill.side_effect = RuntimeError('/private/cleanup token=secret')
                 DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
                 result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
-                self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'stopped',
-                                         'stage': 'frames', 'stopReason': 'signal', 'signal': 5,
-                                         'frames': [frame()], 'cleanupFailed': True})
+                self.assertEqual(result['frames'], [frame()])
+                self.assertIs(result['cleanupFailed'], True)
+                expected = ({'operation': 'lldb_kill', 'kind': 'exception',
+                             'exceptionType': 'RuntimeError', 'identityMatched': True}
+                            if raises else {'operation': 'lldb_kill', 'kind': 'api_error',
+                                            'errorType': 2, 'errorCode': 5, 'identityMatched': True})
+                self.assertEqual(result['cleanupErrors'], [expected])
+                self.assertNotIn('private', json.dumps(result))
                 self.assertFalse(DEBUGGER._fixture_captured(result))
 
     def test_fixture_requires_known_successful_cleanup(self):
         result = {'scope': 'diagnostic_replay', 'probe': 'stopped',
                   'stopReason': 'signal', 'signal': 5, 'frames': [frame()]}
         self.assertFalse(DEBUGGER._fixture_captured(result))
-        self.assertTrue(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent')))
+        self.assertFalse(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent')))
+        self.assertTrue(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent', collectorTimedOut=False)))
 
 
 FAKE_XCRUN = r'''#!/usr/bin/env python3
@@ -440,6 +491,8 @@ if args[:3] == ['simctl', 'help', 'launch']:
     else:
         print('--stdout=<path> --stderr=<path>')
         print('--wait-for-debugger' if mode != 'unsupported' else '--other-option', file=sys.stderr)
+    if mode == 'help-error':
+        sys.exit(64)
 elif args[0] == 'clang':
     executable = Path(args[args.index('-o') + 1])
     executable.write_text('#!' + sys.executable + '\n'
@@ -539,7 +592,7 @@ sys.exit(module.main(sys.argv[2:]))
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Controlled executable identities use Linux fixtures')
 class ControlledCliTests(unittest.TestCase):
-    def run_cli(self, command='check', mode='success'):
+    def run_cli(self, command='check', mode='success', show_result=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         base = Path(temporary.name)
@@ -551,6 +604,8 @@ class ControlledCliTests(unittest.TestCase):
         driver = base / 'driver.py'
         driver.write_text(CLI_DRIVER)
         args = [sys.executable, str(driver), str(HELPER), command, '--output', str(base / 'output')]
+        if show_result:
+            args.append('--print-result')
         if command == 'replay':
             make_app(base / 'Compiled.app')
             make_app(base / 'Installed.app')
@@ -560,12 +615,22 @@ class ControlledCliTests(unittest.TestCase):
         environment = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ.get('PATH', ''),
                            DEBUGGER_FIXTURE_ROOT=str(base), DEBUGGER_FIXTURE_MODE=mode)
         result = subprocess.run(args, env=environment, capture_output=True, text=True, timeout=8)
-        self.assertEqual(result.stdout, '')
+        if not show_result:
+            self.assertEqual(result.stdout, '')
         self.assertEqual(result.stderr, '')
         calls = [json.loads(line) for line in (base / 'calls.jsonl').read_text().splitlines()]
         exported = json.loads((base / 'output' / DEBUGGER.RESULT_NAME).read_text())
         self.assertEqual(exported, DEBUGGER.safe_result(exported))
+        if show_result:
+            self.assertEqual(json.loads(result.stdout), exported)
         return base, result, exported, calls, args, environment
+
+    def test_explicit_result_output_reconstructs_only_safe_fields(self):
+        base, result, exported, _, _, _ = self.run_cli(mode='denied', show_result=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(exported['probe'], 'unavailable')
+        self.assertNotIn('private', result.stdout)
+        self.assertIn('private', (base / 'output/lldb.stderr.log').read_text())
 
     def test_prebuild_check_uses_both_help_streams_and_releases_only_after_attach(self):
         base, result, exported, calls, _, _ = self.run_cli()
@@ -587,6 +652,14 @@ class ControlledCliTests(unittest.TestCase):
                 self.assertEqual(exported['probe'], 'unavailable')
                 self.assertEqual(exported['stage'], 'launch_help')
                 self.assertEqual(len(calls), 1)
+
+    def test_nonzero_help_is_observable_and_still_blocks_before_compile(self):
+        _, result, exported, calls, _, _ = self.run_cli(mode='help-error')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(exported['launchHelp'], {'exitCode': 64, 'stdoutCapture': True,
+                                                 'stderrCapture': True, 'waitForDebugger': True})
+        self.assertEqual(exported['stage'], 'launch_help')
+        self.assertEqual(len(calls), 1)
 
     def test_usage_only_help_accepts_documented_flag_delimiters(self):
         _, result, exported, _, _, _ = self.run_cli(mode='usage')
@@ -638,7 +711,7 @@ class ControlledCliTests(unittest.TestCase):
     def test_replay_debugger_timeout_cleans_app_and_debugger_descendant(self):
         base, result, exported, _, _, _ = self.run_cli(command='replay', mode='timeout')
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'attach'})
+        self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'attach', 'collectorTimedOut': True})
         self.assertFalse(alive(int((base / 'app.pid').read_text())))
         self.assertFalse(alive(int((base / 'debugger-child.pid').read_text())))
 
@@ -722,6 +795,32 @@ static ssize_t record_read(int fd, void *buffer, size_t size) {
 
 
 class DebuggerCommandResultTests(unittest.TestCase):
+    def test_deadline_preserves_committed_frames_and_cleanup_errors_without_passing(self):
+        for cleanup_error in (None, PermissionError(errno.EPERM, 'private cleanup error')):
+            with self.subTest(cleanup_error=cleanup_error), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                captured = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
+                            'stopReason': 'signal', 'signal': 5, 'frames': [frame()], 'cleanupFailed': False}
+                raw = json.dumps(captured).encode()
+                (output / DEBUGGER.CAPTURE_RESULT_NAME).write_bytes(raw)
+                (output / 'attached.ready').touch()
+                process = mock.Mock()
+                process.poll.return_value = None
+                with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                        mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
+                        mock.patch.object(DEBUGGER, '_stop_group', side_effect=cleanup_error):
+                    result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+                self.assertEqual(result['frames'], [frame()])
+                self.assertIs(result['collectorTimedOut'], True)
+                self.assertFalse(DEBUGGER._fixture_captured(dict(result, fixtureRelease='sent')))
+                if cleanup_error is not None:
+                    self.assertEqual(result['cleanupErrors'], [
+                        {'operation': 'lldb_command_group', 'kind': 'os_error', 'errno': errno.EPERM}])
+                self.assertEqual((output / DEBUGGER.CAPTURE_RESULT_NAME).read_bytes(), raw)
+                with mock.patch.object(DEBUGGER, 'replay', return_value=result):
+                    self.assertEqual(DEBUGGER.main(['replay', '--app', '/App.app', '--simulator', frame()['uuid'],
+                                                   '--build', '77', '--original-result', '/original.json',
+                                                   '--output', '/unused']), 1)
     def test_debugger_command_cleanup_failure_preserves_its_committed_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -741,6 +840,124 @@ class DebuggerCommandResultTests(unittest.TestCase):
             self.assertNotIn('private', json.dumps(result))
 
 
+class ProcessGroupCleanupTests(unittest.TestCase):
+    def test_reaps_a_waitable_zombie_before_group_signal(self):
+        process = mock.Mock(pid=123)
+        reaped = False
+
+        def wait(timeout=None):
+            nonlocal reaped
+            reaped = True
+            return 0
+
+        def killpg(pid, signum):
+            if not reaped:
+                raise PermissionError(errno.EPERM, 'Darwin zombie-only group')
+            raise ProcessLookupError(errno.ESRCH, 'group disappeared after reap')
+
+        process.wait.side_effect = wait
+        with mock.patch.object(DEBUGGER.os, 'killpg', side_effect=killpg):
+            DEBUGGER._stop_group(process)
+        self.assertTrue(reaped)
+
+    def test_cached_zero_does_not_skip_group_signals(self):
+        process = mock.Mock(pid=123, returncode=0)
+        process.wait.return_value = 0
+        with mock.patch.object(DEBUGGER.os, 'killpg') as send:
+            DEBUGGER._stop_group(process)
+        self.assertEqual(send.call_args_list, [mock.call(123, signal.SIGTERM), mock.call(123, signal.SIGKILL)])
+
+    def test_real_permission_error_stays_a_cleanup_failure(self):
+        process = mock.Mock(pid=123)
+        process.wait.side_effect = subprocess.TimeoutExpired('owned command', 0)
+        with mock.patch.object(DEBUGGER.os, 'killpg', side_effect=PermissionError(errno.EPERM, 'private detail')):
+            with self.assertRaises(OSError) as observed:
+                DEBUGGER._stop_group(process)
+        self.assertEqual(observed.exception.errno, errno.EPERM)
+
+    def test_final_timeout_cannot_claim_successful_cleanup(self):
+        process = mock.Mock(pid=123)
+        process.wait.side_effect = subprocess.TimeoutExpired('owned command', 1)
+        with mock.patch.object(DEBUGGER.os, 'killpg'):
+            with self.assertRaises(OSError) as observed:
+                DEBUGGER._stop_group(process)
+        self.assertEqual(observed.exception.errno, errno.ETIMEDOUT)
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Real descendant liveness uses Linux fixtures')
+    def test_live_descendant_is_cleaned_after_leader_was_reaped(self):
+        command = ('import subprocess,sys; '
+                   'child=subprocess.Popen([sys.executable,"-c","import time;time.sleep(60)"],'
+                   'stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); '
+                   'print(child.pid,flush=True)')
+        process = subprocess.Popen((sys.executable, '-c', command), stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, text=True, start_new_session=True)
+        child_pid = None
+        try:
+            ready, _, _ = select.select([process.stdout], [], [], 5)
+            self.assertTrue(ready)
+            child_pid = int(process.stdout.readline())
+            process.wait(timeout=5)
+            self.assertTrue(alive(child_pid))
+            DEBUGGER._stop_group(process)
+            deadline = time.monotonic() + 2
+            while alive(child_pid) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(alive(child_pid))
+        finally:
+            process.stdout.close()
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=2)
+
+
+class NativeCleanupTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'darwin',
+                         'Zombie process-group semantics require Darwin')
+    def test_real_darwin_zombie_group_is_reaped_before_signaling(self):
+        self.assertTrue(hasattr(select, 'kqueue'), 'Darwin kqueue is required for this regression')
+        previous = signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+        process, queue = None, None
+        try:
+            process = subprocess.Popen((sys.executable, '-c', 'import sys;sys.stdin.buffer.read(1)'),
+                                       stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            queue = select.kqueue()
+            event = select.kevent(process.pid, filter=select.KQ_FILTER_PROC,
+                                  flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                  fflags=select.KQ_NOTE_EXIT)
+            queue.control([event], 0, 0)
+            process.stdin.write(b'x')
+            process.stdin.flush()
+            process.stdin.close()
+            events = queue.control(None, 1, 5)
+            self.assertTrue(events, 'the exact child must exit before group cleanup')
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                state = subprocess.run(('ps', '-o', 'state=', '-p', str(process.pid)),
+                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=1)
+                if state.returncode == 0 and state.stdout.strip().startswith('Z'):
+                    break
+                time.sleep(0.01)
+            else:
+                self.fail('the exact child must become a zombie without being reaped')
+            with self.assertRaises(PermissionError):
+                os.killpg(process.pid, signal.SIGTERM)
+            DEBUGGER._stop_group(process)
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(process.pid, 0)
+        finally:
+            if process is not None:
+                if process.stdin is not None and not process.stdin.closed:
+                    process.stdin.close()
+                process.kill()
+                process.wait(timeout=2)
+            if queue is not None:
+                queue.close()
+            signal.signal(signal.SIGCHLD, previous)
+
+
 class HostCheckResultTests(unittest.TestCase):
     def run_host_check(self, captured, invoke_release=True, broken_pipe=False, cleanup_failed=False):
         with tempfile.TemporaryDirectory() as directory:
@@ -758,7 +975,9 @@ class HostCheckResultTests(unittest.TestCase):
                 if invoke_release:
                     attached()
                 (destination / DEBUGGER.CAPTURE_RESULT_NAME).write_text(json.dumps(captured))
-                return DEBUGGER._read_result(destination, DEBUGGER.CAPTURE_RESULT_NAME)
+                result = DEBUGGER._read_result(destination, DEBUGGER.CAPTURE_RESULT_NAME)
+                result['collectorTimedOut'] = False
+                return result
 
             command = subprocess.CompletedProcess([], 0, '--wait-for-debugger --stdout --stderr', '')
             with mock.patch.object(DEBUGGER, '_is_darwin', return_value=True), \

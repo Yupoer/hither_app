@@ -227,6 +227,7 @@ with its own retained evidence before another dispatch.
 | [40834930383](https://github.com/Yupoer/hither_app/actions/runs/40834930383), source `3fe702a3c55dc726cf661bbba288e62cb6727615` | Runner preflight rejected the launch capture capability check before any App build. | The help reader inspected stdout only. Real child-command fixtures reproduce rejection when identical supported help is on stderr or split between streams. The correction reads both streams for this help call; exact Xcode 27 stream routing still requires native observation. This run supplies no new App crash evidence. |
 | [40837853209](https://github.com/Yupoer/hither_app/actions/runs/40837853209), source `1ddd65a85e55462f023aaa8c00d02b4a1f7b50b2` | Help preflight and full Release compilation passed; cold launch failed on attempt 1. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40837853209/artifacts/12883846272) attributes signal 5 to the original executable-checked PID during launch observation. The App was then absent, the simulator remained booted, and no matching report, fixed console/runtime pattern or PID-correlated system hint was observed. This establishes SIGTRAP termination, not its trap site or a link to historical phone reports. |
 | [40898632385](https://github.com/Yupoer/hither_app/actions/runs/40898632385), source `a608d6356b0ca78804414c7fdab8954c78ba7cbb` | The host debugger self-check failed before simulator creation or App build. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40898632385/artifacts/12909020858) reports `debuggerCheck.probe=exited` at `continue`, without an exit status. This is an LLDB-reported state; it does not establish a new App failure or uniquely identify the fixture failure. |
+| [40911535088](https://github.com/Yupoer/hither_app/actions/runs/40911535088), source `1e59472809f67f8bbc4b4156ab8b0c707546f631` | The host check captured the expected named trap frames and completed its release sequence, then failed cleanup before App build. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40911535088/artifacts/12913723304) reports stopped/exception, `fixtureRelease=sent` and `cleanupFailed=true`. These are fixture frames, not an App crash stack. The old diagnostic does not identify the failing cleanup operation. |
 
 The last run was dispatched separately from this patch. No rerun or guessed
 native fix is part of the contract repair. Future logs contain fixed UTC stage
@@ -348,6 +349,35 @@ fixture consumed the byte. A broken pipe cannot discard capture evidence or
 skip cleanup. The debugger writes a separate runner-local `lldb-capture.json`;
 the outer helper writes the final sanitized `replay-result.json` once after
 guarded cleanup. Neither file replaces the original launch result.
+
+Cleanup diagnostics retain at most six `cleanupErrors` with finite operation,
+kind and phase values, bounded `errno` or SBError type/code, and an optional
+identity-match boolean. Error messages and paths are excluded. Recorded or
+malformed error entries keep `cleanupFailed=true`; stack frames survive errors.
+
+Group cleanup first makes a short bounded reap attempt, then retains both group
+signal passes even when the leader has exited. This matters on Darwin: libc's
+[POSIX killpg implementation](https://github.com/apple-oss-distributions/Libc/blob/main/compat-43/FreeBSD/killpg.c)
+can receive `EPERM` from a group containing only unreaped zombies because
+[XNU excludes zombie members](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c)
+when selecting signal recipients. Reaping first addresses that concrete case;
+genuine permission errors and final cleanup timeouts still fail. A cached
+`Popen` return code never skips descendant signals and is not treated as
+independently observed OS exit evidence. This mechanism is a candidate for the
+recorded cleanup failure, not a proven attribution. Its Darwin regression and
+the selected-Xcode host check require native execution before merge.
+
+`collectorTimedOut=true` preserves any capture already committed when the
+debugger command reaches its deadline. Cleanup errors remain attached to that
+capture. The host check and replay command require explicit timeout-free
+completion; retained frames cannot turn a timeout into success. For CI,
+`check --print-result` prints only a reconstructed safe result while raw
+debugger output remains runner-local. The default command stays quiet.
+`launchHelp` retains only the help command's bounded exit code and three
+capability booleans. Help must still exit zero and advertise every required
+flag before compilation; raw help is not printed. The CI host check selects
+the same Xcode 27.0 bundle as CD and rejects version drift while retaining
+diagnostics, since the runner's default toolchain can differ.
 
 A replay observes another lifetime. The same installed native executable does
 not establish the same OTA selection; replay evidence must retain that limit.
