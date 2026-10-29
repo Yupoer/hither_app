@@ -173,7 +173,6 @@ export function GatheringCarousel({
   return (
     <>{uiVisible && showDenseChrome && destinations.length > 0 && !atFull && (
       <Animated.View
-        // a11y-layout:carouselCapsuleClearance
         style={[
           styles.carouselWrap,
           { top: insets.top + 8, maxHeight: carouselMaxHeight },
@@ -261,7 +260,6 @@ export function GatheringCarousel({
             const distParts = splitDistanceParts(d);
             const etaParts = splitEtaParts(etaSeconds);
             const cardExpanded = isCardExpanded(dest.id);
-            // a11y-layout:commandRowCompact
             const chromeCompact =
               narrowScreen || fontBucket === 'large' || fontBucket === 'xl';
             const chromeTight = fontBucket === 'xl' || (narrowScreen && fontBucket === 'large');
@@ -397,7 +395,6 @@ export function GatheringCarousel({
                           />
                         )}
                       </View>
-                      {/* Collapsed / expanded swap in-tree — one shot, no Zoom / layout morph. */}
                       {cardExpanded ? (
                         <View>
                           <Text
@@ -577,10 +574,6 @@ export function GatheringCarousel({
                   </View>
     
                   </GatheringCardPressable>
-                  {/* a11y-layout:commandRow — always one row.
-                      Order: [Start / End + Complete] [Transport] [Countdown]
-                      Outside expand Pressable so Start never toggles the card.
-                      Density tracks narrow + Dynamic Type. */}
                   {cardExpanded && (
                   <View style={styles.commandRow} pointerEvents="box-none">
                     {cardExpanded && navCmd.kind !== 'hidden' ? (

@@ -347,10 +347,6 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, []);
 
-  // Live Dynamic Type layout — rebuilds when system fontScale changes.
-  // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
-  // font bucket + physical width, never multi-row stacking.
-  // a11y-layout:narrowScreen — iPhone 15 / mini (~375) denser chrome.
   const fontLayout = useFontLayout();
   const fontBucket = fontLayout.bucket;
   // ≤390 ≈ iPhone 15 / mini / SE; slightly denser chrome so fixed command
@@ -4212,8 +4208,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : (
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
-      {/* #175: navigation response banner removed entirely (not moved to Tools). */}
-
       {inPassiveMode ? (
         <PassiveCompanionPanel
           model={passiveModel}

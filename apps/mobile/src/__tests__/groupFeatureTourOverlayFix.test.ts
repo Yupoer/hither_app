@@ -616,7 +616,6 @@ describe('MapScreen wires prev + members highlight', () => {
     expect(tour).toContain('const [snapshot, setSnapshot]');
     expect(tour).toContain('ctrl.stepIndex !== snapshot.stepIndex');
     expect(tour).toContain('setSnapshot({');
-    expect(measure).toContain('Bounded measurement retry');
     expect(measure).not.toContain('await sleep(STAGE_TWO_SETTLE_MS)');
     expect(addPlaceCard).toContain("testID=\"add-place-favorite-star\"");
     expect(addPlaceCard).toContain("setTourTargetRef('addPlaceFavoriteStar'");

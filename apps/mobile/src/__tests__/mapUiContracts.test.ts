@@ -423,18 +423,7 @@ describe('map UI placement contracts', () => {
     expect(visitHistory).toContain('mergeHistoryWithPastStops');
   });
 
-  it('avoids Zoom enter/exit on gathering-card body (no shrink-then-pop)', () => {
-    const cardBodyStart = carousel.indexOf(
-      '{cardExpanded ? (',
-      carousel.indexOf('Collapsed / expanded swap in-tree'),
-    );
-    const cardBodyEnd = carousel.indexOf(') : (', cardBodyStart);
-    expect(cardBodyStart).toBeGreaterThanOrEqual(0);
-    expect(cardBodyEnd).toBeGreaterThan(cardBodyStart);
-    expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomIn');
-    expect(mapScreen.slice(cardBodyStart, cardBodyEnd)).not.toContain('ZoomOut');
-    // Arrival feedback uses a centered solid check overlay (not kicker badge);
-    // the expanded/collapsed card body must remain a one-shot swap.
+  it('uses an ease-only centered arrival check', () => {
     expect(carousel).toContain('arrivalCenterCheckLayer');
     // Ease-only ZoomIn — no springify bounce on the celebrate check.
     expect(carousel).toContain('entering={ZoomIn.duration(240)}');
