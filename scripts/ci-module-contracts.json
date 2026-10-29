@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "version": 1,
+  "fullFallbackPaths": [
+    ".github/",
+    "scripts/",
+    "apps/mobile/scripts/",
+    "apps/mobile/test/",
+    "apps/mobile/patches/",
+    "apps/mobile/package.json",
+    "apps/mobile/package-lock.json",
+    "apps/mobile/jest.config.js",
+    "apps/mobile/jest.config.components.js",
+    "apps/mobile/tsconfig.json",
+    "apps/mobile/metro.config.js",
+    "apps/mobile/babel.config.js",
+    "apps/mobile/eslint.config.js",
+    "apps/mobile/app.config.js",
+    "apps/mobile/app.json",
+    "apps/mobile/eas.json",
+    "apps/mobile/plugins/",
+    "apps/mobile/index.ts",
+    "apps/mobile/App.tsx",
+    "apps/mobile/src/types/",
+    "apps/mobile/src/api/",
+    "apps/mobile/src/state/",
+    "apps/mobile/src/providers/",
+    "apps/mobile/src/contexts/",
+    "apps/mobile/src/native/",
+    "supabase/migrations/",
+    "release/",
+    "apps/mobile/app.config.ts",
+    "apps/mobile/react-native.config.js",
+    "apps/mobile/.env.example"
+  ],
+  "modules": [
+    {
+      "id": "mobile",
+      "paths": [
+        "apps/mobile/src/"
+      ],
+      "groups": [
+        "node",
+        "components",
+        "test-meta",
+        "lint",
+        "typecheck",
+        "runtime-alignment",
+        "expo-dependencies",
+        "expo-doctor"
+      ],
+      "consumers": []
+    },
+    {
+      "id": "backend",
+      "paths": [
+        "supabase/"
+      ],
+      "groups": [
+        "backend"
+      ],
+      "consumers": []
+    },
+    {
+      "id": "native",
+      "paths": [
+        "apps/mobile/modules/",
+        "apps/mobile/ios/"
+      ],
+      "groups": [
+        "node",
+        "components",
+        "test-meta",
+        "lint",
+        "typecheck",
+        "runtime-alignment",
+        "expo-dependencies",
+        "expo-doctor",
+        "jsi-ui-runtime",
+        "jsi-ios27-runtime"
+      ],
+      "consumers": [
+        "mobile"
+      ]
+    },
+    {
+      "id": "auth-web",
+      "paths": [
+        "apps/legal-site/"
+      ],
+      "groups": [
+        "auth-web"
+      ],
+      "consumers": []
+    },
+    {
+      "id": "documentation",
+      "paths": [
+        "docs/",
+        "README.md",
+        "AGENTS.md"
+      ],
+      "groups": [
+        "workflow-tooling"
+      ],
+      "consumers": []
+    }
+  ],
+  "contracts": [
+    {
+      "id": "core-operations-and-sqlite",
+      "producerPaths": [
+        "apps/mobile/src/types/coreData.ts",
+        "apps/mobile/src/state/",
+        "supabase/migrations/"
+      ],
+      "consumers": [
+        "mobile",
+        "backend"
+      ]
+    },
+    {
+      "id": "notification-identity-and-vectors",
+      "producerPaths": [
+        "apps/mobile/src/native/notifications.ts",
+        "apps/mobile/src/hooks/useGroupNotifications.ts",
+        "supabase/functions/send-push/",
+        "apps/mobile/test/"
+      ],
+      "consumers": [
+        "mobile",
+        "backend",
+        "native"
+      ]
+    },
+    {
+      "id": "live-activity-payload",
+      "producerPaths": [
+        "apps/mobile/src/native/liveActivity.ts",
+        "apps/mobile/modules/hither-live-activity/",
+        "apps/mobile/ios/HitherLiveActivity/"
+      ],
+      "consumers": [
+        "mobile",
+        "native"
+      ]
+    },
+    {
+      "id": "headless-process-and-screen-registry",
+      "producerPaths": [
+        "apps/mobile/test/headless/"
+      ],
+      "consumers": [
+        "mobile",
+        "backend",
+        "native"
+      ]
+    }
+  ]
+}

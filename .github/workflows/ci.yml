@@ -57,7 +57,7 @@ jobs:
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
-          node --test apps/mobile/scripts/check-changed-coverage.test.mjs
+          node --test apps/mobile/scripts/check-changed-coverage.test.mjs scripts/ci-shadow-plan.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
@@ -166,6 +166,7 @@ jobs:
         with:
           name: hither-ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            apps/mobile/test-artifacts/ci-shadow-plan.json
             apps/mobile/test-artifacts/node-receipt.json
             apps/mobile/coverage-changed/coverage-summary.json
           if-no-files-found: warn

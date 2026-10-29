@@ -13,6 +13,8 @@ function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85'
   baseEnv = { COVERAGE_BASE: 'event-base-sha' }, raw = true, zeroSuites = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coverage gate '));
   try {
+    fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
+    fs.copyFileSync(new URL('../../../scripts/ci-shadow-plan.mjs', import.meta.url), path.join(root, 'scripts/ci-shadow-plan.mjs'));
     const app = path.join(root, 'apps/mobile');
     const scripts = path.join(app, 'scripts');
     fs.mkdirSync(scripts, { recursive: true });
@@ -66,6 +68,8 @@ function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85'
     });
     const receiptPath = path.join(app, 'test-artifacts/node-receipt.json');
     result.receipt = fs.existsSync(receiptPath) ? fs.readFileSync(receiptPath, 'utf8') : null;
+    const planPath = path.join(app, 'test-artifacts/ci-shadow-plan.json');
+    result.plan = fs.existsSync(planPath) ? JSON.parse(fs.readFileSync(planPath, 'utf8')) : null;
     return result;
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -192,4 +196,14 @@ test('CI cannot accept a missing fresh Jest result', () => {
 test('full CI rejects zero discovered suites while standalone retains passWithNoTests', () => {
   assert.notEqual(run({ ci: true, zeroSuites: true, pct: '100' }).status, 0);
   assert.equal(run({ zeroSuites: true, pct: '100' }).status, 0);
+});
+
+test('failed shadow observation proposes all checks and cannot change actual Jest invocation', () => {
+  const result = run({ ci: true });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.plan.shadowOnly, true);
+  assert.ok(result.plan.fallbackReasons.includes('change-or-manifest-read-failed'));
+  assert.ok(result.plan.proposedGroups.includes('backend'));
+  assert.equal(invocations(result).length, 1);
+  assert.deepEqual(invocations(result)[0].slice(-2), ['--json', '--outputFile=test-artifacts/node-jest.raw.json']);
 });

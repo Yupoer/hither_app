@@ -11,6 +11,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
+import { observeShadowPlan } from '../../../scripts/ci-shadow-plan.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,11 +23,12 @@ const artifactDir = path.join(appRoot, 'test-artifacts');
 const rawResultPath = path.join(artifactDir, 'node-jest.raw.json');
 const receiptPath = path.join(artifactDir, 'node-receipt.json');
 const coverageDir = path.join(appRoot, 'coverage-changed');
+const shadowPlanPath = path.join(artifactDir, 'ci-shadow-plan.json');
 let diffMode = 'triple-dot';
 if (fullNodeTests) {
   fs.rmSync(coverageDir, { recursive: true, force: true });
   fs.mkdirSync(artifactDir, { recursive: true });
-  for (const file of [rawResultPath, receiptPath]) fs.rmSync(file, { force: true });
+  for (const file of [rawResultPath, receiptPath, shadowPlanPath]) fs.rmSync(file, { force: true });
 }
 const threshold = Number(process.env.COVERAGE_THRESHOLD || 85);
 if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
@@ -172,6 +174,10 @@ function main() {
   for (const f of changed) console.log(`  - ${f}`);
   fs.rmSync(coverageDir, { recursive: true, force: true });
   const identity = fullNodeTests ? sourceIdentity(base) : null;
+  if (fullNodeTests) {
+    const shadowPlan = observeShadowPlan({ identity, eligibleAppPaths: changed, git });
+    fs.writeFileSync(shadowPlanPath, JSON.stringify(shadowPlan, null, 2) + '\n');
+  }
   const receipt = fullNodeTests ? {
     schemaVersion: 1, identity, mode: changed.length ? 'full-coverage' : 'full-plain',
     status: 'failed', exitCode: 1, suites: [], suiteEvidence: 'unavailable',
