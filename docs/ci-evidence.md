@@ -12,6 +12,8 @@ The existing metadata lookup and checks run before the expensive suites. Compone
 
 `scripts/ci-shadow-plan.mjs` reads declarations from both the pinned base and head and unions their edges. Rename destinations and old paths, and deleted producers, participate. Consumer expansion reaches a fixed point, including cycles. Each classified path records its owners, contracts and fallback reasons. Unsupported schemas, invalid references, missing base/head declarations, unknown owners, shared/configuration inputs, dynamic registry uncertainty and read/parse failures propose every existing check group with an explicit fallback reason. The first rollout normally falls back when the base predates the manifest.
 
+Registry tests require module and contract producer selectors to match tracked sources. Shared Deno inputs under `supabase/functions/_shared/` propose every group because their wire consumers are not fully declared.
+
 The report is **shadow only**. It is written for observation and is never read by job conditions, `ci-required`, Jest selection or command routing. It names proposed groups, not executable arguments. Full current checks continue to run. No import parser, result cache, selection framework or scheduled workflow is added. This registry is not evidence that unknown dynamic dependencies are complete. Future selection needs a separate reviewed exclusion policy and measured regression corpus.
 
 ## Artifacts and evidence limits

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": 1,
+  "version": 2,
   "fullFallbackPaths": [
     ".github/",
     "scripts/",
@@ -28,6 +28,7 @@
     "apps/mobile/src/contexts/",
     "apps/mobile/src/native/",
     "supabase/migrations/",
+    "supabase/functions/_shared/",
     "release/",
     "apps/mobile/app.config.ts",
     "apps/mobile/react-native.config.js",
@@ -65,7 +66,8 @@
       "id": "native",
       "paths": [
         "apps/mobile/modules/",
-        "apps/mobile/ios/"
+        "apps/mobile/ios/",
+        "apps/mobile/targets/"
       ],
       "groups": [
         "node",
@@ -123,7 +125,7 @@
       "id": "notification-identity-and-vectors",
       "producerPaths": [
         "apps/mobile/src/native/notifications.ts",
-        "apps/mobile/src/hooks/useGroupNotifications.ts",
+        "apps/mobile/src/state/useGroupNotifications.ts",
         "supabase/functions/send-push/",
         "apps/mobile/test/"
       ],
@@ -138,7 +140,7 @@
       "producerPaths": [
         "apps/mobile/src/native/liveActivity.ts",
         "apps/mobile/modules/hither-live-activity/",
-        "apps/mobile/ios/HitherLiveActivity/"
+        "apps/mobile/targets/live-activity/"
       ],
       "consumers": [
         "mobile",

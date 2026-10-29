@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { ALL_GROUPS, buildShadowPlan, parseChanges, observeShadowPlan } from './ci-shadow-plan.mjs';
 
@@ -92,7 +93,23 @@ test('checked-in registry covers coarse current runtimes and explicitly marks in
   const report = plan([{ status: 'M', path: 'apps/mobile/src/utils/example.ts' }], { baseManifest: registry, headManifest: registry });
   assert.deepEqual(report.fallbackReasons, []);
   assert.ok(report.proposedGroups.includes('node'));
-  for (const path of ['.github/workflows/ci.yml', 'apps/mobile/package-lock.json', 'apps/mobile/src/types/coreData.ts', 'apps/mobile/test/headless/app.cjs']) {
+  for (const path of ['.github/workflows/ci.yml', 'apps/mobile/package-lock.json', 'apps/mobile/src/types/coreData.ts', 'apps/mobile/test/headless/app.cjs', 'supabase/functions/_shared/appStoreServerApi.ts']) {
     assert.deepEqual(plan([{ status: 'M', path }], { baseManifest: registry, headManifest: registry }).proposedGroups, ALL_GROUPS);
+  }
+});
+
+test('checked-in module and producer selectors name tracked sources', () => {
+  const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
+  const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: new URL('../', import.meta.url), encoding: 'utf8' }).split('\0');
+  for (const selector of [...registry.modules.flatMap(module => module.paths), ...registry.contracts.flatMap(contract => contract.producerPaths)]) {
+    assert.ok(tracked.some(file => selector.endsWith('/') ? file.startsWith(selector) : file === selector), selector);
+  }
+  for (const [path, contract] of [
+    ['apps/mobile/src/state/useGroupNotifications.ts', 'notification-identity-and-vectors'],
+    ['apps/mobile/targets/live-activity/HitherLiveActivity.swift', 'live-activity-payload'],
+  ]) {
+    const report = plan([{ status: 'M', path }], { baseManifest: registry, headManifest: registry });
+    assert.ok(report.contracts.includes(contract));
+    assert.ok(report.affectedModules.includes('native'));
   }
 });
