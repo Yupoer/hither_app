@@ -46,7 +46,6 @@
     "navigationPushContract.test.ts",
     "noHardcodedUserCopy.test.ts",
     "notificationSemanticsContract.test.ts",
-    "notificationsBoundary.test.ts",
     "performanceTracingContract.test.ts",
     "productionConfig.test.ts",
     "productionPushMigration.test.ts",

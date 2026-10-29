@@ -1,3 +1,5 @@
+import type { AppNotice } from '../state/appNotice';
+
 const mockActor = jest.fn(async () => 'actor-a');
 jest.mock('../api/services/_helpers', () => ({ requireLocalActorId: () => mockActor() }));
 const mockSetHandler = jest.fn();
@@ -50,4 +52,23 @@ it('suppresses delayed arrivals for another account without consuming the curren
   expect(await handleNotification(value)).toMatchObject({ shouldPlaySound: true });
   value.request.content.data.recipientId = '';
   expect(await handleNotification(value)).toMatchObject({ shouldPlaySound: false });
+});
+
+
+it('suppresses arrivals while identity lookup fails and permits the same event after account restoration', async () => {
+  const { clearAppNotices, subscribeAppNotices } = jest.requireActual<typeof import('../state/appNotice')>('../state/appNotice');
+  clearAppNotices();
+  const notices: (AppNotice | null)[] = [];
+  const unsubscribe = subscribeAppNotices(notice => notices.push(notice));
+  const { handleNotification } = mockSetHandler.mock.calls[0][0];
+  const notification = { request: { identifier: 'restore', content: { title: 'Private arrival', data: {
+    category: 'arrival', recipientId: 'actor-a', eventId: 'arrival:restored-session',
+  } } } };
+  try {
+    mockActor.mockRejectedValueOnce(new Error('session not restored'));
+    expect(await handleNotification(notification)).toEqual({ shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false });
+    expect(notices.filter(notice => notice !== null)).toEqual([]);
+    expect(await handleNotification(notification)).toMatchObject({ shouldShowBanner: false, shouldShowList: false, shouldPlaySound: true });
+    expect(notices.filter(notice => notice !== null)).toEqual([expect.objectContaining({ title: 'Private arrival' })]);
+  } finally { unsubscribe(); clearAppNotices(); }
 });
