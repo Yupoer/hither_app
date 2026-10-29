@@ -3,6 +3,20 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 346,
+      "child": 346,
+      "acceptance": "SDK 57 rollback directives from check or fetch reload the app through the existing automatic and manual OTA lifecycle.",
+      "testFile": "otaUpdates.test.ts",
+      "testNamePattern": "applies SDK rollback|applies rollback arriving"
+    },
+    {
+      "parent": 346,
+      "child": 346,
+      "acceptance": "Concurrent automatic and manual rollback callers share one fetch and reload, preserve failure statuses, and keep embedded launches silent.",
+      "testFile": "otaUpdates.test.ts",
+      "testNamePattern": "shares one rollback|preserves rollback|embedded rollback"
+    },
+    {
       "parent": 316,
       "child": 316,
       "acceptance": "Concurrent IPC commands finish real React foreground and native location cleanup in order without overlapping act scopes.",

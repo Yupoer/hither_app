@@ -311,7 +311,7 @@ describe('consumeOtaAppliedNotice', () => {
   });
 
   it('keeps embedded rollback launches silent and persists the embedded identity', async () => {
-    const embedded = jest.replaceProperty(Updates, 'isEmbeddedLaunch', true);
+    const embedded = jest.replaceProperty(jest.requireMock('expo-updates'), 'isEmbeddedLaunch', true);
     try {
       getItem.mockResolvedValue('old-id');
       expect(currentOtaLaunchId()).toBe('embedded');
