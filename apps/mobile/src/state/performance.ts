@@ -26,7 +26,6 @@ const LOCAL_RETENTION_MS = 72 * 60 * 60 * 1_000;
 const MAX_LOCAL_RECORDS = 10_000;
 const MAX_UPLOAD_BATCH = 100;
 const SAMPLE_WINDOW_MS = 1_000;
-const SAMPLE_INTERVAL_MS = 5 * 60_000;
 const RETENTION_CLEANUP_INTERVAL_MS = 15 * 60 * 1_000;
 /** Stay under performance_events 32 KB payload contract. */
 const MAX_PAYLOAD_JSON_BYTES = 30_000;
@@ -954,51 +953,6 @@ async function collectEnergyObservationSample(
   }
 }
 
-/**
- * Compatibility-only navigation sampler for older callers/tests. MapScreen no
- * longer calls this function: production sampling is owned by
- * energyObservability.start() above. Keeping the deprecated seam avoids
- * breaking third-party diagnostics while making ownership explicit.
- */
-async function collectEnergySample(
-  operation: string,
-  context: {
-    navigationSessionId: string | null;
-    trackingMode: string;
-  },
-): Promise<void> {
-  if (nativeSampleInFlight) return;
-  if (!isAppForeground() && !operation.endsWith('.end')) return;
-  if (!(await getDiagnosticConsentEnabled())) return;
-  nativeSampleInFlight = true;
-  try {
-    const nativeSample = await metrics.samplePerformance(SAMPLE_WINDOW_MS).catch(() => null);
-    if (!nativeSample) return;
-    const enriched = enrichNativeSample(nativeSample as unknown as Record<string, unknown>);
-    await insertEvent({
-      id: Crypto.randomUUID(),
-      timestamp: Date.now(),
-      sessionId,
-      eventType: 'sample',
-      operation: normalizeOperation(operation),
-      payload: {
-        ...sanitizePayload({
-          ...enriched,
-          navigationSessionId: context.navigationSessionId,
-          trackingMode: context.trackingMode,
-          sampleWindowMs: SAMPLE_WINDOW_MS,
-          confidence:
-            typeof enriched.confidence === 'string' ? enriched.confidence : 'background',
-          appState: performanceAppState,
-        }),
-        ...releaseContext(),
-      },
-    });
-  } finally {
-    nativeSampleInFlight = false;
-  }
-}
-
 export function markInteraction(operation: string, payload?: Record<string, unknown>): void {
   if (!active) return;
   const normalized = `ui.${normalizeOperation(operation)}`;
@@ -1225,38 +1179,5 @@ export function startPerformanceMonitor(): () => void {
     controller?.stop();
     unsubscribePower?.();
     controller = null;
-  };
-}
-
-/**
- * Low-overhead energy trend while navigation is active.
- * Works without EXPO_PUBLIC_PERFORMANCE_TRACING=full; no per-API traces or JS FPS.
- */
-export function startNavigationEnergyMonitor(context: {
-  navigationSessionId: string | null;
-  trackingMode: string;
-}): () => void {
-  // @deprecated: production MapScreen uses the single energyObservability
-  // controller. This compatibility-only seam remains for old diagnostics.
-  let stopped = false;
-  energyObservability.setTrackingMode(context.trackingMode);
-  void collectEnergySample('navigation.energy.sample', context);
-  const controller = energyObservability.start(
-    (sample) => {
-      if (stopped) return;
-      // The immediate sample above owns the start boundary. This compatibility
-      // monitor only needs steady five-minute samples from the shared timer.
-      if (sample.kind === 'startup') return;
-      void collectEnergySample(
-        'navigation.energy.sample',
-        context,
-      );
-    },
-    { startupOffsetsMs: [], steadyIntervalMs: SAMPLE_INTERVAL_MS },
-  );
-  return () => {
-    stopped = true;
-    controller.stop();
-    void collectEnergySample('navigation.energy.end', context);
   };
 }
