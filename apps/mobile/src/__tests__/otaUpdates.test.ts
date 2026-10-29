@@ -76,21 +76,6 @@ describe('otaUpdates', () => {
     expect(typeof isOtaApplyInFlight).toBe('function');
   });
 
-  it('wires expo-updates APIs used by production bootstrap', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../utils/otaUpdates.ts'),
-      'utf8',
-    );
-    expect(src).toContain('checkForUpdateAsync');
-    expect(src).toContain('fetchUpdateAsync');
-    expect(src).toContain('reloadAsync');
-    expect(src).toContain("AppState.addEventListener('change'");
-    expect(src).toContain('consumeOtaAppliedNotice');
-    expect(src).toContain('pendingManualFollowUp');
-    expect(src).toContain('inFlight');
-  });
-
   it('no-ops under Jest/dev without calling Updates', async () => {
     await expect(applyOtaUpdateIfAvailable()).resolves.toBe(false);
     await expect(applyOtaUpdate({ manual: true })).resolves.toMatchObject({

@@ -1,9 +1,8 @@
 /**
  * Production OTA bootstrap for TestFlight / store builds.
  *
- * Native check uses ON_LOAD + LaunchWaitMs, but with wait=0 the first open only
- * *downloads* and the next cold start applies. Users often force-quit before
- * the download finishes, so JS also checks, fetches, and reloads when ready.
+ * Native startup checks follow the embedded Expo.plist configuration. The JS
+ * boot and foreground checks also fetch and apply actionable updates when ready.
  *
  * Manual Settings "立即更新" and automatic bootstrap share a single-flight
  * lifecycle so double-taps / concurrent apply cannot stack reloads.
