@@ -360,6 +360,7 @@ async function main() {
     for (const [name, device] of Object.entries(devices)) { cursors[name] = 0; await device.boot(); }
     await capture('world', 'night.power-on', { gap, mode: 'powered-off clock gap' });
     for (const actor of Object.keys(devices)) await enterRestored(actor);
+    await advance(0, 'Commit deferred profile restoration before identity verification');
     await capture('world', 'day-two.identity-preserved', {}, null, o => {
       for (const actor of Object.keys(devices)) {
         const expectedName = { leader: 'Tokyo Leader', memberA: 'Tokyo A', memberB: 'Tokyo B' }[actor];

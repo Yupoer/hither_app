@@ -2731,6 +2731,69 @@
       "acceptance": "Legacy recovery function body, signature, ACL, comment, authorization, full profiles, and metadata remain unchanged from the baseline.",
       "testFile": "supabase/tests/group_recovery_snapshot_legacy_contract.test.sql",
       "testNamePattern": "legacy function body remains byte-identical|legacy execute ACL remains unchanged|legacy snapshot retains full authoritative rows"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "The full App trio preserves recipient notices, exact captured locations, names, two-day stops and abrupt offline restart.",
+      "testFile": "headlessTokyoTripScenario.test.ts",
+      "testNamePattern": "preserves mixed-platform receiver notices"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Offline GPS retains its original identity until exactly the 24-hour expiry boundary across process restarts.",
+      "testFile": "headlessToleranceScenario.test.ts",
+      "testNamePattern": "retains offline GPS until the 24-hour boundary"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Pending Map hydration suspends sensors without deleting queued fixes, and confirmed access resumes the original event.",
+      "testFile": "locationOutbox.test.ts",
+      "testNamePattern": "retains the original durable event while access is pending"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Background GPS callbacks preserve queued fixes during pending hydration while confirmed revocation still purges them.",
+      "testFile": "backgroundJourneyTaskBehavior.test.ts",
+      "testNamePattern": "stops background acquisition while access hydrates"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Background push callbacks preserve queued fixes while hydration is pending and acquire no unauthorized sensor sample.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "retains queued locations for a registered push"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Each journey lifecycle notifies receivers once and pause copy retains its original destination.",
+      "testFile": "notificationRealtimeBehavior.test.ts",
+      "testNamePattern": "notifies each start lifecycle"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Remaining eligible members receive distinct Solo, follow and voluntary departure events with privacy preferences respected.",
+      "testFile": "notificationRealtimeBehavior.test.ts",
+      "testNamePattern": "informs remaining followers|keeps participation notices silent"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Old and updated apps present each journey event once during the backend-first rolling update.",
+      "testFile": "journeyNotificationRollout.test.ts",
+      "testNamePattern": "old app suppresses|new app presents"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Team entry during deferred profile restoration cannot replace a saved nickname with a temporary fallback.",
+      "testFile": "headlessAccountScenario.test.ts",
+      "testNamePattern": "enters a saved team while profile enrichment is pending"
     }
   ]
 }
