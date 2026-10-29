@@ -62,7 +62,7 @@ for changed in ({"id": "46e781f0-5efc-4028-b84c-2fa87f30ae30"},
                 {"id": "invalid"}, {"id": None}, {"group": []}, {"group": "invalid"},
                 {"runtimeVersion": "0.1.12"}, {"gitCommitHash": "b" * 40},
                 {"message": "different"}, {"isRollBackToEmbedded": True},
-                {"isRollBackToEmbedded": None}, {"platform": "OTHER"},
+                {"isRollBackToEmbedded": None}, {"isRollBackToEmbedded": 0}, {"platform": "OTHER"},
                 {"branch": "production"}, {"branch": {"id": BRANCH, "name": "preview"}},
                 {"branch": {"id": UPDATE, "name": "production"}}, {"branch": None}):
     wrong = deepcopy(channel)
