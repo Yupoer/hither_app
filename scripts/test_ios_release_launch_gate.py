@@ -168,8 +168,17 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                          [(123, Path(binary)), (456, Path(binary))])
 
     def test_cli_rejects_unsupported_console_or_failed_observer_before_app_build(self):
-        for console_supported in (False, True):
-            with self.subTest(console_supported=console_supported), tempfile.TemporaryDirectory() as directory:
+        cases = (
+            ('stdout', '--stdout=<path> --stderr=<path>', '', 0, True),
+            ('stderr', '', '--stdout=<path> --stderr=<path>', 0, True),
+            ('split', '--stdout=<path>', '--stderr=<path>', 0, True),
+            ('neither', '--console', '', 0, False),
+            ('missing_stdout', '', '--stderr=<path>', 0, False),
+            ('missing_stderr', '--stdout=<path>', '', 0, False),
+            ('command_failed', '--stdout=<path>', '--stderr=<path>', 17, False),
+        )
+        for case_name, help_stdout, help_stderr, help_exit, observer_expected in cases:
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 script = root / "scripts/run-ios-release-launch.py"
                 script.parent.mkdir()
@@ -184,12 +193,15 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 trace = root / "commands.jsonl"
                 for name, response in {"git": "a" * 40, "pod": "1.16.2",
                                        "xcodebuild": "Xcode 27.0\nBuild version test",
-                                       "xcrun": "--stdout=<path> --stderr=<path>" if console_supported else "--console"}.items():
+                                       "xcrun": help_stdout}.items():
                     command = tools / name
+                    error_output = help_stderr + '\nprivate help sentinel' if name == 'xcrun' else ''
+                    exit_code = help_exit if name == 'xcrun' else 0
                     command.write_text(f"#!{sys.executable}\nimport json,os,pathlib,sys\n"
                                        "with pathlib.Path(os.environ['HITHER_TEST_TRACE']).open('a') as stream:\n"
                                        " stream.write(json.dumps(sys.argv)+'\\n')\n"
-                                       f"print({response!r})\n")
+                                       f"print({response!r})\nprint({error_output!r}, file=sys.stderr)\n"
+                                       f"sys.exit({exit_code})\n")
                     command.chmod(0o755)
                 helper = mobile / "scripts/verify-ios-release-launch.py"
                 helper.write_text("import os,pathlib,sys\n"
@@ -205,15 +217,24 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 diagnostic = json.loads((root / "hither-release-launch-diagnostic.json").read_text())
                 self.assertEqual(diagnostic["stage"], "runner_preflight")
-                self.assertEqual((root / "self-check-ran").exists(), console_supported)
-                if console_supported:
+                self.assertEqual((root / "self-check-ran").exists(), observer_expected)
+                if observer_expected:
                     self.assertEqual(diagnostic["commandExitCode"], 7)
                     self.assertNotIn("exitCode", diagnostic)
                     self.assertNotIn("appExitCode", diagnostic)
+                elif help_exit:
+                    self.assertEqual(diagnostic['commandExitCode'], help_exit)
                 calls = [json.loads(line)[1:] for line in trace.read_text().splitlines()]
+                self.assertIn(['simctl', 'help', 'launch'], calls)
                 self.assertNotIn(["install", "--deployment"], calls)
                 self.assertFalse(any("build" in call or "create" in call for call in calls))
                 self.assertNotIn("private console sentinel", result.stdout + result.stderr + json.dumps(diagnostic))
+                self.assertNotIn("private help sentinel", result.stdout + result.stderr + json.dumps(diagnostic))
+
+    def test_structured_command_output_does_not_include_stderr_warnings(self):
+        output = GATE.run(sys.executable, '-c',
+                          'import sys; print(\'{"devices": []}\'); print("private warning", file=sys.stderr)')
+        self.assertEqual(json.loads(output), {'devices': []})
 
     def run_profile_boundary(self, production, inherited):
         with tempfile.TemporaryDirectory() as directory:

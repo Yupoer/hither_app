@@ -39,7 +39,7 @@ class ReleaseCommandFailure(RuntimeError):
         super().__init__(f"{command} failed with exit code {returncode}{detail}")
 
 
-def run(*command, cwd=None, timeout=600, output=None):
+def run(*command, cwd=None, timeout=600, output=None, include_stderr=False):
     if output:
         with Path(output).open("w", encoding="utf-8") as stream:
             result = subprocess.run(command, cwd=cwd, text=True, stdout=stream,
@@ -49,7 +49,10 @@ def run(*command, cwd=None, timeout=600, output=None):
                                 timeout=timeout)
     if result.returncode:
         raise ReleaseCommandFailure(command[0], result.returncode, output)
-    return result.stdout.strip() if result.stdout else ""
+    contents = result.stdout or ""
+    if include_stderr and result.stderr:
+        contents += "\n" + result.stderr
+    return contents.strip()
 
 
 def valid_legal_url(value):
@@ -293,7 +296,7 @@ def main(diagnostic):
     xcode = run("xcodebuild", "-version")
     if not re.search(r"^Xcode 27\.0(?:\.[0-9]+)?$", xcode, re.M):
         raise RuntimeError("Xcode 27.0 is required for the Release launch gate")
-    launch_help = run("xcrun", "simctl", "help", "launch", timeout=15)
+    launch_help = run("xcrun", "simctl", "help", "launch", timeout=15, include_stderr=True)
     if not all(flag in launch_help for flag in ("--stdout", "--stderr")):
         raise RuntimeError("simctl launch must support stdout/stderr capture")
     run(sys.executable, str(MOBILE / "scripts/verify-ios-release-launch.py"),

@@ -224,6 +224,7 @@ with its own retained evidence before another dispatch.
 | [40479104034](https://github.com/Yupoer/hither_app/actions/runs/40479104034), [40486179433](https://github.com/Yupoer/hither_app/actions/runs/40486179433), [40538498115](https://github.com/Yupoer/hither_app/actions/runs/40538498115) | The full Release simulator did not reach the startup breadcrumb. | The [last run's sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40538498115/artifacts/12752148731) shows `ProcessLookupError`, no matching crash report, and no runtime log signal. The cause remains unproven. PRs #339 and #340 added diagnostics, not a root-cause fix. |
 | [40696292714](https://github.com/Yupoer/hither_app/actions/runs/40696292714) | The full Release simulator did not reach the startup breadcrumb. | The sanitized diagnostic reports `appProcessState=absent`, `processAlive=false`, and `simulatorState=booted`. Bundle-only system log hints include `jetsam` and `watchdog`; the earlier probe could not attribute either signal to the launched App PID. The cause remains unknown. |
 | [40816052797](https://github.com/Yupoer/hither_app/actions/runs/40816052797), source `57d91e882a0f8fb3e2798c4fe2e5243624b0a0f1` | Source CI and toolchain passed; cold launch failed on attempt 1 while waiting to observe the startup breadcrumb. | The [sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40816052797/artifacts/12873064423) reports original host PID alive at launch, App absent, simulator booted, no matching crash report or runtime signal, empty PID-correlated signals, and bundle-only `jetsam`/`process_exit` hints in a seven-second window. `exitCode=1` belongs to the failed gate command, not the App. Cause remains unknown. |
+| [40834930383](https://github.com/Yupoer/hither_app/actions/runs/40834930383), source `3fe702a3c55dc726cf661bbba288e62cb6727615` | Runner preflight rejected the launch capture capability check before any App build. | The help reader inspected stdout only. Real child-command fixtures reproduce rejection when identical supported help is on stderr or split between streams. The correction reads both streams for this help call; exact Xcode 27 stream routing still requires native observation. This run supplies no new App crash evidence. |
 
 The last run was dispatched separately from this patch. No rerun or guessed
 native fix is part of the contract repair. Future logs contain fixed UTC stage
@@ -269,8 +270,12 @@ it preceded or caused that failure. Kernel flags and status follow Apple's publi
 and [process filter implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_event.c).
 
 Before the single Release App build, runner preflight checks that `simctl help
-launch` exposes stdout/stderr capture and tests actual host exit code 37 and
-SIGTERM through the observer. A failed self-check stops before App build.
+launch` exposes stdout/stderr capture in its captured stdout or stderr, and
+tests actual host exit code 37 and SIGTERM through the observer. A failed
+self-check stops before App build.
+Only this help call combines streams. Git, runtime JSON and simulator UUID
+commands retain stdout-only results; nonzero help status and either missing
+capture flag still reject. Raw help is not printed or uploaded.
 The self-check launches the current interpreter's observed executable, including
 framework Python installations whose command is a launcher stub.
 Child-process success does not prove permission to observe the launchd-owned
