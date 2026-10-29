@@ -121,6 +121,13 @@ def safe_result(payload):
         result['cleanupFailed'] = payload['cleanupFailed']
     if type(payload.get('collectorTimedOut')) is bool:
         result['collectorTimedOut'] = payload['collectorTimedOut']
+    help_result = payload.get('launchHelp')
+    if (isinstance(help_result, dict) and type(help_result.get('exitCode')) is int
+            and -127 <= help_result['exitCode'] <= 255):
+        result['launchHelp'] = {'exitCode': help_result['exitCode']}
+        for field in ('stdoutCapture', 'stderrCapture', 'waitForDebugger'):
+            if type(help_result.get(field)) is bool:
+                result['launchHelp'][field] = help_result[field]
     if 'cleanupErrors' in payload:
         errors = payload['cleanupErrors']
         if isinstance(errors, list):
@@ -558,14 +565,19 @@ def check(output):
     stage = 'launch_help'
     result = _result('unavailable', stage)
     released = 'not_observed'
+    launch_help = None
     try:
         if not _is_darwin():
             raise _CommandFailure()
-        help_result = _run_command(('xcrun', 'simctl', 'help', 'launch'), output, 'launch-help')
+        help_result = _run_command(('xcrun', 'simctl', 'help', 'launch'), output, 'launch-help', check=False)
         help_text = help_result.stdout + '\n' + help_result.stderr
-        for option in ('--wait-for-debugger', '--stdout', '--stderr'):
-            if not re.search(r'(?<![\w-])' + re.escape(option) + r'(?=[=\s,\]|/]|$)', help_text):
-                raise _CommandFailure()
+        launch_help = {'exitCode': help_result.returncode}
+        for field, option in (('waitForDebugger', '--wait-for-debugger'),
+                              ('stdoutCapture', '--stdout'), ('stderrCapture', '--stderr')):
+            launch_help[field] = bool(re.search(r'(?<![\w-])' + re.escape(option) + r'(?=[=\s,\]|/]|$)', help_text))
+        if help_result.returncode != 0 or not all(launch_help[field] for field in
+                ('waitForDebugger', 'stdoutCapture', 'stderrCapture')):
+            raise _CommandFailure()
         source, executable = output / 'hither_lldb_probe.c', output / 'hither_lldb_probe'
         source.write_text(FIXTURE_SOURCE, encoding='utf-8')
         stage = 'compile_probe'
@@ -609,6 +621,8 @@ def check(output):
                 except OSError as error:
                     _record_cleanup_error(result, 'fixture_group', error)
         result['fixtureRelease'] = released
+        if launch_help is not None:
+            result['launchHelp'] = launch_help
     return _write_result(output, result)
 
 

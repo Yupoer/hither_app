@@ -83,6 +83,18 @@ class EligibilityTests(unittest.TestCase):
 
 
 class SafeResultTests(unittest.TestCase):
+    def test_launch_help_diagnostics_keep_only_exit_status_and_capability_booleans(self):
+        help_result = {'exitCode': 64, 'stdoutCapture': True, 'stderrCapture': False,
+                       'waitForDebugger': True, 'raw': 'private help text'}
+        result = DEBUGGER.safe_result({'scope': 'diagnostic_replay', 'probe': 'unavailable',
+                                      'launchHelp': help_result})
+        self.assertEqual(result['launchHelp'], {key: help_result[key] for key in
+                         ('exitCode', 'stdoutCapture', 'stderrCapture', 'waitForDebugger')})
+        self.assertNotIn('private', json.dumps(result))
+        for code in (True, -128, 256, '64', None):
+            self.assertNotIn('launchHelp', DEBUGGER.safe_result({
+                'scope': 'diagnostic_replay', 'probe': 'unavailable',
+                'launchHelp': dict(help_result, exitCode=code)}))
     def test_cleanup_provenance_is_bounded_and_cannot_clear_failure(self):
         item = {'operation': 'fixture_group', 'kind': 'os_error', 'phase': 'term',
                 'errno': 1, 'message': 'private error path'}
@@ -479,6 +491,8 @@ if args[:3] == ['simctl', 'help', 'launch']:
     else:
         print('--stdout=<path> --stderr=<path>')
         print('--wait-for-debugger' if mode != 'unsupported' else '--other-option', file=sys.stderr)
+    if mode == 'help-error':
+        sys.exit(64)
 elif args[0] == 'clang':
     executable = Path(args[args.index('-o') + 1])
     executable.write_text('#!' + sys.executable + '\n'
@@ -638,6 +652,14 @@ class ControlledCliTests(unittest.TestCase):
                 self.assertEqual(exported['probe'], 'unavailable')
                 self.assertEqual(exported['stage'], 'launch_help')
                 self.assertEqual(len(calls), 1)
+
+    def test_nonzero_help_is_observable_and_still_blocks_before_compile(self):
+        _, result, exported, calls, _, _ = self.run_cli(mode='help-error')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(exported['launchHelp'], {'exitCode': 64, 'stdoutCapture': True,
+                                                 'stderrCapture': True, 'waitForDebugger': True})
+        self.assertEqual(exported['stage'], 'launch_help')
+        self.assertEqual(len(calls), 1)
 
     def test_usage_only_help_accepts_documented_flag_delimiters(self):
         _, result, exported, _, _, _ = self.run_cli(mode='usage')
@@ -891,9 +913,10 @@ class ProcessGroupCleanupTests(unittest.TestCase):
 
 
 class NativeCleanupTests(unittest.TestCase):
-    @unittest.skipUnless(sys.platform == 'darwin' and hasattr(select, 'kqueue'),
+    @unittest.skipUnless(sys.platform == 'darwin',
                          'Zombie process-group semantics require Darwin')
     def test_real_darwin_zombie_group_is_reaped_before_signaling(self):
+        self.assertTrue(hasattr(select, 'kqueue'), 'Darwin kqueue is required for this regression')
         previous = signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         process, queue = None, None
         try:

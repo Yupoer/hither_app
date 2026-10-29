@@ -373,6 +373,11 @@ capture. The host check and replay command require explicit timeout-free
 completion; retained frames cannot turn a timeout into success. For CI,
 `check --print-result` prints only a reconstructed safe result while raw
 debugger output remains runner-local. The default command stays quiet.
+`launchHelp` retains only the help command's bounded exit code and three
+capability booleans. Help must still exit zero and advertise every required
+flag before compilation; raw help is not printed. The CI host check selects
+the same Xcode 27.0 bundle as CD and rejects version drift while retaining
+diagnostics, since the runner's default toolchain can differ.
 
 A replay observes another lifetime. The same installed native executable does
 not establish the same OTA selection; replay evidence must retain that limit.
