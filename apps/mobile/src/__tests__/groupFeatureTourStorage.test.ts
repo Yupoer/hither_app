@@ -7,7 +7,6 @@ import {
   clearGroupFeatureTour,
   completeGroupFeatureTour,
   GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,
-  isTourAccountSyncPending,
   readGroupFeatureTourCompletedLocal,
   readTourAccountSyncPending,
   retryPendingTourAccountSync,
@@ -99,10 +98,6 @@ describe('group feature tour storage', () => {
   });
 
   it('reports pending account sync from storage', async () => {
-    storage.getItem.mockResolvedValueOnce(
-      JSON.stringify({ accountId: 'u', completed: true }),
-    );
-    expect(await isTourAccountSyncPending()).toBe(true);
     storage.getItem.mockResolvedValueOnce(
       JSON.stringify({ accountId: 'u', completed: true }),
     );

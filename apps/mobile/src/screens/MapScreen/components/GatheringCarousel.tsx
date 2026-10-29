@@ -270,8 +270,6 @@ export function GatheringCarousel({
               stopClosed: Boolean(dest.closedAt),
               personallyArrived,
               flockNavigatingThis,
-              isNextTeamPending: true,
-              teamStartBlocked: false,
             });
             const navLabel = navCmd.kind === 'leader_stop' ? t('nav.endNavigation') : navCommandDisplayLabel(navCmd.kind, t);
             const startAccessibilityHint = canEditItinerary

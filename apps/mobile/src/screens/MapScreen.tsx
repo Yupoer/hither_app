@@ -1177,7 +1177,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ? undefined
       : navigationSessionState.session,
     startSession: navigationSessionState.start,
-    cancelSession: navigationSessionState.cancel,
     refreshNavigationSession: navigationSessionState.refresh,
     travelMode,
     onOptimisticGathering: applyOptimisticGathering,
@@ -3537,8 +3536,6 @@ export default function MapScreen({ route, navigation }: Props) {
       isLeader,
       personallyArrived: myCompletedDestinationIds.has(dest.id),
       flockNavigatingThis,
-      isNextTeamPending: true,
-      teamStartBlocked: false,
     });
     return {
       navCommandVisible: navCmd.kind !== 'hidden',

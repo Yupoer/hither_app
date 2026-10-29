@@ -332,7 +332,7 @@ exports.run = async function run(jest) {
       arrivalRadiusM: 50,
       refresh: app.group.refresh, t, mapRef, carouselRef, setSelectedIndex,
       navigationSession: app.navigation?.session, terminalSession: app.navigation.terminalSession,
-      startSession: app.navigation.start, cancelSession: app.navigation.cancel,
+      startSession: app.navigation.start,
       refreshNavigationSession: app.navigation.refresh,
       onOptimisticGathering: app.group.applyOptimisticGathering,
     });

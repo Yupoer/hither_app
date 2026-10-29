@@ -44,7 +44,6 @@ function getJourneyApi(): ReturnType<typeof useJourneyNavigation> {
 }
 let root: import('react-test-renderer').ReactTestRenderer;
 const startSession = jest.fn();
-const cancelSession = jest.fn();
 const projection = jest.fn();
 const pauseConfirm = jest.fn();
 const localSessionChanges: Array<string | null> = [];
@@ -70,7 +69,7 @@ function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSes
     acquireStartFix, arrivalRadiusM,
     t: (key, params) => params ? `${key}:${params.currentName}:${params.newName}` : key,
     mapRef: { current: camera as any ?? null }, carouselRef: { current: null }, setSelectedIndex: selectIndex ?? jest.fn(),
-    navigationSession, startSession, cancelSession, hasPendingTeamOperation,
+    navigationSession, startSession, hasPendingTeamOperation,
     onOptimisticGathering: projection, onOperatorPauseConfirm: pauseConfirm,
     onLocalSessionIdChange });
   if (suspend) throw new Promise(() => undefined);
@@ -353,7 +352,6 @@ it('persists every Start End Start in tap order before projection without legacy
   expect(projection.mock.calls.map(([value]) => value.activeDestinationId)).toEqual(['b']);
   expect(getJourneyApi().navTargetId).toBe('b');
   expect(startSession).not.toHaveBeenCalled();
-  expect(cancelSession).not.toHaveBeenCalled();
   expect(pauseConfirm).not.toHaveBeenCalled();
 });
 
@@ -732,7 +730,6 @@ it('stops a durably deleted target without creating a separate End command', asy
   await act(async () => { getJourneyApi().stopRemovedDestination('a', 'op-1'); });
   expect(getJourneyApi().navTargetId).toBeNull();
   expect(sync.enqueueLeaderGatheringEnd).not.toHaveBeenCalled();
-  expect(cancelSession).not.toHaveBeenCalled();
   expect(localSessionChanges.at(-1)).toBeNull();
 });
 

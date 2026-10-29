@@ -12,7 +12,7 @@ import {
   placeTourCard,
 } from '../featureTour/overlayLayout';
 import { retreatTour, startTour } from '../featureTour/tourController';
-import { getWindowSize, measureTourStepRects, STAGE_TWO_SETTLE_MS } from '../featureTour/measureTarget';
+import { getWindowSize, measureTourStepRects } from '../featureTour/measureTarget';
 import { TOUR_STEPS } from '../featureTour/constants';
 import * as featureTour from '../featureTour';
 
@@ -136,8 +136,6 @@ describe('featureTour barrel public seams', () => {
     expect(typeof featureTour.clipRectToWindow).toBe('function');
     expect(typeof featureTour.holeKindForTarget).toBe('function');
     expect(typeof featureTour.measureTourStepRects).toBe('function');
-    // Stage Two uses bounded measurement retries; there is no fixed settle sleep.
-    expect(featureTour.STAGE_TWO_SETTLE_MS).toBe(0);
   });
 });
 
@@ -408,11 +406,10 @@ describe('retreatTour', () => {
   });
 });
 
-describe('Stage Two members measure after settle', () => {
-  it('after delay, members target is non-null and clipped', async () => {
+describe('Stage Two members measurement', () => {
+  it('returns a clipped members target and tab placement', async () => {
     const members = { x: -8, y: 480, width: 400, height: 220 };
     const tabs = { x: 16, y: 420, width: 358, height: 48 };
-    let slept = 0;
     const measure = jest.fn(async (id: string) => {
       if (id === 'paneMembers') return members;
       if (id === 'stageTwoPlacement') return tabs;
@@ -425,11 +422,8 @@ describe('Stage Two members measure after settle', () => {
       step: step!,
       winW: 390,
       winH: 844,
-      sleep: async (ms) => {
-        slept += ms;
-      },
+      sleep: async () => undefined,
     });
-    expect(slept).toBeGreaterThanOrEqual(STAGE_TWO_SETTLE_MS);
     expect(result.targetRect).toEqual(clipRectToWindow(members, 390, 844));
     expect(result.targetRect).not.toBeNull();
     expect(result.targetRect!.x).toBeGreaterThanOrEqual(0);
@@ -610,13 +604,11 @@ describe('MapScreen wires prev + members highlight', () => {
     const { readFileSync } = require('node:fs') as typeof import('node:fs');
     const { join } = require('node:path') as typeof import('node:path');
     const tour = readFileSync(join(__dirname, '../featureTour/useGroupFeatureTour.tsx'), 'utf8');
-    const measure = readFileSync(join(__dirname, '../featureTour/measureTarget.ts'), 'utf8');
     const map = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8') + '\n' + readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
     const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
     expect(tour).toContain('const [snapshot, setSnapshot]');
     expect(tour).toContain('ctrl.stepIndex !== snapshot.stepIndex');
     expect(tour).toContain('setSnapshot({');
-    expect(measure).not.toContain('await sleep(STAGE_TWO_SETTLE_MS)');
     expect(addPlaceCard).toContain("testID=\"add-place-favorite-star\"");
     expect(addPlaceCard).toContain("setTourTargetRef('addPlaceFavoriteStar'");
   });
