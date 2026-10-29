@@ -295,6 +295,16 @@ jobs:
           cache-dependency-path: apps/mobile/package-lock.json
       - name: Install clean patched native dependency
         run: npm ci
+      - name: Verify Release debugger capture and cleanup
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+        run: |
+          probe_status=0
+          python3 -B apps/mobile/scripts/ios_launch_debugger.py check --output "$RUNNER_TEMP/hither-release-debugger-ci" --print-result || probe_status=$?
+          python3 -B scripts/test_ios_launch_debugger.py NativeCleanupTests.test_real_darwin_zombie_group_is_reaped_before_signaling || probe_status=1
+          exit "$probe_status"
       - name: Select iPhone 12 Pro on iOS 27 for the native probe
         run: |
           python3 - <<'PY'
