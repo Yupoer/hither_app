@@ -95,7 +95,8 @@ def verify_readback(published, viewed, channel):
         raise ValueError("remote update readback differs from the published update")
     latest = latest_channel_ios_update(production_branch(channel))
     fields = ("id", "group", "runtimeVersion", "gitCommitHash", "message", "isRollBackToEmbedded")
-    if any(latest.get(field) != expected.get(field) for field in fields):
+    if (latest.get("isRollBackToEmbedded") is not False
+            or any(latest.get(field) != expected.get(field) for field in fields)):
         raise ValueError("production channel does not serve the exact published iOS update")
     return expected
 
