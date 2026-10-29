@@ -468,11 +468,14 @@ export async function enqueueLocationOutbox(
 export async function flushLocationOutbox(
   maxEntries = MAX_BATCH,
 ): Promise<LocationFlushResult> {
-  if (!await captureLocationAccess()) {
+  const access = await captureLocationAccess();
+  if (access === null) {
     if (!isLocationAccessPending()) await outbox.purge();
     return { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   }
-  const result = await outbox.flush(maxEntries);
+  const result: LocationFlushResult = access
+    ? await outbox.flush(maxEntries)
+    : { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   clearTimeout(retryTimer);
   if (result.remaining > 0 && AppState.currentState === 'active') {
     retryTimer = setTimeout(() => {

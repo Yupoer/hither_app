@@ -207,6 +207,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (!config || generation !== trackingGeneration || !controller.isCurrent(config)) return;
         const access = await captureLocationAccess(config.groupId, true);
         if (generation !== trackingGeneration || !controller.isCurrent(config)) return;
+        if (access === undefined && config.sharingEnabled && config.hasMembership !== false) return;
         if (!access || !config.sharingEnabled || config.hasMembership === false) {
           await stopBackgroundJourney(false, config);
           if (!isLocationAccessPending() || !config.sharingEnabled || config.hasMembership === false) {
@@ -687,6 +688,7 @@ export async function startBackgroundJourney(
   const generation = ++trackingGeneration;
   const access = await captureLocationAccess(config.groupId);
   if (generation !== trackingGeneration) return 'cancelled';
+  if (access === undefined && config.sharingEnabled && config.hasMembership !== false) return 'cancelled';
   if (!access || !config.sharingEnabled || config.hasMembership === false) {
     await stopBackgroundJourney(true);
     return 'hidden';

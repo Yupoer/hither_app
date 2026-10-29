@@ -70,17 +70,19 @@ export function isLocationAccessCurrent(access: LocationAccess): boolean {
     && generation === access.generation && !access.signal.aborted;
 }
 
-export async function captureLocationAccess(groupId?: string, requirePermission = false): Promise<LocationAccess | null> {
+/** Undefined suspends the request when stored consent or platform permission cannot be checked. */
+export async function captureLocationAccess(groupId?: string, requirePermission = false): Promise<LocationAccess | null | undefined> {
   if (!foregroundSeen || !consent || !group || (groupId && groupId !== group)) return null;
   const access = { generation, groupId: group, signal: cancellation.signal };
   try {
     const stored = await AsyncStorage.getItem(LOCATION_SHARING_KEY);
+    if (stored === 'false') return null;
     if (requirePermission) {
       const { getForegroundPermissionsAsync } = await import('expo-location');
       if ((await getForegroundPermissionsAsync()).status !== 'granted') return null;
     }
-    return stored !== 'false' && isLocationAccessCurrent(access) ? access : null;
+    return isLocationAccessCurrent(access) ? access : null;
   } catch {
-    return null;
+    return undefined;
   }
 }
