@@ -55,8 +55,6 @@ async function tryDurableCoreWrite<T>(
   }
 }
 
-// ── Row shape ──────────────────────────────────────────────────────────────
-
 export interface ItineraryRow {
   id: string;
   title: string;
@@ -76,8 +74,6 @@ export interface ItineraryRow {
   stay_anchor?: boolean | null;
   provider_place_id?: string | null;
 }
-
-// ── Mapper ─────────────────────────────────────────────────────────────────
 
 export function mapDestination(row: ItineraryRow): Destination {
   const kind = row.kind === 'accommodation' ? 'accommodation' : 'stop';
@@ -104,8 +100,6 @@ export function mapDestination(row: ItineraryRow): Destination {
     providerPlaceId: row.provider_place_id ?? undefined,
   };
 }
-
-// ── API functions ──────────────────────────────────────────────────────────
 
 export async function addDestination(
   groupId: string,

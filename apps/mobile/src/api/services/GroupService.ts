@@ -50,8 +50,6 @@ import {
   classifyAnonymousAccessError,
 } from '../../anonymousAccess';
 
-// ── Row shapes (DB snake_case) ─────────────────────────────────────────────
-
 export interface GroupRow {
   id: string;
   name: string;
@@ -113,8 +111,6 @@ export interface LocationRow {
   source?: string | null;
   navigation_session_id?: string | null;
 }
-
-// ── Pure mappers ───────────────────────────────────────────────────────────
 
 export function mapGroup(row: GroupRow): Group {
   const storedAvatar = row.avatar;
@@ -195,8 +191,6 @@ export function mapSubgroupInvite(row: SubgroupInviteRow): SubgroupInvite {
     createdAt: row.created_at ?? undefined,
   };
 }
-
-// ── API functions ──────────────────────────────────────────────────────────
 
 /**
  * Create a group as leader via atomic SECURITY DEFINER RPC.

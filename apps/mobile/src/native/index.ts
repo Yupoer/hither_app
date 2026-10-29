@@ -7,9 +7,6 @@
  *
  *   import { location, maps } from '../native';
  *   const fix = await location.getCurrentLocation();
- *
- * Phase A backs these with Expo modules (Expo Go compatible). Phase B adds
- * custom Swift/Kotlin modules behind the same interfaces (EAS Dev Build).
  */
 export * as location from './location';
 export * as maps from './maps';
