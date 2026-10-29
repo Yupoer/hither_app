@@ -360,6 +360,84 @@ def lldb_fixture(mode='stopped'):
         yield debugger, process, calls
 
 
+class BoundedCaptureRegressionTests(unittest.TestCase):
+    def test_fast_stop_after_async_continue_is_not_the_stale_attach_stop(self):
+        with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            asynchronous, resumed = False, False
+
+            def set_async(value):
+                nonlocal asynchronous
+                asynchronous = value
+
+            def resume():
+                nonlocal resumed
+                if not asynchronous:
+                    raise TimeoutError('controlled synchronous continuation waits for a stop')
+                resumed = True
+                return mock.Mock(Fail=lambda: False)
+
+            native = sys.modules['lldb']
+            native.SBListener = lambda name: mock.Mock(GetNextEvent=lambda event: False)
+            native.SBEvent = lambda: mock.Mock()
+            debugger.SetAsync.side_effect = set_async
+            process.GetStopID.side_effect = lambda: 8 if resumed else 7
+            process.Continue.side_effect = resume
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
+            result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result['probe'], 'stopped')
+            self.assertEqual(result['frames'], [frame()])
+            self.assertEqual(result['captureKind'], 'spontaneous_stop')
+            self.assertEqual(debugger.SetAsync.call_args_list, [mock.call(False), mock.call(True)])
+            process.SendAsyncInterrupt.assert_not_called()
+
+    def test_static_observation_is_committed_before_native_cleanup_can_block(self):
+        with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            output = Path(directory)
+            observed = []
+
+            def cleanup():
+                path = output / 'lldb-observation.json'
+                observed.append(json.loads(path.read_text()) if path.is_file() else None)
+                return mock.Mock(Fail=lambda: False)
+
+            process.Kill.side_effect = cleanup
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', output)
+            self.assertTrue(observed and observed[0] is not None,
+                            'static frames must exist before entering native Kill cleanup')
+            observation = observed[0]
+            self.assertEqual(observation['frames'], [frame()])
+            self.assertIsNot(observation.get('cleanupFailed'), False)
+            self.assertEqual(json.loads((output / 'lldb-observation.json').read_text()), observation)
+
+    def test_watchdog_retains_observation_and_progress_when_final_cleanup_never_commits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            observation = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
+                           'captureKind': 'timeout_sample', 'stopReason': 'signal', 'signal': 2,
+                           'frames': [frame()], 'cleanupFailed': True}
+            raw = json.dumps(observation).encode()
+            (output / 'lldb-observation.json').write_bytes(raw)
+            (output / 'collector-progress.json').write_text(json.dumps({
+                'scope': 'diagnostic_replay', 'probe': 'unavailable', 'stage': 'cleanup',
+                'collectorPhase': 'cleanup', 'processState': 'stopped'}))
+            process = mock.Mock()
+            process.poll.return_value = None
+            with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                    mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
+                    mock.patch.object(DEBUGGER, '_stop_group'):
+                result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+            self.assertEqual(result.get('frames'), [frame()])
+            self.assertEqual(result['captureKind'], 'timeout_sample')
+            self.assertEqual(result['collectorPhase'], 'cleanup')
+            self.assertEqual(result['processState'], 'stopped')
+            self.assertIs(result['cleanupFailed'], True)
+            self.assertIs(result['collectorTimedOut'], True)
+            self.assertFalse(DEBUGGER._fixture_captured(dict(result, fixtureRelease='sent')))
+            self.assertEqual((output / 'lldb-observation.json').read_bytes(), raw)
+
+
 class CaptureTests(unittest.TestCase):
     def test_sb_api_captures_static_frame_then_cleans_only_attached_process(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, calls), \
