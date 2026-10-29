@@ -1,83 +1,212 @@
 # iOS CD release routes
 
 Dispatch [.github/workflows/cd-ios-testflight.yml](../.github/workflows/cd-ios-testflight.yml)
-on `master` with the reviewed 40-character `source_sha`. The workflow checks out that
-commit and runs the native dependency alignment check before any release action.
+on `master` with the reviewed 40-character `source_sha`. The workflow verifies
+exact checkout and master ancestry before executing selected-checkout helpers.
+All six modes are manual. A Git push alone does not publish.
 
-## Production OTA
+## Full delivery and evidence map
 
-Use `mode=ota` only after the installed production binary is verified. The reviewed
-[binary record](../release/ios-production-binary.json) names its source commit,
-runtime, build, production channel, Apple state, and evidence. Update this record
-only after checking the real build and its installability. The repository currently
-records build 76, runtime `0.1.11`, from `164ca5c`. It does not establish an
-installed `0.1.13` binary. GitHub `master` is the code baseline for comparing
-changes. A TestFlight build can predate both this workflow and the binary record;
-neither supplies its runtime or channel retroactively. A historical IPA is not
-required when other trustworthy evidence establishes the installed binary's
-runtime, channel, and native compatibility with that GitHub baseline. Update the
-record with the evidence actually checked, including a verifiable ancestor
-source SHA required by the current compatibility gate. Do not invent a source
-receipt when it is absent.
+```mermaid
+flowchart TD
+  change[Reviewed source change] --> pr[PR CI: tests, acceptance map, changed-function coverage at least 85 percent]
+  pr --> master[Reviewed integration and exact-source master-push CI]
+  master --> dispatch[Manual dispatch on master with source SHA and mode]
+  dispatch --> trust[Exact checkout and master ancestry guard]
+  trust --> inspect[inspect-release: read-only EAS metadata on Linux]
+  trust --> preflight[preflight: Xcode and dependency checks]
+  trust --> admission[Exact-source successful master-push CI for release modes]
+  admission --> ota[ota: current master, backend attestation, binary compatibility]
+  admission --> launch[validate-release, build-only, submit: full Release simulator gate]
+  ota --> route[Active unconditional production route]
+  route --> otaIntent[Retain immutable unknown OTA intent]
+  otaIntent --> publish[Publish production iOS update]
+  publish --> readback[Exact-group and latest-channel iOS readbacks]
+  readback --> client[Native startup and JS boot or foreground selection]
+  client --> js[Executed JS identity remains unobserved by this workflow]
+  launch --> launchReceipt[Two cold starts and source-equivalent launch receipt]
+  launchReceipt --> buildIntent[build-only or submit: retain unknown build intent]
+  buildIntent --> build[Local signed EAS build and remote auto-increment]
+  build --> ipa[Exact private IPA signature, bundle, version, runtime and channel checks]
+  ipa --> submitIntent[submit: backend attestation and retained unknown upload intent]
+  submitIntent --> upload[EAS submit exact path and wait]
+  upload --> apple[Apple processing remains unknown without separate observation]
+  dispatch --> outcome[Always attempt safe journal and final outcome retention]
+  backend[Separate production backend deployment and verification] --> ota
+  backend --> submitIntent
+```
 
-The OTA route requires the pinned source to still be the current `master` commit.
-It compares every mobile change since the binary source with a conservative
-allowlist for JavaScript, TypeScript, and tests. iOS code, modules, targets,
-plugins, patches, app config, package changes, assets, and unrecognized mobile
-paths stop the OTA route. It also checks the app and embedded iOS update runtime,
-the EAS production build channel, and the active production update branch.
-An incompatible or missing binary record stops before `eas update`; use the
-native route after completing its release checks.
+PR CI verifies the proposed patch. Release admission requires a successful
+`master` push CI run for the exact selected source and its current attempt.
+An ancestor source is permitted for native modes; OTA additionally requires
+current master immediately before publication. Stale binary evidence does not
+automatically select or dispatch native work.
 
-Set `backend_verified=true` for `ota` or `submit` only after checking that every
-backend change required by the pinned source is applied in production. The input
-records the release operator's verification; it does not deploy the backend.
-The OTA step maps the existing `HITHER_GITHUB_ACTIONS` GitHub secret to the
-`EXPO_TOKEN` environment variable. It loads the EAS production environment
-before evaluating the production app config,
-which requires valid HTTPS privacy and terms URLs. It publishes iOS only, then reads
-back the update ID, group, runtime, branch, and source. A failed readback
-requires direct inspection before any retry. The workflow keeps a small
-receipt for 14 days.
+| Owner | Evidence and limit |
+| --- | --- |
+| [CD workflow](../.github/workflows/cd-ios-testflight.yml) | Trust, modes, prerequisites, locks, fixed commands and artifact transport. |
+| [CI admission](../scripts/check-release-ci.mjs) | Exact source, repository, master-push run and current successful attempt. |
+| [Compatibility gate](../scripts/check-ios-ota-compatibility.py) | Conservative source/runtime/channel admission from the checked-in binary record. It does not inspect an installed App. |
+| [OTA verifier](../scripts/verify-ios-ota-publication.py) | Published identity, exact-group readback and latest production-channel iOS identity. It does not observe client application. |
+| [Inventory reducer](../scripts/inspect-ios-release-inventory.py) | Sanitized independent EAS metadata, including blocked results. EAS candidates do not prove Apple processing or installation. |
+| [Simulator gate](../scripts/run-ios-release-launch.py) | Full source-equivalent Release build, two cold starts and sanitized diagnostics. It does not launch the signed device IPA. |
+| [Attempt writer](../scripts/write-ios-cd-outcome.py) | Strict local attempt events and immutable pre-write snapshots. It performs no release actions. |
+| [App OTA lifecycle](../apps/mobile/src/utils/otaUpdates.ts) | Shared manual and automatic check/fetch/runtime reload, including SDK rollback directives. |
+
+## Production OTA and compatibility policy
+
+The unattended `ota` route requires the reviewed
+[binary record](../release/ios-production-binary.json). It names an ancestor
+source, runtime, app version, build, production channel, Apple state and evidence.
+The current record is build 76, runtime `0.1.11`, from `164ca5c`; it does not
+establish an installed `0.1.13` binary. Update it only with evidence actually
+checked. A non-object JSON record returns structured `invalid_binary_record`.
+No compatibility admission rule is relaxed by this repair.
+
+The already approved local Hither release path treats the latest GitHub source
+as the authoritative compatibility comparison baseline. This operator source
+attestation is distinct from observed binary provenance. Missing historical
+build 79 IPA bytes alone are not a mandatory blocker for that approved path.
+Real runtime compatibility, authentication and a publication receipt still need
+their own evidence. This unattended workflow retains its conservative record;
+it does not manufacture build 79 provenance or a `0.1.13` manifest from the
+operator attestation. A historical IPA is unnecessary when other trustworthy
+evidence establishes the required binary facts.
+
+The gate compares every mobile change since the recorded binary source with a
+conservative JavaScript, TypeScript and test allowlist. Native code, modules,
+targets, plugins, patches, app config, package changes, assets and unknown mobile
+paths stop OTA. It checks the app and embedded iOS runtime, EAS production build
+channel and active unconditional production branch. A missing, stale or
+incompatible record stops before publication. Inspect the evidence and choose
+an authorized route explicitly.
+
+Set `backend_verified=true` for `ota` or `submit` only after required production
+backend changes are deployed and verified. This is an operator attestation;
+the workflow neither deploys nor independently attests the backend.
+The existing `HITHER_GITHUB_ACTIONS` secret supplies step-local `EXPO_TOKEN`.
+The pinned EAS 21.0.2 command loads production environment values before config
+evaluation and publishes iOS only. HTTPS legal URLs, current master and the
+existing source/runtime/channel guards remain required.
+
+EAS wire contracts differ. `update` and `update:view` format a string branch;
+`channel:view` retains GraphQL branch objects inside `Update[][]`. The verifier
+checks only the latest nested group and exactly one matching iOS update.
+Android may appear first and have another runtime. Wrong iOS ID, group, source,
+runtime, message, rollback flag, malformed branch or conditional route rejects.
+A matching older group cannot hide a superseding latest group.
+
+SDK 57 can report `isRollBackToEmbedded=true` with `isAvailable=false` or
+`isNew=false`. Either directive is actionable through the existing shared
+flight. Concurrent automatic and manual callers retain one fetch/reload chain,
+existing manual failure statuses and silent embedded-launch notice behavior.
+`Updates.reloadAsync` reloads the React Native runtime inside the existing OS
+process. It does not explain a missing OS PID.
 
 ## Native build and TestFlight
 
-`inspect-release` uses a Linux GitHub runner and the existing
-`HITHER_GITHUB_ACTIONS` secret as `EXPO_TOKEN` to read production iOS EAS
-build, channel, and update metadata. The job uploads only a sanitized receipt.
-A finished EAS build is a candidate binary; the receipt leaves Apple processing
-and installed-device status unknown. IPA files built locally on a GitHub Xcode
-runner may not appear in EAS Build history.
+| Mode | Work performed |
+| --- | --- |
+| `inspect-release` | Linux read-only EAS build/channel/update inventory. |
+| `preflight` | Xcode and dependency checks without signing. |
+| `validate-release` | Full Release simulator build and two verified cold starts. |
+| `ota` | Guarded iOS publication and exact remote readback. |
+| `build-only` | Full simulator gate, signed local EAS build and exact IPA verification. |
+| `submit` | Same native gates and upload of that exact private IPA path. |
 
-`preflight` checks Xcode and dependencies without signing. `validate-release`
-builds the complete Release simulator app and requires two 45-second cold
-launches before returning a sanitized receipt. Both `build-only` and `submit`
-run the same full App gate before signing; `build-only` then builds and
-validates a signed IPA, while `submit` builds and uploads it to TestFlight.
-These modes remain available when the binary record does not permit OTA.
-The workflow uploads receipts, not the signed IPA, screenshots, or native logs,
-as GitHub artifacts. The simulator gate applies the full cold-launch check in
-[iOS startup validation](ios-release-startup-validation.md). It verifies real
-App startup and records screenshot hashes. The simulator build injects the
-production update-channel header in a temporary copy of `Expo.plist`, restores
-the checked-in file, and verifies the compiled App. EAS uses a remote auto
-incrementing build number for the signed device IPA, so the simulator receipt
-proves a source-equivalent Release launch rather than launching that IPA. The
-workflow compares source and app version with the IPA and separately verifies
-its embedded update runtime and production channel. The signed IPA receipt records
-the verified runtime and production channel alongside its source SHA, version,
-build number, and IPA SHA-256. It is a build receipt, not proof that Apple
-processed the upload or that a user installed the binary. Visual screenshot review remains
-pending. Read back Apple processing and verify the installed build on a real
-device before treating a native release as complete. The CI actor probes and
-quick `preflight` do not perform these checks.
+EAS Build history supplies candidates. An IPA built locally on the GitHub Xcode
+runner may not appear there. A finished EAS build does not prove Apple
+processing, installability, installation, native compatibility or executed JS.
+Native modes remain explicitly selectable when the binary record blocks OTA.
 
-## Failure triage before another run
+The full simulator gate follows [startup validation](ios-release-startup-validation.md).
+It requires two 45-second cold starts, verifies real App startup and records
+screenshot hashes. The simulator temporarily injects the production update
+channel into `Expo.plist`, restores the source file and verifies the compiled
+App. Its receipt is source-equivalent Release evidence. The signed device IPA
+uses EAS remote auto-increment and is not the simulator artifact.
 
-Record the run ID, attempt, pinned source SHA, selected mode, and first failing
-step. A Node 20 deprecation warning printed during post-job cleanup does not
-explain an earlier step's exit code. Check each failed gate against its own
-artifact or log before dispatching another build.
+The simulator inherits EAS production environment values and overlays checked-in
+`build.production.env`. Profile values win, matching the pinned signed-build
+merge. Supported flat profiles use EAS's default `distribution=store`, store-first
+environment inference and explicit environment precedence. Effective preview or
+development env rejects. Inheritance and relevant iOS-specific env/inference
+overrides reject explicitly rather than silently differing from EAS. Env values
+must be strings. No environment dump or secret fingerprint is retained. Server
+values can still drift between simulator and signed build.
+
+The workflow verifies the exact private IPA's integrity, signature, app/widget
+bundle IDs, source app version, embedded runtime and production channel. Its
+receipt records the actual signed build number and IPA SHA-256. Submission uses
+only `$RUNNER_TEMP/Hither-production.ipa`, never `--latest` or a candidate URL.
+A separate receipt after successful pinned EAS `submit --wait` reports
+`easUpload=reported_complete`, `appleProcessing=unknown` and
+`deviceAcceptance=not_verified`. No Apple query is added.
+
+For the 2026-10-29 audit/correction round, physical-device and production
+behavioral tests are explicitly excluded as completion gates. Their statuses
+remain unverified. CI, preflight, a simulator receipt and EAS upload completion
+each retain their own scope. None establishes Apple processing, installed-device
+or production behavior. Visual screenshot review remains pending.
+
+## Attempt evidence and interrupted writes
+
+The three mutation modes share `cd-ios-production` with cancellation disabled.
+Diagnostic modes use distinct run-and-attempt concurrency keys so they cannot
+replace a pending production writer. GitHub still has one pending member per
+group. This is not a durable FIFO queue and does not lock external publishers,
+master changes or server environment changes.
+
+GitHub reruns of `ota`, `build-only` and `submit` reject when `run_attempt` is
+greater than one, including pre-mutation failures. Diagnostic reruns remain
+allowed. After direct outcome inspection, a fresh dispatch is another operator
+intent even at the same source SHA. No source-only deduplication, automatic
+retry, rollback or recovery mode is implemented.
+
+Every journal event has exactly six keys. Source is a full lowercase SHA, run ID
+is numeric, attempt is a positive integer, and mode, phase and status are finite
+allowlists. A trusted workflow-local early-failure serializer may use null source
+or mode for invalid dispatch inputs. Those values authorize nothing.
+
+```json
+{"sourceSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","runId":"12345","runAttempt":1,"mode":"ota","phase":"ota_publication","status":"unknown"}
+```
+
+The writer validates existing journal identity and atomically replaces the
+complete JSON Lines file. It serializes no free text, provider output, URLs,
+paths, credentials or environment values. Source trust must pass before any
+selected-checkout helper executes, including an `always()` finalizer. A source
+without the new helper fails before release work and gets the trusted fallback;
+tooling is not silently fetched from a different revision. Invalid final journal
+data is replaced by a safe unknown event while finalization still fails.
+
+Before OTA publication, signed build/remote auto-increment, or EAS submission,
+the workflow writes an immutable six-key unknown intent and uploads its exact
+path with the pinned artifact action. Names contain run ID, attempt and phase.
+Default success gating and the mutation shell both require successful intent
+retention. Failed retention permits zero remote mutations. Final journal/outcome
+and successful operation receipts have separate names and never overwrite the
+uploaded intent. Retention remains 14 days. Signed IPA, screenshots, raw EAS
+responses, provider URLs and raw native logs are excluded from artifacts.
+
+A remote command can be accepted before a local failure, lost response or
+invalid output. Its mutation outcome remains unknown. Validated publication
+output records publication passed separately from failed readback. Successful
+EAS wait records upload passed and Apple processing unknown. A selected mode
+or signed-build receipt cannot imply successful upload.
+
+A blocked inventory parser retains its nonzero exit and existing sanitized
+receipt. Earlier auth/JSON failures get an attempt failure with no fabricated
+inventory. Ordinary failures trigger `always()` outcome retention. Hard runner
+loss, forced cancellation, GitHub outage, deletion or expiry can still prevent
+later evidence. A retained pre-write intent then supports only an unknown
+remote outcome. Artifact delivery is not an exactly-once guarantee.
+
+## Failure history and triage
+
+Record run ID, attempt, pinned source, mode and first failing step. A cleanup
+Node deprecation warning does not explain an earlier exit. Compare each gate
+with its own retained evidence before another dispatch.
 
 | Historical failed run | First failed gate in retained job logs | Follow-up evidence |
 | --- | --- | --- |
@@ -87,40 +216,49 @@ artifact or log before dispatching another build.
 | [40474400700](https://github.com/Yupoer/hither_app/actions/runs/40474400700) | Generated privacy categories had the same disclosures in a different order. | PR #337 compares the disclosures while still rejecting changed content; the next run passed this gate. |
 | [40479104034](https://github.com/Yupoer/hither_app/actions/runs/40479104034), [40486179433](https://github.com/Yupoer/hither_app/actions/runs/40486179433), [40538498115](https://github.com/Yupoer/hither_app/actions/runs/40538498115) | The full Release simulator did not reach the startup breadcrumb. | The [last run's sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40538498115/artifacts/12752148731) shows `ProcessLookupError`, no matching crash report, and no runtime log signal. The cause remains unproven. PRs #339 and #340 added diagnostics, not a root-cause fix. |
 | [40696292714](https://github.com/Yupoer/hither_app/actions/runs/40696292714) | The full Release simulator did not reach the startup breadcrumb. | The sanitized diagnostic reports `appProcessState=absent`, `processAlive=false`, and `simulatorState=booted`. Bundle-only system log hints include `jetsam` and `watchdog`; the earlier probe could not attribute either signal to the launched App PID. The cause remains unknown. |
+| [40816052797](https://github.com/Yupoer/hither_app/actions/runs/40816052797), source `57d91e882a0f8fb3e2798c4fe2e5243624b0a0f1` | Source CI and toolchain passed; cold launch failed on attempt 1 before the startup breadcrumb. | The [sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40816052797/artifacts/12873064423) reports original host PID alive at launch, App absent, simulator booted, no matching crash report or runtime signal, empty PID-correlated signals, and bundle-only `jetsam`/`process_exit` hints in a seven-second window. `exitCode=1` belongs to the failed gate command, not the App. Cause remains unknown. |
 
-Latest-source review also found that App startup checks for a production OTA
-and can call `Updates.reloadAsync`, which intentionally restarts the process.
-That is an unproven possibility for this run, alongside OS termination or an
-early native failure. The retained diagnostic does not distinguish them.
+The last run was dispatched separately from this patch. No rerun or guessed
+native fix is part of the contract repair. Future logs contain fixed UTC stage
+markers for preflight, simulator setup, Pods, Xcode build, metadata and cold
+launch. These reveal stage boundaries; they neither diagnose nor fix App loss.
+The env overlay also does not establish a native startup fix.
 
-For a cold-launch failure, read the sanitized diagnostic artifact for that exact
-attempt and compare the process, breadcrumb, crash, and runtime-log fields.
-Do not call `ProcessLookupError` an App crash or a PID-check bug without evidence
-that distinguishes them. The failure artifact also reports whether a process
-whose executable path matches this simulator's installed App has the original
-PID, a replacement PID, or no matching PID, plus simulator state and allowlisted
-system termination signals. `systemTerminationSignals` contains bundle-only
-contextual hints and does not attribute them to the launched App. The separate
-`pidCorrelatedSystemSignals` list requires the exact bundle ID and launched App
-PID in a recognized termination-target form such as `application<bundle>:PID`.
-The signal must occur in the same Apple NDJSON record, with a timestamp inside
-the launch interval or the following one-second log grace period.
-`systemLogWindowSeconds` records that bounded interval. The logging daemon's
-`processID` field is not the App PID. A correlated signal is still an observation,
-not proof of why the App stopped. `unavailable` means the probe failed; an empty
-signal list means no matching evidence was found in that window, not proof of a
-clean exit. These are advisory observations and never turn
-a failed launch into a pass. If a source-equivalent simulator `.app` remains on a
-trusted macOS host, run `apps/mobile/scripts/verify-ios-release-launch.py` against
-that App and simulator to repeat only the two cold starts. GitHub runners do not
-retain that App, so the next cloud check requires `mode=validate-release` with
-the reviewed current `master` SHA and `backend_verified=false`. It rebuilds the
-full Release simulator App, then uploads only a sanitized receipt or failure
-diagnostic; it does not sign an IPA, submit to TestFlight, or publish OTA. Review
-the new evidence before any further native retry. `ota` does not run this
-simulator gate. Select it only when the verified binary record and all changes
-since that binary pass compatibility checks. A successful `submit` still needs
-separate Apple processing and installed-build evidence.
+`ProcessLookupError` alone is not an App crash or PID-probe defect. The sanitized
+probe distinguishes original/replacement/absent matching App executables and
+simulator state. Bundle-only system hints do not attribute termination to the
+App. `pidCorrelatedSystemSignals` requires exact bundle ID and launched PID in a
+recognized termination-target form, in the same Apple NDJSON record and inside
+the launch interval plus one-second grace. The logging daemon's process ID is
+not the App PID. A correlated hint remains an observation rather than a cause.
+An unavailable probe failed; an empty list proves only no matching evidence was
+found. Advisory diagnostics never turn failed launch into success.
 
-The historical `scripts/ota-auto-ship.sh` and `scripts/task-end-ship.sh` are
-retired compatibility stubs. A Git push alone does not publish an update.
+The repair's offline checks are separate evidence. Canonical EAS-shaped CLI
+fixtures reproduce the nested-list crash and exercise strict latest readback.
+SDK-shaped JS behavior tests exercise rollback, races, failures and shared
+flight. Real child commands prove profile precedence. Controlled EAS stubs
+record acceptance before returning errors to prove unknown-write retention.
+These checks do not claim a live publication, signed build or native fix.
+The historical `ota-auto-ship.sh` and `task-end-ship.sh` remain retired stubs.
+
+## Remaining proposals
+
+These need their own design and evidence.
+
+- Observe selected JavaScript identity through public Expo identity or a bounded
+  read-only SDK database observation while preserving startup and adding no
+  required native API.
+- Define immutable native/runtime cohorts or reviewed fingerprints and runtime
+  rotation. A comparison baseline does not attest a binary's source.
+- Attest reviewed public configuration separately from secret server values,
+  native capabilities and backend state. Do not hash the complete environment.
+- Separate workflow/tooling revision from selected App source explicitly if
+  historical source reproduction expands.
+- Design exact signed-IPA reuse and verify-only reconciliation around an earlier
+  run/attempt and validated remote IDs. Do not republish automatically or infer
+  absence from the latest source-matching group.
+- Add exact-build Apple processing observation only with separately authorized
+  access. Keep processing unknown and device status unverified until observed.
+- Define durable queue and external-publisher coordination if required. The
+  current concurrency group and attempt journal provide neither.
