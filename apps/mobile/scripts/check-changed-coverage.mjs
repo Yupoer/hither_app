@@ -198,7 +198,7 @@ function main() {
     'jest',
     '--runInBand',
     '--silent',
-    '--forceExit',
+    ...(!fullNodeTests ? ['--forceExit'] : []),
     '--coverage',
     '--coverageDirectory',
     coverageDir,

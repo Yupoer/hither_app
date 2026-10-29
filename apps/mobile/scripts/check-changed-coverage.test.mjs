@@ -109,7 +109,7 @@ test('runs the full node suite exactly once in CI with or without eligible sourc
     assert.equal(args[0], 'jest');
     assert.equal(args.includes('--coverage'), files[0] !== 'README.md');
     assert.equal(args.includes('--runInBand'), files[0] !== 'README.md');
-    assert.equal(args.includes('--forceExit'), files[0] !== 'README.md');
+    assert.equal(args.includes('--forceExit'), false);
     assert.equal(args.includes('--silent'), files[0] !== 'README.md');
     assert.ok(args.includes('--json'));
     assert.ok(args.includes('--outputFile=test-artifacts/node-jest.raw.json'));
