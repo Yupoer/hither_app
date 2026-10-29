@@ -193,7 +193,6 @@ function main() {
     return code;
   };
 
-  // Keep the existing serial coverage policy; empty CI scope uses ordinary Jest workers.
   const args = changed.length ? [
     'jest',
     '--runInBand',
