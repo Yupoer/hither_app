@@ -1,5 +1,7 @@
 import hashlib
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from datetime import datetime, timezone
@@ -24,6 +26,71 @@ VERIFY_SPEC.loader.exec_module(VERIFY)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def run_replay_boundary(self, eligible=True, child_exit=0, malformed=False, helper_error=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mobile = root / 'mobile'
+            (mobile / 'scripts').mkdir(parents=True)
+            output = root / 'launch'
+            output.mkdir()
+            original = output / 'launch-result.json'
+            original.write_text(json.dumps({'passed': False, 'eligible': eligible, 'build': '77',
+                                             'private': 'original private sentinel'}))
+            before = original.read_bytes()
+            helper = mobile / 'scripts/ios_launch_debugger.py'
+            helper.write_text(
+                'import json, pathlib, sys\n'
+                'def eligible_failure(payload, build=None):\n'
+                ' return payload.get("eligible") is True and payload.get("build") == build\n'
+                'def safe_result(payload):\n'
+                + (' raise RuntimeError("private summary error")\n' if helper_error else
+                   ' return {key: payload[key] for key in ("scope", "probe", "stopReason", "signal", "frames") if key in payload}\n') +
+                'if __name__ == "__main__":\n'
+                ' args = sys.argv[1:]\n'
+                ' output = pathlib.Path(args[args.index("--output") + 1])\n'
+                ' output.mkdir(exist_ok=False)\n'
+                ' (output / "argv.json").write_text(json.dumps(args))\n'
+                ' print("private debugger sentinel")\n'
+                + (' (output / "replay-result.json").write_text("not-json")\n' if malformed else
+                   ' (output / "replay-result.json").write_text(json.dumps({"scope":"diagnostic_replay", "probe":"stopped", "stopReason":"signal", "signal":5, "frames":[], "private":"private debugger sentinel"}))\n')
+                + f' sys.exit({child_exit})\n')
+            with patch.object(GATE, 'MOBILE', mobile), contextlib.redirect_stdout(io.StringIO()) as public:
+                result = GATE.collect_failure_replay(root / 'Hither.app', 'target-simulator', '77', output)
+            self.assertEqual(original.read_bytes(), before)
+            self.assertNotIn('private', json.dumps(result) + public.getvalue())
+            replay = output / 'diagnostic-replay'
+            args = json.loads((replay / 'argv.json').read_text()) if replay.exists() else None
+            local_log = (output / 'debugger-replay-run.log').read_text() if (output / 'debugger-replay-run.log').exists() else ''
+            return result, args, local_log
+
+    def test_debugger_replay_cannot_replace_original_failure_and_keeps_raw_output_local(self):
+        for child_exit in (0, 17):
+            with self.subTest(child_exit=child_exit):
+                result, args, local_log = self.run_replay_boundary(child_exit=child_exit)
+                self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'stopped',
+                                          'stopReason': 'signal', 'signal': 5, 'frames': []})
+                self.assertEqual(args[0], 'replay')
+                self.assertEqual(args[args.index('--simulator') + 1], 'target-simulator')
+                self.assertEqual(args[args.index('--build') + 1], '77')
+                self.assertTrue(args[args.index('--original-result') + 1].endswith('/launch-result.json'))
+                self.assertIn('private debugger sentinel', local_log)
+                self.assertNotIn('passed', result)
+
+    def test_ineligible_launch_failure_does_not_run_debugger_replay(self):
+        result, args, local_log = self.run_replay_boundary(eligible=False)
+        self.assertIsNone(result)
+        self.assertIsNone(args)
+        self.assertEqual(local_log, '')
+
+    def test_malformed_debugger_summary_preserves_original_failure(self):
+        result, args, _ = self.run_replay_boundary(malformed=True)
+        self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'unavailable'})
+        self.assertIsNotNone(args)
+
+    def test_unexpected_diagnostic_error_preserves_original_failure(self):
+        result, _, _ = self.run_replay_boundary(helper_error=True)
+        self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'unavailable'})
+
     def test_exit_observer_attributes_only_registered_executable_and_kernel_status(self):
         api = SimpleNamespace(KQ_FILTER_PROC=-5, KQ_EV_ADD=1, KQ_EV_ONESHOT=16,
                               KQ_EV_ERROR=0x4000, KQ_NOTE_EXIT=0x80000000,
@@ -176,6 +243,7 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             ('missing_stdout', '', '--stderr=<path>', 0, False),
             ('missing_stderr', '--stdout=<path>', '', 0, False),
             ('command_failed', '--stdout=<path>', '--stderr=<path>', 17, False),
+            ('debugger_failed', '--stdout=<path> --stderr=<path>', '', 0, True),
         )
         for case_name, help_stdout, help_stderr, help_exit, observer_expected in cases:
             with self.subTest(case=case_name), tempfile.TemporaryDirectory() as directory:
@@ -204,9 +272,14 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                                        f"sys.exit({exit_code})\n")
                     command.chmod(0o755)
                 helper = mobile / "scripts/verify-ios-release-launch.py"
+                observer_exit = 0 if case_name == 'debugger_failed' else 7
                 helper.write_text("import os,pathlib,sys\n"
                                   "pathlib.Path(os.environ['RUNNER_TEMP'],'self-check-ran').touch()\n"
-                                  "print('private console sentinel')\nsys.exit(7)\n")
+                                  f"print('private console sentinel')\nsys.exit({observer_exit})\n")
+                (mobile / 'scripts/ios_launch_debugger.py').write_text(
+                    "import os,pathlib,sys\n"
+                    "pathlib.Path(os.environ['RUNNER_TEMP'],'debugger-check-ran').touch()\n"
+                    "print('private console sentinel')\nsys.exit(11)\n")
                 result = subprocess.run((sys.executable, str(script), "--source-sha", "a" * 40,
                                          "--receipt", str(root / "receipt.json")), capture_output=True,
                                         text=True, env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
@@ -218,8 +291,10 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 diagnostic = json.loads((root / "hither-release-launch-diagnostic.json").read_text())
                 self.assertEqual(diagnostic["stage"], "runner_preflight")
                 self.assertEqual((root / "self-check-ran").exists(), observer_expected)
+                self.assertEqual((root / 'debugger-check-ran').exists(),
+                                 observer_expected and observer_exit == 0)
                 if observer_expected:
-                    self.assertEqual(diagnostic["commandExitCode"], 7)
+                    self.assertEqual(diagnostic["commandExitCode"], 11 if observer_exit == 0 else observer_exit)
                     self.assertNotIn("exitCode", diagnostic)
                     self.assertNotIn("appExitCode", diagnostic)
                 elif help_exit:
@@ -585,6 +660,27 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 "private user information; Library not loaded; uncaught exception"),
                 ["dyld_failure", "uncaught_exception"])
 
+    def test_matching_crash_stack_retains_static_image_identity_without_raw_values(self):
+        report = {'pid': 123, 'procName': 'Hither',
+                  'bundleInfo': {'CFBundleIdentifier': 'app.hither.mobile'},
+                  'faultingThread': 0,
+                  'usedImages': [{'path': '/private/runner/Hither.app/Hither',
+                                  'uuid': '01234567-89ab-cdef-0123-456789abcdef'}],
+                  'threads': [{'frames': [
+                      {'imageIndex': 0, 'imageOffset': 42, 'symbol': 'AppContext.prepareUIRuntime()',
+                       'variables': 'private runtime value'},
+                      {'imageIndex': 0, 'imageOffset': 43, 'symbol': 'f(token="private")'},
+                      {'imageIndex': 0, 'imageOffset': True, 'symbol': 'private'},
+                  ]}]}
+        safe = GATE.safe_launch_diagnostic(VERIFY.crash_report_summary(report, 123, 'Hither', 'app.hither.mobile'))
+        self.assertEqual(safe['crashFrames'], [
+            {'module': 'Hither', 'uuid': '01234567-89AB-CDEF-0123-456789ABCDEF',
+             'imageOffset': 42, 'function': 'AppContext.prepareUIRuntime()'},
+            {'module': 'Hither', 'uuid': '01234567-89AB-CDEF-0123-456789ABCDEF', 'imageOffset': 43},
+        ])
+        self.assertNotIn('private', json.dumps(safe))
+        self.assertIsNone(VERIFY.crash_report_summary(report, 456, 'Hither', 'app.hither.mobile'))
+
     def test_runner_writes_sanitized_diagnostic_on_preflight_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(("python3", str(SCRIPT), "--source-sha", "invalid",
@@ -724,6 +820,12 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 GATE.receipt_from_launch("a" * 40, "0.1.13", "77", runtime,
                                          "fdb9d41f-c394-4a0b-841a-4e4cbf2c4bdb", result, output)
+
+
+def load_tests(loader, tests, pattern):
+    if pattern is None:
+        tests.addTests(loader.discover(str(SCRIPT.parent), pattern='test_ios_launch_debugger.py'))
+    return tests
 
 
 if __name__ == "__main__":

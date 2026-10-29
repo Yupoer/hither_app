@@ -75,4 +75,13 @@ generation 無法確認時保留未知。`commandExitCode` 是 verifier 子指�
 
 完整 runner 在唯一一次 App build 前，會檢查 Xcode 的 console flags，並以小型
 host 子程序驗證 exit 37 與 SIGTERM 觀測。此自測不代表 App 通過冷啟動。
-原始失敗仍使 gate 失敗，不會因診斷或自測成功改判，也不自動重建或重新 launch。
+原始失敗仍使 gate 失敗，不會因診斷或自測成功改判，也不自動重建。
+
+對已確認的原 PID SIGTRAP、App 已不存在且沒有匹配 crash report 的失敗，wrapper
+會在保存原始結果後，使用同一份已安裝 binary 最多加一次限時 LLDB 診斷 launch。
+此 replay 不計入兩次冷啟動驗收；其成功或工具失敗都不能覆蓋原 gate 失敗。
+完整 App build 前會先用小型 host trap fixture 驗證 debugger 能取得命名 frame。
+若 LLDB cleanup 回報失敗，會保留已取得的 frames 並標記 `cleanupFailed`，
+診斷指令與 build 前自測仍判失敗。
+只把有限的靜態 module／UUID／offset／function 欄位放入診斷 artifact，原始
+debugger 輸出留在 runner。相同 native binary 仍不保證選到相同 OTA bundle。

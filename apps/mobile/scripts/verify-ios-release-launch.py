@@ -75,6 +75,31 @@ def crash_report_summary(report, pid, executable, bundle):
                     modules.append(name)
         return modules
 
+    def frame_evidence(frames):
+        if not isinstance(frames, list):
+            return []
+        evidence = []
+        for frame in frames[:16]:
+            if not isinstance(frame, dict):
+                continue
+            index, offset = frame.get('imageIndex'), frame.get('imageOffset')
+            if (type(index) is not int or not 0 <= index < len(images)
+                    or type(offset) is not int or not 0 <= offset < 2**64):
+                continue
+            image = images[index]
+            if not isinstance(image, dict):
+                continue
+            name, identifier = image.get('name') or image.get('path'), image.get('uuid')
+            if (not isinstance(name, str) or not isinstance(identifier, str)
+                    or len(identifier) > 128):
+                continue
+            item = {'module': Path(name).name, 'uuid': identifier, 'imageOffset': offset}
+            symbol = frame.get('symbol')
+            if isinstance(symbol, str) and len(symbol) <= 240:
+                item['function'] = symbol
+            evidence.append(item)
+        return evidence
+
     threads = report.get('threads', [])
     index = report.get('faultingThread')
     if (type(index) is int and isinstance(threads, list)
@@ -83,6 +108,9 @@ def crash_report_summary(report, pid, executable, bundle):
         if modules:
             summary['faultingModule'] = modules[0]
             summary['faultingModules'] = modules
+        frames = frame_evidence(threads[index].get('frames'))
+        if frames:
+            summary['crashFrames'] = frames
     modules = frame_modules(report.get('lastExceptionBacktrace'))
     if modules:
         summary['lastExceptionModules'] = modules

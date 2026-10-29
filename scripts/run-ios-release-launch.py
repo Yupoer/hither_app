@@ -4,6 +4,7 @@
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -208,6 +209,15 @@ def safe_launch_diagnostic(payload):
     for key in ("processAlive", "hostPidAliveAtLaunch", "crashReportFound"):
         if type(payload.get(key)) is bool:
             safe[key] = payload[key]
+    if payload.get("crashReportFound") is True and isinstance(payload.get("crashFrames"), list):
+        try:
+            frames = load_debugger_helper().safe_result({
+                "scope": "diagnostic_replay", "probe": "stopped", "frames": payload["crashFrames"],
+            }).get("frames")
+            if frames:
+                safe["crashFrames"] = frames
+        except Exception:
+            pass
     if safe.get("processExitProbe") == "observed":
         during = payload.get("appExitObservedDuring")
         if isinstance(during, str) and during in {"launch_observation", "failure_collection"}:
@@ -271,6 +281,49 @@ def safe_launch_diagnostic(payload):
     return safe
 
 
+def load_debugger_helper():
+    path = MOBILE / "scripts/ios_launch_debugger.py"
+    spec = importlib.util.spec_from_file_location("hither_launch_debugger", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def read_debugger_summary(path, helper=None):
+    unavailable = {"scope": "diagnostic_replay", "probe": "unavailable"}
+    try:
+        if path.stat().st_size > 65536:
+            return unavailable
+        helper = helper or load_debugger_helper()
+        return helper.safe_result(json.loads(path.read_text(encoding="utf-8"))) or unavailable
+    except Exception:
+        return unavailable
+
+
+def collect_failure_replay(app, simulator, build, output):
+    unavailable = {"scope": "diagnostic_replay", "probe": "unavailable"}
+    try:
+        original = output / "launch-result.json"
+        if original.stat().st_size > 65536:
+            return unavailable
+        payload = json.loads(original.read_text(encoding="utf-8"))
+        helper = load_debugger_helper()
+        if not helper.eligible_failure(payload, build):
+            return None
+        replay = output / "diagnostic-replay"
+        print("hither-ios-release-diagnostic=replay", flush=True)
+        try:
+            run(sys.executable, str(MOBILE / "scripts/ios_launch_debugger.py"), "replay",
+                "--app", str(app), "--simulator", simulator, "--build", build,
+                "--original-result", str(original), "--output", str(replay),
+                timeout=120, output=output / "debugger-replay-run.log")
+        except (OSError, ReleaseCommandFailure, subprocess.TimeoutExpired):
+            pass
+        return read_debugger_summary(replay / "replay-result.json", helper)
+    except Exception:
+        return unavailable
+
+
 def main(diagnostic):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-sha", required=True)
@@ -301,6 +354,14 @@ def main(diagnostic):
         raise RuntimeError("simctl launch must support stdout/stderr capture")
     run(sys.executable, str(MOBILE / "scripts/verify-ios-release-launch.py"),
         "--check-exit-observer", timeout=20)
+    debugger_check = runner_temp / "hither-debugger-check"
+    try:
+        run(sys.executable, str(MOBILE / "scripts/ios_launch_debugger.py"), "check",
+            "--output", str(debugger_check), timeout=120,
+            output=runner_temp / "hither-debugger-check.log")
+    except (ReleaseCommandFailure, subprocess.TimeoutExpired):
+        diagnostic["debuggerCheck"] = read_debugger_summary(debugger_check / "replay-result.json")
+        raise
     runtime = select_ios_27_runtime(json.loads(run("xcrun", "simctl", "list", "runtimes", "--json")))
     app_config = json.loads((MOBILE / "app.json").read_text(encoding="utf-8"))["expo"]
     output = runner_temp / "hither-release-launch"
@@ -349,10 +410,16 @@ def main(diagnostic):
         raise ValueError("Release simulator app does not embed the production update channel")
     build = str(info["CFBundleVersion"])
     mark_stage(diagnostic, "cold_launch")
-    run(sys.executable, str(MOBILE / "scripts/verify-ios-release-launch.py"),
-        "--app", str(app), "--simulator", simulator, "--build", build,
-        "--output", str(output), cwd=MOBILE, timeout=300,
-        output=output / "cold-launch-run.log")
+    try:
+        run(sys.executable, str(MOBILE / "scripts/verify-ios-release-launch.py"),
+            "--app", str(app), "--simulator", simulator, "--build", build,
+            "--output", str(output), cwd=MOBILE, timeout=300,
+            output=output / "cold-launch-run.log")
+    except ReleaseCommandFailure:
+        replay = collect_failure_replay(app, simulator, build, output)
+        if replay is not None:
+            diagnostic["diagnosticReplay"] = replay
+        raise
     launch = json.loads((output / "launch-result.json").read_text(encoding="utf-8"))
     mark_stage(diagnostic, "launch_receipt")
     data = receipt_from_launch(args.source_sha, app_config["version"], build,
