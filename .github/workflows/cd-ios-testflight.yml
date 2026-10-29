@@ -110,6 +110,7 @@ jobs:
             --updates "$RUNNER_TEMP/hither-ios-updates.json" \
             "${view_args[@]}" \
             --receipt "$RUNNER_TEMP/hither-ios-inventory.json"
+          test -s "$RUNNER_TEMP/hither-ios-inventory.json"
           python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase inventory --status passed
       - name: Summarize sanitized inventory receipt
         if: always()
