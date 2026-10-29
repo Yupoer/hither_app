@@ -24,7 +24,6 @@ import type { Membership } from './SessionContext';
 import { displayMemberAvatar } from '../constants/avatars';
 import {
   getGoogleAuthCredentials,
-  getGoogleIdToken,
   usesNativeGoogleSignIn,
 } from './googleSignIn';
 import type { GoogleAuthCredentials } from './googleSignInTypes';
@@ -115,17 +114,6 @@ function withGoogleStageTimeout<T>(
       },
     );
   });
-}
-
-async function readGoogleCredentials(): Promise<GoogleAuthCredentials | null> {
-  // The undefined branch keeps older Jest/native mocks compatible while the
-  // platform adapter rolls out the ID-token + access-token response shape.
-  const credentials = typeof getGoogleAuthCredentials === 'function'
-    ? await getGoogleAuthCredentials()
-    : undefined;
-  if (credentials !== undefined) return credentials;
-  const idToken = await getGoogleIdToken();
-  return idToken ? { idToken, accessToken: null, nonce: null } : null;
 }
 
 function googleTokenCredentials(credentials: GoogleAuthCredentials) {
@@ -225,7 +213,7 @@ export function useAuthFlow({
     async (nickname?: string): Promise<User | null> => {
       let authUser: SupabaseAuthUser | null = null;
       try {
-        const credentials = await readGoogleCredentials();
+        const credentials = await getGoogleAuthCredentials();
         if (!credentials) return null;
         console.log('[auth][google] token_exchange_started', {
           hasIdToken: Boolean(credentials.idToken),
@@ -384,7 +372,7 @@ export function useAuthFlow({
     let authUser: SupabaseAuthUser | null = null;
     let useHostedFallback = false;
     try {
-      const credentials = await readGoogleCredentials();
+      const credentials = await getGoogleAuthCredentials();
       if (!credentials) return null;
       const { idToken: token, accessToken } = credentials;
       const linked = await supabase.auth.linkIdentity({

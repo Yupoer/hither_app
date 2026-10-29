@@ -18,7 +18,6 @@ const mockUpsert = jest.fn();
 const mockMaybeSingle = jest.fn();
 const mockUpdateNickname = jest.fn();
 const mockUpdateProfile = jest.fn();
-const mockGetGoogleIdToken = jest.fn();
 const mockGetGoogleAuthCredentials = jest.fn();
 let mockUsesNativeGoogle = true;
 
@@ -52,7 +51,6 @@ jest.mock('../api/client', () => ({
   },
 }));
 jest.mock('../state/googleSignIn', () => ({
-  getGoogleIdToken: (...args: unknown[]) => mockGetGoogleIdToken(...args),
   getGoogleAuthCredentials: (...args: unknown[]) => mockGetGoogleAuthCredentials(...args),
   get usesNativeGoogleSignIn() { return mockUsesNativeGoogle; },
 }));
@@ -116,7 +114,9 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     mockUpsert.mockResolvedValue({ error: null });
     mockUpdateNickname.mockResolvedValue('Ada');
     mockUpdateProfile.mockResolvedValue(undefined);
-    mockGetGoogleIdToken.mockResolvedValue('google-id-token');
+    mockGetGoogleAuthCredentials.mockResolvedValue({
+      idToken: 'google-id-token', accessToken: null, nonce: null,
+    });
     mockGetUser.mockResolvedValue({ data: { user: { is_anonymous: false } } });
     mockUpdateUser.mockResolvedValue({ error: null });
   });
@@ -248,6 +248,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     mockGetGoogleAuthCredentials.mockResolvedValueOnce({
       idToken: 'google-id-token',
       accessToken: 'google-access-token',
+      nonce: null,
     });
     mockSignInWithIdToken.mockResolvedValueOnce({
       data: {
@@ -382,13 +383,13 @@ describe('useAuthFlow deleteAccount and signOut', () => {
   });
 
   it('returns null when native Google account selection is cancelled', async () => {
-    mockGetGoogleIdToken.mockResolvedValueOnce(null);
+    mockGetGoogleAuthCredentials.mockResolvedValueOnce(null);
     await expect(makeFlow().signInWithGoogle()).resolves.toBeNull();
     expect(mockSignInWithIdToken).not.toHaveBeenCalled();
   });
 
   it('does not fall back to the hosted project prompt on iOS native failure', async () => {
-    mockGetGoogleIdToken.mockRejectedValueOnce({
+    mockGetGoogleAuthCredentials.mockRejectedValueOnce({
       code: 'google_native_unavailable',
       message: 'native module missing',
     });
