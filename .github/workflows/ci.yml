@@ -57,7 +57,7 @@ jobs:
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
-          node --test apps/mobile/scripts/check-changed-coverage.test.mjs scripts/ci-shadow-plan.test.mjs
+          node --test apps/mobile/scripts/check-changed-coverage.test.mjs scripts/ci-shadow-plan.test.mjs scripts/check-release-ci.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
