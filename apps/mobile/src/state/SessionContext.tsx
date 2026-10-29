@@ -235,8 +235,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     let restoreFlight: Promise<void> | null = null;
     let retryAttempt = 0;
     let terminal = false;
-    let recovery: ReturnType<typeof getDefaultAuthRecovery> | null = null;
-    try { recovery = getDefaultAuthRecovery(); } catch { /* Isolated test client. */ }
+    const recovery = getDefaultAuthRecovery();
 
     const clearIdentity = () => {
       if (terminal) return;
@@ -464,17 +463,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       const epoch = authEpoch;
       const flight = Promise.resolve().then(async () => {
         try {
-          const local = recovery
-            ? await recovery.getLocalSession()
-            : await supabase.auth.getSession().then(({ data, error }) => {
-              if (error) throw error;
-              return data.session;
-            });
+          const local = await recovery.getLocalSession();
           if (!active || terminal || epoch !== authEpoch) return;
           if (!local?.user?.id) { finishInitialization(); return; }
           // hydrate seeds identity synchronously, then enriches independently.
           void hydrate(local.user as Parameters<typeof hydrate>[0], epoch).catch(() => undefined);
-          const refreshed = recovery ? await recovery.getSession({ forceRefresh: true }) : local;
+          const refreshed = await recovery.getSession({ forceRefresh: true });
           if (!active || terminal || epoch !== authEpoch) return;
           retryAttempt = 0;
           if (refreshed.user?.id) deferHydration(refreshed.user as Parameters<typeof hydrate>[0]);
@@ -495,7 +489,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       void flight.finally(() => { if (restoreFlight === flight) restoreFlight = null; });
       return flight;
     };
-    const unsubscribeTerminal = recovery?.subscribeTerminal(clearIdentity);
+    const unsubscribeTerminal = recovery.subscribeTerminal(clearIdentity);
     // Startup already owns the first foreground refresh. The lifecycle's
     // deferred initial callback must not rotate a second time after it finishes.
     let skipInitialForeground = AppState.currentState === 'active';
@@ -518,7 +512,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (retryTimer) clearTimeout(retryTimer);
       if (autoRefreshRestartTimer) clearTimeout(autoRefreshRestartTimer);
       stopLifecycle();
-      unsubscribeTerminal?.();
+      unsubscribeTerminal();
       sub.subscription.unsubscribe();
       urlSub.remove();
     };

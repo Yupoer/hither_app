@@ -40,6 +40,7 @@ jest.mock('../api/services/DailyAccommodationService', () => ({
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import {
   createGroup,
   getCachedMyJoinedGroups,
@@ -105,6 +106,10 @@ beforeEach(() => {
   storage.setItem.mockResolvedValue(undefined);
   mockedSupabase.auth.getSession.mockResolvedValue({
     data: { session: { access_token: 'token', user: { id: 'user-1' } } }, error: null,
+  });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedSupabase.auth.getSession(),
+    refreshSession: () => mockedSupabase.auth.getSession(),
   });
   mockedSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null });
   mockedSupabase.rpc.mockResolvedValue({ data: null, error: null });

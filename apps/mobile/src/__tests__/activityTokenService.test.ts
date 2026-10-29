@@ -36,7 +36,7 @@ jest.mock('../api/supabase', () => ({
   supabase: {
     auth: {
       getSession: jest.fn(async () => ({
-        data: { session: { user: { id: 'user-1' } } },
+        data: { session: { access_token: 'fixture-token', user: { id: 'user-1' } } },
         error: null,
       })),
     },
@@ -52,6 +52,8 @@ jest.mock('expo-crypto', () => ({
 }));
 
 import * as SecureStore from 'expo-secure-store';
+import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import {
   getOrCreateLiveActivityDeviceId,
   upsertDeviceActivityToken,
@@ -62,6 +64,10 @@ describe('device ActivityKit token service', () => {
     jest.clearAllMocks();
     upsert.mockResolvedValue({ error: null });
     selectLimit.mockResolvedValue({ data: [], error: null });
+    configureDefaultAuthRecovery({
+      getSession: () => jest.mocked(supabase.auth.getSession)(),
+      refreshSession: () => jest.mocked(supabase.auth.getSession)(),
+    });
   });
 
   it('creates and persists one stable device id', async () => {

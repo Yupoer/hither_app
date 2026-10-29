@@ -29,6 +29,7 @@ import {
 import { joinGroup } from '../api/services/GroupService';
 import { addDestination } from '../api/services/DestinationService';
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 
 jest.mock('../api/supabase', () => ({
   supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getSession: jest.fn() } },
@@ -53,8 +54,12 @@ beforeEach(() => {
   // Reset Edge Function stub so RPC-only tests are not polluted.
   delete (supabase as { functions?: unknown }).functions;
   mockedAuth.getSession.mockResolvedValue({
-    data: { session: { user: { id: 'uid' } } },
+    data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
     error: null,
+  });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedAuth.getSession(),
+    refreshSession: () => mockedAuth.getSession(),
   });
 });
 

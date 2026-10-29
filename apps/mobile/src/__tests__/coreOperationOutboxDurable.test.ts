@@ -25,6 +25,7 @@ import {
 import { projectPendingDestinations } from '../state/coreDataSync';
 import { applyCoreOperation } from '../api/services/CoreDataService';
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import { insertFirstStop } from '../utils/firstStopInsertion';
 
 const mockedSupabase = supabase as unknown as {
@@ -399,6 +400,10 @@ describe('durable core operation outbox', () => {
       { code: 'session_missing_or_expired', status: 401 },
     );
     mockedSupabase.auth.getSession.mockRejectedValue(sessionError);
+    configureDefaultAuthRecovery({
+      getSession: () => mockedSupabase.auth.getSession(),
+      refreshSession: () => mockedSupabase.auth.getSession(),
+    });
     const operation = {
       id: 'service-session-op',
       actorId: 'actor-a',

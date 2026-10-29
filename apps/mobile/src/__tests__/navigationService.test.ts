@@ -4,7 +4,7 @@ jest.mock('../api/supabase', () => ({
     from: jest.fn(),
     auth: {
       getSession: jest.fn().mockResolvedValue({
-        data: { session: { user: { id: 'user-1' } } },
+        data: { session: { access_token: 'fixture-token', user: { id: 'user-1' } } },
         error: null,
       }),
     },
@@ -12,6 +12,7 @@ jest.mock('../api/supabase', () => ({
 }));
 
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import {
   ackNavigationSession,
   cancelNavigationSession,
@@ -36,7 +37,13 @@ const sessionRow = {
 };
 
 describe('NavigationService', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    configureDefaultAuthRecovery({
+      getSession: () => jest.mocked(supabase.auth.getSession)(),
+      refreshSession: () => jest.mocked(supabase.auth.getSession)(),
+    });
+  });
 
   it('starts an idempotent session and maps the database row', async () => {
     jest.mocked(supabase.rpc).mockResolvedValueOnce({

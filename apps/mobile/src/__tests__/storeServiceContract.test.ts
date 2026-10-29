@@ -21,6 +21,7 @@ import {
   shouldBlockNewDestination,
 } from '../entitlements';
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 
 jest.mock('../api/supabase', () => ({
   supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getSession: jest.fn() } },
@@ -42,8 +43,12 @@ const storeReview01Migration = readFileSync(
 beforeEach(() => {
   jest.clearAllMocks();
   mockedAuth.getSession.mockResolvedValue({
-    data: { session: { user: { id: 'uid' } } },
+    data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
     error: null,
+  });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedAuth.getSession(),
+    refreshSession: () => mockedAuth.getSession(),
   });
 });
 
