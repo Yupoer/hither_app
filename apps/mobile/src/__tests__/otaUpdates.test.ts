@@ -19,12 +19,14 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import * as Updates from 'expo-updates';
 import {
   __setOtaUsableForTests,
   applyOtaUpdate,
   applyOtaUpdateIfAvailable,
   consumeOtaAppliedNotice,
+  currentOtaLaunchId,
   isOtaApplyInFlight,
   OTA_LAST_UPDATE_ID_KEY,
   shouldShowOtaAppliedToast,
@@ -36,10 +38,30 @@ const fetchUpdateAsync = Updates.fetchUpdateAsync as jest.Mock;
 const reloadAsync = Updates.reloadAsync as jest.Mock;
 const getItem = AsyncStorage.getItem as jest.Mock;
 const setItem = AsyncStorage.setItem as jest.Mock;
+const rollbackCheck: Updates.UpdateCheckResult = {
+  isAvailable: false,
+  isRollBackToEmbedded: true,
+  manifest: undefined,
+  reason: undefined,
+};
+const rollbackFetch: Updates.UpdateFetchResult = {
+  isNew: false,
+  isRollBackToEmbedded: true,
+  manifest: undefined,
+};
 
 describe('otaUpdates', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    checkForUpdateAsync.mockReset().mockResolvedValue({
+      isAvailable: false,
+      isRollBackToEmbedded: false,
+    });
+    fetchUpdateAsync.mockReset().mockResolvedValue({
+      isNew: false,
+      isRollBackToEmbedded: false,
+    });
+    reloadAsync.mockReset().mockResolvedValue(undefined);
     __setOtaUsableForTests(null);
   });
 
@@ -128,6 +150,100 @@ describe('otaUpdates', () => {
     expect(autoOut.reloading).toBe(true);
     expect(reloadAsync).toHaveBeenCalledTimes(1);
   });
+
+  it.each([false, true])('applies SDK rollback from check for manual=%s', async (manual) => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockResolvedValue(rollbackCheck);
+    fetchUpdateAsync.mockResolvedValue(rollbackFetch);
+    await expect(applyOtaUpdate({ manual })).resolves.toEqual({
+      status: 'reloading', reloading: true,
+    });
+    expect(fetchUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies rollback arriving during fetch after an available update check', async () => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockResolvedValue({ isAvailable: true, isRollBackToEmbedded: false });
+    fetchUpdateAsync.mockResolvedValue(rollbackFetch);
+    await expect(applyOtaUpdateIfAvailable()).resolves.toBe(true);
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one rollback fetch and reload across automatic and manual callers', async () => {
+    __setOtaUsableForTests(true);
+    let resolveCheck!: (value: Updates.UpdateCheckResult) => void;
+    checkForUpdateAsync.mockImplementation(() => new Promise((resolve) => { resolveCheck = resolve; }));
+    fetchUpdateAsync.mockResolvedValue(rollbackFetch);
+    const automatic = applyOtaUpdate();
+    const manual = applyOtaUpdate({ manual: true });
+    resolveCheck(rollbackCheck);
+    const results = await Promise.all([automatic, manual]);
+    expect(results).toEqual([
+      { status: 'reloading', reloading: true }, { status: 'reloading', reloading: true },
+    ]);
+    expect(checkForUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(fetchUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
+    expect(isOtaApplyInFlight()).toBe(false);
+  });
+
+  it('does not reload when a rollback check fetches neither a bundle nor a directive', async () => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockResolvedValue(rollbackCheck);
+    await expect(applyOtaUpdate()).resolves.toMatchObject({ status: 'no_update' });
+    expect(fetchUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('reloads a known pending manual update when fetch has no new directive', async () => {
+    __setOtaUsableForTests(true);
+    await expect(applyOtaUpdate({ manual: true, skipCheck: true })).resolves.toMatchObject({ status: 'reloading' });
+    expect(checkForUpdateAsync).not.toHaveBeenCalled();
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('preserves rollback fetch failure behavior for manual=%s', async (manual) => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockResolvedValue(rollbackCheck);
+    fetchUpdateAsync.mockRejectedValue(new Error('fetch unavailable'));
+    await expect(applyOtaUpdate({ manual })).resolves.toMatchObject({ status: manual ? 'fetch_failed' : 'no_update' });
+    expect(reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('preserves rollback reload failure behavior for manual=%s', async (manual) => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockResolvedValue(rollbackCheck);
+    fetchUpdateAsync.mockResolvedValue(rollbackFetch);
+    reloadAsync.mockRejectedValue(new Error('reload unavailable'));
+    await expect(applyOtaUpdate({ manual })).resolves.toMatchObject({ status: manual ? 'reload_failed' : 'no_update' });
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('preserves check failure behavior for manual=%s', async (manual) => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockRejectedValue(new Error('check unavailable'));
+    fetchUpdateAsync.mockResolvedValue(rollbackFetch);
+    await expect(applyOtaUpdate({ manual })).resolves.toMatchObject({ status: manual ? 'reloading' : 'no_update' });
+    expect(fetchUpdateAsync).toHaveBeenCalledTimes(manual ? 1 : 0);
+  });
+
+  it('checks rollback on boot and foreground through the shared lifecycle', async () => {
+    __setOtaUsableForTests(true);
+    checkForUpdateAsync.mockResolvedValue(rollbackCheck);
+    fetchUpdateAsync.mockResolvedValue(rollbackFetch);
+    const stop = startOtaUpdateBootstrap();
+    await applyOtaUpdate();
+    const listener = (AppState.addEventListener as jest.Mock).mock.calls.at(-1)[1];
+    listener('background');
+    expect(checkForUpdateAsync).toHaveBeenCalledTimes(1);
+    listener('active');
+    await applyOtaUpdate();
+    expect(checkForUpdateAsync).toHaveBeenCalledTimes(2);
+    expect(reloadAsync).toHaveBeenCalledTimes(2);
+    stop();
+    stop();
+  });
 });
 
 describe('shouldShowOtaAppliedToast', () => {
@@ -190,5 +306,22 @@ describe('consumeOtaAppliedNotice', () => {
     getItem.mockResolvedValue(null);
     await expect(consumeOtaAppliedNotice()).resolves.toBe(false);
     expect(setItem).toHaveBeenCalledWith(OTA_LAST_UPDATE_ID_KEY, 'new-update-id');
+  });
+
+  it('keeps embedded rollback launches silent and persists the embedded identity', async () => {
+    const embedded = jest.replaceProperty(Updates, 'isEmbeddedLaunch', true);
+    try {
+      getItem.mockResolvedValue('old-id');
+      expect(currentOtaLaunchId()).toBe('embedded');
+      await expect(consumeOtaAppliedNotice()).resolves.toBe(false);
+      expect(setItem).toHaveBeenCalledWith(OTA_LAST_UPDATE_ID_KEY, 'embedded');
+    } finally {
+      embedded.restore();
+    }
+  });
+
+  it('softly ignores unavailable notice storage', async () => {
+    getItem.mockRejectedValue(new Error('storage unavailable'));
+    await expect(consumeOtaAppliedNotice()).resolves.toBe(false);
   });
 });
