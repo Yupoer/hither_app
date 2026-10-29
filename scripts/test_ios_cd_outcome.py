@@ -78,6 +78,20 @@ class CdOutcomeTests(unittest.TestCase):
                                         "--outcome", str(self.root / "outcome.json")).returncode, 0)
         self.assertEqual(self.events()[-1]["status"], "failed")
 
+    def test_apple_processing_stays_unknown_after_a_later_artifact_failure(self):
+        self.assertEqual(self.run_writer("--phase", "apple_processing", "--status", "unknown").returncode, 0)
+        self.assertEqual(self.run_writer("--finalize", "--job-status", "failure",
+                                        "--outcome", str(self.root / "outcome.json")).returncode, 0)
+        self.assertEqual(self.events()[-1]["status"], "unknown")
+
+    def test_invalid_final_journal_is_sanitized_and_still_fails(self):
+        self.journal.write_text('{"private": "https://private.invalid/token-private-sentinel"}\n')
+        outcome = self.root / "outcome.json"
+        result = self.run_writer("--finalize", "--job-status", "success", "--outcome", str(outcome))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.events()[-1]["status"], "unknown")
+        self.assertNotIn("private", self.journal.read_text() + outcome.read_text())
+
     def test_strict_identity_and_finite_fields_reject_private_input(self):
         bad = "https://private.invalid/token-private-sentinel"
         for key in self.identity:

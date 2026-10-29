@@ -92,13 +92,19 @@ def record_outcome(journal, identity, phase, status, intent=None):
 def finalize(journal, identity, job_status, outcome):
     if job_status not in {"success", "failure", "cancelled"}:
         raise ValueError("invalid job status")
-    events = read_events(journal, identity)
+    try:
+        events = read_events(journal, identity)
+    except (OSError, TypeError, ValueError):
+        safe = json.dumps({**identity, "phase": "setup", "status": "unknown"}, sort_keys=True) + "\n"
+        atomic_write(journal, safe)
+        atomic_write(outcome, safe)
+        raise ValueError("journal validation failed") from None
     last = events[-1] if events else None
     if last is None:
         last = record_outcome(journal, identity, "dispatch", "failed")
     elif job_status != "success":
         if last["status"] == "unknown":
-            status = "unknown" if last["phase"] in MUTATIONS or job_status == "cancelled" else "failed"
+            status = "unknown" if last["phase"] in MUTATIONS | {"apple_processing", "device_acceptance"} or job_status == "cancelled" else "failed"
             last = record_outcome(journal, identity, last["phase"], status)
         else:
             last = record_outcome(journal, identity, "setup", "unknown" if job_status == "cancelled" else "failed")

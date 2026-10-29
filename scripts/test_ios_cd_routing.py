@@ -68,4 +68,38 @@ for name in expo_steps:
     assert "EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}" in steps[name]["body"], name
 assert "secrets.EXPO_TOKEN" not in source
 
+group_expression = re.search(r"^  group: (.+)$", source, flags=re.MULTILINE)[1]
+expected_group = "${{ contains(fromJSON('[\"ota\",\"build-only\",\"submit\"]'), inputs.mode) && 'cd-ios-production' || format('cd-ios-diagnostic-{0}-{1}', github.run_id, github.run_attempt) }}"
+assert group_expression == expected_group
+mutation_modes = {"ota", "build-only", "submit"}
+groups = {mode: "cd-ios-production" if mode in mutation_modes else "cd-ios-diagnostic-12345-1"
+          for mode in ("inspect-release", "preflight", "validate-release", "ota", "build-only", "submit")}
+assert {groups[mode] for mode in mutation_modes} == {"cd-ios-production"}
+assert all(groups[mode] != "cd-ios-production" for mode in groups if mode not in mutation_modes)
+
+for prepare, upload, mutate, phase, step_id in (
+        ("Prepare production iOS OTA intent", "Upload OTA mutation intent", "Publish and verify production iOS OTA", "ota_publication", "ota_intent_upload"),
+        ("Prepare signed build intent", "Upload signed build mutation intent", "Build signed production IPA on this runner", "signed_build", "build_intent_upload"),
+        ("Prepare TestFlight upload intent", "Upload TestFlight mutation intent", "Upload this IPA to TestFlight", "eas_upload", "submit_intent_upload")):
+    assert source.index(f"- name: {prepare}") < source.index(f"- name: {upload}") < source.index(f"- name: {mutate}")
+    body = steps[upload]["body"]
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in body
+    assert f"hither-ios-cd-intent-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}-{phase}" in body
+    assert f"path: ${{{{ runner.temp }}}}/hither-ios-cd-intent-{phase}.json" in body
+    assert "if-no-files-found: error" in body and "overwrite:" not in body
+    assert f"INTENT_RETAINED: ${{{{ steps.{step_id}.outcome }}}}" in steps[mutate]["body"]
+
+for name in ("Finalize inventory attempt outcome", "Finalize iOS attempt outcome",
+             "Upload inventory attempt outcome", "Upload iOS attempt outcome", "Upload sanitized inventory receipt"):
+    assert steps[name]["if"] == "always()", name
+for guard, initialize, finalize in (
+        ("Verify pinned inventory source", "Initialize inventory attempt journal", "Finalize inventory attempt outcome"),
+        ("Verify pinned master source and Xcode", "Initialize iOS attempt journal", "Finalize iOS attempt outcome")):
+    assert source.index(f"- name: {guard}") < source.index(f"- name: {initialize}")
+    assert "id: trusted_source" in steps[guard]["body"]
+    assert steps[initialize]["if"] is None
+    assert "SOURCE_TRUSTED: ${{ steps.trusted_source.outcome }}" in steps[finalize]["body"]
+assert "continue-on-error" not in source
+assert "Hither-production.ipa" not in steps["Upload iOS attempt outcome"]["body"]
+
 print("iOS CD route isolation checks passed")

@@ -65,7 +65,9 @@ elif 'update:view' in args:
 elif 'build:list' in args:
     print('[]')
 elif 'update:list' in args:
-    print(json.dumps({'name': 'production', 'currentPage': []}))
+    groups = [{'group': update['group'], 'branch': 'production', 'runtimeVersion': '0.1.13',
+               'platforms': 'unknown-private-sentinel'}] if fault == 'blocked_inventory' else []
+    print(json.dumps({'name': 'production', 'currentPage': groups}))
 else:
     sys.exit(90)
 '''
@@ -80,7 +82,7 @@ class CdAttemptTests(unittest.TestCase):
         commands.mkdir()
         for name, body in (("npx", f"#!{sys.executable}\n" + FAKE_EAS),
                            ("git", '#!/bin/sh\nprintf "%s\\trefs/heads/master\\n" "$SOURCE_SHA"\n'),
-                           ("node", '#!/bin/sh\nprintf "0.1.13\\n"\n')):
+                           ("node", '#!/bin/sh\nif [ "$1" = scripts/check-release-ci.mjs ]; then exit "${HITHER_FAKE_CI_EXIT:-0}"; fi\nprintf "0.1.13\\n"\n')):
             path = commands / name
             path.write_text(body)
             path.chmod(0o755)
@@ -89,7 +91,8 @@ class CdAttemptTests(unittest.TestCase):
                     "GITHUB_REF": "refs/heads/master", "RELEASE_MODE": "ota",
                     "EXPO_TOKEN": "offline-fixture", "RUNNER_TEMP": str(self.root),
                     "GITHUB_STEP_SUMMARY": str(self.root / "summary.md"),
-                    "HITHER_FAKE_ROOT": str(self.root), "INTENT_RETAINED": "success", "JOB_STATUS": "failure"}
+                    "HITHER_FAKE_ROOT": str(self.root), "INTENT_RETAINED": "success", "JOB_STATUS": "failure",
+                    "SOURCE_TRUSTED": "success"}
 
     def run_step(self, name, cwd=None):
         block = STEPS[name]
@@ -187,6 +190,20 @@ class CdAttemptTests(unittest.TestCase):
         for mode in ("preflight", "validate-release"):
             self.env["RELEASE_MODE"] = mode
             self.assertEqual(self.run_step("Validate trusted dispatch").returncode, 0)
+        self.env["RELEASE_MODE"] = "inspect-release"
+        self.assertEqual(self.run_step("Validate inventory dispatch").returncode, 0)
+
+    def test_ci_admission_failure_propagates_and_retains_its_phase(self):
+        self.env["HITHER_FAKE_CI_EXIT"] = "23"
+        result = self.run_step("Verify exact-source master CI")
+        self.assertEqual(result.returncode, 23)
+        self.finalize()
+        self.assertEqual((self.events()[-1]["phase"], self.events()[-1]["status"]), ("ci_admission", "failed"))
+        self.assertEqual(self.accepted(), [])
+
+    def test_trusted_source_without_the_new_helper_uses_safe_fallback(self):
+        self.finalize(cwd=self.root)
+        self.assertEqual((self.events()[-1]["phase"], self.events()[-1]["status"]), ("dispatch", "failed"))
 
     def test_submit_wait_success_is_upload_complete_with_apple_unknown(self):
         self.env["RELEASE_MODE"] = "submit"
@@ -202,6 +219,29 @@ class CdAttemptTests(unittest.TestCase):
         self.assertEqual(receipt["appleProcessing"], "unknown")
         self.assertEqual(self.accepted()[0]["args"][self.accepted()[0]["args"].index("--path") + 1],
                          str(self.root / "Hither-production.ipa"))
+
+    def test_successful_ota_retains_receipt_and_independent_immutable_intent(self):
+        self.prepare("ota_publication")
+        intent = (self.root / "retained/hither-ios-cd-intent-ota_publication.json").read_bytes()
+        result = self.run_step("Publish and verify production iOS OTA")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.env["JOB_STATUS"] = "success"
+        self.finalize()
+        self.assertEqual((self.events()[-1]["phase"], self.events()[-1]["status"]), ("ota_readback", "passed"))
+        self.assertEqual((self.root / "retained/hither-ios-cd-intent-ota_publication.json").read_bytes(), intent)
+        self.assertEqual(json.loads(intent)["status"], "unknown")
+        self.assertTrue((self.root / "hither-ota-receipt.json").exists())
+        self.assertEqual(len(self.accepted()), 1)
+
+    def test_hard_loss_can_leave_only_the_prewrite_unknown_artifact(self):
+        self.prepare("ota_publication")
+        self.env["HITHER_FAKE_FAULT"] = "accept_then_error"
+        self.assertEqual(self.run_step("Publish and verify production iOS OTA").returncode, 17)
+        retained = self.root / "retained/hither-ios-cd-intent-ota_publication.json"
+        (self.root / "hither-ios-cd-journal.jsonl").unlink()
+        self.assertFalse((self.root / "hither-ios-cd-outcome.json").exists())
+        self.assertEqual(json.loads(retained.read_text())["status"], "unknown")
+        self.assertEqual(len(self.accepted()), 1)
 
     def test_submit_and_build_accept_then_error_stay_unknown(self):
         for phase, mode, name in (("eas_upload", "submit", "Upload this IPA to TestFlight"),
@@ -239,6 +279,29 @@ class CdAttemptTests(unittest.TestCase):
         self.assertIsNone(event["mode"])
         self.assertEqual((event["phase"], event["status"]), ("dispatch", "failed"))
         self.assertNotIn("private", json.dumps(event))
+
+    def test_finalizer_rejects_private_journal_fields_and_leaves_safe_artifacts(self):
+        (self.root / "hither-ios-cd-journal.jsonl").write_text('{"private":"https://private.invalid/token"}\n')
+        result = self.run_step("Finalize iOS attempt outcome")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.events()[-1]["status"], "unknown")
+        self.assertNotIn("private", (self.root / "hither-ios-cd-outcome.json").read_text())
+
+    def test_failed_source_trust_never_imports_selected_helper(self):
+        scripts = self.root / "scripts"
+        scripts.mkdir()
+        marker = self.root / "untrusted-code-executed"
+        (scripts / "write-ios-cd-outcome.py").write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).touch()\n")
+        self.env["SOURCE_TRUSTED"] = "failure"
+        for name in ("Finalize inventory attempt outcome", "Finalize iOS attempt outcome"):
+            with self.subTest(name=name):
+                result = self.run_step(name, cwd=self.root)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(marker.exists())
+                event = self.events()[-1]
+                self.assertEqual((event["phase"], event["status"]), ("dispatch", "failed"))
+        self.assertEqual(self.accepted(), [])
 
 
 if __name__ == "__main__":
