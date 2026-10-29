@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import select
 import shutil
 import signal
 import subprocess
@@ -81,6 +82,25 @@ class EligibilityTests(unittest.TestCase):
 
 
 class SafeResultTests(unittest.TestCase):
+    def test_exited_status_is_bounded_and_never_mistaken_for_os_exit_evidence(self):
+        for value in (-1, 0, 2, 255, -2, 256, True, 2.0, 'private detail'):
+            source = {'scope': 'diagnostic_replay', 'probe': 'exited',
+                      'lldbExitStatus': value, 'sigtrapStopConfigured': True,
+                      'fixtureRelease': 'write_failed', 'exitDescription': 'private detail'}
+            result = DEBUGGER.safe_result(source)
+            self.assertEqual(result.get('lldbExitStatus'), value if type(value) is int and -1 <= value <= 255 else None)
+            self.assertIs(result['sigtrapStopConfigured'], True)
+            self.assertEqual(result['fixtureRelease'], 'write_failed')
+            self.assertNotIn('private', json.dumps(result))
+        self.assertNotIn('lldbExitStatus', DEBUGGER.safe_result({
+            'scope': 'diagnostic_replay', 'probe': 'stopped', 'lldbExitStatus': 2}))
+        for value in (0, 1, 'true', None):
+            self.assertNotIn('sigtrapStopConfigured', DEBUGGER.safe_result({
+                'scope': 'diagnostic_replay', 'probe': 'exited', 'sigtrapStopConfigured': value}))
+        for value in ('private path', 'consumed', True, None):
+            self.assertNotIn('fixtureRelease', DEBUGGER.safe_result({
+                'scope': 'diagnostic_replay', 'probe': 'exited', 'fixtureRelease': value}))
+
     def test_static_fields_are_reconstructed_and_bounded(self):
         source = {'scope': 'diagnostic_replay', 'probe': 'stopped',
                   'stopReason': 'signal', 'signal': 5,
@@ -249,6 +269,8 @@ def lldb_fixture(mode='stopped'):
     process.GetNumThreads.return_value = 1
     process.GetThreadAtIndex.return_value = thread
     process.GetUnixSignals.return_value.IsValid.return_value = True
+    process.GetUnixSignals.return_value.SetShouldStop.return_value = True
+    process.GetExitStatus.return_value = 2
     process.Kill.return_value.Fail.return_value = False
     process.Detach.return_value.Fail.return_value = False
     thread.GetStopReason.return_value = 3
@@ -311,7 +333,19 @@ class CaptureTests(unittest.TestCase):
                 mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
             DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
             result = json.loads((Path(directory) / DEBUGGER.RESULT_NAME).read_text())
-            self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'exited', 'stage': 'continue'})
+            self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'exited', 'stage': 'continue',
+                                     'lldbExitStatus': 2, 'sigtrapStopConfigured': True})
+
+    def test_debugserver_lost_status_remains_lldb_evidence(self):
+        with tempfile.TemporaryDirectory() as directory, lldb_fixture('exited') as (debugger, process, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            process.GetExitStatus.return_value = -1
+            process.GetExitDescription.return_value = 'private error description'
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
+            result = json.loads((Path(directory) / DEBUGGER.RESULT_NAME).read_text())
+            self.assertEqual(result['lldbExitStatus'], -1)
+            self.assertNotIn('private', json.dumps(result))
+            process.GetExitDescription.assert_not_called()
 
     def test_symbol_target_uses_compiled_binary_but_pid_checks_stay_installed(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, _):
@@ -563,6 +597,77 @@ class ControlledCliTests(unittest.TestCase):
         self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'replay_launch'})
         self.assertFalse(alive(int((base / 'app.pid').read_text())))
         self.assertFalse(any(call[0] == 'lldb' for call in calls))
+
+
+@unittest.skipUnless(sys.platform.startswith('linux') and shutil.which('cc'),
+                     'Real C read interruption test uses Linux and cc')
+class NativeFixtureReadTests(unittest.TestCase):
+    def compile_fixture(self, directory, closed_stdin=False):
+        source, binary = Path(directory) / 'probe.c', Path(directory) / 'probe'
+        source.write_text('''#include <errno.h>
+#include <signal.h>
+#include <sys/resource.h>
+#include <unistd.h>
+static void interrupt_read(int value) { (void)value; }
+__attribute__((constructor)) static void install_handler(void) {
+  struct sigaction action = {0};
+  action.sa_handler = interrupt_read;
+  sigemptyset(&action.sa_mask);
+  sigaction(SIGALRM, &action, 0);
+  struct rlimit limit = {0, 0};
+  setrlimit(RLIMIT_CORE, &limit);
+#ifdef FIXTURE_CLOSED_STDIN
+  close(STDIN_FILENO);
+#endif
+  alarm(1);
+}
+static ssize_t record_read(int fd, void *buffer, size_t size) {
+  ssize_t count = read(fd, buffer, size);
+  int saved = errno;
+  if (count == -1 && saved == EINTR) (void)write(1, "i", 1);
+  errno = saved;
+  return count;
+}
+#define read record_read
+#define __builtin_debugtrap() raise(SIGTRAP)
+''' + DEBUGGER.FIXTURE_SOURCE)
+        if closed_stdin:
+            source.write_text('#define FIXTURE_CLOSED_STDIN\n' + source.read_text())
+        built = subprocess.run(('cc', '-O0', str(source), '-o', str(binary)),
+                               capture_output=True, text=True, timeout=10)
+        self.assertEqual(built.returncode, 0, built.stderr)
+        return binary
+
+    def test_real_c_interrupted_read_waits_for_release_and_reaches_trap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = self.compile_fixture(directory)
+            process = subprocess.Popen((str(binary),), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, start_new_session=True)
+            try:
+                ready, _, _ = select.select([process.stdout], [], [], 4)
+                self.assertTrue(ready, 'the actual C read must return EINTR before release')
+                self.assertEqual(process.stdout.read(1), b'i')
+                process.communicate(b'x', timeout=2)
+                self.assertEqual(process.returncode, -signal.SIGTRAP,
+                                 'an interrupted read must still wait for release and reach the trap')
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=2)
+
+    def test_real_c_eof_still_rejects_the_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = self.compile_fixture(directory)
+            process = subprocess.run((str(binary),), stdin=subprocess.DEVNULL,
+                                     capture_output=True, timeout=2)
+            self.assertEqual(process.returncode, 2)
+
+    def test_real_c_fatal_read_error_stays_distinct_from_eof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = self.compile_fixture(directory, closed_stdin=True)
+            process = subprocess.run((str(binary),), stdin=subprocess.DEVNULL,
+                                     capture_output=True, timeout=2)
+            self.assertEqual(process.returncode, 3)
 
 
 class NativeCheckTests(unittest.TestCase):
