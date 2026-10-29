@@ -284,3 +284,31 @@ it('stops background acquisition while access hydrates and purges only after con
   setLocationSharingConsent(false);
   expect(mockPurge).toHaveBeenCalledTimes(2);
 });
+
+it.each([
+  { state: 'pending', context: undefined, sharingEnabled: true, hasMembership: true, purges: 0 },
+  { state: 'revoked', context: null, sharingEnabled: true, hasMembership: true, purges: 1 },
+  { state: 'sharing disabled', context: undefined, sharingEnabled: false, hasMembership: true, purges: 1 },
+  { state: 'membership removed', context: undefined, sharingEnabled: true, hasMembership: false, purges: 1 },
+])('handles a registered cold-launch GPS callback with $state access', async ({ context, sharingEnabled, hasMembership, purges }) => {
+  mockStore.clear();
+  mockAppState.currentState = 'background';
+  jest.clearAllMocks();
+  mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(true);
+  jest.isolateModules(() => {
+    const privacy = require('../state/locationPrivacy') as typeof import('../state/locationPrivacy');
+    privacy.setLocationAccessContext(context, true);
+    require('../state/backgroundJourney');
+  });
+  mockStore.set(BACKGROUND_JOURNEY_KEY, JSON.stringify({ ...baseConfig, sharingEnabled, hasMembership }));
+
+  if (!mockTaskCallback) throw new Error('background journey task was not registered');
+  await mockTaskCallback({ data: { locations: [locationSample] }, error: null });
+
+  expect(mockLocation.stopLocationUpdatesAsync).toHaveBeenCalledWith('hither-background-journey-location');
+  expect(mockLocation.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  expect(mockLocation.getForegroundPermissionsAsync).not.toHaveBeenCalled();
+  expect(mockEnqueue).not.toHaveBeenCalled();
+  expect(mockFlush).not.toHaveBeenCalled();
+  expect(mockPurge).toHaveBeenCalledTimes(purges);
+});

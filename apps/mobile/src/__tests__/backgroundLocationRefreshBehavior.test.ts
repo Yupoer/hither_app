@@ -203,6 +203,34 @@ describe('durable location refresh recovery', () => {
 
   });
 
+  it('retains queued locations for a registered push while access hydrates and purges after revocation', async () => {
+    const handler = taskHandler();
+    mockAppState.currentState = 'background';
+    setLocationAccessContext(undefined, true);
+    const payload = { data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null };
+
+    await handler(payload);
+
+    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+    expect(mockListPending).not.toHaveBeenCalled();
+    expect(mockIngest).not.toHaveBeenCalled();
+    expect(mockAck).not.toHaveBeenCalled();
+    expect(mockPurgeOutbox).not.toHaveBeenCalled();
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({
+      event: 'location_rejected_sharing_disabled',
+    }));
+
+    setLocationAccessContext(null, false);
+    await handler(payload);
+
+    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+    expect(mockIngest).not.toHaveBeenCalled();
+    expect(mockPurgeOutbox).toHaveBeenCalledTimes(1);
+    expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'location_rejected_sharing_disabled',
+    }));
+  });
+
   it('consumes permission markers exactly once and ignores malformed refresh data', async () => {
     await expect(consumePendingLocationPermission()).resolves.toBe(false);
     await rememberPendingLocationPermission();

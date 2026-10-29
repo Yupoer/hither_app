@@ -209,7 +209,9 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (generation !== trackingGeneration || !controller.isCurrent(config)) return;
         if (!access || !config.sharingEnabled || config.hasMembership === false) {
           await stopBackgroundJourney(false, config);
-          await purgeLocationOutbox();
+          if (!isLocationAccessPending() || !config.sharingEnabled || config.hasMembership === false) {
+            await purgeLocationOutbox();
+          }
           return;
         }
         if (AppState.currentState !== 'background' || generation !== trackingGeneration || !controller.isCurrent(config)) return;
