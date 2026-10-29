@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
 
@@ -24,6 +24,73 @@ VERIFY_SPEC.loader.exec_module(VERIFY)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def test_exit_observer_attributes_only_registered_executable_and_kernel_status(self):
+        api = SimpleNamespace(KQ_FILTER_PROC=-5, KQ_EV_ADD=1, KQ_EV_ONESHOT=16,
+                              KQ_EV_ERROR=0x4000, KQ_NOTE_EXIT=0x80000000,
+                              kevent=lambda pid, **values: SimpleNamespace(ident=pid, **values))
+        for status, flags, expected in (
+            (37 << 8, 0x84000000, {"appExitKind": "exited", "appExitCode": 37}),
+            (9, 0x86000000, {"appExitKind": "signaled", "appExitSignal": 9,
+                               "appExitDetails": []}),
+            (9 | 0x20000, 0x86000000, {"appExitKind": "signaled", "appExitSignal": 9,
+                                         "appExitDetails": ["memory"]}),
+            (37 << 8, 0x80000000, {"appExitKind": "unknown"}),
+        ):
+            queue = Mock()
+            queue.control.side_effect = [[], [SimpleNamespace(
+                ident=123, filter=-5, flags=0, fflags=flags, data=status)]]
+            api.kqueue = Mock(return_value=queue)
+            with self.subTest(status=status, flags=flags), \
+                    patch.object(VERIFY, "select", api), patch.object(VERIFY.sys, "platform", "darwin"), \
+                    patch.object(VERIFY, "host_executable_path", return_value="/sim/Hither.app/Hither"):
+                observer = VERIFY.ProcessExitObserver(123, Path("/sim/Hither.app/Hither"))
+                self.assertEqual(observer.poll(), {"processExitProbe": "observed", **expected})
+                self.assertEqual(queue.control.call_args.args, (None, 1, 0))
+                observer.close()
+                observer.close()
+                queue.close.assert_called_once()
+
+    def test_exit_observer_rejects_wrong_identity_other_events_and_probe_failure(self):
+        api = SimpleNamespace(KQ_FILTER_PROC=-5, KQ_EV_ADD=1, KQ_EV_ONESHOT=16,
+                              KQ_EV_ERROR=0x4000, KQ_NOTE_EXIT=0x80000000,
+                              kevent=lambda pid, **values: SimpleNamespace(ident=pid, **values))
+        for path, events in (("/other/Hither", []), (None, []),
+                             ("/sim/Hither", [SimpleNamespace(
+                                 ident=456, filter=-5, flags=0, fflags=0x84000000, data=0)]),
+                             ("/sim/Hither", OSError("private error"))):
+            queue = Mock()
+            queue.control.side_effect = [[], events]
+            api.kqueue = Mock(return_value=queue)
+            with self.subTest(path=path, events=events), patch.object(VERIFY, "select", api), \
+                    patch.object(VERIFY.sys, "platform", "darwin"), \
+                    patch.object(VERIFY, "host_executable_path", return_value=path):
+                observer = VERIFY.ProcessExitObserver(123, Path("/sim/Hither"))
+                self.assertEqual(observer.poll(), {"processExitProbe": "unavailable"})
+                observer.close()
+        with patch.object(VERIFY.sys, "platform", "linux"):
+            self.assertEqual(VERIFY.ProcessExitObserver(123, Path("/sim/Hither")).poll(),
+                             {"processExitProbe": "unavailable"})
+
+    def test_safe_exit_evidence_cannot_confuse_observer_status_with_app_status(self):
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "processExitProbe": "observed", "appExitKind": "signaled", "appExitSignal": 9,
+            "appExitDetails": ["memory"], "appExitCode": 1, "exitCode": 1,
+            "stderr": "private token", "pid": 123}), {
+                "processExitProbe": "observed", "appExitKind": "signaled",
+                "appExitSignal": 9, "appExitDetails": ["memory"]})
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "processExitProbe": "unavailable", "appExitKind": "exited", "appExitCode": 1}),
+            {"processExitProbe": "unavailable"})
+        self.assertEqual(GATE.safe_launch_diagnostic({
+            "processExitProbe": "observed", "appExitKind": "exited", "appExitCode": 37,
+            "consoleProbe": "available", "consoleSignals": ["uncaught_exception"]}), {
+                "processExitProbe": "observed", "appExitKind": "exited", "appExitCode": 37,
+                "consoleProbe": "available", "consoleSignals": ["uncaught_exception"]})
+
+    @unittest.skipUnless(sys.platform == "darwin", "requires Darwin kqueue")
+    def test_real_host_exit_observer_reads_exact_exit_and_signal(self):
+        VERIFY.check_exit_observer()
+
     def run_profile_boundary(self, production, inherited):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
