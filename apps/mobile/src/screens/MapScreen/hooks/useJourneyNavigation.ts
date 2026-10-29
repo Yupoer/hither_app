@@ -297,9 +297,6 @@ export function useJourneyNavigation({
     [t, travelMode],
   );
 
-  /** @deprecated Use openExternalNavigation — kept as alias for gradual call-site migration. */
-  const openInAppleMaps = openExternalNavigation;
-
   const startLocalRoutePlan = useCallback(
     (dest: Destination, index: number) => {
       setLocalTargetId(dest.id);
@@ -734,7 +731,6 @@ export function useJourneyNavigation({
     numericDistance,
     journeyBusy,
     openExternalNavigation,
-    openInAppleMaps,
     startNavigation,
     refreshStartFrame,
     requestTeamEnd,
