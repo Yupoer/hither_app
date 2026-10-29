@@ -42,6 +42,9 @@ def check(repo, source_sha, manifest_path):
         result["reason"] = "missing_or_invalid_binary_record"
         return result
 
+    if not isinstance(manifest, dict):
+        result["reason"] = "invalid_binary_record"
+        return result
     binary_sha = manifest.get("sourceSha")
     result["binarySourceSha"] = binary_sha
     result["runtimeVersion"] = manifest.get("runtimeVersion")

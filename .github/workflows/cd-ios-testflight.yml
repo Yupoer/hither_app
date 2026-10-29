@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cd-ios-production
+  group: ${{ contains(fromJSON('["ota","build-only","submit","validate-release"]'), inputs.mode) && 'cd-ios-production' || format('cd-ios-diagnostic-{0}-{1}', github.run_id, github.run_attempt) }}
   cancel-in-progress: false
 
 jobs:
@@ -42,6 +42,7 @@ jobs:
         working-directory: apps/mobile
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
+      RELEASE_MODE: ${{ inputs.mode }}
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
     steps:
@@ -50,16 +51,23 @@ jobs:
         run: |
           [[ "$GITHUB_REF" == refs/heads/master ]] || exit 1
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Verify pinned inventory source
+        id: trusted_source
         working-directory: .
         run: |
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
           git merge-base --is-ancestor "$SOURCE_SHA" origin/master
+      - name: Initialize inventory attempt journal
+        working-directory: .
+        run: |
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase dispatch --status passed
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status unknown
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.16.0
@@ -73,6 +81,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase inventory --status unknown
           test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
           npx --yes eas-cli@21.0.2 build:list --platform ios --build-profile production \
@@ -101,12 +110,71 @@ jobs:
             --updates "$RUNNER_TEMP/hither-ios-updates.json" \
             "${view_args[@]}" \
             --receipt "$RUNNER_TEMP/hither-ios-inventory.json"
-          cat "$RUNNER_TEMP/hither-ios-inventory.json" >> "$GITHUB_STEP_SUMMARY"
+          test -s "$RUNNER_TEMP/hither-ios-inventory.json"
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase inventory --status passed
+      - name: Summarize sanitized inventory receipt
+        if: always()
+        working-directory: .
+        run: |
+          if [[ -f "$RUNNER_TEMP/hither-ios-inventory.json" ]]; then
+            cat "$RUNNER_TEMP/hither-ios-inventory.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload sanitized inventory receipt
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hither-ios-inventory-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hither-ios-inventory.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Finalize inventory attempt outcome
+        if: always()
+        working-directory: .
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_TRUSTED: ${{ steps.trusted_source.outcome }}
+        run: |
+          python3 - <<'PY'
+          import importlib.util, json, os, re, tempfile
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          journal = root / 'hither-ios-cd-journal.jsonl'
+          outcome = root / 'hither-ios-cd-outcome.json'
+          source = os.environ.get('SOURCE_SHA', '')
+          source = source if re.fullmatch(r'[0-9a-f]{40}', source) else None
+          mode = os.environ.get('RELEASE_MODE', '')
+          mode = mode if mode in {'inspect-release', 'preflight', 'validate-release', 'ota', 'build-only', 'submit'} else None
+          helper = Path('scripts/write-ios-cd-outcome.py')
+          if os.environ.get('SOURCE_TRUSTED') == 'success' and helper.is_file() and source is not None and mode is not None:
+              spec = importlib.util.spec_from_file_location('cd_outcome', helper)
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              module.finalize(journal, module.attempt_identity(os.environ), os.environ['JOB_STATUS'], outcome)
+          else:
+              run_id, attempt = os.environ.get('GITHUB_RUN_ID', ''), os.environ.get('GITHUB_RUN_ATTEMPT', '')
+              if not re.fullmatch(r'[1-9][0-9]*', run_id) or not re.fullmatch(r'[1-9][0-9]*', attempt):
+                  raise ValueError('invalid GitHub attempt identity')
+              event = {'sourceSha': source, 'runId': run_id, 'runAttempt': int(attempt), 'mode': mode,
+                       'phase': 'dispatch', 'status': 'unknown' if os.environ['JOB_STATUS'] == 'cancelled' else 'failed'}
+              for path in (journal, outcome):
+                  with tempfile.NamedTemporaryFile(mode='w', dir=root, delete=False) as stream:
+                      json.dump(event, stream, sort_keys=True)
+                      stream.write('\n')
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                  os.replace(stream.name, path)
+          PY
+          cat "$RUNNER_TEMP/hither-ios-cd-outcome.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload inventory attempt outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-cd-outcome-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/hither-ios-cd-journal.jsonl
+            ${{ runner.temp }}/hither-ios-cd-outcome.json
           if-no-files-found: error
           retention-days: 14
 
@@ -133,6 +201,10 @@ jobs:
           [[ "$GITHUB_REF" == refs/heads/master ]] || { echo 'Dispatch from master only'; exit 1; }
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'source_sha must be a full lowercase SHA'; exit 1; }
           [[ "$RELEASE_MODE" == ota || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == validate-release || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]] || exit 1
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || { echo 'A valid GitHub run attempt is required'; exit 1; }
+          if [[ "$RELEASE_MODE" == ota || "$RELEASE_MODE" == build-only || "$RELEASE_MODE" == submit ]]; then
+            [[ "$GITHUB_RUN_ATTEMPT" == 1 ]] || { echo 'Write-mode reruns are blocked; inspect the earlier outcome before a fresh dispatch'; exit 1; }
+          fi
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -141,6 +213,7 @@ jobs:
           persist-credentials: false
 
       - name: Verify pinned master source and Xcode
+        id: trusted_source
         working-directory: .
         run: |
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
@@ -150,6 +223,12 @@ jobs:
           sw_vers
           xcrun --sdk iphoneos --show-sdk-version
           xcrun simctl list runtimes
+
+      - name: Initialize iOS attempt journal
+        working-directory: .
+        run: |
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase dispatch --status passed
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status unknown
 
       - name: Pin CocoaPods to checked-in lockfile
         if: inputs.mode == 'preflight' || inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
@@ -179,26 +258,34 @@ jobs:
         working-directory: .
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node scripts/check-release-ci.mjs >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ci_admission --status unknown
+          node scripts/check-release-ci.mjs >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ci_admission --status passed
 
       - name: Install and verify native dependencies
         run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status unknown
           npm ci
           npx patch-package --error-on-fail
           npm run verify:runtime
           npx --yes eas-cli@21.0.2 --version
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status passed
 
       - name: Verify production release prerequisites
         if: inputs.mode == 'ota' || inputs.mode == 'submit'
         env:
           BACKEND_VERIFIED: ${{ inputs.backend_verified }}
         run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase backend_prerequisite --status unknown
           [[ "$BACKEND_VERIFIED" == true ]] || { echo 'Verify production backend deployment before publishing'; exit 1; }
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase backend_prerequisite --status passed
 
       - name: Verify OTA compatibility and current master
         if: inputs.mode == 'ota'
         working-directory: .
         run: |
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ota_compatibility --status unknown
           [[ "$(git ls-remote origin refs/heads/master | cut -f1)" == "$SOURCE_SHA" ]] || {
             echo 'OTA source must still be the current master commit'; exit 1;
           }
@@ -211,18 +298,43 @@ jobs:
               exit 1
             }
           cat "$RUNNER_TEMP/hither-ota-compatibility.json" >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ota_compatibility --status passed
 
-      - name: Publish and verify production iOS OTA
+      - name: Prepare production iOS OTA intent
         if: inputs.mode == 'ota'
         env:
           EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status unknown
           test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
           npx --yes eas-cli@21.0.2 channel:view production --non-interactive --json \
             > "$RUNNER_TEMP/hither-production-channel-before.json"
           python3 ../../scripts/verify-ios-ota-publication.py before \
             --channel "$RUNNER_TEMP/hither-production-channel-before.json"
+          [[ "$(git ls-remote origin refs/heads/master | cut -f1)" == "$SOURCE_SHA" ]] || {
+            echo 'Master moved before OTA publication'; exit 1;
+          }
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" \
+            --phase ota_publication --status unknown --intent "$RUNNER_TEMP/hither-ios-cd-intent-ota_publication.json"
+
+      - name: Upload OTA mutation intent
+        id: ota_intent_upload
+        if: inputs.mode == 'ota'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-cd-intent-${{ github.run_id }}-${{ github.run_attempt }}-ota_publication
+          path: ${{ runner.temp }}/hither-ios-cd-intent-ota_publication.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish and verify production iOS OTA
+        if: inputs.mode == 'ota'
+        env:
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
+          INTENT_RETAINED: ${{ steps.ota_intent_upload.outcome }}
+        run: |
+          [[ "$INTENT_RETAINED" == success ]] || { echo 'OTA intent retention is required'; exit 1; }
           [[ "$(git ls-remote origin refs/heads/master | cut -f1)" == "$SOURCE_SHA" ]] || {
             echo 'Master moved before OTA publication'; exit 1;
           }
@@ -233,6 +345,8 @@ jobs:
             --published "$RUNNER_TEMP/hither-ota-published.json" \
             --source-sha "$SOURCE_SHA" \
             --runtime "$(node -p 'require("./app.json").expo.runtimeVersion')")
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ota_publication --status passed
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ota_readback --status unknown
           printf 'Published OTA group %s; verifying remote state\n' "$group" >> "$GITHUB_STEP_SUMMARY"
           npx --yes eas-cli@21.0.2 update:view "$group" --json \
             > "$RUNNER_TEMP/hither-ota-view.json"
@@ -245,6 +359,7 @@ jobs:
             --source-sha "$SOURCE_SHA" \
             --runtime "$(node -p 'require("./app.json").expo.runtimeVersion')" \
             --receipt "$RUNNER_TEMP/hither-ota-receipt.json"
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ota_readback --status passed
           cat "$RUNNER_TEMP/hither-ota-receipt.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload OTA receipt
@@ -261,10 +376,12 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
         run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase release_launch --status unknown
           test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 env:exec production \
             "EAS_BUILD_PROFILE=production python3 ../../scripts/run-ios-release-launch.py --source-sha $SOURCE_SHA --receipt $RUNNER_TEMP/hither-release-launch-receipt.json" \
             --non-interactive
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase release_launch --status passed
           cat "$RUNNER_TEMP/hither-release-launch-receipt.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Release launch receipt
@@ -285,19 +402,39 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Prepare signed build intent
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" \
+            --phase signed_build --status unknown --intent "$RUNNER_TEMP/hither-ios-cd-intent-signed_build.json"
+
+      - name: Upload signed build mutation intent
+        id: build_intent_upload
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-cd-intent-${{ github.run_id }}-${{ github.run_attempt }}-signed_build
+          path: ${{ runner.temp }}/hither-ios-cd-intent-signed_build.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Build signed production IPA on this runner
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         env:
           EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
+          INTENT_RETAINED: ${{ steps.build_intent_upload.outcome }}
         run: |
+          [[ "$INTENT_RETAINED" == success ]] || { echo 'Signed build intent retention is required'; exit 1; }
           test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
           npx --yes eas-cli@21.0.2 whoami
           npx --yes eas-cli@21.0.2 build --platform ios --profile production --local \
             --non-interactive --output "$RUNNER_TEMP/Hither-production.ipa"
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase signed_build --status passed
 
       - name: Verify IPA and record source
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ipa_verification --status unknown
           ipa="$RUNNER_TEMP/Hither-production.ipa"
           test -s "$ipa"
           unzip -tq "$ipa" >/dev/null
@@ -339,6 +476,7 @@ jobs:
             "$SOURCE_SHA" "$RELEASE_MODE" "$version" "$build" "$runtime" production "$digest" "$GITHUB_RUN_ID" \
             > "$RUNNER_TEMP/hither-receipt.txt"
           cat "$RUNNER_TEMP/hither-receipt.txt" >> "$GITHUB_STEP_SUMMARY"
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ipa_verification --status passed
 
       - name: Upload build receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -349,10 +487,99 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Prepare TestFlight upload intent
+        if: inputs.mode == 'submit'
+        run: |
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" \
+            --phase eas_upload --status unknown --intent "$RUNNER_TEMP/hither-ios-cd-intent-eas_upload.json"
+
+      - name: Upload TestFlight mutation intent
+        id: submit_intent_upload
+        if: inputs.mode == 'submit'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-cd-intent-${{ github.run_id }}-${{ github.run_attempt }}-eas_upload
+          path: ${{ runner.temp }}/hither-ios-cd-intent-eas_upload.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload this IPA to TestFlight
         if: inputs.mode == 'submit'
         env:
           EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
+          INTENT_RETAINED: ${{ steps.submit_intent_upload.outcome }}
         run: |
+          [[ "$INTENT_RETAINED" == success ]] || { echo 'TestFlight upload intent retention is required'; exit 1; }
           npx --yes eas-cli@21.0.2 submit --platform ios --profile production \
             --path "$RUNNER_TEMP/Hither-production.ipa" --non-interactive --wait
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase eas_upload --status passed
+          python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase apple_processing --status unknown
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          event = json.loads((root / 'hither-ios-cd-journal.jsonl').read_text().splitlines()[-1])
+          receipt = {key: event[key] for key in ('sourceSha', 'runId', 'runAttempt', 'mode')}
+          receipt.update(easUpload='reported_complete', appleProcessing='unknown', deviceAcceptance='not_verified')
+          (root / 'hither-ios-upload-receipt.json').write_text(json.dumps(receipt, sort_keys=True) + '\n')
+          PY
+          cat "$RUNNER_TEMP/hither-ios-upload-receipt.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload TestFlight submission receipt
+        if: always() && inputs.mode == 'submit'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-upload-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-ios-upload-receipt.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Finalize iOS attempt outcome
+        if: always()
+        working-directory: .
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_TRUSTED: ${{ steps.trusted_source.outcome }}
+        run: |
+          python3 - <<'PY'
+          import importlib.util, json, os, re, tempfile
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          journal = root / 'hither-ios-cd-journal.jsonl'
+          outcome = root / 'hither-ios-cd-outcome.json'
+          source = os.environ.get('SOURCE_SHA', '')
+          source = source if re.fullmatch(r'[0-9a-f]{40}', source) else None
+          mode = os.environ.get('RELEASE_MODE', '')
+          mode = mode if mode in {'inspect-release', 'preflight', 'validate-release', 'ota', 'build-only', 'submit'} else None
+          helper = Path('scripts/write-ios-cd-outcome.py')
+          if os.environ.get('SOURCE_TRUSTED') == 'success' and helper.is_file() and source is not None and mode is not None:
+              spec = importlib.util.spec_from_file_location('cd_outcome', helper)
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              module.finalize(journal, module.attempt_identity(os.environ), os.environ['JOB_STATUS'], outcome)
+          else:
+              run_id, attempt = os.environ.get('GITHUB_RUN_ID', ''), os.environ.get('GITHUB_RUN_ATTEMPT', '')
+              if not re.fullmatch(r'[1-9][0-9]*', run_id) or not re.fullmatch(r'[1-9][0-9]*', attempt):
+                  raise ValueError('invalid GitHub attempt identity')
+              event = {'sourceSha': source, 'runId': run_id, 'runAttempt': int(attempt), 'mode': mode,
+                       'phase': 'dispatch', 'status': 'unknown' if os.environ['JOB_STATUS'] == 'cancelled' else 'failed'}
+              for path in (journal, outcome):
+                  with tempfile.NamedTemporaryFile(mode='w', dir=root, delete=False) as stream:
+                      json.dump(event, stream, sort_keys=True)
+                      stream.write('\n')
+                      stream.flush()
+                      os.fsync(stream.fileno())
+                  os.replace(stream.name, path)
+          PY
+          cat "$RUNNER_TEMP/hither-ios-cd-outcome.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload iOS attempt outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hither-ios-cd-outcome-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/hither-ios-cd-journal.jsonl
+            ${{ runner.temp }}/hither-ios-cd-outcome.json
+          if-no-files-found: error
+          retention-days: 14

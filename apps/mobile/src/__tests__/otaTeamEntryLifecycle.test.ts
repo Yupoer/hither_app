@@ -1,7 +1,23 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ota = readFileSync(join(__dirname, '../utils/otaUpdates.ts'), 'utf8');
+jest.mock('expo-updates', () => ({
+  isEnabled: true,
+  checkForUpdateAsync: jest.fn(),
+  fetchUpdateAsync: jest.fn(),
+  reloadAsync: jest.fn(),
+}));
+jest.mock('react-native', () => ({ AppState: {} }));
+jest.mock('@react-native-async-storage/async-storage', () => ({}));
+
+import * as Updates from 'expo-updates';
+import {
+  __setOtaUsableForTests,
+  applyOtaUpdate,
+  applyOtaUpdateIfAvailable,
+  isOtaApplyInFlight,
+} from '../utils/otaUpdates';
+
 const settings = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsOverlay.tsx'),
   'utf8',
@@ -9,17 +25,41 @@ const settings = readFileSync(
 const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
 
 describe('OTA apply single-flight + team entry lifecycle', () => {
-  it('shares one in-flight apply across manual and automatic paths', () => {
-    expect(ota).toContain('let inFlight');
-    expect(ota).toContain('pendingManualFollowUp');
-    expect(ota).toContain('export async function applyOtaUpdate');
-    expect(ota).toContain('applyOtaUpdateIfAvailable');
-    expect(ota).toContain("status === 'reloading'");
-    expect(ota).toContain('fetch_failed');
-    expect(ota).toContain('reload_failed');
-    expect(ota).toContain("'busy'");
-    // Intentional reload is not classified as crash.
-    expect(ota).toContain('intentional process reload');
+  it('holds automatic and manual callers until their single runtime reload completes', async () => {
+    const check = Updates.checkForUpdateAsync as jest.Mock;
+    const fetch = Updates.fetchUpdateAsync as jest.Mock;
+    const reload = Updates.reloadAsync as jest.Mock;
+    check.mockResolvedValue({ isAvailable: true });
+    fetch.mockResolvedValue({ isNew: true });
+    let finishReload!: () => void;
+    let reloadStarted!: () => void;
+    const started = new Promise<void>((resolve) => { reloadStarted = resolve; });
+    reload.mockImplementation(() => new Promise<void>((resolve) => {
+      finishReload = resolve;
+      reloadStarted();
+    }));
+    __setOtaUsableForTests(true);
+    try {
+      const automatic = applyOtaUpdateIfAvailable();
+      await started;
+      const manual = applyOtaUpdate({ manual: true, skipCheck: true });
+      const settled: string[] = [];
+      void automatic.then(() => { settled.push('automatic'); });
+      void manual.then(() => { settled.push('manual'); });
+      await Promise.resolve();
+      expect(settled).toEqual([]);
+      expect(isOtaApplyInFlight()).toBe(true);
+      finishReload();
+      await expect(Promise.all([automatic, manual])).resolves.toEqual([
+        true, { status: 'reloading', reloading: true },
+      ]);
+      expect(check).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(isOtaApplyInFlight()).toBe(false);
+    } finally {
+      __setOtaUsableForTests(null);
+    }
   });
 
   it('Settings CTA uses shared applyOtaUpdate (no parallel reload stack)', () => {

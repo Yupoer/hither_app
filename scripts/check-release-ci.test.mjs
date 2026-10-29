@@ -286,14 +286,15 @@ test('actual workflow routes guard to four release modes with step-only token an
   }
   assert.match(guard, /^        working-directory: \.$/m);
   assert.match(guard, /^          GITHUB_TOKEN: \$\{\{ github\.token \}\}$/m);
-  assert.match(guard, /^        run: node scripts\/check-release-ci\.mjs >> "\$GITHUB_STEP_SUMMARY"$/m);
+  assert.match(guard, /^          node scripts\/check-release-ci\.mjs >> "\$GITHUB_STEP_SUMMARY"$/m);
+  assert.equal([...guard.matchAll(/node scripts\/check-release-ci\.mjs/g)].length, 1);
   assert.match(ios, /^    permissions:\n      contents: read\n      actions: read$/m);
   assert.equal([...source.matchAll(/^\s*GITHUB_TOKEN:/gm)].length, 1);
   assert.equal([...source.matchAll(/^\s*actions: read$/gm)].length, 1);
   assert.doesNotMatch(inventory, /check-release-ci|actions: read|GITHUB_TOKEN/);
   assert.ok(ios.indexOf('node-version: 22.16.0') < ios.indexOf(guard));
   assert.ok(ios.indexOf(guard) < ios.indexOf('- name: Install and verify native dependencies'));
-  assert.match(source, /^concurrency:\n  group: cd-ios-production\n  cancel-in-progress: false$/m);
+  assert.match(source, /^concurrency:\n  group: \$\{\{ contains\(fromJSON\('\["ota","build-only","submit","validate-release"\]'\), inputs\.mode\) && 'cd-ios-production' \|\| format\('cd-ios-diagnostic-\{0\}-\{1\}', github\.run_id, github\.run_attempt\) \}\}\n  cancel-in-progress: false$/m);
   const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.match(workflowJob(ci, 'scope'), /^          node --test .+ scripts\/check-release-ci\.test\.mjs$/m);
 });

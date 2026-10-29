@@ -54,6 +54,8 @@ jobs:
           python3 -B scripts/test_ios_ota_compatibility.py
           python3 -B scripts/test_ios_ota_publication.py
           python3 -B scripts/test_ios_cd_routing.py
+          python3 -B scripts/test_ios_cd_outcome.py
+          python3 -B scripts/test_ios_cd_attempt.py
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
