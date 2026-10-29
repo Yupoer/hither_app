@@ -8,6 +8,7 @@ import argparse
 import ctypes
 from datetime import datetime
 import json
+import math
 import os
 from pathlib import Path
 import plistlib
@@ -124,26 +125,87 @@ def system_termination_signals(contents):
     patterns = {'jetsam': ('jetsam', 'memorystatus'),
                 'watchdog': ('watchdog', '0x8badf00d'),
                 'codesigning': ('code signature', 'codesigning'),
-                'process_exit': ('exit status', 'exit code', 'termination reason')}
+                'process_exit': ('exit status', 'exit code', 'termination reason',
+                                 'process exited', 'termination reported by launchd')}
     return sorted(name for name, terms in patterns.items()
                   if any(term in text for term in terms))
 
 
-def probe_system_termination(simulator, bundle, started):
-    if started is None or not re.fullmatch(r'[A-Za-z0-9.-]+', bundle):
+def targets_app_termination(message, bundle, target_pid):
+    if type(target_pid) is not int or target_pid <= 0:
+        return False
+    text = message.lstrip()
+    lower = text.casefold()
+    on_target = re.search(r'\bon\s+<RBSProcess', text, re.IGNORECASE)
+    if on_target and 'received termination request' in lower[:128]:
+        target = re.match(r'\s+application<([A-Za-z0-9.-]+)>:([0-9]+)>',
+                          text[on_target.end():], re.IGNORECASE)
+    elif lower.startswith('process exited:'):
+        target = re.match(r'^process exited:\s*<FBApplicationProcess:\s+'
+                          r'application<([A-Za-z0-9.-]+)>:([0-9]+)>',
+                          text, re.IGNORECASE)
+    else:
+        target = re.match(r'^\[application<([A-Za-z0-9.-]+)>:([0-9]+)\]\s+'
+                          r'(?:received termination request|termination reported by launchd)\b',
+                          text, re.IGNORECASE)
+    app_refs = re.findall(r'application<([A-Za-z0-9.-]+)>:([0-9]+)', text,
+                          re.IGNORECASE)
+    return (target is not None and len(app_refs) == 1
+            and target.group(1).casefold() == bundle.casefold()
+            and int(target.group(2)) == target_pid)
+
+
+def probe_system_termination(simulator, bundle, started, ended, target_pid):
+    if (not isinstance(bundle, str) or not re.fullmatch(r'[A-Za-z0-9.-]+', bundle)
+            or not all(type(value) in (int, float) and math.isfinite(value)
+                       for value in (started, ended))
+            or not 0 <= ended - started <= 120):
         return {'systemLogProbe': 'unavailable'}
     predicate = ('(process == "runningboardd" OR process == "SpringBoard") '
                  'AND eventMessage CONTAINS[c] "' + bundle + '"')
     try:
         since = datetime.fromtimestamp(started).astimezone().strftime('%Y-%m-%d %H:%M:%S')
+        window_end = min(ended + 1, started + 120)
+        until = datetime.fromtimestamp(math.ceil(window_end)).astimezone().strftime('%Y-%m-%d %H:%M:%S')
         result = subprocess.run(('xcrun', 'simctl', 'spawn', simulator, 'log', 'show',
-                                 '--style', 'compact', '--start', since, '--predicate',
-                                 predicate), capture_output=True, text=True, timeout=15)
+                                 '--style', 'ndjson', '--start', since, '--end', until,
+                                 '--predicate', predicate), capture_output=True,
+                                text=True, timeout=15)
         if result.returncode:
             return {'systemLogProbe': 'unavailable'}
+        bundle_pattern = re.compile(r'(?<![A-Za-z0-9_.-])' + re.escape(bundle)
+                                    + r'(?![A-Za-z0-9_.-])', re.IGNORECASE)
+        contextual = set()
+        correlated = set()
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                return {'systemLogProbe': 'unavailable'}
+            if 'finished' in record:
+                continue
+            message = record.get('eventMessage')
+            timestamp = record.get('timestamp')
+            if not isinstance(message, str) or not isinstance(timestamp, str):
+                return {'systemLogProbe': 'unavailable'}
+            observed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            if observed.tzinfo is None:
+                return {'systemLogProbe': 'unavailable'}
+            if not started <= observed.timestamp() <= window_end or not bundle_pattern.search(message):
+                continue
+            signals = system_termination_signals(message)
+            contextual.update(signals)
+            # processID is the logger PID. Require the App's bundle and PID in
+            # a known termination-subject position within the same message.
+            if targets_app_termination(message, bundle, target_pid):
+                correlated.update(signals)
         return {'systemLogProbe': 'available',
-                'systemTerminationSignals': system_termination_signals(result.stdout)}
-    except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
+                'systemTerminationSignals': sorted(contextual),
+                'pidCorrelatedSystemSignals': sorted(correlated),
+                'systemLogWindowSeconds': math.ceil(window_end - started)}
+    except (OSError, ValueError, TypeError, OverflowError, UnicodeError,
+            subprocess.TimeoutExpired):
         return {'systemLogProbe': 'unavailable'}
 
 
@@ -281,6 +343,7 @@ def main():
             print('PASS cold start', attempt, phase, flush=True)
         evidence['passed'] = True
     except Exception as error:
+        failed_at = time.time()
         evidence['passed'] = False
         evidence['failureStage'] = stage
         evidence['failureType'] = type(error).__name__
@@ -305,7 +368,8 @@ def main():
         except Exception:
             evidence['simulatorState'] = 'unavailable'
         try:
-            evidence.update(probe_system_termination(options.simulator, bundle, started))
+            evidence.update(probe_system_termination(
+                options.simulator, bundle, started, failed_at, pid))
         except Exception:
             evidence['systemLogProbe'] = 'unavailable'
         if phase is not None:
