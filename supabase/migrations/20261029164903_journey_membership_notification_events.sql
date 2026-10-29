@@ -26,6 +26,7 @@ create trigger trg_journey_change
   for each row execute function public.on_journey_change();
 
 revoke insert, update, delete on public.group_alerts from public, anon, authenticated;
+grant select on public.group_alerts to service_role;
 
 alter table public.group_alerts drop constraint group_alerts_kind_check;
 alter table public.group_alerts add constraint group_alerts_kind_check

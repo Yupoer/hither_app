@@ -43,6 +43,15 @@ export function mapPushCategoryToEventKey(
   }
 }
 
+/** Old apps dedupe journeys by group/status; updated apps use the lifecycle id. */
+export function eventIdsFromPayload(payload: EventIdPayload): { eventId: string; eventIdV2?: string } {
+  const eventId = eventIdFromPayload(payload);
+  if (payload.category === "journey" && payload.version != null) {
+    return { eventId: eventIdFromPayload({ ...payload, version: null }), eventIdV2: eventId };
+  }
+  return { eventId };
+}
+
 export function eventIdFromPayload(payload: EventIdPayload): string {
   const event = mapPushCategoryToEventKey(payload.category, payload.type);
   const entity =

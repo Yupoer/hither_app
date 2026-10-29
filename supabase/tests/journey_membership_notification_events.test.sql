@@ -1,7 +1,10 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(6);
+select plan(7);
+
+select ok(has_table_privilege('service_role','public.group_alerts','SELECT'),
+ 'send-push can read durable departure evidence as service_role');
 
 create temporary table notification_push_receipts(sequence bigint generated always as identity, payload jsonb);
 create or replace function extensions.notify_push(payload jsonb)

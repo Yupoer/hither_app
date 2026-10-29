@@ -249,7 +249,10 @@ describe('Realtime notification semantics', () => {
     const root = await mountNotifications();
     const first = { journey_status: 'going', active_destination_id: 'stop-1', journey_started_at: '2026-10-22T00:00:00.000Z' };
     const onPush = mockNotifications.addForegroundListener.mock.calls[0][0];
-    onPush({ category: 'journey', groupId: 'group-1', status: 'going', destinationId: 'stop-1', version: Date.parse(first.journey_started_at) });
+    const pushData = { category: 'journey', eventId: 'journey:group-1:going::going',
+      eventIdV2: 'journey:group-1:stop-1::going:1792627200000' };
+    onPush(pushData);
+    onPush(pushData);
     await emit('groups', { new: first, old: { journey_status: 'paused' } });
     expect(mockSchedule).not.toHaveBeenCalled();
     await emit('groups', { new: { ...first, journey_started_at: '2026-10-22T00:01:00.000Z' }, old: first });

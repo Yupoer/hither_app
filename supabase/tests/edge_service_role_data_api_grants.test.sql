@@ -6,12 +6,13 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
 select plan(11);
 
--- The 11-table matrix is limited to operations performed through the admin
+-- The 12-table matrix is limited to operations performed through the admin
 -- Data API clients in send-push and apple-server-notifications.
 with required(table_name, privilege) as (
   values
     ('push_tokens', 'SELECT'), ('push_tokens', 'DELETE'),
     ('groups', 'SELECT'),
+    ('group_alerts', 'SELECT'),
     ('itinerary_items', 'SELECT'),
     ('profiles', 'SELECT'),
     ('memberships', 'SELECT'),
@@ -45,10 +46,10 @@ select is(
    where n.nspname = 'public' and c.relname in (
      'push_tokens', 'groups', 'itinerary_items', 'profiles', 'memberships',
      'notification_preferences', 'navigation_sessions', 'device_live_activity_tokens',
-     'live_activity_sessions', 'destination_arrivals', 'premium_app_account_tokens'
+     'live_activity_sessions', 'destination_arrivals', 'premium_app_account_tokens', 'group_alerts'
    ) and c.relrowsecurity),
-  11,
-  'RLS stays enabled on all 11 exposed tables'
+  12,
+  'RLS stays enabled on all 12 exposed tables'
 );
 
 select ok(
@@ -57,7 +58,7 @@ select ok(
       ('push_tokens'), ('groups'), ('itinerary_items'), ('profiles'), ('memberships'),
       ('notification_preferences'), ('navigation_sessions'),
       ('device_live_activity_tokens'), ('live_activity_sessions'),
-      ('destination_arrivals'), ('premium_app_account_tokens')
+      ('destination_arrivals'), ('premium_app_account_tokens'), ('group_alerts')
     ) t(table_name)
     cross join (values ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE')) p(privilege)
     where has_table_privilege('anon', 'public.' || t.table_name, p.privilege)
@@ -101,6 +102,7 @@ select lives_ok(
   $$select
       (select count(*) from public.push_tokens where false) +
       (select count(*) from public.groups where false) +
+      (select count(*) from public.group_alerts where false) +
       (select count(*) from public.itinerary_items where false) +
       (select count(*) from public.profiles where false) +
       (select count(*) from public.memberships where false) +
@@ -110,7 +112,7 @@ select lives_ok(
       (select count(*) from public.live_activity_sessions where false) +
       (select count(*) from public.destination_arrivals where false) +
       (select count(*) from public.premium_app_account_tokens where false)$$,
-  'service_role can plan all 11 backend reads'
+  'service_role can plan all 12 backend reads'
 );
 select lives_ok(
   $$explain delete from public.push_tokens where false$$,

@@ -15,7 +15,10 @@
       "sender_id": "s1",
       "entity_id": "cmd-1"
     },
-    "expected": "quick_command:g1:cmd-1:s1:"
+    "expected": "quick_command:g1:cmd-1:s1:",
+    "push": {
+      "eventId": "quick_command:g1:cmd-1:s1:"
+    }
   },
   {
     "name": "request_start",
@@ -33,7 +36,10 @@
       "sender_id": "m1",
       "entity_id": "cmd-2"
     },
-    "expected": "route_request:g1:cmd-2:m1:"
+    "expected": "route_request:g1:cmd-2:m1:",
+    "push": {
+      "eventId": "route_request:g1:cmd-2:m1:"
+    }
   },
   {
     "name": "arrival / member_arrival via destination_id",
@@ -50,7 +56,10 @@
       "sender_id": "member-1",
       "destination_id": "dest-9"
     },
-    "expected": "member_arrival:g1:dest-9:member-1:"
+    "expected": "member_arrival:g1:dest-9:member-1:",
+    "push": {
+      "eventId": "member_arrival:g1:dest-9:member-1:"
+    }
   },
   {
     "name": "straggler with entity_id",
@@ -67,7 +76,10 @@
       "entity_id": "alert-1",
       "member_id": "fallen"
     },
-    "expected": "straggler:g1:alert-1:leader-1:"
+    "expected": "straggler:g1:alert-1:leader-1:",
+    "push": {
+      "eventId": "straggler:g1:alert-1:leader-1:"
+    }
   },
   {
     "name": "journey omits sender",
@@ -83,7 +95,10 @@
       "sender_id": "leader-ignored",
       "status": "going"
     },
-    "expected": "journey:g1:going::going"
+    "expected": "journey:g1:going::going",
+    "push": {
+      "eventId": "journey:g1:going::going"
+    }
   },
   {
     "name": "add_gathering",
@@ -101,7 +116,10 @@
       "entity_id": "dest-new",
       "title": "Cafe"
     },
-    "expected": "add_gathering:g1:dest-new:u1:"
+    "expected": "add_gathering:g1:dest-new:u1:",
+    "push": {
+      "eventId": "add_gathering:g1:dest-new:u1:"
+    }
   },
   {
     "name": "first journey start",
@@ -121,7 +139,11 @@
       "status": "going",
       "version": 1792627200000
     },
-    "expected": "journey:g1:d1::going:1792627200000"
+    "expected": "journey:g1:d1::going:1792627200000",
+    "push": {
+      "eventId": "journey:g1:going::going",
+      "eventIdV2": "journey:g1:d1::going:1792627200000"
+    }
   },
   {
     "name": "same destination resumed",
@@ -141,7 +163,11 @@
       "status": "going",
       "version": 1792627260000
     },
-    "expected": "journey:g1:d1::going:1792627260000"
+    "expected": "journey:g1:d1::going:1792627260000",
+    "push": {
+      "eventId": "journey:g1:going::going",
+      "eventIdV2": "journey:g1:d1::going:1792627260000"
+    }
   },
   {
     "name": "destination changed while going",
@@ -161,7 +187,11 @@
       "status": "going",
       "version": 1792627320000
     },
-    "expected": "journey:g1:d2::going:1792627320000"
+    "expected": "journey:g1:d2::going:1792627320000",
+    "push": {
+      "eventId": "journey:g1:going::going",
+      "eventIdV2": "journey:g1:d2::going:1792627320000"
+    }
   },
   {
     "name": "paused original journey",
@@ -181,7 +211,11 @@
       "status": "paused",
       "version": 1792627200000
     },
-    "expected": "journey:g1:d1::paused:1792627200000"
+    "expected": "journey:g1:d1::paused:1792627200000",
+    "push": {
+      "eventId": "journey:g1:paused::paused",
+      "eventIdV2": "journey:g1:d1::paused:1792627200000"
+    }
   },
   {
     "name": "durable member departure",
@@ -197,6 +231,9 @@
       "sender_id": "peer",
       "entity_id": "alert-2"
     },
-    "expected": "member_left:g1:alert-2:peer:"
+    "expected": "member_left:g1:alert-2:peer:",
+    "push": {
+      "eventId": "member_left:g1:alert-2:peer:"
+    }
   }
 ]

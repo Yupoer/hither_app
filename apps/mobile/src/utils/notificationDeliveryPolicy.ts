@@ -382,12 +382,15 @@ export function buildAlignedNotificationEventId(fields: {
 
 /**
  * Resolve event identity from push notification `data` (server alertData keys).
- * Prefers server-provided `eventId` when present.
+ * Prefers the lifecycle identity while retaining legacy server payload support.
  */
 export function eventIdFromPushData(
   data: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!data) return null;
+  if (typeof data.eventIdV2 === 'string' && data.eventIdV2.length > 0) {
+    return data.eventIdV2;
+  }
   if (typeof data.eventId === 'string' && data.eventId.length > 0) {
     return data.eventId;
   }

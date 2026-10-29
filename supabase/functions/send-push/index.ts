@@ -47,7 +47,7 @@ import {
   navigationScopeMembers,
   specialAlertRecipientIds,
 } from "./recipients.ts";
-import { eventIdFromPayload } from "./eventId.ts";
+import { eventIdsFromPayload } from "./eventId.ts";
 import { deliverWithSenderFallback } from "./senderFallback.ts";
 
 interface MembershipRow {
@@ -134,7 +134,7 @@ function alertData(payload: PushPayload): Record<string, string | undefined | nu
     destinationId: payload.destination_id,
     entityId: payload.entity_id,
     // Dual-path dedup with Realtime local presentation (Ticket 02 / SUG-3).
-    eventId: eventIdFromPayload(payload),
+    ...eventIdsFromPayload(payload),
   };
 }
 
