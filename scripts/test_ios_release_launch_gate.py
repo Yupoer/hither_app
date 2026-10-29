@@ -1,5 +1,7 @@
 import hashlib
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from datetime import datetime, timezone
@@ -24,6 +26,66 @@ VERIFY_SPEC.loader.exec_module(VERIFY)
 
 
 class ReleaseLaunchGateTests(unittest.TestCase):
+    def run_replay_boundary(self, eligible=True, child_exit=0, malformed=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mobile = root / 'mobile'
+            (mobile / 'scripts').mkdir(parents=True)
+            output = root / 'launch'
+            output.mkdir()
+            original = output / 'launch-result.json'
+            original.write_text(json.dumps({'passed': False, 'eligible': eligible, 'build': '77',
+                                             'private': 'original private sentinel'}))
+            before = original.read_bytes()
+            helper = mobile / 'scripts/ios_launch_debugger.py'
+            helper.write_text(
+                'import json, pathlib, sys\n'
+                'def eligible_failure(payload, build=None):\n'
+                ' return payload.get("eligible") is True and payload.get("build") == build\n'
+                'def safe_result(payload):\n'
+                ' return {key: payload[key] for key in ("scope", "probe", "stopReason", "signal", "frames") if key in payload}\n'
+                'if __name__ == "__main__":\n'
+                ' args = sys.argv[1:]\n'
+                ' output = pathlib.Path(args[args.index("--output") + 1])\n'
+                ' output.mkdir(exist_ok=False)\n'
+                ' (output / "argv.json").write_text(json.dumps(args))\n'
+                ' print("private debugger sentinel")\n'
+                + (' (output / "replay-result.json").write_text("not-json")\n' if malformed else
+                   ' (output / "replay-result.json").write_text(json.dumps({"scope":"diagnostic_replay", "probe":"stopped", "stopReason":"signal", "signal":5, "frames":[], "private":"private debugger sentinel"}))\n')
+                + f' sys.exit({child_exit})\n')
+            with patch.object(GATE, 'MOBILE', mobile), contextlib.redirect_stdout(io.StringIO()) as public:
+                result = GATE.collect_failure_replay(root / 'Hither.app', 'target-simulator', '77', output)
+            self.assertEqual(original.read_bytes(), before)
+            self.assertNotIn('private', json.dumps(result) + public.getvalue())
+            replay = output / 'diagnostic-replay'
+            args = json.loads((replay / 'argv.json').read_text()) if replay.exists() else None
+            local_log = (output / 'debugger-replay-run.log').read_text() if (output / 'debugger-replay-run.log').exists() else ''
+            return result, args, local_log
+
+    def test_debugger_replay_cannot_replace_original_failure_and_keeps_raw_output_local(self):
+        for child_exit in (0, 17):
+            with self.subTest(child_exit=child_exit):
+                result, args, local_log = self.run_replay_boundary(child_exit=child_exit)
+                self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'stopped',
+                                          'stopReason': 'signal', 'signal': 5, 'frames': []})
+                self.assertEqual(args[0], 'replay')
+                self.assertEqual(args[args.index('--simulator') + 1], 'target-simulator')
+                self.assertEqual(args[args.index('--build') + 1], '77')
+                self.assertTrue(args[args.index('--original-result') + 1].endswith('/launch-result.json'))
+                self.assertIn('private debugger sentinel', local_log)
+                self.assertNotIn('passed', result)
+
+    def test_ineligible_launch_failure_does_not_run_debugger_replay(self):
+        result, args, local_log = self.run_replay_boundary(eligible=False)
+        self.assertIsNone(result)
+        self.assertIsNone(args)
+        self.assertEqual(local_log, '')
+
+    def test_malformed_debugger_summary_preserves_original_failure(self):
+        result, args, _ = self.run_replay_boundary(malformed=True)
+        self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'unavailable'})
+        self.assertIsNotNone(args)
+
     def test_exit_observer_attributes_only_registered_executable_and_kernel_status(self):
         api = SimpleNamespace(KQ_FILTER_PROC=-5, KQ_EV_ADD=1, KQ_EV_ONESHOT=16,
                               KQ_EV_ERROR=0x4000, KQ_NOTE_EXIT=0x80000000,
