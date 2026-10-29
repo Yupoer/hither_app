@@ -225,6 +225,7 @@ with its own retained evidence before another dispatch.
 | [40696292714](https://github.com/Yupoer/hither_app/actions/runs/40696292714) | The full Release simulator did not reach the startup breadcrumb. | The sanitized diagnostic reports `appProcessState=absent`, `processAlive=false`, and `simulatorState=booted`. Bundle-only system log hints include `jetsam` and `watchdog`; the earlier probe could not attribute either signal to the launched App PID. The cause remains unknown. |
 | [40816052797](https://github.com/Yupoer/hither_app/actions/runs/40816052797), source `57d91e882a0f8fb3e2798c4fe2e5243624b0a0f1` | Source CI and toolchain passed; cold launch failed on attempt 1 while waiting to observe the startup breadcrumb. | The [sanitized diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40816052797/artifacts/12873064423) reports original host PID alive at launch, App absent, simulator booted, no matching crash report or runtime signal, empty PID-correlated signals, and bundle-only `jetsam`/`process_exit` hints in a seven-second window. `exitCode=1` belongs to the failed gate command, not the App. Cause remains unknown. |
 | [40834930383](https://github.com/Yupoer/hither_app/actions/runs/40834930383), source `3fe702a3c55dc726cf661bbba288e62cb6727615` | Runner preflight rejected the launch capture capability check before any App build. | The help reader inspected stdout only. Real child-command fixtures reproduce rejection when identical supported help is on stderr or split between streams. The correction reads both streams for this help call; exact Xcode 27 stream routing still requires native observation. This run supplies no new App crash evidence. |
+| [40837853209](https://github.com/Yupoer/hither_app/actions/runs/40837853209), source `1ddd65a85e55462f023aaa8c00d02b4a1f7b50b2` | Help preflight and full Release compilation passed; cold launch failed on attempt 1. | Dispatcher-read [diagnostic](https://github.com/Yupoer/hither_app/actions/runs/40837853209/artifacts/12883846272) attributes signal 5 to the original executable-checked PID during launch observation. The App was then absent, the simulator remained booted, and no matching report, fixed console/runtime pattern or PID-correlated system hint was observed. This establishes SIGTRAP termination, not its trap site or a link to historical phone reports. |
 
 The last run was dispatched separately from this patch. No rerun or guessed
 native fix is part of the contract repair. Future logs contain fixed UTC stage
@@ -282,10 +283,54 @@ Child-process success does not prove permission to observe the launchd-owned
 simulator App. Its own registration result remains explicit.
 Neither self-check nor offline fixtures establish native App acceptance. The
 two original 45-second cold launches, fresh breadcrumb/build requirements and
-screenshots remain required. No diagnostic relaunch or build retry is added.
+screenshots remain required. The separate SIGTRAP replay described below never
+counts toward those launches or changes their result. No build retry is added.
 The wrapper now calls its failed child return code `commandExitCode`; historical
 `exitCode` values still describe the gate command. No unobserved App exit code
 or current startup cause is inferred from either field.
+
+## Same-build SIGTRAP backtrace collection
+
+An original failed result is saved before additional diagnostics. One debugger
+replay is eligible only when the original result has an OS-observed signal 5,
+the expected bundle/build and attempt, an absent App, and no matching crash
+report. Other failures receive no replay. The original JSON and failed command
+status remain unchanged, even if the replay succeeds or its tooling fails.
+
+Before the expensive App build, a selected-Xcode LLDB check must capture a named
+frame from a tiny host C trap fixture. The check also verifies the selected
+simctl advertises wait-for-debugger and stdout/stderr capture. A denied debugger,
+missing capability, empty fixture stack or reported cleanup failure fails before
+App build. This checks the collector, not App startup or simulator-App debugging
+permission.
+
+After an eligible failure, the helper exclusively reserves a separate directory
+and attempts at most one launch of the existing installed App. It verifies the
+bundle/build/platform and installed/compiled executable digest, preserves App
+data, and checks the returned PID's executable before attaching and continuing.
+The compiled executable supplies the symbolic target so matching build symbols
+can be resolved. Debugger execution has an external deadline and cleanup targets
+only the diagnostic processes. No debugger permissions, TCC settings or crash
+reporting preferences are changed.
+
+The safe failure artifact retains `debuggerCheck` or `diagnosticReplay` as
+separate evidence. Its allowlist contains finite probe/stage/stop-reason values,
+a bounded signal, and at most 16 static frames with module basename, image UUID,
+image-relative offset and an optional static function name. `cleanupFailed`
+records whether LLDB target cleanup reported failure; captured frames survive
+that failure, while the diagnostic command still fails. Raw debugger output,
+argument values, variable values, memory and source paths are excluded. Raw
+files stay on the runner. Missing, malformed or failed diagnostic output cannot
+promote the original gate or replace its failure.
+When an original matching IPS exists, `crashFrames` retains the same bounded
+static image/symbol fields from its faulting thread. Report argument values and
+source paths remain excluded.
+
+A replay observes another lifetime. The same installed native executable does
+not establish the same OTA selection; replay evidence must retain that limit.
+The current gate does not attest executed JavaScript identity. Its diagnostic
+stack helps identify a native trap class, while an eventual App repair still
+requires the original unaided two-launch gate to pass.
 
 The repair's offline checks are separate evidence. Canonical EAS-shaped CLI
 fixtures reproduce the nested-list crash and exercise strict latest readback.
