@@ -111,55 +111,101 @@ const noReactEffects = {
   },
 };
 
-/**
- * Reviewed lint baseline for pre-existing React Compiler debt (#129 Sol gate).
- *
- * Rules stay at **error** severity for:
- *   - `src/featureTour/**` (this PR's surface)
- *   - all other files not listed below
- *
- * Legacy app modules below pre-date the React Compiler ESLint plugin and
- * produce ~150 known errors unrelated to the tour/i18n work. They are
- * suppressed with an explicit, scoped override — not a global demotion of
- * rule severity. A dedicated cleanup PR should delete this baseline.
- *
- * CI runs `npm run lint` (full tree) and must exit 0.
- */
-const LEGACY_REACT_COMPILER_BASELINE_FILES = [
-  'src/screens/**/*.{ts,tsx}',
-  'src/state/**/*.{ts,tsx}',
-  'src/components/**/*.{ts,tsx}',
-  'src/hooks/**/*.{ts,tsx}',
-  'src/navigation/**/*.{ts,tsx}',
-  'src/api/**/*.{ts,tsx}',
-  'src/onboarding/**/*.{ts,tsx}',
-  'src/store/**/*.{ts,tsx}',
-  'src/services/**/*.{ts,tsx}',
-  'src/utils/**/*.{ts,tsx}',
-  'src/theme/**/*.{ts,tsx}',
-  'src/i18n/**/*.{ts,tsx}',
-  'src/liveActivity/**/*.{ts,tsx}',
-  'src/notifications/**/*.{ts,tsx}',
-  'src/ads/**/*.{ts,tsx}',
-  'src/location/**/*.{ts,tsx}',
-  'src/map/**/*.{ts,tsx}',
-  'src/a11y/**/*.{ts,tsx}',
-  'src/premiumCatalog.ts',
-  'App.tsx',
-  'index.ts',
-  'index.js',
-];
-
-const REACT_COMPILER_RULES_OFF = {
-  'react-hooks/refs': 'off',
-  'react-hooks/set-state-in-effect': 'off',
-  'react-hooks/immutability': 'off',
-  'react-hooks/purity': 'off',
-  'react-hooks/preserve-manual-memoization': 'off',
-  'react-hooks/static-components': 'off',
-  'react-hooks/globals': 'off',
-  'react-hooks/incompatible-library': 'off',
-  'expo/no-dynamic-env-var': 'off',
+const LEGACY_REACT_COMPILER_EXCEPTIONS = {
+  'react-hooks/refs': [
+    'src/components/AmicroButton.tsx',
+    'src/components/BottomSheet.tsx',
+    'src/components/DestinationReorderList.tsx',
+    'src/components/DestinationSearch.tsx',
+    'src/components/GroupMap.tsx',
+    'src/components/OtaUpdateToast.tsx',
+    'src/components/OverlaySheet.tsx',
+    'src/components/useMemberMarkerMotion.ts',
+    'src/screens/MapScreen.tsx',
+    'src/screens/MapScreen/components/AddPlaceConfirmCard.tsx',
+    'src/screens/MapScreen/components/SettingsChildSheet.ios.tsx',
+    'src/screens/MapScreen/components/SettingsSheetPanel.tsx',
+    'src/screens/MapScreen/components/StorePane.tsx',
+    'src/screens/MapScreen/hooks/useCarouselSelection.ts',
+    'src/screens/MapScreen/hooks/useCoordinationRequests.ts',
+    'src/screens/MapScreen/hooks/useDeviceLocation.ts',
+    'src/screens/MapScreen/hooks/useGatherCardExpansion.ts',
+    'src/screens/MapScreen/hooks/useGatheringCompletion.ts',
+    'src/screens/MapScreen/hooks/useGatheringWorkflow.ts',
+    'src/screens/MapScreen/hooks/useGroupRole.ts',
+    'src/screens/MapScreen/hooks/useJourneyNavigation.ts',
+    'src/screens/MapScreen/hooks/usePendingPlaceEntrance.ts',
+    'src/screens/MapScreen/hooks/usePersonalProgressSurfaces.ts',
+    'src/screens/MapScreen/hooks/useRouteDraft.ts',
+    'src/screens/MapScreen/hooks/useStoreEntitlements.ts',
+    'src/screens/MapScreen/hooks/useStragglerReporting.ts',
+    'src/screens/MapScreen/hooks/useVisitHistory.ts',
+    'src/state/SessionContext.tsx',
+    'src/state/useForegroundReconcile.ts',
+    'src/state/useGroupNotifications.ts',
+    'src/state/useGroupState.ts',
+    'src/state/useJoinedGroups.ts',
+    'src/state/useLiveActivity.ts',
+    'src/state/useNavigationSession.ts',
+    'src/state/useOrganizerExceptions.ts',
+    'src/state/useStragglerAlerts.ts',
+    'src/state/useSubgroupInvites.ts',
+  ],
+  'react-hooks/set-state-in-effect': [
+    'App.tsx',
+  ],
+  'react-hooks/immutability': [
+    'src/components/AmicroButton.tsx',
+    'src/components/BottomSheet.tsx',
+    'src/components/DestinationReorderList.tsx',
+    'src/components/DestinationSearch.tsx',
+    'src/components/GroupMap.tsx',
+    'src/components/MetalforgeBackground.tsx',
+    'src/components/MetalforgeStarfield.tsx',
+    'src/components/OverflowMarquee.tsx',
+    'src/components/OverlaySheet.tsx',
+    'src/components/useMemberMarkerMotion.ts',
+    'src/components/WaveLoading.tsx',
+    'src/onboarding/steps/CelebrationStep.tsx',
+    'src/onboarding/steps/IntroStep.tsx',
+    'src/onboarding/steps/MascotStep.tsx',
+    'src/onboarding/steps/PrimaryButton.tsx',
+    'src/onboarding/steps/StepShell.tsx',
+    'src/onboarding/steps/ThemeStep.tsx',
+    'src/screens/MapScreen.tsx',
+    'src/screens/MapScreen/components/Segmented.tsx',
+    'src/screens/MapScreen/components/SettingsSheetPanel.tsx',
+    'src/screens/MapScreen/hooks/useDeviceLocation.ts',
+    'src/screens/MapScreen/hooks/useMapKitRoutes.ts',
+    'src/screens/MapScreen/hooks/useMemberPresence.ts',
+    'src/screens/MapScreen/hooks/usePendingPlaceEntrance.ts',
+    'src/screens/MapScreen/MapScreenChromeResources.tsx',
+    'src/screens/RoleSelectScreen.tsx',
+    'src/state/useForegroundReconcile.ts',
+    'src/state/useGroupState.ts',
+    'src/state/useJoinedGroups.ts',
+    'src/state/useNavigationSession.ts',
+  ],
+  'react-hooks/purity': [
+    'src/components/AccountSheet.tsx',
+    'src/components/GroupMap.tsx',
+    'src/screens/LoginScreen.tsx',
+    'src/screens/MapScreen.tsx',
+    'src/screens/MapScreen/hooks/useMeetTimeEditor.ts',
+    'src/screens/MapScreen/hooks/usePersonalProgressSurfaces.ts',
+    'src/state/useLiveActivity.ts',
+  ],
+  'react-hooks/preserve-manual-memoization': [
+    'src/screens/MapScreen.tsx',
+    'src/state/useOrganizerExceptions.ts',
+  ],
+  'react-hooks/static-components': [
+    'src/components/NativeGlassButton.tsx',
+    'src/components/ReactNativeSheetHeaderAction.tsx',
+  ],
+  'expo/no-dynamic-env-var': [
+    'src/premiumCatalog.ts',
+  ],
 };
 
 module.exports = defineConfig([
@@ -173,15 +219,12 @@ module.exports = defineConfig([
     rules: {
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
-      // Compiler rules remain errors by default (from eslint-config-expo).
     },
   },
-  {
-    // Explicit reviewed baseline — NOT a global demotion of rule severity.
-    files: LEGACY_REACT_COMPILER_BASELINE_FILES,
-    ignores: ['src/featureTour/**'],
-    rules: REACT_COMPILER_RULES_OFF,
-  },
+  ...Object.entries(LEGACY_REACT_COMPILER_EXCEPTIONS).map(([rule, files]) => ({
+    files,
+    rules: { [rule]: 'off' },
+  })),
   {
     files: ['src/**/*.{js,jsx,ts,tsx}'],
     plugins: { hither: { rules: { 'no-react-effects': noReactEffects } } },

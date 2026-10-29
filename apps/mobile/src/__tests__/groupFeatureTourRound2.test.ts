@@ -1,8 +1,4 @@
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ textScale: 1, boldText: false }) }));
-/**
- * Sol REVIEW_FIX round 2 — high-level observable behavior for #129 / PR #142.
- * Node/ts-jest runner (same as CI `npm test`).
- */
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { measureTargetWithRetry } from '../featureTour/measureTarget';
@@ -607,11 +603,48 @@ describe('R2: MapScreen wires single tour destination + accountId', () => {
   });
 
   it('eslint keeps compiler rules for featureTour (no global demotion)', () => {
-    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
     const { join } = require('node:path') as typeof import('node:path');
-    const cfg = readFileSync(join(__dirname, '../../eslint.config.js'), 'utf8');
-    expect(cfg).toContain('LEGACY_REACT_COMPILER_BASELINE');
-    expect(cfg).toContain("ignores: ['src/featureTour/**']");
-    expect(cfg).not.toMatch(/react-hooks\/refs':\s*'warn'/);
+    const required = {
+      'react-hooks/refs': 2,
+      'react-hooks/set-state-in-effect': 2,
+      'react-hooks/immutability': 2,
+      'react-hooks/purity': 2,
+      'react-hooks/preserve-manual-memoization': 2,
+      'react-hooks/static-components': 2,
+      'react-hooks/globals': 2,
+      'react-hooks/incompatible-library': 1,
+      'expo/no-dynamic-env-var': 2,
+    };
+    const result = spawnSync(process.execPath, ['-e', `
+      const { ESLint } = require('eslint');
+      (async () => {
+        const eslint = new ESLint();
+        const rules = Object.keys(JSON.parse(process.argv[1]));
+        const paths = {
+          tour: 'src/featureTour/measureTarget.ts',
+          futureComponent: 'src/components/FutureComponent.tsx',
+          futureState: 'src/state/FutureState.ts',
+          map: 'src/components/GroupMap.tsx',
+        };
+        const levels = {};
+        for (const [name, file] of Object.entries(paths)) {
+          const config = await eslint.calculateConfigForFile(file);
+          levels[name] = Object.fromEntries(rules.map(rule => [rule, config.rules[rule][0]]));
+        }
+        console.log(JSON.stringify(levels));
+      })();
+    `, JSON.stringify(required)], {
+      cwd: join(__dirname, '../..'),
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(0);
+    const levels = JSON.parse(result.stdout);
+    expect(levels.tour).toEqual(required);
+    expect(levels.futureComponent).toEqual(required);
+    expect(levels.futureState).toEqual(required);
+    expect(levels.map['react-hooks/refs']).toBe(0);
+    expect(levels.map['react-hooks/globals']).toBe(required['react-hooks/globals']);
+    expect(levels.map['react-hooks/incompatible-library']).toBe(required['react-hooks/incompatible-library']);
   });
 });
