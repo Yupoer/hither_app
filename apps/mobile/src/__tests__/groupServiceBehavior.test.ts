@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: { getItem: jest.fn(), setItem: jest.fn() },
@@ -40,7 +41,6 @@ jest.mock('../api/services/DailyAccommodationService', () => ({
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase';
-import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import {
   createGroup,
   getCachedMyJoinedGroups,

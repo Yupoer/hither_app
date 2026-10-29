@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 // Mock the supabase singleton so importing the client does not pull in
 // react-native-url-polyfill / AsyncStorage (native-only) or require env vars.
 jest.mock('../api/supabase', () => ({
@@ -52,7 +53,6 @@ import {
   deleteMyLiveActivitySessionsForGroups,
 } from '../api/client';
 import { supabase } from '../api/supabase';
-import { configureDefaultAuthRecovery } from '../api/authRecovery';
 
 const mockedAuth = supabase.auth as unknown as { getSession: jest.Mock };
 const mockedFrom = supabase.from as unknown as jest.Mock;

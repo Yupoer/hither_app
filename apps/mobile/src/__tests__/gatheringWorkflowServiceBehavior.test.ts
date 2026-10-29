@@ -1,3 +1,4 @@
+import type { CoreGroupSnapshot } from '../types/coreData';
 jest.mock('../api/supabase', () => ({
   supabase: {
     auth: { getSession: jest.fn() },
@@ -26,7 +27,6 @@ const mockCoreSync = {
 jest.mock('../state/coreDataSync', () => mockCoreSync);
 
 import { supabase } from '../api/supabase';
-import type { CoreGroupSnapshot } from '../types/coreData';
 import {
   fetchDestinationArrivals,
   fetchPendingGatherPointRequests,

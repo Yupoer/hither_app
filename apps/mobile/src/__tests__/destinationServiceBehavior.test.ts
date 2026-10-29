@@ -1,3 +1,4 @@
+import type { CoreGroupSnapshot } from '../types/coreData';
 jest.mock('../api/supabase', () => ({
   supabase: {
     rpc: jest.fn(),
@@ -32,7 +33,6 @@ const mockCoreSync = {
 jest.mock('../state/coreDataSync', () => mockCoreSync);
 
 import { supabase } from '../api/supabase';
-import type { CoreGroupSnapshot } from '../types/coreData';
 import {
   addDestination,
   addDestinationsBatch,

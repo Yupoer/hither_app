@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('expo-sqlite', () => ({ openDatabaseAsync: jest.fn() }));
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'generated-id') }));
@@ -25,7 +26,6 @@ import {
 import { projectPendingDestinations } from '../state/coreDataSync';
 import { applyCoreOperation } from '../api/services/CoreDataService';
 import { supabase } from '../api/supabase';
-import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import { insertFirstStop } from '../utils/firstStopInsertion';
 
 const mockedSupabase = supabase as unknown as {

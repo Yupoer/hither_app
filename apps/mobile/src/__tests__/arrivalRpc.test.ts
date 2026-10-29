@@ -1,8 +1,8 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('../api/supabase', () => ({ supabase: {
   auth: { getSession: jest.fn() }, rpc: jest.fn(), from: jest.fn(),
 } }));
 import { supabase } from '../api/supabase';
-import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import { applyCoreOperation } from '../api/services/CoreDataService';
 import type { CoreOperation } from '../types/coreData';
 

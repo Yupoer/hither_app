@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('../api/supabase', () => ({
   supabase: {
     rpc: jest.fn(),
@@ -12,7 +13,6 @@ jest.mock('../api/supabase', () => ({
 }));
 
 import { supabase } from '../api/supabase';
-import { configureDefaultAuthRecovery } from '../api/authRecovery';
 import {
   ackNavigationSession,
   cancelNavigationSession,
