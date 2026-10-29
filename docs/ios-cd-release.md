@@ -151,15 +151,22 @@ or production behavior. Visual screenshot review remains pending.
 
 ## Attempt evidence and interrupted writes
 
-The three mutation modes share `cd-ios-production` with cancellation disabled.
-Diagnostic modes use distinct run-and-attempt concurrency keys so they cannot
-replace a pending production writer. GitHub still has one pending member per
-group. This is not a durable FIFO queue and does not lock external publishers,
-master changes or server environment changes.
+The three mutation modes and `validate-release` share `cd-ios-production` with
+cancellation disabled. Validation is read-only but is a sensitive production
+reader: its cold-launch gate can select a compatible production OTA, and this
+workflow does not observe executed JS identity. The common lock prevents this
+workflow's OTA publication from interleaving with that validation.
+Only `inspect-release` and `preflight` use distinct run-and-attempt diagnostic
+keys, so those two cannot replace a pending production-group writer.
+`validate-release` still occupies the common group and can replace a pending
+member under GitHub's one-pending behavior. This preserves within-workflow read
+consistency; it is not a durable FIFO queue and does not lock external
+publishers, master changes or server environment changes.
 
 GitHub reruns of `ota`, `build-only` and `submit` reject when `run_attempt` is
-greater than one, including pre-mutation failures. Diagnostic reruns remain
-allowed. After direct outcome inspection, a fresh dispatch is another operator
+greater than one, including pre-mutation failures. Read-only `validate-release`,
+`inspect-release` and `preflight` remain rerunnable. After direct outcome
+inspection, a fresh dispatch is another operator
 intent even at the same source SHA. No source-only deduplication, automatic
 retry, rollback or recovery mode is implemented.
 

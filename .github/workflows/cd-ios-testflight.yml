@@ -29,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ contains(fromJSON('["ota","build-only","submit"]'), inputs.mode) && 'cd-ios-production' || format('cd-ios-diagnostic-{0}-{1}', github.run_id, github.run_attempt) }}
+  group: ${{ contains(fromJSON('["ota","build-only","submit","validate-release"]'), inputs.mode) && 'cd-ios-production' || format('cd-ios-diagnostic-{0}-{1}', github.run_id, github.run_attempt) }}
   cancel-in-progress: false
 
 jobs:
