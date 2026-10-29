@@ -177,8 +177,8 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             ('missing_stderr', '--stdout=<path>', '', 0, False),
             ('command_failed', '--stdout=<path>', '--stderr=<path>', 17, False),
         )
-        for name, help_stdout, help_stderr, help_exit, observer_expected in cases:
-            with self.subTest(case=name), tempfile.TemporaryDirectory() as directory:
+        for case_name, help_stdout, help_stderr, help_exit, observer_expected in cases:
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 script = root / "scripts/run-ios-release-launch.py"
                 script.parent.mkdir()
