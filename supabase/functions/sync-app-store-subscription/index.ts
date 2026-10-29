@@ -515,11 +515,6 @@ export function createSyncHandler(
   };
 }
 
-/** Optional service_role near-expiry sweep. This parent keeps it a no-op helper. */
-export function planNearExpirySweep(): { ok: true; skipped: true } {
-  return { ok: true, skipped: true };
-}
-
 const handler = createSyncHandler();
 
 if (import.meta.main) Deno.serve(handler);

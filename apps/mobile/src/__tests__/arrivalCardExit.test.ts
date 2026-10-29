@@ -54,7 +54,6 @@ describe('arrivalCardExit (#149)', () => {
       ],
     ]);
     const merged = mergeExitingDestinations(open, snapshots, records);
-    // Original index preserved — not appended to the end.
     expect(merged.map((d) => d.id)).toEqual(['a', 'b', 'c']);
   });
 
@@ -129,7 +128,6 @@ describe('arrivalCardExit (#149)', () => {
     const store: CelebrateClearStore = new Map();
     let celebrateId: string | null = null;
 
-    // Personal arrival flash.
     celebrateId = 'd1';
     armCelebrateClearTimer(
       store,
@@ -140,7 +138,6 @@ describe('arrivalCardExit (#149)', () => {
       },
     );
 
-    // Stop completes promptly → start 3.2s hold (must cancel 1.6s timer).
     cancelCelebrateClearTimer(store, 'd1');
     celebrateId = 'd1';
     armCelebrateClearTimer(
@@ -199,7 +196,6 @@ describe('arrivalCardExit (#149)', () => {
       ['d', { id: 'd' }],
     ]);
 
-    // Close B.
     const bIdx = resolveExitIndexAtStart(visibleOrder, 'b', visibleOrder.length);
     const bHold = beginArrivalCardExit(records, 'b', 0, bIdx)!;
     records.set('b', bHold);
@@ -215,7 +211,6 @@ describe('arrivalCardExit (#149)', () => {
       mergeExitingDestinations(open, snapshots, records, visibleOrder).map((d) => d.id),
     ).toEqual(['a', 'b', 'c', 'd']);
 
-    // Close C while B is still in the 3.2s hold (open-only would give C index 1).
     const cIdx = resolveExitIndexAtStart(visibleOrder, 'c', visibleOrder.length);
     const cHold = beginArrivalCardExit(records, 'c', 100, cIdx)!;
     records.set('c', cHold);
@@ -231,7 +226,6 @@ describe('arrivalCardExit (#149)', () => {
       mergeExitingDestinations(open, snapshots, records, visibleOrder).map((d) => d.id),
     ).toEqual(['a', 'b', 'c', 'd']);
 
-    // Advance B through exit while C still holding — order stays A,B,C,D.
     const bExit = advanceArrivalCardExit(bHold, ARRIVAL_EFFECT_HOLD_MS);
     records.set('b', bExit);
     expect(bExit.phase).toBe('exit');
@@ -239,7 +233,6 @@ describe('arrivalCardExit (#149)', () => {
       mergeExitingDestinations(open, snapshots, records, visibleOrder).map((d) => d.id),
     ).toEqual(['a', 'b', 'c', 'd']);
 
-    // B done → removed from records; C remains active before D → [A,C,D].
     const bDone = advanceArrivalCardExit(
       bExit,
       ARRIVAL_EFFECT_HOLD_MS + ARRIVAL_CARD_EXIT_MS,
