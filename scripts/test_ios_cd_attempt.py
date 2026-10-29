@@ -255,6 +255,23 @@ class CdAttemptTests(unittest.TestCase):
                 self.assertEqual((self.events()[-1]["phase"], self.events()[-1]["status"]), (phase, "unknown"))
                 self.assertFalse((self.root / "hither-ios-upload-receipt.json").exists())
 
+    def test_inventory_success_without_receipt_still_fails(self):
+        checkout = self.root / "checkout"
+        mobile = checkout / "apps/mobile"
+        mobile.mkdir(parents=True)
+        scripts = checkout / "scripts"
+        scripts.mkdir()
+        shutil.copyfile(REPO / "scripts/write-ios-cd-outcome.py", scripts / "write-ios-cd-outcome.py")
+        (scripts / "inspect-ios-release-inventory.py").write_text("import sys\nsys.exit(0)\n")
+        self.env["RELEASE_MODE"] = "inspect-release"
+        result = self.run_step("Read EAS production iOS metadata", cwd=mobile)
+        self.assertNotEqual(result.returncode, 0)
+        self.finalize(inventory=True, cwd=checkout)
+        self.assertFalse((self.root / "hither-ios-inventory.json").exists())
+        self.assertEqual((self.events()[-1]["phase"], self.events()[-1]["status"]), ("inventory", "failed"))
+        self.assertNotIn(("inventory", "passed"), {(event["phase"], event["status"]) for event in self.events()})
+        self.assertEqual(self.accepted(), [])
+
     def test_inventory_block_and_early_auth_failure_preserve_failures(self):
         self.env.update(RELEASE_MODE="inspect-release", HITHER_FAKE_FAULT="blocked_inventory")
         result = self.run_step("Read EAS production iOS metadata")
