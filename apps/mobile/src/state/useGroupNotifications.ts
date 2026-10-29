@@ -124,6 +124,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
       eventKind: NotificationEventKind;
       senderId: string;
       entityId?: string | null;
+      destinationId?: string | null;
       commandType?: string | null;
       version?: string | number | null;
       /** Server push category string for aligned eventId (optional). */
@@ -151,7 +152,8 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
         const isOwnArrival = opts.eventKind === 'own_arrival';
         // Solo/subgroup mute only when we successfully read memberships.
         if (!isOwnArrival && !soloErr && meRow?.solo) return;
-        if (!soloErr && !isCommand && !isLeaderOnlyEvent && !isOwnArrival && meRow?.subgroup_id != null) return;
+        const isParticipationEvent = opts.eventKind === 'participation' || opts.eventKind === 'leave_group';
+        if (!soloErr && !isCommand && !isLeaderOnlyEvent && !isOwnArrival && !isParticipationEvent && meRow?.subgroup_id != null) return;
 
         // Role: trust DB row when present; on select error/null fall back to
         // session isLeaderRef so leader_only (request_start) is not dropped.
@@ -197,6 +199,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
           type: opts.commandType,
           senderId: opts.senderId,
           entityId: opts.entityId,
+          destinationId: opts.destinationId,
           status: opts.status,
           title: opts.titleKey,
           version: opts.version,
@@ -339,6 +342,19 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
             sender_id?: string | null;
             member_id?: string | null;
           };
+          if (row.kind === 'member_solo' || row.kind === 'member_follow' || row.kind === 'member_left') {
+            const name = row.member_name?.trim() || tRef.current('group.travelerFallback');
+            void fire({
+              category: 'journey',
+              title: tRef.current('notif.participationTitle'),
+              body: tRef.current(`notif.${row.kind}Body`, { name }),
+              eventKind: row.kind === 'member_left' ? 'leave_group' : 'participation',
+              senderId: row.sender_id ?? 'unknown',
+              entityId: row.id,
+              pushCategory: row.kind,
+            });
+            return;
+          }
           if (row.kind !== 'straggler') return;
           const name = row.member_name?.trim() || tRef.current('group.travelerFallback');
           const distance = typeof row.distance_m === 'number'
@@ -367,11 +383,15 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
             active_destination_id?: string | null;
             journey_started_at?: string | null;
           };
-          const prev = payload.old as { journey_status?: string; active_destination_id?: string | null };
-          if (next.journey_status === prev?.journey_status) return;
+          const prev = payload.old as Partial<typeof next>;
+          if (next.journey_status === prev.journey_status
+            && next.active_destination_id === prev.active_destination_id
+            && next.journey_started_at === prev.journey_started_at) return;
           // Operator local confirm is client-side after startSession — not here.
           if (isLeaderRef.current) return;
           const going = next.journey_status === 'going';
+          const destinationId = going ? next.active_destination_id : prev.active_destination_id;
+          const startedAt = going ? next.journey_started_at : prev.journey_started_at;
           void (async () => {
             if (!going && prev.active_destination_id) {
               const { data: completed } = await supabase.from('itinerary_items')
@@ -380,8 +400,8 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
             }
             const [{ data: leader }, { data: destination }] = await Promise.all([
               supabase.from('memberships').select('user_id').eq('group_id', groupId).eq('role', 'leader').limit(1).maybeSingle(),
-              next.active_destination_id
-                ? supabase.from('itinerary_items').select('title').eq('id', next.active_destination_id).maybeSingle()
+              destinationId
+                ? supabase.from('itinerary_items').select('title').eq('id', destinationId).maybeSingle()
                 : Promise.resolve({ data: null }),
             ]);
             const leaderId = (leader as { user_id?: string } | null)?.user_id ?? 'leader';
@@ -396,7 +416,8 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
               body: tRef.current(going ? 'notif.journeyGoingBody' : 'notif.journeyPausedBody', { name, title }),
               eventKind: 'exception',
               senderId: leaderId,
-              entityId: undefined,
+              destinationId,
+              version: startedAt ? Date.parse(startedAt) : undefined,
               status: next.journey_status,
               pushCategory: 'journey',
             });

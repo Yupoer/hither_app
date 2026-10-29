@@ -102,5 +102,101 @@
       "title": "Cafe"
     },
     "expected": "add_gathering:g1:dest-new:u1:"
+  },
+  {
+    "name": "first journey start",
+    "mobile": {
+      "category": "journey",
+      "groupId": "g1",
+      "senderId": "leader",
+      "destinationId": "d1",
+      "status": "going",
+      "version": 1792627200000
+    },
+    "deno": {
+      "category": "journey",
+      "group_id": "g1",
+      "sender_id": "leader",
+      "destination_id": "d1",
+      "status": "going",
+      "version": 1792627200000
+    },
+    "expected": "journey:g1:d1::going:1792627200000"
+  },
+  {
+    "name": "same destination resumed",
+    "mobile": {
+      "category": "journey",
+      "groupId": "g1",
+      "senderId": "leader",
+      "destinationId": "d1",
+      "status": "going",
+      "version": 1792627260000
+    },
+    "deno": {
+      "category": "journey",
+      "group_id": "g1",
+      "sender_id": "leader",
+      "destination_id": "d1",
+      "status": "going",
+      "version": 1792627260000
+    },
+    "expected": "journey:g1:d1::going:1792627260000"
+  },
+  {
+    "name": "destination changed while going",
+    "mobile": {
+      "category": "journey",
+      "groupId": "g1",
+      "senderId": "leader",
+      "destinationId": "d2",
+      "status": "going",
+      "version": 1792627320000
+    },
+    "deno": {
+      "category": "journey",
+      "group_id": "g1",
+      "sender_id": "leader",
+      "destination_id": "d2",
+      "status": "going",
+      "version": 1792627320000
+    },
+    "expected": "journey:g1:d2::going:1792627320000"
+  },
+  {
+    "name": "paused original journey",
+    "mobile": {
+      "category": "journey",
+      "groupId": "g1",
+      "senderId": "leader",
+      "destinationId": "d1",
+      "status": "paused",
+      "version": 1792627200000
+    },
+    "deno": {
+      "category": "journey",
+      "group_id": "g1",
+      "sender_id": "leader",
+      "destination_id": "d1",
+      "status": "paused",
+      "version": 1792627200000
+    },
+    "expected": "journey:g1:d1::paused:1792627200000"
+  },
+  {
+    "name": "durable member departure",
+    "mobile": {
+      "category": "member_left",
+      "groupId": "g1",
+      "senderId": "peer",
+      "entityId": "alert-2"
+    },
+    "deno": {
+      "category": "member_left",
+      "group_id": "g1",
+      "sender_id": "peer",
+      "entity_id": "alert-2"
+    },
+    "expected": "member_left:g1:alert-2:peer:"
   }
 ]

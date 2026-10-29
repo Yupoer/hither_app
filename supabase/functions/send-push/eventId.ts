@@ -57,10 +57,10 @@ export function eventIdFromPayload(payload: EventIdPayload): string {
     ?? payload.title
     ?? "";
   const isJourney = event === "journey";
-  const entityId = isJourney ? (payload.status ?? entity) : entity;
+  const entityId = isJourney && payload.version == null ? (payload.status ?? entity) : entity;
   const senderId = isJourney ? "" : (payload.sender_id ?? "");
   const version = isJourney
-    ? String(payload.status ?? payload.version ?? "")
+    ? payload.version != null ? `${payload.status ?? ""}:${payload.version}` : String(payload.status ?? "")
     : (payload.version != null ? String(payload.version) : "");
   return [event, payload.group_id, entityId ?? "", senderId, version].join(":");
 }

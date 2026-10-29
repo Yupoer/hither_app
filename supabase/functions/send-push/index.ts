@@ -289,7 +289,15 @@ Deno.serve(async (req) => {
 
     const members = (memberData ?? []) as MembershipRow[];
     const memberByUser = new Map(members.map((member) => [member.user_id, member]));
-    const sender = memberByUser.get(payload.sender_id);
+    let sender = memberByUser.get(payload.sender_id);
+    if (payload.category === "member_left") {
+      const { data: departure, error: departureError } = await supabase.from("group_alerts")
+        .select("id").eq("id", payload.entity_id).eq("group_id", payload.group_id)
+        .eq("sender_id", payload.sender_id).eq("kind", "member_left").maybeSingle();
+      if (departureError) throw departureError;
+      if (!departure) return json({ error: "departure event is not recorded" }, 403);
+      sender ??= { user_id: payload.sender_id, role: "follower", subgroup_id: null, solo: false, status: "offline" };
+    }
     if (!sender) return json({ error: "sender is not a group member" }, 403);
     if (!commandSenderIsAuthorized(payload, sender.role)) {
       return json({ error: "sender is not authorized for command" }, 403);

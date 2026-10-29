@@ -15,6 +15,7 @@ export type NotificationEventKind =
   | 'coordination'
   | 'route_request'
   | 'leave_group'
+  | 'participation'
   | 'straggler'
   | 'add_gathering'
   | 'meet_time';
@@ -193,19 +194,6 @@ export function resolveNotificationRecipients(
     };
   }
 
-  if (input.event === 'leave_group') {
-    const ids = leaders(input.members)
-      .filter((m) => m.userId !== input.senderId)
-      .map((m) => m.userId);
-    return {
-      deliveryKind: 'leader_only',
-      recipientIds: prefsAllow ? unique(ids) : [],
-      includesSender: false,
-      eventIdentity,
-      keepRealtimeFallback,
-    };
-  }
-
   if (input.event === 'meet_time') {
     const ids = input.members.map((m) => m.userId);
     return {
@@ -233,9 +221,9 @@ export function resolveNotificationRecipients(
   }
 
   // Sync broadcasts: quick commands, exceptions, coordination, add gathering.
-  // Quick commands are whole-group on server (not subgroup-muted); others use scope.
+  // Commands and participation changes reach the whole team; others use sender scope.
   const wholeGroup =
-    input.event === 'quick_command';
+    input.event === 'quick_command' || input.event === 'participation' || input.event === 'leave_group';
   const ids = input.members
     .filter((m) => m.userId !== input.senderId)
     .filter((m) => !m.solo)
@@ -351,7 +339,8 @@ export function mapPushCategoryToEventKey(
  * Dual-path identity shared by Realtime local + APNs/FCM data payloads.
  * Algorithm must match send-push `eventIdFromPayload` (Deno copy).
  *
- * Journey omits sender so client Realtime (no leader uid) matches server.
+ * Journeys omit sender and use destination/status/start-time when versioned.
+ * Legacy payloads without a version retain their original group/status identity.
  */
 export function buildAlignedNotificationEventId(fields: {
   category: string;
@@ -383,10 +372,10 @@ export function buildAlignedNotificationEventId(fields: {
   return buildNotificationEventId({
     event,
     groupId: fields.groupId,
-    entityId: isJourney ? (fields.status ?? entity) : entity,
+    entityId: isJourney && fields.version == null ? (fields.status ?? entity) : entity,
     senderId: isJourney ? '' : (fields.senderId ?? ''),
     version: isJourney
-      ? String(fields.status ?? fields.version ?? '')
+      ? fields.version != null ? `${fields.status ?? ''}:${fields.version}` : String(fields.status ?? '')
       : (fields.version != null ? String(fields.version) : ''),
   });
 }
