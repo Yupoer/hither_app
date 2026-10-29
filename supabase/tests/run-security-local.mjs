@@ -9,6 +9,7 @@ const runtime = resolve(process.argv[2]);
 const { PGlite } = await import(pathToFileURL(runtime).href);
 const { pgcrypto } = await import(pathToFileURL(resolve(runtime, '../contrib/pgcrypto.js')).href);
 const db = new PGlite({ extensions: { pgcrypto } });
+const explicitPublicGrants = process.argv.includes('--explicit-public-grants');
 const root = new URL('../', import.meta.url);
 const read = name => readFileSync(new URL(name, root), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
 try {
@@ -33,7 +34,7 @@ try {
     create function cron.unschedule(bigint) returns boolean language sql as $$select true$$;
     create publication supabase_realtime;
     grant usage on schema public, auth, extensions, storage to anon, authenticated, service_role;
-    alter default privileges in schema public grant all on tables to authenticated, service_role;
+    ${explicitPublicGrants ? '' : 'alter default privileges in schema public grant all on tables to authenticated, service_role;'}
     alter default privileges in schema storage grant all on tables to authenticated, service_role;
     grant all on storage.objects to authenticated, service_role;
   `);
@@ -76,7 +77,7 @@ try {
       execute 'select array_agg(q::text) from ('||$2||') q' into expected;
       assert actual is not distinct from expected, $3; return 'ok - '||$3; end$$;
   `);
-  const tests = process.argv.slice(3);
+  const tests = process.argv.slice(3).filter(arg => arg !== '--explicit-public-grants');
   for (const name of tests.length ? tests : ['security_group_command_import_arrival.test.sql', 'feedback_limits.test.sql']) {
     try {
       const output = await db.exec(read('tests/' + name).replace(/create extension if not exists pgtap[^;]*;/gi, ''));

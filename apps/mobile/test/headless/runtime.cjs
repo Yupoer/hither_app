@@ -66,7 +66,7 @@ exports.run = async function run(jest) {
       };
       requests.set(id, { resolve, reject, cleanup: () => signal?.removeEventListener('abort', abort) });
       signal?.addEventListener('abort', abort, { once: true });
-      send({ type: 'request', id, operation });
+      send({ type: 'request', id, operation, requestedAt: Date.now() });
     });
   }
   const receive = message => {
@@ -357,6 +357,7 @@ exports.run = async function run(jest) {
     return {
       pid: process.pid, generation: spec.generation, actorId: await getLocalAuthActorId(),
       presentation: presentationMode ? {
+        ...host.observeViews(root),
         hosts: (() => { try { return host.observe(root); } catch (error) { return fatal(`Presentation renderer failed: ${error.message}\n${renderErrors.join('\n')}`); } })(), route: host.route,
         session: presentation.observation.session ? JSON.parse(JSON.stringify(presentation.observation.session)) : null,
         preferences: presentation.observation.preferences ? JSON.parse(JSON.stringify(presentation.observation.preferences)) : null,
@@ -370,7 +371,7 @@ exports.run = async function run(jest) {
       auth: { user: authFixture.currentSession()?.user ?? null, autoRefresh: authFixture.inspection().autoRefresh, listeners: authListeners.size },
       renderErrors: renderErrors.slice(-10),
       group: { state: app.group?.state, loading: app.group?.loading, error: app.group?.error,
-        dataSource: app.group?.dataSource, snapshotFreshness: app.group?.snapshotFreshness,
+        dataSource: app.group?.dataSource, serverTimeOffsetMs: app.group?.serverTimeOffsetMs, snapshotFreshness: app.group?.snapshotFreshness,
         emptyLocalSnapshot: app.group?.emptyLocalSnapshot, refreshing: app.group?.refreshing },
       location: { coordinates: app.location?.deviceCoords, accuracy: app.location?.deviceAccuracyM,
         acceptedAt: app.location?.deviceCoordsAcceptedAtMs, appState: app.location?.appState },

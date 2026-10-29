@@ -152,7 +152,10 @@ jobs:
           META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
       - name: Node tests and changed functions ≥85%
-        run: npm run test:ci
+        run: |
+          node test/headless/scenario-coverage.test.cjs
+          npm run test:ci
+          node test/headless/scenario-coverage.cjs test-artifacts/node-jest.raw.json test-artifacts/headless-scenarios.md > test-artifacts/headless-scenarios.json
         env:
           COVERAGE_BASE: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
@@ -170,6 +173,8 @@ jobs:
           path: |
             apps/mobile/test-artifacts/ci-shadow-plan.json
             apps/mobile/test-artifacts/node-receipt.json
+            apps/mobile/test-artifacts/headless-scenarios.json
+            apps/mobile/test-artifacts/headless-scenarios.md
             apps/mobile/coverage-changed/coverage-summary.json
           if-no-files-found: warn
           retention-days: 14

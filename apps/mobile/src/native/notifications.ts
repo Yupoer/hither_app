@@ -70,7 +70,8 @@ Notifications.setNotificationHandler({
         shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false,
       };
     }
-    const eventId = data?.eventId;
+    const eventId = typeof data?.eventIdV2 === 'string' && data.eventIdV2.length > 0
+      ? data.eventIdV2 : data?.eventId;
     const show = !(Platform.OS === 'ios' && notification.request.content.data?.kind === 'approach') && shouldDeliverOnce(
       presentedEvents, typeof eventId === 'string' ? eventId : null, 'device',
     );

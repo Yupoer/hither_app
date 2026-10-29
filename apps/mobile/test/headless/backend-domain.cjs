@@ -139,9 +139,13 @@ function executeTable(b, operation) {
     if (name === 'groups' && rows.some(r => !leader(b, r.id, userId))) return fail('leader_required');
     if (name === 'itinerary_items' && rows.some(r => !require('./backend-workflows.cjs').scopeAllowed(b, r.group_id, r.subgroup_id, userId))) return fail('leader_required');
     if (mode === 'delete') {
+      if (name === 'memberships') for (const row of rows) {
+        if (row.user_id === userId && b.groups.has(row.group_id)) publishMembershipNotice(b, row, 'member_left');
+      }
       all = all.filter(row => !rows.includes(row));
       rows.forEach(row => b.emit({ table: name, eventType: 'DELETE', new: {}, old: structuredClone(row), commit_timestamp: iso(b) }));
     } else {
+      const oldGroups = name === 'groups' ? rows.map(row => structuredClone(row)) : [];
       const inputs = Array.isArray(mutation[1]) ? mutation[1] : [mutation[1]];
       if (mode !== 'update') rows = [];
       for (const input of inputs) {
@@ -158,7 +162,7 @@ function executeTable(b, operation) {
           const row = { id: randomUUID(), created_at: iso(b), ...(name === 'visited_waypoints' ? { arrived_at: iso(b) } : {}), ...structuredClone(input) }; all.push(row); rows.push(row);
         } else rows.forEach(row => Object.assign(row, structuredClone(input)));
       }
-      rows.forEach(row => b.publish(name, row, mode === 'update' ? 'UPDATE' : 'INSERT'));
+      rows.forEach((row, index) => b.publish(name, row, mode === 'update' ? 'UPDATE' : 'INSERT', oldGroups[index]));
     }
     storeRows(b, name, all);
     if (previousPublicProfiles) for (const row of rows) {
@@ -260,9 +264,18 @@ function execute(b, operation) {
     keys(args, 'p_group_id p_user_id');
     if (!leader(b, args.p_group_id, userId) || args.p_user_id === userId) return fail('leader_required');
     b.memberships = b.memberships.filter(m => !(m.group_id === args.p_group_id && m.user_id === args.p_user_id));
-    const group = b.groups.get(args.p_group_id); group.invite_code = randomUUID().slice(0, 6).toUpperCase(); b.publish('groups', group); return ok(group.invite_code);
+    const group = b.groups.get(args.p_group_id); const oldGroup = structuredClone(group);
+    group.invite_code = randomUUID().slice(0, 6).toUpperCase(); b.publish('groups', group, 'UPDATE', oldGroup); return ok(group.invite_code);
   }
   return undefined;
 }
 
-module.exports = { publicProfile, initialize, execute, schemas, ok, fail, keys, member, leader, iso, projection, anonymousExpired };
+function publishMembershipNotice(b, membership, kind) {
+  const row = { id: randomUUID(), group_id: membership.group_id, kind, sender_id: membership.user_id,
+    member_id: membership.user_id, member_name: (b.profiles.get(membership.user_id)?.nickname ?? '').trim(),
+    distance_m: null, created_at: iso(b) };
+  b.tables.group_alerts.push(row);
+  b.publish('group_alerts', row, 'INSERT');
+}
+
+module.exports = { publishMembershipNotice, publicProfile, initialize, execute, schemas, ok, fail, keys, member, leader, iso, projection, anonymousExpired };

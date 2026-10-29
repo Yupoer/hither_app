@@ -1,0 +1,1530 @@
+{
+  "scope": "Finite feasible JavaScript common-trip and adjacent functional behavior families. Each row requires every referenced scenario on the listed platforms; counts are not global scenario coverage.",
+  "families": [
+    {
+      "id": "AUTH-01",
+      "title": "Email credentials, registration and reset validate, preserve drafts and retry",
+      "critical": true,
+      "sources": [
+        "src/screens/AuthScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "validates credentials locally",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "separates signup confirmation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "rejects duplicate and missing signup identities",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AUTH-02",
+      "title": "Google and Apple cancellation, incomplete credentials and stage failures preserve identity",
+      "critical": true,
+      "sources": [
+        "src/state/useAuthFlow.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "cancels social sign in",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "cancels Apple",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "reports Google profile failures",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AUTH-03",
+      "title": "Recovery callback validates origin, expiry and one-time consumption",
+      "critical": true,
+      "sources": [
+        "src/auth/callbacks.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "validates callback boundaries",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "handles deep-link callbacks once",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AUTH-04",
+      "title": "Guest creation and group join validate input without eager account creation",
+      "critical": true,
+      "sources": [
+        "src/screens/LoginScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "opens and cancels guest warning",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "creates and joins through lazy anonymous auth",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AUTH-05",
+      "title": "Cold identity and foreground transient refresh recover without losing sessions",
+      "critical": true,
+      "sources": [
+        "src/state/SessionContext.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "restores durable identity",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "boots the real navigator",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AUTH-06",
+      "title": "Signout and account deletion require confirmation and successful server work",
+      "critical": true,
+      "sources": [
+        "src/state/SessionContext.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "cancels registered signout",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "deletes an anonymous identity",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "AUTH-07",
+      "title": "Anonymous upgrade and social linking retain UID, membership and authoritative expiry",
+      "critical": true,
+      "sources": [
+        "src/state/SessionContext.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "upgrades an anonymous account",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "links",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ACCOUNT-01",
+      "title": "Profile edits cancel, trim, retain failed drafts and reject duplicate saves",
+      "critical": false,
+      "sources": [
+        "src/screens/MapScreen/components/ProfileOverlay.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "cancels a profile draft",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "blocks profile cancel",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GROUP-01",
+      "title": "Home team list retries and entry adopts only one selected membership",
+      "critical": true,
+      "sources": [
+        "src/screens/MyTeamsScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "routes home actions",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "enters a saved team while profile enrichment is pending without overwriting the nickname",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GROUP-02",
+      "title": "Split, merge and invitations keep role and subgroup scope",
+      "critical": true,
+      "sources": [
+        "src/state/useSubgroupInvites.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "sends, enriches, declines and accepts",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "debounces real subgroup subscriptions",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "GROUP-03",
+      "title": "Map leave and kick cancel safely and remove only the selected member",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual leader kick confirmation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual Map home preserves membership",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual split warning precedes membership",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRIVACY-01",
+      "title": "Teammates receive only public profile fields and denied reads never fall back to private data",
+      "critical": true,
+      "sources": [
+        "src/state/useGroupState.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessPublicProfiles.test.ts",
+          "pattern": "converges teammate identity",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessPublicProfiles.test.ts",
+          "pattern": "propagates public recovery",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessPublicProfiles.test.ts",
+          "pattern": "enriches invitation names",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRIVACY-02",
+      "title": "Notification names use public fields with safe missing-read fallbacks",
+      "critical": true,
+      "sources": [
+        "src/state/useGroupNotifications.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessPublicProfileNotifications.test.ts",
+          "pattern": "uses only public nicknames",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessPublicProfileNotifications.test.ts",
+          "pattern": "keeps notification fallbacks",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DEST-01",
+      "title": "Search debounce and stale responses preserve current provider selection",
+      "critical": false,
+      "sources": [
+        "src/components/DestinationSearch.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapComponentsScenario.test.ts",
+          "pattern": "debounces actual search",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapComponentsScenario.test.ts",
+          "pattern": "actual search reopen clears draft",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DEST-02",
+      "title": "Coordinate form validates and resets its draft",
+      "critical": false,
+      "sources": [
+        "src/components/CoordinateDestinationSheet.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "runs real coordinate validation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DEST-03",
+      "title": "Map add stages without writes, commits durably before ACK and preserves provider identity",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "cancel writes nothing and real confirmation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual search stages an editor confirmation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DEST-04",
+      "title": "Favorites normalize owner identity, delete exactly and restore failed optimistic deletion",
+      "critical": true,
+      "sources": [
+        "src/api/services/FavoritePlacesService.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapServiceScenario.test.ts",
+          "pattern": "owner queries normalization exact deletion",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DEST-05",
+      "title": "KML cancellation, malformed files and quotas never import unintended points",
+      "critical": false,
+      "sources": [
+        "src/components/KmlImportSheet.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapComponentsScenario.test.ts",
+          "pattern": "actual KML picker loads real XML",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapComponentsScenario.test.ts",
+          "pattern": "canceled selection does no I/O",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DEST-06",
+      "title": "Actual Map KML import and follower suggestion approval persist the selected batch",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual Map KML opener reads quota",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual follower KML submits a request",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ROUTE-01",
+      "title": "Route day moves preserve closed history and flush stay selection only on Done",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual move-to-day control",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual stay selection removes its source stop",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ROUTE-02",
+      "title": "Subgroup edits cannot reorder the main itinerary",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual subgroup editor captures its own lane",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ROUTE-03",
+      "title": "Route marker, trip and bulk-delete controls preserve cancellation",
+      "critical": false,
+      "sources": [
+        "src/components/DestinationReorderList.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual marker trip and multi-selection controls",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "STAY-01",
+      "title": "Daily stay updates retain identity, clear safely and keep independent hotel cards",
+      "critical": true,
+      "sources": [
+        "src/api/services/DailyAccommodationService.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapServiceScenario.test.ts",
+          "pattern": "real daily writes retain ID",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NAV-01",
+      "title": "Actual Start and End preserve terminal intent through held ACK and restart",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useJourneyNavigation.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual Start then End pauses",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual held Start then End keeps terminal intent",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "starts with fresh GPS while its location upload ACK is delayed",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NAV-02",
+      "title": "Switch cancellation retains the old session and confirmed switch promotes the right day",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useJourneyNavigation.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual switch confirmation preserves old session",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual follower request-start",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ARRIVAL-01",
+      "title": "Poor GPS cannot arrive and repeated valid GPS retains one durable automatic arrival",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual GPS arrival ignores poor fixes",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ARRIVAL-02",
+      "title": "All-arrived completion closes the original session and keeps the audit trail",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useGatheringCompletion.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "automatic arrivals and all-arrived completion",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ARRIVAL-03",
+      "title": "Force completion requires confirmation and cannot close a replacement or other scope session",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useGatheringCompletion.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessForceCompletionScenario.test.ts",
+          "pattern": "manual force completion confirms before closing",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessForceCompletionScenario.test.ts",
+          "pattern": "stale force confirmation cannot complete",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessForceCompletionScenario.test.ts",
+          "pattern": "a subgroup leader can force complete",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HISTORY-01",
+      "title": "History deletion confirms and personal arrival corrections keep session ownership",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual history cancel retains a waypoint",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COORD-01",
+      "title": "Coordination create, respond and override preserve the resolved result",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useCoordinationRequests.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual create respond and override controls",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "COORD-02",
+      "title": "Coordination reads remain pure and role-denied deadline mutation cannot resolve requests",
+      "critical": true,
+      "sources": [
+        "src/api/services/CoordinationRequestService.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapServiceScenario.test.ts",
+          "pattern": "real coordination services keep reads pure",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LOC-01",
+      "title": "A fresh fix reaches another device through durable storage and platform wrappers",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useDeviceLocation.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "publishes an Expo GPS fix",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "publishes iOS GPS into an Android peer hook",
+          "platforms": [
+            "mixed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SYNC-01",
+      "title": "Missed Realtime repairs by poll and late old recovery cannot overwrite a newer fix",
+      "critical": true,
+      "sources": [
+        "src/state/useGroupState.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "repairs missed Realtime",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "ignores an old recovery",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SYNC-02",
+      "title": "Offline GPS and lost-ACK replay retain original IDs and publish only once after restart",
+      "critical": true,
+      "sources": [
+        "src/state/locationOutbox.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "persists offline GPS across a real process restart",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "acknowledges the same event after lost ACK",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SYNC-03",
+      "title": "Offline Start and End retain original FIFO intent across restart",
+      "critical": true,
+      "sources": [
+        "src/state/coreDataSync.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "restores offline Start and End",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "keeps End authoritative",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRIVACY-03",
+      "title": "Revoked consent, retired callbacks and account replacement fence pending GPS and refreshes",
+      "critical": true,
+      "sources": [
+        "src/state/locationPrivacy.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "fences stale samples and revoked consent",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "does not replay an offline location under a replacement account",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "does not complete a held manual refresh for a replacement account",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LOC-02",
+      "title": "Manual refresh confirms the accepted latest fix without allowing a watcher race to regress it",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/hooks/useDeviceLocation.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "confirms the newest watcher fix",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "resolves manual refresh after its fresh fix",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LOC-03",
+      "title": "Permission denial, background owner handoff and stop failure obey actual wrapper contracts",
+      "critical": true,
+      "sources": [
+        "src/state/backgroundJourney.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
+          "pattern": "preserves foreground permission denial",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
+          "pattern": "preserves background permission denial",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
+          "pattern": "rolls back persisted ownership",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
+          "pattern": "retains the durable owner after a stop error",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRESENCE-01",
+      "title": "Actual solo, stealth and follow controls preserve consent and role scope",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual presence persists solo",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual sharing reenable refuses",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual Map hands active navigation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NOTICE-01",
+      "title": "Receiver preferences, role guards, push/realtime dedupe and stale-account awaits remain effective",
+      "critical": true,
+      "sources": [
+        "src/state/useGroupNotifications.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "loads all five actual preference toggles",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "dispatches real role-scoped realtime notifications",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NOTICE-02",
+      "title": "Local notification permission, scheduling and retryable durable delivery are explicit",
+      "critical": true,
+      "sources": [
+        "src/native/notifications.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreNativeScenario.test.ts",
+          "pattern": "executes permission fallback",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreNativeScenario.test.ts",
+          "pattern": "suppresses iOS approach",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreNativeScenario.test.ts",
+          "pattern": "persists the actual journey delivery claim",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NOTICE-03",
+      "title": "Quick command role controls retain exact offline notification intent",
+      "critical": true,
+      "sources": [
+        "src/components/QuickCommandsCard.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "invokes actual QuickCommands role guards",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "MAP-01",
+      "title": "Camera, directions and provider choice use actual fixes and selected travel mode",
+      "critical": false,
+      "sources": [
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapScenario.test.ts",
+          "pattern": "actual GPS directions feed card metrics",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LIVE-01",
+      "title": "Live Activity adopts only owned scope and throttles native display without granting access",
+      "critical": true,
+      "sources": [
+        "src/state/useLiveActivity.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "adopts only its scoped activity",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "STORE-01",
+      "title": "Ad rewards wait for SSV and lost-response redemption charges once",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/components/StorePane.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "executes Store callbacks and waits for external SSV",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "preserves the redemption request key",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "restores the owned offline snapshot",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "STORE-02",
+      "title": "Native ad cancellation, consent and no-fill never grant client-only credit",
+      "critical": true,
+      "sources": [
+        "src/native/rewardedAds.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreNativeScenario.test.ts",
+          "pattern": "gates consent and treats earned ad events",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreNativeScenario.test.ts",
+          "pattern": "distinguishes no fill",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreNativeScenario.test.ts",
+          "pattern": "fails closed for explicitly unavailable",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PURCHASE-01",
+      "title": "Subscription and trip purchase finish only after verification for the selected owner/group",
+      "critical": true,
+      "sources": [
+        "src/services/premiumPurchaseFlow.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "selects the actual plan",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "binds an actual consumable purchase",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PURCHASE-02",
+      "title": "Restore and unfinished purchases respect authoritative revocation and personal/team separation",
+      "critical": true,
+      "sources": [
+        "src/services/premiumPurchaseFlow.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "restores verified subscriptions",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "recovers unfinished purchases",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreScenario.test.ts",
+          "pattern": "clears the actual promo form",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SETTINGS-01",
+      "title": "Preferences normalize and rehydrate while settings children and reset preserve ownership",
+      "critical": false,
+      "sources": [
+        "src/state/PreferencesContext.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "persists every preference",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "ignores malformed persisted preferences",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "navigates real settings children",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ONBOARD-01",
+      "title": "Leader, follower and browser onboarding preserve branch answers and denied permission progress",
+      "critical": false,
+      "sources": [
+        "src/onboarding/OnboardingScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "finishes the actual",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "preserves partial onboarding answers",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "continues after permission denial",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TOUR-01",
+      "title": "Group and add-place tours complete independently and suppress replay after restart",
+      "critical": false,
+      "sources": [
+        "src/featureTour/useGroupFeatureTour.tsx",
+        "src/screens/MapScreen/MapAddPlaceTourResource.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessTourScenario.test.ts",
+          "pattern": "completes the actual group tour",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessTourScenario.test.ts",
+          "pattern": "navigates the actual add-place tour",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TOUR-02",
+      "title": "Route tour previous, next, completion and replay state use actual controls",
+      "critical": false,
+      "sources": [
+        "src/featureTour/routeReorderTour.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual route tour previous next",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SUPPORT-01",
+      "title": "Feedback failure keeps its draft and diagnostics respect consent and sanitization",
+      "critical": true,
+      "sources": [
+        "src/components/FeedbackSheet.tsx",
+        "src/state/diagnostics.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "submits trimmed feedback",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "retains failed feedback",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "writes sanitized diagnostics",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "RUNTIME-01",
+      "title": "OTA apply shares one flight and error boundaries offer only effective retries",
+      "critical": false,
+      "sources": [
+        "src/utils/otaUpdates.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "shares one OTA apply flight",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "checks OTA when settings opens",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "recovers a resolved render fault",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAccountScenario.test.ts",
+          "pattern": "blocks a loading group retry",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TRIP-01",
+      "title": "Full App two-day trip preserves exact receiver notices, live fixes, hotel, abrupt restart and traveler names",
+      "critical": true,
+      "sources": [
+        "App.tsx",
+        "src/screens/MyTeamsScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessTokyoTripScenario.test.ts",
+          "pattern": "preserves mixed-platform receiver notices",
+          "platforms": [
+            "mixed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TOLERANCE-01",
+      "title": "Offline GPS survives powered-off restart until exactly 24 hours, then expires without later upload",
+      "critical": true,
+      "sources": [
+        "src/state/locationOutbox.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessToleranceScenario.test.ts",
+          "pattern": "retains offline GPS until the 24-hour boundary",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TOLERANCE-02",
+      "title": "A connection flap during held delivery retains the same durable GPS identity for retry",
+      "critical": true,
+      "sources": [
+        "src/state/locationOutbox.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "keeps an offline GPS draft durable when a delivery hold captures the network failure",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TOLERANCE-03",
+      "title": "Retryable transport failure retains GPS while permanent stale-sample rejection discards the rejected event",
+      "critical": true,
+      "sources": [
+        "src/state/locationOutbox.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "keeps the first same-tick sample from independent devices of one account",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessScenario.test.ts",
+          "pattern": "persists offline GPS across a real process restart",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    }
+  ]
+}

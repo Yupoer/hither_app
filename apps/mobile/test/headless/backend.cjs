@@ -36,8 +36,8 @@ class Backend {
       subgroups: this.tables.subgroups.filter(s => s.group_id === groupId), entity_versions: this.tables.core_entity_versions.filter(r => r.group_id === groupId),
       generated_at: new Date(this.now).toISOString(), realtime_revision: new Date(this.now).toISOString() });
   }
-  publish(table, row, eventType = 'UPDATE') {
-    this.emit({ table, eventType, new: structuredClone(row), old: {}, commit_timestamp: new Date(this.now).toISOString() });
+  publish(table, row, eventType = 'UPDATE', old = {}) {
+    this.emit({ table, eventType, new: structuredClone(row), old: structuredClone(old), commit_timestamp: new Date(this.now).toISOString() });
   }
   configureAuth(fixtures) { require('./backend-auth.cjs').configure(this, fixtures); }
   failNext(match, error) { require('./backend-faults.cjs').failNext(this, match, error); }

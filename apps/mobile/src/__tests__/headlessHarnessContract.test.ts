@@ -18,6 +18,23 @@ describe('headless harness contract', () => {
     } finally { await world.close(); }
   });
 
+  it('keeps recovery server time aligned with actor time during a long timer advance', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'clock', userId: LEADER });
+      await device.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(device, (value: { group: { dataSource: string } }) => value.group.dataSource === 'remote');
+      await world.advance(185_000);
+      const observed = await device.observe();
+      expect(observed.now).toBe(world.now);
+      expect(observed.group.serverTimeOffsetMs).toBe(0);
+      const snapshots = world.backend.trace.filter((call: { name: string }) => call.name === 'get_group_public_recovery_snapshot');
+      expect(snapshots.length).toBeGreaterThan(1);
+      expect(snapshots.at(-1).at).toBeLessThan(world.now);
+      expect(Date.parse(snapshots.at(-1).result.data.generated_at)).toBe(snapshots.at(-1).at);
+    } finally { await world.close(); }
+  });
+
   it.each(['network', 'native', 'sdk'])('keeps a swallowed unexpected %s operation fatal through observation and disposal', async name => {
     const world = new World();
     try {
