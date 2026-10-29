@@ -15,6 +15,8 @@ node test/headless/scenario-coverage.cjs C:/path/to/headless-results.json C:/pat
 node test/headless/scenario-coverage.test.cjs
 ```
 
+CI runs the evaluator contract and enforces the family/critical requirements after its complete Node execution. It uploads the safe family report alongside the coverage receipt; detailed actor input/output remains local.
+
 Evaluate the JSON produced by a complete run on the same source under review. Filtered execution is useful for diagnosis and leaves other families unexecuted. Do not combine historical results from different product or harness revisions. The report lists every matched test and platform. A complete registry or a catalog-only Jest run cannot pass this report.
 
 ## Disconnection tolerances
