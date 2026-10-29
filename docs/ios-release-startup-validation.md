@@ -88,5 +88,12 @@ release write／flush／close；`fixtureRelease=sent` 不代表已證實子程�
 回報 exited／-1。Broken pipe 或 cleanup 失敗都會保留已取得的安全診斷。
 若 LLDB cleanup 回報失敗，會保留已取得的 frames 並標記 `cleanupFailed`，
 診斷指令與 build 前自測仍判失敗。
+`cleanupErrors` 只保留有限的 operation／kind／phase 與數字錯誤碼，方便區分
+LLDB Kill／Detach、debugger group 與 fixture group；不保留原始錯誤文字。
+Group cleanup 先嘗試 reap 已退出的直接子程序，再處理 group signals；即使
+leader 已退出仍清理 descendants，真實 permission error 與最終 timeout 都失敗。
+Debugger command deadline 不會丟掉已取得的 capture；`collectorTimedOut=true`
+仍使自測與 replay 指令失敗。CI 可使用 `check --print-result` 取得重新過濾的
+安全 JSON，原始 LLDB 輸出留在 runner。
 只把有限的靜態 module／UUID／offset／function 欄位放入診斷 artifact，原始
 debugger 輸出留在 runner。相同 native binary 仍不保證選到相同 OTA bundle。

@@ -456,7 +456,8 @@ class CaptureTests(unittest.TestCase):
         result = {'scope': 'diagnostic_replay', 'probe': 'stopped',
                   'stopReason': 'signal', 'signal': 5, 'frames': [frame()]}
         self.assertFalse(DEBUGGER._fixture_captured(result))
-        self.assertTrue(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent')))
+        self.assertFalse(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent')))
+        self.assertTrue(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent', collectorTimedOut=False)))
 
 
 FAKE_XCRUN = r'''#!/usr/bin/env python3
@@ -577,7 +578,7 @@ sys.exit(module.main(sys.argv[2:]))
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Controlled executable identities use Linux fixtures')
 class ControlledCliTests(unittest.TestCase):
-    def run_cli(self, command='check', mode='success'):
+    def run_cli(self, command='check', mode='success', show_result=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         base = Path(temporary.name)
@@ -589,6 +590,8 @@ class ControlledCliTests(unittest.TestCase):
         driver = base / 'driver.py'
         driver.write_text(CLI_DRIVER)
         args = [sys.executable, str(driver), str(HELPER), command, '--output', str(base / 'output')]
+        if show_result:
+            args.append('--print-result')
         if command == 'replay':
             make_app(base / 'Compiled.app')
             make_app(base / 'Installed.app')
@@ -598,12 +601,22 @@ class ControlledCliTests(unittest.TestCase):
         environment = dict(os.environ, PATH=str(binary) + os.pathsep + os.environ.get('PATH', ''),
                            DEBUGGER_FIXTURE_ROOT=str(base), DEBUGGER_FIXTURE_MODE=mode)
         result = subprocess.run(args, env=environment, capture_output=True, text=True, timeout=8)
-        self.assertEqual(result.stdout, '')
+        if not show_result:
+            self.assertEqual(result.stdout, '')
         self.assertEqual(result.stderr, '')
         calls = [json.loads(line) for line in (base / 'calls.jsonl').read_text().splitlines()]
         exported = json.loads((base / 'output' / DEBUGGER.RESULT_NAME).read_text())
         self.assertEqual(exported, DEBUGGER.safe_result(exported))
+        if show_result:
+            self.assertEqual(json.loads(result.stdout), exported)
         return base, result, exported, calls, args, environment
+
+    def test_explicit_result_output_reconstructs_only_safe_fields(self):
+        base, result, exported, _, _, _ = self.run_cli(mode='denied', show_result=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(exported['probe'], 'unavailable')
+        self.assertNotIn('private', result.stdout)
+        self.assertIn('private', (base / 'output/lldb.stderr.log').read_text())
 
     def test_prebuild_check_uses_both_help_streams_and_releases_only_after_attach(self):
         base, result, exported, calls, _, _ = self.run_cli()
@@ -676,7 +689,7 @@ class ControlledCliTests(unittest.TestCase):
     def test_replay_debugger_timeout_cleans_app_and_debugger_descendant(self):
         base, result, exported, _, _, _ = self.run_cli(command='replay', mode='timeout')
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'attach'})
+        self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'attach', 'collectorTimedOut': True})
         self.assertFalse(alive(int((base / 'app.pid').read_text())))
         self.assertFalse(alive(int((base / 'debugger-child.pid').read_text())))
 
@@ -760,6 +773,32 @@ static ssize_t record_read(int fd, void *buffer, size_t size) {
 
 
 class DebuggerCommandResultTests(unittest.TestCase):
+    def test_deadline_preserves_committed_frames_and_cleanup_errors_without_passing(self):
+        for cleanup_error in (None, PermissionError(errno.EPERM, 'private cleanup error')):
+            with self.subTest(cleanup_error=cleanup_error), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                captured = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
+                            'stopReason': 'signal', 'signal': 5, 'frames': [frame()], 'cleanupFailed': False}
+                raw = json.dumps(captured).encode()
+                (output / DEBUGGER.CAPTURE_RESULT_NAME).write_bytes(raw)
+                (output / 'attached.ready').touch()
+                process = mock.Mock()
+                process.poll.return_value = None
+                with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                        mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
+                        mock.patch.object(DEBUGGER, '_stop_group', side_effect=cleanup_error):
+                    result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+                self.assertEqual(result['frames'], [frame()])
+                self.assertIs(result['collectorTimedOut'], True)
+                self.assertFalse(DEBUGGER._fixture_captured(dict(result, fixtureRelease='sent')))
+                if cleanup_error is not None:
+                    self.assertEqual(result['cleanupErrors'], [
+                        {'operation': 'lldb_command_group', 'kind': 'os_error', 'errno': errno.EPERM}])
+                self.assertEqual((output / DEBUGGER.CAPTURE_RESULT_NAME).read_bytes(), raw)
+                with mock.patch.object(DEBUGGER, 'replay', return_value=result):
+                    self.assertEqual(DEBUGGER.main(['replay', '--app', '/App.app', '--simulator', frame()['uuid'],
+                                                   '--build', '77', '--original-result', '/original.json',
+                                                   '--output', '/unused']), 1)
     def test_debugger_command_cleanup_failure_preserves_its_committed_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -851,6 +890,51 @@ class ProcessGroupCleanupTests(unittest.TestCase):
             process.wait(timeout=2)
 
 
+class NativeCleanupTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == 'darwin' and hasattr(select, 'kqueue'),
+                         'Zombie process-group semantics require Darwin')
+    def test_real_darwin_zombie_group_is_reaped_before_signaling(self):
+        previous = signal.signal(signal.SIGCHLD, signal.SIG_DFL)
+        process, queue = None, None
+        try:
+            process = subprocess.Popen((sys.executable, '-c', 'import sys;sys.stdin.buffer.read(1)'),
+                                       stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            queue = select.kqueue()
+            event = select.kevent(process.pid, filter=select.KQ_FILTER_PROC,
+                                  flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                                  fflags=select.KQ_NOTE_EXIT)
+            queue.control([event], 0, 0)
+            process.stdin.write(b'x')
+            process.stdin.flush()
+            process.stdin.close()
+            events = queue.control(None, 1, 5)
+            self.assertTrue(events, 'the exact child must exit before group cleanup')
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                state = subprocess.run(('ps', '-o', 'state=', '-p', str(process.pid)),
+                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=1)
+                if state.returncode == 0 and state.stdout.strip().startswith('Z'):
+                    break
+                time.sleep(0.01)
+            else:
+                self.fail('the exact child must become a zombie without being reaped')
+            with self.assertRaises(PermissionError):
+                os.killpg(process.pid, signal.SIGTERM)
+            DEBUGGER._stop_group(process)
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(process.pid, 0)
+        finally:
+            if process is not None:
+                if process.stdin is not None and not process.stdin.closed:
+                    process.stdin.close()
+                process.kill()
+                process.wait(timeout=2)
+            if queue is not None:
+                queue.close()
+            signal.signal(signal.SIGCHLD, previous)
+
+
 class HostCheckResultTests(unittest.TestCase):
     def run_host_check(self, captured, invoke_release=True, broken_pipe=False, cleanup_failed=False):
         with tempfile.TemporaryDirectory() as directory:
@@ -868,7 +952,9 @@ class HostCheckResultTests(unittest.TestCase):
                 if invoke_release:
                     attached()
                 (destination / DEBUGGER.CAPTURE_RESULT_NAME).write_text(json.dumps(captured))
-                return DEBUGGER._read_result(destination, DEBUGGER.CAPTURE_RESULT_NAME)
+                result = DEBUGGER._read_result(destination, DEBUGGER.CAPTURE_RESULT_NAME)
+                result['collectorTimedOut'] = False
+                return result
 
             command = subprocess.CompletedProcess([], 0, '--wait-for-debugger --stdout --stderr', '')
             with mock.patch.object(DEBUGGER, '_is_darwin', return_value=True), \

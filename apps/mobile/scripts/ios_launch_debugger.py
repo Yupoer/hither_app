@@ -7,6 +7,7 @@ This helper never installs an app, changes simulator data, or passes a launch ga
 """
 import argparse
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -29,6 +30,11 @@ PROBES = frozenset(('stopped', 'exited', 'timeout', 'unavailable',
 STOP_REASONS = frozenset(('signal', 'exception', 'other'))
 STAGES = frozenset(('launch_help', 'compile_probe', 'fixture_launch', 'replay_launch',
                     'identity', 'attach', 'continue', 'frames', 'cleanup'))
+CLEANUP_OPERATIONS = frozenset(('lldb_inspect', 'lldb_kill', 'lldb_detach',
+                                'lldb_command_group', 'fixture_group', 'replay_process'))
+CLEANUP_KINDS = frozenset(('api_error', 'os_error', 'exception'))
+CLEANUP_PHASES = frozenset(('reap', 'term', 'kill', 'wait'))
+EXCEPTION_TYPES = frozenset(('AttributeError', 'RuntimeError', 'TypeError', 'ValueError', 'other'))
 DEBUGGER_TIMEOUT = 50
 COMMAND_TIMEOUT = 8
 MAX_JSON_BYTES = 512_000
@@ -85,6 +91,23 @@ def _safe_frame(payload):
     return result
 
 
+def _safe_cleanup_error(payload):
+    if (not isinstance(payload, dict) or not isinstance(payload.get('operation'), str)
+            or payload['operation'] not in CLEANUP_OPERATIONS
+            or not isinstance(payload.get('kind'), str) or payload['kind'] not in CLEANUP_KINDS):
+        return None
+    result = {name: payload[name] for name in ('operation', 'kind')}
+    for key, choices in (('phase', CLEANUP_PHASES), ('exceptionType', EXCEPTION_TYPES)):
+        if isinstance(payload.get(key), str) and payload[key] in choices:
+            result[key] = payload[key]
+    for key, limit in (('errno', 4096), ('errorType', 2**32), ('errorCode', 2**32)):
+        if type(payload.get(key)) is int and 0 <= payload[key] < limit:
+            result[key] = payload[key]
+    if type(payload.get('identityMatched')) is bool:
+        result['identityMatched'] = payload['identityMatched']
+    return result
+
+
 def safe_result(payload):
     """Reconstruct the complete artifact allowlist; never copy arbitrary fields."""
     if (not isinstance(payload, dict) or payload.get('scope') != 'diagnostic_replay'
@@ -96,6 +119,16 @@ def safe_result(payload):
         result['stage'] = stage
     if type(payload.get('cleanupFailed')) is bool:
         result['cleanupFailed'] = payload['cleanupFailed']
+    if type(payload.get('collectorTimedOut')) is bool:
+        result['collectorTimedOut'] = payload['collectorTimedOut']
+    if 'cleanupErrors' in payload:
+        errors = payload['cleanupErrors']
+        if isinstance(errors, list):
+            safe = [item for error in errors[:6] if (item := _safe_cleanup_error(error)) is not None]
+            if safe:
+                result['cleanupErrors'] = safe
+        if not isinstance(errors, list) or errors:
+            result['cleanupFailed'] = True
     release = payload.get('fixtureRelease')
     if isinstance(release, str) and release in ('sent', 'write_failed', 'not_observed'):
         result['fixtureRelease'] = release
@@ -123,12 +156,39 @@ def _result(probe, stage=None):
     return safe_result({'scope': 'diagnostic_replay', 'probe': probe, 'stage': stage})
 
 
+def _record_cleanup_error(result, operation, error, *, api=False, identity=None):
+    item = {'operation': operation,
+            'kind': 'api_error' if api else 'os_error' if isinstance(error, OSError) else 'exception'}
+    if api:
+        for field, getter in (('errorType', 'GetType'), ('errorCode', 'GetError')):
+            try:
+                item[field] = getattr(error, getter)()
+            except Exception:
+                pass
+    elif isinstance(error, OSError):
+        item['errno'] = error.errno
+        item['phase'] = getattr(error, 'cleanup_phase', None)
+    else:
+        name = type(error).__name__
+        item['exceptionType'] = name if name in EXCEPTION_TYPES else 'other'
+    if type(identity) is bool:
+        item['identityMatched'] = identity
+    result['cleanupFailed'] = True
+    result.setdefault('cleanupErrors', []).append(_safe_cleanup_error(item))
+
+
 class _IdentityMismatch(ValueError):
     pass
 
 
 class _CommandFailure(RuntimeError):
     pass
+
+
+class _GroupCleanupFailure(OSError):
+    def __init__(self, phase, code):
+        self.cleanup_phase = phase
+        super().__init__(code, 'process-group cleanup failed')
 
 
 class _CommandTimeout(RuntimeError):
@@ -172,22 +232,33 @@ def _read_result(output, name=RESULT_NAME):
 
 def _stop_group(process):
     """The group belongs to this command, never to a simulator App launch."""
+    phase = 'reap'
     try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=0.5)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    try:
+        try:
+            process.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            pass
+        phase = 'term'
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        phase = 'wait'
+        try:
+            process.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            pass
+        phase = 'kill'
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        phase = 'wait'
         process.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        pass
+    except subprocess.TimeoutExpired as error:
+        raise _GroupCleanupFailure(phase, errno.ETIMEDOUT) from error
+    except OSError as error:
+        raise _GroupCleanupFailure(phase, error.errno) from error
 
 
 def _run_command(argv, output, name, timeout=COMMAND_TIMEOUT, check=True):
@@ -420,22 +491,22 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
         result = _result('unavailable')
     finally:
         result['stage'] = stage
-        cleanup_failed = False
+        operation, identity = 'lldb_inspect', None
         try:
             if process is not None and process.IsValid() and process.GetState() != lldb.eStateExited:
-                if owned and _same_executable(pid, executable):
+                identity = _same_executable(pid, executable) if owned else False
+                if identity:
+                    operation = 'lldb_kill'
                     error = process.Kill()
                 else:
+                    operation = 'lldb_detach'
                     error = process.Detach(True)
                 if error.Fail():
-                    cleanup_failed = True
-        except Exception:
-            cleanup_failed = True
-        if result.get('probe') == 'stopped':
-            # Cleanup trouble must not discard the only captured static stack.
-            result['cleanupFailed'] = cleanup_failed
-        elif cleanup_failed:
-            result = _result('unavailable', 'cleanup')
+                    _record_cleanup_error(result, operation, error, api=True, identity=identity)
+        except Exception as error:
+            _record_cleanup_error(result, operation, error, identity=identity)
+        if result.get('probe') == 'stopped' and 'cleanupFailed' not in result:
+            result['cleanupFailed'] = False
         _write_result(output, result, CAPTURE_RESULT_NAME)
 
 
@@ -452,7 +523,8 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
                                    start_new_session=True)
         deadline = time.monotonic() + DEBUGGER_TIMEOUT
-        cleanup_failed = False
+        cleanup_error = None
+        timeout_stage = None
         try:
             while process.poll() is None:
                 if attached is not None and (Path(output) / 'attached.ready').is_file():
@@ -461,14 +533,19 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None):
                 if time.monotonic() >= deadline:
                     raise _CommandTimeout('continue' if (Path(output) / 'attached.ready').is_file() else 'attach')
                 time.sleep(0.05)
+        except _CommandTimeout as error:
+            timeout_stage = error.stage
         finally:
             try:
                 _stop_group(process)
-            except OSError:
-                cleanup_failed = True
+            except OSError as error:
+                cleanup_error = error
     result = _read_result(output, CAPTURE_RESULT_NAME)
-    if cleanup_failed:
-        result['cleanupFailed'] = True
+    if timeout_stage is not None and result.get('probe') == 'unavailable' and 'stage' not in result:
+        result.update(probe='timeout', stage=timeout_stage)
+    result['collectorTimedOut'] = timeout_stage is not None
+    if cleanup_error is not None:
+        _record_cleanup_error(result, 'lldb_command_group', cleanup_error)
     if 'stage' not in result:
         result['stage'] = 'continue' if (Path(output) / 'attached.ready').is_file() else 'attach'
     return result
@@ -529,8 +606,8 @@ def check(output):
             finally:
                 try:
                     _stop_group(fixture)
-                except OSError:
-                    result['cleanupFailed'] = True
+                except OSError as error:
+                    _record_cleanup_error(result, 'fixture_group', error)
         result['fixtureRelease'] = released
     return _write_result(output, result)
 
@@ -574,8 +651,8 @@ def replay(app, simulator, build, original_result, output):
         if owned is not None:
             try:
                 owned.close()
-            except OSError:
-                result['cleanupFailed'] = True
+            except OSError as error:
+                _record_cleanup_error(result, 'replay_process', error)
         elif executable is not None:
             # A launch command can print its PID and then time out. Its exact
             # returned PID remains the only cleanup candidate in that case.
@@ -599,6 +676,7 @@ def _launch_pid(contents):
 def _fixture_captured(result):
     return (result.get('probe') == 'stopped'
             and result.get('cleanupFailed') is False
+            and result.get('collectorTimedOut') is False
             and result.get('fixtureRelease') == 'sent'
             and (result.get('stopReason') == 'exception'
                  or (result.get('stopReason') == 'signal' and result.get('signal') == 5))
@@ -614,6 +692,7 @@ def main(argv=None):
     commands = parser.add_subparsers(dest='command', required=True)
     check_parser = commands.add_parser('check')
     check_parser.add_argument('--output', required=True, type=Path)
+    check_parser.add_argument('--print-result', action='store_true')
     replay_parser = commands.add_parser('replay')
     replay_parser.add_argument('--app', required=True, type=Path)
     replay_parser.add_argument('--simulator', required=True)
@@ -623,11 +702,15 @@ def main(argv=None):
     options = parser.parse_args(argv)
     try:
         if options.command == 'check':
-            return 0 if _fixture_captured(check(options.output)) else 1
+            result = check(options.output)
+            if options.print_result:
+                print(json.dumps(safe_result(result), sort_keys=True))
+            return 0 if _fixture_captured(result) else 1
         result = replay(options.app, options.simulator, options.build,
                         options.original_result, options.output)
         return 0 if (result.get('probe') in ('stopped', 'exited')
-                     and result.get('cleanupFailed') is not True) else 1
+                     and result.get('cleanupFailed') is not True
+                     and result.get('collectorTimedOut') is False) else 1
     except (OSError, ValueError):
         return 1
 
