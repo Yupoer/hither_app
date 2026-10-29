@@ -1,6 +1,7 @@
 """Check the release modes execute only their intended CD actions."""
 
 from pathlib import Path
+import json
 import re
 
 
@@ -69,13 +70,16 @@ for name in expo_steps:
 assert "secrets.EXPO_TOKEN" not in source
 
 group_expression = re.search(r"^  group: (.+)$", source, flags=re.MULTILINE)[1]
-expected_group = "${{ contains(fromJSON('[\"ota\",\"build-only\",\"submit\"]'), inputs.mode) && 'cd-ios-production' || format('cd-ios-diagnostic-{0}-{1}', github.run_id, github.run_attempt) }}"
-assert group_expression == expected_group
+serialized_modes = set(json.loads(re.search(r"fromJSON\('([^']+)'\)", group_expression)[1]))
 mutation_modes = {"ota", "build-only", "submit"}
-groups = {mode: "cd-ios-production" if mode in mutation_modes else "cd-ios-diagnostic-12345-1"
+groups = {mode: "cd-ios-production" if mode in serialized_modes else "cd-ios-diagnostic-12345-1"
           for mode in ("inspect-release", "preflight", "validate-release", "ota", "build-only", "submit")}
 assert {groups[mode] for mode in mutation_modes} == {"cd-ios-production"}
-assert all(groups[mode] != "cd-ios-production" for mode in groups if mode not in mutation_modes)
+assert groups["validate-release"] == groups["ota"], groups
+assert serialized_modes == mutation_modes | {"validate-release"}
+assert all(groups[mode] != "cd-ios-production" for mode in ("inspect-release", "preflight"))
+expected_group = "${{ contains(fromJSON('[\"ota\",\"build-only\",\"submit\",\"validate-release\"]'), inputs.mode) && 'cd-ios-production' || format('cd-ios-diagnostic-{0}-{1}', github.run_id, github.run_attempt) }}"
+assert group_expression == expected_group
 
 for prepare, upload, mutate, phase, step_id in (
         ("Prepare production iOS OTA intent", "Upload OTA mutation intent", "Publish and verify production iOS OTA", "ota_publication", "ota_intent_upload"),
