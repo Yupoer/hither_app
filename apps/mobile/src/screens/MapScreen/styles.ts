@@ -1744,12 +1744,10 @@ export const makeStyles = (
       borderColor: glass.hairline,
     },
     reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
-  };
-  // applyAppTextScale / applyBoldTextWeights spread style objects; cast keeps
-  // StyleSheet.create happy with the wide inferred defs shape.
+  } satisfies StyleSheet.NamedStyles<Record<string, unknown>>;
   const scaled = applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS);
   return StyleSheet.create(
-    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS) as any,
+    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS),
   );
 };
 
