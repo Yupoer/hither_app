@@ -70,11 +70,22 @@ class ReleaseLaunchGateTests(unittest.TestCase):
     def test_cli_rejects_unsupported_or_malformed_profiles_before_child_commands(self):
         for profile in (None, [], {"env": []}, {"env": {"KEY": 1}},
                         {"extends": "base"}, {"ios": {"env": {"KEY": "private-sentinel"}}},
-                        {"ios": []}, {"environment": "preview"}):
+                        {"ios": []}, {"environment": "preview"},
+                        {"distribution": "internal"}, {"distribution": "internal", "developmentClient": True},
+                        {"distribution": "unknown"}, {"developmentClient": "false"},
+                        {"ios": {"distribution": "internal"}}, {"ios": {"environment": "preview"}}):
             with self.subTest(profile=profile):
                 child, result = self.run_profile_boundary(profile, {})
                 self.assertIsNone(child)
                 self.assertIn("production profile", result.stderr)
+
+    def test_cli_preserves_eas_store_default_and_explicit_environment_precedence(self):
+        for profile in ({}, {"distribution": "store"}, {"distribution": "store", "developmentClient": True},
+                        {"developmentClient": True}, {"distribution": "internal", "environment": "production"},
+                        {"distribution": "internal", "developmentClient": True, "environment": "production"}):
+            with self.subTest(profile=profile):
+                child, _ = self.run_profile_boundary(profile, {})
+                self.assertIsNotNone(child)
 
     def test_failure_probe_distinguishes_replacement_app_from_stale_host_pid(self):
         app = "/sim/Containers/Hither.app"
