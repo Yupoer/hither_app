@@ -87,7 +87,7 @@ for prepare, upload, mutate, phase, step_id in (
         ("Prepare TestFlight upload intent", "Upload TestFlight mutation intent", "Upload this IPA to TestFlight", "eas_upload", "submit_intent_upload")):
     assert source.index(f"- name: {prepare}") < source.index(f"- name: {upload}") < source.index(f"- name: {mutate}")
     body = steps[upload]["body"]
-    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in body
+    assert re.search(r"^[ \t]*uses: actions/upload-artifact@[0-9a-f]{40}(?:[ \t]+#.*)?$", body, re.MULTILINE)
     assert f"hither-ios-cd-intent-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}-{phase}" in body
     assert f"path: ${{{{ runner.temp }}}}/hither-ios-cd-intent-{phase}.json" in body
     assert "if-no-files-found: error" in body and "overwrite:" not in body
