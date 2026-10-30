@@ -52,7 +52,7 @@ jobs:
           [[ "$GITHUB_REF" == refs/heads/master ]] || exit 1
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
           [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -68,7 +68,7 @@ jobs:
         run: |
           python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase dispatch --status passed
           python3 scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status unknown
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22.16.0
           cache: npm
@@ -121,7 +121,7 @@ jobs:
           fi
       - name: Upload sanitized inventory receipt
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-inventory-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hither-ios-inventory.json
@@ -169,7 +169,7 @@ jobs:
 
       - name: Upload inventory attempt outcome
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-cd-outcome-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -206,7 +206,7 @@ jobs:
             [[ "$GITHUB_RUN_ATTEMPT" == 1 ]] || { echo 'Write-mode reruns are blocked; inspect the earlier outcome before a fresh dispatch'; exit 1; }
           fi
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
@@ -247,7 +247,7 @@ jobs:
           printf '%s\n' "$tool_dir" >> "$GITHUB_PATH"
           PATH="$tool_dir:$PATH" pod --version | grep -Fx '1.16.2'
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22.16.0
           cache: npm
@@ -321,7 +321,7 @@ jobs:
       - name: Upload OTA mutation intent
         id: ota_intent_upload
         if: inputs.mode == 'ota'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-cd-intent-${{ github.run_id }}-${{ github.run_attempt }}-ota_publication
           path: ${{ runner.temp }}/hither-ios-cd-intent-ota_publication.json
@@ -363,7 +363,7 @@ jobs:
           cat "$RUNNER_TEMP/hither-ota-receipt.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload OTA receipt
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: inputs.mode == 'ota'
         with:
           name: hither-ios-ota-receipt-${{ github.run_id }}-${{ github.run_attempt }}
@@ -385,7 +385,7 @@ jobs:
           cat "$RUNNER_TEMP/hither-release-launch-receipt.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Release launch receipt
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
         with:
           name: hither-ios-release-launch-receipt-${{ github.run_id }}-${{ github.run_attempt }}
@@ -394,7 +394,7 @@ jobs:
           retention-days: 14
 
       - name: Upload sanitized Release launch failure diagnostic
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure() && (inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit')
         with:
           name: hither-ios-release-launch-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
@@ -411,7 +411,7 @@ jobs:
       - name: Upload signed build mutation intent
         id: build_intent_upload
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-cd-intent-${{ github.run_id }}-${{ github.run_attempt }}-signed_build
           path: ${{ runner.temp }}/hither-ios-cd-intent-signed_build.json
@@ -479,7 +479,7 @@ jobs:
           python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ipa_verification --status passed
 
       - name: Upload build receipt
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         with:
           name: hither-ios-receipt-${{ github.run_id }}-${{ github.run_attempt }}
@@ -496,7 +496,7 @@ jobs:
       - name: Upload TestFlight mutation intent
         id: submit_intent_upload
         if: inputs.mode == 'submit'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-cd-intent-${{ github.run_id }}-${{ github.run_attempt }}-eas_upload
           path: ${{ runner.temp }}/hither-ios-cd-intent-eas_upload.json
@@ -527,7 +527,7 @@ jobs:
 
       - name: Upload TestFlight submission receipt
         if: always() && inputs.mode == 'submit'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-upload-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hither-ios-upload-receipt.json
@@ -575,7 +575,7 @@ jobs:
 
       - name: Upload iOS attempt outcome
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: hither-ios-cd-outcome-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
