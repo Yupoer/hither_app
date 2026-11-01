@@ -2,6 +2,8 @@
 
 Run from `apps/mobile` on Node >=22.16.0.
 
+For a recorded user-flow proof, use the project [verification skill](../../../../.cursor/skills/verify-hither/SKILL.md) and its [feature map](../../../../.cursor/skills/verify-hither/features/README.md). The skill provides checkout doctor checks, source records, retained evidence, and cleanup. Codex discovers the same instructions through `.agents/skills/verify-hither`.
+
 ```sh
 npm run test:headless -- --list
 npm run test:headless -- --inventory
