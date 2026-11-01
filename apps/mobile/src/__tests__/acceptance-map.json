@@ -2913,6 +2913,13 @@
       "acceptance": "Measured card bounds hide overlapping map controls and restore recenter when collapsing the card frees its band.",
       "testFile": "mapChromeLayout.test.ts",
       "testNamePattern": "hides the compass when the measured card occupies|restores recenter after card collapse"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Headless compiled output reflects source edits and inherited TypeScript configuration changes across isolated processes.",
+      "testFile": "headlessLoaderContract.test.ts",
+      "testNamePattern": "headless compilation cache reloads edited source"
     }
   ]
 }

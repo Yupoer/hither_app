@@ -18,7 +18,9 @@ npm ci --no-audit --no-fund
 
 Require Node >=22.16.0 for `node:sqlite`. Keep `patch-package` postinstall enabled. If the Windows npm shim cannot find `npm-cli.js`, invoke the `node_modules/npm/bin/npm-cli.js` beside the actual Node installation with that installation's `node.exe`.
 
-There is no server, port, Expo Go, device, or emulator to keep alive. The Drive command launches the actual `App.tsx` in owned child Jest processes. Each `World` starts with a new `hither-headless-*` temporary directory and runs production SQLite initialization. It supplies a fixture backend with a leader, member, group `TEST42`, and one stop. The recorded trip starts signed out, then creates a separate group through the guest and team screens. It needs no live account, `.env`, remote migration, or production credentials.
+There is no server, port, Expo Go, device, or emulator to keep alive. The Drive command launches the actual `App.tsx` in owned isolated Node processes. Each `World` starts with a new `hither-headless-*` temporary directory and runs production SQLite initialization. It supplies a fixture backend with a leader, member, group `TEST42`, and one stop. The recorded trip starts signed out, then creates a separate group through the guest and team screens. It needs no live account, `.env`, remote migration, or production credentials.
+
+On Windows, use `test/headless/run.ps1` for the CPU budget. It caps its own launch and descendants with a 4.5% Windows Job CPU rate, restores the caller's environment and its own rate on exit, and writes actual CPU time, elapsed time and owned host CPU share to `-ResourceReport`. Other programs are outside that budget. Each device keeps its own process, globals, SDK fixtures and durable storage. Only source-derived compilation data is cached under this checkout's `node_modules/.cache/hither-headless`; input changes invalidate it. The first cold compilation can cost more than a warm iteration. V8 compilation caching is disabled when `NODE_V8_COVERAGE` is present. On other hosts, invoke the same Node drivers directly; the Windows resource cap is separate from functional verification.
 
 `app.boot` alone is not usable readiness. Require an operable `onboarding-skip` host, successful guest confirmation, and `membership.confirmed` observations with route `Map`, membership, and `map-search`. `trio.roster` must show all three travelers. The runner exercises these controls and fails when the expected path is unavailable. World shutdown runs in `finally`, including after a failed drive.
 
@@ -35,7 +37,7 @@ const root = process.cwd();
 const [major, minor] = process.versions.node.split('.').map(Number);
 assert(major > 22 || major === 22 && minor >= 16, 'Node >=22.16.0 required');
 require('node:sqlite');
-for (const name of ['jest/bin/jest', 'typescript', 'react', 'react-test-renderer']) {
+for (const name of ['jest/bin/jest', 'typescript', 'ts-jest', '@jest/fake-timers', 'jest-resolve', 'react', 'react-test-renderer']) {
 	assert(require.resolve(name).startsWith(path.join(root, 'node_modules') + path.sep), `${name}: install dependencies in this checkout`);
 }
 const registry = require('./test/headless/actions.cjs');
@@ -67,6 +69,7 @@ New-Item -ItemType Directory -Force -Path $verifyParent | Out-Null
 $verifyOutput = Join-Path $verifyParent $verifyRunId
 $verifyStdout = Join-Path $verifyParent ($verifyRunId + '.stdout.log')
 $verifyStderr = Join-Path $verifyParent ($verifyRunId + '.stderr.log')
+$verifyResources = Join-Path $verifyParent ($verifyRunId + '.resources.json')
 $verifySource = [ordered]@{
 	revision = (git rev-parse HEAD)
 	worktree = (git rev-parse --show-toplevel)
@@ -74,9 +77,9 @@ $verifySource = [ordered]@{
 	node = (node --version)
 	lockSha256 = (Get-FileHash -Algorithm SHA256 package-lock.json).Hash
 	featureIds = @('teams', 'itinerary', 'journey', 'members')
-	command = @('node', 'test/headless/tokyo-trip.cjs', $verifyOutput)
+	command = @('./test/headless/run.ps1', '-Driver', 'trip', '-ResourceReport', $verifyResources, $verifyOutput)
 }
-node test/headless/tokyo-trip.cjs $verifyOutput 1> $verifyStdout 2> $verifyStderr
+./test/headless/run.ps1 -Driver trip -ResourceReport $verifyResources $verifyOutput 1> $verifyStdout 2> $verifyStderr
 $verifyExit = $LASTEXITCODE
 $verifySource.exitCode = $verifyExit
 $verifySource | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $verifyParent ($verifyRunId + '.source.json'))
@@ -89,6 +92,10 @@ Use a new output path on every attempt. The CLI refuses an existing directory. T
 The runner clicks `onboarding-skip`, `login-guest`, `guest-confirm-button`, `role-create`, and `role-join`, then uses registry commands such as `team.create`, `team.join`, `map.pin.drop`, `map.place.first-stop`, and `map.journey.command`. These reach rendered production callbacks with visibility and disabled guards. `map-bottom-sheet` gestures invoke the actual registered callback phases. They do not reproduce physical touch or animation rendering.
 
 For an entry point outside this trip, use the corresponding feature's exact Jest command or extend a `World` scenario through the registry. `node test/headless/run.cjs --list` prints the current commands, sources, input shapes, levels, and completion contracts. A service call or standalone component receipt does not prove its parent screen path. `perform()` can return before persistence or acknowledgment. Use `world.waitFor()` for the durable result and recipient convergence, and always `finally { await world.close(); }`.
+
+`world.advance(ms)` advances virtual milliseconds: `world.advance(120000)` runs two minutes of timers without waiting two real minutes. Retain the existing bounded steps, timer ordering, and checks before and at expiry or retry boundaries. Drive the next action as soon as its completion event or observable precondition permits; do not insert human reaction delays or fixed sleeps. Complete or cancel animations through the host event so production callbacks still run. Real timeouts are failure ceilings for stuck work, not required waits. Do not multiply logical time, skip due timers, or assign successful state to accelerate a scenario.
+
+For a slow or CPU-heavy run, measure owned process startup, App loading, command execution and cleanup before changing the runner. Separate test CPU from other programs, record CPU time and elapsed time, and compare identical work with independent device processes and retained evidence. A shorter simulated duration or fewer checks is not a performance improvement.
 
 ## Evidence
 
@@ -105,6 +112,7 @@ Each recorded trip produces these files.
 | `transcript.md` | Readable chronological actions and resulting states. |
 | `leader.log`, `memberA.log`, `memberB.log` | Actor diagnostics. |
 | Sibling `<run-id>.source.json`, `.stdout.log`, `.stderr.log` | Source revision and dirty paths, lock hash, command, runtime, exit code, and CLI output. |
+| Sibling `<run-id>.resources.json` | Owned launcher and child CPU time, elapsed time, measured host CPU share, configured rate, native exit and launcher errors. |
 
 For other Jest scenarios, set `HITHER_HEADLESS_EVIDENCE` using the map index recipe. Every World writes a unique directory with `world.json` identifying its test and scratch path, `events.jsonl` pairing commands and returned observations by actor, generation and command ID, `backend.json` preserving final fixture state, and `cleanup.json` reporting scratch removal, child disposal, and failures. Recording adds no app actions or observation requests. Native adapter unit cases that do not create a World retain their Jest assertions as boundary evidence.
 
@@ -124,6 +132,8 @@ foreach ($verifyName in @('inputs.jsonl', 'observations.jsonl', 'backend-evidenc
 	if (-not (Test-Path -LiteralPath (Join-Path $verifyOutput $verifyName))) { throw "Missing proof $verifyName" }
 }
 $verifySummary = Get-Content -Raw (Join-Path $verifyOutput 'summary.json') | ConvertFrom-Json
+$verifyResourceSummary = Get-Content -Raw $verifyResources | ConvertFrom-Json
+if ($verifyResourceSummary.exitCode -ne 0) { throw 'Verification launcher failed; retain its resource report' }
 if ($verifyExit -ne 0 -or $verifySummary.failed -ne 0 -or $null -ne $verifySummary.harnessFailure) {
 	$verifySummary | Select-Object passed, failed, harnessFailure
 	throw 'Hither verification failed. Inspect retained evidence before retrying.'
@@ -143,16 +153,18 @@ This skill reuses maintained helpers in `apps/mobile/test/headless`.
 ```powershell
 node test/headless/run.cjs --list
 node test/headless/run.cjs --inventory
-node test/headless/tokyo-trip.cjs $verifyOutput
+./test/headless/run.ps1 -Driver trip -ResourceReport "${verifyOutput}.resources.json" $verifyOutput
 ```
 
-The last command is the recorded driver used above. For mapped Jest suites, use the exact commands in the feature files and require matching executed cases in the JSON report. A successful command with every case skipped is not a pass. Do not run `actor.test.ts` directly because it needs World IPC. For a full headless execution report, allocate `$verifySuiteOutput` with the map index recipe, then run these commands. Never feed the coverage reporter a partial suite as complete coverage.
+The last command is the recorded driver used above. For mapped Jest suites, use the exact commands in the feature files and require matching executed cases in the JSON report. A successful command with every case skipped is not a pass. Do not run `actor.cjs` directly because it needs World IPC. For a full headless execution report, allocate `$verifySuiteOutput` with the map index recipe, then run these commands. Never feed the coverage reporter a partial suite as complete coverage.
 
 ```powershell
-node test/headless/run.cjs --json --outputFile="$verifySuiteOutput"
+./test/headless/run.ps1 -ResourceReport "${verifySuiteOutput}.resources.json" --json --outputFile="$verifySuiteOutput"
 if ($LASTEXITCODE -ne 0) { throw 'Headless suite failed' }
 node test/headless/scenario-coverage.cjs $verifySuiteOutput "${verifySuiteOutput}.coverage.md"
 if ($LASTEXITCODE -ne 0) { throw 'Functional scenario coverage failed' }
+node -e "const assert=require('node:assert/strict'); const report=require('./test/headless/scenario-coverage.cjs').evaluate(require(process.argv[1])); assert.equal(report.passed,report.total);" $verifySuiteOutput
+if ($LASTEXITCODE -ne 0) { throw 'Complete verification requires every functional family' }
 ```
 
 For maintenance, use `pstack:maintain-verification-skill` and update this map when a route, callback, fixture contract, or observable result changes. Inventory alignment and executed feature coverage remain separate claims.

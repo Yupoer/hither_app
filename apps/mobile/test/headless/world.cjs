@@ -160,7 +160,7 @@ class Device {
     fs.mkdirSync(directory, { recursive: true });
     const generation = this.generation;
     this.logs = '';
-    this.child = fork(require.resolve('jest/bin/jest'), ['--config', 'test/headless/actor.config.cjs', '--runInBand', '--silent'], {
+    this.child = fork(require.resolve('./actor.cjs'), [], {
       cwd: path.dirname(require.resolve('../../package.json')),
       env: { ...process.env, HITHER_HEADLESS_DEVICE: JSON.stringify({ ...this.spec, directory, generation, now: this.world.now }) },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],

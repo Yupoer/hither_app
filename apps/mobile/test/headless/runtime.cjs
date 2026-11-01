@@ -297,10 +297,6 @@ exports.run = async function run(jest) {
     previousAct = current.catch(() => {});
     return current;
   };
-  const { useGroupState } = require('../../src/state/useGroupState');
-  const { useNavigationSession } = require('../../src/state/useNavigationSession');
-  const { useDeviceLocation } = require('../../src/screens/MapScreen/hooks/useDeviceLocation');
-  const { useJourneyNavigation } = require('../../src/screens/MapScreen/hooks/useJourneyNavigation');
   const privacy = require('../../src/state/locationPrivacy');
   const core = require('../../src/state/coreDataSync');
   const { getLocalAuthActorId } = require('../../src/api/supabase');
@@ -309,13 +305,17 @@ exports.run = async function run(jest) {
   session = authFixture.currentSession();
   stage('auth persisted');
   const app = { userId: session?.user.id ?? null, platform: spec.platform, groupId: spec.screen?.params?.groupId ?? null, sharingEnabled: true,
-    destinationService: require('../../src/api/services/DestinationService') };
+    get destinationService() { return require('../../src/api/services/DestinationService'); } };
   app.external = { input: input => command({ command: { kind: 'input', input } }) };
   const mapRef = { current: null };
   const carouselRef = { current: null };
   const t = key => key;
   const setSelectedIndex = () => {};
   function Probe() {
+    const { useGroupState } = require('../../src/state/useGroupState');
+    const { useNavigationSession } = require('../../src/state/useNavigationSession');
+    const { useDeviceLocation } = require('../../src/screens/MapScreen/hooks/useDeviceLocation');
+    const { useJourneyNavigation } = require('../../src/screens/MapScreen/hooks/useJourneyNavigation');
     app.group = useGroupState(app.groupId, { myUserId: app.userId });
     app.navigation = useNavigationSession(app.groupId, null, app.userId);
     app.location = useDeviceLocation({ groupId: app.groupId, highAccuracy: false,
