@@ -7959,19 +7959,19 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "f50270c5633868a641cbd396a0272874976307641caf890cee8474aea01ac377"
+    "hash": "cea5076dba8f4aa394dd5bbbb6c923adf6a0163417b6855fc341f27e36b4945d"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "57e31decbe83828a881b4d00084703ee704ff974502bb4f863c90c807993c9eb"
+    "hash": "eaff17161a5aee94ef860e68be764666855e8941c4b26d08dfd45fa2d29fd98d"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "dcbc608a35cc7456e23fcae2d39a40be8218fedc9fa59ab0a8875bce35e66e0f"
+    "hash": "5d1f431e21fbe5a2ec26af25ea16d25546f2fd9c7cc8c9f4201f7eb73ce0ec23"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
