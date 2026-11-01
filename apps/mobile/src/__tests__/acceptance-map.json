@@ -2920,6 +2920,34 @@
       "acceptance": "Headless compiled output reflects source edits and inherited TypeScript configuration changes across isolated processes.",
       "testFile": "headlessLoaderContract.test.ts",
       "testNamePattern": "headless compilation cache reloads edited source"
+    },
+    {
+      "parent": 342,
+      "child": "automatic-arrival",
+      "acceptance": "Automatic GPS arrival commits through the real Map and reaches the leader and arriving member once through Realtime while another follower stays silent.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "actual GPS arrival reaches"
+    },
+    {
+      "parent": 342,
+      "child": "straggler-recipients",
+      "acceptance": "A real straggler report reaches the detector and participating member once through Realtime while a solo member stays silent.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "leader straggler report reaches"
+    },
+    {
+      "parent": 342,
+      "child": "request-start-routing",
+      "acceptance": "The follower card queues request-start for the leader without starting a session, and an injected foreground push is presented only once.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "request-start card targets"
+    },
+    {
+      "parent": 342,
+      "child": "member-departure",
+      "acceptance": "Self departure removes the member from the leader roster and delivers one member-left participation notification under the current master contract.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "leaving the group updates"
     }
   ]
 }
