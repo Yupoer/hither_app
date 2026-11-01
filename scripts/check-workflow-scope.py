@@ -1,4 +1,3 @@
-"""Classify product changes and adapt the shared planner to workflow outputs."""
 import json
 import os
 import subprocess

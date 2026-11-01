@@ -338,9 +338,10 @@ jobs:
         run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27" --standalone --runtime-build "$JSI_RUNTIME_BUILD"
 
   benchmark-workers:
+    needs: scope
     if: github.event_name == 'workflow_dispatch' && inputs.benchmark && inputs.benchmark_kind != 'cache'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -368,6 +369,7 @@ jobs:
           retention-days: 14
 
   benchmark-cache:
+    needs: scope
     if: github.event_name == 'workflow_dispatch' && inputs.benchmark && inputs.benchmark_kind != 'workers'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
