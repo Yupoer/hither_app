@@ -4,7 +4,7 @@ const { LEADER, PEER, GROUP_ID } = require('../../test/headless/backend.cjs');
 
 type ClockObservation = { presentation: {
   route: { route: string };
-  hosts: { testId?: string }[];
+  hosts: { testId?: string; acceptsInput: boolean; disabled: boolean }[];
   flockRows: { userId: string; lastUpdated: string; serverTimeOffsetMs: number; text: string }[];
 } };
 
@@ -26,12 +26,22 @@ describe('Tokyo full App common-trip acceptance', () => {
         group_id: GROUP_ID, user_id: PEER, latitude: 25.03, longitude: 121.53,
         captured_at: capturedAt, updated_at: capturedAt,
       });
+      world.hold('memberships', { deviceId: 'clock' });
       const device = await world.device({ id: 'clock', userId: LEADER, platform, mode: 'app' });
       const press = (testId: string) => device.host.call({ kind: 'press', testId });
       if ((await device.observe()).presentation.hosts.some((host: { testId?: string }) => host.testId === 'onboarding-skip')) {
         await press('onboarding-skip');
       }
       await press('role-my-teams');
+      const loading = await world.waitFor(device, (value: ClockObservation) =>
+        value.presentation.route.route === 'MyTeams', 'loading joined teams');
+      expect(loading.presentation.hosts.some((host: ClockObservation['presentation']['hosts'][number]) =>
+        host.testId === `team-card-${GROUP_ID}`)).toBe(false);
+      await Promise.all([
+        world.waitFor(device, (value: ClockObservation) => value.presentation.hosts.some(host =>
+          host.testId === `team-card-${GROUP_ID}` && host.acceptsInput && !host.disabled), 'joined team card'),
+        world.release('memberships'),
+      ]);
       await press(`team-card-${GROUP_ID}`);
       await press('team-enter');
       await world.waitFor(device, (value: ClockObservation) => value.presentation.route.route === 'Map', 'restored team Map');

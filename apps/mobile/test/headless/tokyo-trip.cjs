@@ -171,6 +171,8 @@ async function enterRestored(actor) {
   await world.settle();
   if (has(await devices[actor].observe(), 'onboarding-skip')) await press(actor, 'onboarding-skip');
   await press(actor, 'role-my-teams');
+  await world.waitFor(devices[actor], o => o.presentation.hosts.some(h =>
+    h.testId === `team-card-${groupId}` && h.acceptsInput && !h.disabled), 'joined team card');
   await press(actor, `team-card-${groupId}`);
   await press(actor, 'team-enter');
 }
