@@ -5,7 +5,7 @@ This map describes user paths and observable proof for the headless React and Ja
 | Feature ID | Recipe | Recorded trip coverage | Additional entry points |
 | --- | --- | --- | --- |
 | `teams` | [Accounts and teams](teams.md) | Guest confirmation, create, join, reenter, leave. | Email, signup, recovery, OAuth, account upgrade, profile. |
-| `itinerary` | [Destinations and itinerary](itinerary.md) | Dropped pins, two days, hotel, move to day, close history. | Search, favorites, KML, member suggestions, subgroup, bulk changes. The coordinate form has no reachable Map opener. |
+| `itinerary` | [Destinations and itinerary](itinerary.md) | Dropped pins, two days, hotel, move to day, close history. | Search, manual coordinates, favorites, KML, member suggestions, subgroup, drag, date, bulk changes. |
 | `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Manual End and completion, location refresh, consent, missed events, native adapter branch. |
 | `members` | [Members and notifications](members.md) | Trio roster, coordinates, solo and rejoin, departure notices, muted category. | Invitations, split and merge, kick, profile, preference controls, route tour. |
 | `store` | [Store and Premium](store.md) | None. | Map store, rewarded ad, redemption, Premium plans, purchase, restore, promo. |
@@ -22,7 +22,7 @@ This map describes user paths and observable proof for the headless React and Ja
 
 Read the corresponding production entry and existing scenario before extending a recipe. Prefer registry names and `testID` hosts to text matching. Preserve guards, confirmation alerts, and fixture errors. Wait for committed state, acknowledgment, or the receiving actor instead of counting mock calls.
 
-The recorded trip emits detailed action and state evidence. A Jest JSON report lists executed assertions but does not by itself contain a chronological screen transcript. For an additional entry point that needs reviewable action and state proof, record `World({ recordInput })`, `device.observe()`, and relevant backend receipts in the same manner as `tokyo-trip.cjs`, outside `world.directory`. Never infer that entry point passed from the trip.
+The recorded trip emits detailed action and state evidence. A Jest JSON report lists executed assertions. Set `HITHER_HEADLESS_EVIDENCE` before other scenario commands to also capture their existing commands, observations, final backend state and cleanup under one directory per World. `world.json` links each record to its exact Jest case. Never infer that an additional entry point passed from the trip.
 
 Before each additional Jest command, allocate a new result path from `apps/mobile`. The feature commands use this variable so a retry cannot overwrite a prior proof.
 
@@ -31,6 +31,7 @@ $verifySuiteId = [guid]::NewGuid().ToString('N')
 $verifySuiteDirectory = Join-Path $PWD ('test-artifacts/verify-hither/' + $verifySuiteId)
 New-Item -ItemType Directory -Path $verifySuiteDirectory -Force | Out-Null
 $verifySuiteOutput = Join-Path $verifySuiteDirectory 'jest.json'
+$env:HITHER_HEADLESS_EVIDENCE = Join-Path $verifySuiteDirectory 'worlds'
 [ordered]@{
 	revision = (git rev-parse HEAD)
 	dirty = @(git status --porcelain)
@@ -38,7 +39,7 @@ $verifySuiteOutput = Join-Path $verifySuiteDirectory 'jest.json'
 } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $verifySuiteDirectory 'source.json')
 ```
 
-Save the selected command, its stdout, stderr, and exit code alongside that JSON. Require a nonzero executed test count, no failed cases, and both declared platform cases. A skipped entry point stays unexecuted. The suites close each owned World in `finally`; retain the JSON and any action records after they finish.
+Save the selected command, its stdout, stderr, and exit code alongside that JSON. Require a nonzero executed test count, no failed cases, and both declared platform cases. A skipped entry point stays unexecuted. The suites close each World in `finally`; retain the JSON and action records after they finish. To cover every mapped entry together, use the full headless command in the skill once, then require the functional scenario report to pass. That denominator includes the parent integrations listed below.
 
 ## Proof and skip reporting
 

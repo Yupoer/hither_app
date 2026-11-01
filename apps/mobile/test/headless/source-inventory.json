@@ -2289,6 +2289,12 @@
     "file": "src/components/DestinationSearch.tsx",
     "kind": "callback",
     "name": "onPress",
+    "hash": "7f8ddedf9eb4f86d1ff6037938eedb3dd919beaae5c6fcd5ec8854924de0d067"
+  },
+  {
+    "file": "src/components/DestinationSearch.tsx",
+    "kind": "callback",
+    "name": "onPress",
     "hash": "be1abd3de252e64a9f00e7b87f10a8b102eb63edec864ce6003858b4795bb2db"
   },
   {
@@ -5643,7 +5649,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "442498eb70454d5b43a32adf204cf976c8a5ad27e3dac9ad19e972848c71b712"
+    "hash": "ecb89e145ff723f9c0246d79781f8bee8d821bcd2b12b718f7bd26d07d927265"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6088,6 +6094,12 @@
     "kind": "callback",
     "name": "onOpenComplete",
     "hash": "6d2258fa885ebb900fe63b9f334e58760008b9e444aed07f00b9aff731fc7e88"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "callback",
+    "name": "onOpenCoordinates",
+    "hash": "eff92afa57a9e70ffbce56640d60b3bb2b61b44908a735bfabee72b305acf6d2"
   },
   {
     "file": "src/screens/MapScreen.tsx",

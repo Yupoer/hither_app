@@ -2085,6 +2085,7 @@ const Row = memo(function Row({
 
   const rowContent = (
         <Animated.View
+          testID={floating ? undefined : `route-drag-${item.id}`}
           style={[
             styles.row,
             !isAccommodation && stayDuplicate && styles.rowStayDuplicate,
