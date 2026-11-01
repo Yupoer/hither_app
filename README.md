@@ -104,6 +104,8 @@ Product PRs select complete CI jobs through the module-contract planner. Known m
 
 Optional manual `benchmark=true` dispatches collect worker and real installed-cache pairs alongside full normal CI. `benchmark_kind` selects `workers`, `cache`, or `all`. Benchmark success does not replace `ci-required`. Adoption requires five matching pairs on each runner environment to pass correctness and satisfy `max(candidate) < min(baseline)`; overlapping results retain the incumbent. Worker plain and coverage modes are evaluated separately.
 
+Worker plain mode binds its base to the checked-out `HEAD` and still runs all Node tests. Coverage mode accepts the optional `benchmark_coverage_base` input as a real 40-character commit SHA. Its preflight rejects an empty eligible coverage scope. Source changes require new matching worker measurements before adoption.
+
 Ubuntu `verify` and `mobile-checks` reuse the exact installed dependency tree. Only `verify` saves it on `master` pushes and manual `deliver/` dispatches. In [cache benchmark run 41339472235](https://github.com/Yupoer/hither_app/actions/runs/41339472235), all five Ubuntu pairs passed correctness with separate timing ranges. Median clean install time was 20.1s, compared with 9.6s for cache restore. The `macos-26` and `xcode-27` ranges overlapped, so both native jobs retain clean patched installs.
 
 ## OpenAI Codex and GPT-5.6 Usage

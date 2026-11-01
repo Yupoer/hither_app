@@ -33,6 +33,10 @@ on:
         type: choice
         options: [all, workers, cache]
         default: all
+      benchmark_coverage_base:
+        description: Real 40-character commit SHA for the worker coverage benchmark base.
+        type: string
+        default: 017bf952db09c353ae7b14984d941be8c584fa30
 
 permissions:
   contents: read
@@ -361,9 +365,10 @@ jobs:
         working-directory: apps/mobile
         env:
           BENCHMARK_MODE: ${{ matrix.mode }}
+          BENCHMARK_COVERAGE_BASE: ${{ inputs.benchmark_coverage_base }}
         run: |
-          base=017bf952db09c353ae7b14984d941be8c584fa30
-          if [ "$BENCHMARK_MODE" = coverage ]; then base=5d3c1d990493bf14e2512e832b0cf553c02e894f; fi
+          base=$(git rev-parse HEAD)
+          if [ "$BENCHMARK_MODE" = coverage ]; then base="$BENCHMARK_COVERAGE_BASE"; fi
           node scripts/benchmark-ci.mjs --mode "$BENCHMARK_MODE" --base "$base" --candidate-workers 2
       - name: Upload sanitized worker comparison
         if: always()
