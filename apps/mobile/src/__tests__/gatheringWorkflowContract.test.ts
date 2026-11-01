@@ -187,7 +187,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('completeGatheringStop');
     expect(visitHistory).toContain('projectHistoryForViewer');
     expect(mapScreen).toContain('enqueueJourneyCompletion');
-    expect(carousel).toContain('leader_mark_complete');
     expect(migrations).toContain('coalesce(i.day, 1) >= v_current_day');
     expect(pushMessages).toContain('gathering_completed');
     expect(pushMessages).toMatch(/nameOr\(p\.sender_name/);

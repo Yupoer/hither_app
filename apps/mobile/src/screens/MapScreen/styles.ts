@@ -39,19 +39,18 @@ export const makeStyles = (
   // Density ladder (single-row only):
   // regular → full labels + larger meet
   // compact → smaller squares (narrow OR large type OR Bold Text via bucket)
-  // tight   → icon-only nav + smallest meet type (xl OR narrow+large)
+  // tight   → smaller command controls and meet type (xl OR narrow+large)
   // Bold Text is already reflected in `scale`/`bucket` (layoutFontScale factor).
   const tight = bucket === 'xl' || (narrow && bucket === 'large');
   const compact = tight || narrow || bucket === 'large';
   const cardPad = compact ? s(14, 10) : s(18, 14);
   const cmdGap = tight ? s(5, 4) : compact ? s(6, 4) : s(8, 6);
-  // Every control is at least 48pt; mode/arrived stay exact squares (#148).
+  // Every command control is at least 44pt; Complete uses cmdSize on both axes.
   const cmdSize = Math.max(
     GATHER_CMD_MIN_HIT_PT,
     tight ? s(48, 44) : compact ? s(52, 48) : s(56, 52),
   );
   // Meet grows with free width; min leaves room for countdown digits.
-  // Collapsed 3-btn row gets more meet width than expanded 4-btn.
   const meetMinW = tight ? s(72, 64) : compact ? s(84, 76) : s(104, 92);
   // Expanded metric numerals — drop size under large Dynamic Type / Bold so
   // distance + ETA never clip inside the two metric columns.
@@ -155,8 +154,6 @@ export const makeStyles = (
       zIndex: 50,
     },
 
-    // a11y-layout:carouselCapsuleClearance — cards above capsules; maxHeight inline.
-    // Must stay below sheetLayer (70).
     carouselWrap: {
       position: 'absolute',
       left: 0,
@@ -429,8 +426,6 @@ export const makeStyles = (
       marginTop: -1,
     },
 
-    // a11y-layout:commandRow — single row always; density via cmdSize/labels.
-    // Mode exact square; nav/meet grow. Meet may grow taller than cmdSize under large type.
     commandRow: {
       flexDirection: 'row',
       alignItems: 'stretch',
@@ -460,19 +455,22 @@ export const makeStyles = (
       backgroundColor: 'rgba(255,255,255,0.12)',
       opacity: 0.85,
     },
-    // Tight density: exact square so meet keeps countdown width.
+    // Complete stays square even when the countdown makes the row taller.
     navBtnIconOnly: {
       flexGrow: 0,
       flexShrink: 0,
       flexBasis: cmdSize,
       width: cmdSize,
+      height: cmdSize,
       minWidth: cmdSize,
       maxWidth: cmdSize,
+      maxHeight: cmdSize,
+      alignSelf: 'center',
       paddingHorizontal: 0,
     },
     // "End navigation" state — a soft danger tint over the accent-solid "go".
     navBtnEnd: { backgroundColor: 'rgba(255,107,107,0.14)', borderColor: 'rgba(255,107,107,0.4)' },
-    // Member waiting-for-leader label needs more width than icon-only nav.
+    // Member waiting-for-leader copy needs extra width.
     navBtnWide: {
       flexGrow: 1.4,
       minWidth: cmdSize * 1.6,
@@ -507,7 +505,7 @@ export const makeStyles = (
       backgroundColor: accentMix(glass.ok, 22),
       borderColor: glass.hairlineSoft,
     },
-    // Meet-time slot keeps countdown from shifting when Arrived appears (#148).
+    // Meet-time slot keeps countdown from shifting when Complete appears (#148).
     meetBtnSlot: {
       flexGrow: 0,
       flexShrink: 0,
@@ -545,7 +543,7 @@ export const makeStyles = (
       overflow: 'visible',
     },
     meetBtnExpanded: {
-      // When Arrived is hidden, allow countdown to absorb free nav space.
+      // When Complete is hidden, allow countdown to absorb free nav space.
       flexGrow: 2.1,
     },
     meetBtnStack: {
@@ -1542,7 +1540,6 @@ export const makeStyles = (
       justifyContent: 'center',
       flexShrink: 0,
     },
-    // a11y-layout:inviteRow
     inviteRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
     invitePromptFull: { flex: 0, width: '100%' },
     inviteActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -1747,12 +1744,10 @@ export const makeStyles = (
       borderColor: glass.hairline,
     },
     reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
-  };
-  // applyAppTextScale / applyBoldTextWeights spread style objects; cast keeps
-  // StyleSheet.create happy with the wide inferred defs shape.
+  } satisfies StyleSheet.NamedStyles<Record<string, unknown>>;
   const scaled = applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS);
   return StyleSheet.create(
-    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS) as any,
+    applyBoldTextWeights(scaled, boldText, EMOJI_STYLE_KEYS),
   );
 };
 

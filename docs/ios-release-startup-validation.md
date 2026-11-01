@@ -64,3 +64,36 @@ npm run verify:ios-release-launch -- \
 封裝 metadata、簽章、Jest、typecheck 或 archive 成功均不能取代冷啟動驗證。
 模擬器結果仍不能代替實機 TestFlight binary 驗收。原生 JSI 修正需要新 IPA，
 純 OTA 不會更新 framework。
+
+檢查器以同次啟動的 stdout/stderr 檔案補充 console 證據，每個 stream 最多解析
+1 MB，原始檔保留在 runner，不上傳。第二次成功後 App 仍可寫入，直到 App／runner
+結束；一般檔案沒有 byte 上限。
+Darwin kqueue 只在核對已安裝 executable 路徑後，對 simctl 回傳的 PID 註冊 exit
+事件；沒有 OS wait status 時不填 App exit code。註冊前退出、工具失敗或 PID
+generation 無法確認時保留未知。`commandExitCode` 是 verifier 子指令的結果，
+`appExitCode`／`appExitSignal` 才是觀測到的 App 狀態。
+
+完整 runner 在唯一一次 App build 前，會檢查 Xcode 的 console flags，並以小型
+host 子程序驗證 exit 37 與 SIGTERM 觀測。此自測不代表 App 通過冷啟動。
+原始失敗仍使 gate 失敗，不會因診斷或自測成功改判，也不自動重建。
+
+對已確認的原 PID SIGTRAP、App 已不存在且沒有匹配 crash report 的失敗，wrapper
+會在保存原始結果後，使用同一份已安裝 binary 最多加一次限時 LLDB 診斷 launch。
+此 replay 不計入兩次冷啟動驗收；其成功或工具失敗都不能覆蓋原 gate 失敗。
+完整 App build 前會先用小型 host trap fixture 驗證 debugger 能取得命名 frame。
+fixture 的讀取只會在 `EINTR` 時重試，EOF 與其他錯誤仍失敗。自測還必須完成
+release write／flush／close；`fixtureRelease=sent` 不代表已證實子程序消費了 byte。
+若 LLDB 回報 `exited`，會保留 `lldbExitStatus` 與 `sigtrapStopConfigured`。
+這是 debugger 狀態，不能當成原 App 的 OS exit code；debugserver 失聯也可能
+回報 exited／-1。Broken pipe 或 cleanup 失敗都會保留已取得的安全診斷。
+若 LLDB cleanup 回報失敗，會保留已取得的 frames 並標記 `cleanupFailed`，
+診斷指令與 build 前自測仍判失敗。
+`cleanupErrors` 只保留有限的 operation／kind／phase 與數字錯誤碼，方便區分
+LLDB Kill／Detach、debugger group 與 fixture group；不保留原始錯誤文字。
+Group cleanup 先嘗試 reap 已退出的直接子程序，再處理 group signals；即使
+leader 已退出仍清理 descendants，真實 permission error 與最終 timeout 都失敗。
+Debugger command deadline 不會丟掉已取得的 capture；`collectorTimedOut=true`
+仍使自測與 replay 指令失敗。CI 可使用 `check --print-result` 取得重新過濾的
+安全 JSON，原始 LLDB 輸出留在 runner。
+只把有限的靜態 module／UUID／offset／function 欄位放入診斷 artifact，原始
+debugger 輸出留在 runner。相同 native binary 仍不保證選到相同 OTA bundle。

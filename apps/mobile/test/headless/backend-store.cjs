@@ -20,13 +20,13 @@ function execute(b, { kind, name, args: a = {}, userId }) {
     if (!projection(b, userId, a.p_group_id).personalPremiumActive && !projection(b, userId, a.p_group_id).teamPremiumActive && used + a.p_items.length > 5) return fail('kml import quota exceeded', 'P0004');
     if (b.itinerary.filter(d => d.group_id === a.p_group_id).length + a.p_items.length > 1000) return fail('group import limit exceeded', 'P0004');
     for (const p of a.p_items) if (!p.title?.trim() || !Number.isFinite(p.latitude) || Math.abs(p.latitude) > 90 || !Number.isFinite(p.longitude) || Math.abs(p.longitude) > 180) return fail('invalid_item', '22023');
-    for (const p of a.p_items) require('./backend-core.cjs').addDestination(b, a.p_group_id, { ...p, day: a.p_day, subgroupId: a.p_subgroup_id });
+    for (const p of a.p_items) require('./backend-core.cjs').addDestination(b, a.p_group_id, { ...p, day: a.p_day, subgroupId: a.p_subgroup_id }, userId);
     b.importUsage.set(userId, used + a.p_items.length); return ok(a.p_items.length);
   }
   if (['add_itinerary_item', 'quick_add_itinerary_item'].includes(name)) {
     keys(a, 'p_group_id p_subgroup_id p_title p_address p_latitude p_longitude p_day p_kind p_stay_anchor');
     if (!scopeAllowed(b, a.p_group_id, a.p_subgroup_id, userId)) return fail('permission denied');
-    const row = require('./backend-core.cjs').addDestination(b, a.p_group_id, { title: a.p_title, address: a.p_address, latitude: a.p_latitude, longitude: a.p_longitude, day: a.p_day, subgroupId: a.p_subgroup_id, kind: a.p_kind, stayAnchor: a.p_stay_anchor, ...(name.startsWith('quick') ? { placement: 'firstStop' } : {}) }); return ok(row.id);
+    const row = require('./backend-core.cjs').addDestination(b, a.p_group_id, { title: a.p_title, address: a.p_address, latitude: a.p_latitude, longitude: a.p_longitude, day: a.p_day, subgroupId: a.p_subgroup_id, kind: a.p_kind, stayAnchor: a.p_stay_anchor, ...(name.startsWith('quick') ? { placement: 'firstStop' } : {}) }, userId); return ok(row.id);
   }
   if (name === 'report_straggler') {
     keys(a, 'p_group_id p_member_id p_distance_m');

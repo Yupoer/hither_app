@@ -316,7 +316,6 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             />
           </View>
         ) : null}
-        {/* ── 個人設定 ─────────────────────────────────────────── */}
         <SectionLabel label={t('settings.sectionPersonal')} styles={styles} />
         <View style={styles.settingsTopGroup}>
           <NavRow

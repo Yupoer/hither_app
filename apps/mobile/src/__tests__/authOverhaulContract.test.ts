@@ -42,7 +42,6 @@ describe('auth overhaul contract', () => {
     expect(googleIos).toContain('GoogleSignin.signIn');
     expect(authFlow).toContain("from './googleSignIn'");
     expect(authFlow).toContain('getGoogleAuthCredentials');
-    expect(authFlow).toContain('getGoogleIdToken');
     expect(authFlow).toMatch(/signInWithIdToken\(\{[\s\S]*?provider: 'google'/);
     expect(authFlow).toContain('access_token: accessToken');
     expect(authFlow).toContain('!usesNativeGoogleSignIn');

@@ -24,38 +24,17 @@ function loadCoreSyncAdapters(): CoreSyncAdapters | null {
   }
 }
 
-/**
- * The current core adapter hydrates a cold group before queueing. A few
- * already-shipped/test seams expose only the older enqueue functions; retain
- * their narrow snapshot-missing fallback without weakening the production
- * adapter (where ensureCoreSnapshot is always present).
- */
-async function tryDurableCoreWrite<T>(
+async function writeDurableCore<T>(
   core: CoreSyncAdapters,
   groupId: string,
   write: () => Promise<T>,
-): Promise<{ handled: true; value: T } | { handled: false }> {
-  const ensure = (core as unknown as {
-    ensureCoreSnapshot?: (id: string) => Promise<unknown>;
-  }).ensureCoreSnapshot;
-  if (typeof ensure === 'function') {
-    const snapshot = await ensure(groupId);
-    if (!snapshot) {
-      throw Object.assign(new Error('core_snapshot_missing'), { code: 'core_snapshot_missing' });
-    }
-    return { handled: true, value: await write() };
+): Promise<T> {
+  const snapshot = await core.ensureCoreSnapshot(groupId);
+  if (!snapshot) {
+    throw Object.assign(new Error('core_snapshot_missing'), { code: 'core_snapshot_missing' });
   }
-  try {
-    return { handled: true, value: await write() };
-  } catch (error) {
-    if ((error as { code?: string })?.code === 'core_snapshot_missing') {
-      return { handled: false };
-    }
-    throw error;
-  }
+  return write();
 }
-
-// ── Row shape ──────────────────────────────────────────────────────────────
 
 export interface ItineraryRow {
   id: string;
@@ -76,8 +55,6 @@ export interface ItineraryRow {
   stay_anchor?: boolean | null;
   provider_place_id?: string | null;
 }
-
-// ── Mapper ─────────────────────────────────────────────────────────────────
 
 export function mapDestination(row: ItineraryRow): Destination {
   const kind = row.kind === 'accommodation' ? 'accommodation' : 'stop';
@@ -105,8 +82,6 @@ export function mapDestination(row: ItineraryRow): Destination {
   };
 }
 
-// ── API functions ──────────────────────────────────────────────────────────
-
 export async function addDestination(
   groupId: string,
   input: {
@@ -131,7 +106,7 @@ export async function addDestination(
   const stayAnchor = false;
   const core = loadCoreSyncAdapters();
   if (core) {
-    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueDestinationAdd({
+    const durable = await writeDurableCore(core, groupId, () => core.enqueueDestinationAdd({
       groupId,
       title: input.title,
       address: input.address,
@@ -144,7 +119,7 @@ export async function addDestination(
       providerPlaceId: input.providerPlaceId,
       ...(input.placement ? { placement: input.placement } : {}),
     }));
-    if (durable.handled) return durable.value.destinationId;
+    return durable.destinationId;
   }
   // Quick-add accommodation inserts before an occupied locked tail so the new
   // card is mid (draggable), not an immediate locked last boundary.
@@ -258,9 +233,9 @@ export async function deleteDestination(
   }
   const core = loadCoreSyncAdapters();
   if (core) {
-    const durable = await tryDurableCoreWrite(core, groupId, () =>
+    await writeDurableCore(core, groupId, () =>
       core.enqueueDestinationDelete({ groupId, destinationId, sessionId }));
-    if (durable.handled) return;
+    return;
   }
   // RPC cancels any active navigation_session for this stop, then deletes.
   // FK is ON DELETE SET NULL so historical sessions no longer block delete.
@@ -285,9 +260,9 @@ export async function completeGatheringStop(
   }
   const core = loadCoreSyncAdapters();
   if (core) {
-    const durable = await tryDurableCoreWrite(core, groupId, () =>
+    await writeDurableCore(core, groupId, () =>
       core.enqueueDestinationComplete({ groupId, destinationId, sessionId: navigationSessionId ?? null }));
-    if (durable.handled) return;
+    return;
   }
   const { error } = await supabase.rpc('complete_gathering_stop', {
     p_group_id: groupId,
@@ -313,9 +288,9 @@ export async function reorderDestinations(
   if (!updates.length) return;
   const core = loadCoreSyncAdapters();
   if (core) {
-    const durable = await tryDurableCoreWrite(core, groupId, () =>
+    await writeDurableCore(core, groupId, () =>
       core.enqueueDestinationReorder({ groupId, updates }));
-    if (durable.handled) return;
+    return;
   }
   // Ordered IDs under groups FOR UPDATE; server recomputes positions from the
   // locked snapshot (client absolute positions are not trusted). Full batch
@@ -401,7 +376,7 @@ export async function updateDestinationEmojiColor(
 
   const core = loadCoreSyncAdapters();
   if (core) {
-    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueDestinationEdit({
+    await writeDurableCore(core, groupId, () => core.enqueueDestinationEdit({
       groupId,
       destinationId,
       patch: {
@@ -409,7 +384,7 @@ export async function updateDestinationEmojiColor(
         ...(patch.marker_color === undefined ? {} : { markerColor: patch.marker_color }),
       },
     }));
-    if (durable.handled) return;
+    return;
   }
 
   // .select() so a silent RLS miss (0 rows) surfaces instead of fake success.
@@ -448,13 +423,13 @@ export async function setDestinationMeetTime(
   }
   const core = loadCoreSyncAdapters();
   if (core && groupId) {
-    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueDestinationMeetTime({
+    await writeDurableCore(core, groupId, () => core.enqueueDestinationMeetTime({
       destinationId,
       groupId,
       meetAt,
       meetRedMinutes,
     }));
-    if (durable.handled) return;
+    return;
   }
   const { error } = await supabase
     .from('itinerary_items')

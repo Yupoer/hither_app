@@ -270,7 +270,6 @@ export function AccountSheetContent({
             ) : null}
           </View>
 
-          {/* Registration Info */}
           <Text style={styles.sectionLabel}>{t('account.regSection')}</Text>
           <View style={styles.card}>
             <View style={styles.row}>
@@ -427,7 +426,6 @@ export function AccountSheetContent({
             </>
           ) : null}
 
-          {/* Subscription Info */}
           <Text style={styles.sectionLabel}>{t('account.subSection')}</Text>
           <View style={styles.card}>
             <View style={styles.row}>

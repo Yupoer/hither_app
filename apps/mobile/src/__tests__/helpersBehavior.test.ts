@@ -34,6 +34,10 @@ beforeEach(() => {
   mockedSupabase.auth.refreshSession.mockResolvedValue({
     data: { session: { access_token: 'refreshed', user: { id: 'user-1' } } }, error: null,
   });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedSupabase.auth.getSession(),
+    refreshSession: () => mockedSupabase.auth.refreshSession(),
+  });
 });
 
 afterEach(() => {
@@ -46,7 +50,7 @@ describe('_helpers auth and error seams', () => {
     expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
   });
 
-  it('uses the fallback auth controller for session, user, and operation helpers', async () => {
+  it('uses the configured auth controller for session, user, and operation helpers', async () => {
     await expect(requireAuthenticatedSession()).resolves.toMatchObject({
       access_token: 'token', user: { id: 'user-1' },
     });
@@ -56,7 +60,7 @@ describe('_helpers auth and error seams', () => {
     })).resolves.toEqual({ id: 'user-1' });
   });
 
-  it('prefers the configured recovery controller over the legacy auth seam', async () => {
+  it('uses the current configured recovery controller for authenticated operations', async () => {
     const configured = configureDefaultAuthRecovery({
       getSession: jest.fn(async () => ({ data: { session: { access_token: 'configured', user: { id: 'configured-user' } } }, error: null })),
       refreshSession: jest.fn(async () => ({ data: { session: { access_token: 'configured-refresh', user: { id: 'configured-user' } } }, error: null })),
@@ -67,7 +71,7 @@ describe('_helpers auth and error seams', () => {
     expect(mockedSupabase.auth.getSession).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the fallback session has no usable user id', async () => {
+  it('fails closed when the configured session has no usable user id', async () => {
     mockedSupabase.auth.getSession.mockResolvedValue({
       data: { session: { access_token: 'token', user: null } }, error: null,
     });

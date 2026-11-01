@@ -1,12 +1,15 @@
 const { World } = require('../../test/headless/world.cjs');
 const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
 const { catalog } = require('../../test/headless/actions.cjs');
+const fs = require('node:fs');
+const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 
 describe('headless harness contract', () => {
   jest.setTimeout(90000);
 
   it('boots independent app processes with actor-bound storage and clean disposal', async () => {
-    const world = new World();
+    const world = new World({ evidenceRoot: path.resolve('test-artifacts/verify-hither', `contract-${randomUUID()}`) });
     try {
       const a = await world.device({ id: 'a', userId: LEADER });
       const b = await world.device({ id: 'b', userId: PEER });
@@ -15,6 +18,30 @@ describe('headless harness contract', () => {
       expect(first.actorId).toBe(LEADER);
       expect(second.actorId).toBe(PEER);
       expect(first.pid).not.toBe(second.pid);
+    } finally { await world.close(); }
+    const records = fs.readFileSync(path.join(world.evidenceDirectory, 'events.jsonl'), 'utf8').trim().split('\n').map((line: string) => JSON.parse(line));
+    expect(records.filter((record: { kind: string }) => record.kind === 'actor-ready')).toHaveLength(2);
+    expect(records.some((record: { kind: string; command?: { kind: string } }) => record.kind === 'command' && record.command?.kind === 'observe')).toBe(true);
+    expect(records.some((record: { kind: string; result?: { actorId: string } }) => record.kind === 'result' && record.result?.actorId === LEADER)).toBe(true);
+    expect(records.filter((record: { kind: string }) => record.kind === 'actor-exit')).toHaveLength(2);
+    expect(JSON.parse(fs.readFileSync(path.join(world.evidenceDirectory, 'cleanup.json'), 'utf8'))).toMatchObject({ scratchRemoved: true, errors: [] });
+    expect(JSON.parse(fs.readFileSync(path.join(world.evidenceDirectory, 'backend.json'), 'utf8')).groups).toEqual(expect.arrayContaining([[GROUP_ID, expect.objectContaining({ id: GROUP_ID })]]));
+  });
+
+  it('keeps recovery server time aligned with actor time during a long timer advance', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'clock', userId: LEADER });
+      await device.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(device, (value: { group: { dataSource: string } }) => value.group.dataSource === 'remote');
+      await world.advance(185_000);
+      const observed = await device.observe();
+      expect(observed.now).toBe(world.now);
+      expect(observed.group.serverTimeOffsetMs).toBe(0);
+      const snapshots = world.backend.trace.filter((call: { name: string }) => call.name === 'get_group_public_recovery_snapshot');
+      expect(snapshots.length).toBeGreaterThan(1);
+      expect(snapshots.at(-1).at).toBeLessThan(world.now);
+      expect(Date.parse(snapshots.at(-1).result.data.generated_at)).toBe(snapshots.at(-1).at);
     } finally { await world.close(); }
   });
 

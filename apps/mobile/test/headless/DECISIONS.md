@@ -37,3 +37,13 @@ Native support follows the repository's actual platform exports. An available iO
 Destination snapshots retain the IDs of local commands already represented by their destination array. Hydration, ACK replacement, alias rewriting and SQLite round trips preserve or clear this provenance with that array. Other state slices still replay their pending commands. This avoids applying an insertion or reorder twice without changing insertion semantics or discarding a server-accepted order.
 
 Arrival receipt compaction retains the newest accepted receipt until older superseded receipts have disappeared from the next durable read. This keeps an interrupted cleanup from reviving an older undo. Switching targets reads open-point status from the durable itinerary because the authoritative gathering projection can include only its current target.
+
+## Recorded trip and disconnection tolerance
+
+The Tokyo acceptance mounts three full Apps so receiver notifications and committed map inputs are checked together. Disk snapshots remain separate evidence because live peer patches can precede persistence. Profile restoration runs its deferred turn before display-name assertions. Every external action and process generation can be retained in a fresh output directory.
+
+The clock advances in bounded segments with IPC settlement and actor-stamped backend requests. A single large fake timer jump previously manufactured request timeouts and incorrect server offsets. Powered-off gaps test persistence and expiry, not overnight operating-system execution.
+
+Pending privacy hydration suspends acquisition and preserves durable fixes. Confirmed revocation still purges them. Registered GPS and push callbacks exercise the distinction. Journey and participation receivers check concrete payloads; versioned identities retain an explicit legacy envelope for clients awaiting OTA. New Edge table reads require explicit service-role grants in the disabled-default replay.
+
+The reviewed source fingerprint includes the changed Map location owner, privacy/outbox boundaries, team entry, notification producer, native JavaScript presentation wrapper and message identities. Focused regression tests, the full App trip and the 58-family execution matrix provide evidence. Function fingerprints and registry counts alone do not establish passed scenarios.

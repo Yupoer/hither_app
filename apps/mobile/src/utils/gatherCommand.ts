@@ -11,7 +11,6 @@
 export type NavCommandKind =
   | 'leader_start'
   | 'leader_stop'
-  | 'leader_mark_complete'
   | 'member_request_start'
   | 'member_navigating'
   | 'member_waiting_complete'
@@ -25,18 +24,6 @@ export interface NavCommandInput {
   personallyArrived: boolean;
   /** Shared flock navigation targets this stop (leader session active). */
   flockNavigatingThis: boolean;
-  /**
-   * OTA-01: this card is the next pending point while global phase is staying.
-   * When false, leader Start is not pressable. Omit to keep legacy always-start.
-   */
-  isNextTeamPending?: boolean;
-  /**
-   * OTA-01: team cannot Start (active session, en_route elsewhere, or not next).
-   * Prefer this over teamEnRouteElsewhere alone.
-   */
-  teamStartBlocked?: boolean;
-  /** @deprecated Prefer teamStartBlocked. */
-  teamEnRouteElsewhere?: boolean;
 }
 
 export interface NavCommandResult {
@@ -47,11 +34,10 @@ export interface NavCommandResult {
   disabled: boolean;
   /**
    * Whether pressing starts shared nav, requests a leader start,
-   * ends (pauses) flock travel, or completes after personal arrival.
-   * Leader End = pause navigation only (point stays on itinerary).
+   * ends flock navigation while leaving the point on the itinerary.
    * Completing a stop is a separate prompt/RPC (complete_gathering_stop).
    */
-  action: 'start_nav' | 'request_start' | 'mark_complete' | 'end_point' | 'none';
+  action: 'start_nav' | 'request_start' | 'end_point' | 'none';
 }
 
 /**
@@ -87,13 +73,10 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     isLeader,
     personallyArrived,
     flockNavigatingThis,
-    isNextTeamPending,
-    teamStartBlocked,
-    teamEnRouteElsewhere,
   } = input;
 
   if (isLeader) {
-    // Active flock travel always offers End first (pause team navigation).
+    // Active flock travel always offers End first.
     if (flockNavigatingThis) {
       return {
         kind: 'leader_stop',
@@ -101,16 +84,6 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
         label: '結束',
         disabled: false,
         action: 'end_point',
-      };
-    }
-    // After personal arrival + 「取消」on complete confirm, keep Complete available.
-    // Must not fall back to Start for the same arrived stop.
-    if (personallyArrived) {
-      return {
-        kind: 'leader_mark_complete',
-        label: '完成',
-        disabled: false,
-        action: 'mark_complete',
       };
     }
     return {
@@ -246,11 +219,6 @@ export interface CompletePromptResult {
    * null when no secondary action.
    */
   cancelLabel: string | null;
-  /**
-   * @deprecated Alias of cancelLabel — kept so older call sites that read
-   * deferLabel still compile until fully migrated.
-   */
-  deferLabel: string | null;
 }
 
 const EMPTY_PROMPT: Omit<CompletePromptResult, 'kind'> = {
@@ -260,7 +228,6 @@ const EMPTY_PROMPT: Omit<CompletePromptResult, 'kind'> = {
   message: '',
   confirmLabel: '',
   cancelLabel: null,
-  deferLabel: null,
 };
 
 /**
@@ -343,7 +310,6 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
       message: `已抵達成員（${arrived}/${totalCount}），是否要完成此集合點？`,
       confirmLabel: '完成',
       cancelLabel: '取消',
-      deferLabel: '取消',
     };
   }
 
@@ -356,7 +322,6 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
       message: '隊長已完成此集合點。確認後卡片會移至歷史行程。',
       confirmLabel: '確認',
       cancelLabel: null,
-      deferLabel: null,
     };
   }
 

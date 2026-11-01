@@ -19,7 +19,6 @@ function runMeta(env: Record<string, string | undefined>) {
 
 describe('test:meta META_PARENT contract', () => {
   it('fails when META_PARENT is a required parent and the map has zero matching entries', () => {
-    // Committed acceptance-map.json starts empty; parent 999 must not silently pass.
     const result = runMeta({ META_PARENT: '999' });
     expect(result.status).not.toBe(0);
     const out = `${result.stdout}\n${result.stderr}`;

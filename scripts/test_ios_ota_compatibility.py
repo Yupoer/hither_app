@@ -76,6 +76,15 @@ class IosOtaCompatibilityTests(unittest.TestCase):
         self.assertEqual(result["reason"], "compatible")
         self.assertEqual(result["runtimeVersion"], "0.1.13")
 
+    def test_non_object_binary_records_return_structured_rejection(self):
+        for value in ([], None, "private-untrusted-value", 42, True):
+            with self.subTest(value=value):
+                self.write("release/wrong-root.json", json.dumps(value))
+                code, result = self.gate("release/wrong-root.json")
+                self.assertNotEqual(code, 0)
+                self.assertFalse(result["eligible"])
+                self.assertEqual(result["reason"], "invalid_binary_record")
+
     def test_runtime_change_requires_new_binary(self):
         self.write("apps/mobile/app.json", json.dumps({"expo": {
             "version": "0.1.14", "runtimeVersion": "0.1.14",

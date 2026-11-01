@@ -86,6 +86,7 @@ const optimisticGathering = {
   version: 1,
 } as unknown as ActiveGatheringState;
 
+const testStartFix = async () => ({ coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5 });
 const destination = {
   id: 'destination-1',
   title: '集合點',
@@ -154,6 +155,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -192,6 +194,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -224,6 +227,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh,
         t: (key) => key,
         mapRef: { current: null },
@@ -282,6 +286,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination, later],
         selectedDestination: later,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -321,6 +326,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination, later],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -362,6 +368,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination, other],
         selectedDestination: other,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -400,6 +407,7 @@ describe('useJourneyNavigation', () => {
         navigationDestinations: [destination, next],
         selectedDestination: next,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -435,6 +443,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: destination.coordinates,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -471,6 +480,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: { latitude: 25.04, longitude: 121.51 },
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -518,6 +528,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -540,8 +551,7 @@ describe('useJourneyNavigation', () => {
     expect(navigation?.navTarget).toBeUndefined();
   });
 
-  it('End navigation pauses flock travel and cancels session without completing the stop', async () => {
-    const cancelSession = jest.fn().mockResolvedValue({ id: 'session-1', version: 2, status: 'cancelled' });
+  it('End navigation persists a paused journey without completing the stop', async () => {
     const onOperatorPauseConfirm = jest.fn();
     const goingState = {
       ...pausedState,
@@ -572,13 +582,13 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
         carouselRef: { current: null },
         setSelectedIndex: jest.fn(),
         navigationSession: activeSession,
-        cancelSession,
         onOperatorPauseConfirm,
       });
       return navigation.lifecycle;
@@ -595,7 +605,6 @@ describe('useJourneyNavigation', () => {
       'group-1',
       expect.objectContaining({ groupState: goingState }),
     );
-    expect(cancelSession).not.toHaveBeenCalled();
     expect(onOperatorPauseConfirm).toHaveBeenCalledWith(destination, expect.stringMatching(/^pause:group-1:/));
     expect(navigation?.journeyStatus).toBe('paused');
     expect(navigation?.navTarget).toBeUndefined();
@@ -616,6 +625,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -658,6 +668,7 @@ describe('useJourneyNavigation', () => {
     function Harness({ session }: { session: NavigationSession | null }) {
       navigation = useJourneyNavigation({ state: pausedState, groupId: 'group-1', isLeader: true,
         destinations: [destination], selectedDestination: destination, fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(), t: key => key, mapRef: { current: null }, carouselRef: { current: null },
         setSelectedIndex: jest.fn(), startSession, navigationSession: session,
         createRequestId: () => 'retry-request', onOperatorStartConfirm });
@@ -712,6 +723,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: key => key,
         mapRef: { current: null },
@@ -758,6 +770,7 @@ describe('useJourneyNavigation', () => {
         destinations: [destination],
         selectedDestination: destination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: key => key,
         mapRef: { current: null },

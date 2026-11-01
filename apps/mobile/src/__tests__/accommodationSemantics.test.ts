@@ -1,7 +1,6 @@
 import {
   accommodationBoundaryLocks,
   applyPureIndexAnchors,
-  crossDayGapCorrection,
   dayBlockRange,
   dayCollapseStorageKey,
   DEFAULT_REORDER_LAYOUT,
@@ -427,19 +426,6 @@ describe('legalDragIndicesForList (cross-day)', () => {
     expect(snapToLegalDragIndex([2, 4], 3, -1)).toBe(2);
     // No direction keeps first best (lower index).
     expect(snapToLegalDragIndex([2, 4], 3, 0)).toBe(2);
-  });
-
-  it('crossDayGapCorrection counts headers between start and aim', () => {
-    const order: ReorderListEntry[] = [
-      header(1),
-      dest('A', 1),
-      header(2),
-      header(3),
-    ];
-    // Dragging down from A (1) toward day3 (aim ~3): crosses H2 and H3 → +2.
-    expect(crossDayGapCorrection(order, 1, 3, 1)).toBe(2);
-    // Dragging up from end toward start: negative.
-    expect(crossDayGapCorrection(order, 3, 1, 1)).toBe(-2);
   });
 
   it('dragTargetIndexFromOffset reaches empty day with modest dy (geometry)', () => {

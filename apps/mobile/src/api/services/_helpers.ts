@@ -1,8 +1,6 @@
 import { supabase } from '../supabase';
 import {
-  createAuthRecovery,
   getDefaultAuthRecovery,
-  type AuthRecoveryController,
   type AuthSessionLike,
   type AuthenticatedOperationOptions,
 } from '../authRecovery';
@@ -22,36 +20,9 @@ export function generateInviteCode(): string {
   ).join('');
 }
 
-let fallbackAuthController: { auth: unknown; controller: AuthRecoveryController } | null = null;
-
-function getAuthRecoveryForClient(): AuthRecoveryController {
-  try {
-    return getDefaultAuthRecovery();
-  } catch {
-    const auth = supabase.auth as {
-      getSession: () => Promise<unknown>;
-      refreshSession?: () => Promise<unknown>;
-    };
-    if (!fallbackAuthController || fallbackAuthController.auth !== auth) {
-      fallbackAuthController = {
-        auth,
-        controller: createAuthRecovery({
-          getSession: () => auth.getSession() as never,
-          refreshSession: () => (
-            typeof auth.refreshSession === 'function'
-              ? auth.refreshSession() as never
-              : auth.getSession() as never
-          ),
-        }),
-      };
-    }
-    return fallbackAuthController.controller;
-  }
-}
-
 /** Ensure a request has a real session before any caller starts a mutation. */
 export async function requireAuthenticatedSession(): Promise<AuthSessionLike> {
-  return getAuthRecoveryForClient().getSession();
+  return getDefaultAuthRecovery().getSession();
 }
 
 /**
@@ -78,7 +49,7 @@ export function runAuthenticatedOperation<T>(
   work: (session: AuthSessionLike) => Promise<T> | T,
   options: Omit<AuthenticatedOperationOptions, 'operation'> = {},
 ): Promise<T> {
-  return getAuthRecoveryForClient().withAuthenticatedOperation(work, {
+  return getDefaultAuthRecovery().withAuthenticatedOperation(work, {
     ...options,
     operation,
   });
@@ -90,34 +61,7 @@ export function runAuthenticatedOperation<T>(
  * the JWT server-side on every query, so nothing trusts this id blindly.
  */
 export async function requireUserId(): Promise<string> {
-  let session: AuthSessionLike;
-  try {
-    session = await requireAuthenticatedSession();
-  } catch (error) {
-    // A few isolated service tests mock only `auth.getSession()` with the
-    // user id. Keep that legacy seam local to the unconfigured fallback
-    // client; the production controller and authenticated transport still
-    // require a real access token and never use this path.
-    if (!fallbackAuthController) throw error;
-    const auth = supabase.auth as {
-      getSession: () => Promise<unknown>;
-    };
-    const result = await auth.getSession();
-    const rawSession = (
-      result
-      && typeof result === 'object'
-      && 'data' in result
-      && result.data
-      && typeof result.data === 'object'
-      && 'session' in result.data
-    )
-      ? result.data.session
-      : null;
-    if (!rawSession || typeof rawSession !== 'object' || !('user' in rawSession)) {
-      throw error;
-    }
-    session = rawSession as AuthSessionLike;
-  }
+  const session = await requireAuthenticatedSession();
   const uid = session.user?.id;
   if (!uid) {
     throw Object.assign(new Error('Authenticated session user is missing'), {

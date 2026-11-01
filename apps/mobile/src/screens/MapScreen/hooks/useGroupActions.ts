@@ -33,7 +33,6 @@ export function useGroupActions({
 
 
 
-  // --- Group actions --------------------------------------------------------
   const [codeCopied, setCodeCopied] = useState(false);
   /** Anonymous Leader at 5 members must register before inviting a 6th. */
   const inviteBlockedForAnonymousLeader = anonymousLeaderRequiresRegistration(
@@ -76,7 +75,6 @@ export function useGroupActions({
     await Share.share({ message: t('map.shareMsg', { code: group.inviteCode }) });
   }, [group, t, inviteBlockedForAnonymousLeader, promptAnonymousLeaderRegistration]);
 
-  // --- Profile (nickname + emoji avatar) — avatar button only --------------
   const openProfile = useCallback(() => {
     lightTap();
     setOverlay('profile');

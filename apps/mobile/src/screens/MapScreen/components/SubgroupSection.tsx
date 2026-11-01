@@ -70,8 +70,6 @@ export const SubgroupSection = React.memo(function SubgroupSection({
               </View>
             </View>
             {memberRows.map((f, i) => renderFlockRow(f, i === memberRows.length - 1, i))}
-            {/* Invite entry lives ON my own team card — where you look to grow
-                the team — instead of buried on every other member's row. */}
             {sg.id === mySubgroupId && (
               <Pressable
                 style={({ pressed }) => [

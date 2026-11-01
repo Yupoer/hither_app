@@ -18,10 +18,6 @@ export interface UploadLocalLogsDeps {
   getConsent?: () => Promise<boolean>;
   flushDiagnostics?: () => Promise<{ sent: number; remaining: number }>;
   flushPerformance?: () => Promise<{ sent: number; remaining: number }>;
-  /** @deprecated no multi-round drain; ignored */
-  maxDiagnosticRounds?: number;
-  /** @deprecated no multi-round drain; ignored */
-  maxPerformanceRounds?: number;
   source?: string;
   writeDiagnostic?: (input: {
     event: string;

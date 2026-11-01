@@ -20,6 +20,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest",
+    "test:ci": "node scripts/check-changed-coverage.mjs --full-node-tests",
     "test:headless": "node test/headless/run.cjs",
     "test:meta": "node scripts/check-test-meta.mjs",
     "test:coverage:changed": "node scripts/check-changed-coverage.mjs",

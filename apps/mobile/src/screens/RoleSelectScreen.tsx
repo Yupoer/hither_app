@@ -138,7 +138,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
         <View style={{ height: 56 }} />
 
         <View style={styles.actionArea}>
-          {/* Create / join stay fixed — no slide-up entrance. */}
           <View style={styles.actionRow}>
             <NativeRoleActionButton
               label="創建群組"
@@ -173,7 +172,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
 
         </View>
 
-        {/* Leftover height stays below actions — keeps create/join ↔ my-teams distance fixed. */}
         <View style={styles.bottomFlex} />
       </View>
     </View>

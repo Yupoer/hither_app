@@ -10,6 +10,15 @@ async function settleLocationStartup(world: any, device: any) {
   return world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').length;
 }
 
+async function startJourneyWithNewFix(world: any, device: any) {
+  const watchesBefore = (await device.observe()).external.watches;
+  const started = device.perform('journey.start', { destinationId: DESTINATION });
+  await world.waitFor(device, (value: any) => value.external.watches > watchesBefore, 'new Start GPS request');
+  await world.advance(1_000);
+  await device.gps(25.03, 121.53);
+  await started;
+}
+
 describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platform => {
   jest.setTimeout(90000);
 
@@ -190,7 +199,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
       world.hold('apply_core_operation_v3');
-      await a.perform('journey.start', { destinationId: DESTINATION });
+      await startJourneyWithNewFix(world, a);
       const optimistic = await world.waitFor(a, (value: any) => value.journey.targetId === DESTINATION && value.durable.operations.length > 0, 'durable optimistic Start');
       expect(optimistic.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
       expect(optimistic.durable.operations[0].actorId).toBe(LEADER);
@@ -256,7 +265,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
       world.hold('apply_core_operation_v3', { phase: 'delivery' });
-      await a.perform('journey.start', { destinationId: DESTINATION });
+      await startJourneyWithNewFix(world, a);
       await world.waitFor(a, (value: any) => value.journey.targetId === DESTINATION && value.pending.length > 0, 'held Start acceptance');
       await a.perform('journey.stop');
       const ended = await world.waitFor(a, (value: any) => !value.journey.targetId && value.durable.operations.length === 2, 'durable End after Start');
@@ -305,7 +314,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
       a.online = false;
-      await a.perform('journey.start', { destinationId: DESTINATION });
+      await startJourneyWithNewFix(world, a);
       await world.waitFor(a, (value: any) => value.journey.targetId === DESTINATION && value.durable.operations.length === 1, 'offline Start');
       await a.perform('journey.end');
       const pending = await world.waitFor(a, (value: any) => !value.journey.targetId && value.durable.operations.length === 2, 'offline terminal intent');

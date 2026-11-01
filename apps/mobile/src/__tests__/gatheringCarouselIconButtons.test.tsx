@@ -1,7 +1,8 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { GatheringCarousel, type GatheringCarouselProps } from '../screens/MapScreen/components/GatheringCarousel';
+import { makeStyles } from '../screens/MapScreen/styles';
 import type { Destination } from '../types';
 
 jest.mock('@expo/vector-icons', () => ({
@@ -12,7 +13,11 @@ jest.mock('@expo/vector-icons', () => ({
   },
 }));
 jest.mock('../components/MetalforgeStarfield', () => () => null);
-jest.mock('../components/OverflowMarquee', () => () => null);
+jest.mock('../components/OverflowMarquee', () => {
+  const ReactRuntime = jest.requireActual<typeof React>('react');
+  const { Text: NativeText } = jest.requireActual<typeof import('react-native')>('react-native');
+  return ({ text, ...rest }: { text: string }) => ReactRuntime.createElement(NativeText, { ...rest, testID: 'gather-title-marquee' }, text);
+});
 jest.mock('../components/SwiftUIGlassSurface', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => {
@@ -40,9 +45,10 @@ const destination: Destination = {
 
 const labels: Record<string, string> = {
   'nav.leaderStart': '開始',
-  'nav.leaderComplete': '完成',
   'nav.endNavigation': '結束導航',
   'nav.completeJourney': '完成行程',
+  'nav.memberRequestStart': '向隊長發送要求開始',
+  'nav.memberNavigating': '前往中',
 };
 
 function props(overrides: Partial<GatheringCarouselProps> = {}) {
@@ -55,7 +61,6 @@ function props(overrides: Partial<GatheringCarouselProps> = {}) {
     arrivalExitRecords: new Map(),
     atFull: false,
     canEditItinerary: true,
-    carouselMaxHeight: 320,
     carouselRef: React.createRef(),
     colors: { accentText: '#000' },
     destinationIds: [destination.id],
@@ -105,7 +110,7 @@ function props(overrides: Partial<GatheringCarouselProps> = {}) {
     navigationSessionId: null,
     showDenseChrome: true,
     startNavigation: jest.fn(async () => undefined),
-    styles: new Proxy({}, { get: () => ({}) }),
+    styles: makeStyles('#68d391', 1),
     t: (key: string) => labels[key] ?? key,
     toggleGatheringCard: jest.fn(),
     tourReduceMotion: true,
@@ -122,31 +127,71 @@ function expectIconOnly(button: Parameters<typeof within>[0], icon: string) {
   expect(button.findAllByType(Text)).toHaveLength(0);
 }
 
-describe('gathering card icon-only commands', () => {
-  it('shows an accessible icon-only Start button that still starts navigation', () => {
-    const startNavigation = jest.fn(async () => undefined);
-    const screen = render(<GatheringCarousel {...props({ startNavigation })} />);
-    const button = screen.getByTestId('gather-nav-meeting-point');
-    expect(button.props.accessibilityLabel).toBe('開始');
-    expectIconOnly(button, 'play');
-    fireEvent.press(button);
-    expect(startNavigation).toHaveBeenCalledWith(destination, 0);
+describe('gathering card navigation commands', () => {
+  it('fits titles within their existing typography bounds in both card states', () => {
+    const styles = makeStyles('#68d391', 1.5, true, 'xl', 1.2);
+    const screen = render(<GatheringCarousel {...props({ styles })} />);
+    const expanded = screen.getByText(destination.title);
+    expect(expanded.props.maxFontSizeMultiplier).toBe(1);
+    expect(expanded.props.adjustsFontSizeToFit).toBe(true);
+    expect(expanded.props.numberOfLines).toBe(1);
+    expect(StyleSheet.flatten(expanded.props.style).lineHeight).toBe(styles.cardTitleExpanded.lineHeight);
+    expect(screen.getByText('開始').props.maxFontSizeMultiplier).toBe(1.25);
+    screen.rerender(<GatheringCarousel {...props({ styles, gatherCardTitleMarquee: true })} />);
+    const expandedMarquee = screen.getByTestId('gather-title-marquee');
+    expect(expandedMarquee.props.active).toBe(true);
+    expect(expandedMarquee.props.maxFontSizeMultiplier).toBe(1);
+    screen.rerender(<GatheringCarousel {...props({ styles, isCardExpanded: () => false })} />);
+    const collapsed = screen.getByTestId('gather-title-marquee');
+    expect(collapsed.props.allowFontScaling).toBe(false);
+    expect(StyleSheet.flatten(collapsed.props.style)).toEqual(styles.cardTitleCollapsed);
   });
 
-  it('shows an accessible icon-only Complete button after personal arrival', () => {
+  it('keeps Start separate from in-place card expansion', () => {
+    const startNavigation = jest.fn(async () => undefined);
+    const toggleGatheringCard = jest.fn();
+    const screen = render(<GatheringCarousel {...props({ startNavigation, toggleGatheringCard })} />);
+    const card = screen.getByTestId('gather-card-meeting-point');
+    const button = screen.getByTestId('gather-nav-meeting-point');
+    expect(button.props.accessibilityLabel).toBe('開始');
+    expect(within(button).getByTestId('icon-play')).toBeTruthy();
+    expect(within(button).getByText('開始')).toBeTruthy();
+    expect(StyleSheet.flatten(button.props.style).flexGrow).toBe(1);
+    expect(screen.queryByTestId('gather-complete-meeting-point')).toBeNull();
+    fireEvent.press(button);
+    expect(startNavigation).toHaveBeenCalledWith(destination, 0);
+    expect(toggleGatheringCard).not.toHaveBeenCalled();
+    fireEvent.press(card);
+    expect(toggleGatheringCard).toHaveBeenCalledWith(destination.id);
+    screen.rerender(<GatheringCarousel {...props({
+      startNavigation,
+      toggleGatheringCard,
+      isCardExpanded: () => false,
+    })} />);
+    expect(screen.getByTestId('gather-card-meeting-point')).toBe(card);
+    expect(screen.queryByTestId('gather-nav-meeting-point')).toBeNull();
+    expect(screen.queryByTestId('gather-external-meeting-point')).toBeNull();
+    screen.rerender(<GatheringCarousel {...props({ startNavigation, toggleGatheringCard })} />);
+    expect(screen.getByTestId('gather-card-meeting-point')).toBe(card);
+    expect(screen.getByTestId('gather-nav-meeting-point')).toBeTruthy();
+  });
+
+  it('still shows only Start after personal arrival when navigation has ended', () => {
     const promptCompleteAfterArrival = jest.fn();
     const screen = render(<GatheringCarousel {...props({
       myCompletedDestinationIds: new Set([destination.id]),
+      navigationSessionId: 'stale-session',
       promptCompleteAfterArrival,
     })} />);
     const button = screen.getByTestId('gather-nav-meeting-point');
-    expect(button.props.accessibilityLabel).toBe('完成');
-    expectIconOnly(button, 'checkmark-done');
+    expect(button.props.accessibilityLabel).toBe('開始');
+    expect(within(button).getByText('開始')).toBeTruthy();
+    expect(screen.queryByTestId('gather-complete-meeting-point')).toBeNull();
     fireEvent.press(button);
-    expect(promptCompleteAfterArrival).toHaveBeenCalledWith(destination);
+    expect(promptCompleteAfterArrival).not.toHaveBeenCalled();
   });
 
-  it('keeps End text while the separate Complete control shows only an icon', () => {
+  it('gives End the remaining width and Complete equal width and height', () => {
     const promptCompleteAfterArrival = jest.fn();
     const requestTeamEnd = jest.fn(async () => true);
     const screen = render(<GatheringCarousel {...props({
@@ -159,11 +204,73 @@ describe('gathering card icon-only commands', () => {
     const completeButton = screen.getByTestId('gather-complete-meeting-point');
     expect(endButton.props.accessibilityLabel).toBe('結束導航');
     expect(within(endButton).getByText('結束導航')).toBeTruthy();
+    expect(StyleSheet.flatten(endButton.props.style).flexGrow).toBe(1);
     expect(completeButton.props.accessibilityLabel).toBe('完成行程');
     expectIconOnly(completeButton, 'checkmark-done');
-    fireEvent.press(endButton);
-    expect(requestTeamEnd).toHaveBeenCalledWith(destination, 0);
+    const completeStyle = StyleSheet.flatten(completeButton.props.style);
+    expect(completeStyle.width).toBeGreaterThanOrEqual(44);
+    expect(completeStyle.height).toBe(completeStyle.width);
     fireEvent.press(completeButton);
     expect(promptCompleteAfterArrival).toHaveBeenCalledWith(destination);
+    fireEvent.press(endButton);
+    expect(requestTeamEnd).toHaveBeenCalledWith(destination, 0);
+    screen.rerender(<GatheringCarousel {...props({
+      navigationSessionId: null,
+      promptCompleteAfterArrival,
+      requestTeamEnd,
+    })} />);
+    expect(screen.queryByTestId('gather-complete-meeting-point')).toBeNull();
+    expect(within(screen.getByTestId('gather-nav-meeting-point')).getByText('開始')).toBeTruthy();
+  });
+
+  it('does not offer Complete before the active session exists', () => {
+    const screen = render(<GatheringCarousel {...props({ sharedTargetId: destination.id })} />);
+    expect(within(screen.getByTestId('gather-nav-meeting-point')).getByText('結束導航')).toBeTruthy();
+    expect(screen.queryByTestId('gather-complete-meeting-point')).toBeNull();
+  });
+
+  it('uses the same Start and End controls for a subgroup leader', () => {
+    const startNavigation = jest.fn(async () => undefined);
+    const screen = render(<GatheringCarousel {...props({
+      isLeader: false,
+      canEditItinerary: true,
+      myScopeId: 'subgroup-1',
+      startNavigation,
+    })} />);
+    const start = screen.getByTestId('gather-nav-meeting-point');
+    expect(within(start).getByTestId('icon-play')).toBeTruthy();
+    expect(within(start).getByText('開始')).toBeTruthy();
+    fireEvent.press(start);
+    expect(startNavigation).toHaveBeenCalledWith(destination, 0);
+    screen.rerender(<GatheringCarousel {...props({
+      isLeader: false,
+      canEditItinerary: true,
+      myScopeId: 'subgroup-1',
+      pendingLeaderTargetId: destination.id,
+      journeyBusy: true,
+    })} />);
+    expect(within(screen.getByTestId('gather-nav-meeting-point')).getByText('結束導航')).toBeTruthy();
+  });
+
+  it('keeps ordinary members on request and waiting states without Complete', () => {
+    const requestLeaderStart = jest.fn();
+    const screen = render(<GatheringCarousel {...props({
+      isLeader: false,
+      canEditItinerary: false,
+      requestLeaderStart,
+    })} />);
+    const request = screen.getByTestId('gather-nav-meeting-point');
+    expect(within(request).getByText('向隊長發送要求開始')).toBeTruthy();
+    fireEvent.press(request);
+    expect(requestLeaderStart).toHaveBeenCalledWith(destination);
+    screen.rerender(<GatheringCarousel {...props({
+      isLeader: false,
+      canEditItinerary: false,
+      sharedTargetId: destination.id,
+    })} />);
+    const waiting = screen.getByTestId('gather-nav-meeting-point');
+    expect(waiting.props.accessibilityState.disabled).toBe(true);
+    expect(within(waiting).getByText('前往中')).toBeTruthy();
+    expect(screen.queryByTestId('gather-complete-meeting-point')).toBeNull();
   });
 });

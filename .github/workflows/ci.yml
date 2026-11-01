@@ -3,7 +3,7 @@ name: CI
 # Hither CI — gates required before store/TestFlight release:
 #   1. Logic and component regressions       -> jest + jest-expo
 #   2. Test meta (acceptance map L1 + anti-fake L2)
-#   3. Changed-function coverage ≥85%        -> test:coverage:changed
+#   3. Changed-function coverage ≥85%        -> test:ci
 #   4. TypeScript regressions                -> tsc --noEmit
 #   5. iOS runtime / OTA alignment           -> verify:runtime
 #   6. Expo dependency version drift         -> expo install --check
@@ -38,10 +38,10 @@ jobs:
     outputs:
       product: ${{ steps.scope.outputs.product }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
 
@@ -54,10 +54,12 @@ jobs:
           python3 -B scripts/test_ios_ota_compatibility.py
           python3 -B scripts/test_ios_ota_publication.py
           python3 -B scripts/test_ios_cd_routing.py
+          python3 -B scripts/test_ios_cd_outcome.py
+          python3 -B scripts/test_ios_cd_attempt.py
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
-          node --test apps/mobile/scripts/check-changed-coverage.test.mjs
+          node --test apps/mobile/scripts/check-changed-coverage.test.mjs scripts/ci-shadow-plan.test.mjs scripts/check-release-ci.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
@@ -81,11 +83,11 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           # Real SQLite transaction tests use node:sqlite (also verified locally on 22.17.1).
           node-version: 22
@@ -95,17 +97,9 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Test (jest)
-        run: npm test --silent
-
-      - name: Component tests (jest-expo)
-        run: npm test -- --config jest.config.components.js --runInBand --silent
-        env:
-          NODE_OPTIONS: --experimental-vm-modules
-
       - name: Resolve META_PARENT
         id: test_meta
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const marker = /<!--\s*hither-test-meta\s+parent:\s*([A-Za-z0-9_-]+)\s*-->/i;
@@ -157,11 +151,33 @@ jobs:
         env:
           META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
-      - name: Coverage changed functions ≥85%
-        run: npm run test:coverage:changed
+      - name: Node tests and changed functions ≥85%
+        run: |
+          node test/headless/scenario-coverage.test.cjs
+          npm run test:ci
+          node test/headless/scenario-coverage.cjs test-artifacts/node-jest.raw.json test-artifacts/headless-scenarios.md > test-artifacts/headless-scenarios.json
         env:
           COVERAGE_BASE: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
+
+      - name: Component tests (jest-expo)
+        run: npm test -- --config jest.config.components.js --runInBand --silent
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+
+      - name: Upload safe node evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hither-ci-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/mobile/test-artifacts/ci-shadow-plan.json
+            apps/mobile/test-artifacts/node-receipt.json
+            apps/mobile/test-artifacts/headless-scenarios.json
+            apps/mobile/test-artifacts/headless-scenarios.md
+            apps/mobile/coverage-changed/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Lint (eslint — full tree; featureTour at error severity)
         run: npm run lint
@@ -189,8 +205,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
 
@@ -207,7 +223,7 @@ jobs:
       - name: Deno Edge fixture tests
         working-directory: ${{ github.workspace }}
         run: |
-          deno test --no-check --allow-env --allow-net --allow-read --allow-import \
+          deno test --allow-env --allow-net --allow-read --allow-import \
             supabase/functions/_shared/storekit_test.ts \
             supabase/functions/_shared/storekit_certificate_test.ts \
             supabase/functions/send-push/ \
@@ -217,7 +233,7 @@ jobs:
             supabase/functions/google-maps/index_test.ts \
             supabase/functions/admob-reward-callback/ssv_test.ts
 
-      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb
+      - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
         with:
           version: 2.109.1
 
@@ -246,8 +262,8 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
@@ -277,14 +293,28 @@ jobs:
       run:
         working-directory: apps/mobile
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
       - name: Install clean patched native dependency
         run: npm ci
+      - name: Verify Release debugger capture and cleanup
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 3
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+        run: |
+          probe_status=0
+          python3 -B -c 'import json; from pathlib import Path; print(json.dumps({"releaseXcodeBundlePresent": Path("/Applications/Xcode_27.0.app/Contents/Developer").is_dir()}))'
+          xcodebuild -version > "$RUNNER_TEMP/hither-debugger-xcode-version.txt" || probe_status=$?
+          cat "$RUNNER_TEMP/hither-debugger-xcode-version.txt"
+          grep -Eq '^Xcode 27\.0(\.[0-9]+)?$' "$RUNNER_TEMP/hither-debugger-xcode-version.txt" || probe_status=1
+          python3 -B apps/mobile/scripts/ios_launch_debugger.py check --output "$RUNNER_TEMP/hither-release-debugger-ci" --print-result || probe_status=$?
+          python3 -B scripts/test_ios_launch_debugger.py NativeCleanupTests.test_real_darwin_zombie_group_is_reaped_before_signaling || probe_status=1
+          exit "$probe_status"
       - name: Select iPhone 12 Pro on iOS 27 for the native probe
         run: |
           python3 - <<'PY'
@@ -308,7 +338,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Require every applicable gate
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
@@ -323,7 +353,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const sha = context.sha.slice(0, 7);

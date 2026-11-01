@@ -64,6 +64,7 @@ const session = {
   version: 1,
 } satisfies NavigationSession;
 
+const testStartFix = async () => ({ coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5 });
 describe('Navigation Session UI integration', () => {
   it('retries a failed local Start with a new durable command and keeps legacy RPC idle', async () => {
     const startSession = jest.fn();
@@ -82,6 +83,7 @@ describe('Navigation Session UI integration', () => {
         destinations: [localDestination, sharedDestination],
         selectedDestination: localDestination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -122,6 +124,7 @@ describe('Navigation Session UI integration', () => {
         destinations,
         selectedDestination: localDestination,
         fromCoords: undefined,
+        acquireStartFix: testStartFix, arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: { centerOn } as never },

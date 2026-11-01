@@ -81,6 +81,7 @@ export async function ingestLocationBatch(
   events: LocationBatchEvent[],
 ): Promise<LocationBatchResult> {
   const access = await captureLocationAccess(undefined, true);
+  if (access === undefined) return { acceptedIds: [], rejected: events.map(event => ({ id: event.id, reason: 'retryable' })) };
   const denied = (rows: LocationBatchEvent[]) => rows.map(event => ({ id: event.id, reason: 'local_location_access_denied' }));
   if (!access) return { acceptedIds: [], rejected: denied(events) };
   const rejected = denied(events.filter(event => event.groupId !== access.groupId));

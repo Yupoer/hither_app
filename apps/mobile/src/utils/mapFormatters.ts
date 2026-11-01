@@ -82,8 +82,6 @@ export function navCommandDisplayLabel(
       return t('nav.leaderStart');
     case 'leader_stop':
       return t('nav.leaderStop');
-    case 'leader_mark_complete':
-      return t('nav.leaderComplete');
     case 'member_navigating':
       return t('nav.memberNavigating');
     case 'member_waiting_complete':

@@ -84,6 +84,47 @@ test('animation completion is explicit and disabled gesture callbacks stay block
   } finally { await act(async () => root.unmount()); }
 });
 
+test('PanResponder forwards event and gesture state, returns acquisition, and honors disabled targets', async () => {
+  const { host, modules } = fixture();
+  const rn = modules.get('react-native');
+  const received = [];
+  const responder = rn.PanResponder.create({
+    onStartShouldSetPanResponder: (_event, state) => state.dx === 0,
+    onPanResponderMove: (event, state) => received.push({ event, state }),
+  });
+  let root;
+  await act(async () => { root = create(React.createElement(rn.View, { testID: 'drag', ...responder.panHandlers })); });
+  const value = { event: { nativeEvent: { pageX: 375 } }, gestureState: { dx: 0, dy: 120 } };
+  try {
+    assert.deepEqual(host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'onStartShouldSetPanResponder', value }), { invoked: true, result: true });
+    host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'onPanResponderMove', value });
+    assert.deepEqual(received, [{ event: value.event, state: value.gestureState }]);
+    await act(async () => root.update(React.createElement(rn.View, { testID: 'drag', disabled: true, ...responder.panHandlers })));
+    assert.deepEqual(host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'onPanResponderMove', value }), { invoked: false, reason: 'disabled' });
+    assert.equal(received.length, 1);
+    assert.throws(() => host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'unknown', value }), /Unknown PanResponder phase/);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('Reanimated completion is explicit and cancellation retains the owning shared value', () => {
+  const { host, modules } = fixture();
+  const animation = modules.get('react-native-reanimated');
+  const first = animation.makeMutable(0);
+  const second = animation.makeMutable(0);
+  const completed = [];
+  first.value = animation.withTiming(100, {}, finished => completed.push(['first', finished]));
+  second.value = animation.withSpring(200, {}, finished => completed.push(['second', finished]));
+  assert.deepEqual(completed, []);
+  animation.cancelAnimation(first);
+  assert.deepEqual(completed, [['first', false]]);
+  assert.equal(host.animations.size, 1);
+  host.input({ kind: 'animation', finished: true });
+  assert.deepEqual(completed, [['first', false], ['second', true]]);
+  assert.equal(host.animations.size, 0);
+  assert.equal(first.value, 100);
+  assert.equal(second.value, 200);
+});
+
 test('swipe actions reopen after cancellation and retain the mounted native handle', async () => {
   const { host, modules } = fixture();
   const Swipeable = modules.get('react-native-gesture-handler/ReanimatedSwipeable').default;
@@ -132,5 +173,34 @@ test('navigation replacement, reset and a new account navigator retain only the 
     await act(async () => root.update(element('account-b')));
     assert.deepEqual(f.host.route.routes.map(route => route.name), ['RoleSelect']);
     assert.equal(f.host.navigation.canGoBack(), false);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('view observations retain committed map inputs and each rendered member timestamp', async () => {
+  const { host, modules } = fixture();
+  const rn = modules.get('react-native');
+  const MapView = modules.get('react-native-maps').default;
+  const GroupMap = React.forwardRef(function GroupMap({ members }, _ref) {
+    return React.createElement(MapView, { testID: 'group-map-native' });
+  });
+  const FlockRow = React.memo(function FlockRow({ name, lastUpdated }) {
+    return React.createElement(rn.Text, null, name + ' updated ' + lastUpdated);
+  });
+  const sample = { userId: 'traveler', name: 'Traveler', coordinates: { latitude: 35.7, longitude: 139.7 }, capturedAt: '2026-10-22T00:00:00Z' };
+  const element = member => React.createElement(React.Fragment, null,
+    React.createElement(GroupMap, { members: [member] }),
+    React.createElement(FlockRow, { ...member, lastUpdated: member.capturedAt }));
+  let root;
+  await act(async () => { root = create(element(sample)); });
+  try {
+    assert.deepEqual(host.observeViews(root).mapMembers, [sample]);
+    assert.equal(host.observeViews(root).flockRows[0].lastUpdated, sample.capturedAt);
+    assert.equal(host.observeViews(root).flockRows[0].text, 'Traveler updated ' + sample.capturedAt);
+    const next = { ...sample, coordinates: { latitude: 35.8, longitude: 139.8 }, capturedAt: '2026-10-22T00:01:00Z' };
+    await act(async () => root.update(element(next)));
+    assert.deepEqual(host.observeViews(root).mapMembers, [next]);
+    assert.equal(host.observeViews(root).flockRows[0].lastUpdated, next.capturedAt);
+    await act(async () => root.update(React.createElement(rn.View)));
+    assert.deepEqual(host.observeViews(root), { mapMembers: null, flockRows: [] });
   } finally { await act(async () => root.unmount()); }
 });

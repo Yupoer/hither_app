@@ -29,6 +29,7 @@ describe('headless operation completeness', () => {
   it('rejects missing operations, stale source anchors and unreviewed source changes', () => {
     require('../../test/headless/inventory-contract.test.cjs');
     require('../../test/headless/source-inventory-contract.test.cjs');
+    require('../../test/headless/scenario-coverage.test.cjs');
   });
 
   it('keeps domain backend fixtures strict and validates observable state transitions', () => {

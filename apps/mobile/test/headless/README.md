@@ -2,6 +2,8 @@
 
 Run from `apps/mobile` on Node >=22.16.0.
 
+For a recorded user-flow proof, use the project [verification skill](../../../../.cursor/skills/verify-hither/SKILL.md) and its [feature map](../../../../.cursor/skills/verify-hither/features/README.md). The skill provides checkout doctor checks, source records, retained evidence, and cleanup. Codex discovers the same instructions through `.agents/skills/verify-hither`.
+
 ```sh
 npm run test:headless -- --list
 npm run test:headless -- --inventory
@@ -9,9 +11,21 @@ npm run test:headless
 npm run test:headless -- --testNamePattern="offline GPS"
 ```
 
-The list is generated from the callable registry in `actions.cjs` and the domain `operations-*.cjs` files. Each entry names its production source, input, level and completion condition. The initial nine entries remain available, but are not a limit. `--inventory` checks the reviewed source families, automatic lifecycle entries and narrowly documented unreachable source. Registry counts measure available calls, not passed scenarios. The runner discovers all `src/__tests__/headless*.test.ts[x]` suites; ordinary `npm test` also runs them. The separate actor config only runs one device and cannot recursively discover parent suites.
+The list is generated from the callable registry in `actions.cjs` and the domain `operations-*.cjs` files. Each entry names its production source, input, level and completion condition. The initial nine entries remain available, but are not a limit. `--inventory` checks the reviewed source families, automatic lifecycle entries and narrowly documented unreachable source. Registry counts measure available calls, not passed scenarios. The runner discovers all `src/__tests__/headless*.test.ts[x]` suites; ordinary `npm test` also runs them. Actors start through World IPC and never discover parent test suites.
 
-Each device is a child Jest process with an independent production module graph, auth storage, file-backed AsyncStorage/SecureStore and real `node:sqlite` database. The default actor mounts real `useGroupState`, `useNavigationSession`, `useDeviceLocation` and `useJourneyNavigation` hooks. `mode: 'app'` mounts the actual App, while `screen: { name, params }` mounts an actual screen or component inside the real providers. External native views become in-memory host nodes. No simulator, operating system, browser or GPU is created. Every `src/**` module remains real, including native wrappers, auth, privacy fences, outboxes, services and SQL statements.
+Set `HITHER_HEADLESS_EVIDENCE` to a new evidence root before running scenarios to record every World's existing commands and responses without adding app actions. Each `world-*` directory identifies its Jest case and keeps `events.jsonl`, final `backend.json`, and `cleanup.json` after scratch removal. Backend Maps serialize as key/value entry pairs so actor ownership survives. Programmatic callers can pass `new World({ evidenceRoot })`. The verification skill contains the PowerShell invocation and result checks.
+
+Each device is an isolated Node process with an independent production module graph, auth storage, file-backed AsyncStorage/SecureStore and real `node:sqlite` database. The default actor mounts real `useGroupState`, `useNavigationSession`, `useDeviceLocation` and `useJourneyNavigation` hooks. `mode: 'app'` mounts the actual App, while `screen: { name, params }` mounts an actual screen or component inside the real providers. External native views become in-memory host nodes. No simulator, operating system, browser or GPU is created. Every `src/**` module remains real, including native wrappers, auth, privacy fences, outboxes, services and SQL statements.
+
+The actor uses the existing platform resolver, assets, ts-jest compiler and Jest ModernFakeTimers, with lazy singleton SDK module factories. It supports the six mock/timer APIs used by runtime.cjs. Source-derived compilation results are cached per checkout; module state and durable storage remain per device. The clock host keeps native node:timers deadlines real while mirroring fake Date, timeout and interval globals into the App. World.advance(ms) retains its bounded steps and all due timers.
+
+On Windows, run the same suites with a CPU budget and a retained resource report:
+
+```powershell
+./test/headless/run.ps1 -ResourceReport ./test-artifacts/headless-resources.json --json --outputFile=./test-artifacts/headless-results.json
+```
+
+The default 4.5% Windows Job CPU rate applies only to this launch and its descendants. The launcher restores its environment and own rate. Use -Driver jest for specific Jest files, or -Driver trip for the recorded trip. Resource reports keep CPU time, elapsed time, measured host CPU share, native exit and launcher errors. The Node commands above remain available on other hosts and for uncapped diagnostics.
 
 External substitutes are explicit React Native/Expo capabilities, map/search and file inputs, auth/OAuth, purchases, ads, notifications, Live Activity, updates, the native SQLite open call and a Supabase SDK/backend contract. GPS inputs travel through Expo `watchPositionAsync` and the real native wrapper. The backend returns fixture wire rows and receipts; it does not execute Postgres functions, RLS, triggers or an actual Realtime service. Unsupported external methods, RPCs, tables, query shapes, actions and accidental network attempts remain fatal even when production catches them.
 
@@ -71,12 +85,28 @@ Set `device.online = false` to reject external SDK requests and suppress deliver
 
 Each device serializes React `act` scopes while continuing to receive IPC and await transport outside that queue. Concurrent commands therefore cannot overlap foreground effects with unmount. React's unsupported-overlap warning remains a sticky harness failure.
 
+## Recorded Tokyo trip
+
+Run the three-traveler scenario from `apps/mobile`. Choose a new output directory for each run.
+
+```sh
+node test/headless/tokyo-trip.cjs ./tokyo-run-1
+```
+
+The same scenario is automatically discovered as `headlessTokyoTripScenario.test.ts`. Set `HITHER_HEADLESS_TOKYO_OUTPUT` to a new directory when detailed records are required. CLI and Jest refuse an existing directory. Without an output path the Jest case keeps its checks in memory.
+
+The runner saves exact command inputs with actor generation in `inputs.jsonl`, and every action and each traveler's observations in `observations.jsonl`, a readable `transcript.md`, and named behavior checks in `summary.json`. It mounts the real App in iOS and Android modes, records local notification receipts and live map inputs, and covers an abrupt offline process restart and a powered-off overnight clock gap. An exit code of 1 can mean a behavior mismatch; inspect `harnessFailure` separately. These records do not establish real push delivery, map drawing, or overnight operating-system behavior.
+
 ## Coverage and limits
 
 Functional scenarios specify iOS and Android platform modes. The resolver selects production platform files as well as Platform.OS branches; inspect `presentation.resolved` when asserting this distinction. A mixed-platform scenario publishes from iOS to an Android peer. Existing location and journey cases cover pending-before-ACK, missed-event recovery at the subscribed 120 second fallback poll, offline persistence/restart/retry, account/privacy fences and Start/End ordering. Domain scenario suites add actual screen and provider operations. Run the current suites and report their results; historical test counts do not establish a new head's coverage.
+
+`functional-scenarios.json` defines a separate finite execution denominator. Run `node test/headless/scenario-coverage.cjs <same-source-jest-results.json> [report.md]` after the complete run. It requires all referenced cases on their declared platforms and all critical families; skipped or unexecuted cases cannot pass. See [functional coverage and disconnection tolerances](../../../../docs/headless-functional-coverage.md).
 
 `operation-inventory.json` records reviewed behavior families. Registry source anchors connect those families to actual entries. `source-inventory.json` fingerprints exported functions, callbacks and lifecycle owners so source changes require a fresh coverage review. Only refresh that snapshot after reviewing the changed behavior and its scenarios. It is a review gate, not execution coverage.
 
 Map rendering, gestures, native sensor accuracy, Swift/Kotlin execution, OS background restrictions, real pushes/purchases, Supabase security/SQL and physical device behavior require separate verification. Child Jest coverage is not merged into the parent report; this suite makes no changed-function coverage claim for child-loaded modules. Stable test identifiers in production views identify actual callback hosts without replacing business logic.
 
 The location fixture follows the bounded ingestion contract in `supabase/migrations/20260929173500_location_rejection_idempotency.sql`. A new event must have a strictly newer captured timestamp; an equal timestamp returns `stale_sample`. An existing accepted event ID with the same actor, group, captured timestamp and coordinates is ACKed without another Realtime update. Device-local sequence is not a cross-device ordering authority.
+
+Membership participation alerts mirror `supabase/migrations/20261029164903_journey_membership_notification_events.sql`. A changed solo flag emits one durable solo/follow row; an unchanged flag emits none. Self membership deletion emits leave only while the group still exists. Fixture execution does not prove that the SQL trigger has been deployed.

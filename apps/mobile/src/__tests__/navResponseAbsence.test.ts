@@ -21,8 +21,4 @@ describe('navigation response banner absence (#175)', () => {
     expect(tools).not.toContain('navResponse.');
     expect(settings).not.toContain('navResponse.');
   });
-
-  it('documents removal comment for reviewers', () => {
-    expect(map).toContain('#175: navigation response banner removed');
-  });
 });

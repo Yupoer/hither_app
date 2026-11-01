@@ -37,6 +37,8 @@ interface UseDeviceLocationParams {
    * `watchPositionAsync` owner and consume MapKit samples instead.
    */
   nativeMapLocationEnabled?: boolean;
+  /** False while preferences or membership are still hydrating. */
+  accessReady?: boolean;
   sharingEnabled?: boolean;
   hasMembership?: boolean;
   teamNavigationActive?: boolean;
@@ -73,6 +75,7 @@ export function useDeviceLocation({
   groupId,
   highAccuracy,
   nativeMapLocationEnabled = false,
+  accessReady = true,
   sharingEnabled = true,
   hasMembership,
   teamNavigationActive = false,
@@ -112,7 +115,7 @@ export function useDeviceLocation({
   deviceCoordsRef.current = deviceCoords;
   const sharingEnabledRef = useRef(sharingEnabled);
   sharingEnabledRef.current = sharingEnabled;
-  const hasMembershipResolved = hasMembership ?? Boolean(groupId);
+  const hasMembershipResolved = accessReady && (hasMembership ?? Boolean(groupId));
   const hasMembershipRef = useRef(hasMembershipResolved);
   hasMembershipRef.current = hasMembershipResolved;
   const policyNow = () => locationPolicy(
@@ -259,9 +262,13 @@ export function useDeviceLocation({
    * @param options.requireUpload When true (Force Refresh), upload failures
    *   propagate so callers can report upload failure independently of reads.
    *   Background/foreground auto paths keep soft-fail upload.
+   * @param options.waitForUpload When false, return the accepted fix while its
+   *   upload continues. Journey Start uses this so network latency cannot
+   *   turn a fresh GPS fix stale before the durable command is queued.
    */
   const refreshDeviceLocation = useCallback(async (options?: {
     requireUpload?: boolean;
+    waitForUpload?: boolean;
   }): Promise<Coordinates | null> => {
     const sampleAtRequest = lastSampleAtRef.current;
     energyObservability.increment('location_callback');
@@ -307,6 +314,7 @@ export function useDeviceLocation({
         ? receipt.completion
         : enqueueUpload(fix, now, { immediate: true }, requestedGroup);
       if (options?.requireUpload) await upload;
+      else if (options?.waitForUpload === false) void upload.catch(() => undefined);
       else await upload.catch(() => undefined);
     }
     if (await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || requestedGroup !== groupIdRef.current
@@ -321,7 +329,7 @@ export function useDeviceLocation({
   }));
   const lifecycle = createElement(DeviceLocationLifecycle, { owner: sampleOwner, input: {
     groupId, highAccuracy, teamNavigationActive, powerMode, nativeMapLocationEnabled,
-    sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
+    accessReady, sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
     refreshDeviceLocation, applySampleToUi, consumeForegroundSample,
   } });
 
@@ -360,6 +368,7 @@ interface DeviceLocationInput {
   teamNavigationActive: boolean;
   powerMode: LocationPowerMode;
   nativeMapLocationEnabled: boolean;
+  accessReady: boolean;
   sharingEnabled: boolean;
   hasMembershipResolved: boolean;
   appState: AppStateStatus;
@@ -395,6 +404,7 @@ function DeviceLocationLifecycle({ owner, input }: {
     || !Object.is(previous.teamNavigationActive, input.teamNavigationActive)
     || !Object.is(previous.powerMode, input.powerMode)
     || !Object.is(previous.nativeMapLocationEnabled, input.nativeMapLocationEnabled)
+    || !Object.is(previous.accessReady, input.accessReady)
     || !Object.is(previous.sharingEnabled, input.sharingEnabled)
     || !Object.is(previous.hasMembershipResolved, input.hasMembershipResolved)
     || !Object.is(previous.appState, input.appState)
@@ -426,7 +436,7 @@ function DeviceLocationProfile({ owner, resources, input }: {
   useMountEffect(() => {
     const old = resources.previous;
     const { groupId, highAccuracy, teamNavigationActive, powerMode, nativeMapLocationEnabled,
-      sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
+      accessReady, sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
       refreshDeviceLocation, applySampleToUi, consumeForegroundSample } = input;
     const scopeChanged = !old || !Object.is(old.foregroundLocationAvailable, foregroundLocationAvailable)
       || !Object.is(old.groupId, groupId) || !Object.is(old.sharingEnabled, sharingEnabled)
@@ -443,9 +453,9 @@ function DeviceLocationProfile({ owner, resources, input }: {
     if (debugChanged) { resources.stopDebug?.(); resources.stopDebug = null; }
     if (bootstrapChanged && resources.watchdog) { clearInterval(resources.watchdog); resources.watchdog = null; }
     if (scopeChanged) clearDeviceFlush(owner);
-    if (!old || !Object.is(old.groupId, groupId) || !Object.is(old.hasMembershipResolved, hasMembershipResolved)
+    if (!old || !Object.is(old.accessReady, accessReady) || !Object.is(old.groupId, groupId) || !Object.is(old.hasMembershipResolved, hasMembershipResolved)
       || !Object.is(old.sharingEnabled, sharingEnabled) || !Object.is(old.appState, appState)) {
-      setLocationAccessContext(hasMembershipResolved ? groupId ?? null : null, sharingEnabled, appState === 'active');
+      setLocationAccessContext(accessReady ? (hasMembershipResolved ? groupId ?? null : null) : undefined, sharingEnabled, accessReady && appState === 'active');
     }
     if (!resources.appStateSubscription) {
       resources.appStateSubscription = AppState.addEventListener('change', owner.setAppState);

@@ -91,7 +91,6 @@ export function estimateRemainingFromGpsMove(opts: {
 }): number {
   const remaining = opts.lastRouteRemainingM;
   if (!Number.isFinite(remaining) || remaining < 0) return 0;
-  // ponytail: target-distance delta between route refreshes; use route projection if turns need greater precision.
   const moved = opts.targetCoords
     ? distanceMeters(opts.lastRouteAt, opts.targetCoords) - distanceMeters(opts.currentGps, opts.targetCoords)
     : distanceMeters(opts.lastRouteAt, opts.currentGps);

@@ -100,6 +100,7 @@ jest.mock('../state/locationPrivacy', () => ({
   captureLocationAccess: forward(mockCaptureAccess),
   isLocationAccessCurrent: forward(mockIsAccessCurrent),
   isLocationAccessEnabled: jest.fn(() => true),
+  isLocationAccessPending: () => false,
   subscribeLocationAccessChanges: forward(mockSubscribeAccess),
   setLocationSharingConsent: forward(mockSetConsent),
 }));
