@@ -5,6 +5,8 @@ const b = new Backend(event => published.push(event));
 const table = (name, steps, userId = LEADER) => b.execute('contract', { kind: 'table', name, steps, userId });
 const rpc = (name, args, userId = LEADER) => b.execute('contract', { kind: 'rpc', name, args, steps: [], userId });
 assert.equal(table('profiles', [['select', '*'], ['eq', 'id', LEADER], ['maybeSingle']]).data.nickname, 'Leader');
+assert.equal(table('profiles', [['select', '*'], ['eq', 'id', PEER], ['maybeSingle']]).data, null);
+assert.equal(table('public_profiles', [['select', '*'], ['eq', 'id', PEER], ['maybeSingle']]).data.nickname, 'Peer');
 assert.equal(table('profiles', [['select', '*'], ['eq', 'id', 'missing'], ['maybeSingle']]).data, null);
 assert.equal(table('profiles', [['update', { nickname: 'Renamed' }], ['eq', 'id', LEADER], ['select', 'id'], ['maybeSingle']]).data.id, LEADER);
 assert.equal(b.snapshot(GROUP_ID).profiles.find(p => p.id === LEADER).nickname, 'Renamed');

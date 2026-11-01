@@ -13,7 +13,13 @@ select ok(not has_function_privilege('authenticated', 'extensions.sync_public_pr
 select ok(exists(select 1 from pg_publication_tables where pubname = 'supabase_realtime'
   and schemaname = 'public' and tablename = 'public_profiles'), 'public profiles are published');
 select ok(exists(select 1 from pg_publication_tables where pubname = 'supabase_realtime'
-  and schemaname = 'public' and tablename = 'profiles'), 'legacy profiles remain published during compatibility window');
+  and schemaname = 'public' and tablename = 'profiles'), 'own profiles remain published under owner-only SELECT');
+select ok(not has_function_privilege('anon', 'public.get_group_recovery_snapshot(uuid)', 'EXECUTE')
+  and not has_function_privilege('service_role', 'public.get_group_recovery_snapshot(uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.get_group_recovery_snapshot(uuid)', 'EXECUTE'),
+  'legacy recovery remains callable only by authenticated clients and its owner');
+select ok(not (select prosecdef from pg_proc where oid='public.get_group_recovery_snapshot(uuid)'::regprocedure),
+  'legacy recovery delegates without definer privileges');
 select is((select count(*) from public.public_profiles), (select count(*) from public.profiles),
   'migration backfills every existing profile');
 
@@ -66,14 +72,18 @@ select is((select to_jsonb(p)->'onboarding'->>'secret' from public.profiles p wh
  'owner-onboarding','owner wildcard read retains onboarding');
 select ok((select to_jsonb(p) ?& array['pro','pro_plan','pro_purchased_at','pro_expires_at','anonymous_expires_at','created_at']
  from public.profiles p where id=auth.uid()),'owner wildcard read retains server metadata');
-select is((select preferences->>'secret' from public.profiles where id='d2700000-0000-4000-8000-000000000002'),
- 'peer-preferences','legacy co-member base read is explicitly retained until a separately authorized cutoff');
+select is((select count(*) from public.profiles where id='d2700000-0000-4000-8000-000000000002'),
+ 0::bigint,'co-member cannot read a peer full profile');
+select is((select count(*) from public.memberships m join public.profiles p on p.id=m.user_id
+ where m.group_id='d2700000-0000-4000-8000-000000000010' and p.id<>auth.uid()),
+ 0::bigint,'membership joins cannot expose private peer profiles');
+select is((with changed as (update public.profiles set preferences='{"forged":true}'
+ where id='d2700000-0000-4000-8000-000000000002' returning id) select count(*) from changed),
+ 0::bigint,'co-member cannot update peer preferences');
 select is(
-  public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010')->'profiles',
-  (select jsonb_agg(to_jsonb(p) order by p.id) from public.profiles p where p.id in (
-    'd2700000-0000-4000-8000-000000000001','d2700000-0000-4000-8000-000000000002',
-    'd2700000-0000-4000-8000-000000000004')),
-  'legacy snapshot still returns full rows including private peer values');
+  public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010'),
+  public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010'),
+  'legacy recovery preserves the public snapshot envelope and exact safe identities');
 select is(
   public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010')->'profiles',
   '[{"id":"d2700000-0000-4000-8000-000000000001","nickname":"Owner","avatar":"O","avatar_color":"#112233"},
@@ -138,6 +148,8 @@ select is((select count(*) from public.public_profiles where id in
  ('d2700000-0000-4000-8000-000000000001','d2700000-0000-4000-8000-000000000002')),0::bigint,
  'outsider sees no group member public profiles');
 select is((select nickname from public.public_profiles where id=auth.uid()),'Outsider','outsider retains own public profile');
+select is((select count(*) from public.profiles where id<>auth.uid()),0::bigint,
+ 'outsider cannot read unrelated private profiles');
 select throws_ok($$select public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010')$$,
  '42501',null,'outsider cannot bypass policy through recovery');
 select set_config('request.jwt.claim.sub','d2700000-0000-4000-8000-000000000004',true);
