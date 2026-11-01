@@ -83,6 +83,33 @@ class EligibilityTests(unittest.TestCase):
 
 
 class SafeResultTests(unittest.TestCase):
+    def test_sampling_progress_and_thread_frames_have_a_fixed_bounded_schema(self):
+        source = {'scope': 'diagnostic_replay', 'probe': 'stopped',
+                  'captureKind': 'timeout_sample', 'collectorPhase': 'interrupt',
+                  'processState': 'running', 'sampleRequested': True, 'resumeObserved': True,
+                  'stopAdvanced': False, 'lldbCommandTimedOut': False, 'lldbCommandExitStatus': 0,
+                  'threadFrames': [{'role': 'react_js', 'frames': [frame()] * 20,
+                                    'name': 'private thread name', 'arguments': 'private'}] * 5}
+        result = DEBUGGER.safe_result(source)
+        self.assertEqual(len(result['threadFrames']), 3)
+        self.assertEqual(len(result['threadFrames'][0]['frames']), 16)
+        self.assertNotIn('private', json.dumps(result))
+        for key in ('captureKind', 'collectorPhase', 'processState', 'sampleRequested', 'resumeObserved',
+                    'stopAdvanced', 'lldbCommandTimedOut', 'lldbCommandExitStatus'):
+            result = DEBUGGER.safe_result(dict(source, **{key: 'private'}))
+            self.assertNotIn(key, result)
+        for code in (True, -128, 256, '0', None):
+            self.assertNotIn('lldbCommandExitStatus', DEBUGGER.safe_result(dict(source, lldbCommandExitStatus=code)))
+        sample = dict(source, runningSample=source, raw='private')
+        result = DEBUGGER.safe_result(dict(source, runningSample=sample))
+        self.assertNotIn('runningSample', result['runningSample'])
+        self.assertNotIn('private', json.dumps(result))
+        exited = DEBUGGER.safe_result(dict(source, runningSample={
+            'scope': 'diagnostic_replay', 'probe': 'exited', 'lldbExitStatus': -1,
+            'sigtrapStopConfigured': True, 'exitDescription': 'private exit description'}))
+        self.assertEqual(exited['runningSample'], {'scope': 'diagnostic_replay', 'probe': 'exited',
+                         'lldbExitStatus': -1, 'sigtrapStopConfigured': True})
+
     def test_launch_help_diagnostics_keep_only_exit_status_and_capability_booleans(self):
         help_result = {'exitCode': 64, 'stdoutCapture': True, 'stderrCapture': False,
                        'waitForDebugger': True, 'raw': 'private help text'}
@@ -320,6 +347,17 @@ class ReplayTests(unittest.TestCase):
 @contextmanager
 def lldb_fixture(mode='stopped'):
     calls = []
+    delivered = False
+
+    def next_event(event):
+        nonlocal delivered
+        if 'continue' not in calls or delivered:
+            return False
+        delivered = True
+        event.state = 2 if mode == 'exited' else 1
+        event.restarted = False
+        event.GetType.return_value = 1
+        return True
     error = mock.Mock()
     error.Fail.return_value = mode == 'denied'
     target, process, thread, stack_frame = (mock.Mock() for _ in range(4))
@@ -330,6 +368,7 @@ def lldb_fixture(mode='stopped'):
     process.GetProcessID.return_value = 123
     process.Continue.return_value = mock.Mock(Fail=lambda: False)
     process.Continue.side_effect = lambda: (calls.append('continue') or mock.Mock(Fail=lambda: False))
+    process.GetStopID.side_effect = lambda: 8 if 'continue' in calls else 7
     process.GetState.return_value = 2 if mode == 'exited' else 1
     process.GetSelectedThread.return_value = thread
     process.GetNumThreads.return_value = 1
@@ -343,6 +382,8 @@ def lldb_fixture(mode='stopped'):
     thread.GetStopReasonDataCount.return_value = 1
     thread.GetStopReasonDataAtIndex.return_value = 5
     thread.GetNumFrames.return_value = 1
+    thread.GetThreadID.return_value = 123
+    thread.GetName.return_value = None
     thread.GetFrameAtIndex.return_value = stack_frame
     stack_frame.GetPCAddress.return_value.GetLoadAddress.return_value = 1042
     module.GetObjectFileHeaderAddress.return_value.GetLoadAddress.return_value = 1000
@@ -354,13 +395,271 @@ def lldb_fixture(mode='stopped'):
     native = types.SimpleNamespace(SBTarget=type(target), SBProcess=type(process),
                                    SBThread=type(thread), SBFrame=type(stack_frame),
                                    SBError=lambda: error, LLDB_INVALID_ADDRESS=2**64 - 1,
+                                   SBListener=lambda name: mock.Mock(GetNextEvent=next_event),
+                                   SBEvent=lambda: mock.Mock(), eStateRunning=5, eStateStepping=7,
                                    eStateStopped=1, eStateCrashed=4, eStateExited=2,
                                    eStopReasonSignal=3, eStopReasonException=6)
-    with mock.patch.dict(sys.modules, {'lldb': native}):
+    with mock.patch.dict(sys.modules, {'lldb': native}), \
+            mock.patch.object(native.SBProcess, 'EventIsProcessEvent', staticmethod(lambda event: True), create=True), \
+            mock.patch.object(native.SBProcess, 'GetStateFromEvent', staticmethod(lambda event: event.state), create=True), \
+            mock.patch.object(native.SBProcess, 'GetRestartedFromEvent', staticmethod(lambda event: event.restarted), create=True), \
+            mock.patch.object(native.SBProcess, 'eBroadcastBitStateChanged', 1, create=True):
         yield debugger, process, calls
 
 
+@contextmanager
+def event_lldb_fixture(events=(), running=False):
+    with lldb_fixture() as (debugger, process, calls):
+        native = sys.modules['lldb']
+        state = {'state': native.eStateStopped, 'stop': 7, 'asynchronous': False,
+                 'resumed': False, 'stop_events': 0}
+        pending = [(native.eStateStopped, 7, False), None]
+
+        def next_event(event):
+            if not pending:
+                return False
+            item = pending.pop(0)
+            if item is None:
+                return False
+            state['state'], state['stop'], event.restarted = item
+            event.state = state['state']
+            if state['resumed'] and item[0] in (native.eStateStopped, native.eStateCrashed) and not item[2]:
+                state['stop_events'] += 1
+            event.GetType.return_value = 1
+            return True
+
+        def resume():
+            if not state['asynchronous']:
+                raise TimeoutError('controlled synchronous continuation waits for a stop')
+            calls.append('continue')
+            state['resumed'] = True
+            if running:
+                state['state'] = native.eStateRunning
+            pending.extend(events)
+            return mock.Mock(Fail=lambda: False)
+
+        debugger.SetAsync.side_effect = lambda value: state.update(asynchronous=value)
+        native.SBListener = lambda name: mock.Mock(GetNextEvent=next_event)
+        process.GetState.side_effect = lambda: state['state']
+        process.GetStopID.side_effect = lambda: state['stop']
+        process.Continue.side_effect = resume
+        with mock.patch.object(native.SBProcess, 'EventIsProcessEvent', staticmethod(lambda event: True), create=True), \
+                mock.patch.object(native.SBProcess, 'GetStateFromEvent', staticmethod(lambda event: event.state), create=True), \
+                mock.patch.object(native.SBProcess, 'GetRestartedFromEvent', staticmethod(lambda event: event.restarted), create=True), \
+                mock.patch.object(native.SBProcess, 'eBroadcastBitStateChanged', 1, create=True):
+            yield debugger, process, pending, state
+
+
+class BoundedCaptureRegressionTests(unittest.TestCase):
+    def test_stale_attach_and_auto_restarted_stops_are_consumed_before_the_real_stop(self):
+        for first_stop, restarted in ((7, False), (8, True)):
+            events = [(1, first_stop, restarted), None, (5, first_stop, False), None,
+                      (1, 9, False), None]
+            with self.subTest(first_stop=first_stop, restarted=restarted), \
+                    tempfile.TemporaryDirectory() as directory, \
+                    event_lldb_fixture(events) as (debugger, process, _, state), \
+                    mock.patch.object(DEBUGGER, '_same_executable', return_value=True), \
+                    mock.patch.object(DEBUGGER.time, 'sleep'):
+                sampled = []
+                thread = process.GetSelectedThread.return_value
+                stack_frame = thread.GetFrameAtIndex.return_value
+                stack_frame.GetFunctionName.side_effect = lambda: (sampled.append(state['stop']) or 'hither_lldb_probe')
+                DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
+                result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+                self.assertEqual(result['captureKind'], 'spontaneous_stop')
+                self.assertEqual(result['frames'], [frame()])
+                self.assertTrue(sampled and set(sampled) == {9})
+                process.SendAsyncInterrupt.assert_not_called()
+
+    def test_pending_spontaneous_stop_is_drained_before_requesting_interrupt(self):
+        with tempfile.TemporaryDirectory() as directory, event_lldb_fixture(running=True) as (debugger, process, pending, state), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True), \
+                mock.patch.object(DEBUGGER.time, 'sleep'):
+            output = Path(directory)
+            (output / 'sample.request').touch()
+            queued = False
+
+            def current_state():
+                nonlocal queued
+                if state['resumed'] and not queued:
+                    queued = True
+                    pending.extend([(1, 8, False), None])
+                return state['state']
+
+            process.GetState.side_effect = current_state
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', output)
+            result = json.loads((output / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result['captureKind'], 'spontaneous_stop')
+            self.assertIs(result['sampleRequested'], False)
+            process.SendAsyncInterrupt.assert_not_called()
+
+    def test_running_target_gets_one_interrupt_and_explicit_timeout_sample(self):
+        with tempfile.TemporaryDirectory() as directory, event_lldb_fixture(running=True) as (debugger, process, pending, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True), \
+                mock.patch.object(DEBUGGER.time, 'sleep'):
+            output = Path(directory)
+            (output / 'sample.request').touch()
+            process.SendAsyncInterrupt.side_effect = lambda: pending.extend([(1, 8, False), None])
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', output)
+            result = json.loads((output / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result['captureKind'], 'timeout_sample')
+            self.assertIs(result['collectorTimedOut'], True)
+            self.assertIs(result['resumeObserved'], True)
+            self.assertIs(result['stopAdvanced'], True)
+            self.assertEqual(result['frames'], [frame()])
+            self.assertFalse(DEBUGGER._fixture_captured(dict(result, fixtureRelease='sent')))
+            process.SendAsyncInterrupt.assert_called_once_with()
+
+    def test_initial_stop_can_only_be_a_timeout_sample_without_an_interrupt(self):
+        with tempfile.TemporaryDirectory() as directory, event_lldb_fixture() as (debugger, process, _, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            output = Path(directory)
+            (output / 'sample.request').touch()
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', output)
+            result = json.loads((output / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result['captureKind'], 'timeout_sample')
+            self.assertIs(result['stopAdvanced'], False)
+            self.assertIs(result['resumeObserved'], False)
+            self.assertIs(result['sampleRequested'], False)
+            self.assertIs(result['collectorTimedOut'], True)
+            self.assertFalse(DEBUGGER._fixture_captured(dict(result, fixtureRelease='sent')))
+            process.SendAsyncInterrupt.assert_not_called()
+
+    def test_interrupt_without_a_stop_has_a_bounded_wait(self):
+        with tempfile.TemporaryDirectory() as directory, event_lldb_fixture(running=True) as (debugger, process, _, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True), \
+                mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.SAMPLE_WAIT + 1]):
+            output = Path(directory)
+            (output / 'sample.request').touch()
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', output)
+            result = json.loads((output / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result['probe'], 'timeout')
+            self.assertIs(result['collectorTimedOut'], True)
+            process.SendAsyncInterrupt.assert_called_once_with()
+
+    def test_abrupt_collector_exit_retains_observation_without_fabricating_a_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            observation = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
+                           'captureKind': 'spontaneous_stop', 'frames': [frame()]}
+            (output / 'lldb-observation.json').write_text(json.dumps(observation))
+            process = mock.Mock()
+            process.poll.return_value = 1
+            with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                    mock.patch.object(DEBUGGER, '_stop_group'):
+                result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+            self.assertEqual(result['frames'], [frame()])
+            self.assertIs(result['cleanupFailed'], True)
+            self.assertIs(result['collectorTimedOut'], False)
+
+    def _assert_fast_stop_waits_for_event(self, sample_marker):
+        with tempfile.TemporaryDirectory() as directory, \
+                event_lldb_fixture((None, (1, 8, False), None)) as (debugger, process, _, state), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True), \
+                mock.patch.object(DEBUGGER.time, 'sleep'):
+            if sample_marker:
+                (Path(directory) / 'sample.request').touch()
+            native_resume = process.Continue.side_effect
+            def resume():
+                error = native_resume()
+                state['stop'] = 8
+                return error
+
+            def function_name():
+                self.assertGreater(state['stop_events'], 0,
+                                   'frame access must wait for removal of the new public stop event')
+                return 'hither_lldb_probe'
+
+            process.Continue.side_effect = resume
+            process.GetSelectedThread.return_value.GetFrameAtIndex.return_value.GetFunctionName.side_effect = function_name
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
+            result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result['probe'], 'stopped')
+            self.assertEqual(result['frames'], [frame()])
+            self.assertEqual(result['captureKind'], 'spontaneous_stop')
+            self.assertEqual(debugger.SetAsync.call_args_list, [mock.call(False), mock.call(True)])
+            process.SendAsyncInterrupt.assert_not_called()
+
+    def test_fast_stop_after_async_continue_is_not_the_stale_attach_stop(self):
+        self._assert_fast_stop_waits_for_event(False)
+
+    def test_sample_marker_cannot_bypass_the_matching_new_stop_event(self):
+        self._assert_fast_stop_waits_for_event(True)
+
+    def test_static_observation_is_committed_before_native_cleanup_can_block(self):
+        with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            output = Path(directory)
+            observed = []
+
+            def cleanup():
+                path = output / 'lldb-observation.json'
+                observed.append(json.loads(path.read_text()) if path.is_file() else None)
+                return mock.Mock(Fail=lambda: False)
+
+            process.Kill.side_effect = cleanup
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', output)
+            self.assertTrue(observed and observed[0] is not None,
+                            'static frames must exist before entering native Kill cleanup')
+            observation = observed[0]
+            self.assertEqual(observation['frames'], [frame()])
+            self.assertIsNot(observation.get('cleanupFailed'), False)
+            self.assertEqual(json.loads((output / 'lldb-observation.json').read_text()), observation)
+
+    def test_watchdog_retains_observation_and_progress_when_final_cleanup_never_commits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            observation = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
+                           'captureKind': 'timeout_sample', 'stopReason': 'signal', 'signal': 2,
+                           'frames': [frame()], 'cleanupFailed': True}
+            raw = json.dumps(observation).encode()
+            (output / 'lldb-observation.json').write_bytes(raw)
+            (output / 'collector-progress.json').write_text(json.dumps({
+                'scope': 'diagnostic_replay', 'probe': 'unavailable', 'stage': 'cleanup',
+                'collectorPhase': 'cleanup', 'processState': 'stopped'}))
+            process = mock.Mock()
+            process.poll.return_value = None
+            with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                    mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
+                    mock.patch.object(DEBUGGER, '_stop_group'):
+                result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+            self.assertEqual(result.get('frames'), [frame()])
+            self.assertEqual(result['captureKind'], 'timeout_sample')
+            self.assertEqual(result['collectorPhase'], 'cleanup')
+            self.assertEqual(result['processState'], 'stopped')
+            self.assertIs(result['cleanupFailed'], True)
+            self.assertIs(result['collectorTimedOut'], True)
+            self.assertFalse(DEBUGGER._fixture_captured(dict(result, fixtureRelease='sent')))
+            self.assertEqual((output / 'lldb-observation.json').read_bytes(), raw)
+
+
 class CaptureTests(unittest.TestCase):
+    def test_bounded_thread_roles_are_deduplicated_without_publishing_thread_identity(self):
+        with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, _), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            native = sys.modules['lldb']
+            native.SBThread = mock.Mock
+            selected = process.GetSelectedThread.return_value
+            initial, javascript = mock.Mock(), mock.Mock()
+            selected.GetName.return_value = 'private selected thread'
+            stack_frame = selected.GetFrameAtIndex.return_value
+            for index, thread in enumerate((initial, javascript), 1):
+                thread.IsValid.return_value = True
+                thread.GetThreadID.return_value = index
+                thread.GetNumFrames.return_value = 1
+                thread.GetFrameAtIndex.return_value = stack_frame
+                thread.GetStopReason.return_value = 0
+            initial.GetName.return_value = 'private initial thread'
+            javascript.GetName.return_value = 'com.facebook.react.JavaScript'
+            process.GetNumThreads.return_value = 3
+            process.GetThreadAtIndex.side_effect = lambda index: (initial, selected, javascript)[index]
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
+            result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual([thread['role'] for thread in result['threadFrames']], ['selected', 'initial', 'react_js'])
+            self.assertTrue(all(thread['frames'] == [frame()] for thread in result['threadFrames']))
+            self.assertNotIn('private', json.dumps(result))
+            self.assertNotIn('com.facebook.react.JavaScript', json.dumps(result))
+
     def test_sb_api_captures_static_frame_then_cleans_only_attached_process(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, calls), \
                 mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
@@ -368,11 +667,15 @@ class CaptureTests(unittest.TestCase):
             result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
             self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'stopped',
                                      'stage': 'frames', 'stopReason': 'signal', 'signal': 5,
-                                     'frames': [frame()], 'cleanupFailed': False})
+                                     'frames': [frame()], 'cleanupFailed': False,
+                                     'captureKind': 'spontaneous_stop', 'sampleRequested': False,
+                                     'collectorTimedOut': False, 'processState': 'stopped',
+                                     'stopAdvanced': True, 'resumeObserved': False,
+                                     'threadFrames': [{'role': 'selected', 'frames': [frame()]}]})
             self.assertEqual(calls, ['continue'])
             process.Kill.assert_called_once_with()
             process.Detach.assert_not_called()
-            debugger.SetAsync.assert_called_once_with(False)
+            self.assertEqual(debugger.SetAsync.call_args_list, [mock.call(False), mock.call(True)])
 
     def test_denied_attach_has_no_continue_and_no_free_form_error(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture('denied') as (debugger, process, calls), \
@@ -400,7 +703,9 @@ class CaptureTests(unittest.TestCase):
             DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
             result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
             self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'exited', 'stage': 'continue',
-                                     'lldbExitStatus': 2, 'sigtrapStopConfigured': True})
+                                     'lldbExitStatus': 2, 'sigtrapStopConfigured': True,
+                                     'sampleRequested': False, 'collectorTimedOut': False,
+                                     'processState': 'exited', 'resumeObserved': False})
 
     def test_debugserver_lost_status_remains_lldb_evidence(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture('exited') as (debugger, process, _), \
@@ -466,14 +771,17 @@ class CaptureTests(unittest.TestCase):
 
     def test_fixture_requires_known_successful_cleanup(self):
         result = {'scope': 'diagnostic_replay', 'probe': 'stopped',
-                  'stopReason': 'signal', 'signal': 5, 'frames': [frame()]}
+                  'stopReason': 'signal', 'signal': 5, 'frames': [frame()], 'captureKind': 'spontaneous_stop'}
         self.assertFalse(DEBUGGER._fixture_captured(result))
         self.assertFalse(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent')))
-        self.assertTrue(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent', collectorTimedOut=False)))
+        self.assertFalse(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False,
+                         fixtureRelease='sent', collectorTimedOut=False)))
+        self.assertTrue(DEBUGGER._fixture_captured(dict(result, cleanupFailed=False, fixtureRelease='sent',
+                        collectorTimedOut=False, lldbCommandTimedOut=False, lldbCommandExitStatus=0)))
 
 
 FAKE_XCRUN = r'''#!/usr/bin/env python3
-import json, os
+import ast, json, os
 from pathlib import Path
 import subprocess, sys, time
 root = Path(os.environ['DEBUGGER_FIXTURE_ROOT'])
@@ -498,8 +806,10 @@ elif args[0] == 'clang':
     executable.write_text('#!' + sys.executable + '\n'
                           'import os, sys\nfrom pathlib import Path\n'
                           'root = Path(os.environ["DEBUGGER_FIXTURE_ROOT"])\n'
-                          'sys.stdin.buffer.read(1)\n'
-                          '(root / "released-after-attach").write_text(str((root / "output/attached.ready").exists()))\n')
+                          'token = sys.stdin.buffer.read(1)\n'
+                          'running = token == b"s"\n'
+                          'output = root / "output" / ("running-sample" if running else "")\n'
+                          '(root / ("running-released-after-attach" if running else "released-after-attach")).write_text(str((output / "attached.ready").exists()))\n')
     executable.chmod(0o700)
 elif args[:2] == ['simctl', 'get_app_container']:
     print(root / 'Installed.app')
@@ -520,17 +830,29 @@ elif args[0] == 'lldb':
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
         (root / 'debugger-child.pid').write_text(str(child.pid))
         time.sleep(60)
-    output = root / 'output'
+    expression = ast.parse(args[args.index('-o') + 1][len('script '):]).body[-1].value
+    output = Path(ast.literal_eval(expression.args[3]))
+    running = output.name == 'running-sample'
     (output / 'attached.ready').touch()
-    if (output / 'hither_lldb_probe').exists():
+    if (root / 'output/hither_lldb_probe').exists():
         until = time.monotonic() + 2
-        while not (root / 'released-after-attach').exists() and time.monotonic() < until:
+        released = root / ('running-released-after-attach' if running else 'released-after-attach')
+        while not released.exists() and time.monotonic() < until:
+            time.sleep(0.01)
+    if running:
+        until = time.monotonic() + 2
+        while not (output / 'sample.request').exists() and time.monotonic() < until:
             time.sleep(0.01)
     result = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
               'stopReason': 'signal', 'signal': 5, 'cleanupFailed': mode == 'cleanup',
+              'captureKind': 'timeout_sample' if running or mode == 'sampled-trap' else 'spontaneous_stop',
+              'collectorTimedOut': running, 'sampleRequested': running,
+              'resumeObserved': running, 'stopAdvanced': True,
               'frames': [] if mode == 'empty' else [
                   {'module': 'Hither', 'uuid': '01234567-89AB-CDEF-0123-456789ABCDEF',
-                   'imageOffset': 42, 'function': 'hither_lldb_probe'}]}
+                   'imageOffset': 42, 'function': 'hither_lldb_running_probe' if running else 'hither_lldb_probe'}]}
+    if running and mode == 'running-fault':
+        result.update(captureKind='spontaneous_stop', collectorTimedOut=False, sampleRequested=False)
     (output / 'lldb-capture.json').write_text(json.dumps(result))
 else:
     sys.exit(2)
@@ -603,7 +925,7 @@ class ControlledCliTests(unittest.TestCase):
         xcrun.chmod(0o700)
         driver = base / 'driver.py'
         driver.write_text(CLI_DRIVER)
-        args = [sys.executable, str(driver), str(HELPER), command, '--output', str(base / 'output')]
+        args = [sys.executable, '-B', str(driver), str(HELPER), command, '--output', str(base / 'output')]
         if show_result:
             args.append('--print-result')
         if command == 'replay':
@@ -636,7 +958,9 @@ class ControlledCliTests(unittest.TestCase):
         base, result, exported, calls, _, _ = self.run_cli()
         self.assertEqual(result.returncode, 0)
         self.assertTrue(DEBUGGER._fixture_captured(exported))
+        self.assertTrue(DEBUGGER._running_sample_captured(exported['runningSample']))
         self.assertEqual((base / 'released-after-attach').read_text(), 'True')
+        self.assertEqual((base / 'running-released-after-attach').read_text(), 'True')
         self.assertEqual(calls[0], ['simctl', 'help', 'launch'])
         self.assertEqual(calls[1][:5], ['--sdk', 'macosx', 'clang', '-g', '-O0'])
         self.assertIn('--no-lldbinit', calls[2])
@@ -665,6 +989,18 @@ class ControlledCliTests(unittest.TestCase):
         _, result, exported, _, _, _ = self.run_cli(mode='usage')
         self.assertEqual(result.returncode, 0)
         self.assertTrue(DEBUGGER._fixture_captured(exported))
+
+    def test_expected_running_sample_is_separate_from_the_named_trap_proof(self):
+        _, result, exported, calls, _, _ = self.run_cli(mode='running-fault')
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(DEBUGGER._fixture_captured(exported))
+        self.assertFalse(DEBUGGER._running_sample_captured(exported['runningSample']))
+        self.assertEqual(sum(call[0] == 'lldb' for call in calls), 2)
+        _, result, exported, calls, _, _ = self.run_cli(mode='sampled-trap')
+        self.assertEqual(result.returncode, 1)
+        self.assertFalse(DEBUGGER._fixture_captured(exported))
+        self.assertNotIn('runningSample', exported)
+        self.assertEqual(sum(call[0] == 'lldb' for call in calls), 1)
 
     def test_denied_attach_and_empty_stack_fail_the_prebuild_check(self):
         for mode in ('denied', 'empty', 'cleanup'):
@@ -711,7 +1047,12 @@ class ControlledCliTests(unittest.TestCase):
     def test_replay_debugger_timeout_cleans_app_and_debugger_descendant(self):
         base, result, exported, _, _, _ = self.run_cli(command='replay', mode='timeout')
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'attach', 'collectorTimedOut': True})
+        self.assertEqual(exported, {'scope': 'diagnostic_replay', 'probe': 'timeout', 'stage': 'attach',
+                                    'collectorTimedOut': True, 'cleanupFailed': True,
+                                    'lldbCommandTimedOut': True,
+                                    'lldbCommandExitStatus': exported['lldbCommandExitStatus']})
+        self.assertIs(type(exported['lldbCommandExitStatus']), int)
+        self.assertNotEqual(exported['lldbCommandExitStatus'], 0)
         self.assertFalse(alive(int((base / 'app.pid').read_text())))
         self.assertFalse(alive(int((base / 'debugger-child.pid').read_text())))
 
@@ -795,6 +1136,38 @@ static ssize_t record_read(int fd, void *buffer, size_t size) {
 
 
 class DebuggerCommandResultTests(unittest.TestCase):
+    def test_selfchecks_require_zero_command_status_without_an_outer_deadline(self):
+        for running in (False, True):
+            for timed_out, status, expected in ((False, 0, True), (False, 1, False), (True, 0, False)):
+                with self.subTest(running=running, timed_out=timed_out, status=status), \
+                        tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory)
+                    captured = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
+                        'captureKind': 'timeout_sample' if running else 'spontaneous_stop',
+                        'stopReason': 'signal', 'signal': 5, 'fixtureRelease': 'sent',
+                        'sampleRequested': running, 'resumeObserved': running, 'stopAdvanced': True,
+                        'collectorTimedOut': running, 'cleanupFailed': False,
+                        'frames': [dict(frame(), function='hither_lldb_running_probe' if running else 'hither_lldb_probe')]}
+                    raw = json.dumps(captured).encode()
+                    (output / DEBUGGER.CAPTURE_RESULT_NAME).write_bytes(raw)
+                    process = mock.Mock(returncode=status)
+                    process.poll.return_value = None if timed_out else status
+                    with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                            mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
+                            mock.patch.object(DEBUGGER, '_stop_group'):
+                        result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+                    predicate = DEBUGGER._running_sample_captured if running else DEBUGGER._fixture_captured
+                    self.assertEqual(predicate(result), expected)
+                    self.assertIs(result['lldbCommandTimedOut'], timed_out)
+                    self.assertEqual(result['lldbCommandExitStatus'], status)
+                    self.assertEqual(result['frames'], captured['frames'])
+                    self.assertEqual((output / DEBUGGER.CAPTURE_RESULT_NAME).read_bytes(), raw)
+                    if not running:
+                        with mock.patch.object(DEBUGGER, 'replay', return_value=result):
+                            observed = DEBUGGER.main(['replay', '--app', '/App.app', '--simulator', frame()['uuid'],
+                                '--build', '77', '--original-result', '/original.json', '--output', '/unused'])
+                        self.assertEqual(observed, 0 if expected else 1)
+
     def test_deadline_preserves_committed_frames_and_cleanup_errors_without_passing(self):
         for cleanup_error in (None, PermissionError(errno.EPERM, 'private cleanup error')):
             with self.subTest(cleanup_error=cleanup_error), tempfile.TemporaryDirectory() as directory:
@@ -976,7 +1349,7 @@ class HostCheckResultTests(unittest.TestCase):
                     attached()
                 (destination / DEBUGGER.CAPTURE_RESULT_NAME).write_text(json.dumps(captured))
                 result = DEBUGGER._read_result(destination, DEBUGGER.CAPTURE_RESULT_NAME)
-                result['collectorTimedOut'] = False
+                result.update(collectorTimedOut=False, lldbCommandTimedOut=False, lldbCommandExitStatus=0)
                 return result
 
             command = subprocess.CompletedProcess([], 0, '--wait-for-debugger --stdout --stderr', '')
@@ -985,6 +1358,12 @@ class HostCheckResultTests(unittest.TestCase):
                     mock.patch.object(DEBUGGER, '_same_executable', return_value=True), \
                     mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=fixture), \
                     mock.patch.object(DEBUGGER, '_run_lldb', side_effect=capture), \
+                    mock.patch.object(DEBUGGER, '_check_running_target', return_value={
+                        'scope': 'diagnostic_replay', 'probe': 'stopped', 'captureKind': 'timeout_sample',
+                        'sampleRequested': True, 'collectorTimedOut': True, 'cleanupFailed': False,
+                        'resumeObserved': True, 'stopAdvanced': True,
+                        'lldbCommandTimedOut': False, 'lldbCommandExitStatus': 0,
+                        'fixtureRelease': 'sent', 'frames': [dict(frame(), function='hither_lldb_running_probe')]}), \
                     mock.patch.object(DEBUGGER, '_stop_group',
                                       side_effect=OSError('private cleanup error') if cleanup_failed else None) as stop:
                 result = DEBUGGER.check(output)
@@ -1018,7 +1397,8 @@ class HostCheckResultTests(unittest.TestCase):
 
     def test_named_trap_requires_release_and_successful_cleanup(self):
         captured = {'scope': 'diagnostic_replay', 'probe': 'stopped', 'stage': 'frames',
-                    'stopReason': 'signal', 'signal': 5, 'frames': [frame()], 'cleanupFailed': False}
+                    'stopReason': 'signal', 'signal': 5, 'frames': [frame()], 'cleanupFailed': False,
+                    'captureKind': 'spontaneous_stop'}
         result = self.run_host_check(captured)
         self.assertTrue(DEBUGGER._fixture_captured(result))
         result = self.run_host_check(captured, invoke_release=False)
@@ -1053,9 +1433,11 @@ class NativeCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'native'
             result = subprocess.run((sys.executable, str(HELPER), 'check', '--output', str(output)),
-                                    capture_output=True, text=True, timeout=100)
+                                    capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0)
-            self.assertTrue(DEBUGGER._fixture_captured(json.loads((output / DEBUGGER.RESULT_NAME).read_text())))
+            observed = json.loads((output / DEBUGGER.RESULT_NAME).read_text())
+            self.assertTrue(DEBUGGER._fixture_captured(observed))
+            self.assertTrue(DEBUGGER._running_sample_captured(observed['runningSample']))
 
 
 if __name__ == '__main__':
