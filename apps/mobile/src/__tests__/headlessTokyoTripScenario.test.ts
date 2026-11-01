@@ -1,4 +1,12 @@
 const { runTokyoTrip } = require('../../test/headless/tokyo-trip.cjs');
+const { World } = require('../../test/headless/world.cjs');
+const { LEADER, PEER, GROUP_ID } = require('../../test/headless/backend.cjs');
+
+type ClockObservation = { presentation: {
+  route: { route: string };
+  hosts: { testId?: string }[];
+  flockRows: { userId: string; lastUpdated: string; serverTimeOffsetMs: number; text: string }[];
+} };
 
 describe('Tokyo full App common-trip acceptance', () => {
   jest.setTimeout(600_000);
@@ -8,5 +16,45 @@ describe('Tokyo full App common-trip acceptance', () => {
     expect(summary.harnessFailure).toBeNull();
     expect(summary.steps).toBeGreaterThan(0);
     expect(summary.checks.filter((check: { pass: boolean }) => !check.pass)).toEqual([]);
+  });
+
+  it.each(['ios', 'android'])('renders peer age from synchronized server time on %s', async platform => {
+    const world = new World();
+    try {
+      const capturedAt = new Date(world.now - 150_000).toISOString();
+      world.backend.locations.set(`${GROUP_ID}:${PEER}`, {
+        group_id: GROUP_ID, user_id: PEER, latitude: 25.03, longitude: 121.53,
+        captured_at: capturedAt, updated_at: capturedAt,
+      });
+      const device = await world.device({ id: 'clock', userId: LEADER, platform, mode: 'app' });
+      const press = (testId: string) => device.host.call({ kind: 'press', testId });
+      if ((await device.observe()).presentation.hosts.some((host: { testId?: string }) => host.testId === 'onboarding-skip')) {
+        await press('onboarding-skip');
+      }
+      await press('role-my-teams');
+      await press(`team-card-${GROUP_ID}`);
+      await press('team-enter');
+      await world.waitFor(device, (value: ClockObservation) => value.presentation.route.route === 'Map', 'restored team Map');
+      for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
+        await device.host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase,
+          value: { translationY: -250, velocityY: 0 }, success: true });
+      }
+      await device.perform('map.tab', { index: 0 });
+      const local = await world.waitFor(device, (value: ClockObservation) =>
+        value.presentation.flockRows.some(row => row.userId === PEER), 'peer freshness row');
+      expect(local.presentation.flockRows.find((row: { userId: string }) => row.userId === PEER).text).toMatch(/(?:^|\s)2 分鐘前更新(?:\s|$)/);
+
+      const snapshot = world.backend.snapshot.bind(world.backend);
+      world.backend.snapshot = (groupId: string) => ({ ...snapshot(groupId),
+        generated_at: new Date(world.now + 3_600_000).toISOString() });
+      await device.input({ kind: 'appState', value: 'background' });
+      await device.input({ kind: 'appState', value: 'active' });
+      const synchronized = await world.waitFor(device, (value: ClockObservation) =>
+        value.presentation.flockRows.some(row => row.userId === PEER && row.serverTimeOffsetMs === 3_600_000), 'authoritative recovery clock');
+      const peer = synchronized.presentation.flockRows.find((row: { userId: string }) => row.userId === PEER);
+      expect(peer.lastUpdated).toBe(capturedAt);
+      expect(peer.text).toMatch(/(?:^|\s)1 小時前更新(?:\s|$)/);
+      expect(synchronized.now).toBe(world.now);
+    } finally { await world.close(); }
   });
 });
