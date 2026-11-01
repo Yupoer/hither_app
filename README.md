@@ -102,7 +102,9 @@ From `apps/mobile`, run `npm run check:quick -- --base origin/master` for existi
 
 Product PRs select complete CI jobs through the module-contract planner. Known mobile changes run `verify` and `mobile-checks`; backend, native, shared, and unknown changes retain full checks. Product pushes to `master` and every manual dispatch run all ordinary gates. Markdown-only push/PR changes retain their existing product-job skip. `verify` owns metadata, the single full Node invocation, changed-function coverage, scenarios, and sanitized evidence. `mobile-checks` owns the component, lint, typecheck, runtime, Expo, and auth-web bundle.
 
-Optional manual `benchmark=true` dispatches collect worker and real installed-cache pairs alongside full normal CI. `benchmark_kind` selects `workers`, `cache`, or `all`. Benchmark success does not replace `ci-required`. Installed-tree reuse remains disabled until five matching pairs on each adopted runner environment pass correctness and satisfy `max(candidate) < min(baseline)`; overlapping results retain the incumbent. Worker plain and coverage modes are evaluated separately.
+Optional manual `benchmark=true` dispatches collect worker and real installed-cache pairs alongside full normal CI. `benchmark_kind` selects `workers`, `cache`, or `all`. Benchmark success does not replace `ci-required`. Adoption requires five matching pairs on each runner environment to pass correctness and satisfy `max(candidate) < min(baseline)`; overlapping results retain the incumbent. Worker plain and coverage modes are evaluated separately.
+
+Ubuntu `verify` and `mobile-checks` reuse the exact installed dependency tree. Only `verify` saves it on `master` pushes and manual `deliver/` dispatches. In [cache benchmark run 41339472235](https://github.com/Yupoer/hither_app/actions/runs/41339472235), all five Ubuntu pairs passed correctness with separate timing ranges. Median clean install time was 20.1s, compared with 9.6s for cache restore. The `macos-26` and `xcode-27` ranges overlapped, so both native jobs retain clean patched installs.
 
 ## OpenAI Codex and GPT-5.6 Usage
 

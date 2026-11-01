@@ -101,6 +101,9 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-mobile
+        with:
+          installed-cache: 'true'
+          save-cache: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/deliver/')) }}
 
       - name: Resolve META_PARENT
         id: test_meta
@@ -191,6 +194,8 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: ./.github/actions/setup-mobile
+        with:
+          installed-cache: 'true'
 
       - name: Component tests (jest-expo)
         run: npm test -- --config jest.config.components.js --runInBand --silent
