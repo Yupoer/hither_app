@@ -2,8 +2,12 @@ import json
 import os
 import sys
 
+REQUIRED_JOBS = {"verify", "mobile-checks", "backend", "jsi-ui-runtime", "jsi-ios27-runtime"}
+
 
 def check(needs):
+    if set(needs) != REQUIRED_JOBS | {"scope"}:
+        raise ValueError("needs must name scope and every required job")
     if needs["scope"]["result"] != "success":
         raise ValueError("scope must succeed")
     product = needs["scope"]["outputs"]["product"]
@@ -11,8 +15,7 @@ def check(needs):
         raise ValueError("scope product must be exactly true or false")
     outputs = needs["scope"]["outputs"]
     expected = json.loads(outputs["expected_jobs"])
-    jobs = set(needs) - {"scope"}
-    if not isinstance(expected, dict) or set(expected) != jobs or not jobs:
+    if not isinstance(expected, dict) or set(expected) != REQUIRED_JOBS:
         raise ValueError("expected_jobs must name exactly every required job")
     if any(type(value) is not bool for value in expected.values()):
         raise ValueError("expected_jobs values must be booleans")

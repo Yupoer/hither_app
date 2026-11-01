@@ -46,15 +46,30 @@ for expected in ("not json", "null", "[]", "{}", json.dumps({job: 1 for job in j
     altered = copy.deepcopy(valid[1]); altered["scope"]["outputs"]["expected_jobs"] = expected; invalid.append(altered)
 for job in ("scope", *jobs):
     altered = copy.deepcopy(valid[1]); del altered[job]; invalid.append(altered)
+joint_omissions = []
+for payload in valid:
+    altered = copy.deepcopy(payload)
+    del altered["backend"]
+    expected = json.loads(altered["scope"]["outputs"]["expected_jobs"])
+    del expected["backend"]
+    altered["scope"]["outputs"]["expected_jobs"] = json.dumps(expected)
+    joint_omissions.append(altered)
+invalid.extend(joint_omissions)
 for result in ("failure", "cancelled", "skipped", None):
     altered = copy.deepcopy(valid[1]); altered["scope"]["result"] = result; invalid.append(altered)
 for mode in ("unknown", "docs", None):
     altered = copy.deepcopy(valid[1]); altered["scope"]["outputs"]["mode"] = mode; invalid.append(altered)
 for payload in invalid:
     assert not accepts(payload), payload
-for payload, expected in [(valid[1], 0), (invalid[3], 1)]:
+for payload, expected in [(valid[1], 0), (invalid[3], 1), (joint_omissions[1], 1)]:
     result = subprocess.run([sys.executable, "-B", str(script)], env={**os.environ, "CI_NEEDS": json.dumps(payload)}, capture_output=True)
     assert (result.returncode != 0) == bool(expected), result
+
+planner_jobs = json.loads(subprocess.check_output([
+    "node", "--input-type=module", "--eval",
+    "import { JOB_GROUPS } from './scripts/ci-shadow-plan.mjs'; console.log(JSON.stringify(Object.keys(JOB_GROUPS)));",
+], cwd=script.parents[1], text=True))
+assert required.REQUIRED_JOBS == set(planner_jobs), "aggregate jobs must match planner JOB_GROUPS"
 
 workflow = script.parents[1].joinpath('.github/workflows/ci.yml').read_text(encoding='utf-8')
 backend = re.search(r'(?ms)^  backend:\n(.*?)(?=^  \S|\Z)', workflow).group(1)
