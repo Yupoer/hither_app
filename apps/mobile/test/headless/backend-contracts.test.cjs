@@ -401,7 +401,7 @@ const publicRecovery = identityRpc('get_group_public_recovery_snapshot');
 assert.equal(publicRecovery.error, null);
 assert.equal(publicRecovery.data.profiles.length, 2);
 for (const profile of publicRecovery.data.profiles) assert.deepEqual(Object.keys(profile).sort(), safeKeys);
-assert.deepEqual(identityRpc('get_group_recovery_snapshot').data.profiles.find(profile => profile.id === PEER), identities.profiles.get(PEER));
+assert.deepEqual(identityRpc('get_group_recovery_snapshot').data, publicRecovery.data);
 for (const name of ['get_group_recovery_snapshot', 'get_group_public_recovery_snapshot']) {
   assert.deepEqual(identityRpc(name, null).error, { message: 'not authenticated', code: '28000' });
   assert.equal(identityRpc(name, 'outsider').error.message, 'not_member');

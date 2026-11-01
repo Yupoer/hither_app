@@ -77,9 +77,9 @@ select is((select count(*) from public.profiles where id='d2700000-0000-4000-800
 select is((select count(*) from public.memberships m join public.profiles p on p.id=m.user_id
  where m.group_id='d2700000-0000-4000-8000-000000000010' and p.id<>auth.uid()),
  0::bigint,'membership joins cannot expose private peer profiles');
-select is((with changed as (update public.profiles set preferences='{"forged":true}'
- where id='d2700000-0000-4000-8000-000000000002' returning id) select count(*) from changed),
- 0::bigint,'co-member cannot update peer preferences');
+with changed as (update public.profiles set preferences='{"forged":true}'
+ where id='d2700000-0000-4000-8000-000000000002' returning id)
+select is(count(*),0::bigint,'co-member cannot update peer preferences') from changed;
 select is(
   public.get_group_recovery_snapshot('d2700000-0000-4000-8000-000000000010'),
   public.get_group_public_recovery_snapshot('d2700000-0000-4000-8000-000000000010'),
