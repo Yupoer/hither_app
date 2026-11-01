@@ -2871,6 +2871,48 @@
       "acceptance": "Actual Map card Start and End preserve their original durable FIFO identities through an abrupt offline restart, then replay to paused peer state without completing the stop.",
       "testFile": "headlessJourneyEntriesScenario.test.ts",
       "testNamePattern": "actual Map offline journey parent on"
+    },
+    {
+      "parent": 359,
+      "child": "settled-camera",
+      "acceptance": "Rapid card swipes select immediately, frame only the settled destination and invalidate superseded camera work while preserving manually panned maps.",
+      "testFile": "carouselSelection.test.ts",
+      "testNamePattern": "coalesces rapid swipes|invalidates pending cameras|resumes an interrupted focus|preserves a manually panned map"
+    },
+    {
+      "parent": 359,
+      "child": "card-title",
+      "acceptance": "Expanded and collapsed gathering-card titles fit within their existing local typography bounds.",
+      "testFile": "gatheringCarouselIconButtons.test.tsx",
+      "testNamePattern": "fits titles within their existing typography bounds"
+    },
+    {
+      "parent": 359,
+      "child": "marquee-scaling",
+      "acceptance": "Marquee measurement, static text and moving text use the same font scaling and clip height.",
+      "testFile": "overflowMarquee.test.tsx",
+      "testNamePattern": "uses the same scaling for measurement, static and moving text"
+    },
+    {
+      "parent": 359,
+      "child": "drag-feedback",
+      "acceptance": "Route dragging projects a lifted clone, source closure, one real-gap line, ripple and spring settlement with outside cancellation, keyboard controls and reduced-motion behavior.",
+      "testFile": "routeDragPreview.test.ts",
+      "testNamePattern": "floating drag clone|source slot without reordering|springs projected neighbors|outside release|original-slot boundaries|keyboard pickup|reduced-motion dragging|final native release coordinates"
+    },
+    {
+      "parent": 359,
+      "child": "drag-persistence",
+      "acceptance": "A drop commits once, preserves the optimistic order through stale parent projections and rolls back rejected persistence even after foreground loss.",
+      "testFile": "routeDragPreview.test.ts",
+      "testNamePattern": "clone through settling|optimistic drop across stale parent arrays|rejected drop after foreground loss"
+    },
+    {
+      "parent": 359,
+      "child": "map-control-bounds",
+      "acceptance": "Measured card bounds hide overlapping map controls and restore recenter when collapsing the card frees its band.",
+      "testFile": "mapChromeLayout.test.ts",
+      "testNamePattern": "hides the compass when the measured card occupies|restores recenter after card collapse"
     }
   ]
 }

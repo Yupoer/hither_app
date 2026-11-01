@@ -901,19 +901,21 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         // Same visible-band lat shift as centerOn so the pin sits in the
         // strip between carousel and sheet while pitched to 30°.
         // Set zoom (Android) + altitude (iOS); pitch needs pitchEnabled on MapView.
-        mapRef.current?.animateCamera(
-          {
-            center: {
-              latitude: coordinates.latitude - latOffset,
-              longitude: coordinates.longitude,
-            },
-            pitch: 30,
-            heading: 0,
-            zoom: options?.zoom ?? LOCATE_ZOOM,
-            altitude: options?.altitude ?? LOCATE_ALTITUDE,
+        const camera = {
+          center: {
+            latitude: coordinates.latitude - latOffset,
+            longitude: coordinates.longitude,
           },
-          { duration: 320 },
-        );
+          pitch: 30,
+          heading: 0,
+          zoom: options?.zoom ?? LOCATE_ZOOM,
+          altitude: options?.altitude ?? LOCATE_ALTITUDE,
+        };
+        if (options?.animated === false) {
+          mapRef.current?.setCamera(camera);
+        } else {
+          mapRef.current?.animateCamera(camera, { duration: 320 });
+        }
       },
       fitRoute: (coordinates) => {
         if (coordinates.length > 1) {

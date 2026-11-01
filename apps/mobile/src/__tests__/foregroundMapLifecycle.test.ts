@@ -35,7 +35,7 @@ jest.mock('../utils/advanceRouteToCoordinate', () => {
   const real = jest.requireActual('../utils/advanceRouteToCoordinate');
   return { ...real, advanceRouteToCoordinate: jest.fn(real.advanceRouteToCoordinate) };
 });
-import GroupMap, { type GroupMapCameraState } from '../components/GroupMap';
+import GroupMap, { type GroupMapCameraState, type GroupMapHandle } from '../components/GroupMap';
 import { displayRoutePoints } from '../utils/routeLod';
 import { advanceRouteToCoordinate } from '../utils/advanceRouteToCoordinate';
 import { energyObservability } from '../state/energyObservability';
@@ -45,6 +45,21 @@ function transition(state: string) {
   mockAppState.currentState = state;
   for (const listener of mockListeners) listener(state);
 }
+
+it('snaps oblique selection when requested and preserves the default camera animation', async () => {
+  const ref = React.createRef<GroupMapHandle>();
+  let root: ReturnType<typeof create>;
+  await act(async () => { root = create(React.createElement(GroupMap, { ref, members: [] })); });
+  mockSurface.animateCamera.mockClear();
+  mockSurface.setCamera.mockClear();
+  const point = { latitude: 25.04, longitude: 121.52 };
+  act(() => ref.current?.focusOblique(point, { animated: false }));
+  expect(mockSurface.setCamera).toHaveBeenCalledWith(expect.objectContaining({ pitch: 30, center: point }));
+  expect(mockSurface.animateCamera).not.toHaveBeenCalled();
+  act(() => ref.current?.focusOblique(point));
+  expect(mockSurface.animateCamera).toHaveBeenCalledWith(expect.objectContaining({ pitch: 30 }), { duration: 320 });
+  await act(async () => root!.unmount());
+});
 
 it('releases the actual map subtree, stops route projection during background updates and restores the settled camera', async () => {
   const route = Array.from({ length: 2000 }, (_, i) => ({ latitude: 25 + i * 0.00001, longitude: 121 + i * 0.00001 }));

@@ -22,6 +22,7 @@ import {
   MAP_SHEET_EDGE_INSET,
 } from '../../../components/mapSheetChrome';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
+import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
@@ -157,7 +158,7 @@ export default function SettingsSheetPanel({
           <Ionicons name="chevron-back" size={22} color="#fff" />
         </Pressable>
       ) : <View style={styles.headerActionSlot} />}
-      <Text style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]} numberOfLines={titleFontSize != null ? 2 : 1}>{title}</Text>
+      <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]} numberOfLines={titleFontSize != null ? 2 : 1}>{title}</Text>
       <SheetHeaderAction
         testID={singleStage ? "settings-root-close" : "settings-child-back"}
         action={action}

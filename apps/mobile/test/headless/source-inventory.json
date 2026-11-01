@@ -1845,7 +1845,13 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "757b6f90c26c4f4f0b6b2f7b6eb811b69a700c2095c0b4a690e75771b787e6d0"
+    "hash": "650e25d39066c4d06800eed240cf6263646f6f7ff8192e0edb6ee84ef339b583"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "0dfaa6936fd5a97cd9139457ef0934500325246d56a4f0163005fffede028412"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -1863,13 +1869,25 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "export",
     "name": "DestinationReorderList",
-    "hash": "0914327d479454b9046270d504bec183c98bf2efb0fd795eec9b5b4eca749917"
+    "hash": "038bc16a114a8b871c474bbcc1e875abe0c07986e2be4f636d331668478c4476"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "dba96f5ffe6bf9f38f52e53df313b926ea20eeb52265b789eddfbd50f06fd2b8"
+    "hash": "79e0acb1492d09bd2b3f84900a6f626644e9f62808970614cba2c503d4f45e59"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "75b2cc7ad057df7413b3891f6094dc03e2ce8340b269297e43dac79f40a6814d"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "lifecycle",
+    "name": "document.addEventListener",
+    "hash": "5de5d8f68f4557286bd36acc57c15f892723304c723f12e4c1d4f83d5ccc356a"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -1929,7 +1947,19 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onCancel",
-    "hash": "c561bcf942f7645a076207bbe6a7588526088cb6a5b08f91458af323eba46477"
+    "hash": "ecc80da53e8bedd9ae7ab0075c0ab100f1c6e8c6c986ebfd3bb46849b616406b"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onHandleKey",
+    "hash": "1af449594ac84a7610c0847f2487f71f52ac449c1ee4476c1a66d6c585393ed7"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onAccessibilityMove",
+    "hash": "c67c5a7c380906d01547d4384e3afe2765a295884d2f69816363d89b0ae739af"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2000,26 +2030,44 @@
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
+    "name": "onHandleKey",
+    "hash": "ec4165e4a867fe539747ba3c728b0c1d5735c184bcab1bbc6c761ca6a659da75"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onAccessibilityMove",
+    "hash": "86de547d7b19340d6a8114dd42244a42ceae073552f06e744438fec983c92e29"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
     "name": "onHeaderGrant",
-    "hash": "1b4f0b7f622cb4f3a20f9a1974c2272a99c8c8922379afe18d73208e6b4191ca"
+    "hash": "9cbdf3c5368256494acdb407885f66396af9618e6e455f88f319ae0bb314a6a6"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onHeaderMove",
-    "hash": "bbed762ec763e348d9147adc76619cb81cac0f7b4a46f70f76e38167c82610c9"
+    "hash": "d917051c4b5f661d034e72fccb15efa648af2b0c82aec14e35afc73d985e5b20"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onHeaderRelease",
-    "hash": "e6ae9bf2336ed05142faf55d8971f02fdfe2fcfc9aa63c44a959a973638ce2d3"
+    "hash": "dc524d2bca2e6c70a516407041e7870b45e0f94d0be36d4248e04a780bc84c50"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onHeaderCancel",
-    "hash": "42ad32b979ce4e917a1af2941b0c09b0e8c79cf3a6c00ffa7a976deb12da45e5"
+    "hash": "d501772e877c90c5859d479ed715f4a4ad1874207f63f5ccda873b8b318382e6"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onViewRef",
+    "hash": "700313a4c34d57f20bd0d66e03803665728ae83a804d118edd0554f5533f46aa"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2043,7 +2091,7 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onLayout",
-    "hash": "856b5437a02d5f995fc5754f1396edcf3c42c6c0f0534ca12796b486ebbf22a3"
+    "hash": "3b9fc926a7532884adb0021d6d62a862e44e7f82d3f73d55f890072c6dcdabcb"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2204,6 +2252,12 @@
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
+    "name": "onAccessibilityAction",
+    "hash": "c16662131c100f15a09ddc3e37c41e615b70f336d1e12aa3403fe32e15f1dff7"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
     "name": "onPress",
     "hash": "6e6aa07ae8a1338f4d419045cc220393f359ad56e16ef32f673a6e85d250c092"
   },
@@ -2242,6 +2296,12 @@
     "kind": "callback",
     "name": "onPress",
     "hash": "2db9676098d68d13c2bb6f19b9c051ffea67949d973760c89b136510a07d0043"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onAccessibilityAction",
+    "hash": "84eb2f6aaf1282c99a17135e9da7ce61eb403046b1f4c7b8e961ce3d5e7c4e99"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2817,7 +2877,7 @@
     "file": "src/components/OverflowMarquee.tsx",
     "kind": "export",
     "name": "OverflowMarquee",
-    "hash": "43814f72b550f7c4ab63d8c43592291a555aa5198fce2388f8013614646b203d"
+    "hash": "08ea0944dc839ded29271d992daa44fde9941374451c1a480544b818c6fbcc88"
   },
   {
     "file": "src/components/OverflowMarquee.tsx",
@@ -2871,7 +2931,7 @@
     "file": "src/components/OverlaySheet.tsx",
     "kind": "export",
     "name": "OverlaySheet",
-    "hash": "025053b338b3bb00a2fa4c9a50ca9d9a1eed541bd9e7abc73fbb6940adddc92e"
+    "hash": "71b47b969da8eb58d4f8e3cb0a3fd5f3ba858dea259b59460d2ccc39135913bc"
   },
   {
     "file": "src/components/OverlaySheet.tsx",
@@ -5649,7 +5709,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "ecb89e145ff723f9c0246d79781f8bee8d821bcd2b12b718f7bd26d07d927265"
+    "hash": "a7f7ff4afd2bac24698a828cf3b8a1073dcfc9eae1fbadae7c058fce2c20439d"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6759,7 +6819,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "ee96e4af1a38f215d86c6c3845058cd3f9a273d4f67a8f6ee555c9928c70e33e"
+    "hash": "fc362ba747ee8b967a95d3c3e46502b7a74ac10c8edbba6227aab7d7e22f0d0c"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -7665,7 +7725,7 @@
     "file": "src/screens/MapScreen/components/SettingsSheetPanel.tsx",
     "kind": "export",
     "name": "SettingsSheetPanel",
-    "hash": "b3c707c8aa08be70594db71a3d6dfde5c9fb501566312a8ea79ca4f0e9399567"
+    "hash": "6afc7b4b1c8cf3a8210aedb30a557438dd38a2a0cf6615892c40037955e19fbe"
   },
   {
     "file": "src/screens/MapScreen/components/SettingsSheetPanel.tsx",
@@ -7863,7 +7923,13 @@
     "file": "src/screens/MapScreen/hooks/useCarouselSelection.ts",
     "kind": "export",
     "name": "useCarouselSelection",
-    "hash": "61af18fca24269c701264cf10afbe0e4e8774bf6d122e6a4caec6e910e1a4c08"
+    "hash": "ee791bf7744fd7a260252c6d9ea42d8f002235a959896941d70f31c08b6cbe58"
+  },
+  {
+    "file": "src/screens/MapScreen/hooks/useCarouselSelection.ts",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "6411e06496a1043e406461b9e07d4a30c88c3b784c2be168565f43ae05912d2e"
   },
   {
     "file": "src/screens/MapScreen/hooks/useCarouselSelection.ts",
@@ -10425,7 +10491,7 @@
     "file": "src/utils/accommodationSemantics.ts",
     "kind": "export",
     "name": "reorderRowGeometry",
-    "hash": "d7d42cfe6ba65f3b9cd46b62645dc5f4a0dae632da0ef9c5a3e598e31bcf2631"
+    "hash": "4622fec702049d4afdd472c9537d0105862af204601a95e2fa215762c29a46f8"
   },
   {
     "file": "src/utils/accommodationSemantics.ts",
@@ -10437,7 +10503,13 @@
     "file": "src/utils/accommodationSemantics.ts",
     "kind": "export",
     "name": "dragTargetIndexFromOffset",
-    "hash": "80a0ba30bff01d52fd3ec907aef96e544bd001ae636c5827e554964ceed7b7c0"
+    "hash": "9386a47fb29faf86f821714d2d32904a226d9e52b723a48387b65b79213b28a6"
+  },
+  {
+    "file": "src/utils/accommodationSemantics.ts",
+    "kind": "export",
+    "name": "sourceClosedReorderGeometry",
+    "hash": "2f37884c8fcb663d95da28af0a8321467f8e422f799136b3a1238e3f2a50a9b1"
   },
   {
     "file": "src/utils/accommodationSemantics.ts",
@@ -11631,7 +11703,7 @@
     "file": "src/utils/mapChromeLayout.ts",
     "kind": "export",
     "name": "mapKitChromeLayout",
-    "hash": "a1f9226e90a1d0a52e834887fdffad5692bf1ca0e32b51be8122d32f08f6d1ad"
+    "hash": "b56990846a3b2f9960a5203c43ea13f6322a59646ae60b6b8a2ebb13be8ec08b"
   },
   {
     "file": "src/utils/mapFormatters.ts",

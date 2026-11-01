@@ -1,4 +1,4 @@
-import { createElement, Fragment, useState, useCallback, useRef, RefObject } from 'react';
+import { createElement, Fragment, useState, useCallback, useRef, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { NativeSyntheticEvent, NativeScrollEvent, ScrollView } from 'react-native';
 import type { Destination } from '../../../types';
@@ -22,12 +22,25 @@ export function useCarouselSelection({
   mapRef,
   obliqueLocate = true,
 }: UseCarouselSelectionParams) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const { travelMode, setTravelMode } = usePreferences();
+  const [selectedIndex, updateSelectedIndex] = useState(0);
+  const pendingCameraRef = useRef<{
+    destinationId: string;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
   // Ignore momentum completions from an older animated scroll after a newer
   // destination ID has become the selected target.
   const programmaticTargetRef = useRef<number | null>(null);
   const userDraggingRef = useRef(false);
+  const cancelPendingCamera = useCallback(() => {
+    if (pendingCameraRef.current?.timer != null) clearTimeout(pendingCameraRef.current.timer);
+    pendingCameraRef.current = null;
+  }, []);
+  const setSelectedIndex = useCallback<Dispatch<SetStateAction<number>>>((next) => {
+    cancelPendingCamera();
+    userDraggingRef.current = false;
+    updateSelectedIndex(next);
+  }, [cancelPendingCamera]);
+  const { travelMode, setTravelMode } = usePreferences();
 
   const scrollToIndex = useCallback((index: number, animated: boolean) => {
     programmaticTargetRef.current = index;
@@ -45,8 +58,15 @@ export function useCarouselSelection({
   const carouselSelectionScrollLifecycle = createElement(CarouselSelectionScroll, { destinations, scrollToIndex, selectedIndex });
 
   const selectedDestination: Destination | undefined = destinations[selectedIndex];
+  const cameraDestinationsKey = JSON.stringify(destinations.map(({ id, coordinates }) => [id, coordinates.latitude, coordinates.longitude]));
+  const cameraLifetime = createElement(CarouselCameraLifetime, { key: cameraDestinationsKey, cancelPendingCamera });
 
   const handleScrollBeginDrag = useCallback(() => {
+    const pending = pendingCameraRef.current;
+    if (pending?.timer != null) {
+      clearTimeout(pending.timer);
+      pendingCameraRef.current = { destinationId: pending.destinationId, timer: null };
+    }
     userDraggingRef.current = true;
     programmaticTargetRef.current = null;
   }, []);
@@ -68,21 +88,28 @@ export function useCarouselSelection({
       }
       userDraggingRef.current = false;
       programmaticTargetRef.current = null;
+      const destination = destinations[clamped];
+      if (clamped === selectedIndex && pendingCameraRef.current?.destinationId !== destination.id) return;
       if (clamped !== selectedIndex) {
-        setSelectedIndex(clamped);
+        updateSelectedIndex(clamped);
         logEvent('carousel_swipe', { index: clamped });
-        if (obliqueLocate && mapRef.current?.focusOblique) {
-          mapRef.current?.focusOblique(destinations[clamped].coordinates);
-        } else {
-          mapRef.current?.centerOn(destinations[clamped].coordinates);
-        }
       }
+      cancelPendingCamera();
+      const timer = setTimeout(() => {
+        pendingCameraRef.current = null;
+        if (obliqueLocate && mapRef.current?.focusOblique) {
+          mapRef.current.focusOblique(destination.coordinates, { animated: false });
+        } else {
+          mapRef.current?.centerOn(destination.coordinates, { animated: false });
+        }
+      }, 140);
+      pendingCameraRef.current = { destinationId: destination.id, timer };
     },
-    [destinations, windowWidth, selectedIndex, mapRef, obliqueLocate],
+    [destinations, windowWidth, selectedIndex, mapRef, obliqueLocate, cancelPendingCamera],
   );
 
   return {
-    lifecycle: createElement(Fragment, { key: 'carousel-selection-runtime' }, carouselBoundsScrollLifecycle, carouselSelectionScrollLifecycle),
+    lifecycle: createElement(Fragment, { key: 'carousel-selection-runtime' }, carouselBoundsScrollLifecycle, carouselSelectionScrollLifecycle, cameraLifetime),
     selectedIndex,
     setSelectedIndex,
     travelMode,
@@ -91,6 +118,11 @@ export function useCarouselSelection({
     handleScrollBeginDrag,
     handleMomentumEnd,
   };
+}
+
+function CarouselCameraLifetime({ cancelPendingCamera }: { cancelPendingCamera: () => void }) {
+  useMountEffect(() => cancelPendingCamera);
+  return null;
 }
 
 function CarouselBoundsScroll({ destinations, selectedIndex, setSelectedIndex, scrollToIndex, windowWidth }: {

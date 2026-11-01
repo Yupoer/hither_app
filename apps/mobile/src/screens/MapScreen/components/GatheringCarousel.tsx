@@ -26,6 +26,7 @@ import type { DestinationArrival, User } from '../../../types';
 import type { AppStateStatus } from 'react-native';
 import type { Palette } from '../../../theme';
 import type { FontScaleBucket } from '../../../theme/typeScale';
+import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 import type { EdgeInsets } from 'react-native-safe-area-context';
 import type { RuntimePowerState } from '../../../state/runtimePowerState';
 import type { DirectionsResult } from '../../../native';
@@ -42,7 +43,6 @@ export interface GatheringCarouselProps {
   arrivalExitRecords: Map<string, ArrivalCardExitRecord>;
   atFull: boolean;
   canEditItinerary: boolean;
-  carouselMaxHeight: number;
   carouselRef: React.RefObject<ScrollView | null>;
   colors: Palette;
   destinationIds: string[];
@@ -111,7 +111,6 @@ export function GatheringCarousel({
   arrivalExitRecords,
   atFull,
   canEditItinerary,
-  carouselMaxHeight,
   carouselRef,
   colors,
   destinationIds,
@@ -175,7 +174,7 @@ export function GatheringCarousel({
       <Animated.View
         style={[
           styles.carouselWrap,
-          { top: insets.top + 8, maxHeight: carouselMaxHeight },
+          { top: insets.top + 8 },
         ]}
         pointerEvents={atFull ? 'none' : 'box-none'}
         onLayout={(e) => {
@@ -346,7 +345,7 @@ export function GatheringCarousel({
                   ) : null}
                   <View style={[styles.cardInner, { zIndex: 1 }]}>
                   {localActionError && (!localActionError.destinationId || localActionError.destinationId === dest.id) ? (
-                    <Text testID="local-arrival-write-error" accessibilityLiveRegion="polite" style={{ color: glass.danger, marginBottom: 8 }}>
+                    <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} testID="local-arrival-write-error" accessibilityLiveRegion="polite" style={{ color: glass.danger, marginBottom: 8 }}>
                       {localActionError.title}{'：'}{localActionError.message}
                     </Text>
                   ) : null}
@@ -362,6 +361,7 @@ export function GatheringCarousel({
                     <View style={styles.grow}>
                       <View style={styles.cardKickerRow}>
                         <Text
+                          maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
                           style={[styles.cardKicker, { color: accent }]}
                           numberOfLines={1}
                           ellipsizeMode="tail"
@@ -395,15 +395,32 @@ export function GatheringCarousel({
                       </View>
                       {cardExpanded ? (
                         <View>
-                          <Text
-                            style={[styles.cardTitle, styles.cardTitleExpanded]}
-                            numberOfLines={3}
-                            ellipsizeMode="tail"
-                          >
-                            {dest.title}
-                          </Text>
+                          {gatherCardTitleMarquee ? (
+                            <OverflowMarquee
+                              text={dest.title}
+                              active={active}
+                              activationDelayMs={1600}
+                              pixelsPerSecond={gatherCardMarqueeSpeed}
+                              startPauseMs={1000}
+                              endPauseMs={1500}
+                              maxFontSizeMultiplier={1}
+                              containerStyle={{ flex: 0, marginTop: styles.cardTitleExpanded.marginTop }}
+                              style={[styles.cardTitle, styles.cardTitleExpanded, { marginTop: 0 }]}
+                            />
+                          ) : (
+                            <Text
+                              style={[styles.cardTitle, styles.cardTitleExpanded]}
+                              numberOfLines={1}
+                              maxFontSizeMultiplier={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.8}
+                              ellipsizeMode="tail"
+                            >
+                              {dest.title}
+                            </Text>
+                          )}
                           <View style={styles.cardSubRow}>
-                            <Text style={styles.cardDayLine} numberOfLines={1}>
+                            <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={styles.cardDayLine} numberOfLines={1}>
                               {formatTripDayLine(
                                 dest.day || 1,
                                 routeDepartureDate,
@@ -425,13 +442,13 @@ export function GatheringCarousel({
                               accessibilityLabel={`${t('map.arrivalProgress')} ${arrivedHere}/${totalMembers}`}
                             >
                               <Ionicons name="people-outline" size={16} color={accent} />
-                              <Text style={[styles.arrivalPeopleValue, { color: accent }]}>
+                              <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={[styles.arrivalPeopleValue, { color: accent }]}>
                                 {flockNavigatingThis ? <>{arrivedHere}/{totalMembers}</> : '—'}
                               </Text>
                             </Pressable>
                           </View>
                           {myScopeId != null && (
-                            <Text style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
+                            <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={styles.cardBadge}>{t('subgroup.itineraryBadge')}</Text>
                           )}
                           <View style={styles.metricsRow}>
                             <View style={styles.metricCol}>
@@ -541,6 +558,7 @@ export function GatheringCarousel({
                             pixelsPerSecond={gatherCardMarqueeSpeed}
                             startPauseMs={1000}
                             endPauseMs={1500}
+                            allowFontScaling={false}
                             // Single stable style object (not an inline array) so
                             // MapScreen re-renders do not thrash marquee measure.
                             style={styles.cardTitleCollapsed}
@@ -548,6 +566,7 @@ export function GatheringCarousel({
                           <View style={styles.cardCollapsedMetrics}>
                             {etaLabel ? (
                               <Text
+                                maxFontSizeMultiplier={1.15}
                                 style={[styles.cardRouteMetaEta, { color: glass.textSecondary }]}
                                 numberOfLines={1}
                               >
@@ -555,10 +574,11 @@ export function GatheringCarousel({
                               </Text>
                             ) : null}
                             {etaLabel && distLabel ? (
-                              <Text style={styles.cardRouteMetaDotExpanded}>·</Text>
+                              <Text maxFontSizeMultiplier={1.15} style={styles.cardRouteMetaDotExpanded}>·</Text>
                             ) : null}
                             {distLabel ? (
                               <Text
+                                maxFontSizeMultiplier={1.15}
                                 style={[styles.cardRouteMetaDist, { color: accent }]}
                                 numberOfLines={1}
                               >
@@ -640,6 +660,7 @@ export function GatheringCarousel({
                           }
                         />
                         <Text
+                          maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}
                           style={[
                             styles.navBtnText,
                             {

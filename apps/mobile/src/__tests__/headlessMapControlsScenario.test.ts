@@ -384,10 +384,22 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await world.advance(1);
       expect(has(await device.observe(), `gather-meet-time-${DESTINATION}`)).toBe(false);
       const cameraStart = (await device.observe()).presentation.receipts.length;
+      const cameraCalls = (value: Observation) => value.presentation.receipts.slice(cameraStart).filter(receipt => receipt.host === 'MapView');
       await device.perform('map.carousel.begin');
       await device.perform('map.carousel.end', { x: 100000 });
       await world.settle();
-      expect((await device.observe()).presentation.receipts.slice(cameraStart).some((receipt: any) => ['animateCamera', 'animateToRegion'].includes(receipt.method))).toBe(true);
+      expect(cameraCalls(await device.observe())).toEqual([]);
+      await world.advance(139);
+      expect(cameraCalls(await device.observe())).toEqual([]);
+      await world.advance(1);
+      const selectedCamera = cameraCalls(await device.observe());
+      expect(selectedCamera).toEqual([expect.objectContaining({
+        method: 'setCamera',
+        value: expect.objectContaining({ center: { latitude: expect.any(Number), longitude: 121.7 }, pitch: 30 }),
+      })]);
+      await device.perform('map.carousel.end', { x: 0 });
+      await world.advance(140);
+      expect(cameraCalls(await device.observe())).toEqual(selectedCamera);
       await device.perform('map.pin.drop', { latitude: 25.1, longitude: 121.6 });
       await world.advance(0);
       expect(has(await device.observe(), 'confirm-place-name')).toBe(true);

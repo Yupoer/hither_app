@@ -59,20 +59,26 @@ export function mapKitChromeLayout({
   /** Settled bottom inset occupied by the map recenter capsule. */
   bottomChrome?: number;
   stage?: MapChromeStage;
-}): MapChromeLayout {
-  const compassVisible = stage === 'peek' || stage === 'stage1';
-  const compassY = windowHeight != null && windowHeight > 0
+}): MapChromeLayout & { recenterVisible: boolean } {
+  const recenterY = windowHeight != null && windowHeight > 0
+    ? windowHeight - bottomChrome - MAP_RECENTER_HEIGHT
+    : null;
+  const compassY = recenterY != null
     ? Math.max(
       safeArea.top,
-      windowHeight - bottomChrome - MAP_RECENTER_HEIGHT - COMPASS_ABOVE_LOCATE_GAP - MAP_COMPASS_SIZE,
+      recenterY - COMPASS_ABOVE_LOCATE_GAP - MAP_COMPASS_SIZE,
     )
     : topChrome + COMPASS_BELOW_TOP_CHROME;
+  const compassVisible = (stage === 'peek' || stage === 'stage1')
+    && compassY >= topChrome + COMPASS_BELOW_TOP_CHROME;
   return {
     compassOffset: {
       x: horizontalInset + COMPASS_HORIZONTAL_CENTER_ADJUSTMENT,
       y: compassY,
     },
     compassVisible,
+    recenterVisible: stage !== 'full'
+      && (recenterY == null || recenterY >= topChrome + COMPASS_BELOW_TOP_CHROME),
     appleLogoInsets: {
       top: 0,
       right: 0,
