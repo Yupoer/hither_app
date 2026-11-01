@@ -82,12 +82,6 @@ describe('measured performance regressions', () => {
     expect(groupMap).not.toContain('function HeadingMarker');
   });
 
-  it('coalesces location outbox uploads instead of flushing after every sample', () => {
-    expect(locationHook).toContain('scheduleOutboxFlush');
-    expect(locationHook).toContain('const OUTBOX_FLUSH_DELAY_MS = 20_000');
-    expect(locationHook).not.toContain('.then(() => flushLocationOutbox())');
-  });
-
   it('keeps debug route local and removes eager multi-round log drain patterns', () => {
     const debugStart = locationHook.indexOf('// DEV debug route');
     const debugEnd = locationHook.indexOf('// Expo watch is fallback', debugStart);

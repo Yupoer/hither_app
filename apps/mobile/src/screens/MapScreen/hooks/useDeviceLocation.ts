@@ -52,9 +52,6 @@ interface UseDeviceLocationParams {
   onIncomingSample?: (sample: LocationSample, acceptedAtMs: number) => void;
 }
 
-/** Coalesce passive outbox flushes; force-sync bypasses this delay. */
-const OUTBOX_FLUSH_DELAY_MS = 20_000;
-
 function isUsableLocationSample(sample: LocationSample): boolean {
   const coordinates = sample.coordinates;
   if (!coordinates) return false;
@@ -101,7 +98,6 @@ export function useDeviceLocation({
   const uiGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const uploadGateRef = useRef<LocationGateState>({ lastCoords: null, lastAtMs: 0 });
   const motionRef = useRef<MotionState>(createMotionState());
-  const outboxFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const forceSyncInFlightRef = useRef(false);
   const groupIdRef = useRef(groupId);
   groupIdRef.current = groupId;
@@ -122,14 +118,6 @@ export function useDeviceLocation({
     highAccuracyRef.current,
     powerModeRef.current,
   );
-
-  const scheduleOutboxFlush = useCallback(() => {
-    if (outboxFlushTimerRef.current) return;
-    outboxFlushTimerRef.current = setTimeout(() => {
-      outboxFlushTimerRef.current = null;
-      void flushLocationOutbox().catch(() => undefined);
-    }, OUTBOX_FLUSH_DELAY_MS);
-  }, []);
 
   const acceptIncomingSample = useCallback((sample: LocationSample, now: number): boolean => {
     if (!groupIdRef.current || !sharingEnabledRef.current || !hasMembershipRef.current
@@ -171,7 +159,6 @@ export function useDeviceLocation({
     async (
       sample: LocationSample,
       now: number,
-      options: { immediate: boolean },
       requestedGroup = groupIdRef.current,
     ): Promise<void> => {
       const gid = requestedGroup;
@@ -196,18 +183,10 @@ export function useDeviceLocation({
         lastCoords: sample.coordinates,
         lastAtMs: now,
       };
-      if (options.immediate) {
-        if (outboxFlushTimerRef.current) {
-          clearTimeout(outboxFlushTimerRef.current);
-          outboxFlushTimerRef.current = null;
-        }
-        const result = await flushLocationOutbox();
-        if (!result.acceptedIds?.includes(eventId)) throw new Error('location_upload_not_confirmed');
-      } else {
-        scheduleOutboxFlush();
-      }
+      const result = await flushLocationOutbox();
+      if (!result.acceptedIds?.includes(eventId)) throw new Error('location_upload_not_confirmed');
     },
-    [scheduleOutboxFlush],
+    [],
   );
 
   /**
@@ -247,7 +226,7 @@ export function useDeviceLocation({
         uploadGateRef.current = { lastCoords: coords, lastAtMs: now };
         const requestedGroup = groupIdRef.current;
         const accessRevision = locationConsentRevision();
-        const completion = enqueueUpload(sample, now, { immediate: true }, requestedGroup);
+        const completion = enqueueUpload(sample, now, requestedGroup);
         latestUploadRef.current = { sample, groupId: requestedGroup, accessRevision, completion };
         void completion.catch(() => undefined);
       }
@@ -312,7 +291,7 @@ export function useDeviceLocation({
       const upload = receipt?.sample === latest && receipt.groupId === requestedGroup
         && receipt.accessRevision === access.generation
         ? receipt.completion
-        : enqueueUpload(fix, now, { immediate: true }, requestedGroup);
+        : enqueueUpload(fix, now, requestedGroup);
       if (options?.requireUpload) await upload;
       else if (options?.waitForUpload === false) void upload.catch(() => undefined);
       else await upload.catch(() => undefined);
@@ -325,7 +304,7 @@ export function useDeviceLocation({
 
   const [sampleOwner] = useState<DeviceLocationSampleOwner>(() => ({
     uiGateRef, uploadGateRef, lastSampleAtRef, latestSampleRef, motionRef,
-    outboxFlushTimerRef, forceSyncInFlightRef, powerModeRef, setAppState, policyNow,
+    forceSyncInFlightRef, powerModeRef, setAppState, policyNow,
   }));
   const lifecycle = createElement(DeviceLocationLifecycle, { owner: sampleOwner, input: {
     groupId, highAccuracy, teamNavigationActive, powerMode, nativeMapLocationEnabled,
@@ -356,7 +335,6 @@ interface DeviceLocationSampleOwner {
   lastSampleAtRef: RefObject<number>;
   latestSampleRef: RefObject<LocationSample | null>;
   motionRef: RefObject<MotionState>;
-  outboxFlushTimerRef: RefObject<ReturnType<typeof setTimeout> | null>;
   forceSyncInFlightRef: RefObject<boolean>;
   powerModeRef: RefObject<LocationPowerMode>;
   setAppState: (state: AppStateStatus) => void;
@@ -383,11 +361,6 @@ interface DeviceLocationResources {
   stopWatch: (() => void) | null;
   stopDebug: (() => void) | null;
   watchdog: ReturnType<typeof setInterval> | null;
-}
-
-function clearDeviceFlush(owner: DeviceLocationSampleOwner): void {
-  if (owner.outboxFlushTimerRef.current) clearTimeout(owner.outboxFlushTimerRef.current);
-  owner.outboxFlushTimerRef.current = null;
 }
 
 /** The same owner publishes access before any synchronous native sample can arrive. */
@@ -420,7 +393,6 @@ function DeviceLocationLifecycle({ owner, input }: {
     if (resources.watchdog) clearInterval(resources.watchdog);
     resources.watchdog = null;
     resources.appStateSubscription?.remove(); resources.appStateSubscription = null;
-    clearDeviceFlush(owner);
     resources.previous = null;
     setLocationAccessContext(null, false);
   });
@@ -452,7 +424,6 @@ function DeviceLocationProfile({ owner, resources, input }: {
     if (watchChanged) { resources.stopWatch?.(); resources.stopWatch = null; }
     if (debugChanged) { resources.stopDebug?.(); resources.stopDebug = null; }
     if (bootstrapChanged && resources.watchdog) { clearInterval(resources.watchdog); resources.watchdog = null; }
-    if (scopeChanged) clearDeviceFlush(owner);
     if (!old || !Object.is(old.accessReady, accessReady) || !Object.is(old.groupId, groupId) || !Object.is(old.hasMembershipResolved, hasMembershipResolved)
       || !Object.is(old.sharingEnabled, sharingEnabled) || !Object.is(old.appState, appState)) {
       setLocationAccessContext(accessReady ? (hasMembershipResolved ? groupId ?? null : null) : undefined, sharingEnabled, accessReady && appState === 'active');
@@ -509,7 +480,7 @@ function DeviceLocationProfile({ owner, resources, input }: {
         if (cancelled) unsubscribe();
         else stop = unsubscribe;
       }).catch(() => undefined);
-      resources.stopWatch = () => { cancelled = true; clearDeviceFlush(owner); stop(); };
+      resources.stopWatch = () => { cancelled = true; stop(); };
     }
     resources.previous = input;
   });

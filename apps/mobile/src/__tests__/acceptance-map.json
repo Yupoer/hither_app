@@ -2693,14 +2693,14 @@
     {
       "parent": 270,
       "child": 270,
-      "acceptance": "Actual PostgreSQL enforces exact fields, current co-member authorization, expiry fences, no client projection writes, and preserved own and legacy contracts.",
+      "acceptance": "Actual PostgreSQL enforces exact public fields, expiry fences, owner-only private reads and writes, preserved owner upserts, and denied client projection writes.",
       "testFile": "supabase/tests/public_profiles.test.sql",
       "testNamePattern": "public profile storage exposes exactly four fields|co-member receives|private-only update writes no public row"
     },
     {
       "parent": 270,
       "child": 270,
-      "acceptance": "The separate public recovery RPC emits exactly four identity keys while the legacy recovery RPC retains full rows and its existing response and permissions.",
+      "acceptance": "Public recovery emits exactly four identity keys and preserves the shared recovery envelope and membership authorization.",
       "testFile": "supabase/tests/group_public_recovery_snapshot.test.sql",
       "testNamePattern": "every recovery profile contains exactly the public fields"
     },
@@ -2728,9 +2728,9 @@
     {
       "parent": 270,
       "child": 270,
-      "acceptance": "Legacy recovery function body, signature, ACL, comment, authorization, full profiles, and metadata remain unchanged from the baseline.",
-      "testFile": "supabase/tests/group_recovery_snapshot_legacy_contract.test.sql",
-      "testNamePattern": "legacy function body remains byte-identical|legacy execute ACL remains unchanged|legacy snapshot retains full authoritative rows"
+      "acceptance": "Legacy recovery retains authenticated access and the complete public recovery envelope while excluding private profile fields.",
+      "testFile": "supabase/tests/public_profiles.test.sql",
+      "testNamePattern": "legacy recovery remains callable only|legacy recovery preserves the public snapshot envelope"
     },
     {
       "parent": 316,
@@ -2920,6 +2920,34 @@
       "acceptance": "Headless compiled output reflects source edits and inherited TypeScript configuration changes across isolated processes.",
       "testFile": "headlessLoaderContract.test.ts",
       "testNamePattern": "headless compilation cache reloads edited source"
+    },
+    {
+      "parent": 342,
+      "child": "automatic-arrival",
+      "acceptance": "Automatic GPS arrival commits through the real Map and reaches the leader and arriving member once through Realtime while another follower stays silent.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "actual GPS arrival reaches"
+    },
+    {
+      "parent": 342,
+      "child": "straggler-recipients",
+      "acceptance": "A real straggler report reaches the detector and participating member once through Realtime while a solo member stays silent.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "leader straggler report reaches"
+    },
+    {
+      "parent": 342,
+      "child": "request-start-routing",
+      "acceptance": "The follower card queues request-start for the leader without starting a session, and an injected foreground push is presented only once.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "request-start card targets"
+    },
+    {
+      "parent": 342,
+      "child": "member-departure",
+      "acceptance": "Self departure removes the member from the leader roster and delivers one member-left participation notification under the current master contract.",
+      "testFile": "headlessNotificationJourneyScenario.test.ts",
+      "testNamePattern": "leaving the group updates"
     }
   ]
 }

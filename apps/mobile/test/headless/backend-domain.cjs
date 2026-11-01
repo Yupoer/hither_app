@@ -122,9 +122,8 @@ function executeTable(b, operation) {
   let all = tableRows(b, name);
   const previousPublicProfiles = name === 'profiles' && mode !== 'select' ? new Map(all.map(row => [row.id, publicProfile(row)])) : null;
   let rows = all.filter(matches);
-  if (schema.owner && name !== 'profiles' && mode === 'select') rows = rows.filter(row => row[schema.owner] === userId);
+  if (schema.owner && mode === 'select') rows = rows.filter(row => row[schema.owner] === userId);
   if (name === 'public_profiles' && mode === 'select') rows = rows.filter(p => userId && (p.id === userId || b.memberships.some(m => m.user_id === p.id && member(b, m.group_id, userId))));
-  if (name === 'profiles' && mode === 'select') rows = rows.filter(p => p.id === userId || b.memberships.some(m => m.user_id === userId && b.memberships.some(n => n.group_id === m.group_id && n.user_id === p.id)));
   if (name === 'subgroup_invites') rows = rows.filter(r => r.invitee_id === userId || r.inviter_id === userId);
   if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
   if (name === 'navigation_member_states') rows = rows.filter(r => member(b, b.sessions.get(r.navigation_session_id)?.group_id, userId));

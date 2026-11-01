@@ -253,6 +253,7 @@ jobs:
             supabase/functions/verify-and-apply-purchase/index_test.ts \
             supabase/functions/apple-server-notifications/index_test.ts \
             supabase/functions/sync-app-store-subscription/index_test.ts \
+            supabase/functions/google-maps/index_test.ts \
             supabase/functions/admob-reward-callback/ssv_test.ts
 
       - uses: supabase/setup-cli@afb1b15109756ea5cf9d8985a359d9095235ca2b # v2.1.2
