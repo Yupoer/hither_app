@@ -203,6 +203,8 @@ it('retains the optimistic drop across stale parent arrays and unlocks only when
   await act(async () => { tree = create(React.createElement(DestinationReorderList, props)); });
   const originalRow = routeRow(tree, 'a');
   await act(async () => { originalRow.props.onGrant('a'); originalRow.props.onMove('a', 100); });
+  expect(routeRows(tree)).toEqual(['A', 'B']);
+  expect(reorder).not.toHaveBeenCalled();
   let release!: Promise<void>;
   act(() => { release = originalRow.props.onRelease(); });
   expect(routeRows(tree)).toEqual(['B', 'A']);
