@@ -301,8 +301,8 @@ async function main() {
         check(`${receiver} preserves offline member A capture time`, received?.capturedAt === oldMemberA?.capturedAt, received);
         check(`${receiver} offline member A fix is older than 120s`, world.now - Date.parse(received.capturedAt) > 120000, o[receiver].derivedLocationEvidence);
         const row = o[receiver].presentation.flockRows.find(row => row.userId === identity);
-        check(`${receiver} renders aged member A location`, row?.lastUpdated === received.capturedAt && /分鐘前更新/.test(row.text), row);
-        check(`${receiver} uses synchronized server time for member A age`, row?.serverTimeOffsetMs === 0, { actorTime: o[receiver].now, worldTime: world.now, row });
+        check(`${receiver} renders member A capture time`, row?.lastUpdated === received.capturedAt, row);
+        check(`${receiver} renders member A age of two minutes`, /(?:^|\s)2 分鐘前更新(?:\s|$)/.test(row?.text), { actorTime: o[receiver].now, worldTime: world.now, row });
       }
     });
     save('memberA-generation1.log', devices.memberA.logs);
