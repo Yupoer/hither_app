@@ -646,18 +646,27 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     const world = new World();
     const secondId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
     try {
-      world.backend.itinerary.push({ ...world.backend.itinerary[0], id: secondId, title: 'Second stop', position: 1, latitude: 25.06 });
+      world.backend.itinerary.push({ ...world.backend.itinerary[0], id: secondId, title: 'Second stop', position: 1, latitude: 25.06, longitude: 121.54 });
       const device = await map(world);
       await startTrip(world, device);
       await world.settle();
+      const cameraStart = (await device.observe()).presentation.receipts.length;
+      const cameraCalls = (value: MapObservation) => value.presentation.receipts.slice(cameraStart).filter(receipt => receipt.host === 'MapView');
       await run(device, 'map.carousel.begin');
       await run(device, 'map.carousel.end', { x: 390 });
       await run(device, 'map.card.toggle', { destinationId: secondId });
-      const cameraCalls = (value: MapObservation) => value.presentation.receipts.filter(receipt => receipt.host === 'MapView' && receipt.method === 'animateCamera');
-      const selectedCameraCount = cameraCalls(await device.observe()).length;
-      expect(selectedCameraCount).toBeGreaterThan(0);
+      expect(cameraCalls(await device.observe())).toEqual([]);
+      await world.advance(139);
+      expect(cameraCalls(await device.observe())).toEqual([]);
+      await world.advance(1);
+      const selectedCamera = cameraCalls(await device.observe());
+      expect(selectedCamera).toEqual([expect.objectContaining({
+        method: 'setCamera',
+        value: expect.objectContaining({ center: { latitude: expect.any(Number), longitude: 121.54 }, pitch: 30 }),
+      })]);
       await run(device, 'map.carousel.end', { x: 0 });
-      expect(cameraCalls(await device.observe())).toHaveLength(selectedCameraCount);
+      await world.advance(140);
+      expect(cameraCalls(await device.observe())).toEqual(selectedCamera);
       await run(device, 'map.journey.command', { destinationId: secondId });
       await device.input({ kind: 'alert', index: 0 });
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(DESTINATION);
