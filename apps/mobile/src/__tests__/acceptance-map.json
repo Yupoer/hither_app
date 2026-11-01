@@ -2871,6 +2871,13 @@
       "acceptance": "Actual Map card Start and End preserve their original durable FIFO identities through an abrupt offline restart, then replay to paused peer state without completing the stop.",
       "testFile": "headlessJourneyEntriesScenario.test.ts",
       "testNamePattern": "actual Map offline journey parent on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Headless compiled output reflects source edits and inherited TypeScript configuration changes across isolated processes.",
+      "testFile": "headlessLoaderContract.test.ts",
+      "testNamePattern": "headless compilation cache reloads edited source"
     }
   ]
 }

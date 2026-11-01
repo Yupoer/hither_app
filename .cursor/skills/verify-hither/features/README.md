@@ -22,6 +22,8 @@ This map describes user paths and observable proof for the headless React and Ja
 
 Read the corresponding production entry and existing scenario before extending a recipe. Prefer registry names and `testID` hosts to text matching. Preserve guards, confirmation alerts, and fixture errors. Wait for committed state, acknowledgment, or the receiving actor instead of counting mock calls.
 
+The Windows recipes use `test/headless/run.ps1` with the default 4.5% CPU rate for the owned launch. Save its resource report alongside the Jest result. The cap retains every scenario and separate device process. Use virtual time and completion events as described in the skill; do not add human reaction delays. A resource cap and a reduction in CPU work are different measurements, so retain CPU time and elapsed time together with host CPU share.
+
 The recorded trip emits detailed action and state evidence. A Jest JSON report lists executed assertions. Set `HITHER_HEADLESS_EVIDENCE` before other scenario commands to also capture their existing commands, observations, final backend state and cleanup under one directory per World. `world.json` links each record to its exact Jest case. Never infer that an additional entry point passed from the trip.
 
 Before each additional Jest command, allocate a new result path from `apps/mobile`. The feature commands use this variable so a retry cannot overwrite a prior proof.
