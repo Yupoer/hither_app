@@ -62,18 +62,18 @@ export type CoreOperationStatus =
 export type CoreSnapshotSource = 'remote' | 'local_optimistic' | 'local_cache';
 
 /**
- * Active gathering state projected with OTA-01 semantics.
+ * Durable gathering state with a resumable destination cursor.
  * `pointStatuses` is keyed by destination id; missing keys default to pending.
  *
- * While `journeyPhase === 'staying'`, `activeDestinationId` is null (server-
- * shaped: no active travel). Next pending is derived from `pointStatuses`, not
- * stored as a travelling id. While `en_route`, id is the active stop.
- * See `teamGatheringState` for live map/session projection (same End rules).
+ * While `en_route`, `activeDestinationId` is the travelling stop. Optimistic
+ * End keeps that open stop as a resumable cursor while `staying`; an
+ * authoritative remote projection can clear it. The live `teamGatheringState`
+ * model separates the next pending cursor from its active travel id.
  */
 export interface ActiveGatheringState {
   groupId: string;
   journeyPhase: JourneyPhase;
-  /** Travelling destination while en_route; null while staying. */
+  /** Travelling destination while en_route, or the next Start cursor while staying. */
   activeDestinationId: string | null;
   pointStatuses: Record<string, GatheringPointStatus>;
   /** Epoch ms when phase last changed. */

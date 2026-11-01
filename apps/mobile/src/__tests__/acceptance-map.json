@@ -2829,6 +2829,48 @@
       "acceptance": "Unavailable preference storage in a registered push preserves queued GPS and does not misreport sharing revocation.",
       "testFile": "backgroundLocationRefreshBehavior.test.ts",
       "testNamePattern": "skips a registered push while preference storage is unavailable"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Map search reaches manual coordinates on both platforms; invalid and cancelled drafts do not write; leaders persist before ACK, followers suggest, and quota boundaries do not discard unsaved input.",
+      "testFile": "headlessCoordinateParentScenario.test.ts",
+      "testNamePattern": "actual Map coordinate entry on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Actual App onboarding and recovery remount the correct navigator, and Map settings account upgrade preserves UID, memberships and group ownership.",
+      "testFile": "headlessTeamEntriesScenario.test.ts",
+      "testNamePattern": "actual App team entry boundaries on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Map notification settings load and persist independent actor-owned categories and return to the same Map.",
+      "testFile": "headlessMemberEntriesScenario.test.ts",
+      "testNamePattern": "actual member parent entries on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Real Map Store, Tools and Settings entries reach Account or Paywall and finish verified purchase, restore and promo with parent entitlement refresh.",
+      "testFile": "headlessStoreEntriesScenario.test.ts",
+      "testNamePattern": "actual App Map Store entry points on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Actual Map entry variants cover follower suggestions, owner favorite deletion, pool moves, malformed import retry, date draft commit and native PanResponder reorder.",
+      "testFile": "headlessItineraryEntriesScenario.test.ts",
+      "testNamePattern": "actual itinerary entry variants on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Actual Map card Start and End preserve their original durable FIFO identities through an abrupt offline restart, then replay to paused peer state without completing the stop.",
+      "testFile": "headlessJourneyEntriesScenario.test.ts",
+      "testNamePattern": "actual Map offline journey parent on"
     }
   ]
 }

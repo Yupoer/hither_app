@@ -87,16 +87,43 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('react-native-safe-area-context', () => ({ SafeAreaProvider: make('SafeAreaProvider'), SafeAreaView: hosts.View,
     useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: 0 }) }));
   jest.doMock('@expo/vector-icons', () => strict('vector-icons', { Ionicons: make('Ionicons'), MaterialCommunityIcons: make('MaterialCommunityIcons') }));
-  const useShared = value => React.useRef({ value }).current;
+  const animationValue = Symbol('headless reanimated value');
+  const sharedCancellations = new WeakMap();
+  const makeShared = initial => {
+    let value = initial;
+    let pendingId;
+    const shared = {};
+    const cancel = () => {
+      const pending = animations.get(pendingId);
+      animations.delete(pendingId);
+      pendingId = undefined;
+      pending?.callback(false);
+    };
+    sharedCancellations.set(shared, cancel);
+    Object.defineProperty(shared, 'value', { enumerable: true, get: () => value, set: next => {
+      cancel();
+      if (next?.[animationValue]) {
+        value = next.value;
+        pendingId = ++animationId;
+        animations.set(pendingId, { reanimated: true, callback: finished => {
+          pendingId = undefined;
+          next.callback(finished);
+        } });
+      } else value = next;
+    } });
+    return shared;
+  };
+  const useShared = value => React.useState(() => makeShared(value))[0];
+  const sharedAnimation = (value, _options, callback) => callback ? { [animationValue]: true, value, callback } : value;
   const animation = strict('reanimated', {
     __esModule: true, default: { View: hosts.View, Text: hosts.Text, ScrollView: hosts.ScrollView,
       createAnimatedComponent: component => component },
-    makeMutable: value => ({ value }), useSharedValue: useShared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
+    makeMutable: makeShared, useSharedValue: useShared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
     scrollTo: (ref, x, y, animated) => ref.current?.scrollTo({ x, y, animated }),
     useAnimatedStyle: fn => fn(), useAnimatedProps: fn => fn(), useReducedMotion: () => true,
     useFrameCallback: () => React.useRef({ setActive() {} }).current,
     useAnimatedReaction: () => {}, useAnimatedScrollHandler: value => value,
-    cancelAnimation() {}, withTiming: value => value, withSpring: value => value, withDelay: (_, value) => value,
+    cancelAnimation: shared => sharedCancellations.get(shared)?.(), withTiming: sharedAnimation, withSpring: sharedAnimation, withDelay: (_, value) => value,
     withRepeat: value => value, withSequence: (...values) => values.at(-1), runOnJS: fn => fn,
     interpolate: (value, input, output) => output[0] + (value - input[0]) / (input.at(-1) - input[0]) * (output.at(-1) - output[0]),
     interpolateColor: (_value, _input, output) => output[0],
@@ -163,7 +190,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       for (const id of ids) {
         const animation = animations.get(id); assert(animation, `Unknown animation ${id}`); animations.delete(id);
         if (input.finished && animation.value instanceof AnimatedValue && animation.options) animation.value.setValue(animation.options.toValue);
-        animation.callback?.({ finished: input.finished });
+        animation.callback?.(animation.reanimated ? input.finished : { finished: input.finished });
       }
     },
     call(root, { kind, testId, label, value, within, phase, success }) {
@@ -181,10 +208,12 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         gestures[0][`${phase}Input`][0](value, success ?? true);
         return { invoked: true };
       }
+      if (kind === 'panResponder') assert(['onStartShouldSetPanResponder', 'onMoveShouldSetPanResponder',
+        'onPanResponderGrant', 'onPanResponderMove', 'onPanResponderRelease', 'onPanResponderTerminate'].includes(phase), `Unknown PanResponder phase ${phase}`);
       const nativeEvents = ['onLongPress', 'onPress', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
         'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen'];
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
-      const property = kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
+      const property = kind === 'panResponder' ? phase : kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
       assert(property, `Unknown host event ${kind}`);
       const visible = node => availability(node).acceptsInput;
       const match = node => visible(node) && typeof node.type === 'string' && node.type.startsWith('host:') &&
@@ -199,6 +228,9 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       const disabled = Boolean(node.props.disabled || node.props.enabled === false || (kind === 'changeText' && node.props.editable === false) || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0]));
       receipts.push({ host: node.type, kind, testId, label, disabled });
       if (disabled) return { invoked: false, reason: 'disabled' };
+      if (kind === 'panResponder') {
+        return { invoked: true, result: node.props[property](value.event, value.gestureState) };
+      }
       const event = kind === 'nativeEvent' ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'event')) : value;
       node.props[property](kind === 'press' ? { nativeEvent: {}, stopPropagation() {} } : event);
       return { invoked: true };

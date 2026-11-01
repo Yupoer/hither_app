@@ -1869,7 +1869,7 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "export",
     "name": "DestinationReorderList",
-    "hash": "0325956bcd6f0528035082b2c240fea8d1bff0e1f0364e43edd9c19a5b88e8ae"
+    "hash": "038bc16a114a8b871c474bbcc1e875abe0c07986e2be4f636d331668478c4476"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2344,6 +2344,12 @@
     "kind": "callback",
     "name": "onChangeText",
     "hash": "cc52bb02a704ea18cf631c7a283f59eba2329eb12ea3ffa00a06c07bfcd73593"
+  },
+  {
+    "file": "src/components/DestinationSearch.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "7f8ddedf9eb4f86d1ff6037938eedb3dd919beaae5c6fcd5ec8854924de0d067"
   },
   {
     "file": "src/components/DestinationSearch.tsx",
@@ -5703,7 +5709,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "fd9298046f8a79ee7b60bd8f5caba1c046e5280346705a4540e7acff4c4d7c5d"
+    "hash": "a7f7ff4afd2bac24698a828cf3b8a1073dcfc9eae1fbadae7c058fce2c20439d"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6148,6 +6154,12 @@
     "kind": "callback",
     "name": "onOpenComplete",
     "hash": "6d2258fa885ebb900fe63b9f334e58760008b9e444aed07f00b9aff731fc7e88"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "callback",
+    "name": "onOpenCoordinates",
+    "hash": "eff92afa57a9e70ffbce56640d60b3bb2b61b44908a735bfabee72b305acf6d2"
   },
   {
     "file": "src/screens/MapScreen.tsx",

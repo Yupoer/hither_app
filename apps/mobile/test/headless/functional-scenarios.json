@@ -92,6 +92,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessTeamEntriesScenario.test.ts",
+          "pattern": "presents recovery from an App deep link",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -192,6 +200,22 @@
         {
           "file": "src/__tests__/headlessAccountScenario.test.ts",
           "pattern": "links",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessTeamEntriesScenario.test.ts",
+          "pattern": "upgrades an anonymous leader through Map settings account",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
+          "pattern": "opens the actual Account registration from anonymous Map Store",
           "platforms": [
             "ios",
             "android"
@@ -394,12 +418,20 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
+          "pattern": "actual follower search and read-only favorite picker",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
     {
       "id": "DEST-02",
-      "title": "Coordinate form validates and resets its draft",
+      "title": "Map coordinate entry validates drafts, enforces role and quota, and persists only successful submissions",
       "critical": false,
       "sources": [
         "src/components/CoordinateDestinationSheet.tsx"
@@ -408,6 +440,46 @@
         {
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "runs real coordinate validation",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
+          "pattern": "Map search opens a prefilled coordinate form",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
+          "pattern": "Map leader saves one trimmed coordinate pool stop",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
+          "pattern": "a Map follower submits only a leader suggestion",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
+          "pattern": "Map quota preflight opens the existing paywall",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
+          "pattern": "quota reached while the Map coordinate form is open",
           "platforms": [
             "ios",
             "android"
@@ -456,6 +528,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
+          "pattern": "actual editable favorite deletion persists for its owner",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -478,6 +558,14 @@
         {
           "file": "src/__tests__/headlessMapComponentsScenario.test.ts",
           "pattern": "canceled selection does no I/O",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
+          "pattern": "actual Map import retries a malformed file",
           "platforms": [
             "ios",
             "android"
@@ -534,6 +622,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
+          "pattern": "actual move-to-pool persists an unscheduled stop",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -566,6 +662,22 @@
         {
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual marker trip and multi-selection controls",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
+          "pattern": "actual departure selector changes the draft",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
+          "pattern": "locked presentation hides selection and drag mode reorders",
           "platforms": [
             "ios",
             "android"
@@ -875,6 +987,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "replays offline card Start then End with their original identities",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -1033,6 +1153,14 @@
         {
           "file": "src/__tests__/headlessStoreScenario.test.ts",
           "pattern": "dispatches real role-scoped realtime notifications",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMemberEntriesScenario.test.ts",
+          "pattern": "opens notification settings from Map",
           "platforms": [
             "ios",
             "android"
@@ -1219,6 +1347,30 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
+          "pattern": "buys monthly through Map Store",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
+          "pattern": "buys annual from the locked Map Tools control",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
+          "pattern": "buys a consumable trip pass for the parent group",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -1249,6 +1401,22 @@
         {
           "file": "src/__tests__/headlessStoreScenario.test.ts",
           "pattern": "clears the actual promo form",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
+          "pattern": "retains an invalid Settings promo",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
+          "pattern": "restores from the actual Settings Paywall",
           "platforms": [
             "ios",
             "android"
@@ -1317,6 +1485,14 @@
         {
           "file": "src/__tests__/headlessAccountScenario.test.ts",
           "pattern": "continues after permission denial",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessTeamEntriesScenario.test.ts",
+          "pattern": "finishes full onboarding through App",
           "platforms": [
             "ios",
             "android"

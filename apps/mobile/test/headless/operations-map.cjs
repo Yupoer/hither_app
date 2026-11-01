@@ -56,6 +56,9 @@ button('map.place.favorite', ['MAP-DEST-10', 'F02', 'F04'], 'togglePendingFavori
 button('map.place.center', ['MAP-DEST-02'], 'confirm-place center onPress', 'add-place-center-btn',
   'Center command uses the staged coordinates without persisting a point.');
 
+button('map.coordinates.open', ['MAP-DEST-06', 'Q05', 'Q06'], 'onOpenCoordinates', 'place-search-coordinates',
+  'Actual Map search opens the coordinate form with accepted device coordinates, or shows the existing quota paywall before accepting a draft.', component('DestinationSearch'));
+operations['map.coordinates.open'].sources.push(...source(screen, 'openCoordinateDestination'));
 for (const [field, id] of [['title', 'coordinate-name'], ['latitude', 'coordinate-latitude'], ['longitude', 'coordinate-longitude']]) {
   operation(`map.coordinates.${field}`, ['Q05'], component('CoordinateDestinationSheet'), id,
     '{ value: string }', 'Real coordinate form draft changes; no persistence before validation and submit.',
@@ -394,8 +397,5 @@ exports.lifecycle = [
     scenarios: ['headlessMapScenario.test.ts'] },
   { name: 'map.store.entitlement-refresh', inventory: ['MAP-STORE-01'], sources: source(screen, 'refreshStoreEntitlements'),
     trigger: 'Actual StorePane redemption or subscription calls Map onEntitlementChanged/onEntitlementActivated and refreshes real projection.',
-    scenarios: ['headlessMapScenario.test.ts'] },
+    scenarios: ['headlessMapControlsScenario.test.ts::actual Map Store waits for SSV', 'headlessStoreEntriesScenario.test.ts::buys monthly through Map Store'] },
 ];
-exports.unreachable = [{ name: 'map.coordinates.parent-submit', inventory: ['MAP-DEST-06'],
-  sources: [...source(screen, 'coordSheetVisible'), ...source(screen, 'handleCoordinateDestination')],
-  reason: 'CoordinateDestinationSheet is mounted permanently with coordSheetVisible initially false. The extracted Map has no opener, and its only setCoordSheetVisible call sets false. Standalone Q05 covers the real form but does not execute this Map parent closure.' }];

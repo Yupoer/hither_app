@@ -106,6 +106,8 @@ Each recorded trip produces these files.
 | `leader.log`, `memberA.log`, `memberB.log` | Actor diagnostics. |
 | Sibling `<run-id>.source.json`, `.stdout.log`, `.stderr.log` | Source revision and dirty paths, lock hash, command, runtime, exit code, and CLI output. |
 
+For other Jest scenarios, set `HITHER_HEADLESS_EVIDENCE` using the map index recipe. Every World writes a unique directory with `world.json` identifying its test and scratch path, `events.jsonl` pairing commands and returned observations by actor, generation and command ID, `backend.json` preserving final fixture state, and `cleanup.json` reporting scratch removal, child disposal, and failures. Recording adds no app actions or observation requests. Native adapter unit cases that do not create a World retain their Jest assertions as boundary evidence.
+
 Require the action and resulting state together. For mutations, require production SQLite state or a recipient view alongside fixture server receipts. Inspect `presentation.resolved` for the actual platform file chosen. Mock only at the production SDK, native, hardware, navigation, or backend boundary already represented by this harness. Keep `src/**` real. Never replace a missing precondition with direct state changes, empty successful responses, skipped assertions, or a different entry point.
 
 This mode creates local files and child processes. It is not a no-effect dry-run. The runtime rejects accidental network calls and unsupported external contracts, including failures caught by production code. These sticky failures must fail cleanup. Local notification scheduling does not prove push delivery. A fixture wallet change does not prove a live store or SSV service. The trip's powered-off 24-hour clock gap does not prove OS background endurance. List these substitutions when reporting a stand-in proof.
@@ -129,6 +131,8 @@ if ($verifyExit -ne 0 -or $verifySummary.failed -ne 0 -or $null -ne $verifySumma
 $verifySummary | Select-Object passed, failed, steps, harnessFailure
 Get-Item -LiteralPath (Join-Path $verifyOutput 'summary.json')
 ```
+
+For recorded World directories, check `cleanup.json` and the scratch path from `world.json` after the suite finishes. Require all user-flow actors to be closed and their scratch state removed. Harness contract tests deliberately provoke unsupported calls, crashes, and shutdown failures. Their failure records must agree with the named Jest assertions; an expected contract failure is not a failed user journey.
 
 Let a failing runner finish its `finally` rather than killing its parent. If forcibly interrupted, establish ownership from the actual parent-child PID tree before stopping any remaining actor, and remove only that run's known scratch directory. Do not guess an old scratch directory from its prefix, stop all Node processes, or clean another run's state. Preserve failed proof and retry with a new output path.
 

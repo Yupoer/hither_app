@@ -14,7 +14,7 @@ A traveler opens the store, earns or spends Tokens, or purchases a Premium entit
 
 - Open Store from Map, then choose the rewarded ad or a product redemption.
 - Choose Subscribe from Store or an applicable Premium gate, select a monthly, annual, or trip plan, and purchase.
-- Open Restore or the promo entry in Premium.
+- Open Premium from Map settings for Restore or promo. The Store Subscribe entry intentionally omits those controls.
 
 ## Driving it with World
 
@@ -26,6 +26,7 @@ Preconditions:
 - **Parent Map entry.** Run `node test/headless/run.cjs --testNamePattern="MAP-STORE-01" --json --outputFile="$verifySuiteOutput"` with a fresh suite path from the map index. The actual Map store case must wait for SSV and an entitlement refresh before the parent tools control unlocks.
 - **Store and Premium controls.** Run `node test/headless/run.cjs --testNamePattern="mounted Store and Premium scenarios on" --json --outputFile="$verifySuiteOutput"` with a fresh suite path. The suite drives `store-ad-cta`, `store-redeem-team_extra_points_3`, and `premium-presentation-purchase`, plus plan, restore, promo, and preference controls. Assert the visible wallet or entitlement alongside fixture ledger rows. `iap.finishTransaction` must follow server verification.
 - **External events.** Run `node test/headless/run.cjs --testNamePattern="external-only Store/native scenarios on" --json --outputFile="$verifySuiteOutput"` with a fresh suite path. Capture external receipts and resulting provider state when using those events in a new scenario.
+- **Every Account and Paywall parent entry.** Run `node test/headless/run.cjs --testNamePattern="actual App Map Store entry points on" --json --outputFile="$verifySuiteOutput"` with a fresh suite path. Start real App and enter Map through My teams. Exercise anonymous Store registration, Store monthly purchase, locked Tools annual purchase, Store trip pass, Settings promo, and Settings Restore. Hold purchase verification and require the parent to remain locked with an unfinished transaction, then verify actual Paywall dismissal and the refreshed Map benefit. Trip purchase must bind the exact group and remain separate from personal Premium. Settings must finish dismissing before its Paywall opens. Invalid promo retains its input; valid promo closes the code form while leaving the parent Paywall open until the user dismisses it.
 
 ## Gotchas
 

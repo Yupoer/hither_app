@@ -84,6 +84,47 @@ test('animation completion is explicit and disabled gesture callbacks stay block
   } finally { await act(async () => root.unmount()); }
 });
 
+test('PanResponder forwards event and gesture state, returns acquisition, and honors disabled targets', async () => {
+  const { host, modules } = fixture();
+  const rn = modules.get('react-native');
+  const received = [];
+  const responder = rn.PanResponder.create({
+    onStartShouldSetPanResponder: (_event, state) => state.dx === 0,
+    onPanResponderMove: (event, state) => received.push({ event, state }),
+  });
+  let root;
+  await act(async () => { root = create(React.createElement(rn.View, { testID: 'drag', ...responder.panHandlers })); });
+  const value = { event: { nativeEvent: { pageX: 375 } }, gestureState: { dx: 0, dy: 120 } };
+  try {
+    assert.deepEqual(host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'onStartShouldSetPanResponder', value }), { invoked: true, result: true });
+    host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'onPanResponderMove', value });
+    assert.deepEqual(received, [{ event: value.event, state: value.gestureState }]);
+    await act(async () => root.update(React.createElement(rn.View, { testID: 'drag', disabled: true, ...responder.panHandlers })));
+    assert.deepEqual(host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'onPanResponderMove', value }), { invoked: false, reason: 'disabled' });
+    assert.equal(received.length, 1);
+    assert.throws(() => host.call(root, { kind: 'panResponder', testId: 'drag', phase: 'unknown', value }), /Unknown PanResponder phase/);
+  } finally { await act(async () => root.unmount()); }
+});
+
+test('Reanimated completion is explicit and cancellation retains the owning shared value', () => {
+  const { host, modules } = fixture();
+  const animation = modules.get('react-native-reanimated');
+  const first = animation.makeMutable(0);
+  const second = animation.makeMutable(0);
+  const completed = [];
+  first.value = animation.withTiming(100, {}, finished => completed.push(['first', finished]));
+  second.value = animation.withSpring(200, {}, finished => completed.push(['second', finished]));
+  assert.deepEqual(completed, []);
+  animation.cancelAnimation(first);
+  assert.deepEqual(completed, [['first', false]]);
+  assert.equal(host.animations.size, 1);
+  host.input({ kind: 'animation', finished: true });
+  assert.deepEqual(completed, [['first', false], ['second', true]]);
+  assert.equal(host.animations.size, 0);
+  assert.equal(first.value, 100);
+  assert.equal(second.value, 200);
+});
+
 test('swipe actions reopen after cancellation and retain the mounted native handle', async () => {
   const { host, modules } = fixture();
   const Swipeable = modules.get('react-native-gesture-handler/ReanimatedSwipeable').default;

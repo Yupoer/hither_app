@@ -703,6 +703,10 @@ export default function DestinationReorderList({
     session.targetBoundary = target;
     const closed = reducedMotion ? session.geometry : sourceClosedReorderGeometry(session.geometry, session.sourceIndex);
     const y = target === session.entries.length ? closed.total : closed.tops[target];
+    const hasGap = target !== session.sourceIndex && target !== session.sourceIndex + 1;
+    lineScale.stopAnimation();
+    if (!hasGap || reducedMotion) lineScale.setValue(hasGap ? 1 : 0);
+    else Animated.timing(lineScale, { toValue: 1, duration: 180, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
     lineY.stopAnimation();
     if (reducedMotion) lineY.setValue(y);
     else Animated.timing(lineY, { toValue: y, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
@@ -715,6 +719,7 @@ export default function DestinationReorderList({
           motion.ripple.stopAnimation();
           motion.ripple.setValue(0);
         }
+        if (!hasGap) return;
         const visible = session.entries.map((entry, index) => ({ entry, index }))
           .filter(({ index }) => index !== session.sourceIndex && session.geometry.rowHeights[index] > 0);
         const sides = [visible.filter(({ index }) => index < target).reverse(), visible.filter(({ index }) => index >= target)];
@@ -733,7 +738,7 @@ export default function DestinationReorderList({
         }));
       }
     }
-  }, [lineY, reducedMotion]);
+  }, [lineY, lineScale, reducedMotion]);
 
   const handleGrant = useCallback((id: string, pointer: DragPoint | null = null, input: 'pointer' | 'keyboard' = 'pointer') => {
     if (dragSession.current.phase !== 'idle') return;
@@ -772,10 +777,9 @@ export default function DestinationReorderList({
     previewX.setValue(reducedMotion ? 0 : 16);
     previewScale.setValue(1);
     lineY.setValue(geometry.tops[sourceIndex]);
-    lineScale.setValue(reducedMotion ? 1 : 0);
+    lineScale.setValue(0);
     if (!reducedMotion) {
       Animated.timing(previewScale, { toValue: 0.9, duration: 160, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
-      Animated.timing(lineScale, { toValue: 1, duration: 180, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
     }
     entries.forEach((row, index) => {
       const motion = rowMotion.current.get(row.id);
@@ -2296,6 +2300,7 @@ const Row = memo(function Row({
 
   const rowContent = (
         <Animated.View
+          testID={floating ? undefined : `route-drag-${item.id}`}
           style={[
             styles.row,
             !isAccommodation && stayDuplicate && styles.rowStayDuplicate,

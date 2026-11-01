@@ -372,6 +372,26 @@ it('uses the actual accessible handles for keyboard pickup, legal movement, Esca
   Object.defineProperty(globalThis, 'document', { configurable: true, value: undefined });
 });
 
+it.each([false, true])('hides the insertion line at both original-slot boundaries with reduced motion %s', async reducedMotion => {
+  mockReducedMotion = reducedMotion;
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(DestinationReorderList, {
+    destinations: routeStops(), canReorder: true, tripDays: 1, colors: themes.night, emptyLabel: 'empty',
+  })); });
+  await act(async () => { routeRow(tree, 'a').props.onGrant('a'); });
+  const scale = flatten(tree.root.findByProps({ testID: 'route-insertion-line' }).props.style).transform[1].scaleX;
+  expect(scale.value).toBe(0);
+  await act(async () => { routeRow(tree, 'a').props.onMove('a', 100); });
+  expect(scale.value).toBe(1);
+  await act(async () => { routeRow(tree, 'a').props.onMove('a', 20); });
+  expect(scale.value).toBe(0);
+  await act(async () => { routeRow(tree, 'a').props.onMove('a', 100); });
+  expect(scale.value).toBe(1);
+  await act(async () => { routeRow(tree, 'a').props.onMove('a', -1); });
+  expect(scale.value).toBe(0);
+  await act(async () => { routeRow(tree, 'a').props.onCancel(); tree.unmount(); });
+});
+
 it('keeps reduced-motion dragging to a static source and one insertion line', async () => {
   mockReducedMotion = true;
   const onPreview = jest.fn(), reorder = jest.fn();

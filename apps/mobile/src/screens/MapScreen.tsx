@@ -2416,6 +2416,20 @@ export default function MapScreen({ route, navigation }: Props) {
     searchOpenCompleteResolveRef.current = null;
   }, []);
 
+  const openCoordinateDestination = useCallback(() => {
+    closeSearch();
+    if (canEditItinerary && shouldBlockNewDestination({
+      isPro,
+      openCount: countOpenDestinations(allScopedDestinations),
+      extraCredits: extraPointCredits,
+    })) {
+      openPaywall('paywall.triggerDestinations');
+      return;
+    }
+    setCoordSheetInitial(deviceCoords ?? undefined);
+    setCoordSheetVisible(true);
+  }, [closeSearch, canEditItinerary, isPro, allScopedDestinations, extraPointCredits, openPaywall, deviceCoords]);
+
   // Followers submit durable, actionable requests instead of plain-text commands.
   const notifyLeaderPlace = useCallback(
     async (
@@ -2689,8 +2703,9 @@ export default function MapScreen({ route, navigation }: Props) {
           openCount,
           extraCredits: extraPointCredits,
         })) {
-          openPaywall('paywall.triggerDestinations');
-          return;
+          const message = t('operationError.quota');
+          Alert.alert(t('map.setFailedTitle'), message);
+          throw new Error(message);
         }
       }
       const result = await runUiAction(
@@ -2751,13 +2766,10 @@ export default function MapScreen({ route, navigation }: Props) {
       isPro,
       allScopedDestinations,
       extraPointCredits,
-      destinations.length,
       obliqueLocate,
       myScopeId,
       refresh,
-      openPaywall,
       t,
-      tripDayForAdd,
     ],
   );
 
@@ -4656,6 +4668,7 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={searchVisible}
         onClose={closeSearch}
         onOpenComplete={handleSearchOpenComplete}
+        onOpenCoordinates={openCoordinateDestination}
         biasRegion={biasRegion}
         // Don't persist on pick — stage the place for the bottom confirm card
         // (Add / Cancel). Resolves immediately so the search sheet closes.
