@@ -30,8 +30,11 @@ async function map(world: InstanceType<typeof World>, platform: string, id: stri
   return device;
 }
 
-const notices = (value: Observation) => value.presentation.receipts.filter(receipt =>
-  receipt.method === 'onAppNotice' && typeof (receipt.args[0] as { id?: string } | null)?.id === 'string');
+const notices = (value: Observation) => value.presentation.receipts.filter(receipt => {
+  const notice = receipt.args[0];
+  return receipt.method === 'onAppNotice' && typeof notice === 'object' && notice !== null
+    && 'id' in notice && typeof notice.id === 'string';
+});
 const presentations = (value: Observation) => value.native.receipts.filter(receipt => receipt.method === 'notifications.presentation');
 
 describe.each(['ios', 'android'])('headless multiuser journey notifications on %s', platform => {
@@ -62,6 +65,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       expect(notices(memberResult)[0].args[0]).toMatchObject({ title: expect.any(String) });
       expect(notices(await other.observe())).toEqual([]);
       const arrival = world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER);
+      expect(arrival).toMatchObject({ user_id: PEER, destination_id: DESTINATION, source: 'automatic' });
       expect(world.realtimeTrace.some((entry: { deviceId: string; event: { table: string; new: { id: string } } }) =>
         entry.deviceId === 'leader-notifications' && entry.event.table === 'destination_arrivals' && entry.event.new.id === arrival.id)).toBe(true);
       world.backend.publish('destination_arrivals', arrival, 'INSERT');
@@ -92,6 +96,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
         entry.deviceId === 'member-notifications' && entry.event.table === 'group_alerts' && entry.event.new.id === alert.id)).toBe(true);
       world.backend.publish('group_alerts', alert, 'INSERT');
       await world.settle();
+      expect((await leader.observe()).native.scheduled).toHaveLength(1);
       expect((await member.observe()).native.scheduled).toHaveLength(1);
       expect((await solo.observe()).native.scheduled).toEqual([]);
     } finally { await world.close(); }
@@ -113,7 +118,8 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       expect(world.realtimeTrace.filter((entry: { event: { table: string } }) => entry.event.table === 'commands')).toEqual([]);
       expect((await other.observe()).native.scheduled).toEqual([]);
       const content = { title: 'Peer', body: request.payload.message, data: { category: request.category,
-        groupId: request.group_id, senderId: request.sender_id, eventId: `request:${request.operation_id}`, type: request.payload.type } };
+        groupId: request.group_id, senderId: request.sender_id,
+        eventId: `route_request:${GROUP_ID}:${request.operation_id}:${PEER}:`, type: request.payload.type } };
       await leader.input({ kind: 'notification', id: request.id, content });
       await leader.input({ kind: 'notification', id: request.id, content });
       const received = presentations(await leader.observe());
@@ -124,7 +130,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
     } finally { await world.close(); }
   });
 
-  it('leaving the group updates the leader roster and emits no notification', async () => {
+  it('leaving the group updates the leader roster and delivers one participation notification', async () => {
     const world = new World();
     try {
       const leaderNotice = await observer(world, platform, 'leader-notifications', LEADER, 'leader');
@@ -142,7 +148,13 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       expect(world.realtimeTrace.some((entry: { deviceId: string; event: { table: string; eventType: string; old: { user_id: string } } }) =>
         entry.deviceId === 'leader-roster' && entry.event.table === 'memberships' && entry.event.eventType === 'DELETE'
         && entry.event.old.user_id === PEER)).toBe(true);
-      expect((await leaderNotice.observe()).native.scheduled).toEqual([]);
+      const result = await world.waitFor(leaderNotice, (value: Observation) => value.native.scheduled.length === 1, 'leader receives departure notice');
+      const [alert] = world.backend.tables.group_alerts;
+      expect(alert).toMatchObject({ group_id: GROUP_ID, kind: 'member_left', sender_id: PEER, member_id: PEER });
+      expect(result.native.scheduled[0].input.content.data).toMatchObject({ category: 'journey', senderId: PEER, groupId: GROUP_ID });
+      world.backend.publish('group_alerts', alert, 'INSERT');
+      await world.settle();
+      expect((await leaderNotice.observe()).native.scheduled).toHaveLength(1);
       expect(notices(await leaderNotice.observe())).toEqual([]);
       expect(world.backend.notificationOutbox).toEqual([]);
     } finally { await world.close(); }
