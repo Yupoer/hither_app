@@ -63,7 +63,7 @@
     "file": "App.tsx",
     "kind": "export",
     "name": "App",
-    "hash": "e08c376f3c641f9baf5ce633ee99cefa7f40669c39ebe61bb89a0bd8c47827a8"
+    "hash": "2805d7c8fb966ebc124cc4f540fc501f29530a9a7de1d3e0afec20a5343ae235"
   },
   {
     "file": "App.tsx",
@@ -374,14 +374,14 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\n  updateNickname,\n  updateProfile,\n  saveOnboardingProfile,\n  setProStatus,\n  redeemPromoCode,\n}",
-    "hash": "d96dce48293194919e3aedf6e945d49386af4a88f4ec1886252f123eb6ac7728"
+    "name": "{\n  updateNickname,\n  updateProfile,\n  saveOnboardingProfile,\n  redeemPromoCode,\n}",
+    "hash": "3e5958014d6be894adf9a35c419202a617634d6fa91467dcdba25c5c6e2155a4"
   },
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\n  getTripEntitlement,\n  applyVerifiedPurchase,\n  restoreEntitlements,\n}",
-    "hash": "0752948fb77522b9042ace38b023d389a402fd07965a30c6a3f50a6801c1804e"
+    "name": "{\n  getTripEntitlement,\n  restoreEntitlements,\n}",
+    "hash": "80684320f2deb981fdebf4d5bc66b7a8350632789dc2098656ca89e9bcbb4021"
   },
   {
     "file": "src/api/client.ts",
@@ -723,7 +723,7 @@
     "file": "src/api/services/DestinationService.ts",
     "kind": "export",
     "name": "addDestination",
-    "hash": "5508ba16a404e331c3417449dcd22846518db6044cb62d67fc62a9a7a3c53230"
+    "hash": "23a1914ed16a79e40d07b9be70fa3bc9f5dd4e0d59bd1a264f7984c016735b0e"
   },
   {
     "file": "src/api/services/DestinationService.ts",
@@ -741,31 +741,31 @@
     "file": "src/api/services/DestinationService.ts",
     "kind": "export",
     "name": "deleteDestination",
-    "hash": "f3a9123790354a34b000a9dfd630a08cc310ecb6e6d0c9a44e3a155b699b5baf"
+    "hash": "c60db4d7e081bbd9cc24000f1d32a6e98f390db6b8d6a6a21f691dfdf7fefd08"
   },
   {
     "file": "src/api/services/DestinationService.ts",
     "kind": "export",
     "name": "completeGatheringStop",
-    "hash": "8beea2ad3513f01cd13382b0ee1bcbafb947a3f7d7468e7e1e10597d2d0064cc"
+    "hash": "6f1a6e4ee5b1ae6443910ede4286cce1d6fc354c3f265e77de47bfbf223f4188"
   },
   {
     "file": "src/api/services/DestinationService.ts",
     "kind": "export",
     "name": "reorderDestinations",
-    "hash": "666ff19ae0625395eaa8f34562a71ca595351f50fe58d10c5099e07acdfff243"
+    "hash": "8d09f753c56aba01c03188bb44940597cf08655b4a58b1e9512ec5c43e24a40c"
   },
   {
     "file": "src/api/services/DestinationService.ts",
     "kind": "export",
     "name": "updateDestinationEmojiColor",
-    "hash": "d772bd1f48aa80f7fd496e27be75cea0c9ad98e0edc8bdd1552a35d1fc90a096"
+    "hash": "14a99145609c4aef76f7d6d51bd633d9a9b9eaa93bfecf17d41370c7a4b0fdc5"
   },
   {
     "file": "src/api/services/DestinationService.ts",
     "kind": "export",
     "name": "setDestinationMeetTime",
-    "hash": "952163b880807f21fd495e6b2aa5555b9bc7c2a993dc41ab3fde4db42b7e6a6a"
+    "hash": "f57a4c1c7d75df7edb7e6d61e1bdb285914a31fc04c038bc9f130b41a70e7208"
   },
   {
     "file": "src/api/services/DiagnosticService.ts",
@@ -824,12 +824,6 @@
   {
     "file": "src/api/services/EntitlementService.ts",
     "kind": "export",
-    "name": "applyVerifiedPurchase",
-    "hash": "3803b1cceebbf2708062546c74eea6d160b7697ea15c92a10fbb8719ad2cd5d9"
-  },
-  {
-    "file": "src/api/services/EntitlementService.ts",
-    "kind": "export",
     "name": "restoreEntitlements",
     "hash": "fac6310462d3a3ff82dac4101495a5a148d0c84f1e9dcebe6ed2db06ca605545"
   },
@@ -838,12 +832,6 @@
     "kind": "export",
     "name": "redeemPromoCode",
     "hash": "db61ed1cc3ac0340435c2354076ac8bded1e180605b3c99b32132ab031b27567"
-  },
-  {
-    "file": "src/api/services/EntitlementService.ts",
-    "kind": "export",
-    "name": "setProStatus",
-    "hash": "2f921b526f562927edf16523042becdfc9489587d92c610d7dd846c33937903e"
   },
   {
     "file": "src/api/services/FavoritePlacesService.ts",
@@ -885,7 +873,7 @@
     "file": "src/api/services/GatheringWorkflowService.ts",
     "kind": "export",
     "name": "submitGatherPointRequest",
-    "hash": "668c5816240c8e75fe5131e32999492fb08fb40b07955ef215e10bac37d647b2"
+    "hash": "045f74105214588e1b12b6e7f7d24c2df56f6afa8ef23cacd129471e4c49a6fb"
   },
   {
     "file": "src/api/services/GatheringWorkflowService.ts",
@@ -897,7 +885,7 @@
     "file": "src/api/services/GatheringWorkflowService.ts",
     "kind": "export",
     "name": "resolveGatherPointRequest",
-    "hash": "90acd01c11c4389c2745ab03f953f4e5d7d436ccf73818f564df60609d38ef14"
+    "hash": "2ec9ee495e1df9c2d8c9f081a2776e34ee2ee77b1cc72a882760dc884b4aea69"
   },
   {
     "file": "src/api/services/GatheringWorkflowService.ts",
@@ -1304,8 +1292,8 @@
   {
     "file": "src/api/services/ProfileService.ts",
     "kind": "export-alias",
-    "name": "{\n  redeemPromoCode,\n  setProStatus,\n}",
-    "hash": "baea2e61a4f224cae1162c34a2bb5e30bd856fc9129581bf7e633a08a607cd96"
+    "name": "{ redeemPromoCode }",
+    "hash": "871c64698b3f09d57bc5851c3b51a307f77959350b2e33831edc82c0858dc3db"
   },
   {
     "file": "src/api/services/StoreService.ts",
@@ -1395,7 +1383,7 @@
     "file": "src/api/services/_helpers.ts",
     "kind": "export",
     "name": "requireAuthenticatedSession",
-    "hash": "aa60c96996f8ed5d6929ae1b9744173f63547e727a3995ac32f9d2f920fba64d"
+    "hash": "887f902e977edf2ebc958828150777b70eeccbf1884b64498919a062b50e5d9e"
   },
   {
     "file": "src/api/services/_helpers.ts",
@@ -1407,13 +1395,13 @@
     "file": "src/api/services/_helpers.ts",
     "kind": "export",
     "name": "runAuthenticatedOperation",
-    "hash": "ecabc32a8591e658086ff55ac5b695a99788c8a6a5ab61fe29ef63e36f97646f"
+    "hash": "1f1ac72575d2b3733422027771ccd645497d68c01d6bbed628ebfaed07d0631e"
   },
   {
     "file": "src/api/services/_helpers.ts",
     "kind": "export",
     "name": "requireUserId",
-    "hash": "32ac3434399490fe41f5597b20412f51bc9f7eb4df99e7d4065d2a771954ebc0"
+    "hash": "a9282569a75de30cf585b9bca52b58a7dc893a12f99c461965ee1eb69692b2ab"
   },
   {
     "file": "src/api/services/_helpers.ts",
@@ -1497,7 +1485,7 @@
     "file": "src/components/AccountSheet.tsx",
     "kind": "export",
     "name": "AccountSheetContent",
-    "hash": "298bfc9d3baa15a2bf61bc44de304f27312ea0502badfae18596b212435f3b70"
+    "hash": "80318024bf81726895fb3e2ea60dccc73981fa71fd8a1fe744179c2f8be25f13"
   },
   {
     "file": "src/components/AccountSheet.tsx",
@@ -1821,7 +1809,7 @@
     "file": "src/components/CrookIcon.tsx",
     "kind": "export",
     "name": "CrookIcon",
-    "hash": "3ad6333de62d7ceb79d942719e72343662787edeeae7681846bf38e06d384dc9"
+    "hash": "c6119ed130740e2cef8032407afa97685672102df38e373558b11c2b875cc879"
   },
   {
     "file": "src/components/CustomQuickCommandSheet.tsx",
@@ -1857,7 +1845,13 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "757b6f90c26c4f4f0b6b2f7b6eb811b69a700c2095c0b4a690e75771b787e6d0"
+    "hash": "650e25d39066c4d06800eed240cf6263646f6f7ff8192e0edb6ee84ef339b583"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "0dfaa6936fd5a97cd9139457ef0934500325246d56a4f0163005fffede028412"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -1875,13 +1869,25 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "export",
     "name": "DestinationReorderList",
-    "hash": "18b2c8637b6dd36bce80a70b834c07c6f6eaae74e58fe623b3442663e9a56bf9"
+    "hash": "038bc16a114a8b871c474bbcc1e875abe0c07986e2be4f636d331668478c4476"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "dba96f5ffe6bf9f38f52e53df313b926ea20eeb52265b789eddfbd50f06fd2b8"
+    "hash": "79e0acb1492d09bd2b3f84900a6f626644e9f62808970614cba2c503d4f45e59"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "75b2cc7ad057df7413b3891f6094dc03e2ce8340b269297e43dac79f40a6814d"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "lifecycle",
+    "name": "document.addEventListener",
+    "hash": "5de5d8f68f4557286bd36acc57c15f892723304c723f12e4c1d4f83d5ccc356a"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -1941,7 +1947,19 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onCancel",
-    "hash": "c561bcf942f7645a076207bbe6a7588526088cb6a5b08f91458af323eba46477"
+    "hash": "ecc80da53e8bedd9ae7ab0075c0ab100f1c6e8c6c986ebfd3bb46849b616406b"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onHandleKey",
+    "hash": "1af449594ac84a7610c0847f2487f71f52ac449c1ee4476c1a66d6c585393ed7"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onAccessibilityMove",
+    "hash": "c67c5a7c380906d01547d4384e3afe2765a295884d2f69816363d89b0ae739af"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2012,26 +2030,44 @@
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
+    "name": "onHandleKey",
+    "hash": "ec4165e4a867fe539747ba3c728b0c1d5735c184bcab1bbc6c761ca6a659da75"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onAccessibilityMove",
+    "hash": "86de547d7b19340d6a8114dd42244a42ceae073552f06e744438fec983c92e29"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
     "name": "onHeaderGrant",
-    "hash": "1b4f0b7f622cb4f3a20f9a1974c2272a99c8c8922379afe18d73208e6b4191ca"
+    "hash": "9cbdf3c5368256494acdb407885f66396af9618e6e455f88f319ae0bb314a6a6"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onHeaderMove",
-    "hash": "bbed762ec763e348d9147adc76619cb81cac0f7b4a46f70f76e38167c82610c9"
+    "hash": "d917051c4b5f661d034e72fccb15efa648af2b0c82aec14e35afc73d985e5b20"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onHeaderRelease",
-    "hash": "e6ae9bf2336ed05142faf55d8971f02fdfe2fcfc9aa63c44a959a973638ce2d3"
+    "hash": "dc524d2bca2e6c70a516407041e7870b45e0f94d0be36d4248e04a780bc84c50"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onHeaderCancel",
-    "hash": "42ad32b979ce4e917a1af2941b0c09b0e8c79cf3a6c00ffa7a976deb12da45e5"
+    "hash": "d501772e877c90c5859d479ed715f4a4ad1874207f63f5ccda873b8b318382e6"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
+    "name": "onViewRef",
+    "hash": "700313a4c34d57f20bd0d66e03803665728ae83a804d118edd0554f5533f46aa"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2055,7 +2091,7 @@
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
     "name": "onLayout",
-    "hash": "856b5437a02d5f995fc5754f1396edcf3c42c6c0f0534ca12796b486ebbf22a3"
+    "hash": "3b9fc926a7532884adb0021d6d62a862e44e7f82d3f73d55f890072c6dcdabcb"
   },
   {
     "file": "src/components/DestinationReorderList.tsx",
@@ -2216,6 +2252,12 @@
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
+    "name": "onAccessibilityAction",
+    "hash": "c16662131c100f15a09ddc3e37c41e615b70f336d1e12aa3403fe32e15f1dff7"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
     "name": "onPress",
     "hash": "6e6aa07ae8a1338f4d419045cc220393f359ad56e16ef32f673a6e85d250c092"
   },
@@ -2258,6 +2300,12 @@
   {
     "file": "src/components/DestinationReorderList.tsx",
     "kind": "callback",
+    "name": "onAccessibilityAction",
+    "hash": "84eb2f6aaf1282c99a17135e9da7ce61eb403046b1f4c7b8e961ce3d5e7c4e99"
+  },
+  {
+    "file": "src/components/DestinationReorderList.tsx",
+    "kind": "callback",
     "name": "onLayout",
     "hash": "ee219cabbe3d16568e7af1034f73df42e125f06d86db023dc7570e6f05b0db73"
   },
@@ -2296,6 +2344,12 @@
     "kind": "callback",
     "name": "onChangeText",
     "hash": "cc52bb02a704ea18cf631c7a283f59eba2329eb12ea3ffa00a06c07bfcd73593"
+  },
+  {
+    "file": "src/components/DestinationSearch.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "7f8ddedf9eb4f86d1ff6037938eedb3dd919beaae5c6fcd5ec8854924de0d067"
   },
   {
     "file": "src/components/DestinationSearch.tsx",
@@ -2517,7 +2571,7 @@
     "file": "src/components/LanguagePicker.tsx",
     "kind": "export",
     "name": "LanguagePicker",
-    "hash": "87457bce0c8acd426a25f557ea1ad3b55bc2e24b54fca53d66a8d67c1ca982c0"
+    "hash": "af392b13164ec50a039b031fddbb2e453386520f372b1e3f628acbf2488a0be7"
   },
   {
     "file": "src/components/LanguagePicker.tsx",
@@ -2745,7 +2799,7 @@
     "file": "src/components/NativeTeamCard.ios.tsx",
     "kind": "export",
     "name": "NativeTeamCard",
-    "hash": "ba580981dee47a56a3ca498c5e036cc906a670fd2c7e99ec47bf2ba7bb178099"
+    "hash": "ef2c8e920649fa6648da3d1c44b38fa5b9485896a519c5add43c98802df26432"
   },
   {
     "file": "src/components/NativeTeamCard.ios.tsx",
@@ -2823,7 +2877,7 @@
     "file": "src/components/OverflowMarquee.tsx",
     "kind": "export",
     "name": "OverflowMarquee",
-    "hash": "43814f72b550f7c4ab63d8c43592291a555aa5198fce2388f8013614646b203d"
+    "hash": "08ea0944dc839ded29271d992daa44fde9941374451c1a480544b818c6fbcc88"
   },
   {
     "file": "src/components/OverflowMarquee.tsx",
@@ -2877,7 +2931,7 @@
     "file": "src/components/OverlaySheet.tsx",
     "kind": "export",
     "name": "OverlaySheet",
-    "hash": "025053b338b3bb00a2fa4c9a50ca9d9a1eed541bd9e7abc73fbb6940adddc92e"
+    "hash": "71b47b969da8eb58d4f8e3cb0a3fd5f3ba858dea259b59460d2ccc39135913bc"
   },
   {
     "file": "src/components/OverlaySheet.tsx",
@@ -3626,8 +3680,8 @@
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{\n  readGroupFeatureTourCompletedLocal,\n  writeGroupFeatureTourCompletedLocal,\n  completeGroupFeatureTour,\n  clearGroupFeatureTour,\n  isTourCompletedFromSources,\n  shouldStartGroupFeatureTour,\n  retryPendingTourAccountSync,\n  isTourAccountSyncPending,\n  readTourAccountSyncPending,\n  parseTourAccountSyncPending,\n  readTourResetIntent,\n  writeTourResetIntent,\n  GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,\n  GROUP_FEATURE_TOUR_RESET_INTENT_KEY,\n  type TourAccountSyncPending,\n}",
-    "hash": "82976aeede7930775cb2bb8e47a1e6b4a6c93930116e1e775c57c2215275f948"
+    "name": "{\n  readGroupFeatureTourCompletedLocal,\n  writeGroupFeatureTourCompletedLocal,\n  completeGroupFeatureTour,\n  clearGroupFeatureTour,\n  isTourCompletedFromSources,\n  shouldStartGroupFeatureTour,\n  retryPendingTourAccountSync,\n  readTourAccountSyncPending,\n  parseTourAccountSyncPending,\n  readTourResetIntent,\n  writeTourResetIntent,\n  GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY,\n  GROUP_FEATURE_TOUR_RESET_INTENT_KEY,\n  type TourAccountSyncPending,\n}",
+    "hash": "e45864d16ff3cdb61d6fe85dda097fc24d4dae98d973e46c44c50409eec68415"
   },
   {
     "file": "src/featureTour/index.ts",
@@ -3638,8 +3692,8 @@
   {
     "file": "src/featureTour/index.ts",
     "kind": "export-alias",
-    "name": "{ measureTargetWithRetry, measureTourStepRects, STABLE_PARENT_BY_TARGET, STAGE_TWO_SETTLE_MS }",
-    "hash": "2829209e657ffcdf51c33f40d37f073ac9e8090e5c920e791ef7ee70e3f5faaf"
+    "name": "{ measureTargetWithRetry, measureTourStepRects, STABLE_PARENT_BY_TARGET }",
+    "hash": "4982bab795046e37b62d21e41235763bec478b0da94d6bbeb63c1aa46c1608b1"
   },
   {
     "file": "src/featureTour/index.ts",
@@ -3850,12 +3904,6 @@
     "kind": "export",
     "name": "readTourAccountSyncPending",
     "hash": "99636bda65bcfe78791ba2da710d370a0237d7e4255f965c11d39354d2cf0a29"
-  },
-  {
-    "file": "src/featureTour/storage.ts",
-    "kind": "export",
-    "name": "isTourAccountSyncPending",
-    "hash": "ea0662223dcae3963fda29de5bac2ec15a35107da88fc0d93d1acb102c3d2f30"
   },
   {
     "file": "src/featureTour/storage.ts",
@@ -4658,18 +4706,6 @@
   {
     "file": "src/native/purchases.ts",
     "kind": "export",
-    "name": "purchasePro",
-    "hash": "cd076f435cff8553c43bb2eb90910a0e38c804b782f75229326a081b6584e138"
-  },
-  {
-    "file": "src/native/purchases.ts",
-    "kind": "export",
-    "name": "restorePurchases",
-    "hash": "b9faec9d175cc6f508c1c687f9cb662d88bd8e044a4ab49b4b9b4ed8a8d027d7"
-  },
-  {
-    "file": "src/native/purchases.ts",
-    "kind": "export",
     "name": "isVerifiedPurchase",
     "hash": "03453b000f78f08a72a63f2c1978d468f59ecef866ece30ae078cd90e46d3a27"
   },
@@ -4690,12 +4726,6 @@
     "kind": "export",
     "name": "productionAdUnitsEnabled",
     "hash": "daab542954438375cd7d0af30e17c93adbaf57713681bc216a5e46ae9eb160e0"
-  },
-  {
-    "file": "src/native/rewardedAds.ts",
-    "kind": "export",
-    "name": "useProductionAdUnits",
-    "hash": "b569938a83b5a28070c147015c22823c4d70335c929d9031655c06eec9e98677"
   },
   {
     "file": "src/native/rewardedAds.ts",
@@ -5379,7 +5409,7 @@
     "file": "src/screens/AuthScreen.tsx",
     "kind": "export",
     "name": "AuthScreen",
-    "hash": "dce42b80bfbc65b69110c980307d9e0ff3d15719436db300693adc70d8f06e1a"
+    "hash": "8ea90d7999f6679fe1e69823d9af474df553d06367935168ec3cd8f662214746"
   },
   {
     "file": "src/screens/AuthScreen.tsx",
@@ -5679,7 +5709,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "a55fa80a26af6bfdd1c38f976405aed662f947382ea60ef57eeb1dbccb363daa"
+    "hash": "a7f7ff4afd2bac24698a828cf3b8a1073dcfc9eae1fbadae7c058fce2c20439d"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6128,6 +6158,12 @@
   {
     "file": "src/screens/MapScreen.tsx",
     "kind": "callback",
+    "name": "onOpenCoordinates",
+    "hash": "eff92afa57a9e70ffbce56640d60b3bb2b61b44908a735bfabee72b305acf6d2"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "callback",
     "name": "onPick",
     "hash": "3ba12af0074fed17056f22430b8b7ce720f9df189289eca23632ab298ec065ff"
   },
@@ -6567,7 +6603,7 @@
     "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
     "kind": "export",
     "name": "AddPlaceConfirmCard",
-    "hash": "7065fa8a10db14859a302863061432c378e1c6b62c58cc33ed5e7ab5eb8231c3"
+    "hash": "afe7add8929ac8bab71028b3973372327d9edacfcfc6208bb4fc7a9490510660"
   },
   {
     "file": "src/screens/MapScreen/components/AddPlaceConfirmCard.tsx",
@@ -6783,7 +6819,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "3b69d9aba9f8e6da9b636a4bf7088797e38c6f3f3410dbe4725b66f06bc422ca"
+    "hash": "fc362ba747ee8b967a95d3c3e46502b7a74ac10c8edbba6227aab7d7e22f0d0c"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -7017,7 +7053,7 @@
     "file": "src/screens/MapScreen/components/MembersPane.tsx",
     "kind": "export",
     "name": "MembersPane",
-    "hash": "1f2c1bbb35c4f7857cda7a2bf0ea1d0d0b8148c3337f4dc89e957fdf4077c3f7"
+    "hash": "ee95dea4e8be5b45c5ab76a967fd39dd01a3b475f8fbcde4de7f3f9da9e3a998"
   },
   {
     "file": "src/screens/MapScreen/components/MembersPane.tsx",
@@ -7125,7 +7161,7 @@
     "file": "src/screens/MapScreen/components/ProfileOverlay.tsx",
     "kind": "export",
     "name": "ProfileOverlay",
-    "hash": "6f24d895a78642de8606c8ad5f849f29ff32eb8d1d96b17d9f655cc24974ebf8"
+    "hash": "be3262246dbbb2177d3e14d76bb78fc5387e161ae07a02e9dd6a99de6fae282d"
   },
   {
     "file": "src/screens/MapScreen/components/ProfileOverlay.tsx",
@@ -7305,7 +7341,7 @@
     "file": "src/screens/MapScreen/components/RoutePane.tsx",
     "kind": "export",
     "name": "RoutePane",
-    "hash": "a48873c74bfab9d856da9e8199d28b088e65b0736431bcc1bfd534f84a176a10"
+    "hash": "661b7abc0acdc75aaa7dda529a73067b22b136a4c5f64eecb799ebadd5f04db1"
   },
   {
     "file": "src/screens/MapScreen/components/RoutePane.tsx",
@@ -7689,7 +7725,7 @@
     "file": "src/screens/MapScreen/components/SettingsSheetPanel.tsx",
     "kind": "export",
     "name": "SettingsSheetPanel",
-    "hash": "b3c707c8aa08be70594db71a3d6dfde5c9fb501566312a8ea79ca4f0e9399567"
+    "hash": "6afc7b4b1c8cf3a8210aedb30a557438dd38a2a0cf6615892c40037955e19fbe"
   },
   {
     "file": "src/screens/MapScreen/components/SettingsSheetPanel.tsx",
@@ -7887,7 +7923,13 @@
     "file": "src/screens/MapScreen/hooks/useCarouselSelection.ts",
     "kind": "export",
     "name": "useCarouselSelection",
-    "hash": "61af18fca24269c701264cf10afbe0e4e8774bf6d122e6a4caec6e910e1a4c08"
+    "hash": "ee791bf7744fd7a260252c6d9ea42d8f002235a959896941d70f31c08b6cbe58"
+  },
+  {
+    "file": "src/screens/MapScreen/hooks/useCarouselSelection.ts",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "6411e06496a1043e406461b9e07d4a30c88c3b784c2be168565f43ae05912d2e"
   },
   {
     "file": "src/screens/MapScreen/hooks/useCarouselSelection.ts",
@@ -8043,7 +8085,7 @@
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
     "kind": "export",
     "name": "useJourneyNavigation",
-    "hash": "6888a6cf61bb57ef0cf62a815c40493f521926d52713b68f069fca9ec96d4c01"
+    "hash": "c7be7041fb02de64570c13eaf39d1f9a52dddde32fd5cee57207a50421c26de4"
   },
   {
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
@@ -8343,7 +8385,7 @@
     "file": "src/screens/MapScreen/styles.ts",
     "kind": "export",
     "name": "makeStyles",
-    "hash": "e854cb7762b9862f680d1b38dd204335770489c9ab3c50bf62a60e8158ea6c96"
+    "hash": "34ad6ee789778ba05be43d9563266f802789c4b5b875b5ac0499dcf27a4157af"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
@@ -8463,7 +8505,7 @@
     "file": "src/screens/RoleSelectScreen.tsx",
     "kind": "export",
     "name": "RoleSelectScreen",
-    "hash": "1066ecebc67f789cf5aeac53d7379c78ac618bf6cdbd7c4fa900df7dc054b744"
+    "hash": "67c9d0b2a2061e4b200f21220460472da0709c432320c03fa53c1a65339cc0dc"
   },
   {
     "file": "src/screens/RoleSelectScreen.tsx",
@@ -8643,13 +8685,13 @@
     "file": "src/state/SessionContext.tsx",
     "kind": "export",
     "name": "SessionProvider",
-    "hash": "1e7a17c2d082be19f1bd2091f90ba318bd6ed206a2e7860351f2a0d6f7abe4e6"
+    "hash": "6528b94f436bd04e7916a8814dd12cd9734b5095303f7b3c282deea5d8c511b1"
   },
   {
     "file": "src/state/SessionContext.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "11b6842a16f6d6ab60c64a82610696a4b7408d6f64965c14f2098ba791f4d3ea"
+    "hash": "bf6b1395834cc4b50027d2d8168eb332e221ac5d275213d5add1b63fec35e167"
   },
   {
     "file": "src/state/SessionContext.tsx",
@@ -9852,12 +9894,6 @@
     "hash": "83b76901a41659ccc9f2d1998edfb593c23fc46f1c008d6c5ec07633c75a1ebe"
   },
   {
-    "file": "src/state/performance.ts",
-    "kind": "export",
-    "name": "startNavigationEnergyMonitor",
-    "hash": "a24efe4a14df5d130f261ec6d4129b434c3f9715c5370e2b4b507c1ae48ef577"
-  },
-  {
     "file": "src/state/runtimePowerState.ts",
     "kind": "export",
     "name": "getRuntimePowerState",
@@ -9885,7 +9921,7 @@
     "file": "src/state/useAuthFlow.ts",
     "kind": "export",
     "name": "useAuthFlow",
-    "hash": "35eaef5e78e822e878124cbd0cd871e93274b771e1abfc8edd18968bf848aa61"
+    "hash": "9f9e0651d60722dcef847c1dc58a6794a00382bfeb4c96b09c3a564a49885200"
   },
   {
     "file": "src/state/useForegroundReconcile.ts",
@@ -10455,7 +10491,7 @@
     "file": "src/utils/accommodationSemantics.ts",
     "kind": "export",
     "name": "reorderRowGeometry",
-    "hash": "d7d42cfe6ba65f3b9cd46b62645dc5f4a0dae632da0ef9c5a3e598e31bcf2631"
+    "hash": "4622fec702049d4afdd472c9537d0105862af204601a95e2fa215762c29a46f8"
   },
   {
     "file": "src/utils/accommodationSemantics.ts",
@@ -10467,13 +10503,13 @@
     "file": "src/utils/accommodationSemantics.ts",
     "kind": "export",
     "name": "dragTargetIndexFromOffset",
-    "hash": "80a0ba30bff01d52fd3ec907aef96e544bd001ae636c5827e554964ceed7b7c0"
+    "hash": "9386a47fb29faf86f821714d2d32904a226d9e52b723a48387b65b79213b28a6"
   },
   {
     "file": "src/utils/accommodationSemantics.ts",
     "kind": "export",
-    "name": "crossDayGapCorrection",
-    "hash": "99029fa61be4791b2cedcbb60acfa05687ab527960230d4ddde0258cc4bb838f"
+    "name": "sourceClosedReorderGeometry",
+    "hash": "2f37884c8fcb663d95da28af0a8321467f8e422f799136b3a1238e3f2a50a9b1"
   },
   {
     "file": "src/utils/accommodationSemantics.ts",
@@ -10624,12 +10660,6 @@
     "kind": "export",
     "name": "groupStateFromSnapshotParts",
     "hash": "d4454dd910cf46bfe33d62d06051a60c4364cc9f64707600272ddedb38ca3883"
-  },
-  {
-    "file": "src/utils/activityLog.ts",
-    "kind": "export",
-    "name": "enqueue",
-    "hash": "c80030e16ad3edd58385277de9cd2b5ef1bc6e02de703d67356efca18ca0c34b"
   },
   {
     "file": "src/utils/activityLog.ts",
@@ -11037,7 +11067,7 @@
     "file": "src/utils/gatherCommand.ts",
     "kind": "export",
     "name": "resolveNavCommand",
-    "hash": "cdd31e8ac4d6ea98f52ddd9e8654b840ed3cb6809837fa51bb76018c174a34de"
+    "hash": "63b17d3b6cc6e808545958f41fc5295660248a1de19ef626e3631925e8312aa3"
   },
   {
     "file": "src/utils/gatherCommand.ts",
@@ -11061,7 +11091,7 @@
     "file": "src/utils/gatherCommand.ts",
     "kind": "export",
     "name": "resolveCompletePrompt",
-    "hash": "d536a5ed3fd3810a784c1e5136ca8f88dff232d66fb34e203c60bbd2f92b14b3"
+    "hash": "e205f895020bb48eae14e5c26e3226b7c97ca8982a50551acc1ca9ffc5a3e54d"
   },
   {
     "file": "src/utils/gatherCommand.ts",
@@ -11673,7 +11703,7 @@
     "file": "src/utils/mapChromeLayout.ts",
     "kind": "export",
     "name": "mapKitChromeLayout",
-    "hash": "a1f9226e90a1d0a52e834887fdffad5692bf1ca0e32b51be8122d32f08f6d1ad"
+    "hash": "b56990846a3b2f9960a5203c43ea13f6322a59646ae60b6b8a2ebb13be8ec08b"
   },
   {
     "file": "src/utils/mapFormatters.ts",

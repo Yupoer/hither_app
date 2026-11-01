@@ -555,12 +555,12 @@
     {
       "id": "B11",
       "area": "Premium/subscription/entitlements",
-      "source": "`EntitlementService::{getTripEntitlement,getPremiumProjection,getPremiumAppAccountToken,applyVerifiedSubscription,applyVerifiedTripPass,syncAppStoreSubscription,restoreEntitlements,applyVerifiedPurchase}`"
+      "source": "`EntitlementService::{getTripEntitlement,getPremiumProjection,getPremiumAppAccountToken,applyVerifiedSubscription,applyVerifiedTripPass,syncAppStoreSubscription,restoreEntitlements}`"
     },
     {
       "id": "B12",
       "area": "Premium/subscription/entitlements",
-      "source": "Entitlement fail closed: `EntitlementService::setProStatus`, `entitlements.ts` capacity/expiry helpers"
+      "source": "`premiumPurchaseFlow::ensurePersonalPremiumAccess` rejects an inactive personal Premium projection"
     },
     {
       "id": "Q01",

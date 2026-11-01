@@ -119,7 +119,6 @@ export function AddPlaceConfirmCard({
           >
             <View style={styles.confirmTitleRow}>
               <View style={styles.confirmTextCol}>
-                {/* Inline rename — single draft; no separate Modal. */}
                 <TextInput
                   value={pendingPlaceTitle}
                   onChangeText={setPendingPlaceTitle}

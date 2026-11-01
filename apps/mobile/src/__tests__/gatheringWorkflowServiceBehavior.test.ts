@@ -1,3 +1,4 @@
+import type { CoreGroupSnapshot } from '../types/coreData';
 jest.mock('../api/supabase', () => ({
   supabase: {
     auth: { getSession: jest.fn() },
@@ -59,7 +60,19 @@ const items = [{
 beforeEach(() => {
   jest.clearAllMocks();
   mockStore.readSnapshot.mockResolvedValue(null);
-  mockCoreSync.ensureCoreSnapshot.mockResolvedValue({ groupId: 'g-1' });
+  mockCoreSync.ensureCoreSnapshot.mockResolvedValue({
+    groupId: 'g-1',
+    group: {
+      id: 'g-1', name: 'Trip', inviteCode: 'ABC123', createdBy: 'actor-1',
+      journeyStatus: 'paused', stragglerAlerts: false, stragglerThresholdM: 200,
+    },
+    destinations: [],
+    activeGathering: {
+      groupId: 'g-1', journeyPhase: 'staying', activeDestinationId: null,
+      pointStatuses: {}, phaseChangedAt: 0, entityVersion: 0,
+    },
+    entityVersion: 0, syncedAt: 0, updatedAt: 0, source: 'local_cache',
+  } satisfies CoreGroupSnapshot);
   mockStore.database.findSnapshotGroupForDestination.mockResolvedValue(null);
   mockOutbox.flush.mockResolvedValue(undefined);
   mockedSupabase.getLocalAuthActorId.mockResolvedValue('actor-1');
@@ -111,6 +124,14 @@ describe('GatheringWorkflowService durable and remote adapters', () => {
     mockCoreSync.enqueueResolveGatherPointRequest.mockRejectedValueOnce(businessFailure);
     await expect(resolveGatherPointRequest('r-3', false, { groupId: 'g-1' })).rejects.toBe(businessFailure);
     expect(mockCoreSync.enqueueResolveGatherPointRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps hydration failures visible without enqueueing or sending an RPC', async () => {
+    const failure = Object.assign(new Error('no local snapshot'), { code: 'core_snapshot_missing' });
+    mockCoreSync.ensureCoreSnapshot.mockRejectedValueOnce(failure);
+    await expect(submitGatherPointRequest('g-1', 'sg-1', items)).rejects.toBe(failure);
+    expect(mockCoreSync.enqueueGatherPointRequest).not.toHaveBeenCalled();
+    expect(mockedSupabase.rpc).not.toHaveBeenCalled();
   });
 
   it('does not retry business errors and maps destination arrivals', async () => {

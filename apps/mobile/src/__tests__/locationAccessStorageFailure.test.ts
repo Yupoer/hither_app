@@ -51,6 +51,12 @@ it.each(['flush access', 'upload access'])('retains queued GPS through one faile
   mockOpen.mockResolvedValue(database);
   let currentTime = Date.now();
   jest.spyOn(Date, 'now').mockImplementation(() => currentTime);
+  const { configureDefaultAuthRecovery } = jest.requireActual<typeof import('../api/authRecovery')>('../api/authRecovery');
+  const { supabase } = jest.requireMock<typeof import('../api/supabase')>('../api/supabase');
+  configureDefaultAuthRecovery({
+    getSession: () => supabase.auth.getSession(),
+    refreshSession: () => supabase.auth.getSession(),
+  });
   const privacy = jest.requireActual<typeof import('../state/locationPrivacy')>('../state/locationPrivacy');
   const outbox = jest.requireActual<typeof import('../state/locationOutbox')>('../state/locationOutbox');
   mockSharingKey = privacy.LOCATION_SHARING_KEY;

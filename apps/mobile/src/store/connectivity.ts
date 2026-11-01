@@ -1,7 +1,5 @@
 /**
  * Lightweight online detection for the store (watch/redeem gate).
- * Prefer NetInfo when present (optional peer); otherwise navigator.onLine
- * + optional HEAD probe. No hard dependency on @react-native-community/netinfo.
  */
 
 export type ConnectivitySnapshot = {
@@ -84,7 +82,6 @@ export async function probeReachability(
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    // HEAD on auth health is cheap; any network-level failure ⇒ offline.
     await fetch(`${url}/auth/v1/health`, {
       method: 'GET',
       signal: controller.signal,

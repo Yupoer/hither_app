@@ -281,8 +281,6 @@ export default function AuthScreen({ navigation, route }: Props) {
             {!isLeader && (
               <>
                 <Text style={styles.label}>{t('group.codeLabel')}</Text>
-                {/* Design: six character boxes (WND-482) fed by one hidden
-                    input; a rejected code highlights the boxes. */}
                 <Pressable
                   style={styles.codeBoxes}
                   onPress={() => codeRef.current?.focus()}

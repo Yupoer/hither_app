@@ -121,7 +121,6 @@ function ThemePreviewCard({
         pointerEvents="none"
       />
 
-      {/* Map terrain — soft water + land masses for depth without bitmaps. */}
       <View
         style={[styles.waterBlob, { backgroundColor: WATER[name] }]}
         pointerEvents="none"
@@ -135,13 +134,11 @@ function ThemePreviewCard({
         pointerEvents="none"
       />
 
-      {/* Road grid — thin native strokes stay sharp at @2x/@3x. */}
       <View style={[styles.roadH, { backgroundColor: road }]} pointerEvents="none" />
       <View style={[styles.roadH2, { backgroundColor: road }]} pointerEvents="none" />
       <View style={[styles.roadV, { backgroundColor: road }]} pointerEvents="none" />
       <View style={[styles.roadArc, { borderColor: roadStrong }]} pointerEvents="none" />
 
-      {/* Building blocks — tiny sharp rects, map-chip feel. */}
       <View style={[styles.block, styles.blockA, { backgroundColor: road }]} pointerEvents="none" />
       <View style={[styles.block, styles.blockB, { backgroundColor: road }]} pointerEvents="none" />
       <View style={[styles.block, styles.blockC, { backgroundColor: road }]} pointerEvents="none" />
@@ -160,7 +157,6 @@ function ThemePreviewCard({
         <CrookIcon size={20} color={palette.accent} style={styles.crook} />
       </View>
 
-      {/* Soft bottom veil so the name stays readable — no framed sheet / grabber. */}
       <LinearGradient
         colors={labelVeil as [string, string]}
         style={styles.labelVeil}

@@ -182,8 +182,7 @@ export async function getCurrentLocation(
 /**
  * Stream foreground position updates until the returned unsubscribe is called.
  * Returns a no-op unsubscribe if permission is denied, so callers can start it
- * unconditionally. Foreground only — background tracking is the native
- * module's job (Phase B). High accuracy is opt-in; low power is the default.
+ * unconditionally. High accuracy is opt-in; low power is the default.
  */
 export async function watchLocation(
   onSample: (sample: LocationSample) => void,

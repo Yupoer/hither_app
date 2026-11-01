@@ -38,14 +38,13 @@ control('premium.promo.edit', 'B08', premium, 'setPromoCode', 'paywall-redeem-in
 control('premium.promo.submit', 'B08', premium, 'handleRedeem', 'paywall-redeem-submit');
 for (const [symbol, ids] of [['loadPremiumStoreProducts', 'B01'], ['purchasePremiumSubscription', 'B03,B04,B05'],
   ['restorePremiumSubscription', 'B06'], ['reconcileUnfinishedPremiumPurchases', 'B07'],
-  ['refreshPremiumProjection', 'B10'], ['ensurePersonalPremiumAccess', 'B10']]) {
+  ['refreshPremiumProjection', 'B10'], ['ensurePersonalPremiumAccess', 'B10,B12']]) {
   exported(`premium.flow.${symbol}`, ids, 'src/services/premiumPurchaseFlow.ts', symbol);
 }
 for (const symbol of ['getTripEntitlement', 'getPremiumProjection', 'getPremiumAppAccountToken',
-  'applyVerifiedSubscription', 'applyVerifiedTripPass', 'syncAppStoreSubscription', 'restoreEntitlements', 'applyVerifiedPurchase']) {
+  'applyVerifiedSubscription', 'applyVerifiedTripPass', 'syncAppStoreSubscription', 'restoreEntitlements']) {
   exported(`premium.service.${symbol}`, 'B11', 'src/api/services/EntitlementService.ts', symbol);
 }
-exported('premium.direct-write-rejected', 'B12', 'src/api/services/EntitlementService.ts', 'setProStatus');
 
 for (const key of ['addGathering', 'leaderCommands', 'followerRequests', 'journey', 'arrival']) {
   control(`notifications.preference.${key}`, 'N01,N02', 'src/components/NotificationPreferencesCard.tsx', 'toggle',
@@ -103,7 +102,7 @@ exports.scenarios = [
   ['B03,B04,B11', 'binds an actual consumable purchase', 'Exact group grant, no personal Premium, consumable finish after verification.'],
   ['B06,B08', 'restores verified subscriptions', 'Invalid promo retained, verified restore activates, unverified receipt stays unfinished.'],
   ['B08', 'clears the actual promo form', 'Successful server redemption activates the authoritative projection before form close, with no native purchase.'],
-  ['B07,B10,B11,B12', 'recovers unfinished purchases', 'Actual recovery component single-flight, cache avoids transport, revoked personal grant denied despite team grant, direct writes rejected.'],
+  ['B07,B10,B11,B12', 'recovers unfinished purchases', 'Actual recovery component single-flight, cache avoids transport, revoked personal grant denied despite team grant.'],
   ['N01,N02', 'loads all five actual preference toggles', 'Each exact wire field persists and failed optimistic toggle rolls back with an alert.'],
   ['N16', 'invokes actual QuickCommands role guards', 'Role grid, empty custom slot editor, durable offline UUID payload and exact replay notification intent.'],
   ['N03,N09,N10,N11,N12,N13,N14', 'dispatches real role-scoped realtime notifications', 'Platform token scope, sender and role guards, command/add/straggler/journey/arrival paths, push dedupe, stale actor awaits, preferences and unmount cleanup.'],

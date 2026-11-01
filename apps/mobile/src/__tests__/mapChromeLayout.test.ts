@@ -4,11 +4,6 @@ import {
   gatherCardHorizontalInset,
   mapKitChromeLayout,
 } from '../utils/mapChromeLayout';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-const mapScreen = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
-const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 
 describe('MapKit chrome layout', () => {
   it.each([
@@ -76,6 +71,34 @@ describe('MapKit chrome layout', () => {
     }).compassVisible).toBe(false);
   });
 
+  it('hides the compass when the measured card occupies its available band', () => {
+    const args = {
+      safeArea: { top: 59, right: 0, bottom: 34, left: 0 },
+      topChrome: 320,
+      horizontalInset: 14,
+      windowHeight: 844,
+      bottomChrome: 400,
+      stage: 'stage1' as const,
+    };
+    expect(mapKitChromeLayout(args).compassVisible).toBe(false);
+    expect(mapKitChromeLayout({ ...args, topChrome: 300 }).compassVisible).toBe(true);
+  });
+
+  it('restores recenter after card collapse or a return to peek frees its band', () => {
+    const args = {
+      safeArea: { top: 59, right: 0, bottom: 34, left: 0 },
+      topChrome: 67 + 280,
+      horizontalInset: 10,
+      windowHeight: 844,
+      bottomChrome: 440,
+      stage: 'stage1' as const,
+    };
+    expect(mapKitChromeLayout(args).recenterVisible).toBe(false);
+    expect(mapKitChromeLayout({ ...args, topChrome: 67 + 90 }).recenterVisible).toBe(true);
+    expect(mapKitChromeLayout({ ...args, bottomChrome: 210, stage: 'peek' }).recenterVisible).toBe(true);
+    expect(mapKitChromeLayout({ ...args, bottomChrome: 0, stage: 'full' }).recenterVisible).toBe(false);
+  });
+
   it.each([
     ['portrait', 844, 210, 59],
     ['landscape', 390, 160, 0],
@@ -93,9 +116,4 @@ describe('MapKit chrome layout', () => {
     expect(layout.compassOffset.y - carouselTop - 8).toBeGreaterThanOrEqual(0);
   });
 
-  it('derives carousel height from the same compass coordinate', () => {
-    expect(mapScreen).toContain('const compassTop = mapKitChromeLayout({');
-    expect(mapScreen).toContain('compassTop - (insets.top + 8) - 8');
-    expect(carousel).toContain('maxHeight: carouselMaxHeight');
-  });
 });

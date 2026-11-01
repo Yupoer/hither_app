@@ -89,7 +89,6 @@ export default function QuickCommandsCard({
 }) {
   const { t, language } = useTranslation();
   const { customQuickCommands } = useSession();
-  // a11y-layout:quickCommands — column count + sizes track live font scale.
   const fontLayout = useFontLayout();
   const styles = useMemo(
     () => makeStyles(colors, fontLayout.scale, fontLayout.bucket, variant),

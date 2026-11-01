@@ -196,11 +196,6 @@ export interface GroupMapProps {
   /** Bottom offset of the floating recenter capsule for compass placement. */
   chromeBottomOffset?: number;
   /**
-   * @deprecated MapView is edge-to-edge; peek translate/oversize is removed.
-   * Kept so callers can pass 0 without a type break.
-   */
-  halfPeek?: number;
-  /**
    * MapKit user-location samples for the single foreground owner path.
    * Does not redraw the self marker — native blue dot stays system-owned.
    */
@@ -700,7 +695,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     bottomOverlap = 0,
     chromeStage = 'peek',
     chromeBottomOffset = 0,
-    halfPeek: _halfPeek = 0,
     onUserLocationSample,
     onLongPressCoordinate,
     onRequestGoHome,
@@ -860,9 +854,6 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
   // The native boundary owns provider selection and platform callback wiring;
   // GroupMap only supplies intent/diagnostic callbacks and spreads its result.
   const mapPlatformProps = useMemo(
-    // The callbacks are stored by the boundary and invoked only by MapView
-    // events; they are not executed while this render-time builder runs.
-    // eslint-disable-next-line react-hooks/refs
     () => ({
       ...platformizedMapViewProps({
         chrome: mapChrome,
@@ -910,19 +901,21 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         // Same visible-band lat shift as centerOn so the pin sits in the
         // strip between carousel and sheet while pitched to 30°.
         // Set zoom (Android) + altitude (iOS); pitch needs pitchEnabled on MapView.
-        mapRef.current?.animateCamera(
-          {
-            center: {
-              latitude: coordinates.latitude - latOffset,
-              longitude: coordinates.longitude,
-            },
-            pitch: 30,
-            heading: 0,
-            zoom: options?.zoom ?? LOCATE_ZOOM,
-            altitude: options?.altitude ?? LOCATE_ALTITUDE,
+        const camera = {
+          center: {
+            latitude: coordinates.latitude - latOffset,
+            longitude: coordinates.longitude,
           },
-          { duration: 320 },
-        );
+          pitch: 30,
+          heading: 0,
+          zoom: options?.zoom ?? LOCATE_ZOOM,
+          altitude: options?.altitude ?? LOCATE_ALTITUDE,
+        };
+        if (options?.animated === false) {
+          mapRef.current?.setCamera(camera);
+        } else {
+          mapRef.current?.animateCamera(camera, { duration: 320 });
+        }
       },
       fitRoute: (coordinates) => {
         if (coordinates.length > 1) {

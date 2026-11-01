@@ -131,7 +131,6 @@ export function ProfileOverlay({
           ) : null}
         </View>
 
-        {/* Color sits under the preview so the swatches aren't buried under emoji. */}
         <Text style={styles.profileColorLabel}>{t('profile.avatarColor')}</Text>
         <View style={styles.colorRow}>
           {AVATAR_COLORS.map((c) => (

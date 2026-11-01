@@ -73,8 +73,6 @@ interface UseJourneyNavigationParams {
     requestId: string,
     replaceExisting?: boolean,
   ) => Promise<NavigationSession>;
-  /** Kept for callers that still pass the old terminal handler. */
-  cancelSession?: () => Promise<NavigationSession | null>;
   /** Re-read the server session when a start response was ambiguous. */
   refreshNavigationSession?: () => Promise<NavigationSession | null>;
   createRequestId?: () => string;
@@ -111,7 +109,6 @@ export function useJourneyNavigation({
   navigationSession,
   terminalSession,
   startSession,
-  cancelSession,
   refreshNavigationSession,
   createRequestId = Crypto.randomUUID,
   travelMode = 'walk',
@@ -296,9 +293,6 @@ export function useJourneyNavigation({
     },
     [t, travelMode],
   );
-
-  /** @deprecated Use openExternalNavigation — kept as alias for gradual call-site migration. */
-  const openInAppleMaps = openExternalNavigation;
 
   const startLocalRoutePlan = useCallback(
     (dest: Destination, index: number) => {
@@ -734,7 +728,6 @@ export function useJourneyNavigation({
     numericDistance,
     journeyBusy,
     openExternalNavigation,
-    openInAppleMaps,
     startNavigation,
     refreshStartFrame,
     requestTeamEnd,

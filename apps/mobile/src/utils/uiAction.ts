@@ -57,8 +57,7 @@ let lastFailure: UiActionFailure | null = null;
 
 type Runnable = {
   actionId: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  task: (token: UiActionToken) => any;
+  task: (token: UiActionToken) => unknown;
   options: UiActionOptions;
 };
 

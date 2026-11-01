@@ -174,13 +174,11 @@ export {
   updateNickname,
   updateProfile,
   saveOnboardingProfile,
-  setProStatus,
   redeemPromoCode,
 } from './services/ProfileService';
 
 export {
   getTripEntitlement,
-  applyVerifiedPurchase,
   restoreEntitlements,
 } from './services/EntitlementService';
 

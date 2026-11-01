@@ -10,6 +10,7 @@ import {
   syncAppStoreSubscription,
 } from '../api/services/EntitlementService';
 import { supabase } from '../api/supabase';
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 
 jest.mock('../api/supabase', () => ({
   supabase: {
@@ -33,7 +34,11 @@ const legacyPurchaseMigration = readFileSync(
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedAuth.getSession.mockResolvedValue({ data: { session: { user: { id: 'user-1' } } }, error: null });
+  mockedAuth.getSession.mockResolvedValue({ data: { session: { access_token: 'fixture-token', user: { id: 'user-1' } } }, error: null });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedAuth.getSession(),
+    refreshSession: () => mockedAuth.getSession(),
+  });
 });
 
 describe('PremiumProjection', () => {

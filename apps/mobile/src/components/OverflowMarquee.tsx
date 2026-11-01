@@ -3,6 +3,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type StyleProp,
   type TextStyle,
@@ -22,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useOptionalVisuals } from '../state/foregroundUi';
+import { GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
 
 export const DEFAULT_MARQUEE_PX_PER_SEC = 40;
 export const MARQUEE_SPEED_MIN = 20;
@@ -47,6 +49,8 @@ type Props = {
   endPauseMs?: number;
   /** Pause at the start of each loop cycle after the first (ms). Default 1000. */
   startPauseMs?: number;
+  allowFontScaling?: boolean;
+  maxFontSizeMultiplier?: number;
 };
 
 /**
@@ -70,7 +74,13 @@ export default function OverflowMarquee({
   pixelsPerSecond = DEFAULT_MARQUEE_PX_PER_SEC,
   endPauseMs = 1500,
   startPauseMs = 1000,
+  allowFontScaling = true,
+  maxFontSizeMultiplier = GLOBAL_FONT_SCALE_CAP,
 }: Props) {
+  const { fontScale } = useWindowDimensions();
+  const effectiveFontScale = allowFontScaling
+    ? maxFontSizeMultiplier > 0 ? Math.min(fontScale, maxFontSizeMultiplier) : fontScale
+    : 1;
   const reduceMotion = useReducedMotion();
   const visuals = useOptionalVisuals();
   enabled = enabled && visuals;
@@ -92,17 +102,18 @@ export default function OverflowMarquee({
       flat.fontWeight ?? '',
       flat.letterSpacing ?? '',
       flat.fontVariant?.join(',') ?? '',
+      effectiveFontScale,
     ].join('|');
-  }, [style]);
+  }, [style, effectiveFontScale]);
 
   const lineHeight = useMemo(() => {
     const flat = StyleSheet.flatten(style) as TextStyle | undefined;
-    if (flat && typeof flat.lineHeight === 'number') return flat.lineHeight;
+    if (flat && typeof flat.lineHeight === 'number') return Math.ceil(flat.lineHeight * effectiveFontScale);
     if (flat && typeof flat.fontSize === 'number') {
-      return Math.round(flat.fontSize * 1.2);
+      return Math.ceil(flat.fontSize * 1.2 * effectiveFontScale);
     }
     return undefined;
-  }, [style]);
+  }, [style, effectiveFontScale]);
 
   const pxPerSec = useMemo(() => {
     const n = Number(pixelsPerSecond);
@@ -132,6 +143,8 @@ export default function OverflowMarquee({
       collapsable={false}
     >
       <Text
+        allowFontScaling={allowFontScaling}
+        maxFontSizeMultiplier={maxFontSizeMultiplier}
         style={[style, styles.measureText]}
         onTextLayout={(e) => {
           const w = e.nativeEvent.lines.reduce(
@@ -187,6 +200,8 @@ export default function OverflowMarquee({
               pointerEvents="none"
             >
               <Text
+                allowFontScaling={allowFontScaling}
+                maxFontSizeMultiplier={maxFontSizeMultiplier}
                 style={[
                   style,
                   styles.scrollText,
@@ -197,7 +212,7 @@ export default function OverflowMarquee({
               </Text>
             </Animated.View>
           ) : (
-            <Text style={style} numberOfLines={1} ellipsizeMode="tail">
+            <Text allowFontScaling={allowFontScaling} maxFontSizeMultiplier={maxFontSizeMultiplier} style={style} numberOfLines={1} ellipsizeMode="tail">
               {text}
             </Text>
           )}

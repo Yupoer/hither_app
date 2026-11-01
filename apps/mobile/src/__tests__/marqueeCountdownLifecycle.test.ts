@@ -12,6 +12,7 @@ const mockCancel = jest.fn();
 const mockTiming = jest.fn((value: number, _config: unknown) => value);
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text',
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
   StyleSheet: { create: (value: unknown) => value,
     flatten: (value: unknown) => Array.isArray(value) ? Object.assign({}, ...value) : value },
 }));
@@ -117,9 +118,10 @@ it('cancels old activation and retry timers on text, activity and visual policy 
 it('notifies due changes and callback reference changes while retaining the text owner', async () => {
   let root: any;
   const first = jest.fn(), second = jest.fn();
-  const props = { meetAtIso: '1970-01-01T00:01:00Z', redWithinMin: 1, redColor: 'red', onDueChange: first };
+  const props = { meetAtIso: '1970-01-01T00:01:00Z', redWithinMin: 1, redColor: 'red', onDueChange: first, maxFontSizeMultiplier: 1.15 };
   await act(async () => { root = create(React.createElement(MeetCountdown, props)); });
   const text = root.root.findByType('Text');
+  expect(text.props.maxFontSizeMultiplier).toBe(1.15);
   expect(first).toHaveBeenCalledWith(false);
   await act(async () => { root.update(React.createElement(MeetCountdown, { ...props, baseStyle: { color: 'white' } })); });
   expect(first).toHaveBeenCalledTimes(1);

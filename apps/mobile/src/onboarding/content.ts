@@ -8,23 +8,15 @@ import type { QuizAnswer } from './types';
  * wording.
  */
 
-// --- L1: leader trip purpose (2x2) ------------------------------------
-
 export const PURPOSE_OPTIONS = ['abroad', 'city', 'family', 'friends'] as const;
 export type PurposeOption = (typeof PURPOSE_OPTIONS)[number];
-
-// --- L2: trip length -----------------------------------------------------
 
 export const MIN_DAYS = 1;
 export const MAX_DAYS = 14;
 
-// --- F1-F3: personality quiz (A/B) ----------------------------------------
-
 export type QuizQuestionId = 'F1' | 'F2' | 'F3';
 
 export const QUIZ_QUESTIONS: QuizQuestionId[] = ['F1', 'F2', 'F3'];
-
-// --- Mascots ---------------------------------------------------------------
 
 export type MascotId = 'collie' | 'retriever' | 'koala' | 'cat';
 
@@ -92,8 +84,6 @@ export function resolveMascot(quiz: {
   return mascot;
 }
 
-// --- F4: attraction preferences (multi-select) ------------------------
-
 export const PREF_OPTIONS = [
   'food',
   'sights',
@@ -103,8 +93,6 @@ export const PREF_OPTIONS = [
   'nightlife',
 ] as const;
 export type PrefOption = (typeof PREF_OPTIONS)[number];
-
-// --- Browser branch: C1-C3 (single-select) ---------------------------
 
 export const WHY_OPTIONS = ['findPeople', 'fearLost', 'planTrip', 'curious'] as const;
 export type WhyOption = (typeof WHY_OPTIONS)[number];

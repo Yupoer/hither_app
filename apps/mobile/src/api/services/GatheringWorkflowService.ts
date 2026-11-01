@@ -17,32 +17,16 @@ function loadCoreSyncAdapters(): CoreSyncAdapters | null {
   }
 }
 
-/** Keep the narrow legacy/test seam while making the current adapter hydrate
- * cold groups before any durable queue write. Hydration errors remain visible.
- */
-async function tryDurableCoreWrite<T>(
+async function writeDurableCore<T>(
   core: CoreSyncAdapters,
   groupId: string,
   write: () => Promise<T>,
-): Promise<{ handled: true; value: T } | { handled: false }> {
-  const ensure = (core as unknown as {
-    ensureCoreSnapshot?: (id: string) => Promise<unknown>;
-  }).ensureCoreSnapshot;
-  if (typeof ensure === 'function') {
-    const snapshot = await ensure(groupId);
-    if (!snapshot) {
-      throw Object.assign(new Error('core_snapshot_missing'), { code: 'core_snapshot_missing' });
-    }
-    return { handled: true, value: await write() };
+): Promise<T> {
+  const snapshot = await core.ensureCoreSnapshot(groupId);
+  if (!snapshot) {
+    throw Object.assign(new Error('core_snapshot_missing'), { code: 'core_snapshot_missing' });
   }
-  try {
-    return { handled: true, value: await write() };
-  } catch (error) {
-    if ((error as { code?: string })?.code === 'core_snapshot_missing') {
-      return { handled: false };
-    }
-    throw error;
-  }
+  return write();
 }
 
 async function requireQueueActor(): Promise<string> {
@@ -108,7 +92,7 @@ export async function submitGatherPointRequest(
 ): Promise<string> {
   const core = loadCoreSyncAdapters();
   if (core) {
-    const durable = await tryDurableCoreWrite(core, groupId, () => core.enqueueGatherPointRequest({
+    const durable = await writeDurableCore(core, groupId, () => core.enqueueGatherPointRequest({
       groupId,
       subgroupId,
       items: items.map((item) => ({
@@ -119,7 +103,7 @@ export async function submitGatherPointRequest(
         day: null,
       })),
     }));
-    if (durable.handled) return durable.value.requestId;
+    return durable.requestId;
   }
   const { data, error } = await supabase.rpc('submit_gather_point_request', {
     p_group_id: groupId,
@@ -188,13 +172,13 @@ export async function resolveGatherPointRequest(
   const core = loadCoreSyncAdapters();
   if (core && options?.groupId) {
     const groupId = options.groupId;
-    const durable = await tryDurableCoreWrite(core, groupId, () =>
+    await writeDurableCore(core, groupId, () =>
       core.enqueueResolveGatherPointRequest({
-      groupId,
-      requestId,
-      approve,
+        groupId,
+        requestId,
+        approve,
       }));
-    if (durable.handled) return { status: approve ? 'approved' : 'rejected', insertedCount: 0 };
+    return { status: approve ? 'approved' : 'rejected', insertedCount: 0 };
   }
   const { data, error } = await supabase.rpc('resolve_gather_point_request', {
     p_request_id: requestId,

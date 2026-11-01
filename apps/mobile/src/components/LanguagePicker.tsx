@@ -34,7 +34,6 @@ export default function LanguagePicker({
         }}
       >
         <Ionicons name="globe-outline" size={19.2} color="#fff" />
-        {/* contract test compatibility: chevron-down */}
       </NativeMenuHost>
     );
   }

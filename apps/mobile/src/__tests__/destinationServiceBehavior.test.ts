@@ -1,3 +1,4 @@
+import type { CoreGroupSnapshot } from '../types/coreData';
 jest.mock('../api/supabase', () => ({
   supabase: {
     rpc: jest.fn(),
@@ -20,7 +21,6 @@ jest.mock('../api/demo', () => ({
   demoUpdateDestinationEmoji: mockDemoUpdateDestinationEmoji,
 }));
 
-const coreMissing = () => Object.assign(new Error('no local snapshot'), { code: 'core_snapshot_missing' });
 const mockCoreSync = {
   ensureCoreSnapshot: jest.fn(),
   enqueueDestinationAdd: jest.fn(),
@@ -59,25 +59,31 @@ const query = (result: unknown) => {
 beforeEach(() => {
   jest.clearAllMocks();
   mockIsDemoGroup.mockReturnValue(false);
-  mockCoreSync.ensureCoreSnapshot.mockResolvedValue({ groupId: 'g-1' });
+  mockCoreSync.ensureCoreSnapshot.mockResolvedValue({
+    groupId: 'g-1',
+    group: {
+      id: 'g-1', name: 'Trip', inviteCode: 'ABC123', createdBy: 'actor-1',
+      journeyStatus: 'paused', stragglerAlerts: false, stragglerThresholdM: 200,
+    },
+    destinations: [],
+    activeGathering: {
+      groupId: 'g-1', journeyPhase: 'staying', activeDestinationId: null,
+      pointStatuses: {}, phaseChangedAt: 0, entityVersion: 0,
+    },
+    entityVersion: 0, syncedAt: 0, updatedAt: 0, source: 'local_cache',
+  } satisfies CoreGroupSnapshot);
   for (const [name, method] of Object.entries(mockCoreSync)) {
     if (name !== 'ensureCoreSnapshot') method.mockResolvedValue(undefined);
   }
 });
 
 describe('DestinationService mapping and durable boundaries', () => {
-  it('passes quick-add intent through the durable path and uses the atomic fallback RPC', async () => {
+  it('passes quick-add intent through the durable path', async () => {
     const input = { title: 'Quick', day: 2, placement: 'firstStop' as const, coordinates: { latitude: 25, longitude: 121 } };
     mockCoreSync.enqueueDestinationAdd.mockResolvedValue({ destinationId: 'queued' });
     await expect(addDestination('g-1', input)).resolves.toBe('queued');
     expect(mockCoreSync.enqueueDestinationAdd).toHaveBeenCalledWith(expect.objectContaining({ placement: 'firstStop', day: 2 }));
-    const ensure = mockCoreSync.ensureCoreSnapshot;
-    delete (mockCoreSync as any).ensureCoreSnapshot;
-    mockCoreSync.enqueueDestinationAdd.mockRejectedValue(coreMissing());
-    mockedSupabase.rpc.mockResolvedValue({ data: 'remote-id', error: null });
-    await expect(addDestination('g-1', input)).resolves.toBe('remote-id');
-    expect(mockedSupabase.rpc).toHaveBeenCalledWith('quick_add_itinerary_item', expect.objectContaining({ p_day: 2 }));
-    mockCoreSync.ensureCoreSnapshot = ensure;
+    expect(mockedSupabase.rpc).not.toHaveBeenCalled();
   });
   it('maps itinerary rows and normalizes accommodation/default fields', () => {
     expect(mapDestination({
@@ -123,6 +129,11 @@ describe('DestinationService mapping and durable boundaries', () => {
     await expect(addDestination('g-1', {
       title: 'Stop', coordinates: { latitude: 1, longitude: 2 }, day: 3,
     })).rejects.toBe(failure);
+    const missingSnapshot = Object.assign(new Error('no local snapshot'), { code: 'core_snapshot_missing' });
+    mockCoreSync.enqueueDestinationAdd.mockRejectedValueOnce(missingSnapshot);
+    await expect(addDestination('g-1', {
+      title: 'Stop', coordinates: { latitude: 1, longitude: 2 }, day: 3,
+    })).rejects.toBe(missingSnapshot);
     expect(mockedSupabase.rpc).not.toHaveBeenCalled();
   });
 

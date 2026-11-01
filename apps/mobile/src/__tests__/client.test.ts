@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 // Mock the supabase singleton so importing the client does not pull in
 // react-native-url-polyfill / AsyncStorage (native-only) or require env vars.
 jest.mock('../api/supabase', () => ({
@@ -59,6 +60,10 @@ const mockedRpc = supabase.rpc as unknown as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  configureDefaultAuthRecovery({
+    getSession: () => mockedAuth.getSession(),
+    refreshSession: () => mockedAuth.getSession(),
+  });
 });
 
 describe('pure mappers (snake_case row -> camelCase type)', () => {
@@ -236,7 +241,7 @@ describe('group state', () => {
 describe('createGroup', () => {
   it('creates via atomic create_group RPC and returns the mapped group', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -258,7 +263,7 @@ describe('createGroup', () => {
 
   it('maps expired anonymous access from create_group RPC (no orphan group)', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -274,7 +279,7 @@ describe('createGroup', () => {
 
   it('maps 6th-member registration gate from create_group RPC', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -294,7 +299,7 @@ describe('createGroup', () => {
 describe('joinGroup', () => {
   it('throws when the invite code matches no group', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -307,7 +312,7 @@ describe('joinGroup', () => {
 
   it('upper-cases the code and joins via the join_group RPC', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -328,7 +333,7 @@ describe('joinGroup', () => {
 
   it('maps anonymous 6th-member registration gate errors', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -346,7 +351,7 @@ describe('joinGroup', () => {
 
   it('maps expired anonymous access errors', async () => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
     mockedRpc.mockResolvedValue({
@@ -438,7 +443,7 @@ describe('getKmlImportQuota', () => {
 describe('notifications, commands & journey', () => {
   beforeEach(() => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
   });
@@ -791,7 +796,7 @@ describe('notifications, commands & journey', () => {
 describe('live activity sessions', () => {
   beforeEach(() => {
     mockedAuth.getSession.mockResolvedValue({
-      data: { session: { user: { id: 'uid' } } },
+      data: { session: { access_token: 'fixture-token', user: { id: 'uid' } } },
       error: null,
     });
   });

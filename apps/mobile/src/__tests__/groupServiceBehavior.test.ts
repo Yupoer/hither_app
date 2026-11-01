@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: { getItem: jest.fn(), setItem: jest.fn() },
@@ -105,6 +106,10 @@ beforeEach(() => {
   storage.setItem.mockResolvedValue(undefined);
   mockedSupabase.auth.getSession.mockResolvedValue({
     data: { session: { access_token: 'token', user: { id: 'user-1' } } }, error: null,
+  });
+  configureDefaultAuthRecovery({
+    getSession: () => mockedSupabase.auth.getSession(),
+    refreshSession: () => mockedSupabase.auth.getSession(),
   });
   mockedSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null });
   mockedSupabase.rpc.mockResolvedValue({ data: null, error: null });

@@ -37,6 +37,7 @@ export default React.memo(function MeetCountdown({
   onDueChange,
   adjustsFontSizeToFit = false,
   minimumFontScale = 0.7,
+  maxFontSizeMultiplier,
 }: {
   meetAtIso: string;
   redWithinMin: number;
@@ -52,6 +53,7 @@ export default React.memo(function MeetCountdown({
   /** Shrink long minute labels inside fixed-width meet chrome. */
   adjustsFontSizeToFit?: boolean;
   minimumFontScale?: number;
+  maxFontSizeMultiplier?: number;
 }) {
   const { now, lifecycle: clockLifecycle } = useForegroundClock(1000);
 
@@ -84,6 +86,7 @@ export default React.memo(function MeetCountdown({
         numberOfLines={1}
         adjustsFontSizeToFit={adjustsFontSizeToFit}
         minimumFontScale={minimumFontScale}
+        maxFontSizeMultiplier={maxFontSizeMultiplier}
       >
         {label}
       </Text>

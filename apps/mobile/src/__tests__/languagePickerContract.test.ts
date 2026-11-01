@@ -66,7 +66,6 @@ describe('language picker placement contract', () => {
     expect(picker).toContain('LANGUAGE_CHOICES');
     expect(picker).toContain("variant = 'segmented'");
     expect(picker).toContain("variant === 'menu'");
-    expect(picker).toContain('chevron-down');
     expect(picker).toContain('NativeMenuHost');
     expect(picker).toContain('lightTap');
     expect(picker).not.toContain('showLanguageChoice(');

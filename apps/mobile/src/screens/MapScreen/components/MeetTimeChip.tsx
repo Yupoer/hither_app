@@ -86,10 +86,12 @@ export const MeetTimeChip = React.memo(function MeetTimeChip({
               onDueChange={onDueChange}
               adjustsFontSizeToFit
               minimumFontScale={0.7}
+              maxFontSizeMultiplier={1.15}
               baseStyle={[labelStyle, { color: accent }]}
             />
           ) : (
             <Text
+              maxFontSizeMultiplier={1.15}
               style={labelStyle}
               numberOfLines={1}
               adjustsFontSizeToFit
@@ -100,6 +102,7 @@ export const MeetTimeChip = React.memo(function MeetTimeChip({
           )}
         </View>
         <Text
+          maxFontSizeMultiplier={1.15}
           style={styles.meetBtnCaption}
           numberOfLines={1}
           adjustsFontSizeToFit

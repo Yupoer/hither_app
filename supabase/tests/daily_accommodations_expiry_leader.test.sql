@@ -1,4 +1,3 @@
--- REVIEW_FIX #158 r4: executable daily-accommodation security + concurrency tests.
 -- Trigger DDL runs as test-admin (reset role); authenticated only for JWT RPC calls.
 -- pgTAP-oriented. Requires full schema (is_member, memberships, groups, etc.).
 -- Single-session tests run inside a transaction (set local role/jwt).
