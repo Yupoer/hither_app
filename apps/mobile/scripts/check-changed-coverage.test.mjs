@@ -10,7 +10,7 @@ const source = fs.readFileSync(new URL('./check-changed-coverage.mjs', import.me
 function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85', status = 0,
   signal = null, error = false, pct = '90', summary = true, malformed = false,
   ci = false, stale = false, tripleDotFails = false, diffFails = false,
-  baseEnv = { COVERAGE_BASE: 'event-base-sha' }, raw = true, zeroSuites = false } = {}) {
+  baseEnv = { COVERAGE_BASE: 'event-base-sha' }, raw = true, zeroSuites = false, zeroPassed = false, zeroFunctions = false, missingEligible = false, extraArgs = [] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coverage gate '));
   try {
     fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
@@ -38,21 +38,21 @@ function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85'
         return 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       }
       export function spawnSync(command, args, options) {
-        console.log('COLLECTED', JSON.stringify(args));
+        console.log('COLLECTED', JSON.stringify(['jest', ...args.slice(1)]));
         console.log('STALE', fs.existsSync(path.join(options.cwd, 'coverage-changed/coverage-summary.json')),
           fs.existsSync(path.join(options.cwd, 'test-artifacts/node-jest.raw.json')),
           fs.existsSync(path.join(options.cwd, 'test-artifacts/node-receipt.json')));
         if (${summary}) {
           const directory = path.join(options.cwd, 'coverage-changed');
           fs.mkdirSync(directory, {recursive: true});
-          fs.writeFileSync(path.join(directory, 'coverage-summary.json'), ${malformed ? "'not json'" : `'{"total":{"functions":{"pct":${pct}}}}'`});
+          fs.writeFileSync(path.join(directory, 'coverage-summary.json'), ${malformed ? "'not json'" : `JSON.stringify({total:{functions:{pct:${pct}, total:${zeroFunctions ? 0 : 100}, covered:${zeroFunctions ? 0 : Math.floor(Number(pct) || 0)}}}, ...Object.fromEntries(${JSON.stringify(files)}.map(f=>f.trim()).filter(f=>f.startsWith('apps/mobile/')).filter(()=>!${missingEligible}).map(f=>[path.resolve(options.cwd, f.slice(12).trim()), {functions:{pct:${pct}, total:100, covered:${Math.floor(Number(pct) || 0)}}}]))})`});
         }
         if (${raw}) {
           fs.mkdirSync(path.join(options.cwd, 'test-artifacts'), {recursive: true});
           fs.writeFileSync(path.join(options.cwd, 'test-artifacts/node-jest.raw.json'), JSON.stringify({
             success: ${status === 0}, numTotalTests: 3, numPassedTests: 1, numFailedTests: 0, numPendingTests: 1, numTodoTests: 1,
             testResults: ${zeroSuites ? '[]' : `[{name: path.join(options.cwd, 'src/__tests__/example.test.ts'), status: 'passed',
-              assertionResults: [{status: 'passed'}, {status: 'pending'}, {status: 'todo'}],
+              assertionResults: [{status: '${zeroPassed ? 'pending' : 'passed'}', fullName: 'PRIVATE_CASE'}, {status: 'pending', fullName: 'pending'}, {status: 'todo', fullName: 'todo'}],
               failureMessage: 'PRIVATE_ASSERTION_MESSAGE', console: ['PRIVATE_CONSOLE']}]`},
             environment: 'PRIVATE_ENVIRONMENT'
           }));
@@ -63,7 +63,7 @@ function run({ files = ['apps/mobile/src/services/example.ts'], threshold = '85'
     const env = { ...process.env, ...baseEnv, COVERAGE_THRESHOLD: threshold };
     if (!Object.hasOwn(baseEnv, 'COVERAGE_BASE')) delete env.COVERAGE_BASE;
     if (!Object.hasOwn(baseEnv, 'GITHUB_BASE_REF')) delete env.GITHUB_BASE_REF;
-    const result = spawnSync(process.execPath, [path.join(scripts, 'check.mjs'), ...(ci ? ['--full-node-tests'] : [])], {
+    const result = spawnSync(process.execPath, [path.join(scripts, 'check.mjs'), ...(ci ? ['--full-node-tests'] : []), ...extraArgs], {
       encoding: 'utf8', env,
     });
     const receiptPath = path.join(app, 'test-artifacts/node-receipt.json');
@@ -112,7 +112,8 @@ test('runs the full node suite exactly once in CI with or without eligible sourc
     assert.equal(args.includes('--forceExit'), false);
     assert.equal(args.includes('--silent'), files[0] !== 'README.md');
     assert.ok(args.includes('--json'));
-    assert.ok(args.includes('--outputFile=test-artifacts/node-jest.raw.json'));
+    assert.ok(args.some(arg => arg.replaceAll('\\', '/') === '--outputFile=test-artifacts/node-jest.raw.json'));
+    assert.equal(args.includes('--passWithNoTests'), false);
     assert.ok(args.every(arg => !/findRelatedTests|runTestsByPath|testPath|onlyChanged|changedSince|--config/.test(arg)));
   }
 });
@@ -205,5 +206,19 @@ test('failed shadow observation proposes all checks and cannot change actual Jes
   assert.ok(result.plan.fallbackReasons.includes('change-or-manifest-read-failed'));
   assert.ok(result.plan.proposedGroups.includes('backend'));
   assert.equal(invocations(result).length, 1);
-  assert.deepEqual(invocations(result)[0].slice(-2), ['--json', '--outputFile=test-artifacts/node-jest.raw.json']);
+  assert.equal(invocations(result)[0].slice(-2)[0], '--json');
+});
+
+test('CI rejects zero passed assertions and preserves zero-function coverage', () => {
+  assert.notEqual(run({ci:true,zeroPassed:true}).status,0);
+  assert.equal(run({ci:true,zeroFunctions:true,pct:'100'}).status,0);
+  assert.equal(run({ci:true,missingEligible:true}).status,0);
+});
+
+test('benchmark options preserve one full invocation and preflight skips Jest', () => {
+  const candidate=run({ci:true, extraArgs:['--jest-max-workers','2','--jest-cache-directory','cold-cache']});
+  assert.equal(candidate.status,0,candidate.stderr);
+  assert.ok(invocations(candidate)[0].includes('--maxWorkers'));
+  assert.ok(!invocations(candidate)[0].includes('--runInBand'));
+  assert.equal(invocations(run({ci:true,extraArgs:['--plan-only']})).length,0);
 });

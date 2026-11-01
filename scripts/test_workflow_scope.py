@@ -1,3 +1,4 @@
+import json
 import importlib.util
 import os
 from pathlib import Path
@@ -46,7 +47,7 @@ def git(repo, *args):
 
 
 def run_scope(repo, event_name, base_sha):
-    output = repo / f"github-output-{event_name}-{base_sha}.txt"
+    output = repo / ".git" / f"github-output-{event_name}-{base_sha}.txt"
     environment = os.environ.copy()
     environment.update(
         EVENT_NAME=event_name,
@@ -65,7 +66,7 @@ def run_scope(repo, event_name, base_sha):
         capture_output=True,
         text=True,
     )
-    return output.read_text(encoding="utf-8")
+    return dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
 
 
 with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
@@ -76,6 +77,9 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     product = repo / "apps/mobile/src/auth.ts"
     product.parent.mkdir(parents=True)
     product.write_text("export const auth = 1;\n", encoding="utf-8")
+    registry = repo / "scripts/ci-module-contracts.json"
+    registry.parent.mkdir()
+    registry.write_bytes(scope_path.with_name("ci-module-contracts.json").read_bytes())
     git(repo, "add", "--all")
     git(repo, "commit", "-m", "base")
     base_sha = git(repo, "rev-parse", "HEAD")
@@ -84,21 +88,26 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     git(repo, "add", "--all")
     git(repo, "commit", "-m", "docs")
     docs_sha = git(repo, "rev-parse", "HEAD")
-    assert run_scope(repo, "pull_request", base_sha) == "product=false\n"
-    assert run_scope(repo, "push", base_sha) == "product=false\n"
+    assert run_scope(repo, "pull_request", base_sha)["product"] == "false"
+    assert run_scope(repo, "push", base_sha)["product"] == "false"
 
     product.write_text("export const auth = 2;\n", encoding="utf-8")
     git(repo, "add", "--all")
     git(repo, "commit", "-m", "product")
     product_sha = git(repo, "rev-parse", "HEAD")
-    assert run_scope(repo, "pull_request", docs_sha) == "product=true\n"
-    assert run_scope(repo, "push", docs_sha) == "product=true\n"
+    selective = run_scope(repo, "pull_request", docs_sha)
+    assert selective["mode"] == "selective", selective
+    assert {job for job, value in json.loads(selective["expected_jobs"]).items() if value} == {"verify", "mobile-checks"}
+    assert run_scope(repo, "push", docs_sha)["mode"] == "full"
+    assert run_scope(repo, "pull_request", "missing-ref")["mode"] == "full"
+    assert run_scope(repo, "pull_request", docs_sha)["product"] == "true"
+    assert run_scope(repo, "push", docs_sha)["product"] == "true"
 
     git(repo, "mv", "apps/mobile/src/auth.ts", "docs-auth.md")
     git(repo, "commit", "-m", "rename-product-to-doc")
     rename_sha = git(repo, "rev-parse", "HEAD")
-    assert run_scope(repo, "pull_request", product_sha) == "product=true\n"
-    assert run_scope(repo, "workflow_dispatch", rename_sha) == "product=true\n"
-    assert run_scope(repo, "push", "0" * 40) == "product=true\n"
+    assert run_scope(repo, "pull_request", product_sha)["product"] == "true"
+    assert run_scope(repo, "workflow_dispatch", rename_sha)["product"] == "true"
+    assert run_scope(repo, "push", "0" * 40)["product"] == "true"
 
 print("workflow scope checks passed")

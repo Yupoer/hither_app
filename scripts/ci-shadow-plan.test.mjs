@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { ALL_GROUPS, buildShadowPlan, parseChanges, observeShadowPlan } from './ci-shadow-plan.mjs';
+import { ALL_GROUPS, JOB_GROUPS, decideWorkflowScope, buildShadowPlan, parseChanges, observeShadowPlan } from './ci-shadow-plan.mjs';
 
 const identity = { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40), treeSha: 'c'.repeat(40), diffMode: 'triple-dot' };
 const manifest = () => ({ schemaVersion: 1, version: 1, fullFallbackPaths: ['config/'],
@@ -112,4 +112,29 @@ test('checked-in module and producer selectors name tracked sources', () => {
     assert.ok(report.contracts.includes(contract));
     assert.ok(report.affectedModules.includes('native'));
   }
+});
+
+ test('workflow scope selects complete jobs and retains mandatory verification', () => {
+  const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
+  const decide = (eventName, product, paths) => decideWorkflowScope({eventName, product,
+    shadowPlan: plan(paths.map(path => ({status: 'M', path})), {baseManifest: registry, headManifest: registry})});
+  assert.ok(Object.values(decide('workflow_dispatch', true, []).expectedJobs).every(Boolean));
+  assert.ok(Object.values(decide('push', true, ['apps/mobile/src/utils/a.ts']).expectedJobs).every(Boolean));
+  assert.ok(Object.values(decide('pull_request', false, ['README.md']).expectedJobs).every(value => !value));
+  assert.deepEqual(Object.entries(decide('pull_request', true, ['apps/mobile/src/utils/a.ts']).expectedJobs).filter(([,v]) => v).map(([job]) => job), ['verify', 'mobile-checks']);
+  assert.deepEqual(Object.entries(decide('pull_request', true, ['apps/legal-site/auth.js']).expectedJobs).filter(([,v]) => v).map(([job]) => job), ['verify', 'mobile-checks']);
+  for (const file of ['supabase/functions/send-push/index.ts', 'apps/mobile/modules/a.ts', 'apps/mobile/src/__tests__/native/Probe.swift', 'unknown.ts', 'apps/mobile/package.json']) {
+    assert.ok(Object.values(decide('pull_request', true, [file]).expectedJobs).every(Boolean), file);
+  }
+});
+
+test('fixed workflow gates exactly match the planner registry', () => {
+  const workflow = fs.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const required = workflow.match(/  ci-required:\r?\n    needs: \[([^\]]+)\]/)[1].split(',').map(s => s.trim());
+  assert.deepEqual(required.filter(job => job !== 'scope').sort(), Object.keys(JOB_GROUPS).sort());
+  for (const job of Object.keys(JOB_GROUPS)) {
+    const block = workflow.slice(workflow.indexOf(`  ${job}:`)).split(/\r?\n  \S/)[0];
+    assert.ok(block.includes(`if: fromJSON(needs.scope.outputs.expected_jobs)['${job}']`), job);
+  }
+  for (const output of ['product', 'mode', 'groups', 'expected_jobs']) assert.ok(workflow.includes(output + ": " + "$" + "{{ steps.scope.outputs." + output + " }}"));
 });

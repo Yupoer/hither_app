@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 export const ALL_GROUPS = Object.freeze([
   'auth-web', 'backend', 'ci-required', 'components', 'expo-dependencies', 'expo-doctor',
@@ -125,4 +128,27 @@ export function observeShadowPlan({ identity, eligibleAppPaths, git }) {
   } catch {
     return buildShadowPlan({ identity, eligibleAppPaths, readFailed: true });
   }
+}
+
+export const JOB_GROUPS = Object.freeze({
+  verify: ['test-meta', 'node'],
+  'mobile-checks': ['components', 'lint', 'typecheck', 'runtime-alignment', 'expo-dependencies', 'expo-doctor', 'auth-web'],
+  backend: ['backend'],
+  'jsi-ui-runtime': ['jsi-ui-runtime'],
+  'jsi-ios27-runtime': ['jsi-ios27-runtime'],
+});
+
+export function decideWorkflowScope({ eventName, product, shadowPlan }) {
+  const mode = !product ? 'docs' : eventName !== 'pull_request' || shadowPlan.fallbackReasons.length ? 'full' : 'selective';
+  const groups = mode === 'docs' ? [] : mode === 'full' ? [...ALL_GROUPS] : shadowPlan.proposedGroups;
+  const expectedJobs = Object.fromEntries(Object.entries(JOB_GROUPS).map(([job, owned]) =>
+    [job, mode === 'full' || mode === 'selective' && (job === 'verify' || owned.some(group => groups.includes(group)))]));
+  return { product, mode, groups, expectedJobs, reasons: shadowPlan.fallbackReasons };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+  const git = args => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const shadowPlan = observeShadowPlan({ identity: input.identity, eligibleAppPaths: [], git });
+  process.stdout.write(JSON.stringify(decideWorkflowScope({ ...input, shadowPlan })) + '\n');
 }

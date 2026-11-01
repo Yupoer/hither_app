@@ -1,0 +1,41 @@
+name: Set up mobile dependencies
+description: Install the locked and patched mobile dependency tree.
+inputs:
+  installed-cache:
+    description: Reuse the exact installed tree after runner-specific benchmark acceptance.
+    default: 'false'
+  save-cache:
+    description: Designate this caller as the installed-tree cache writer.
+    default: 'false'
+outputs:
+  exact-key:
+    value: ${{ steps.key.outputs.key }}
+  cache-hit:
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: apps/mobile/package-lock.json
+    - id: key
+      working-directory: ${{ github.workspace }}
+      shell: bash
+      run: node scripts/mobile-install-key.mjs >> "$GITHUB_OUTPUT"
+    - id: restore
+      if: inputs.installed-cache == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: apps/mobile/node_modules
+        key: ${{ steps.key.outputs.key }}
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: apps/mobile
+      run: npm ci
+    - if: inputs.installed-cache == 'true' && inputs.save-cache == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: apps/mobile/node_modules
+        key: ${{ steps.key.outputs.key }}

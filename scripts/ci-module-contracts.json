@@ -1,7 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": 2,
+  "version": 3,
   "fullFallbackPaths": [
+    "supabase/",
+    "apps/mobile/modules/",
+    "apps/mobile/ios/",
+    "apps/mobile/targets/",
+    "apps/mobile/src/__tests__/native/",
     ".github/",
     "scripts/",
     "apps/mobile/scripts/",
@@ -60,7 +65,7 @@
       "groups": [
         "backend"
       ],
-      "consumers": []
+      "consumers": ["mobile"]
     },
     {
       "id": "native",

@@ -31,7 +31,8 @@
     "verify:runtime": "node scripts/verify-runtime-alignment.mjs",
     "verify:ios-release-launch": "python3 scripts/verify-ios-release-launch.py",
     "update:preview": "eas update --channel preview",
-    "update:production": "eas update --channel production"
+    "update:production": "eas update --channel production",
+    "check:quick": "node scripts/check-quick.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/fredoka": "^0.4.1",

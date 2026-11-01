@@ -37,6 +37,9 @@ jobs:
     timeout-minutes: 5
     outputs:
       product: ${{ steps.scope.outputs.product }}
+      mode: ${{ steps.scope.outputs.mode }}
+      groups: ${{ steps.scope.outputs.groups }}
+      expected_jobs: ${{ steps.scope.outputs.expected_jobs }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -59,7 +62,7 @@ jobs:
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
-          node --test apps/mobile/scripts/check-changed-coverage.test.mjs scripts/ci-shadow-plan.test.mjs scripts/check-release-ci.test.mjs
+          node --test apps/mobile/scripts/check-changed-coverage.test.mjs apps/mobile/scripts/check-ci-evidence.test.mjs apps/mobile/scripts/check-quick.test.mjs scripts/ci-shadow-plan.test.mjs scripts/check-release-ci.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
@@ -73,7 +76,7 @@ jobs:
 
   verify:
     needs: scope
-    if: needs.scope.outputs.product == 'true'
+    if: fromJSON(needs.scope.outputs.expected_jobs)['verify']
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -87,15 +90,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          # Real SQLite transaction tests use node:sqlite (also verified locally on 22.17.1).
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
-
-      - name: Install
-        run: npm ci
+      - uses: ./.github/actions/setup-mobile
 
       - name: Resolve META_PARENT
         id: test_meta
@@ -155,15 +150,11 @@ jobs:
         run: |
           node test/headless/scenario-coverage.test.cjs
           npm run test:ci
-          node test/headless/scenario-coverage.cjs test-artifacts/node-jest.raw.json test-artifacts/headless-scenarios.md > test-artifacts/headless-scenarios.json
+          node test/headless/scenario-coverage.cjs test-artifacts/node-jest.raw.json test-artifacts/headless-scenarios.md > test-artifacts/headless-scenarios.raw.json
+          node scripts/check-ci-evidence.mjs
         env:
           COVERAGE_BASE: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           COVERAGE_THRESHOLD: '85'
-
-      - name: Component tests (jest-expo)
-        run: npm test -- --config jest.config.components.js --runInBand --silent
-        env:
-          NODE_OPTIONS: --experimental-vm-modules
 
       - name: Upload safe node evidence
         if: always()
@@ -176,8 +167,25 @@ jobs:
             apps/mobile/test-artifacts/headless-scenarios.json
             apps/mobile/test-artifacts/headless-scenarios.md
             apps/mobile/coverage-changed/coverage-summary.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
+
+  mobile-checks:
+    needs: scope
+    if: fromJSON(needs.scope.outputs.expected_jobs)['mobile-checks']
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: ./.github/actions/setup-mobile
+
+      - name: Component tests (jest-expo)
+        run: npm test -- --config jest.config.components.js --runInBand --silent
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
 
       - name: Lint (eslint — full tree; featureTour at error severity)
         run: npm run lint
@@ -201,7 +209,7 @@ jobs:
 
   backend:
     needs: scope
-    if: needs.scope.outputs.product == 'true'
+    if: fromJSON(needs.scope.outputs.expected_jobs)['backend']
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -253,7 +261,7 @@ jobs:
 
   jsi-ui-runtime:
     needs: scope
-    if: needs.scope.outputs.product == 'true'
+    if: fromJSON(needs.scope.outputs.expected_jobs)['jsi-ui-runtime']
     # Swift's isIsolatingCurrentContext runtime hook requires macOS 26.
     runs-on: macos-26
     timeout-minutes: 20
@@ -262,13 +270,7 @@ jobs:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
-      - name: Install clean patched native dependency
-        run: npm ci
+      - uses: ./.github/actions/setup-mobile
       - name: Exercise native foreground and headless snapshot races
         run: |
           swiftc -swift-version 5 modules/hither-live-activity/ios/HitherLiveActivitySnapshot.swift src/__tests__/native/HitherLiveActivitySnapshotTests.swift -o "$RUNNER_TEMP/hither-live-activity-snapshot-tests"
@@ -285,7 +287,7 @@ jobs:
 
   jsi-ios27-runtime:
     needs: scope
-    if: needs.scope.outputs.product == 'true'
+    if: fromJSON(needs.scope.outputs.expected_jobs)['jsi-ios27-runtime']
     runs-on: xcode-27
     timeout-minutes: 15
     defaults:
@@ -293,13 +295,7 @@ jobs:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
-      - name: Install clean patched native dependency
-        run: npm ci
+      - uses: ./.github/actions/setup-mobile
       - name: Verify Release debugger capture and cleanup
         working-directory: ${{ github.workspace }}
         timeout-minutes: 3
@@ -332,7 +328,7 @@ jobs:
         run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27" --standalone --runtime-build "$JSI_RUNTIME_BUILD"
 
   ci-required:
-    needs: [scope, verify, backend, jsi-ui-runtime, jsi-ios27-runtime]
+    needs: [scope, verify, mobile-checks, backend, jsi-ui-runtime, jsi-ios27-runtime]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

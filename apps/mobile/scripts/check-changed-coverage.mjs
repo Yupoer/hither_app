@@ -19,16 +19,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(appRoot, '../..');
 const fullNodeTests = process.argv.slice(2).includes('--full-node-tests');
-const artifactDir = path.join(appRoot, 'test-artifacts');
+const options = new Map();
+const flags = new Set(['--full-node-tests', '--plan-only']);
+for (let i = 2; i < process.argv.length; i += 1) {
+  const arg = process.argv[i];
+  if (flags.has(arg)) continue;
+  if (!['--artifact-dir', '--jest-max-workers', '--jest-cache-directory'].includes(arg) || !process.argv[i + 1]) {
+    throw new Error(`Unknown or missing option: ${arg}`);
+  }
+  options.set(arg, process.argv[++i]);
+}
+const workers = options.get('--jest-max-workers');
+if (workers !== undefined && !/^[1-9]\d*$/.test(workers)) throw new Error('--jest-max-workers must be a positive integer');
+const artifactDir = path.resolve(appRoot, options.get('--artifact-dir') || 'test-artifacts');
 const rawResultPath = path.join(artifactDir, 'node-jest.raw.json');
 const receiptPath = path.join(artifactDir, 'node-receipt.json');
-const coverageDir = path.join(appRoot, 'coverage-changed');
+const coverageDir = options.has('--artifact-dir') ? path.join(artifactDir, 'coverage') : path.join(appRoot, 'coverage-changed');
 const shadowPlanPath = path.join(artifactDir, 'ci-shadow-plan.json');
 let diffMode = 'triple-dot';
 if (fullNodeTests) {
   fs.rmSync(coverageDir, { recursive: true, force: true });
   fs.mkdirSync(artifactDir, { recursive: true });
-  for (const file of [rawResultPath, receiptPath, shadowPlanPath]) fs.rmSync(file, { force: true });
+  for (const file of [rawResultPath, receiptPath, shadowPlanPath, ...['headless-scenarios.raw.json', 'headless-scenarios.json', 'headless-scenarios.md'].map(file => path.join(artifactDir, file))]) fs.rmSync(file, { force: true });
 }
 const threshold = Number(process.env.COVERAGE_THRESHOLD || 85);
 if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
@@ -138,6 +150,7 @@ function sourceIdentity(base) {
 function readSuites() {
   const raw = JSON.parse(fs.readFileSync(rawResultPath, 'utf8'));
   if (typeof raw.success !== 'boolean' || !Array.isArray(raw.testResults)) throw new Error('invalid Jest results');
+  const cases = [];
   const suites = raw.testResults.map((result) => {
     if (typeof result.name !== 'string' || !['passed', 'failed', 'pending'].includes(result.status) ||
         !Array.isArray(result.assertionResults)) throw new Error('invalid Jest suite');
@@ -149,12 +162,14 @@ function readSuites() {
     for (const assertion of result.assertionResults) {
       const status = assertion.status === 'disabled' ? 'pending' : assertion.status;
       if (!Object.hasOwn(counts, status)) throw new Error('invalid Jest case status');
+      if (typeof assertion.fullName !== 'string') throw new Error('invalid Jest case name');
+      cases.push([relative, assertion.fullName, status]);
       counts[status] += 1;
     }
     return { runner: 'node-jest', path: relative, status: result.status, counts };
   });
   if (new Set(suites.map(suite => suite.path)).size !== suites.length) throw new Error('duplicate Jest suites');
-  return { success: raw.success, suites };
+  return { success: raw.success, suites, suiteCaseDigest: createHash('sha256').update(JSON.stringify(cases.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))).digest('hex') };
 }
 
 function main() {
@@ -174,6 +189,12 @@ function main() {
   for (const f of changed) console.log(`  - ${f}`);
   fs.rmSync(coverageDir, { recursive: true, force: true });
   const identity = fullNodeTests ? sourceIdentity(base) : null;
+  if (process.argv.includes('--plan-only')) {
+    fs.mkdirSync(artifactDir, { recursive: true });
+    fs.writeFileSync(path.join(artifactDir, 'node-plan.json'), JSON.stringify({ identity,
+      mode: changed.length ? 'full-coverage' : 'full-plain', coverage: { eligibleAppPaths: changed, threshold } }, null, 2) + '\n');
+    return 0;
+  }
   if (fullNodeTests) {
     const shadowPlan = observeShadowPlan({ identity, eligibleAppPaths: changed, git });
     fs.writeFileSync(shadowPlanPath, JSON.stringify(shadowPlan, null, 2) + '\n');
@@ -195,7 +216,7 @@ function main() {
 
   const args = changed.length ? [
     'jest',
-    '--runInBand',
+    ...(!workers ? ['--runInBand'] : []),
     '--silent',
     ...(!fullNodeTests ? ['--forceExit'] : []),
     '--coverage',
@@ -204,16 +225,17 @@ function main() {
     '--coverageReporters=json-summary',
     '--coverageReporters=text-summary',
     ...changed.flatMap((f) => ['--collectCoverageFrom', f]),
-    '--passWithNoTests',
+    ...(!fullNodeTests ? ['--passWithNoTests'] : []),
   ] : ['jest'];
-  if (fullNodeTests) args.push('--json', '--outputFile=test-artifacts/node-jest.raw.json');
+  if (workers) args.push('--maxWorkers', workers);
+  if (options.has('--jest-cache-directory')) args.push('--cacheDirectory', path.resolve(appRoot, options.get('--jest-cache-directory')));
+  if (fullNodeTests) args.push('--json', `--outputFile=${path.relative(appRoot, rawResultPath)}`);
 
-  const r = spawnSync('npx', args, {
+  const r = spawnSync(process.execPath, [path.join(appRoot, 'node_modules/jest/bin/jest.js'), ...args.slice(1)], {
     cwd: appRoot,
     encoding: 'utf8',
     // Stream diagnostics so spawnSync cannot exhaust its output buffer before coverage is written.
     stdio: 'inherit',
-    shell: true,
     env: process.env,
   });
   if (r.stdout) process.stdout.write(r.stdout);
@@ -223,8 +245,11 @@ function main() {
     try {
       const result = readSuites();
       receipt.suites = result.suites;
+      receipt.suiteCaseDigest = result.suiteCaseDigest;
       receipt.suiteEvidence = 'available';
-      suiteError = !result.success || result.suites.length === 0;
+      suiteError = !result.success || result.suites.length === 0 ||
+        result.suites.some(suite => suite.status === 'failed' || suite.counts.failed > 0) ||
+        result.suites.reduce((sum, suite) => sum + suite.counts.passed, 0) === 0;
     } catch {
       suiteError = true;
     }
@@ -254,18 +279,17 @@ function main() {
   }
   const pct = summary?.total?.functions?.pct;
   console.log(`[coverage:changed] functions=${pct}% (need ≥${threshold})`);
-  if (typeof pct !== 'number' || !Number.isFinite(pct)) {
+  const functions = summary?.total?.functions;
+  const validFunctions = value => value && Number.isFinite(value.pct) && value.pct >= 0 && value.pct <= 100 &&
+    Number.isSafeInteger(value.total) && value.total >= 0 && Number.isSafeInteger(value.covered) &&
+    value.covered >= 0 && value.covered <= value.total;
+  if (!validFunctions(functions)) {
     console.error('[coverage:changed] could not read functions pct — fail');
     return finish(1, 'invalid-functions-percentage');
   }
   if (receipt) {
-    const functions = { pct };
-    for (const key of ['total', 'covered', 'skipped']) {
-      const value = summary.total.functions[key];
-      if (Number.isSafeInteger(value) && value >= 0) functions[key] = value;
-    }
-    receipt.coverage.functions = functions;
-    receipt.coverage.summaryPath = 'apps/mobile/coverage-changed/coverage-summary.json';
+    receipt.coverage.functions = { pct, total: functions.total, covered: functions.covered };
+    receipt.coverage.summaryPath = path.relative(repoRoot, summaryPath).split(path.sep).join('/');
   }
   if (pct < threshold) {
     console.error('[coverage:changed] FAIL below threshold');
