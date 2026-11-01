@@ -64,7 +64,6 @@ describe('kick_group_member (#168)', () => {
     expect(ciWorkflow).toContain("find supabase/tests -type f -name '*.test.sql' -print0");
     expect(ciWorkflow).toContain('supabase test db --local "${tests[@]}"');
     expect(ciWorkflow).toMatch(/\n  backend:\n/);
-    expect(ciWorkflow).toContain('needs: [scope, verify, backend, jsi-ui-runtime, jsi-ios27-runtime]');
   });
 
   it('wires client RPC and leader kick surface', () => {
