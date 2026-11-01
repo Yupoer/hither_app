@@ -15,7 +15,7 @@ A traveler enters through onboarding or Login, chooses a role, creates or joins 
 - Start App, skip or finish onboarding, then choose guest, email, Google, or Apple on Login.
 - Choose Create or Join in role selection. Enter a display name plus a group name or invite code.
 - Open My teams from role selection, choose the team card, and enter the group.
-- Open profile or account controls from Map settings.
+- Open profile from the Map header avatar, or account controls from Map settings.
 
 ## Driving it with World
 
@@ -28,10 +28,11 @@ Preconditions:
 - **Return proof.** The trip uses `role-my-teams`, `team-card-<created-group-id>`, and `team-enter`. Use the ID captured from that run, rather than a guessed fixture ID. Day-two observations must preserve the traveler display identities and group membership after restart.
 - **Auth entry points.** Run `node test/headless/run.cjs --testNamePattern="headless authentication operations on" --json --outputFile="$verifySuiteOutput"` after allocating a fresh suite path as described in the map index. Existing cases drive `auth.email.edit`, `auth.password.edit`, `auth.email.submit`, signup, guest cancellation, legal links, recovery, and configured OAuth callbacks. Require actual route and session outcomes plus the corresponding SDK contract receipts.
 - **Account and profile entry points.** Run `node test/headless/run.cjs --testNamePattern="headless account operations on" --json --outputFile="$verifySuiteOutput"` with a fresh suite path. The tests distinguish component receipts from parent App navigation, preserve UID and memberships on upgrade, and exercise cancellation and persistence.
+- **Actual App and Map parents.** Run `node test/headless/run.cjs --testNamePattern="actual App team entry boundaries on|real App native host foundation on|MAP-PROFILE-01" --json --outputFile="$verifySuiteOutput"` with a fresh suite path. Complete onboarding into Login without restarting, present password recovery through App's actual deep-link route, enter a saved group through My teams, save a profile through the Map avatar, and upgrade an anonymous leader through Map settings. Require the same UID, exact memberships, leader role, and group creator after upgrade. Standalone account tests above cover the distinct social-link, cancellation, and failure contracts.
 
 ## Gotchas
 
 - OAuth, email delivery, and guest auth use explicit external contracts. They do not prove a real identity provider or inbox.
 - A fixture account injection is setup for a screen test. It cannot replace the Login flow in an App proof.
-- A profile overlay mounted directly can prove its callback and provider effect. Use the actual Map profile path before claiming the parent screen integration. That path is in the members recipe.
+- A profile overlay mounted directly can prove its callback and provider effect. Use the actual Map avatar path before claiming the parent screen integration.
 - Reusing a prior output directory fails before launch. Use the current run's source record and retain its failure.

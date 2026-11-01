@@ -157,12 +157,16 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
 
   it('MAP-SETTINGS-01 actual Map group avatar save refreshes persisted group and followers have no editor', async () => {
     const world = new World();
+    const originalAvatar = '🐑';
+    world.backend.groups.get(GROUP_ID).avatar = originalAvatar;
     try {
       const device = await map(world);
       await settings(world, device);
       await device.perform('settings.groupAvatar');
       await device.input({ kind: 'animation', finished: true });
-      const emoji = (await device.observe()).presentation.hosts.find((host: any) => host.testId?.startsWith('settings-group-avatar-') && host.testId !== 'settings-group-avatar-save').testId.slice('settings-group-avatar-'.length);
+      const emoji = (await device.observe()).presentation.hosts.find((host: any) => host.testId?.startsWith('settings-group-avatar-')
+        && host.testId !== 'settings-group-avatar-save' && host.testId !== `settings-group-avatar-${originalAvatar}`).testId.slice('settings-group-avatar-'.length);
+      expect(emoji).not.toBe(originalAvatar);
       await press(device, `settings-group-avatar-${emoji}`);
       await device.perform('map.settings.group-avatar.save');
       await world.waitFor(device, () => world.backend.groups.get(GROUP_ID).avatar === emoji, 'actual saved group avatar');
@@ -171,6 +175,8 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     const followerWorld = new World();
     try {
       const follower = await map(followerWorld, PEER);
+      await expand(followerWorld, follower);
+      expect((await follower.observe()).presentation.hosts.some((host: any) => host.testId?.startsWith('map-kick-'))).toBe(false);
       await settings(followerWorld, follower);
       expect(has(await follower.observe(), 'settings-page-groupAvatar')).toBe(false);
     } finally { await followerWorld.close(); }

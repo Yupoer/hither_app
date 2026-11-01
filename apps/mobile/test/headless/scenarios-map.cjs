@@ -29,6 +29,8 @@ module.exports = [
     'Canceled picker does no filesystem work; malformed KMZ enters real error stage; retry clears error and no import callback fires.'),
   screen('Q05,Q06', 'runs real coordinate validation',
     'Blank and out-of-range form produces no submit; valid fields normalize; reopened coordinates reinitialize; cancel does not submit.'),
+  scenario('headlessCoordinateParentScenario', 'MAP-DEST-06,Q05,Q06', 'Map leader saves one trimmed coordinate pool stop durably before ACK',
+    'Actual Map search opens its coordinate form, persists one normalized pool stop before held ACK, closes after local persistence, and retains one server row after restart.'),
   screen('MAP-DEST-02,MAP-DEST-03,MAP-DEST-04,MAP-DEST-13,MAP-SHELL-04', 'cancel writes nothing and real confirmation',
     'Actual native map long press stages title; cancel writes nothing; confirmation trims title, commits local pool row before held transport ACK, closes card, then ACK drains the outbox. Single-row swipe delete cancellation preserves the row; reopening and confirming deletes it.'),
   screen('MAP-DEST-05', 'a follower confirm persists a suggestion',
