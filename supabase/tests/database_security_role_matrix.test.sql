@@ -352,8 +352,8 @@ select is(
 select is(
   (select pro from public.profiles
     where id = 'b2222222-2222-4222-8222-222222222222'),
-  true,
-  'audit: same-group peer can currently read the sensitive pro field'
+  null::boolean,
+  'same-group peer cannot read the sensitive pro field'
 );
 select lives_ok(
   $$select public.kick_group_member(

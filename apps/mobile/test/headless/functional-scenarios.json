@@ -1221,6 +1221,49 @@
       ]
     },
     {
+      "id": "NOTICE-04",
+      "title": "Cross-user GPS arrivals, straggler reports, request-start routing and membership departure preserve recipients and deduplicate delivery",
+      "critical": true,
+      "sources": [
+        "src/state/useGroupNotifications.ts",
+        "src/screens/MapScreen.tsx"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessNotificationJourneyScenario.test.ts",
+          "pattern": "actual GPS arrival reaches",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNotificationJourneyScenario.test.ts",
+          "pattern": "leader straggler report reaches",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNotificationJourneyScenario.test.ts",
+          "pattern": "request-start card targets",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNotificationJourneyScenario.test.ts",
+          "pattern": "leaving the group updates",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
       "id": "MAP-01",
       "title": "Camera, directions and provider choice use actual fixes and selected travel mode",
       "critical": false,

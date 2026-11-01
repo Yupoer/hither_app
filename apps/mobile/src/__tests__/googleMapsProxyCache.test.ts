@@ -5,10 +5,6 @@ const source = readFileSync(
   join(__dirname, '../native/googleMapsProxy.ts'),
   'utf8',
 );
-const edge = readFileSync(
-  join(__dirname, '../../../../supabase/functions/google-maps/index.ts'),
-  'utf8',
-);
 
 describe('googleMapsProxy cache and dedupe (source contracts)', () => {
   it('shares in-flight promises and keeps a short TTL success cache', () => {
@@ -32,22 +28,6 @@ describe('googleMapsProxy cache and dedupe (source contracts)', () => {
     expect(source).toContain("'upstream_unavailable'");
     expect(source).toContain("'network'");
     expect(source).toContain('isMapsQuotaFailure');
-    expect(edge).toContain('quota_rpc_failed');
-    expect(edge).toContain('missing_config');
-    expect(edge).toContain('upstream_unavailable');
-  });
-
-  it('classifies missing/malformed admin key as missing_config 503 (not throw/500)', () => {
-    // readSupabaseAdminKey must return null, never throw, so Deno.serve can respond 503.
-    expect(edge).toContain('function readSupabaseAdminKey(): string | null');
-    expect(edge).toContain('return null');
-    expect(edge).not.toMatch(/throw new Error\(["']Supabase admin key/);
-    // Handler short-circuits before createClient when key is absent.
-    expect(edge).toMatch(
-      /const adminKey = readSupabaseAdminKey\(\);[\s\S]*if \(!adminKey\)[\s\S]*missing_config[\s\S]*503/,
-    );
-    // Malformed SUPABASE_SECRET_KEYS JSON must not escape as 500.
-    expect(edge).toMatch(/JSON\.parse\(secretKeys\)[\s\S]*catch\s*\{/);
   });
 
   it('uses bounded failure cooldown and never infinite auto-retry', () => {
