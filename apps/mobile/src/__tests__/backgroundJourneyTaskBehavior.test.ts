@@ -264,3 +264,117 @@ jest.mock('../state/arrivalSync', () => ({
 }));
 jest.mock('../api/services/GatheringWorkflowService', () => ({ fetchDestinationArrivals: jest.fn(async () => []) }));
 jest.mock('../state/coreDataSync', () => ({ readLocalJourneyProjection: jest.fn(async () => null), getCoreOperationOutbox: () => ({ listByGroup: () => mockArrivalRows() }), flushCoreOperationOutbox: jest.fn(async () => undefined) }));
+
+
+it('stops background acquisition while access hydrates and purges only after confirmed revocation', async () => {
+  const { setLocationAccessContext, setLocationSharingConsent, captureLocationAccess } = require('../state/locationPrivacy');
+  setLocationAccessContext('group-1', true, true);
+  const previousAccess = await captureLocationAccess('group-1');
+  mockPurge.mockClear();
+  setLocationAccessContext(undefined, true);
+  expect(previousAccess.signal.aborted).toBe(true);
+  expect(await captureLocationAccess()).toBeNull();
+  expect(mockPurge).not.toHaveBeenCalled();
+  setLocationAccessContext('group-1', true, true);
+  expect(await captureLocationAccess('group-1')).not.toBeNull();
+  setLocationAccessContext(null, false);
+  await Promise.resolve();
+  expect(mockPurge).toHaveBeenCalledTimes(1);
+  setLocationAccessContext(undefined, false);
+  setLocationSharingConsent(false);
+  expect(mockPurge).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { state: 'pending', context: undefined, sharingEnabled: true, hasMembership: true, purges: 0 },
+  { state: 'revoked', context: null, sharingEnabled: true, hasMembership: true, purges: 1 },
+  { state: 'sharing disabled', context: undefined, sharingEnabled: false, hasMembership: true, purges: 1 },
+  { state: 'membership removed', context: undefined, sharingEnabled: true, hasMembership: false, purges: 1 },
+])('handles a registered cold-launch GPS callback with $state access', async ({ context, sharingEnabled, hasMembership, purges }) => {
+  mockStore.clear();
+  mockAppState.currentState = 'background';
+  jest.clearAllMocks();
+  mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(true);
+  jest.isolateModules(() => {
+    const privacy = require('../state/locationPrivacy') as typeof import('../state/locationPrivacy');
+    privacy.setLocationAccessContext(context, true);
+    require('../state/backgroundJourney');
+  });
+  mockStore.set(BACKGROUND_JOURNEY_KEY, JSON.stringify({ ...baseConfig, sharingEnabled, hasMembership }));
+
+  if (!mockTaskCallback) throw new Error('background journey task was not registered');
+  await mockTaskCallback({ data: { locations: [locationSample] }, error: null });
+
+  expect(mockLocation.stopLocationUpdatesAsync).toHaveBeenCalledWith('hither-background-journey-location');
+  expect(mockLocation.startLocationUpdatesAsync).not.toHaveBeenCalled();
+  expect(mockLocation.getForegroundPermissionsAsync).not.toHaveBeenCalled();
+  expect(mockEnqueue).not.toHaveBeenCalled();
+  expect(mockFlush).not.toHaveBeenCalled();
+  expect(mockPurge).toHaveBeenCalledTimes(purges);
+});
+
+it('cancels a new background start on unavailable preference storage without tearing down the established owner', async () => {
+  mockStore.clear();
+  jest.clearAllMocks();
+  mockAppState.currentState = 'background';
+  mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(false);
+  await jest.isolateModulesAsync(async () => {
+    const privacy = jest.requireActual<typeof import('../state/locationPrivacy')>('../state/locationPrivacy');
+    privacy.setLocationAccessContext('group-1', true, true);
+    const journey = jest.requireActual<typeof import('../state/backgroundJourney')>('../state/backgroundJourney');
+    try {
+      await expect(journey.startBackgroundJourney({ ...baseConfig, permissionsPrepared: true })).resolves.toBe('started');
+      mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(true);
+      const established = mockStore.get(BACKGROUND_JOURNEY_KEY);
+      const stopsBefore = mockLocation.stopLocationUpdatesAsync.mock.calls.length;
+      const startsBefore = mockLocation.startLocationUpdatesAsync.mock.calls.length;
+      mockAsyncStorage.getItem.mockRejectedValueOnce(new Error('preference storage temporarily unavailable'));
+      await expect(journey.startBackgroundJourney({ ...baseConfig, permissionsPrepared: true })).resolves.toBe('cancelled');
+      expect(mockStore.get(BACKGROUND_JOURNEY_KEY)).toBe(established);
+      expect(mockLocation.stopLocationUpdatesAsync).toHaveBeenCalledTimes(stopsBefore);
+      expect(mockLocation.startLocationUpdatesAsync).toHaveBeenCalledTimes(startsBefore);
+      expect(mockPurge).not.toHaveBeenCalled();
+    } finally { await journey.stopBackgroundJourney(); }
+  });
+});
+
+it('keeps the registered GPS owner and queue through an unavailable preference read, then accepts the next sample', async () => {
+  mockStore.clear();
+  jest.clearAllMocks();
+  mockAppState.currentState = 'background';
+  mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(false);
+  await jest.isolateModulesAsync(async () => {
+    const privacy = jest.requireActual<typeof import('../state/locationPrivacy')>('../state/locationPrivacy');
+    privacy.setLocationAccessContext('group-1', true, true);
+    const journey = jest.requireActual<typeof import('../state/backgroundJourney')>('../state/backgroundJourney');
+    let failedRead = false;
+    try {
+      await journey.startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
+      mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(true);
+      const established = mockStore.get(BACKGROUND_JOURNEY_KEY);
+      const stopsBefore = mockLocation.stopLocationUpdatesAsync.mock.calls.length;
+      mockAsyncStorage.getItem.mockImplementation(async key => {
+        if (key === privacy.LOCATION_SHARING_KEY && !failedRead) {
+          failedRead = true;
+          throw new Error('preference storage temporarily unavailable');
+        }
+        return mockStore.get(key) ?? null;
+      });
+      if (!mockTaskCallback) throw new Error('background journey task was not registered');
+      const sample = { ...locationSample, timestamp: Date.now(), coords: { ...locationSample.coords, latitude: 25.01 } };
+      await mockTaskCallback({ data: { locations: [sample] }, error: null });
+      expect(failedRead).toBe(true);
+      expect(mockStore.get(BACKGROUND_JOURNEY_KEY)).toBe(established);
+      expect(mockLocation.stopLocationUpdatesAsync).toHaveBeenCalledTimes(stopsBefore);
+      expect(mockPurge).not.toHaveBeenCalled();
+      expect(mockEnqueue).not.toHaveBeenCalled();
+      await mockTaskCallback({ data: { locations: [{ ...sample, timestamp: sample.timestamp + 1 }] }, error: null });
+      expect(mockEnqueue).toHaveBeenCalledTimes(1);
+      expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({ groupId: 'group-1', capturedAt: sample.timestamp + 1,
+        coords: expect.objectContaining({ latitude: 25.01, longitude: 121 }) }));
+    } finally {
+      mockAsyncStorage.getItem.mockImplementation(async key => mockStore.get(key) ?? null);
+      await journey.stopBackgroundJourney();
+    }
+  });
+});

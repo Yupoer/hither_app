@@ -157,12 +157,16 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
 
   it('MAP-SETTINGS-01 actual Map group avatar save refreshes persisted group and followers have no editor', async () => {
     const world = new World();
+    const originalAvatar = '🐑';
+    world.backend.groups.get(GROUP_ID).avatar = originalAvatar;
     try {
       const device = await map(world);
       await settings(world, device);
       await device.perform('settings.groupAvatar');
       await device.input({ kind: 'animation', finished: true });
-      const emoji = (await device.observe()).presentation.hosts.find((host: any) => host.testId?.startsWith('settings-group-avatar-') && host.testId !== 'settings-group-avatar-save').testId.slice('settings-group-avatar-'.length);
+      const emoji = (await device.observe()).presentation.hosts.find((host: any) => host.testId?.startsWith('settings-group-avatar-')
+        && host.testId !== 'settings-group-avatar-save' && host.testId !== `settings-group-avatar-${originalAvatar}`).testId.slice('settings-group-avatar-'.length);
+      expect(emoji).not.toBe(originalAvatar);
       await press(device, `settings-group-avatar-${emoji}`);
       await device.perform('map.settings.group-avatar.save');
       await world.waitFor(device, () => world.backend.groups.get(GROUP_ID).avatar === emoji, 'actual saved group avatar');
@@ -171,6 +175,8 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     const followerWorld = new World();
     try {
       const follower = await map(followerWorld, PEER);
+      await expand(followerWorld, follower);
+      expect((await follower.observe()).presentation.hosts.some((host: any) => host.testId?.startsWith('map-kick-'))).toBe(false);
       await settings(followerWorld, follower);
       expect(has(await follower.observe(), 'settings-page-groupAvatar')).toBe(false);
     } finally { await followerWorld.close(); }
@@ -378,10 +384,22 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await world.advance(1);
       expect(has(await device.observe(), `gather-meet-time-${DESTINATION}`)).toBe(false);
       const cameraStart = (await device.observe()).presentation.receipts.length;
+      const cameraCalls = (value: Observation) => value.presentation.receipts.slice(cameraStart).filter(receipt => receipt.host === 'MapView');
       await device.perform('map.carousel.begin');
       await device.perform('map.carousel.end', { x: 100000 });
       await world.settle();
-      expect((await device.observe()).presentation.receipts.slice(cameraStart).some((receipt: any) => ['animateCamera', 'animateToRegion'].includes(receipt.method))).toBe(true);
+      expect(cameraCalls(await device.observe())).toEqual([]);
+      await world.advance(139);
+      expect(cameraCalls(await device.observe())).toEqual([]);
+      await world.advance(1);
+      const selectedCamera = cameraCalls(await device.observe());
+      expect(selectedCamera).toEqual([expect.objectContaining({
+        method: 'setCamera',
+        value: expect.objectContaining({ center: { latitude: expect.any(Number), longitude: 121.7 }, pitch: 30 }),
+      })]);
+      await device.perform('map.carousel.end', { x: 0 });
+      await world.advance(140);
+      expect(cameraCalls(await device.observe())).toEqual(selectedCamera);
       await device.perform('map.pin.drop', { latitude: 25.1, longitude: 121.6 });
       await world.advance(0);
       expect(has(await device.observe(), 'confirm-place-name')).toBe(true);

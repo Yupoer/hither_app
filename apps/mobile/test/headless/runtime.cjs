@@ -66,7 +66,7 @@ exports.run = async function run(jest) {
       };
       requests.set(id, { resolve, reject, cleanup: () => signal?.removeEventListener('abort', abort) });
       signal?.addEventListener('abort', abort, { once: true });
-      send({ type: 'request', id, operation });
+      send({ type: 'request', id, operation, requestedAt: Date.now() });
     });
   }
   const receive = message => {
@@ -297,10 +297,6 @@ exports.run = async function run(jest) {
     previousAct = current.catch(() => {});
     return current;
   };
-  const { useGroupState } = require('../../src/state/useGroupState');
-  const { useNavigationSession } = require('../../src/state/useNavigationSession');
-  const { useDeviceLocation } = require('../../src/screens/MapScreen/hooks/useDeviceLocation');
-  const { useJourneyNavigation } = require('../../src/screens/MapScreen/hooks/useJourneyNavigation');
   const privacy = require('../../src/state/locationPrivacy');
   const core = require('../../src/state/coreDataSync');
   const { getLocalAuthActorId } = require('../../src/api/supabase');
@@ -309,13 +305,17 @@ exports.run = async function run(jest) {
   session = authFixture.currentSession();
   stage('auth persisted');
   const app = { userId: session?.user.id ?? null, platform: spec.platform, groupId: spec.screen?.params?.groupId ?? null, sharingEnabled: true,
-    destinationService: require('../../src/api/services/DestinationService') };
+    get destinationService() { return require('../../src/api/services/DestinationService'); } };
   app.external = { input: input => command({ command: { kind: 'input', input } }) };
   const mapRef = { current: null };
   const carouselRef = { current: null };
   const t = key => key;
   const setSelectedIndex = () => {};
   function Probe() {
+    const { useGroupState } = require('../../src/state/useGroupState');
+    const { useNavigationSession } = require('../../src/state/useNavigationSession');
+    const { useDeviceLocation } = require('../../src/screens/MapScreen/hooks/useDeviceLocation');
+    const { useJourneyNavigation } = require('../../src/screens/MapScreen/hooks/useJourneyNavigation');
     app.group = useGroupState(app.groupId, { myUserId: app.userId });
     app.navigation = useNavigationSession(app.groupId, null, app.userId);
     app.location = useDeviceLocation({ groupId: app.groupId, highAccuracy: false,
@@ -332,7 +332,7 @@ exports.run = async function run(jest) {
       arrivalRadiusM: 50,
       refresh: app.group.refresh, t, mapRef, carouselRef, setSelectedIndex,
       navigationSession: app.navigation?.session, terminalSession: app.navigation.terminalSession,
-      startSession: app.navigation.start, cancelSession: app.navigation.cancel,
+      startSession: app.navigation.start,
       refreshNavigationSession: app.navigation.refresh,
       onOptimisticGathering: app.group.applyOptimisticGathering,
     });
@@ -357,6 +357,7 @@ exports.run = async function run(jest) {
     return {
       pid: process.pid, generation: spec.generation, actorId: await getLocalAuthActorId(),
       presentation: presentationMode ? {
+        ...host.observeViews(root),
         hosts: (() => { try { return host.observe(root); } catch (error) { return fatal(`Presentation renderer failed: ${error.message}\n${renderErrors.join('\n')}`); } })(), route: host.route,
         session: presentation.observation.session ? JSON.parse(JSON.stringify(presentation.observation.session)) : null,
         preferences: presentation.observation.preferences ? JSON.parse(JSON.stringify(presentation.observation.preferences)) : null,
@@ -370,7 +371,7 @@ exports.run = async function run(jest) {
       auth: { user: authFixture.currentSession()?.user ?? null, autoRefresh: authFixture.inspection().autoRefresh, listeners: authListeners.size },
       renderErrors: renderErrors.slice(-10),
       group: { state: app.group?.state, loading: app.group?.loading, error: app.group?.error,
-        dataSource: app.group?.dataSource, snapshotFreshness: app.group?.snapshotFreshness,
+        dataSource: app.group?.dataSource, serverTimeOffsetMs: app.group?.serverTimeOffsetMs, snapshotFreshness: app.group?.snapshotFreshness,
         emptyLocalSnapshot: app.group?.emptyLocalSnapshot, refreshing: app.group?.refreshing },
       location: { coordinates: app.location?.deviceCoords, accuracy: app.location?.deviceAccuracyM,
         acceptedAt: app.location?.deviceCoordsAcceptedAtMs, appState: app.location?.appState },

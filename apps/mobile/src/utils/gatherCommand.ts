@@ -24,18 +24,6 @@ export interface NavCommandInput {
   personallyArrived: boolean;
   /** Shared flock navigation targets this stop (leader session active). */
   flockNavigatingThis: boolean;
-  /**
-   * OTA-01: this card is the next pending point while global phase is staying.
-   * When false, leader Start is not pressable. Omit to keep legacy always-start.
-   */
-  isNextTeamPending?: boolean;
-  /**
-   * OTA-01: team cannot Start (active session, en_route elsewhere, or not next).
-   * Prefer this over teamEnRouteElsewhere alone.
-   */
-  teamStartBlocked?: boolean;
-  /** @deprecated Prefer teamStartBlocked. */
-  teamEnRouteElsewhere?: boolean;
 }
 
 export interface NavCommandResult {
@@ -85,9 +73,6 @@ export function resolveNavCommand(input: NavCommandInput): NavCommandResult {
     isLeader,
     personallyArrived,
     flockNavigatingThis,
-    isNextTeamPending,
-    teamStartBlocked,
-    teamEnRouteElsewhere,
   } = input;
 
   if (isLeader) {
@@ -234,11 +219,6 @@ export interface CompletePromptResult {
    * null when no secondary action.
    */
   cancelLabel: string | null;
-  /**
-   * @deprecated Alias of cancelLabel — kept so older call sites that read
-   * deferLabel still compile until fully migrated.
-   */
-  deferLabel: string | null;
 }
 
 const EMPTY_PROMPT: Omit<CompletePromptResult, 'kind'> = {
@@ -248,7 +228,6 @@ const EMPTY_PROMPT: Omit<CompletePromptResult, 'kind'> = {
   message: '',
   confirmLabel: '',
   cancelLabel: null,
-  deferLabel: null,
 };
 
 /**
@@ -331,7 +310,6 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
       message: `已抵達成員（${arrived}/${totalCount}），是否要完成此集合點？`,
       confirmLabel: '完成',
       cancelLabel: '取消',
-      deferLabel: '取消',
     };
   }
 
@@ -344,7 +322,6 @@ export function resolveCompletePrompt(input: CompletePromptInput): CompletePromp
       message: '隊長已完成此集合點。確認後卡片會移至歷史行程。',
       confirmLabel: '確認',
       cancelLabel: null,
-      deferLabel: null,
     };
   }
 

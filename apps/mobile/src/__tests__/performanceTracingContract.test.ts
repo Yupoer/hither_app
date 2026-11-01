@@ -48,7 +48,6 @@ describe('performance tracing contract', () => {
     expect(performance).toContain('TRACE_TTL_MS = 2 * 60 * 60 * 1_000');
     expect(performance).toContain('SUCCESS_TRACE_MIN_INTERVAL_MS = 20_000');
     expect(performance).toContain('SAMPLE_WINDOW_MS = 1_000');
-    expect(performance).toContain('SAMPLE_INTERVAL_MS = 5 * 60_000');
     expect(performance).not.toContain('FLUSH_DELAY_MS');
     expect(performance).toContain('getDiagnosticConsentEnabled');
     expect(performance).toContain('notifyLogRecorded');
@@ -76,17 +75,13 @@ describe('performance tracing contract', () => {
     );
   });
 
-  it('exposes a navigation-only energy monitor independent of full API tracing', () => {
-    expect(performance).toContain('export function startNavigationEnergyMonitor');
+  it('samples current energy observations independently of full API tracing', () => {
     expect(performance).toContain('collectEnergyObservationSample');
     expect(performance).toContain("confidence: 'energy_only'");
-    expect(performance).toContain('navigation.energy.sample');
-    expect(performance).toContain('navigation.energy.end');
-    expect(performance).toContain('navigationSessionId');
     expect(performance).toContain('trackingMode');
 
     const energyStart = performance.indexOf('async function collectEnergyObservationSample');
-    const energyEnd = performance.indexOf('/**', energyStart + 1);
+    const energyEnd = performance.indexOf('export function markInteraction', energyStart + 1);
     const energySource = performance.slice(energyStart, energyEnd);
     expect(energySource).toContain('getDiagnosticConsentEnabled');
     expect(energySource).toContain('metrics.samplePerformance');

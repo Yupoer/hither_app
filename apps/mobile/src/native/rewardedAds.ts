@@ -143,11 +143,6 @@ export function productionAdUnitsEnabled(): boolean {
   return true;
 }
 
-/** @deprecated Use productionAdUnitsEnabled — name avoided "use" prefix (eslint hooks). */
-export function useProductionAdUnits(): boolean {
-  return productionAdUnitsEnabled();
-}
-
 export function rewardedAdUnitForPlatform(
   platform: 'ios' | 'android' = Platform.OS === 'ios' ? 'ios' : 'android',
 ): string {

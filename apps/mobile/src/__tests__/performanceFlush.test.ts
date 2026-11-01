@@ -135,7 +135,6 @@ import {
   flushPerformance,
   recordPerformanceError,
   setPerformanceAppState,
-  startNavigationEnergyMonitor,
 } from '../state/performance';
 import { getHitherDatabase } from '../state/hitherDatabase';
 import { notifyErrorRecorded } from '../state/logBatchScheduler';
@@ -170,20 +169,11 @@ describe('flushPerformance', () => {
     setPerformanceAppState('active');
   });
 
-  it('skips flush and energy samples when consent is off', async () => {
+  it('skips flush when consent is off', async () => {
     consentEnabled.value = false;
     await seedPending(2);
     configurePerformanceTracing(async (records) => records.map((r) => r.id));
     await expect(flushPerformance()).resolves.toEqual({ sent: 0, remaining: 0 });
-    samplePerformance.mockClear();
-    const stop = startNavigationEnergyMonitor({
-      navigationSessionId: '00000000-0000-4000-8000-000000000001',
-      trackingMode: 'teamNavigation',
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(samplePerformance).not.toHaveBeenCalled();
-    stop();
   });
 
   it('returns sent and remaining when the uploader accepts all ids', async () => {
@@ -211,31 +201,6 @@ describe('flushPerformance', () => {
   it('returns remaining 0 when the queue is empty', async () => {
     configurePerformanceTracing(async () => []);
     await expect(flushPerformance()).resolves.toEqual({ sent: 0, remaining: 0 });
-  });
-
-  it('records navigation energy at start and at five-minute cadence only', async () => {
-    jest.useFakeTimers();
-    samplePerformance.mockClear();
-    const stop = startNavigationEnergyMonitor({
-      navigationSessionId: '00000000-0000-4000-8000-000000000001',
-      trackingMode: 'teamNavigation',
-    });
-
-    // Allow the initial async sample to start.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(samplePerformance).toHaveBeenCalledTimes(1);
-
-    await jest.advanceTimersByTimeAsync(4 * 60_000);
-    expect(samplePerformance).toHaveBeenCalledTimes(1);
-
-    await jest.advanceTimersByTimeAsync(60_000);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(samplePerformance).toHaveBeenCalledTimes(2);
-
-    stop();
-    jest.useRealTimers();
   });
 
   it('queues JS errors without full-tracing TTL and prefers them on flush', async () => {
@@ -290,20 +255,5 @@ describe('flushPerformance', () => {
         { cpuTimeMs: 100, wallMs: 4_000 },
       ),
     ).toBeNull();
-  });
-
-  it('skips mid-session energy samples while backgrounded', async () => {
-    samplePerformance.mockClear();
-    setPerformanceAppState('background');
-    const stop = startNavigationEnergyMonitor({
-      navigationSessionId: '00000000-0000-4000-8000-000000000001',
-      trackingMode: 'teamNavigation',
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(samplePerformance).not.toHaveBeenCalled();
-    stop();
-    // end sample still allowed even if background — restore for other tests
-    setPerformanceAppState('active');
   });
 });

@@ -3,6 +3,27 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 346,
+      "child": 346,
+      "acceptance": "SDK 57 rollback directives from check or fetch reload the app through the existing automatic and manual OTA lifecycle.",
+      "testFile": "otaUpdates.test.ts",
+      "testNamePattern": "applies SDK rollback|applies rollback arriving"
+    },
+    {
+      "parent": 346,
+      "child": 346,
+      "acceptance": "Concurrent automatic and manual rollback callers share one fetch and reload, preserve failure statuses, and keep embedded launches silent.",
+      "testFile": "otaUpdates.test.ts",
+      "testNamePattern": "shares one rollback|preserves rollback|embedded rollback"
+    },
+    {
+      "parent": 346,
+      "child": 346,
+      "acceptance": "Automatic and manual OTA callers both wait for their shared runtime reload to complete before reporting success.",
+      "testFile": "otaTeamEntryLifecycle.test.ts",
+      "testNamePattern": "holds automatic and manual callers"
+    },
+    {
       "parent": 316,
       "child": 316,
       "acceptance": "Concurrent IPC commands finish real React foreground and native location cleanup in order without overlapping act scopes.",
@@ -140,7 +161,7 @@
       "child": "gather-card-followup",
       "acceptance": "The gathering card shows Start only before navigation, then flexible End and square icon-only Complete while the session is active.",
       "testFile": "gatheringCarouselIconButtons.test.tsx",
-      "testNamePattern": "shows a flexible Start button|gives End the remaining width"
+      "testNamePattern": "keeps Start separate from in-place card expansion|gives End the remaining width"
     },
     {
       "parent": 298,
@@ -2710,6 +2731,195 @@
       "acceptance": "Legacy recovery function body, signature, ACL, comment, authorization, full profiles, and metadata remain unchanged from the baseline.",
       "testFile": "supabase/tests/group_recovery_snapshot_legacy_contract.test.sql",
       "testNamePattern": "legacy function body remains byte-identical|legacy execute ACL remains unchanged|legacy snapshot retains full authoritative rows"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "The full App trio preserves recipient notices, exact captured locations, names, two-day stops and abrupt offline restart.",
+      "testFile": "headlessTokyoTripScenario.test.ts",
+      "testNamePattern": "preserves mixed-platform receiver notices"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Offline GPS retains its original identity until exactly the 24-hour expiry boundary across process restarts.",
+      "testFile": "headlessToleranceScenario.test.ts",
+      "testNamePattern": "retains offline GPS until the 24-hour boundary"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Pending Map hydration suspends sensors without deleting queued fixes, and confirmed access resumes the original event.",
+      "testFile": "locationOutbox.test.ts",
+      "testNamePattern": "retains the original durable event while access is pending"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Background GPS callbacks preserve queued fixes during pending hydration while confirmed revocation still purges them.",
+      "testFile": "backgroundJourneyTaskBehavior.test.ts",
+      "testNamePattern": "stops background acquisition while access hydrates"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Background push callbacks preserve queued fixes while hydration is pending and acquire no unauthorized sensor sample.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "retains queued locations for a registered push"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Each journey lifecycle notifies receivers once and pause copy retains its original destination.",
+      "testFile": "notificationRealtimeBehavior.test.ts",
+      "testNamePattern": "notifies each start lifecycle"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Remaining eligible members receive distinct Solo, follow and voluntary departure events with privacy preferences respected.",
+      "testFile": "notificationRealtimeBehavior.test.ts",
+      "testNamePattern": "informs remaining followers|keeps participation notices silent"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Old and updated apps present each journey event once during the backend-first rolling update.",
+      "testFile": "journeyNotificationRollout.test.ts",
+      "testNamePattern": "old app suppresses|new app presents"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Team entry during deferred profile restoration cannot replace a saved nickname with a temporary fallback.",
+      "testFile": "headlessAccountScenario.test.ts",
+      "testNamePattern": "enters a saved team while profile enrichment is pending"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Unavailable preference reads at the flush and upload boundaries retain the exact SQLite event and deliver it once after recovery.",
+      "testFile": "locationAccessStorageFailure.test.ts",
+      "testNamePattern": "retains queued GPS through one failed preference read"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "An unavailable access check cancels background preparation without reporting hidden access, stopping the established owner or clearing its queued intent.",
+      "testFile": "backgroundJourneyTaskBehavior.test.ts",
+      "testNamePattern": "cancels a new background start on unavailable preference storage"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "A registered GPS callback suspends acquisition on unavailable consent storage and accepts the next authorized sample without tearing down the owner.",
+      "testFile": "backgroundJourneyTaskBehavior.test.ts",
+      "testNamePattern": "keeps the registered GPS owner and queue through an unavailable preference read"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "A delayed prior-team push cannot purge the current team GPS queue or acquire, upload or acknowledge a location for the wrong team.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "ignores a delayed group A push"
+    },
+    {
+      "parent": 316,
+      "child": 316,
+      "acceptance": "Unavailable preference storage in a registered push preserves queued GPS and does not misreport sharing revocation.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "skips a registered push while preference storage is unavailable"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Map search reaches manual coordinates on both platforms; invalid and cancelled drafts do not write; leaders persist before ACK, followers suggest, and quota boundaries do not discard unsaved input.",
+      "testFile": "headlessCoordinateParentScenario.test.ts",
+      "testNamePattern": "actual Map coordinate entry on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Actual App onboarding and recovery remount the correct navigator, and Map settings account upgrade preserves UID, memberships and group ownership.",
+      "testFile": "headlessTeamEntriesScenario.test.ts",
+      "testNamePattern": "actual App team entry boundaries on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Map notification settings load and persist independent actor-owned categories and return to the same Map.",
+      "testFile": "headlessMemberEntriesScenario.test.ts",
+      "testNamePattern": "actual member parent entries on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Real Map Store, Tools and Settings entries reach Account or Paywall and finish verified purchase, restore and promo with parent entitlement refresh.",
+      "testFile": "headlessStoreEntriesScenario.test.ts",
+      "testNamePattern": "actual App Map Store entry points on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Actual Map entry variants cover follower suggestions, owner favorite deletion, pool moves, malformed import retry, date draft commit and native PanResponder reorder.",
+      "testFile": "headlessItineraryEntriesScenario.test.ts",
+      "testNamePattern": "actual itinerary entry variants on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Actual Map card Start and End preserve their original durable FIFO identities through an abrupt offline restart, then replay to paused peer state without completing the stop.",
+      "testFile": "headlessJourneyEntriesScenario.test.ts",
+      "testNamePattern": "actual Map offline journey parent on"
+    },
+    {
+      "parent": 359,
+      "child": "settled-camera",
+      "acceptance": "Rapid card swipes select immediately, frame only the settled destination and invalidate superseded camera work while preserving manually panned maps.",
+      "testFile": "carouselSelection.test.ts",
+      "testNamePattern": "coalesces rapid swipes|invalidates pending cameras|resumes an interrupted focus|preserves a manually panned map"
+    },
+    {
+      "parent": 359,
+      "child": "card-title",
+      "acceptance": "Expanded and collapsed gathering-card titles fit within their existing local typography bounds.",
+      "testFile": "gatheringCarouselIconButtons.test.tsx",
+      "testNamePattern": "fits titles within their existing typography bounds"
+    },
+    {
+      "parent": 359,
+      "child": "marquee-scaling",
+      "acceptance": "Marquee measurement, static text and moving text use the same font scaling and clip height.",
+      "testFile": "overflowMarquee.test.tsx",
+      "testNamePattern": "uses the same scaling for measurement, static and moving text"
+    },
+    {
+      "parent": 359,
+      "child": "drag-feedback",
+      "acceptance": "Route dragging projects a lifted clone, source closure, one real-gap line, ripple and spring settlement with outside cancellation, keyboard controls and reduced-motion behavior.",
+      "testFile": "routeDragPreview.test.ts",
+      "testNamePattern": "floating drag clone|source slot without reordering|springs projected neighbors|outside release|original-slot boundaries|keyboard pickup|reduced-motion dragging|final native release coordinates"
+    },
+    {
+      "parent": 359,
+      "child": "drag-persistence",
+      "acceptance": "A drop commits once, preserves the optimistic order through stale parent projections and rolls back rejected persistence even after foreground loss.",
+      "testFile": "routeDragPreview.test.ts",
+      "testNamePattern": "clone through settling|optimistic drop across stale parent arrays|rejected drop after foreground loss"
+    },
+    {
+      "parent": 359,
+      "child": "map-control-bounds",
+      "acceptance": "Measured card bounds hide overlapping map controls and restore recenter when collapsing the card frees its band.",
+      "testFile": "mapChromeLayout.test.ts",
+      "testNamePattern": "hides the compass when the measured card occupies|restores recenter after card collapse"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "Headless compiled output reflects source edits and inherited TypeScript configuration changes across isolated processes.",
+      "testFile": "headlessLoaderContract.test.ts",
+      "testNamePattern": "headless compilation cache reloads edited source"
     }
   ]
 }

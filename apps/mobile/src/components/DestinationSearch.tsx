@@ -32,6 +32,7 @@ export interface DestinationSearchProps {
   onClose: () => void;
   /** Fires after the sheet open animation finishes (OverlaySheet). */
   onOpenComplete?: () => void;
+  onOpenCoordinates?: () => void;
   /** Bias search results toward what the user is looking at, when known. */
   biasRegion?: MapRegion;
   /**
@@ -106,6 +107,7 @@ export default React.memo(function DestinationSearch({
   visible,
   onClose,
   onOpenComplete,
+  onOpenCoordinates,
   biasRegion,
   onPick,
 }: DestinationSearchProps) {
@@ -202,6 +204,19 @@ export default React.memo(function DestinationSearch({
 
         <Text style={styles.hint}>{t('search.longPressHint')}</Text>
 
+        {onOpenCoordinates ? (
+          <Pressable
+            onPress={onOpenCoordinates}
+            testID="place-search-coordinates"
+            accessibilityRole="button"
+            disabled={submittingId !== null}
+            accessibilityState={{ disabled: submittingId !== null }}
+            style={styles.coordinateAction}
+          >
+            <Text style={styles.coordinateActionText}>{t('coord.title')}</Text>
+          </Pressable>
+        ) : null}
+
         <View style={styles.statusRow} testID="search-status">
           {searching ? <WaveLoading color={colors.accent} /> : null}
           <Text style={styles.statusText}>{searching ? t('search.searching')
@@ -277,6 +292,8 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  coordinateAction: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: spacing.sm },
+  coordinateActionText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 24 },
   statusText: { color: glass.textSecondary, fontSize: 14 },
   list: { flex: 1 },

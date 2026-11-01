@@ -1,9 +1,8 @@
 /**
  * Production OTA bootstrap for TestFlight / store builds.
  *
- * Native check uses ON_LOAD + LaunchWaitMs, but with wait=0 the first open only
- * *downloads* and the next cold start applies. Users often force-quit before
- * the download finishes, so JS also checks, fetches, and reloads when ready.
+ * Native startup checks follow the embedded Expo.plist configuration. The JS
+ * boot and foreground checks also fetch and apply actionable updates when ready.
  *
  * Manual Settings "立即更新" and automatic bootstrap share a single-flight
  * lifecycle so double-taps / concurrent apply cannot stack reloads.
@@ -11,8 +10,8 @@
  * After a new bundle is launched, {@link consumeOtaAppliedNotice} returns true
  * once so the root UI can show a brief top toast on any screen.
  *
- * `Updates.reloadAsync` is an intentional process reload — not a crash —
- * unless the subsequent launch records a native termination or unhandled error.
+ * `Updates.reloadAsync` reloads the React Native runtime in the existing OS
+ * process. It does not explain a native termination or a missing process.
  */
 import { AppState, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -51,7 +50,7 @@ export type OtaApplyStatus =
 
 export interface OtaApplyResult {
   status: OtaApplyStatus;
-  /** True only when reloadAsync was invoked (process will restart). */
+  /** True only when reloadAsync completed and a runtime reload was requested. */
   reloading: boolean;
 }
 
@@ -126,7 +125,7 @@ async function runOtaApply(opts: OtaApplyOptions): Promise<OtaApplyResult> {
     if (!skipCheck) {
       try {
         const check = await Updates.checkForUpdateAsync();
-        if (!check.isAvailable) return result('no_update');
+        if (!check.isAvailable && !check.isRollBackToEmbedded) return result('no_update');
       } catch {
         if (!manual) return result('no_update');
         // Manual: still attempt fetch after a flaky check.
@@ -135,9 +134,9 @@ async function runOtaApply(opts: OtaApplyOptions): Promise<OtaApplyResult> {
 
     try {
       const fetched = await Updates.fetchUpdateAsync();
-      // Auto path only reloads when the fetch reports a new bundle.
+      // A rollback directive is actionable without a new bundle.
       // Manual + skipCheck (pending already on disk) always reloads.
-      if (!fetched.isNew && !(manual && skipCheck)) {
+      if (!fetched.isNew && !fetched.isRollBackToEmbedded && !(manual && skipCheck)) {
         return result('no_update');
       }
     } catch {
@@ -214,7 +213,7 @@ export async function applyOtaUpdate(
 
 /**
  * Background / auto path: check → fetch → reload when available.
- * Returns true when a reload was initiated (process will restart).
+ * Returns true when a React Native runtime reload was requested.
  */
 export async function applyOtaUpdateIfAvailable(): Promise<boolean> {
   const outcome = await applyOtaUpdate({ manual: false });

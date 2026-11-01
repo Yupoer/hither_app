@@ -54,6 +54,10 @@ export function leaderOnlyRecipientIds<
 export function specialAlertRecipientIds<
   T extends { user_id: string; role: string; solo?: boolean },
 >(payload: PushPayload, members: T[]): string[] | null {
+  if (payload.category === "member_solo" || payload.category === "member_follow" || payload.category === "member_left") {
+    return members.filter(member => member.user_id !== payload.sender_id && !member.solo)
+      .map(member => member.user_id);
+  }
   if (payload.category === "arrival") {
     return [...new Set([
       ...members.filter((member) => member.user_id === payload.sender_id).map((member) => member.user_id),

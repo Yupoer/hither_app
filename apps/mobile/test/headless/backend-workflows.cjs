@@ -39,8 +39,9 @@ function startSession(b, groupId, destinationId, requestId, userId, replace = fa
     live_activity_id: null, acknowledged_at: null, arrived_at: null, updated_at: iso(b) });
   if (scope == null) {
     const group = b.groups.get(groupId);
+    const oldGroup = structuredClone(group);
     Object.assign(group, { journey_status: 'going', active_destination_id: destination.id, journey_started_at: iso(b) });
-    b.publish('groups', group);
+    b.publish('groups', group, 'UPDATE', oldGroup);
   }
   b.publish('navigation_sessions', session, 'INSERT');
   return ok(session);
@@ -60,8 +61,9 @@ function terminalSession(b, sessionId, expected, status, userId) {
   }
   if (session.scope_subgroup_id == null) {
     const group = b.groups.get(session.group_id);
+    const oldGroup = structuredClone(group);
     Object.assign(group, { journey_status: 'paused', active_destination_id: null, journey_started_at: null });
-    b.publish('groups', group);
+    b.publish('groups', group, 'UPDATE', oldGroup);
   }
   b.publish('navigation_sessions', session);
   return ok(session);
@@ -162,8 +164,9 @@ function execute(b, operation) {
     if (!leader(b, args.p_group_id, userId)) return fail('leader_required');
     const group = b.groups.get(args.p_group_id);
     if (name === 'set_journey_target' && args.p_destination_id && !b.itinerary.some(d => d.id === args.p_destination_id && d.group_id === group.id)) return fail('destination_not_found', 'P0002');
+    const oldGroup = structuredClone(group);
     group[name === 'set_accommodation_auto_add' ? 'accommodation_auto_add' : 'active_destination_id'] = name === 'set_accommodation_auto_add' ? args.p_enabled : args.p_destination_id;
-    b.publish('groups', group); return ok(null);
+    b.publish('groups', group, 'UPDATE', oldGroup); return ok(null);
   }
   if (name === 'ingest_diagnostic_batch') {
     keys(args, 'p_events'); const acceptedIds = [];

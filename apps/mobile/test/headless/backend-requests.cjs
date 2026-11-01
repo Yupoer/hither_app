@@ -20,7 +20,7 @@ function resolve(b, request, userId, optionId, source) {
         b.publish('itinerary_items', destination); applied = true;
       }
     } else if (p.title && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)) {
-      require('./backend-core.cjs').addDestination(b, request.group_id, { ...p, subgroupId: request.subgroup_id }); applied = true;
+      require('./backend-core.cjs').addDestination(b, request.group_id, { ...p, subgroupId: request.subgroup_id }, userId); applied = true;
     }
   } else assert(['keep_current', 'reject', 'no_change'].includes(option.kind), 'Coordination option kind contract');
   const operation = { id: randomUUID(), group_id: request.group_id, subgroup_id: request.subgroup_id,
@@ -61,7 +61,7 @@ function execute(b, { kind, name, args: a = {}, userId, requestId }) {
     if (!row) return fail('request_not_found', 'P0002');
     if (!scopeAllowed(b, row.group_id, row.subgroup_id, userId)) return fail('leader_required');
     if (row.status !== 'pending') return ok({ status: row.status, inserted_count: 0 });
-    const inserted = a.p_approve ? row.items.map(item => require('./backend-core.cjs').addDestination(b, row.group_id, { ...item, subgroupId: row.subgroup_id })) : [];
+    const inserted = a.p_approve ? row.items.map(item => require('./backend-core.cjs').addDestination(b, row.group_id, { ...item, subgroupId: row.subgroup_id }, userId)) : [];
     Object.assign(row, { status: a.p_approve ? 'approved' : 'rejected', resolved_at: iso(b), resolved_by: userId });
     b.publish('gather_point_requests', row); return ok({ status: row.status, inserted_count: inserted.length });
   }

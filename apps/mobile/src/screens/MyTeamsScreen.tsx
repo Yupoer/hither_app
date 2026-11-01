@@ -35,7 +35,7 @@ export default function MyTeamsScreen({ navigation }: Props) {
   const emptyActionWidth = Math.max(0, windowWidth - insets.left - insets.right - 40);
   const { colors } = useTheme();
   const accent = colors.accent;
-  const { user, setMembership, updateNickname } = useSession();
+  const { user, setMembership } = useSession();
   const { t } = useTranslation();
 
   const { groups: joinedGroups, setGroups: setJoinedGroups, loading: isLoading, error: groupsError, retry, lifecycle: joinedGroupsLifecycle } = useJoinedGroups(user?.id ?? null);
@@ -70,14 +70,6 @@ export default function MyTeamsScreen({ navigation }: Props) {
         if (!token.isCurrent()) {
           enterInFlightRef.current = null;
           return;
-        }
-        if (!user?.name.trim()) {
-          const fallback = user?.email?.split('@')[0]?.trim() || t('group.travelerFallback');
-          await updateNickname(fallback);
-          if (!token.isCurrent()) {
-            enterInFlightRef.current = null;
-            return;
-          }
         }
         setMembership({ group: info.group, role: info.role });
         navigation.replace('Map', { groupId: info.group.id });

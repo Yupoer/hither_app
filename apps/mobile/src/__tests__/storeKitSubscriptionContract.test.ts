@@ -60,7 +60,7 @@ describe('Ticket 6 catalog and StoreKit native boundary', () => {
     expect(service).toContain('verification_service_unavailable');
     const subscriptionSource = service.slice(
       service.indexOf('export async function applyVerifiedSubscription'),
-      service.indexOf('export async function applyVerifiedPurchase'),
+      service.indexOf('export async function restoreEntitlements'),
     );
     expect(subscriptionSource).not.toContain('apply_verified_purchase');
   });

@@ -50,8 +50,6 @@ describe('route editor + KML contracts (#151)', () => {
     expect(reorder).toContain('const showCollapseAffordance');
     expect(reorder).toContain('const showDragAffordance');
     expect(reorder).toContain('onSwipeToggleAffordance');
-    expect(reorder).toContain('drop-before-header');
-    expect(reorder).toContain('drop-after-header');
   });
   it('open-once sync + import CTA replace always-on sync button', () => {
     expect(mapScreen).toContain('routeOpenSyncSessionRef');
@@ -147,8 +145,6 @@ describe('route editor + KML contracts (#151)', () => {
   });
 
   it('ghost drag: no mid-move setOrder; deleteBg hidden while active; release commits', () => {
-    // Move path must not re-parent rows (cross-day freeze root cause).
-    expect(reorder).toContain('Do NOT setOrder mid-move');
     expect(reorder).toContain('orderAfterDragMove');
     expect(reorder).toContain('canSwipe && !active');
     expect(reorder).toContain('selectionTick');

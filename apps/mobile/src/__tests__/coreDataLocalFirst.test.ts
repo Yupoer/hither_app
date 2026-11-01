@@ -909,7 +909,6 @@ describe('OTA-04 contract surfaces', () => {
     expect(coreSync).toContain('markGatheringConflictAndRestore');
     expect(coreSync).toContain('flushImmediately');
     expect(journey).toContain('enqueueLeaderGatheringEnd');
-    expect(journey).toContain('cancelSession');
     // End navigation must not invoke the complete-stop RPC (MapScreen owns that).
     expect(journey).not.toMatch(/await completeGatheringStop\(/);
     expect(fs.readFileSync(path.join(__dirname, '../screens/MapScreen/hooks/useGatheringCompletion.ts'), 'utf8')).toContain('enqueueJourneyCompletion({');

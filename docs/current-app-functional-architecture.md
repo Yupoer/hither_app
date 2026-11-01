@@ -323,7 +323,7 @@ Android `hither-live-activity` 目前只有 no-op stub。
 | straggler threshold | 500 m |
 | 歷史項目 | 3 |
 
-`profiles.pro`、plan／purchase metadata、promo code 與 paywall UI 已存在；但 `purchasePro()` 與 `restorePurchases()` 仍固定回傳 `unavailable`，所以商店實際購買尚未完成。
+Premium 購買與還原由 `premiumPurchaseFlow` 協調。原生 adapter 取得交易後交由伺服器驗證，確認 durable grant 後才完成原生交易。
 
 ## 6. 前端模組邊界
 

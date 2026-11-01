@@ -102,13 +102,14 @@ describe('resolveNotificationRecipients', () => {
     expect(r.recipientIds).not.toContain('member1');
   });
 
-  it('leave_group → leaders only', () => {
+  it('leave_group informs remaining non-solo members', () => {
     const r = resolveNotificationRecipients({
       event: 'leave_group',
       senderId: 'member2',
       members,
     });
-    expect(r.deliveryKind).toBe('leader_only');
+    expect(r.deliveryKind).toBe('sync_broadcast');
+    expect(r.recipientIds).toEqual(['leader1', 'member1', 'subLeader', 'subMember']);
   });
 
   it('prefsAllow false also suppresses operator confirmation', () => {

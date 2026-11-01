@@ -17,8 +17,6 @@ import type {
 } from '../../types';
 import { orThrow } from './_helpers';
 
-// ── Row shapes ─────────────────────────────────────────────────────────────
-
 interface CoordinationRequestRow {
   id: string;
   group_id: string;
@@ -60,8 +58,6 @@ interface ItineraryOperationRow {
   created_by: string | null;
   created_at: string;
 }
-
-// ── Mappers ────────────────────────────────────────────────────────────────
 
 const OPTION_KINDS = new Set<CoordinationOptionKind>([
   'keep_current',
@@ -180,8 +176,6 @@ function optionToJson(option: CoordinationOption): Record<string, unknown> {
       : {}),
   };
 }
-
-// ── API ────────────────────────────────────────────────────────────────────
 
 export interface CreateCoordinationRequestInput {
   groupId: string;

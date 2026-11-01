@@ -8,10 +8,6 @@
  *
  * Deciding WHEN to push / WHO to push is server-side (Supabase Edge Function
  * + APNs/FCM), out of this client boundary's scope.
- *
- * Phase B seam: the custom native module `HitherNotifications`
- * (`apps/mobile/modules/hither-notifications`) backs {@link getDevicePushToken}
- * on a Dev Build; absent in Expo Go, where it returns null.
  */
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
@@ -70,7 +66,8 @@ Notifications.setNotificationHandler({
         shouldShowBanner: false, shouldShowList: false, shouldPlaySound: false, shouldSetBadge: false,
       };
     }
-    const eventId = data?.eventId;
+    const eventId = typeof data?.eventIdV2 === 'string' && data.eventIdV2.length > 0
+      ? data.eventIdV2 : data?.eventId;
     const show = !(Platform.OS === 'ios' && notification.request.content.data?.kind === 'approach') && shouldDeliverOnce(
       presentedEvents, typeof eventId === 'string' ? eventId : null, 'device',
     );

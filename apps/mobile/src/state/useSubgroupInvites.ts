@@ -35,7 +35,6 @@ let channelSeq = 0;
 // the accept/decline UI). Module-level so only ONE of them actually fires the
 // notification for a given invite id, no matter which instance's debounced
 // refetch sees it first.
-// ponytail: plain Set, never pruned — invite ids are few and app-session-lived.
 const notifiedIds = new Set<string>();
 
 interface UseSubgroupInvitesResult {

@@ -15,7 +15,6 @@ import { useAppState, useForegroundUi, useVisibleUi } from '../state/foregroundU
 import { authLoadingMotionAllowed } from '../utils/loadingDots';
 import { energyObservability } from '../state/energyObservability';
 
-// ─── MetalForge Grain SkSL Source ─────────────────────────────────────────────
 const grainSkSL = Skia.RuntimeEffect.Make(`
 uniform float2 size;
 uniform float time;
@@ -98,8 +97,6 @@ half4 main(float2 fragCoord) {
     return half4(clamp(col, half3(0.0), half3(1.0)), 1.0);
 }
 `)!;
-
-// ─── Palette & Parameters ─────────────────────────────────────────────────────
 
 export const METALFORGE_COLORS = [
   '#9A502B', '#83809B', '#002142',

@@ -540,7 +540,7 @@ export function reorderRowGeometry(
     const entry = order[i];
     const measuredH = measured?.heightById?.get(entry.id);
     const h =
-      typeof measuredH === 'number' && measuredH > 0
+      typeof measuredH === 'number' && measuredH >= 0
         ? measuredH
         : entry.type === 'header'
           ? heights.headerHeight
@@ -561,7 +561,7 @@ export function reorderRowGeometry(
             : 1;
       const gapMeasured = measured?.gapByDay?.get(day);
       const gap =
-        typeof gapMeasured === 'number' && gapMeasured > 0
+        typeof gapMeasured === 'number' && gapMeasured >= 0
           ? gapMeasured
           : heights.dayGapHeight;
       if (gap > 0) y += gap;
@@ -594,16 +594,21 @@ export function dragTargetIndexFromOffset(
   dy: number,
   heights: ReorderLayoutHeights = DEFAULT_REORDER_LAYOUT,
   measured?: MeasuredReorderGeometry | null,
+  closeSource = false,
 ): number {
   if (order.length === 0) return 0;
   const clampedStart = Math.max(0, Math.min(startIndex, order.length - 1));
-  const { tops, rowHeights, total } = reorderRowGeometry(order, heights, measured);
-  const startCenter = tops[clampedStart] + rowHeights[clampedStart] / 2;
+  const frozen = reorderRowGeometry(order, heights, measured);
+  const { tops, rowHeights, total } = closeSource
+    ? sourceClosedReorderGeometry(frozen, clampedStart)
+    : frozen;
+  const startCenter = frozen.tops[clampedStart] + (closeSource ? 0 : frozen.rowHeights[clampedStart] / 2);
   // Allow a small overscroll past total so the bottom insertion line is reachable.
   const maxY = Math.max(total + heights.rowHeight / 2, 0);
   const fingerY = Math.max(0, Math.min(maxY, startCenter + dy));
 
   for (let i = 0; i < order.length; i++) {
+    if (rowHeights[i] === 0) continue;
     const top = tops[i];
     const nextTop = i + 1 < order.length ? tops[i + 1] : total;
     if (fingerY < nextTop || i === order.length - 1) {
@@ -620,25 +625,17 @@ export function dragTargetIndexFromOffset(
   return order.length;
 }
 
-/**
- * @deprecated Prefer dragTargetIndexFromOffset (geometry-aware).
- * Kept for tests that assert header-crossing correction.
- */
-export function crossDayGapCorrection(
-  order: readonly ReorderListEntry[],
-  startIndex: number,
-  rawAim: number,
-  extraPerHeader: number = 1,
-): number {
-  if (extraPerHeader === 0 || order.length === 0) return 0;
-  const lo = Math.min(startIndex, rawAim);
-  const hi = Math.max(startIndex, rawAim);
-  let headers = 0;
-  for (let i = lo + 1; i <= hi && i < order.length; i++) {
-    if (order[i]?.type === 'header') headers += 1;
-  }
-  const signed = rawAim >= startIndex ? headers : -headers;
-  return signed * extraPerHeader;
+/** Projection retains original order indices, so legal insertion boundaries stay valid. */
+export function sourceClosedReorderGeometry(
+  geometry: ReturnType<typeof reorderRowGeometry>,
+  sourceIndex: number,
+): ReturnType<typeof reorderRowGeometry> {
+  const span = geometry.rowHeights[sourceIndex];
+  return {
+    tops: geometry.tops.map((top, index) => top - (index > sourceIndex ? span : 0)),
+    rowHeights: geometry.rowHeights.map((height, index) => index === sourceIndex ? 0 : height),
+    total: geometry.total - span,
+  };
 }
 
 /** Continuous min/max over legal full-list indices. */

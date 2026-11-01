@@ -79,12 +79,6 @@ export async function measureTargetWithRetry(
   return last;
 }
 
-/**
- * Kept as a compatibility export for existing tests/callers.  Stage Two
- * correctness now comes from bounded target retries, not a fixed sleep.
- */
-export const STAGE_TWO_SETTLE_MS = 0;
-
 export function getWindowSize(): { width: number; height: number } {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

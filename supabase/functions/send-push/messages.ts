@@ -10,6 +10,9 @@ export interface PushPayload {
     | "journey"
     | "arrival"
     | "straggler"
+    | "member_solo"
+    | "member_follow"
+    | "member_left"
     | "live_activity"
     | "navigation_session"
     | "location_refresh"
@@ -140,6 +143,12 @@ export function buildMessage(p: PushPayload): { title: string; body: string } {
           ? { title: "出發囉", body: `${sender} 已開始前往${place}` }
           : { title: "暫停", body: `${sender} 已暫停前往${place}` };
       }
+    case "member_solo":
+      return { title: "隊伍動態", body: `${nameOr(p.member_name ?? p.sender_name, "旅人")} 已切換為自由行動` };
+    case "member_follow":
+      return { title: "隊伍動態", body: `${nameOr(p.member_name ?? p.sender_name, "旅人")} 已恢復跟隨隊伍` };
+    case "member_left":
+      return { title: "隊伍動態", body: `${nameOr(p.member_name ?? p.sender_name, "旅人")} 已離開隊伍` };
     case "arrival": {
       const dest = p.title?.trim();
       if (!dest) return { title: "", body: "" };
@@ -235,6 +244,9 @@ export function prefColumn(category: PushPayload["category"]): "add_gathering" |
     case "arrival":
       return "arrival";
     case "journey":
+    case "member_solo":
+    case "member_follow":
+    case "member_left":
     case "straggler":
     case "live_activity":
     case "navigation_session":

@@ -347,10 +347,6 @@ export default function MapScreen({ route, navigation }: Props) {
     });
   }, []);
 
-  // Live Dynamic Type layout — rebuilds when system fontScale changes.
-  // a11y-layout:commandRow — always ONE row; density (size/labels) tracks
-  // font bucket + physical width, never multi-row stacking.
-  // a11y-layout:narrowScreen — iPhone 15 / mini (~375) denser chrome.
   const fontLayout = useFontLayout();
   const fontBucket = fontLayout.bucket;
   // ≤390 ≈ iPhone 15 / mini / SE; slightly denser chrome so fixed command
@@ -979,7 +975,6 @@ export default function MapScreen({ route, navigation }: Props) {
     setPaywallVisible(true);
   }, []);
 
-  // --- Meet-time countdown + editor (date + time; red threshold shared via DB)
   const { lifecycle: meetTimeEditorLifecycle,
     meetTimeEditor,
     setMeetTimeEditor,
@@ -1103,7 +1098,6 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   const incomingArrivalHandlerRef = useRef<() => void>(() => undefined);
-  // --- Carousel selection ---------------------------------------------------
   const { lifecycle: carouselSelectionLifecycle,
     selectedIndex,
     setSelectedIndex,
@@ -1183,7 +1177,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ? undefined
       : navigationSessionState.session,
     startSession: navigationSessionState.start,
-    cancelSession: navigationSessionState.cancel,
     refreshNavigationSession: navigationSessionState.refresh,
     travelMode,
     onOptimisticGathering: applyOptimisticGathering,
@@ -1207,6 +1200,7 @@ export default function MapScreen({ route, navigation }: Props) {
     latestLocationSampleRef,
     lifecycle: deviceLocationLifecycle,
   } = useDeviceLocation({
+    accessReady: preferencesReady && (state !== null || groupStateError === 'not_member'),
     groupId: mapFocused || effectiveNavigationActive ? groupId : null,
     highAccuracy: foregroundLocation.highAccuracy,
     powerMode: foregroundLocation.powerMode,
@@ -2422,6 +2416,20 @@ export default function MapScreen({ route, navigation }: Props) {
     searchOpenCompleteResolveRef.current = null;
   }, []);
 
+  const openCoordinateDestination = useCallback(() => {
+    closeSearch();
+    if (canEditItinerary && shouldBlockNewDestination({
+      isPro,
+      openCount: countOpenDestinations(allScopedDestinations),
+      extraCredits: extraPointCredits,
+    })) {
+      openPaywall('paywall.triggerDestinations');
+      return;
+    }
+    setCoordSheetInitial(deviceCoords ?? undefined);
+    setCoordSheetVisible(true);
+  }, [closeSearch, canEditItinerary, isPro, allScopedDestinations, extraPointCredits, openPaywall, deviceCoords]);
+
   // Followers submit durable, actionable requests instead of plain-text commands.
   const notifyLeaderPlace = useCallback(
     async (
@@ -2695,8 +2703,9 @@ export default function MapScreen({ route, navigation }: Props) {
           openCount,
           extraCredits: extraPointCredits,
         })) {
-          openPaywall('paywall.triggerDestinations');
-          return;
+          const message = t('operationError.quota');
+          Alert.alert(t('map.setFailedTitle'), message);
+          throw new Error(message);
         }
       }
       const result = await runUiAction(
@@ -2757,13 +2766,10 @@ export default function MapScreen({ route, navigation }: Props) {
       isPro,
       allScopedDestinations,
       extraPointCredits,
-      destinations.length,
       obliqueLocate,
       myScopeId,
       refresh,
-      openPaywall,
       t,
-      tripDayForAdd,
     ],
   );
 
@@ -3028,7 +3034,6 @@ export default function MapScreen({ route, navigation }: Props) {
     t,
   });
 
-  // --- Subgroups (小隊：邀請制；依 leader_id 判斷小隊隊長) --------------------
   const setRouteDraftDestinations = routeDraft.setDestinations;
   const handleMergedBack = useCallback(() => {
     // Leave wipes subgroup-scoped UI: itinerary draft list, team pill scope.
@@ -3081,10 +3086,6 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [groupId, destinations, stopNavigation, refresh, t, resolveCurrentNavigationSessionId]);
 
-  // Report-a-problem: swap the settings overlay
-  // for the feedback form. Uses the SAME `overlay` state so the two are
-  // mutually exclusive — opening feedback closes settings, so the translucent
-  // panels can never stack and interleave their text.
   const openFeedback = useCallback(() => {
     void runUiAction(
       'map.open_feedback',
@@ -3275,28 +3276,19 @@ export default function MapScreen({ route, navigation }: Props) {
       : (detent === 0
         ? bottomPad
         : detents[1] + sheetBottomOffset(detents[1], detents, insets.bottom)) + 12;
-  // MapKit's compass lives below RN siblings, so reserve its band explicitly
-  // in the carousel geometry. This keeps the card from painting over the
-  // compass while the sheet moves between Peek and Stage 1.
-  const compassTop = mapKitChromeLayout({
-    safeArea: insets,
-    topChrome: 0,
-    horizontalInset: gatherCardHorizontalInset(windowWidth),
-    windowHeight,
-    bottomChrome: chromeBottomOffset,
-    stage: chromeStage,
-  }).compassOffset.y;
-  const CAPSULE_CLEARANCE = 8;
-  // The 8pt card reserve is equivalent to compassTop - (insets.top + 8) - 8.
-  const carouselMaxHeight = Math.max(
-    1,
-    compassTop - (insets.top + 8) - CAPSULE_CLEARANCE,
-  );
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
     destinations.length > 0
       ? insets.top + 8 + (carouselHeight > 0 ? carouselHeight : carouselFallback)
       : insets.top + 8;
+  const { recenterVisible } = mapKitChromeLayout({
+    safeArea: insets,
+    topChrome: topPad,
+    horizontalInset: gatherCardHorizontalInset(windowWidth),
+    windowHeight,
+    bottomChrome: chromeBottomOffset,
+    stage: chromeStage,
+  });
 
   // Sheet "下一站" is the first ordered active stop — not the carousel card
   // or current navigation target the user may be viewing.
@@ -3548,8 +3540,6 @@ export default function MapScreen({ route, navigation }: Props) {
       isLeader,
       personallyArrived: myCompletedDestinationIds.has(dest.id),
       flockNavigatingThis,
-      isNextTeamPending: true,
-      teamStartBlocked: false,
     });
     return {
       navCommandVisible: navCmd.kind !== 'hidden',
@@ -3647,7 +3637,6 @@ export default function MapScreen({ route, navigation }: Props) {
     syncFromDatabase,
   });
 
-  // ─── 成員：位置、狀態、個別操作、小隊（無「成員」標題） ────────────────
   const membersPaneBody = useMemo(() => (
     <MembersPane
       accent={accent}
@@ -3686,7 +3675,6 @@ export default function MapScreen({ route, navigation }: Props) {
     sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
   ]);
 
-  // ─── 路線：集合點、排序、Google Maps 匯入、歷史 ───────────────────────
   const opsOpenCount = exceptionOpenCount + coordination.openCount;
   const gatherRequestPageW = Math.max(200, windowWidth - 32);
   const routeMainDestinations = useMemo(
@@ -3973,7 +3961,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetChildren = useMemo(() => (
     <>
-      {/* Native iOS Liquid Glass selector; Android keeps its system fallback. */}
       <View
         style={styles.sheetPaneToggleWrap}
         ref={(n) => setTourTargetRef('stageTwoPlacement', n)}
@@ -4222,9 +4209,6 @@ export default function MapScreen({ route, navigation }: Props) {
       ) : (
         <View style={[styles.flex, { backgroundColor: '#0c0e12' }]} />
       )}
-      {/* #175: navigation response banner removed entirely (not moved to Tools). */}
-
-      {/* OTA-07: reduced presentation — covers dense chrome; same state tree. */}
       {inPassiveMode ? (
         <PassiveCompanionPanel
           model={passiveModel}
@@ -4238,7 +4222,6 @@ export default function MapScreen({ route, navigation }: Props) {
         />
       ) : null}
 
-      {/* Group pill — moved to bottom left, tracking sheet like recenter capsule. */}
       {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
       <Animated.View
         style={[styles.teamCapsuleWrap, recenterStyle]}
@@ -4268,8 +4251,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
       )}
 
-      {/* Recenter capsule — fit-all (top) + locate-me (bottom), always both. */}
-      {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
+      {uiVisible && showDenseChrome && !confirmCardReady && recenterVisible && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -4284,8 +4266,6 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
       )}
 
-      {/* Add-gather-point confirm card — a bottom sheet-style card shown after
-          picking a search result. Cancel sits above the title and place controls. */}
       <AddPlaceConfirmCard
         accent={accent}
         addPlaceTourStep={addPlaceTourStep}
@@ -4313,7 +4293,6 @@ export default function MapScreen({ route, navigation }: Props) {
         user={user}
       />
 
-      {/* Add Place contextual tour — measured targets + full-screen blocker. */}
       <GroupFeatureTourOverlay
         visible={
           addPlaceTourStep != null
@@ -4376,7 +4355,6 @@ export default function MapScreen({ route, navigation }: Props) {
         arrivalExitRecords={arrivalExitRecords}
         atFull={atFull}
         canEditItinerary={canEditItinerary}
-        carouselMaxHeight={carouselMaxHeight}
         carouselRef={carouselRef}
         colors={colors}
         destinationIds={destinationIds}
@@ -4478,7 +4456,6 @@ export default function MapScreen({ route, navigation }: Props) {
       </BottomSheet>
       </Animated.View>
 
-      {/* Route overlay: reorder gathering points (local draft until dismiss). */}
       <RouteEditorSheet
         accent={accent}
         canEditItinerary={canEditItinerary}
@@ -4552,7 +4529,6 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
-      {/* 邀請成員 — independent share sheet (code / share / copy). */}
       <InviteMembersOverlay
         accent={accent}
         codeCopied={codeCopied}
@@ -4567,7 +4543,6 @@ export default function MapScreen({ route, navigation }: Props) {
         t={t}
       />
 
-      {/* Exceptions + coordination — single full-bleed ops center. */}
       <OpsCenterSheet
         accent={accent}
         coordination={coordination}
@@ -4581,7 +4556,6 @@ export default function MapScreen({ route, navigation }: Props) {
         t={t}
       />
 
-      {/* 全部快捷指令 */}
       <OverlaySheet
         visible={overlay === 'commands'}
         onClose={() => setOverlay(null)}
@@ -4624,7 +4598,6 @@ export default function MapScreen({ route, navigation }: Props) {
         styles={styles}
       />
 
-      {/* Arrival management — one page: every stop + member mark/undo on the right. */}
       <ArrivalManageSheet
         accent={accent}
         allScopedDestinations={allScopedDestinations}
@@ -4638,7 +4611,6 @@ export default function MapScreen({ route, navigation }: Props) {
         t={t}
       />
 
-      {/* Single-destination arrival (gathering-card shortcut only). */}
       <ArrivalTimeSheet
         accent={accent}
         activeDestinationArrivals={activeDestinationArrivals}
@@ -4653,7 +4625,6 @@ export default function MapScreen({ route, navigation }: Props) {
         t={t}
       />
 
-      {/* History overlay: gathering points actually reached, grouped by day. */}
       <HistorySheet
         accent={accent}
         handleDeleteHistory={handleDeleteHistory}
@@ -4666,7 +4637,6 @@ export default function MapScreen({ route, navigation }: Props) {
         user={user}
       />
 
-      {/* Report-a-problem stacks over settings; dismissing it reveals settings. */}
       <View
         pointerEvents="box-none"
         style={[StyleSheet.absoluteFill, styles.settingsChildLayer]}
@@ -4683,7 +4653,6 @@ export default function MapScreen({ route, navigation }: Props) {
         onClose={() => setOverlay(null)}
       />
 
-      {/* Invite-a-teammate picker, opened from my own subgroup card. */}
       <InviteTeammateSheet
         accent={accent}
         handleInvite={handleInvite}
@@ -4699,6 +4668,7 @@ export default function MapScreen({ route, navigation }: Props) {
         visible={searchVisible}
         onClose={closeSearch}
         onOpenComplete={handleSearchOpenComplete}
+        onOpenCoordinates={openCoordinateDestination}
         biasRegion={biasRegion}
         // Don't persist on pick — stage the place for the bottom confirm card
         // (Add / Cancel). Resolves immediately so the search sheet closes.
@@ -4754,7 +4724,6 @@ export default function MapScreen({ route, navigation }: Props) {
         onSubmit={handleCoordinateDestination}
       />
 
-      {/* Meet-time editor: date + time + red-threshold warning + Set/Clear */}
       <MeetTimeSheet
         accent={accent}
         meetTimeEditor={meetTimeEditor}

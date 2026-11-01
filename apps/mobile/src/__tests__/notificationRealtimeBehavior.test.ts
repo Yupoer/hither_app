@@ -11,10 +11,10 @@ const mockSession = {
   user: { id: 'me' },
   membership: { role: 'leader', group: { id: 'group-1' } },
 };
-const mockSchedule = jest.fn(async () => undefined);
+const mockSchedule = jest.fn(async (_input: { title: string; body: string; data: Record<string, unknown> }) => undefined);
 const mockUnsubscribe = jest.fn();
 const mockNotifications = {
-  addForegroundListener: jest.fn(() => mockUnsubscribe),
+  addForegroundListener: jest.fn((_listener: (data: Record<string, unknown>) => void) => mockUnsubscribe),
   scheduleLocalNotification: mockSchedule,
 };
 const mockT = jest.fn((key: string, params?: Record<string, unknown>) =>
@@ -26,7 +26,8 @@ const mockGetPreferences = jest.fn(async () => ({
   journey: true,
   arrival: true,
 }));
-const mockSeen = new Set<string>();
+let mockRecipientSolo = false;
+const mockSeen = require('../utils/notificationDeliveryPolicy').getProcessNotificationSeen();
 const mockChannel: { on: jest.Mock; subscribe: jest.Mock } = {
   on: jest.fn(),
   subscribe: jest.fn(),
@@ -47,7 +48,7 @@ const mockSupabase = {
         if (table === 'itinerary_items') return { data: { title: 'Museum' }, error: null };
         if (table === 'memberships') {
           return {
-            data: { solo: false, subgroup_id: null, role: 'leader', user_id: 'leader-1' },
+            data: { solo: mockRecipientSolo, subgroup_id: null, role: mockSession.membership.role, user_id: 'leader-1' },
             error: null,
           };
         }
@@ -65,32 +66,6 @@ jest.mock('../api/client', () => ({ getNotificationPreferences: () => mockGetPre
 jest.mock('../native', () => ({ notifications: mockNotifications }));
 jest.mock('../state/SessionContext', () => ({ useSession: () => mockSession }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: mockT }) }));
-jest.mock('../utils/notificationDeliveryPolicy', () => ({
-  buildAlignedNotificationEventId: (input: Record<string, unknown>) =>
-    [input.category, input.groupId, input.type, input.senderId, input.entityId, input.status]
-      .filter(Boolean).join('|'),
-  classifyCommandNotification: ({ commandType, senderRole }: {
-    commandType: string;
-    senderRole: string | null;
-  }) => ({
-    prefCategory: commandType === 'custom' && senderRole === 'leader'
-      ? 'leaderCommands'
-      : commandType === 'request_start'
-        ? 'followerRequests'
-        : 'leaderCommands',
-    policyEvent: commandType === 'request_start' ? 'route_request' : 'quick_command',
-    pushCategory: commandType === 'request_start' ? 'follower_requests' : 'leader_commands',
-  }),
-  eventIdFromPushData: () => 'push-event',
-  getProcessNotificationSeen: () => mockSeen,
-  isLeaderCommand: (commandType: string) => commandType === 'start_journey',
-  markNotificationDelivered: jest.fn(),
-  resolveNotificationRecipients: ({ members }: { members: Array<{ userId: string }> }) => ({
-    recipientIds: members.map((member) => member.userId),
-  }),
-  shouldDeliverOnce: () => true,
-}));
-
 const { useGroupNotifications } = require('../state/useGroupNotifications') as typeof import('../state/useGroupNotifications');
 const { act, create } = require('react-test-renderer') as {
   act: (callback: () => void | Promise<void>) => Promise<void>;
@@ -126,6 +101,7 @@ describe('Realtime notification semantics', () => {
     jest.clearAllMocks();
     mockSubscriptions.length = 0;
     mockSeen.clear();
+    mockRecipientSolo = false;
     mockSession.membership.role = 'leader';
     mockSession.user = { id: 'me' };
     mockSession.membership.group.id = 'group-1';
@@ -228,6 +204,72 @@ describe('Realtime notification semantics', () => {
     mockGetPreferences.mockResolvedValue({ leaderCommands: true, followerRequests: true,
       addGathering: true, journey: true, arrival: false });
     await emit('destination_arrivals', { new: { id: 'own-2', user_id: 'me', destination_id: 'stop-2' } });
+    expect(mockSchedule).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('notifies each start lifecycle and preserves the paused destination without repeating deliveries', async () => {
+    mockSession.membership.role = 'follower';
+    const root = await mountNotifications();
+    const first = { journey_status: 'going', active_destination_id: 'stop-1', journey_started_at: '2026-10-22T00:00:00.000Z' };
+    const paused = { journey_status: 'paused', active_destination_id: null, journey_started_at: null };
+    const resumed = { ...first, journey_started_at: '2026-10-22T00:01:00.000Z' };
+    const switched = { ...resumed, active_destination_id: 'stop-2', journey_started_at: '2026-10-22T00:02:00.000Z' };
+    await emit('groups', { new: first, old: paused });
+    await emit('groups', { new: paused, old: first });
+    expect(mockSchedule).toHaveBeenLastCalledWith(expect.objectContaining({
+      title: 'notif.journeyPausedTitle', body: expect.stringContaining('Ada Museum'),
+    }));
+    await emit('groups', { new: resumed, old: paused });
+    await emit('groups', { new: switched, old: resumed });
+    await emit('groups', { new: switched, old: resumed });
+    expect(mockSchedule).toHaveBeenCalledTimes(4);
+    const ids = mockSchedule.mock.calls.map(([notice]) => notice.data.eventId);
+    expect(new Set(ids).size).toBe(4);
+    root.unmount();
+  });
+
+  it('informs remaining followers of solo, follow and departure using durable alert ids', async () => {
+    mockSession.membership.role = 'follower';
+    const root = await mountNotifications();
+    for (const kind of ['member_solo', 'member_follow', 'member_left']) {
+      const row = { id: kind, kind, sender_id: 'peer-1', member_id: 'peer-1', member_name: 'Kai' };
+      await emit('group_alerts', { new: row });
+      await emit('group_alerts', { new: row });
+      expect(mockSchedule).toHaveBeenLastCalledWith(expect.objectContaining({
+        body: expect.stringContaining('Kai'), data: expect.objectContaining({ senderId: 'peer-1' }),
+      }));
+    }
+    expect(mockSchedule).toHaveBeenCalledTimes(3);
+    root.unmount();
+  });
+
+  it('deduplicates a push-first start while allowing the next lifecycle', async () => {
+    mockSession.membership.role = 'follower';
+    const root = await mountNotifications();
+    const first = { journey_status: 'going', active_destination_id: 'stop-1', journey_started_at: '2026-10-22T00:00:00.000Z' };
+    const onPush = mockNotifications.addForegroundListener.mock.calls[0][0];
+    const pushData = { category: 'journey', eventId: 'journey:group-1:going::going',
+      eventIdV2: 'journey:group-1:stop-1::going:1792627200000' };
+    onPush(pushData);
+    onPush(pushData);
+    await emit('groups', { new: first, old: { journey_status: 'paused' } });
+    expect(mockSchedule).not.toHaveBeenCalled();
+    await emit('groups', { new: { ...first, journey_started_at: '2026-10-22T00:01:00.000Z' }, old: first });
+    expect(mockSchedule).toHaveBeenCalledTimes(1);
+    root.unmount();
+  });
+
+  it('keeps participation notices silent for their sender, solo recipients and disabled journey preferences', async () => {
+    mockSession.membership.role = 'follower';
+    const root = await mountNotifications();
+    const row = { kind: 'member_solo', member_name: 'Kai', sender_id: 'me', id: 'self' };
+    await emit('group_alerts', { new: row });
+    mockRecipientSolo = true;
+    await emit('group_alerts', { new: { ...row, sender_id: 'peer', id: 'solo' } });
+    mockRecipientSolo = false;
+    mockGetPreferences.mockResolvedValueOnce({ leaderCommands: true, followerRequests: true, addGathering: true, journey: false, arrival: true });
+    await emit('group_alerts', { new: { ...row, sender_id: 'peer', id: 'muted' } });
     expect(mockSchedule).not.toHaveBeenCalled();
     root.unmount();
   });

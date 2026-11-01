@@ -39,10 +39,10 @@ const sample = (latitude = 25): LocationSample => ({
 function createLocationProbe() {
   let feed!: ReturnType<typeof useDeviceLocation>;
   function Probe({ group = 'group-a', sharing = true, nativeMap = false, passive = false,
-    highAccuracy = false, incoming }: { group?: string; sharing?: boolean; nativeMap?: boolean;
-    passive?: boolean; highAccuracy?: boolean; incoming?: (sample: LocationSample, now: number) => void }) {
+    highAccuracy = false, accessReady = true, incoming }: { group?: string; sharing?: boolean; nativeMap?: boolean;
+    passive?: boolean; highAccuracy?: boolean; accessReady?: boolean; incoming?: (sample: LocationSample, now: number) => void }) {
     feed = useDeviceLocation({ groupId: group, highAccuracy, powerMode: passive ? 'allDay' : 'journey',
-      nativeMapLocationEnabled: nativeMap, sharingEnabled: sharing, hasMembership: true, onIncomingSample: incoming });
+      accessReady, nativeMapLocationEnabled: nativeMap, sharingEnabled: sharing, hasMembership: true, onIncomingSample: incoming });
     return feed.lifecycle;
   }
   return { Probe, get feed() { return feed; } };
@@ -338,4 +338,16 @@ it('recovers manual GPS after failed watcher setup and failed automatic reads', 
   await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
   expect(probe.feed.deviceCoords).toEqual({ latitude: 26, longitude: 121 });
   expect(enqueueLocationOutbox).toHaveBeenCalledTimes(1);
+});
+
+
+it('suspends sensors and queued uploads until initial access inputs resolve', async () => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe, { accessReady: false })); });
+  expect(await captureLocationAccess()).toBeNull();
+  expect(mockWatch).not.toHaveBeenCalled();
+  expect(flushLocationOutbox).not.toHaveBeenCalled();
+  await act(async () => { tree!.update(React.createElement(probe.Probe, { accessReady: true })); });
+  expect(await captureLocationAccess('group-a')).not.toBeNull();
+  expect(flushLocationOutbox).toHaveBeenCalledTimes(1);
 });

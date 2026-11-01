@@ -7,7 +7,13 @@ const { setTimeout: realTimeout, clearTimeout: clearRealTimeout } = require('nod
 const { Backend, EPOCH } = require('./backend.cjs');
 
 class World {
-  constructor() {
+  constructor({ recordInput, evidenceRoot = process.env.HITHER_HEADLESS_EVIDENCE } = {}) {
+    this.recordInput = recordInput;
+    if (evidenceRoot) {
+      fs.mkdirSync(evidenceRoot, { recursive: true });
+      this.evidenceDirectory = fs.mkdtempSync(path.join(path.resolve(evidenceRoot), 'world-'));
+      this.recordEvidence = record => fs.appendFileSync(path.join(this.evidenceDirectory, 'events.jsonl'), `${JSON.stringify({ logicalTime: this.now, ...record })}\n`);
+    }
     this.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-headless-'));
     this.devices = new Map();
     this.fatals = [];
@@ -18,6 +24,10 @@ class World {
     this.realtimeTrace = [];
     this.now = EPOCH;
     this.backend = new Backend(event => this.events.push(event));
+    if (this.evidenceDirectory) fs.writeFileSync(path.join(this.evidenceDirectory, 'world.json'), JSON.stringify({
+      formatVersion: 1, ownerPid: process.pid, scratch: this.directory,
+      test: globalThis.expect ? globalThis.expect.getState().currentTestName : null,
+    }, null, 2));
   }
   check() { assert.equal(this.fatals.length, 0, this.fatals.join('\n')); }
   async device({ id, userId, platform = 'ios', mode, screen, capabilities, authFixtures, updatesFixtures }) {
@@ -37,22 +47,26 @@ class World {
     if (!keep) this.holds.delete(rpcName);
     const ready = this.held.filter(item => item.operation.name === rpcName);
     this.held = this.held.filter(item => item.operation.name !== rpcName);
-    for (const item of ready) this.respond(item);
+    for (const item of ready) this.respond(item, this.now);
     await this.settle();
   }
-  execute(device, operation) {
-    if (operation.kind === 'auth' && operation.name === 'fixtureSession') return this.backend.execute(device.spec.id, operation);
-    if (operation.kind === 'health' && device.online) { assert.equal(operation.name, 'auth.health'); assert.deepEqual(operation.args, {}); return { data: {}, error: null }; }
-    return device.online ? this.backend.execute(device.spec.id, operation)
-      : { data: null, error: { message: 'Network request failed', code: 'NETWORK_ERROR' } };
+  execute(device, operation, requestedAt) {
+    const now = this.backend.now;
+    this.backend.now = requestedAt;
+    try {
+      if (operation.kind === 'auth' && operation.name === 'fixtureSession') return this.backend.execute(device.spec.id, operation);
+      if (operation.kind === 'health' && device.online) { assert.equal(operation.name, 'auth.health'); assert.deepEqual(operation.args, {}); return { data: {}, error: null }; }
+      return device.online ? this.backend.execute(device.spec.id, operation)
+        : { data: null, error: { message: 'Network request failed', code: 'NETWORK_ERROR' } };
+    } finally { this.backend.now = now; }
   }
-  respond(item) {
+  respond(item, executedAt = item.requestedAt) {
     const { device, generation, id, operation } = item;
     if (device.generation !== generation || !device.child?.connected) return;
     let result;
     let fatal;
     try {
-      result = Object.hasOwn(item, 'result') ? item.result : this.execute(device, operation);
+      result = Object.hasOwn(item, 'result') ? item.result : this.execute(device, operation, executedAt);
     } catch (error) {
       fatal = error.stack ?? String(error);
       this.fatals.push(fatal);
@@ -84,10 +98,15 @@ class World {
   }
   async advance(ms) {
     assert(Number.isSafeInteger(ms) && ms >= 0);
-    this.now += ms;
-    this.backend.now = this.now;
-    for (const device of this.devices.values()) await device.command({ kind: 'advance', ms });
-    await this.settle();
+    let remaining = ms;
+    do {
+      const step = Math.min(remaining, 5000);
+      this.now += step;
+      this.backend.now = this.now;
+      for (const device of this.devices.values()) await device.command({ kind: 'advance', ms: step });
+      await this.settle();
+      remaining -= step;
+    } while (remaining > 0);
   }
   async waitFor(device, predicate, description = 'device observation') {
     let value;
@@ -109,6 +128,16 @@ class World {
     assert(resolved.startsWith(`${path.resolve(os.tmpdir())}${path.sep}`) && path.basename(resolved).startsWith('hither-headless-'));
     fs.rmSync(resolved, { recursive: true, force: true });
     try { this.check(); } catch (error) { errors.push(error); }
+    if (this.evidenceDirectory) {
+      fs.writeFileSync(path.join(this.evidenceDirectory, 'backend.json'), JSON.stringify(this.backend,
+        (_key, value) => value instanceof Map ? [...value.entries()] : value instanceof Set ? [...value] : value, 2));
+      fs.writeFileSync(path.join(this.evidenceDirectory, 'cleanup.json'), JSON.stringify({
+        scratchRemoved: !fs.existsSync(this.directory),
+        actors: [...this.devices.values()].map(device => ({ id: device.spec.id, generation: device.generation,
+          childClosed: device.child === null, disposal: device.disposal })),
+        errors: errors.map(error => error.stack ?? String(error)),
+      }, null, 2));
+    }
     if (errors.length) throw new AggregateError(errors, `Headless disposal failed: ${errors.map(error => error.stack ?? error).join('\n')}`);
   }
 }
@@ -131,7 +160,7 @@ class Device {
     fs.mkdirSync(directory, { recursive: true });
     const generation = this.generation;
     this.logs = '';
-    this.child = fork(require.resolve('jest/bin/jest'), ['--config', 'test/headless/actor.config.cjs', '--runInBand', '--silent'], {
+    this.child = fork(require.resolve('./actor.cjs'), [], {
       cwd: path.dirname(require.resolve('../../package.json')),
       env: { ...process.env, HITHER_HEADLESS_DEVICE: JSON.stringify({ ...this.spec, directory, generation, now: this.world.now }) },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
@@ -142,6 +171,8 @@ class Device {
     let failed;
     const boot = new Promise((resolve, reject) => { ready = resolve; failed = reject; });
     this.exited = new Promise(resolve => this.child.once('exit', (code, signal) => {
+      this.world.recordEvidence?.({ kind: 'actor-exit', deviceId: this.spec.id, generation,
+        pid: this.child.pid, code, signal, logs: this.logs });
       for (const { reject, timer } of this.pending.values()) {
         clearRealTimeout(timer);
         reject(new Error(`Device ${this.spec.id} exited (${code}/${signal}): ${this.logs}`));
@@ -155,14 +186,18 @@ class Device {
       const message = JSON.parse(JSON.stringify(wire));
       if (message.generation !== generation) return;
       if (message.type === 'stage') { this.logs += `\n${message.value}`; return; }
-      if (message.type === 'ready') { ready(); return; }
+      if (message.type === 'ready') {
+        this.world.recordEvidence?.({ kind: 'actor-ready', deviceId: this.spec.id, generation,
+          pid: this.child.pid, platform: this.spec.platform, mode: this.spec.mode, screen: this.spec.screen });
+        ready(); return;
+      }
       if (message.type === 'request') {
-        const item = { device: this, generation, id: message.id, operation: message.operation };
+        const item = { device: this, generation, id: message.id, operation: message.operation, requestedAt: message.requestedAt };
         this.world.revision++;
         const hold = this.world.holds.get(message.operation.name);
         if (hold && (!hold.deviceId || hold.deviceId === this.spec.id)) {
           if (hold.phase === 'delivery') {
-            try { item.result = this.world.execute(this, item.operation); }
+            try { item.result = this.world.execute(this, item.operation, item.requestedAt); }
             catch (error) { this.world.fatals.push(error.stack ?? String(error)); }
           }
           this.world.held.push(item);
@@ -179,6 +214,8 @@ class Device {
         if (!pending) { this.world.fatals.push(`Unexpected result ${message.id}`); return; }
         this.pending.delete(message.id);
         clearRealTimeout(pending.timer);
+        this.world.recordEvidence?.({ kind: 'result', deviceId: this.spec.id, generation, id: message.id,
+          result: message.result, error: message.error });
         if (message.error) pending.reject(new Error(message.error));
         else pending.resolve(message.result);
         return;
@@ -191,6 +228,10 @@ class Device {
   command(command) {
     assert(this.child?.connected, `Device ${this.spec.id} is closed`);
     const id = ++this.nextCommand;
+    this.world.recordEvidence?.({ kind: 'command', deviceId: this.spec.id, generation: this.generation, id, command });
+    if (['perform', 'input', 'host', 'mount', 'advance', 'close'].includes(command.kind)) {
+      this.world.recordInput?.({ deviceId: this.spec.id, platform: this.spec.platform, generation: this.generation, logicalTime: this.world.now, command: structuredClone(command) });
+    }
     return new Promise((resolve, reject) => {
       const timer = realTimeout(() => {
         this.pending.delete(id);

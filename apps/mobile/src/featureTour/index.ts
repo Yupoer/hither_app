@@ -15,7 +15,6 @@ export {
   isTourCompletedFromSources,
   shouldStartGroupFeatureTour,
   retryPendingTourAccountSync,
-  isTourAccountSyncPending,
   readTourAccountSyncPending,
   parseTourAccountSyncPending,
   readTourResetIntent,
@@ -36,7 +35,7 @@ export {
   stepCount,
   type TourControllerState,
 } from './tourController';
-export { measureTargetWithRetry, measureTourStepRects, STABLE_PARENT_BY_TARGET, STAGE_TWO_SETTLE_MS } from './measureTarget';
+export { measureTargetWithRetry, measureTourStepRects, STABLE_PARENT_BY_TARGET } from './measureTarget';
 export {
   placeTourCard,
   holeRadius,

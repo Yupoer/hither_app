@@ -1,4 +1,6 @@
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
+jest.mock('expo-location', () => ({ getForegroundPermissionsAsync: jest.fn(async () => ({ status: 'granted' })) }));
+import { getForegroundPermissionsAsync } from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { captureLocationAccess, setLocationAccessContext, setLocationSharingConsent, isLocationAccessCurrent } from '../state/locationPrivacy';
 import { memberMotionDuration } from '../utils/memberMotion';
@@ -17,9 +19,11 @@ test('cold background cannot read; stop and team change invalidate in-flight rea
   setLocationAccessContext('b', true, true);
   expect(await captureLocationAccess('a')).toBeNull();
   (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce('false');
-  expect(await captureLocationAccess()).toBeNull();
+  const permission = jest.mocked(getForegroundPermissionsAsync).mockRejectedValueOnce(new Error('permission lookup unavailable'));
+  expect(await captureLocationAccess(undefined, true)).toBeNull();
+  expect(permission).not.toHaveBeenCalled();
   (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error('storage unavailable'));
-  expect(await captureLocationAccess()).toBeNull();
+  expect(await captureLocationAccess()).toBeUndefined();
 });
 
 test('display transitions follow sample time and snap on resume, stale samples, reduced motion, and jumps', () => {

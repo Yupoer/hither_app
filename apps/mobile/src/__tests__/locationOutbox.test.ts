@@ -1,3 +1,4 @@
+jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
 jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'user-1' }));
 jest.mock('react-native', () => ({ AppState: { currentState: 'active' } }));
 jest.mock('../api/services/LocationService', () => ({
@@ -12,6 +13,9 @@ jest.mock('expo-sqlite', () => ({
 
 import {
   createLocationOutbox,
+  enqueueLocationOutbox,
+  flushLocationOutbox,
+  SQLiteLocationOutboxDatabase,
   LOCATION_OUTBOX_KEY,
   type LocationOutboxDatabase,
   type LocationOutboxEntry,
@@ -241,4 +245,39 @@ describe('SQLite location outbox', () => {
       capturedAt: 1_000.424,
     });
   });
+});
+
+
+it('retains the original durable event while access is pending and uploads only after membership resolves', async () => {
+  const { setLocationAccessContext } = require('../state/locationPrivacy');
+  const { ingestLocationBatch } = require('../api/services/LocationService');
+  const database = new MemoryLocationOutboxDatabase();
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'initialize').mockImplementation(() => database.initialize());
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'insert').mockImplementation(row => database.insert(row));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'removeExpired').mockImplementation(now => database.removeExpired(now));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'getDue').mockImplementation((now, limit) => database.getDue(now, limit));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'resolveBatch').mockImplementation((ids, failed) => database.resolveBatch(ids, failed));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'count').mockImplementation(() => database.count());
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'purge').mockImplementation(() => database.purge());
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'nextDue').mockResolvedValue(null);
+  try {
+    setLocationAccessContext('g1', true, true);
+    const original = { ...event(), capturedAt: Date.now(), actorId: 'user-1' };
+    await enqueueLocationOutbox(original);
+    setLocationAccessContext(undefined, true);
+    await expect(flushLocationOutbox()).resolves.toMatchObject({ sent: 0, remaining: 1 });
+    expect(database.entries.get(original.id)).toMatchObject(original);
+    expect(ingestLocationBatch).not.toHaveBeenCalled();
+    ingestLocationBatch.mockImplementation(async (events: LocationUploadEvent[]) => ({
+      acceptedIds: events.map(row => row.id), rejected: [],
+    }));
+    setLocationAccessContext('g1', true, true);
+    await expect(flushLocationOutbox()).resolves.toMatchObject({ sent: 1, acceptedIds: [original.id], remaining: 0 });
+    expect(ingestLocationBatch).toHaveBeenCalledWith([original]);
+    await enqueueLocationOutbox({ ...original, id: '00000000-0000-4000-8000-000000000888' });
+    setLocationAccessContext(null, false);
+    await expect(flushLocationOutbox()).resolves.toMatchObject({ sent: 0, remaining: 0 });
+  } finally {
+    jest.restoreAllMocks();
+  }
 });

@@ -9,7 +9,7 @@ import {
   ingestLocationBatch,
   listMyPendingLocationRefreshes,
 } from '../api/services/LocationService';
-import { captureLocationAccess, isLocationAccessCurrent, type LocationAccess } from './locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessPending, type LocationAccess } from './locationPrivacy';
 import { reconcileBackgroundNavigation } from './backgroundJourney';
 import { diagnostics } from './diagnostics';
 import {
@@ -184,8 +184,9 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
 
       const payload = parsePayload(data);
       if (!payload?.groupId || !['location_refresh', 'navigation_session'].includes(payload.category ?? '')) return;
-      const access = await captureLocationAccess(payload.groupId);
+      const access = await captureLocationAccess();
       if (!access) {
+        if (access === undefined || isLocationAccessPending()) return;
         await purgeLocationOutbox();
         await diagnostics.write({
           event: 'location_rejected_sharing_disabled',
@@ -194,6 +195,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
         return;
       }
 
+      if (access.groupId !== payload.groupId) return;
       if (payload.category === 'navigation_session') {
         await reconcileBackgroundNavigation(payload.groupId);
         return;

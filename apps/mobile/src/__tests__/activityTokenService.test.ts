@@ -1,3 +1,4 @@
+import { configureDefaultAuthRecovery } from '../api/authRecovery';
 type UpsertResult = { error: { code?: string; message?: string } | null };
 type SelectResult = {
   data: Array<{ user_id: string; device_id: string }> | null;
@@ -32,13 +33,15 @@ const from = jest.fn((table: string) => {
   return { upsert, select };
 });
 
+const mockGetSession = jest.fn(async () => ({
+  data: { session: { access_token: 'fixture-token', user: { id: 'user-1' } } },
+  error: null,
+}));
+
 jest.mock('../api/supabase', () => ({
   supabase: {
     auth: {
-      getSession: jest.fn(async () => ({
-        data: { session: { user: { id: 'user-1' } } },
-        error: null,
-      })),
+      getSession: mockGetSession,
     },
     from,
   },
@@ -62,6 +65,10 @@ describe('device ActivityKit token service', () => {
     jest.clearAllMocks();
     upsert.mockResolvedValue({ error: null });
     selectLimit.mockResolvedValue({ data: [], error: null });
+    configureDefaultAuthRecovery({
+      getSession: () => mockGetSession(),
+      refreshSession: () => mockGetSession(),
+    });
   });
 
   it('creates and persists one stable device id', async () => {

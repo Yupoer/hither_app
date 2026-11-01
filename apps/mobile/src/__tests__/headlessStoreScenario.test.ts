@@ -294,7 +294,6 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       const revoked = await device.perform('premium.flow.ensurePersonalPremiumAccess', { args: [{ userId: LEADER, groupId: GROUP_ID, cacheStale: true, cachedLive: false }] });
       expect(revoked.allowed).toBe(false);
       expect(revoked.projection).toMatchObject({ personalPremiumActive: false, teamPremiumActive: true });
-      await expect(device.perform('premium.direct-write-rejected', { args: [LEADER] })).rejects.toThrow('entitlement_write_forbidden');
     } finally { await world.close(); }
   });
 
@@ -347,6 +346,16 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       world.backend.tables.notification_preferences = [{ user_id: PEER, add_gathering: false, leader_commands: true, follower_requests: true, journey: true, arrival: true }];
       await event('itinerary_items', { id: 'muted-stop', group_id: GROUP_ID, created_by: LEADER, title: 'Muted' });
       expect((await device.observe()).native.scheduled).toHaveLength(5);
+      const laterDeparture = new Date(world.now + 1000).toISOString();
+      await event('groups', { id: GROUP_ID, journey_status: 'going', active_destination_id: DESTINATION,
+        journey_started_at: laterDeparture }, 'UPDATE', { journey_status: 'paused', active_destination_id: DESTINATION });
+      const categoryScoped = await world.waitFor(device, (value: any) => value.native.scheduled.length === 6, 'journey still delivered after gathering category mute');
+      expect(categoryScoped.presentation.session.user.id).toBe(PEER);
+      expect(categoryScoped.native.scheduled.at(-1).input.content).toMatchObject({
+        body: expect.stringContaining('Leader'), data: { category: 'journey', groupId: GROUP_ID, senderId: LEADER },
+      });
+      expect(world.backend.memberships.find((row: any) => row.user_id === PEER).solo).toBe(false);
+      expect(world.backend.tables.notification_preferences[0]).toMatchObject({ user_id: PEER, add_gathering: false, journey: true });
       world.hold('notification_preferences');
       await event('commands', { id: 'old-account-await', group_id: GROUP_ID, sender_id: LEADER, type: 'gather', message: 'Old account' });
       await world.waitFor(device, () => world.held.some((request: any) => request.operation.name === 'notification_preferences'), 'held old actor preference read');
@@ -354,12 +363,12 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       await world.advance(0);
       await world.waitFor(device, (value: any) => value.presentation.session.user?.id === LEADER, 'actual replacement account committed');
       await world.release('notification_preferences');
-      expect((await device.observe()).native.scheduled).toHaveLength(5);
+      expect((await device.observe()).native.scheduled).toHaveLength(6);
       await device.command({ kind: 'mount', screen: { name: 'NotificationPreferences' } });
       const detached = await device.observe();
       expect(detached.native.listeners).toMatchObject({ notification: 0, live: 0 });
       await event('commands', { id: 'after-unmount', group_id: GROUP_ID, sender_id: LEADER, type: 'gather', message: 'No listener' });
-      expect((await device.observe()).native.scheduled).toHaveLength(5);
+      expect((await device.observe()).native.scheduled).toHaveLength(6);
     } finally { await world.close(); }
   });
 

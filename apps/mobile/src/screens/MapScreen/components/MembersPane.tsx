@@ -76,7 +76,6 @@ export function MembersPane({
 }: MembersPaneProps) {
   return (
     <>
-      {/* My status + refresh on one row (stage 1+ body) */}
       <View style={styles.myStatusBar}>
         <View style={styles.myStatusCluster}>
           {Platform.OS === 'ios' ? (
@@ -242,7 +241,6 @@ export function MembersPane({
         </Pressable>
       </View>
     
-      {/* 精準定位 — 成員欄最下方 */}
       <View style={[styles.accuracyRow, styles.accuracyRowLast]}>
         <View style={styles.accuracyCopy}>
           <Text style={styles.accuracyLabel}>

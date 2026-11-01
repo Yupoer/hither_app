@@ -309,35 +309,29 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
     } finally { await world.close(); }
   });
 
-  it('retries a failed nickname fallback and permits only one team entry across different cards', async () => {
+  it('enters a saved team while profile enrichment is pending without overwriting the nickname', async () => {
     const world = new World();
+    world.backend.profiles.get(LEADER).nickname = 'Tokyo Leader';
+    world.hold('profiles');
     try {
-      world.backend.profiles.get(LEADER).nickname = '';
-      const device = await screen(world, 'RoleSelect');
-      const second = await device.perform('group.createGroup', { args: ['Second team'] });
-      await device.perform('home.teams');
-      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${second.id}`), 'both team cards loaded');
-      device.online = false;
+      const device = await screen(world, 'MyTeams');
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`), 'saved team available before profile enrichment');
+      expect((await device.observe()).presentation.session.user.name).toBe('');
       await device.perform('teams.expand', { groupId: GROUP_ID });
       await device.perform('teams.enter');
       await world.settle();
-      expect((await device.observe()).presentation.session.membership).toBeNull();
-      expect((await device.observe()).presentation.route.route).toBe('MyTeams');
-      device.online = true;
-      world.hold('profiles');
-      await device.perform('teams.expand', { groupId: GROUP_ID });
-      await device.perform('teams.enter');
-      await world.waitFor(device, (value: any) => value.pending.length > 0, 'nickname write before membership adoption');
-      await device.perform('teams.expand', { groupId: second.id });
-      await device.perform('teams.enter');
-      expect(world.held.filter((item: any) => item.operation.name === 'profiles')).toHaveLength(1);
-      expect((await device.observe()).presentation.session.membership).toBeNull();
+      expect((await device.observe()).presentation.route.route).toBe('Map');
+      expect(world.backend.profiles.get(LEADER).nickname).toBe('Tokyo Leader');
+      expect(world.backend.trace.filter((call: any) => call.name === 'profiles'
+        && call.steps.some((step: any) => ['update', 'upsert'].includes(step[0])))).toHaveLength(0);
+      await world.advance(1);
       await world.release('profiles');
-      const entered = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Map' && value.presentation.session.membership?.group.id === GROUP_ID, 'first team adopted after nickname write');
-      expect(entered.presentation.session.user.name).toBe('leader');
-      expect(world.backend.profiles.get(LEADER).nickname).toBe('leader');
-      expect(entered.presentation.route.params.groupId).toBe(GROUP_ID);
-    } finally { await world.close(); }
+      const enriched = await world.waitFor(device, (value: any) => value.presentation.session.user.name === 'Tokyo Leader', 'persisted nickname restored');
+      expect(enriched.presentation.session.membership.group.id).toBe(GROUP_ID);
+    } finally {
+      await world.release('profiles');
+      await world.close();
+    }
   });
 
   it('sends, enriches, declines and accepts subgroup invitations through real services', async () => {
