@@ -151,8 +151,6 @@ describe('Dynamic Type contract', () => {
   });
 
   it('stacks gathering cards above capsules and below the sheet layer', () => {
-    expect(mapScreen).toContain('carouselMaxHeight');
-    expect(mapScreen).toContain('CAPSULE_CLEARANCE');
     const styles = makeStyles('#68d391', 1);
     expect(styles.carouselWrap.zIndex).toBeGreaterThan(styles.recenter.zIndex);
     expect(styles.carouselWrap.zIndex).toBeGreaterThan(styles.teamCapsuleWrap.zIndex);

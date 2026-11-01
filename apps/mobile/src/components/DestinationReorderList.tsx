@@ -3,6 +3,8 @@ import React, { useCallback, useMemo, useRef, useState, memo } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
 import {
   Animated,
+  AccessibilityInfo,
+  Easing,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -14,6 +16,8 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
+import { cappedFontScale } from '../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import ReanimatedSwipeable, {
@@ -37,7 +41,8 @@ import {
   legalDragIndicesForList,
   moveDayHeaderBefore,
   orderAfterDragMove,
-  reorderRowCenterY,
+  reorderRowGeometry,
+  sourceClosedReorderGeometry,
   snapToLegalDragIndex,
   shouldHighlightStayDuplicate,
   type AccommodationListItem,
@@ -63,7 +68,7 @@ import { classifyOperationError } from '../utils/operationError';
 
 const REORDER_VISUAL_SCALE = 1;
 const ROW_HEIGHT = 52;
-const FAVORITE_TITLE_SIZE = 15 * 2;
+const FAVORITE_TITLE_SIZE = 19;
 const REORDER_LAYOUT = DEFAULT_REORDER_LAYOUT;
 const REVEAL_WIDTH = Math.round(76 * REORDER_VISUAL_SCALE);
 /** Fixed right-column width so day ≡ and stop ≡ share one vertical line. */
@@ -151,6 +156,74 @@ type ListItem =
   | { type: 'header'; day: number; id: string; title: string; dateStr: string }
   | { type: 'dest'; item: Destination; id: string };
 
+type DragPoint = { x: number; y: number };
+type DragFrame = DragPoint & { width: number; height: number };
+type DragKeyEvent = { nativeEvent: { key?: string }; preventDefault?: () => void };
+type DragRowMotion = { close: Animated.Value; ripple: Animated.Value; pulse: Animated.CompositeAnimation | null };
+type DragSession =
+  | { phase: 'idle' }
+  | {
+      phase: 'dragging' | 'releasing' | 'settling' | 'cancelling';
+      sourceId: string;
+      sourceIndex: number;
+      targetBoundary: number;
+      input: 'pointer' | 'keyboard';
+      entries: ReorderListEntry[];
+      measured: MeasuredReorderGeometry;
+      geometry: ReturnType<typeof reorderRowGeometry>;
+      legalBoundaries: number[];
+      scrollOffset: number;
+      pointerDy: number;
+      pointer: DragPoint | null;
+      frame: DragFrame | null;
+      bounds: DragFrame | null;
+    };
+
+function RouteDragSettlement({ session, rows, rowMotion, generation, currentGeneration, completion, previewPan, previewX, previewScale, lineScale, reducedMotion }: {
+  session: Exclude<DragSession, { phase: 'idle' }>;
+  rows: React.RefObject<Map<string, View>>;
+  rowMotion: React.RefObject<Map<string, DragRowMotion>>;
+  generation: number;
+  currentGeneration: React.RefObject<number>;
+  completion: React.RefObject<(() => void) | null>;
+  previewPan: Animated.Value;
+  previewX: Animated.Value;
+  previewScale: Animated.Value;
+  lineScale: Animated.Value;
+  reducedMotion: boolean;
+}) {
+  useMountEffect(() => {
+    const finish = () => {
+      if (generation !== currentGeneration.current) return;
+      completion.current?.();
+      completion.current = null;
+    };
+    const row = rows.current.get(session.sourceId);
+    const frame = session.frame;
+    if (reducedMotion) { finish(); return; }
+    const animateTo = (x: number, y: number) => {
+      if (generation !== currentGeneration.current) return;
+      Animated.parallel([
+        ...[...rowMotion.current.values()].flatMap(motion => [
+          Animated.spring(motion.close, { toValue: 0, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+          Animated.spring(motion.ripple, { toValue: 0, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+        ]),
+        Animated.spring(previewPan, { toValue: y, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+        Animated.spring(previewX, { toValue: x, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+        Animated.spring(previewScale, { toValue: 1, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+        Animated.timing(lineScale, { toValue: 0, duration: 120, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      ]).start(finish);
+    };
+    if (row && frame) row.measureInWindow((x, y) => animateTo(x - frame.x, y - frame.y));
+    else animateTo(0, 0);
+    return () => {
+      for (const value of [previewPan, previewX, previewScale, lineScale]) value.stopAnimation();
+      finish();
+    };
+  });
+  return null;
+}
+
 /**
  * Stable route shape used to reconcile an optimistic local drop with the
  * parent draft. It follows headers rather than trusting a destination's
@@ -192,11 +265,11 @@ interface RouteListInteractionOwner {
   replay: boolean;
 }
 
-function RouteListInteractionCommit({ input, owner, autoScrollRaf, dragging, pendingOrderSignature, setOrder }: {
+function RouteListInteractionCommit({ input, owner, autoScrollRaf, dragSession, pendingOrderSignature, setOrder }: {
   input: RouteListInteractionInput;
   owner: React.RefObject<RouteListInteractionOwner>;
   autoScrollRaf: React.RefObject<number | null>;
-  dragging: React.RefObject<boolean>;
+  dragSession: React.RefObject<DragSession>;
   pendingOrderSignature: React.RefObject<string | null>;
   setOrder: React.Dispatch<React.SetStateAction<ListItem[]>>;
 }) {
@@ -223,7 +296,7 @@ function RouteListInteractionCommit({ input, owner, autoScrollRaf, dragging, pen
     if (foregroundChanged && !input.foreground) input.endDragSession();
     if (!projectionChanged) return;
     input.closeOpenSwipeable();
-    if (dragging.current) return;
+    if (dragSession.current.phase !== 'idle') return;
     const nextOrder: ListItem[] = [{ type: 'header', day: 0, id: 'header-pool', title: input.t('trip.pool'), dateStr: '' }];
     const days = Math.max(1, input.tripDays || 1);
     const sortedDests = [...input.destinations].sort((a, b) => {
@@ -334,7 +407,8 @@ export default function DestinationReorderList({
 }: Props) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { fontScale } = useWindowDimensions();
-  const favoriteIconSize = FAVORITE_TITLE_SIZE * fontScale;
+  const favoriteIconSize = FAVORITE_TITLE_SIZE * cappedFontScale(fontScale);
+  const reducedMotion = useReducedMotion();
   const { t } = useTranslation();
   const { dayColors, setDayColor, gatherCardTitleMarquee, gatherCardMarqueeSpeed } = usePreferences();
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -374,9 +448,11 @@ export default function DestinationReorderList({
    */
   const pendingOrderSignatureRef = useRef<string | null>(null);
 
-  const draggingRef = useRef(false);
+  const dragSession = useRef<DragSession>({ phase: 'idle' });
+  const [, refreshDrag] = useState(0);
+  const listView = useRef<View | null>(null);
   const foreground = useForegroundUi();
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeId = dragSession.current.phase === 'idle' ? null : dragSession.current.sourceId;
   const [colorPickerDay, setColorPickerDay] = useState<number | null>(null);
   const [emojiPickerDestId, setEmojiPickerDestId] = useState<string | null>(null);
   const [emojiDraft, setEmojiDraft] = useState(DESTINATION_EMOJI_FALLBACK);
@@ -393,39 +469,23 @@ export default function DestinationReorderList({
   // Stable so memo(HeaderRow) is not busted by a new lambda each parent render.
   const onHeaderColorPress = useCallback((day: number) => {
     setColorPickerDay(day);
-  }, []);
-  const startIndexRef = useRef(0);
-  /** List-space center Y of the row at drag grant (for finger tracking). */
-  const startCenterYRef = useRef(0);
-  /** Extra dy from programmatic parent scroll during drag. */
-  const scrollAccumRef = useRef(0);
-  /**
-   * Legal full-list indices cached at grant. Ghost drag never mutates order mid-
-   * pan, so this set stays valid for the whole gesture (no O(n²) recompute).
-   */
-  const legalIndicesRef = useRef<number[]>([]);
-  /** Aim index while ghost-dragging (applied once on release). */
-  const dropTargetIndexRef = useRef(0);
-  const lastDropHapticIndexRef = useRef(-1);
-  /** Coalesce edge auto-scroll to one scrollTo per animation frame. */
+  }, [setColorPickerDay]);
   const autoScrollRafRef = useRef<number | null>(null);
   const pendingAutoScrollRef = useRef(0);
-  const pan = useRef(new Animated.Value(0)).current;
   const previewPan = useRef(new Animated.Value(0)).current;
+  const previewX = useRef(new Animated.Value(0)).current;
+  const previewScale = useRef(new Animated.Value(1)).current;
+  const lineY = useRef(new Animated.Value(0)).current;
+  const lineScale = useRef(new Animated.Value(0)).current;
+  const rowMotion = useRef(new Map<string, DragRowMotion>());
   const dragGenerationRef = useRef(0);
+  const settleCompletion = useRef<(() => void) | null>(null);
   const rowViewsRef = useRef(new Map<string, View>());
   const previewRowsRef = useRef(new Map<string, React.ReactElement>());
-  /** Insertion line under finger aim (null when not dragging). */
-  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   /** onLayout heights so drag aim matches real header / stay / quick-add sizes. */
   const measuredHeightByIdRef = useRef(new Map<string, number>());
   const measuredGapByDayRef = useRef(new Map<number, number>());
   const [, setMeasureTick] = useState(0);
-
-  const getMeasuredGeometry = useCallback((): MeasuredReorderGeometry => ({
-    heightById: measuredHeightByIdRef.current,
-    gapByDay: measuredGapByDayRef.current,
-  }), []);
 
   const recordMeasuredHeight = useCallback((id: string, height: number) => {
     if (!(height > 0)) return;
@@ -467,28 +527,61 @@ export default function DestinationReorderList({
   const [moveDestinationId, setMoveDestinationId] = useState<string | null>(null);
 
   const endDragSession = useCallback(() => {
-    draggingRef.current = false;
+    dragSession.current = { phase: 'idle' };
     dragGenerationRef.current += 1;
-    legalIndicesRef.current = [];
-    scrollAccumRef.current = 0;
+    settleCompletion.current?.();
+    settleCompletion.current = null;
     pendingAutoScrollRef.current = 0;
-    dropTargetIndexRef.current = 0;
-    lastDropHapticIndexRef.current = -1;
-    if (autoScrollRafRef.current != null) {
-      cancelAnimationFrame(autoScrollRafRef.current);
-      autoScrollRafRef.current = null;
+    if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
+    autoScrollRafRef.current = null;
+    for (const motion of rowMotion.current.values()) {
+      motion.pulse?.stop();
+      motion.pulse = null;
+      motion.close.stopAnimation();
+      motion.ripple.stopAnimation();
+      motion.close.setValue(0);
+      motion.ripple.setValue(0);
     }
-    // Always re-enable parent scroll even if release races with unmount.
+    for (const value of [previewPan, previewX, previewScale, lineY, lineScale]) value.stopAnimation();
     onDragActiveChange?.(false);
     onDragPreviewChange?.(null);
-    setActiveId(null);
-    setDropTargetIndex(null);
-    pan.setValue(0);
-  }, [onDragActiveChange, onDragPreviewChange, pan]);
+    refreshDrag(value => value + 1);
+  }, [onDragActiveChange, onDragPreviewChange, previewPan, previewX, previewScale, lineY, lineScale]);
+
+  const cancelDrag = useCallback(() => {
+    const session = dragSession.current;
+    if (session.phase !== 'dragging' && session.phase !== 'releasing') return;
+    if (reducedMotion) { endDragSession(); return; }
+    session.phase = 'cancelling';
+    const generation = ++dragGenerationRef.current;
+    if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
+    autoScrollRafRef.current = null;
+    pendingAutoScrollRef.current = 0;
+    refreshDrag(value => value + 1);
+    Animated.parallel([
+      ...[...rowMotion.current.values()].flatMap(motion => {
+        motion.pulse?.stop();
+        motion.pulse = null;
+        motion.close.stopAnimation();
+        motion.ripple.stopAnimation();
+        return [
+          Animated.spring(motion.close, { toValue: 0, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+          Animated.spring(motion.ripple, { toValue: 0, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+        ];
+      }),
+      Animated.spring(previewPan, { toValue: -session.scrollOffset, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+      Animated.spring(previewX, { toValue: 0, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+      Animated.spring(previewScale, { toValue: 1, stiffness: 300, damping: 26, mass: 0.8, useNativeDriver: true }),
+      Animated.timing(lineScale, { toValue: 0, duration: 120, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished && generation === dragGenerationRef.current) endDragSession();
+    });
+  }, [reducedMotion, endDragSession, previewPan, previewX, previewScale, lineScale]);
 
   const interactionOwner = useRef<RouteListInteractionOwner>({ input: null, replay: true });
   useMountEffect(() => () => {
     interactionOwner.current.replay = true;
+    endDragSession();
     if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
     autoScrollRafRef.current = null;
   });
@@ -504,7 +597,7 @@ export default function DestinationReorderList({
         if (date) setEditDate(clampDateNotBeforeToday(date));
       },
     });
-  }, [editDate]);
+  }, [editDate, setEditDate]);
 
   const saveTripSettings = useCallback(() => {
     setShowSettings(false);
@@ -519,7 +612,7 @@ export default function DestinationReorderList({
       && editDate.getTime() < min.getTime();
     const toSave = unchangedPast ? existing : clampDateNotBeforeToday(editDate);
     onUpdateTripDetails?.(editDays, toSave.toISOString());
-  }, [departureDate, editDate, editDays, onUpdateTripDetails]);
+  }, [departureDate, editDate, editDays, onUpdateTripDetails, setShowSettings]);
 
   const [collapseInput, setCollapseInput] = useState({ accountId, groupId, departureDate, tripDays, generation: 0 });
   if (!Object.is(collapseInput.accountId, accountId) || !Object.is(collapseInput.groupId, groupId)
@@ -542,7 +635,7 @@ export default function DestinationReorderList({
         return next;
       });
     },
-    [accountId, groupId, departureDate],
+    [accountId, groupId, departureDate, setCollapsedDays],
   );
 
   const stayDateForDay = useCallback(
@@ -585,14 +678,16 @@ export default function DestinationReorderList({
   }
 
   const toReorderEntries = useCallback((list: ListItem[]): ReorderListEntry[] => {
+    let day = 0;
     return list.map((entry) => {
       if (entry.type === 'header') {
+        day = entry.day;
         return { type: 'header' as const, day: entry.day, id: entry.id };
       }
       return {
         type: 'dest' as const,
         id: entry.item.id,
-        day: entry.item.day ?? 0,
+        day,
         kind: entry.item.kind === 'accommodation' ? 'accommodation' : 'stop',
         stayAnchor: entry.item.stayAnchor,
         title: entry.item.title,
@@ -600,123 +695,204 @@ export default function DestinationReorderList({
     });
   }, []);
 
-  const handleGrant = useCallback(
-    (id: string) => {
-      const startIdx = orderRef.current.findIndex((d) => d.id === id);
-      if (startIdx === -1) return;
-      const entry = orderRef.current[startIdx];
-      // Day1 header is fixed; Day2…last may drag.
-      if (entry.type === 'header' && entry.day <= 1) return;
-      const generation = ++dragGenerationRef.current;
-      startIndexRef.current = startIdx;
-      draggingRef.current = true;
-      onDragActiveChange?.(true);
-      const view = rowViewsRef.current.get(id);
-      const preview = previewRowsRef.current.get(id);
-      previewPan.setValue(0);
-      if (view && preview && onDragPreviewChange) {
-        view.measureInWindow((x, y, width, height) => {
-          if (!draggingRef.current || generation !== dragGenerationRef.current || orderRef.current[startIndexRef.current]?.id !== id) return;
-          setActiveId(id);
-          onDragPreviewChange(
-            <Animated.View pointerEvents="none" accessibilityElementsHidden testID="route-drag-preview"
-              style={[styles.dragPreview, { position: 'absolute', left: x, top: y, width, height, zIndex: 1000,
-                elevation: 1000, transform: [{ translateY: previewPan }] }]}>
-              {preview}
-            </Animated.View>,
-          );
+  const showTarget = useCallback((target: number) => {
+    const session = dragSession.current;
+    if (session.phase !== 'dragging' && session.phase !== 'releasing') return;
+    const previous = session.targetBoundary;
+    if (previous === target) return;
+    session.targetBoundary = target;
+    const closed = reducedMotion ? session.geometry : sourceClosedReorderGeometry(session.geometry, session.sourceIndex);
+    const y = target === session.entries.length ? closed.total : closed.tops[target];
+    lineY.stopAnimation();
+    if (reducedMotion) lineY.setValue(y);
+    else Animated.timing(lineY, { toValue: y, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    if (previous !== target) {
+      selectionTick();
+      if (!reducedMotion) {
+        for (const motion of rowMotion.current.values()) {
+          motion.pulse?.stop();
+          motion.pulse = null;
+          motion.ripple.stopAnimation();
+          motion.ripple.setValue(0);
+        }
+        const visible = session.entries.map((entry, index) => ({ entry, index }))
+          .filter(({ index }) => index !== session.sourceIndex && session.geometry.rowHeights[index] > 0);
+        const sides = [visible.filter(({ index }) => index < target).reverse(), visible.filter(({ index }) => index >= target)];
+        sides.forEach((neighbors, side) => neighbors.slice(0, 7).forEach(({ entry }, distance) => {
+          const motion = rowMotion.current.get(entry.id);
+          if (!motion) return;
+          motion.ripple.stopAnimation();
+          motion.ripple.setValue(0);
+          const pulse = Animated.sequence([
+            Animated.delay(24 * distance),
+            Animated.timing(motion.ripple, { toValue: (side === 0 ? -1 : 1) * 8 * Math.pow(0.7, distance), duration: 65, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+            Animated.spring(motion.ripple, { toValue: 0, stiffness: 320, damping: 24, mass: 0.6, useNativeDriver: true }),
+          ]);
+          motion.pulse = pulse;
+          pulse.start(() => { if (motion.pulse === pulse) motion.pulse = null; });
+        }));
+      }
+    }
+  }, [lineY, reducedMotion]);
+
+  const handleGrant = useCallback((id: string, pointer: DragPoint | null = null, input: 'pointer' | 'keyboard' = 'pointer') => {
+    if (dragSession.current.phase !== 'idle') return;
+    const sourceIndex = orderRef.current.findIndex(entry => entry.id === id);
+    if (sourceIndex < 0) return;
+    const entry = orderRef.current[sourceIndex];
+    if (entry.type === 'header' && entry.day <= 1) return;
+    closeOpenSwipeable();
+    const generation = ++dragGenerationRef.current;
+    const entries = toReorderEntries(orderRef.current);
+    const heights = new Map<string, number>();
+    const gaps = new Map<number, number>();
+    let day = 0;
+    for (const item of orderRef.current) {
+      if (item.type === 'header') day = item.day;
+      heights.set(item.id, item.type === 'dest' && collapsedDays[day] ? 0
+        : measuredHeightByIdRef.current.get(item.id) ?? (item.type === 'header' ? REORDER_LAYOUT.headerHeight : REORDER_LAYOUT.rowHeight));
+      if (item.type === 'header') {
+        const stayDate = day > 0 ? stayDateForDay(day) : null;
+        const quickAdd = !collapsedDays[day] && canReorder && onQuickAddAccommodation != null
+          && entries.some(row => row.type === 'dest' && row.day === day) && Boolean(stayDate && dailyByDate?.[stayDate]);
+        gaps.set(day, quickAdd ? (measuredGapByDayRef.current.get(day) ?? REORDER_LAYOUT.dayGapHeight) : 0);
+      }
+    }
+    const measured = { heightById: heights, gapByDay: gaps };
+    const geometry = reorderRowGeometry(entries, REORDER_LAYOUT, measured);
+    const legal = legalDragIndicesForList(entries, id);
+    dragSession.current = {
+      phase: 'dragging', sourceId: id, sourceIndex, targetBoundary: sourceIndex, input,
+      entries, measured, geometry, legalBoundaries: legal.length ? legal : [sourceIndex],
+      pointer, scrollOffset: 0, pointerDy: 0, frame: null, bounds: null,
+    };
+    pendingAutoScrollRef.current = 0;
+    onDragActiveChange?.(true);
+    previewPan.setValue(0);
+    previewX.setValue(reducedMotion ? 0 : 16);
+    previewScale.setValue(1);
+    lineY.setValue(geometry.tops[sourceIndex]);
+    lineScale.setValue(reducedMotion ? 1 : 0);
+    if (!reducedMotion) {
+      Animated.timing(previewScale, { toValue: 0.9, duration: 160, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
+      Animated.timing(lineScale, { toValue: 1, duration: 180, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
+    }
+    entries.forEach((row, index) => {
+      const motion = rowMotion.current.get(row.id);
+      if (!motion) return;
+      const offset = !reducedMotion && index > sourceIndex ? -geometry.rowHeights[sourceIndex] : 0;
+      if (reducedMotion) motion.close.setValue(offset);
+      else Animated.timing(motion.close, { toValue: offset, duration: 180, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
+    });
+    for (const [id, motion] of rowMotion.current) {
+      if (!id.startsWith('gap-')) continue;
+      const gapDay = Number(id.slice(4));
+      const lastIndex = entries.findLastIndex(row => row.day === gapDay);
+      const offset = !reducedMotion && lastIndex >= sourceIndex ? -geometry.rowHeights[sourceIndex] : 0;
+      if (reducedMotion) motion.close.setValue(offset);
+      else Animated.timing(motion.close, { toValue: offset, duration: 180, easing: Easing.out(Easing.exp), useNativeDriver: true }).start();
+    }
+    refreshDrag(value => value + 1);
+    listView.current?.measureInWindow((x, y, width, height) => {
+      const current = dragSession.current;
+      if (current.phase !== 'dragging' || generation !== dragGenerationRef.current) return;
+      current.bounds = { x, y, width, height };
+    });
+    const preview = previewRowsRef.current.get(id);
+    if (!reducedMotion && preview && onDragPreviewChange) {
+      rowViewsRef.current.get(id)?.measureInWindow((x, y, width, height) => {
+        const current = dragSession.current;
+        if (current.phase !== 'dragging' || generation !== dragGenerationRef.current) return;
+        current.frame = { x, y, width, height };
+        onDragPreviewChange(
+          <Animated.View pointerEvents="none" accessibilityElementsHidden testID="route-drag-preview"
+            style={[styles.dragPreview, { position: 'absolute', left: x, top: y, width, height, zIndex: 1000,
+              elevation: 1000, transform: [{ translateX: previewX }, { translateY: previewPan }, { scale: previewScale }] }]}>
+            {preview}
+          </Animated.View>,
+        );
+      });
+    }
+    selectionTick();
+  }, [closeOpenSwipeable, toReorderEntries, collapsedDays, canReorder, onQuickAddAccommodation, stayDateForDay, dailyByDate,
+    onDragActiveChange, onDragPreviewChange, reducedMotion, previewPan, previewX, previewScale, lineY, lineScale, styles]);
+
+  const aimDrag = useCallback((session: Exclude<DragSession, { phase: 'idle' }>) => {
+    const effectiveDy = session.pointerDy + session.scrollOffset;
+    const raw = dragTargetIndexFromOffset(session.entries, session.sourceIndex, effectiveDy, REORDER_LAYOUT, session.measured, !reducedMotion);
+    showTarget(snapToLegalDragIndex(session.legalBoundaries, raw, Math.sign(effectiveDy)));
+  }, [showTarget, reducedMotion]);
+
+  const handleMove = useCallback((id: string, dy: number, pageY?: number, dx = 0, pageX?: number) => {
+    const session = dragSession.current;
+    if (session.phase !== 'dragging' || session.sourceId !== id) return;
+    session.pointerDy = dy;
+    if (pageY != null && pageX != null) session.pointer = { x: pageX, y: pageY };
+    if (pageY != null && onDragAutoScroll) {
+      const winH = Dimensions.get('window').height;
+      let step = 0;
+      if (pageY < DRAG_EDGE_PX) {
+        const proximity = 1 - pageY / DRAG_EDGE_PX;
+        step = -Math.max(DRAG_SCROLL_STEP, Math.round(DRAG_SCROLL_STEP * (1 + proximity * 1.5)));
+      } else if (pageY > winH - DRAG_EDGE_PX) {
+        const proximity = 1 - (winH - pageY) / DRAG_EDGE_PX;
+        step = Math.max(DRAG_SCROLL_STEP, Math.round(DRAG_SCROLL_STEP * (1 + proximity * 1.5)));
+      }
+      if (step !== 0) {
+        pendingAutoScrollRef.current += step;
+        if (autoScrollRafRef.current == null) autoScrollRafRef.current = requestAnimationFrame(() => {
+          autoScrollRafRef.current = null;
+          const delta = pendingAutoScrollRef.current;
+          pendingAutoScrollRef.current = 0;
+          if (!isForegroundUi() || dragSession.current.phase !== 'dragging' || delta === 0) return;
+          onDragAutoScroll(delta);
+          listView.current?.measureInWindow((_x, y) => {
+            const current = dragSession.current;
+            if (current !== session || current.phase !== 'dragging' || !current.bounds) return;
+            current.scrollOffset = current.bounds.y - y;
+            aimDrag(current);
+          });
         });
       }
-      if (!onDragPreviewChange) setActiveId(id);
-      dropTargetIndexRef.current = startIdx;
-      lastDropHapticIndexRef.current = startIdx;
-      scrollAccumRef.current = 0;
-      pendingAutoScrollRef.current = 0;
-      const entries = toReorderEntries(orderRef.current);
-      const measured = getMeasuredGeometry();
-      startCenterYRef.current = reorderRowCenterY(
-        entries,
-        startIdx,
-        REORDER_LAYOUT,
-        measured,
-      );
-      // Ghost drag: order is frozen mid-gesture → legal slots stay valid for the whole drag.
-      legalIndicesRef.current = legalDragIndicesForList(entries, id);
-      setDropTargetIndex(startIdx);
-      pan.setValue(0);
-      selectionTick();
-    },
-    [pan, previewPan, styles, onDragActiveChange, onDragPreviewChange, toReorderEntries, getMeasuredGeometry],
-  );
+    }
+    aimDrag(session);
+    if (!reducedMotion) {
+      previewPan.stopAnimation();
+      previewX.stopAnimation();
+      Animated.timing(previewPan, { toValue: dy, duration: 45, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+      Animated.timing(previewX, { toValue: dx + 16, duration: 45, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
+    }
+  }, [onDragAutoScroll, aimDrag, reducedMotion, previewPan, previewX]);
 
-  const handleMove = useCallback(
-    (id: string, dy: number, pageY?: number) => {
-      if (!draggingRef.current) return;
-      const startIndex = startIndexRef.current;
-      // Ghost drag: row stays in DOM place; only pan follows the finger.
-      // Do NOT setOrder mid-move — that re-parented rows under new day headers
-      // and left the row's action layer offset from the list (freeze screenshot).
-
-      // Edge auto-scroll so other day blocks off-screen stay reachable.
-      // Proximity scales step so the further into the edge band, the faster.
-      if (typeof pageY === 'number' && onDragAutoScroll) {
-        const winH = Dimensions.get('window').height;
-        let step = 0;
-        if (pageY < DRAG_EDGE_PX) {
-          const t = 1 - pageY / DRAG_EDGE_PX;
-          step = -Math.max(DRAG_SCROLL_STEP, Math.round(DRAG_SCROLL_STEP * (1 + t * 1.5)));
-        } else if (pageY > winH - DRAG_EDGE_PX) {
-          const t = 1 - (winH - pageY) / DRAG_EDGE_PX;
-          step = Math.max(DRAG_SCROLL_STEP, Math.round(DRAG_SCROLL_STEP * (1 + t * 1.5)));
-        }
-        if (step !== 0) {
-          scrollAccumRef.current += step;
-          pendingAutoScrollRef.current += step;
-          if (autoScrollRafRef.current == null) {
-            autoScrollRafRef.current = requestAnimationFrame(() => {
-              autoScrollRafRef.current = null;
-              const delta = pendingAutoScrollRef.current;
-              pendingAutoScrollRef.current = 0;
-              if (!isForegroundUi() || !draggingRef.current || delta === 0) return;
-              onDragAutoScroll(delta);
-            });
-          }
-        }
-      }
-
-      const effectiveDy = dy + scrollAccumRef.current;
-      const entries = toReorderEntries(orderRef.current);
-      const measured = getMeasuredGeometry();
-      const rawTarget = dragTargetIndexFromOffset(
-        entries,
-        startIndex,
-        effectiveDy,
-        REORDER_LAYOUT,
-        measured,
-      );
-      const direction = effectiveDy === 0 ? 0 : effectiveDy > 0 ? 1 : -1;
-      const legal =
-        legalIndicesRef.current.length > 0
-          ? legalIndicesRef.current
-          : legalDragIndicesForList(entries, id);
-      const legalOrSelf = legal.length > 0 ? legal : [startIndex];
-      const target = snapToLegalDragIndex(legalOrSelf, rawTarget, direction);
-      dropTargetIndexRef.current = target;
-      if (target !== lastDropHapticIndexRef.current) {
-        lastDropHapticIndexRef.current = target;
-        selectionTick();
-        setDropTargetIndex(target);
-      }
-
-      // Pure finger offset — order/layout Y never changes during the gesture.
-      pan.setValue(effectiveDy);
-      previewPan.setValue(dy);
-    },
-    [pan, previewPan, toReorderEntries, onDragAutoScroll, getMeasuredGeometry],
-  );
-
-  const handleRelease = useCallback(async () => {
-    if (!draggingRef.current) return;
+  const handleRelease = useCallback(async (pointer?: DragPoint) => {
+    const session = dragSession.current;
+    if (session.phase !== 'dragging') return;
+    if (pointer) {
+      if (session.pointer) session.pointerDy += pointer.y - session.pointer.y;
+      session.pointer = pointer;
+    }
+    session.phase = 'releasing';
+    let bounds = session.bounds;
+    if (listView.current) {
+      bounds = await new Promise<DragFrame>(resolve => {
+        listView.current?.measureInWindow((x, y, width, height) => resolve({ x, y, width, height }));
+      });
+      if (dragSession.current !== session || session.phase !== 'releasing') return;
+      if (session.bounds) session.scrollOffset = session.bounds.y - bounds.y;
+    }
+    if (session.input === 'pointer') aimDrag(session);
+    const lastPointer = session.pointer;
+    if (session.input === 'pointer' && bounds && lastPointer && (lastPointer.x < bounds.x || lastPointer.x > bounds.x + bounds.width
+      || lastPointer.y < Math.max(0, bounds.y)
+      || lastPointer.y > Math.min(Dimensions.get('window').height, bounds.y + bounds.height))) {
+      cancelDrag();
+      return;
+    }
+    session.phase = 'settling';
+    const generation = dragGenerationRef.current;
+    if (autoScrollRafRef.current != null) cancelAnimationFrame(autoScrollRafRef.current);
+    autoScrollRafRef.current = null;
+    pendingAutoScrollRef.current = 0;
 
     const previousOrder = [...orderRef.current];
     const updates: {
@@ -726,8 +902,8 @@ export default function DestinationReorderList({
       stayAnchor?: boolean;
     }[] = [];
     try {
-      const startIndex = startIndexRef.current;
-      const target = dropTargetIndexRef.current;
+      const startIndex = session.sourceIndex;
+      const target = session.targetBoundary;
       const moving = orderRef.current[startIndex];
       // Commit ghost drop once: single splice, single setOrder, no mid-drag thrash.
       if (target !== startIndex) {
@@ -737,6 +913,7 @@ export default function DestinationReorderList({
           // unchanged; the new header positions determine each destination's
           // day after the drop.
           next = moveDayHeaderBefore(orderRef.current, startIndex, target);
+          const movedIndex = next.findIndex(item => item.id === session.sourceId);
           let dayCounter = 0;
           next = next.map((item) => {
             if (item.type === 'header') {
@@ -756,6 +933,7 @@ export default function DestinationReorderList({
               item: { ...item.item, day: dayCounter > 0 ? dayCounter : null },
             };
           });
+          session.sourceId = next[movedIndex].id;
         } else {
           next = orderAfterDragMove(orderRef.current, startIndex, target);
         }
@@ -763,6 +941,31 @@ export default function DestinationReorderList({
         orderRef.current = next;
         setOrder(next);
       }
+      const committedSignature = listShapeSignature(orderRef.current);
+
+      const previousGeometry = reducedMotion ? session.geometry : sourceClosedReorderGeometry(session.geometry, startIndex);
+      const nextEntries = toReorderEntries(orderRef.current);
+      const nextGeometry = reorderRowGeometry(nextEntries, REORDER_LAYOUT, session.measured);
+      for (const [id, motion] of rowMotion.current) {
+        motion.pulse?.stop();
+      motion.pulse = null;
+      motion.close.stopAnimation();
+        motion.ripple.stopAnimation();
+        motion.ripple.setValue(0);
+        const gapDay = id.startsWith('gap-') ? Number(id.slice(4)) : null;
+        const previousIndex = gapDay == null ? session.entries.findIndex(entry => entry.id === id)
+          : session.entries.findLastIndex(entry => entry.day === gapDay);
+        const nextIndex = gapDay == null ? nextEntries.findIndex(entry => entry.id === id)
+          : nextEntries.findLastIndex(entry => entry.day === gapDay);
+        if (previousIndex < 0 || nextIndex < 0 || id === session.sourceId || reducedMotion) motion.close.setValue(0);
+        else {
+          const previousTop = previousGeometry.tops[previousIndex] + (gapDay == null ? 0 : previousGeometry.rowHeights[previousIndex]);
+          const nextTop = nextGeometry.tops[nextIndex] + (gapDay == null ? 0 : nextGeometry.rowHeights[nextIndex]);
+          motion.close.setValue(previousTop - nextTop);
+        }
+      }
+      const settled = new Promise<void>(resolve => { settleCompletion.current = resolve; });
+      refreshDrag(value => value + 1);
 
       let currentDay = 0;
       let position = 0;
@@ -832,16 +1035,71 @@ export default function DestinationReorderList({
           const ok = await onReorder?.(updates);
           if (ok === false) throw new Error('reorder_failed');
         } catch {
-          pendingOrderSignatureRef.current = null;
-          orderRef.current = previousOrder;
-          setOrder(previousOrder);
+          if (pendingOrderSignatureRef.current === committedSignature) {
+            pendingOrderSignatureRef.current = null;
+            orderRef.current = previousOrder;
+            setOrder(previousOrder);
+          }
         }
       }
+      await settled;
     } finally {
       // Unlock parent ScrollView even if update computation throws.
-      endDragSession();
+      if (generation === dragGenerationRef.current) endDragSession();
     }
-  }, [dayDateLabel, onReorder, destinations, endDragSession, t, activeDestinationId]);
+  }, [dayDateLabel, onReorder, destinations, endDragSession, cancelDrag, t, activeDestinationId, reducedMotion, toReorderEntries, aimDrag]);
+
+  const moveKeyboardTarget = (direction: number) => {
+    const session = dragSession.current;
+    if (session.phase !== 'dragging') return;
+    const choices = session.legalBoundaries.filter(boundary => boundary !== session.sourceIndex + 1
+      && (direction > 0 ? boundary > session.targetBoundary : boundary < session.targetBoundary));
+    const target = direction > 0 ? choices[0] : choices.at(-1);
+    if (target == null) return;
+    showTarget(target);
+    AccessibilityInfo.announceForAccessibility(isZh ? '已移動插入位置' : 'Insertion position moved');
+  };
+  const handleKey = (id: string, event: DragKeyEvent) => {
+    const key = event.nativeEvent.key;
+    if (![' ', 'Enter', 'Escape', 'ArrowUp', 'ArrowDown'].includes(key ?? '')) return;
+    event.preventDefault?.();
+    if (key === 'Escape') { cancelDrag(); return; }
+    const session = dragSession.current;
+    if (key === ' ' || key === 'Enter') {
+      if (session.phase === 'idle') {
+        handleGrant(id, null, 'keyboard');
+        AccessibilityInfo.announceForAccessibility(isZh ? '已提起，使用方向鍵移動，按 Enter 放下' : 'Picked up. Use arrow keys to move and Enter to drop.');
+      } else if (session.phase === 'dragging' && session.sourceId === id) void handleRelease();
+    } else if (session.phase === 'dragging' && session.sourceId === id && session.input === 'keyboard') {
+      moveKeyboardTarget(key === 'ArrowDown' ? 1 : -1);
+    }
+  };
+  const handleAccessibilityMove = (id: string, action: string) => {
+    if (action === 'escape') { cancelDrag(); return; }
+    if (action === 'activate') { handleKey(id, { nativeEvent: { key: 'Enter' } }); return; }
+    if (action !== 'increment' && action !== 'decrement') return;
+    if (dragSession.current.phase === 'idle') handleGrant(id, null, 'keyboard');
+    moveKeyboardTarget(action === 'increment' ? 1 : -1);
+    void handleRelease();
+  };
+  const keyboardHandlers = useRef({ handleKey });
+  keyboardHandlers.current = { handleKey };
+  useMountEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const cancelOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') keyboardHandlers.current.handleKey('', { nativeEvent: { key: 'Escape' } });
+    };
+    document.addEventListener('keydown', cancelOnEscape);
+    return () => document.removeEventListener('keydown', cancelOnEscape);
+  });
+  const projectionFor = (id: string) => {
+    let motion = rowMotion.current.get(id);
+    if (!motion) {
+      motion = { close: new Animated.Value(0), ripple: new Animated.Value(0), pulse: null };
+      rowMotion.current.set(id, motion);
+    }
+    return Animated.add(motion.close, motion.ripple);
+  };
 
   const moveToDay = (id: string, day: number | null) => {
     const moving = destinations.find(item => item.id === id);
@@ -856,18 +1114,22 @@ export default function DestinationReorderList({
 
   const handlersRef = useRef({ handleGrant, handleMove, handleRelease });
   handlersRef.current = { handleGrant, handleMove, handleRelease };
-  const onGrant = useCallback((id: string) => handlersRef.current.handleGrant(id), []);
+  const onGrant = useCallback((id: string, pointer?: DragPoint) => handlersRef.current.handleGrant(id, pointer), []);
   const onMove = useCallback(
-    (id: string, dy: number, pageY?: number) =>
-      handlersRef.current.handleMove(id, dy, pageY),
+    (id: string, dy: number, pageY?: number, dx?: number, pageX?: number) =>
+      handlersRef.current.handleMove(id, dy, pageY, dx, pageX),
     [],
   );
-  const onRelease = useCallback(() => handlersRef.current.handleRelease(), []);
+  const onRelease = useCallback((pointer?: DragPoint) => handlersRef.current.handleRelease(pointer), []);
 
   return (
     <View>
+      {dragSession.current.phase === 'settling' ? <RouteDragSettlement key={dragGenerationRef.current}
+        session={dragSession.current} rows={rowViewsRef} rowMotion={rowMotion} generation={dragGenerationRef.current}
+        currentGeneration={dragGenerationRef} completion={settleCompletion}
+        previewPan={previewPan} previewX={previewX} previewScale={previewScale} lineScale={lineScale} reducedMotion={reducedMotion} /> : null}
       <RouteListInteractionCommit key={`interaction-${interactionInput.generation}`} input={interactionInput} owner={interactionOwner}
-        autoScrollRaf={autoScrollRafRef} dragging={draggingRef} pendingOrderSignature={pendingOrderSignatureRef} setOrder={setOrder} />
+        autoScrollRaf={autoScrollRafRef} dragSession={dragSession} pendingOrderSignature={pendingOrderSignatureRef} setOrder={setOrder} />
       <RouteDayCollapsePreferences key={`collapse-${collapseInput.generation}`} accountId={accountId} groupId={groupId}
         departureDate={departureDate} tripDays={tripDays} setCollapsedDays={setCollapsedDays} />
       <OnboardingTripDefaults key={`onboarding-${onboardingInput.generation}`} tripDays={tripDays} canReorder={canReorder}
@@ -924,7 +1186,7 @@ export default function DestinationReorderList({
       {order.length === 0 ? (
          <Text style={styles.empty}>{emptyLabel}</Text>
       ) : (
-        <View style={styles.list}>
+        <View ref={listView} style={styles.list} testID="route-reorder-list">
           {(() => {
             // Group into day blocks: header + dests (+ quick-add at end of each day).
             type DayBlock =
@@ -1005,11 +1267,11 @@ export default function DestinationReorderList({
                   item={item.item}
                   onMoveTo={canReorder && item.item.kind !== 'accommodation'
                     ? () => setMoveDestinationId(item.item.id) : undefined}
-                  active={activeId === item.id}
+                  active={!reducedMotion && activeId === item.id}
+                  projection={projectionFor(item.id)}
                   onViewRef={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
                   canDrag={canDragStop}
                   canSwipeDelete={canReorder && !!onDelete && !locked && !inSetMode}
-                  pan={pan}
                   styles={styles}
                   gatherCardTitleMarquee={gatherCardTitleMarquee}
                   gatherCardMarqueeSpeed={gatherCardMarqueeSpeed}
@@ -1017,7 +1279,9 @@ export default function DestinationReorderList({
                   onGrant={onGrant}
                   onMove={onMove}
                   onRelease={onRelease}
-                  onCancel={endDragSession}
+                  onCancel={cancelDrag}
+                  onHandleKey={handleKey}
+                  onAccessibilityMove={handleAccessibilityMove}
                   onDelete={onDelete}
                   isAccommodation={isStayCard}
                   stayDuplicate={stayDuplicate}
@@ -1075,27 +1339,16 @@ export default function DestinationReorderList({
               );
               previewRowsRef.current.set(item.id, React.cloneElement(row, {
                 active: false, floating: true, canDrag: false, canSwipeDelete: false,
-                onViewRef: undefined, tourTargetRef: undefined, onLayoutHeight: undefined,
+                onViewRef: undefined, tourTargetRef: undefined, onLayoutHeight: undefined, projection: undefined,
               }));
               return row;
             };
 
-            // Flat index walk matches order[] for ghost drop indicator.
-            let flatIndex = 0;
             const blockNodes = blocks.map((block, blockIndex) => {
               if (block.kind === 'orphan') {
-                const line =
-                  dropTargetIndex === flatIndex ? (
-                    <View
-                      key={`drop-${flatIndex}`}
-                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                    />
-                  ) : null;
                 const row = renderDestRow(block.dest);
-                flatIndex += 1;
                 return (
                   <React.Fragment key={block.dest.id}>
-                    {line}
                     {row}
                   </React.Fragment>
                 );
@@ -1122,41 +1375,16 @@ export default function DestinationReorderList({
                 item.day <= 1 || headerAffordance === 'collapse';
               const showDragAffordance =
                 canReorder && item.day > 1 && headerAffordance === 'drag';
-              // A boundary after a header is the first destination slot for
-              // that day. Only that boundary draws below the header; the
-              // boundary before a header remains above the separator.
-              const headerIndex = flatIndex;
-              const dropBeforeHeader =
-                item.day > 1 && dropTargetIndex === headerIndex;
-              const dropAfterHeader = dropTargetIndex === headerIndex + 1;
-              flatIndex += 1; // header occupies one order slot
               const destNodes = !collapsed
-                ? block.dests.map((destItem, destIdx) => {
-                    // First dest: header already claimed the after-header
-                    // boundary line.
-                    const line =
-                      dropTargetIndex === flatIndex
-                      && !(dropAfterHeader && destIdx === 0)
-                        ? (
-                          <View
-                            key={`drop-${flatIndex}`}
-                            style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                          />
-                        )
-                        : null;
+                ? block.dests.map((destItem) => {
                     const row = renderDestRow(destItem, item.day);
-                    flatIndex += 1;
                     return (
                       <React.Fragment key={destItem.id}>
-                        {line}
                         {row}
                       </React.Fragment>
                     );
                   })
-                : (() => {
-                    flatIndex += block.dests.length;
-                    return null;
-                  })();
+                : null;
               const header = (
                   <HeaderRow
                     item={item}
@@ -1194,24 +1422,27 @@ export default function DestinationReorderList({
                         };
                       });
                     }}
+                    onHandleKey={(event) => handleKey(item.id, event)}
+                    onAccessibilityMove={(action) => handleAccessibilityMove(item.id, action)}
                     onHeaderGrant={
                       showDragAffordance
-                        ? () => onGrant(item.id)
+                        ? (pointer) => onGrant(item.id, pointer)
                         : undefined
                     }
                     onHeaderMove={
                       showDragAffordance
-                        ? (dy, pageY) => onMove(item.id, dy, pageY)
+                        ? (dy, pageY, dx, pageX) => onMove(item.id, dy, pageY, dx, pageX)
                         : undefined
                     }
                     onHeaderRelease={
-                      showDragAffordance ? () => onRelease() : undefined
+                      showDragAffordance ? (pointer) => onRelease(pointer) : undefined
                     }
                     onHeaderCancel={
-                      showDragAffordance ? () => endDragSession() : undefined
+                      showDragAffordance ? () => cancelDrag() : undefined
                     }
-                    headerActive={activeId === item.id}
-                    headerPan={pan}
+                    onViewRef={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
+                    projection={projectionFor(item.id)}
+                    headerActive={!reducedMotion && activeId === item.id}
                     setStayLabel={
                       canReorder
                       && item.day > 0
@@ -1284,41 +1515,23 @@ export default function DestinationReorderList({
                   />
               );
               const floatingHeader = React.cloneElement(header, {
-                headerActive: false, onViewRef: undefined, tourTargetRef: undefined,
+                headerActive: false, onViewRef: undefined, tourTargetRef: undefined, projection: undefined,
                 accommodationTargetRef: undefined, onLayoutHeight: undefined,
               });
-              const floatingRows = collapsed ? [] : block.dests.map((entry) => previewRowsRef.current.get(entry.id));
               previewRowsRef.current.set(item.id,
                 <View style={styles.floatingDay}>
                   {floatingHeader}
-                  {floatingRows}
                 </View>,
               );
               return (
-                <View key={item.id} testID={`day-block-${item.day}`}
-                  ref={(node) => { if (node) rowViewsRef.current.set(item.id, node); else rowViewsRef.current.delete(item.id); }}
-                  style={activeId === item.id ? { opacity: 0 } : undefined}>
-                  {dropBeforeHeader ? (
-                    <View
-                      key={`drop-before-header-${item.day}`}
-                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                      testID={`drop-before-header-${item.day}`}
-                    />
-                  ) : null}
+                <View key={item.id} testID={`day-block-${item.day}`}>
                   {header}
-                  {dropAfterHeader ? (
-                    <View
-                      key={`drop-after-header-${item.day}`}
-                      style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                      testID={`drop-after-header-${item.day}`}
-                    />
-                  ) : null}
                   {destNodes}
                   {/* Quick-add only when the day already has gathering points. */}
                   {showQuickAdd ? (
-                    <View
-                      style={styles.dayActions}
-                      onLayout={(e) => recordMeasuredGap(item.day, e.nativeEvent.layout.height)}
+                    <Animated.View
+                      style={[styles.dayActions, { transform: [{ translateY: projectionFor('gap-' + item.day) }] }]}
+                      onLayout={(e) => recordMeasuredGap(item.day, e.nativeEvent.layout.height + spacing.xs + spacing.sm)}
                     >
                       <Pressable
                         style={styles.dashedBtn}
@@ -1334,24 +1547,17 @@ export default function DestinationReorderList({
                           {t('stay.quickAdd')}
                         </Text>
                       </Pressable>
-                    </View>
+                    </Animated.View>
                   ) : null}
                 </View>
               );
             });
-            // Insertion line after the last row (aim past last midpoint).
-            const endDrop =
-              dropTargetIndex === flatIndex
-              && !(order.at(-1)?.type === 'header') ? (
-                <View
-                  key={`drop-end-${flatIndex}`}
-                  style={[styles.dropLine, { backgroundColor: colors.accent }]}
-                />
-              ) : null;
             return (
               <>
                 {blockNodes}
-                {endDrop}
+                {activeId ? <Animated.View pointerEvents="none" testID="route-insertion-line"
+                  style={[styles.dropLine, { backgroundColor: colors.textPrimary,
+                    transform: [{ translateY: lineY }, { scaleX: lineScale }] }]} /> : null}
               </>
             );
           })()}
@@ -1362,13 +1568,13 @@ export default function DestinationReorderList({
         visible={favoritesOpen}
         onClose={() => setFavoritesOpen(false)}
         title={t('stay.favorites')}
-        titleFontSize={17 * 2}
+        titleFontSize={FAVORITE_TITLE_SIZE}
         initialStage={1}
         stageTwoRatio={0.9}
       >
         <View style={styles.childSheetBody}>
             {(favoritePlaces ?? []).length === 0 ? (
-              <Text style={styles.favoriteEmpty}>{t('stay.noFavorites')}</Text>
+              <Text maxFontSizeMultiplier={1.25} style={styles.favoriteEmpty}>{t('stay.noFavorites')}</Text>
             ) : (
               (favoritePlaces ?? []).map((fav) => (
                 <View key={fav.id} style={styles.favoriteRow}>
@@ -1384,7 +1590,7 @@ export default function DestinationReorderList({
                     testID={`route-favorite-${fav.id}`}
                   >
                     <Ionicons name="star" size={favoriteIconSize} color={colors.accent} />
-                    <Text style={styles.favoriteTitle}>{fav.title}</Text>
+                    <Text maxFontSizeMultiplier={1.25} style={styles.favoriteTitle}>{fav.title}</Text>
                   </Pressable>
                   {onDeleteFavorite ? (
                     <Pressable
@@ -1663,11 +1869,13 @@ const HeaderRow = memo(function HeaderRow({
   canSwipeToggleAffordance,
   onSwipeToggleAffordance,
   onHeaderGrant,
+  onHandleKey,
+  onAccessibilityMove,
   onHeaderMove,
   onHeaderRelease,
   onHeaderCancel,
   headerActive,
-  headerPan,
+  projection,
   setStayLabel,
   setStayActive,
   setStayCancelLabel,
@@ -1692,14 +1900,16 @@ const HeaderRow = memo(function HeaderRow({
   /** Day2+: left-swipe toggles collapse ↔ drag (only one shown at a time). */
   canSwipeToggleAffordance?: boolean;
   onSwipeToggleAffordance?: () => void;
-  onHeaderGrant?: () => void;
-  onHeaderMove?: (dy: number, pageY?: number) => void;
+  onHeaderGrant?: (pointer: DragPoint) => void;
+  onHandleKey?: (event: DragKeyEvent) => void;
+  onAccessibilityMove?: (action: string) => void;
+  onHeaderMove?: (dy: number, pageY?: number, dx?: number, pageX?: number) => void;
   /** Finger released — commit drop. */
-  onHeaderRelease?: () => void;
+  onHeaderRelease?: (pointer?: DragPoint) => void;
   /** Gesture stolen/cancelled — do not commit. */
   onHeaderCancel?: () => void;
   headerActive?: boolean;
-  headerPan?: Animated.Value;
+  projection?: ReturnType<typeof Animated.add>;
   /** Label for set-stay control placed after day title (not dashed). */
   setStayLabel?: string;
   setStayActive?: boolean;
@@ -1714,6 +1924,7 @@ const HeaderRow = memo(function HeaderRow({
 }) {
   const { t } = useTranslation();
   const hasStay = Boolean(dailyTitle);
+  const handleCursor: object = { cursor: Platform.OS === 'web' && headerActive ? 'grabbing' : 'pointer' };
   const canDragHeaderRef = useRef(canDragHeader);
   canDragHeaderRef.current = canDragHeader;
   const canSwipeToggleRef = useRef(canSwipeToggleAffordance);
@@ -1741,9 +1952,9 @@ const HeaderRow = memo(function HeaderRow({
       // Keep ownership for the whole gesture so ScrollView cannot mid-commit.
       onPanResponderTerminationRequest: () => false,
       onShouldBlockNativeResponder: () => true,
-      onPanResponderGrant: () => onHeaderGrantRef.current?.(),
-      onPanResponderMove: (_e, g) => onHeaderMoveRef.current?.(g.dy, g.moveY),
-      onPanResponderRelease: () => onHeaderReleaseRef.current?.(),
+      onPanResponderGrant: (event) => onHeaderGrantRef.current?.({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }),
+      onPanResponderMove: (_e, g) => onHeaderMoveRef.current?.(g.dy, g.moveY, g.dx, g.moveX),
+      onPanResponderRelease: (event) => onHeaderReleaseRef.current?.({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }),
       // Stolen/cancelled → cancel without reorder commit.
       onPanResponderTerminate: () => onHeaderCancelRef.current?.(),
     }),
@@ -1812,11 +2023,7 @@ const HeaderRow = memo(function HeaderRow({
         }
       }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
-      style={
-        headerActive && headerPan
-          ? { opacity: 0 }
-          : undefined
-      }
+      style={{ opacity: headerActive ? 0 : 1, transform: [{ translateY: projection ?? 0 }] }}
       {...(canSwipeToggleAffordance ? swipeResponder.panHandlers : {})}
     >
       <Animated.View
@@ -1896,7 +2103,12 @@ const HeaderRow = memo(function HeaderRow({
             ) : null}
             {canDragHeader ? (
               <View
-                style={styles.handleSlot}
+                style={[styles.handleSlot, handleCursor]}
+                focusable accessible accessibilityRole="adjustable" accessibilityLabel={item.title}
+                accessibilityActions={[{ name: 'activate' }, { name: 'increment' }, { name: 'decrement' }, { name: 'escape' }]}
+                onAccessibilityAction={(event) => onAccessibilityMove?.(event.nativeEvent.actionName)}
+                {...(Platform.OS === 'web' ? { onKeyDown: onHandleKey } : {})}
+                testID={'route-drag-handle-header-' + item.day}
                 {...dragResponder.panHandlers}
                 hitSlop={12}
               >
@@ -1933,15 +2145,17 @@ const Row = memo(function Row({
   item,
   active,
   floating = false,
+  projection,
   canDrag,
   canSwipeDelete,
-  pan,
   styles,
   dayColor,
   onGrant,
   onMove,
   onRelease,
   onCancel,
+  onHandleKey,
+  onAccessibilityMove,
   onDelete,
   onEmojiPress,
   isAccommodation,
@@ -1965,16 +2179,18 @@ const Row = memo(function Row({
   item: Destination;
   active: boolean;
   floating?: boolean;
+  projection?: ReturnType<typeof Animated.add>;
   /** Vertical drag handle (interactionMode === 'drag'). */
   canDrag: boolean;
   /** Horizontal swipe-to-delete (independent of drag mode). */
   canSwipeDelete: boolean;
-  pan: Animated.Value;
   styles: ReturnType<typeof makeStyles>;
   dayColor: string;
-  onGrant: (id: string) => void;
-  onMove: (id: string, dy: number, pageY?: number) => void;
-  onRelease: () => void;
+  onGrant: (id: string, pointer?: DragPoint) => void;
+  onHandleKey?: (id: string, event: DragKeyEvent) => void;
+  onAccessibilityMove?: (id: string, action: string) => void;
+  onMove: (id: string, dy: number, pageY?: number, dx?: number, pageX?: number) => void;
+  onRelease: (pointer?: DragPoint) => void;
   onCancel: () => void;
   onDelete?: (id: string) => void;
   onEmojiPress?: (id: string) => void;
@@ -2000,6 +2216,7 @@ const Row = memo(function Row({
 }) {
   // Boundary-locked stays use a permanent trash control — no horizontal swipe.
   const canSwipe = canSwipeDelete && !!onDelete && !boundaryLocked && !multiSelect;
+  const handleCursor: object = { cursor: Platform.OS === 'web' && active ? 'grabbing' : 'pointer' };
   const canDragRef = useRef(canDrag);
   canDragRef.current = canDrag;
   const handleTouchRef = useRef(false);
@@ -2026,14 +2243,9 @@ const Row = memo(function Row({
 
   const responder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: (evt) => {
-        if (!canDragRef.current) {
-          handleTouchRef.current = false;
-          return false;
-        }
-        const screenWidth = Dimensions.get('window').width;
-        handleTouchRef.current = evt.nativeEvent.pageX > screenWidth - 60;
-        return handleTouchRef.current;
+      onStartShouldSetPanResponder: () => {
+        handleTouchRef.current = canDragRef.current;
+        return canDragRef.current;
       },
       onMoveShouldSetPanResponder: (_evt, g) =>
         handleTouchRef.current
@@ -2042,16 +2254,15 @@ const Row = memo(function Row({
         && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (evt) => {
-        const screenWidth = Dimensions.get('window').width;
-        if (canDragRef.current && evt.nativeEvent.pageX > screenWidth - 60) {
-          onGrantRef.current(itemIdRef.current);
+        if (canDragRef.current) {
+          onGrantRef.current(itemIdRef.current, { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY });
         }
       },
       onPanResponderMove: (_evt, g) => {
-        if (canDragRef.current) onMoveRef.current(itemIdRef.current, g.dy, g.moveY);
+        if (canDragRef.current) onMoveRef.current(itemIdRef.current, g.dy, g.moveY, g.dx, g.moveX);
       },
-      onPanResponderRelease: () => {
-        onReleaseRef.current();
+      onPanResponderRelease: (event) => {
+        onReleaseRef.current({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
         handleTouchRef.current = false;
       },
       onPanResponderTerminate: () => {
@@ -2090,9 +2301,7 @@ const Row = memo(function Row({
             !isAccommodation && stayDuplicate && styles.rowStayDuplicate,
             (active || floating) && styles.rowActive,
             floating && styles.rowFloating,
-            { transform: [{ translateY: active ? pan : 0 }] },
           ]}
-          {...(canDrag ? responder.panHandlers : {})}
         >
         {showSelect ? (
           <Pressable
@@ -2183,7 +2392,14 @@ const Row = memo(function Row({
             <Ionicons name="trash-outline" size={20} color="#FF5A5F" />
           </Pressable>
         ) : canDrag || floating ? (
-          <View style={styles.handleSlot}>
+          <View style={[styles.handleSlot, handleCursor]}
+            {...(canDrag ? responder.panHandlers : {})}
+            {...(Platform.OS === 'web' ? { onKeyDown: (event: DragKeyEvent) => onHandleKey?.(item.id, event) } : {})}
+            focusable={canDrag} accessible={canDrag} accessibilityRole="adjustable"
+            accessibilityLabel={item.title}
+            accessibilityActions={[{ name: 'activate' }, { name: 'increment' }, { name: 'decrement' }, { name: 'escape' }]}
+            onAccessibilityAction={(event) => onAccessibilityMove?.(item.id, event.nativeEvent.actionName)}
+            testID={floating ? undefined : 'route-drag-handle-' + item.id}>
             <Text style={styles.handle}>≡</Text>
           </View>
         ) : multiSelect ? (
@@ -2193,9 +2409,9 @@ const Row = memo(function Row({
   );
 
   return (
-    <View
+    <Animated.View
       ref={(node) => { tourTargetRef?.(node as View | null); onViewRef?.(node as View | null); }}
-      style={active && { opacity: 0 }}
+      style={{ opacity: active ? 0 : 1, transform: [{ translateY: projection ?? 0 }] }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
     >
       {floating ? rowContent : <ReanimatedSwipeable
@@ -2216,7 +2432,7 @@ const Row = memo(function Row({
 
         {rowContent}
       </ReanimatedSwipeable>}
-    </View>
+    </Animated.View>
   );
 });
 
@@ -2265,11 +2481,14 @@ const makeStyles = (colors: Palette) =>
     },
     headerSetStayText: { fontSize: 14, fontWeight: '700' },
     dropLine: {
-      height: 3,
-      borderRadius: 2,
-      marginVertical: 2,
-      marginHorizontal: spacing.sm,
-      opacity: 0.9,
+      position: 'absolute',
+      top: 0,
+      left: spacing.sm,
+      right: spacing.sm,
+      height: 1.5,
+      borderRadius: 1,
+      opacity: 0.15,
+      zIndex: 10,
     },
     stayBadge: {
       flexDirection: 'row',
@@ -2332,7 +2551,7 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     favoriteTitle: { color: colors.textPrimary, fontSize: FAVORITE_TITLE_SIZE, flex: 1, minWidth: 0 },
-    favoriteEmpty: { color: colors.textSecondary, fontSize: 14 * 2, paddingVertical: spacing.md },
+    favoriteEmpty: { color: colors.textSecondary, fontSize: FAVORITE_TITLE_SIZE, paddingVertical: spacing.md },
     favTitle: { color: colors.textPrimary, fontSize: 15, flex: 1 },
     hint: {
       color: colors.textSecondary,

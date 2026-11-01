@@ -13,7 +13,11 @@ jest.mock('@expo/vector-icons', () => ({
   },
 }));
 jest.mock('../components/MetalforgeStarfield', () => () => null);
-jest.mock('../components/OverflowMarquee', () => () => null);
+jest.mock('../components/OverflowMarquee', () => {
+  const ReactRuntime = jest.requireActual<typeof React>('react');
+  const { Text: NativeText } = jest.requireActual<typeof import('react-native')>('react-native');
+  return ({ text, ...rest }: { text: string }) => ReactRuntime.createElement(NativeText, { ...rest, testID: 'gather-title-marquee' }, text);
+});
 jest.mock('../components/SwiftUIGlassSurface', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => {
@@ -57,7 +61,6 @@ function props(overrides: Partial<GatheringCarouselProps> = {}) {
     arrivalExitRecords: new Map(),
     atFull: false,
     canEditItinerary: true,
-    carouselMaxHeight: 320,
     carouselRef: React.createRef(),
     colors: { accentText: '#000' },
     destinationIds: [destination.id],
@@ -125,6 +128,25 @@ function expectIconOnly(button: Parameters<typeof within>[0], icon: string) {
 }
 
 describe('gathering card navigation commands', () => {
+  it('fits titles within their existing typography bounds in both card states', () => {
+    const styles = makeStyles('#68d391', 1.5, true, 'xl', 1.2);
+    const screen = render(<GatheringCarousel {...props({ styles })} />);
+    const expanded = screen.getByText(destination.title);
+    expect(expanded.props.maxFontSizeMultiplier).toBe(1);
+    expect(expanded.props.adjustsFontSizeToFit).toBe(true);
+    expect(expanded.props.numberOfLines).toBe(1);
+    expect(StyleSheet.flatten(expanded.props.style).lineHeight).toBe(styles.cardTitleExpanded.lineHeight);
+    expect(screen.getByText('開始').props.maxFontSizeMultiplier).toBe(1.25);
+    screen.rerender(<GatheringCarousel {...props({ styles, gatherCardTitleMarquee: true })} />);
+    const expandedMarquee = screen.getByTestId('gather-title-marquee');
+    expect(expandedMarquee.props.active).toBe(true);
+    expect(expandedMarquee.props.maxFontSizeMultiplier).toBe(1);
+    screen.rerender(<GatheringCarousel {...props({ styles, isCardExpanded: () => false })} />);
+    const collapsed = screen.getByTestId('gather-title-marquee');
+    expect(collapsed.props.allowFontScaling).toBe(false);
+    expect(StyleSheet.flatten(collapsed.props.style)).toEqual(styles.cardTitleCollapsed);
+  });
+
   it('keeps Start separate from in-place card expansion', () => {
     const startNavigation = jest.fn(async () => undefined);
     const toggleGatheringCard = jest.fn();

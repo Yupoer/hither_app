@@ -3264,28 +3264,19 @@ export default function MapScreen({ route, navigation }: Props) {
       : (detent === 0
         ? bottomPad
         : detents[1] + sheetBottomOffset(detents[1], detents, insets.bottom)) + 12;
-  // MapKit's compass lives below RN siblings, so reserve its band explicitly
-  // in the carousel geometry. This keeps the card from painting over the
-  // compass while the sheet moves between Peek and Stage 1.
-  const compassTop = mapKitChromeLayout({
-    safeArea: insets,
-    topChrome: 0,
-    horizontalInset: gatherCardHorizontalInset(windowWidth),
-    windowHeight,
-    bottomChrome: chromeBottomOffset,
-    stage: chromeStage,
-  }).compassOffset.y;
-  const CAPSULE_CLEARANCE = 8;
-  // The 8pt card reserve is equivalent to compassTop - (insets.top + 8) - 8.
-  const carouselMaxHeight = Math.max(
-    1,
-    compassTop - (insets.top + 8) - CAPSULE_CLEARANCE,
-  );
   const carouselFallback = fontLayout.s(160, 140);
   const topPad =
     destinations.length > 0
       ? insets.top + 8 + (carouselHeight > 0 ? carouselHeight : carouselFallback)
       : insets.top + 8;
+  const { recenterVisible } = mapKitChromeLayout({
+    safeArea: insets,
+    topChrome: topPad,
+    horizontalInset: gatherCardHorizontalInset(windowWidth),
+    windowHeight,
+    bottomChrome: chromeBottomOffset,
+    stage: chromeStage,
+  });
 
   // Sheet "下一站" is the first ordered active stop — not the carousel card
   // or current navigation target the user may be viewing.
@@ -4248,7 +4239,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
       )}
 
-      {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
+      {uiVisible && showDenseChrome && !confirmCardReady && recenterVisible && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -4352,7 +4343,6 @@ export default function MapScreen({ route, navigation }: Props) {
         arrivalExitRecords={arrivalExitRecords}
         atFull={atFull}
         canEditItinerary={canEditItinerary}
-        carouselMaxHeight={carouselMaxHeight}
         carouselRef={carouselRef}
         colors={colors}
         destinationIds={destinationIds}

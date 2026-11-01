@@ -22,6 +22,7 @@ import {
   MAP_SHEET_EDGE_INSET,
 } from './mapSheetChrome';
 import SheetHeaderAction from './SheetHeaderAction';
+import { GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
 
 // Drag the handle/header down past this many px (or fling it) to dismiss —
 // matches the iOS sheet feel so "Done" is never the only way out.
@@ -290,7 +291,7 @@ export default function OverlaySheet({
             <View style={[styles.headerSide, styles.headerSideLeft]}>
               {headerLeft ?? null}
             </View>
-            <Text style={styles.title} numberOfLines={1}>
+            <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={styles.title} numberOfLines={1}>
               {title}
             </Text>
             <SheetHeaderAction
