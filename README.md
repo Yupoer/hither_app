@@ -96,6 +96,14 @@ The historical local release entry is `C:/Users/alexs/.codex/skills/hither-relea
 
 The [iOS CD release routes](docs/ios-cd-release.md) describe the verified-binary OTA gate, retained native modes, and checks required after publication.
 
+### Local quick checks and CI scope
+
+From `apps/mobile`, run `npm run check:quick -- --base origin/master` for existing changed-file ESLint and the whole-project TypeScript check. The command includes branch commits, staged, working, and untracked changes. Shared lint/configuration changes run the existing full lint inputs. It does not install dependencies or run tests; use the existing test commands for affected behavior.
+
+Product PRs select complete CI jobs through the module-contract planner. Known mobile changes run `verify` and `mobile-checks`; backend, native, shared, and unknown changes retain full checks. Product pushes to `master` and every manual dispatch run all ordinary gates. Markdown-only push/PR changes retain their existing product-job skip. `verify` owns metadata, the single full Node invocation, changed-function coverage, scenarios, and sanitized evidence. `mobile-checks` owns the component, lint, typecheck, runtime, Expo, and auth-web bundle.
+
+Optional manual `benchmark=true` dispatches collect worker and real installed-cache pairs alongside full normal CI. `benchmark_kind` selects `workers`, `cache`, or `all`. Benchmark success does not replace `ci-required`. Installed-tree reuse remains disabled until five matching pairs on each adopted runner environment pass correctness and satisfy `max(candidate) < min(baseline)`; overlapping results retain the incumbent. Worker plain and coverage modes are evaluated separately.
+
 ## OpenAI Codex and GPT-5.6 Usage
 
 This project was built with assistance from OpenAI Codex and GPT-5.6.

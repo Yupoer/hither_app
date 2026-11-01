@@ -23,6 +23,16 @@ on:
     branches: ["master"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      benchmark:
+        description: Collect optional paired optimization evidence in addition to full CI.
+        type: boolean
+        default: false
+      benchmark_kind:
+        description: Select the independent experiment.
+        type: choice
+        options: [all, workers, cache]
+        default: all
 
 permissions:
   contents: read
@@ -62,7 +72,7 @@ jobs:
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
-          node --test apps/mobile/scripts/check-changed-coverage.test.mjs apps/mobile/scripts/check-ci-evidence.test.mjs apps/mobile/scripts/check-quick.test.mjs scripts/ci-shadow-plan.test.mjs scripts/check-release-ci.test.mjs
+          node --test apps/mobile/scripts/check-changed-coverage.test.mjs apps/mobile/scripts/check-ci-evidence.test.mjs apps/mobile/scripts/check-quick.test.mjs apps/mobile/scripts/benchmark-ci.test.mjs apps/mobile/scripts/benchmark-install.test.mjs scripts/ci-shadow-plan.test.mjs scripts/mobile-install-key.test.mjs scripts/check-release-ci.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
 
       - name: Classify rules and documentation changes
@@ -326,6 +336,155 @@ jobs:
           PY
       - name: Verify iOS 27 UI regression and background-thread rejection
         run: python3 scripts/verify-jsi-simulator.py --simulator "$JSI_SIMULATOR" --output "$RUNNER_TEMP/hither-jsi-ios27" --standalone --runtime-build "$JSI_RUNTIME_BUILD"
+
+  benchmark-workers:
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark && inputs.benchmark_kind != 'cache'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [plain, coverage]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mobile
+      - name: Five same-runner worker pairs
+        working-directory: apps/mobile
+        env:
+          BENCHMARK_MODE: ${{ matrix.mode }}
+        run: |
+          base=017bf952db09c353ae7b14984d941be8c584fa30
+          if [ "$BENCHMARK_MODE" = coverage ]; then base=5d3c1d990493bf14e2512e832b0cf553c02e894f; fi
+          node scripts/benchmark-ci.mjs --mode "$BENCHMARK_MODE" --base "$base" --candidate-workers 2
+      - name: Upload sanitized worker comparison
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: benchmark-workers-${{ matrix.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/mobile/test-artifacts/benchmark-${{ matrix.mode }}/comparison.json
+          if-no-files-found: error
+          retention-days: 14
+
+  benchmark-cache:
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark && inputs.benchmark_kind != 'workers'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-26, xcode-27]
+        pair: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Start priming timer
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/prime-start.json"
+      - uses: ./.github/actions/setup-mobile
+        id: seed
+      - name: Start save timer
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/save-start.json"
+      - name: Seed this sample's exact installed cache
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/mobile/node_modules
+          key: ${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}
+      - name: Record separate priming and save overhead
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const now = process.hrtime.bigint();
+          const read = name => BigInt(JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, name))).startNs);
+          fs.mkdirSync('test-artifacts/benchmark-cache', { recursive: true });
+          fs.writeFileSync('test-artifacts/benchmark-cache/overhead.json', JSON.stringify({
+            primeInstallMs: Number(read('save-start.json') - read('prime-start.json')) / 1e6,
+            saveMs: Number(now - read('save-start.json')) / 1e6,
+            imageOS: process.env.ImageOS, imageVersion: process.env.ImageVersion,
+          }, null, 2) + '\n');
+          NODE
+      - name: Reset and time baseline first
+        if: contains(fromJSON('[1,3,5]'), matrix.pair)
+        shell: bash
+        run: |
+          rm -rf apps/mobile/node_modules
+          node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/start-baseline.json"
+      - name: Clean npm install first
+        if: contains(fromJSON('[1,3,5]'), matrix.pair)
+        working-directory: apps/mobile
+        shell: bash
+        run: npm ci
+      - name: Validate baseline first
+        if: contains(fromJSON('[1,3,5]'), matrix.pair)
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs finish --start "$RUNNER_TEMP/start-baseline.json" --output "$RUNNER_TEMP/baseline.json" --arm baseline --pair "${{ matrix.pair }}" --key "${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}" --cache-hit "false"
+      - name: Reset and time candidate first
+        if: contains(fromJSON('[2,4]'), matrix.pair)
+        shell: bash
+        run: |
+          rm -rf apps/mobile/node_modules
+          node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/start-candidate.json"
+      - name: Restore actual installed cache first
+        if: contains(fromJSON('[2,4]'), matrix.pair)
+        id: restore-first
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/mobile/node_modules
+          key: ${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}
+          fail-on-cache-miss: true
+      - name: Validate candidate first
+        if: contains(fromJSON('[2,4]'), matrix.pair)
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs finish --start "$RUNNER_TEMP/start-candidate.json" --output "$RUNNER_TEMP/candidate.json" --arm candidate --pair "${{ matrix.pair }}" --key "${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}" --cache-hit "${{ steps.restore-first.outputs.cache-hit == 'true' }}"
+      - name: Reset and time candidate second
+        if: contains(fromJSON('[1,3,5]'), matrix.pair)
+        shell: bash
+        run: |
+          rm -rf apps/mobile/node_modules
+          node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/start-candidate.json"
+      - name: Restore actual installed cache second
+        if: contains(fromJSON('[1,3,5]'), matrix.pair)
+        id: restore-second
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/mobile/node_modules
+          key: ${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}
+          fail-on-cache-miss: true
+      - name: Validate candidate second
+        if: contains(fromJSON('[1,3,5]'), matrix.pair)
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs finish --start "$RUNNER_TEMP/start-candidate.json" --output "$RUNNER_TEMP/candidate.json" --arm candidate --pair "${{ matrix.pair }}" --key "${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}" --cache-hit "${{ steps.restore-second.outputs.cache-hit == 'true' }}"
+      - name: Reset and time baseline second
+        if: contains(fromJSON('[2,4]'), matrix.pair)
+        shell: bash
+        run: |
+          rm -rf apps/mobile/node_modules
+          node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/start-baseline.json"
+      - name: Clean npm install second
+        if: contains(fromJSON('[2,4]'), matrix.pair)
+        working-directory: apps/mobile
+        shell: bash
+        run: npm ci
+      - name: Validate baseline second
+        if: contains(fromJSON('[2,4]'), matrix.pair)
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs finish --start "$RUNNER_TEMP/start-baseline.json" --output "$RUNNER_TEMP/baseline.json" --arm baseline --pair "${{ matrix.pair }}" --key "${{ steps.seed.outputs.exact-key }}-bench-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-${{ matrix.pair }}" --cache-hit "false"
+      - name: Compare paired dependency and runtime evidence
+        shell: bash
+        run: node apps/mobile/scripts/benchmark-install.mjs compare --baseline "$RUNNER_TEMP/baseline.json" --candidate "$RUNNER_TEMP/candidate.json" --output test-artifacts/benchmark-cache/pair.json
+      - name: Upload sanitized cache pair
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: benchmark-cache-${{ matrix.runner }}-pair-${{ matrix.pair }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-artifacts/benchmark-cache/pair.json
+            test-artifacts/benchmark-cache/overhead.json
+          if-no-files-found: error
+          retention-days: 14
 
   ci-required:
     needs: [scope, verify, mobile-checks, backend, jsi-ui-runtime, jsi-ios27-runtime]

@@ -118,7 +118,7 @@ test('checked-in module and producer selectors name tracked sources', () => {
   const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
   const decide = (eventName, product, paths) => decideWorkflowScope({eventName, product,
     shadowPlan: plan(paths.map(path => ({status: 'M', path})), {baseManifest: registry, headManifest: registry})});
-  assert.ok(Object.values(decide('workflow_dispatch', true, []).expectedJobs).every(Boolean));
+  assert.ok(Object.values(decide('workflow_dispatch', false, []).expectedJobs).every(Boolean));
   assert.ok(Object.values(decide('push', true, ['apps/mobile/src/utils/a.ts']).expectedJobs).every(Boolean));
   assert.ok(Object.values(decide('pull_request', false, ['README.md']).expectedJobs).every(value => !value));
   assert.deepEqual(Object.entries(decide('pull_request', true, ['apps/mobile/src/utils/a.ts']).expectedJobs).filter(([,v]) => v).map(([job]) => job), ['verify', 'mobile-checks']);

@@ -139,6 +139,7 @@ export const JOB_GROUPS = Object.freeze({
 });
 
 export function decideWorkflowScope({ eventName, product, shadowPlan }) {
+  product ||= eventName === 'workflow_dispatch';
   const mode = !product ? 'docs' : eventName !== 'pull_request' || shadowPlan.fallbackReasons.length ? 'full' : 'selective';
   const groups = mode === 'docs' ? [] : mode === 'full' ? [...ALL_GROUPS] : shadowPlan.proposedGroups;
   const expectedJobs = Object.fromEntries(Object.entries(JOB_GROUPS).map(([job, owned]) =>
