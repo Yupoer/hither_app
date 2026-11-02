@@ -9,7 +9,7 @@ export function navigationStartRecipients({
 }) {
   const remoteUserIds = navigationRemoteRecipients({ origin, senderId, userIds });
   return {
-    existingUserIds: remoteUserIds.filter(userId => usersWithHandle.has(userId)),
+    existingUserIds: userIds.filter(userId => usersWithHandle.has(userId)),
     startUserIds: remoteUserIds.filter(userId => !usersWithHandle.has(userId) && usersWithStartToken.has(userId)),
     alertUserIds: remoteUserIds.filter(userId => origin === 'scheduled' || !usersWithStartToken.has(userId) || usersWithHandle.has(userId)),
   };

@@ -7,6 +7,7 @@ import { requestWithDeadline } from '../utils/requestDeadline';
 import { getGroupRecoverySnapshot } from '../api/client';
 import type { GroupRecoverySnapshot } from '../api/services/GroupService';
 import { subscribeGroupSyncSnapshots } from './groupSync';
+import { recoverPendingLocationRefreshes } from './backgroundLocationRefresh';
 import { energyObservability } from './energyObservability';
 import { syncLocationSharing } from './locationSharingSync';
 import { classifyOperationError, getOperationErrorMessage, type OperationErrorClassification } from '../utils/operationError';
@@ -38,7 +39,6 @@ import {
   readCoreSnapshot,
 } from './coreDataStore';
 import {
-  flushCoreOperationOutbox,
   hydrateCoreEntityVersions,
   listOpenCoreOperations,
   projectOptimisticGathering,
@@ -324,6 +324,10 @@ function useGroupStateOwner(
         // Initial/group-foreground effects may call load twice for the same
         // revision. Only a revision that arrived after this request needs a
         // follow-up; Realtime callbacks explicitly mark their own events below.
+        if (suppliedRecovery) {
+          return loadInFlightRef.current.then(() => isCurrentRequest()
+            ? loadRef.current(reason, suppliedRecovery) : false);
+        }
         if (reason === 'poll_manual_refresh' || latestRevisionRef.current !== inFlightRevisionRef.current) {
           pendingReloadRef.current = true;
         }
@@ -449,11 +453,8 @@ function useGroupStateOwner(
         } catch {
           // Local cache write is best-effort; remote state still paints.
         }
-        // Opportunistic outbox drain after a successful network round-trip.
         if (!isCurrentRequest()) return false;
         if (actorId) await syncLocationSharing(actorId).catch(() => undefined);
-        if (!isCurrentRequest()) return false;
-        await flushCoreOperationOutbox().catch(() => undefined);
         if (!isCurrentRequest()) return false;
         await refreshOpenOperations(groupId, generation, actorId);
         return isCurrentRequest();
@@ -628,9 +629,11 @@ function GroupOutboxProjection({ owner }: { owner: GroupStateOwner }) {
         if (!cancelled && !applied) void refreshOpenOperations(groupId);
       });
     });
-    const unsubscribeSnapshots = subscribeGroupSyncSnapshots((actorId, recovery) => {
-      if (!cancelled && actorId === owner.myUserIdRef.current && recovery.state.group.id === groupId
-        && !owner.loadInFlightRef.current) void owner.loadRef.current('itinerary_mutation', recovery);
+    const unsubscribeSnapshots = subscribeGroupSyncSnapshots((actorId, recovery, pendingRefreshes) => {
+      if (!cancelled && actorId === owner.myUserIdRef.current && recovery.state.group.id === groupId) {
+        void owner.loadRef.current('itinerary_mutation', recovery);
+        if (pendingRefreshes.length > 0) void recoverPendingLocationRefreshes(pendingRefreshes).catch(() => undefined);
+      }
     });
     return () => { cancelled = true; unsubscribe(); unsubscribeSnapshots(); };
 

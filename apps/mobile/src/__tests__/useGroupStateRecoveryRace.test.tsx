@@ -1,4 +1,5 @@
 jest.mock('../state/groupSync', () => ({ subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
+jest.mock('../state/backgroundLocationRefresh', () => ({ recoverPendingLocationRefreshes: jest.fn(async () => undefined) }));
 import React from 'react';
 import type { GroupState } from '../types';
 
@@ -91,6 +92,29 @@ describe('useGroupState recovery snapshot race', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  it('applies a supplied exchange after an older read without another network request or queue drain', async () => {
+    let settle!: (value: ReturnType<typeof snapshot>) => void;
+    mockRecovery.mockImplementation(() => new Promise(resolve => { settle = resolve; }));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return api.lifecycle; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    try {
+      const receive = require('../state/groupSync').subscribeGroupSyncSnapshots.mock.calls[0][0] as
+        (actorId: string, recovery: ReturnType<typeof snapshot>, pending: unknown[]) => void;
+      const next = snapshot(state('batched'), '2026-11-02T00:00:02Z');
+      const pending = [{ groupId: 'group-1', requestedBy: 'peer', requestedAt: '2026-11-02T00:00:01.123456Z' }];
+      let applied!: Promise<boolean>;
+      await act(async () => { receive('actor-a', next, pending); applied = api.applyRecoverySnapshot(next); });
+      expect(require('../state/backgroundLocationRefresh').recoverPendingLocationRefreshes).toHaveBeenCalledWith(pending);
+      await act(async () => { settle(snapshot(state('older'), '2026-11-02T00:00:01Z')); });
+      await act(async () => { expect(await applied).toBe(true); });
+      expect(api.state?.group.name).toBe('batched');
+      expect(mockRecovery).toHaveBeenCalledTimes(1);
+      expect(mockFlushOutbox).not.toHaveBeenCalled();
+    } finally { await act(async () => root.unmount()); }
   });
 
   it('exposes the real cold-start error and recovers without a local snapshot', async () => {

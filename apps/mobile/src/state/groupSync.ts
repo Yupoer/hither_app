@@ -11,10 +11,10 @@ type ExchangeReply = Awaited<ReturnType<typeof exchangeGroup>>;
 export type GroupSyncResult = ExchangeReply & { core: CoreOutboxFlushResult; location: LocationFlushResult };
 const flights = new Map<string, Promise<GroupSyncResult>>();
 const serial = new Map<string, Promise<unknown>>();
-const listeners = new Set<(actorId: string, recovery: GroupRecoverySnapshot) => void>();
+const listeners = new Set<(actorId: string, recovery: GroupRecoverySnapshot, pendingRefreshes: ExchangeReply['pendingRefreshes']) => void>();
 const receipts = new Map<string, AcceptedLocationReceipt>();
 
-export function subscribeGroupSyncSnapshots(listener: (actorId: string, recovery: GroupRecoverySnapshot) => void): () => void {
+export function subscribeGroupSyncSnapshots(listener: (actorId: string, recovery: GroupRecoverySnapshot, pendingRefreshes: ExchangeReply['pendingRefreshes']) => void): () => void {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 }
@@ -56,7 +56,7 @@ export async function syncGroup(input: { groupId: string; refresh?: GroupRefresh
       const key = JSON.stringify([actorId, input.groupId]);
       if (receipt.capturedAt >= (receipts.get(key)?.capturedAt ?? -Infinity)) receipts.set(key, receipt);
     }
-    for (const listener of listeners) listener(actorId, reply.recovery);
+    for (const listener of listeners) listener(actorId, reply.recovery, reply.pendingRefreshes);
     return { ...reply, core, location };
   };
   const previous = serial.get(lane) ?? Promise.resolve();

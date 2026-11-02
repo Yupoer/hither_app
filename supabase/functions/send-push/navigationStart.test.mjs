@@ -13,13 +13,13 @@ test('scheduled captain receives control, activity and alert; PTS recipients als
   });
 });
 
-test('manual starter excluded; existing handle and PTS routing preserved', () => {
+test('manual starter keeps existing handle updates and is excluded from control, PTS and alerts', () => {
   assert.deepEqual(navigationRemoteRecipients({ origin: 'manual', senderId: 'captain',
     userIds: ['captain', 'pts', 'existing', 'android'] }), ['pts', 'existing', 'android']);
   assert.deepEqual(navigationStartRecipients({ origin: 'manual', senderId: 'captain',
     userIds: ['captain', 'pts', 'existing', 'android'], usersWithHandle: new Set(['captain', 'existing']),
     usersWithStartToken: new Set(['captain', 'pts', 'existing']) }), {
-    existingUserIds: ['existing'],
+    existingUserIds: ['captain', 'existing'],
     startUserIds: ['pts'], alertUserIds: ['existing', 'android'],
   });
 });

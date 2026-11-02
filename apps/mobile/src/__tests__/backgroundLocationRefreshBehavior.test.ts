@@ -133,6 +133,19 @@ describe('durable location refresh recovery', () => {
 
   });
 
+  it('uses foreground commands from an ordinary exchange without relisting or recursively starting recovery', async () => {
+    const pending = [{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00.123456Z' }];
+    const flight = recoverPendingLocationRefreshes(pending);
+    expect(recoverPendingLocationRefreshes(pending)).toBe(flight);
+    await flight;
+    expect(mockListPending).not.toHaveBeenCalled();
+    expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
+    expect(mockAck).toHaveBeenCalledWith('group-1', pending[0].requestedAt);
+    await recoverPendingLocationRefreshes([]);
+    expect(mockListPending).not.toHaveBeenCalled();
+    expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the durable row when the foreground fix or upload fails', async () => {
     mockListPending.mockResolvedValue([
       { groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' },

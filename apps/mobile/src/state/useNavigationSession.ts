@@ -24,6 +24,7 @@ import { enqueuePersonalNavigationResponse } from './coreDataSync';
 import { runNavigationTerminalMutation } from './navigationTerminalMutation';
 import { getOperationErrorMessage } from '../utils/operationError';
 import { getActiveLanguage } from '../i18n';
+import { currentSyncTimingScale } from './syncTiming';
 
 interface NavigationLaneOwner {
   revision: RefObject<number>;
@@ -65,7 +66,12 @@ function NavigationLaneSubscription({ owner, groupId, scopeSubgroupId, actorId, 
     let unsubscribe: (() => void) | null = null;
     void refresh();
     if (!groupId) return;
-    const timer = setInterval(() => { void refresh(); }, 30_000);
+    let lastPollAt = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - lastPollAt < 30_000 * currentSyncTimingScale()) return;
+      lastPollAt = Date.now();
+      void refresh();
+    }, 30_000);
     void subscribeNavigationSession(groupId, next => {
       if (!cancelled) acceptSession(next);
     }, next => {

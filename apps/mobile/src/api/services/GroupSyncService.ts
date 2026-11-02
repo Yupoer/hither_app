@@ -30,7 +30,10 @@ export async function exchangeGroup(input: {
   groupId: string; actorId: string; operations: CoreOperation[]; events: LocationBatchEvent[];
   refresh: GroupRefreshExchange; signal?: AbortSignal;
 }) {
-  if (await requireUserId() !== input.actorId) throw new Error('account_changed');
+  if (await requireUserId() !== input.actorId
+    || input.operations.some(operation => operation.actorId && operation.actorId !== input.actorId)) {
+    throw Object.assign(new Error('account_changed'), { code: '28000' });
+  }
   const core = input.operations.slice(0, 20).map(operation => ({
     operation_id: operation.id, entity_type: operation.entityType, entity_id: operation.entityId,
     entity_version: operation.entityVersion, operation_type: operation.operationType,

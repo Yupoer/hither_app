@@ -348,9 +348,9 @@
     {
       "parent": 272,
       "child": 272,
-      "acceptance": "Normal journey location uploads respect a 10-second floor; precise tracking is opt-in.",
+      "acceptance": "General journey uploads use a 60-second floor, and precise sharing uses a 15-second floor.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "bounds normal moving uploads by the 10-second minimum"
+      "testNamePattern": "bounds normal moving uploads by the 60-second minimum"
     },
     {
       "parent": 272,
@@ -558,23 +558,23 @@
     {
       "parent": 193,
       "child": 196,
-      "acceptance": "D1 Journey sharing uploads at least every 30s moving / 60s stationary.",
+      "acceptance": "Journey sharing uses actual samples with general 90-second moving and 360-second stationary heartbeats.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "journey targets 10s moving"
+      "testNamePattern": "journey targets 60s minimum and 90s/360s heartbeats with real samples"
     },
     {
       "parent": 193,
       "child": 196,
-      "acceptance": "D2 Non-journey sharing refreshes liveness at most every 2 minutes.",
+      "acceptance": "Idle foreground sharing respects a five-minute heartbeat; passive background requests ten minutes.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "non-journey sharing refreshes liveness"
+      "testNamePattern": "idle heartbeats respect the five-minute sharing minimum"
     },
     {
       "parent": 193,
       "child": 196,
-      "acceptance": "D3 pausesUpdatesAutomatically is false while sharing.",
+      "acceptance": "Background sharing keeps pausesUpdatesAutomatically false with ordinary activity and accuracy.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "uses fitness High accuracy"
+      "testNamePattern": "requests passive background at ten minutes without pausing"
     },
     {
       "parent": 193,
@@ -831,16 +831,16 @@
     {
       "parent": 206,
       "child": 209,
-      "acceptance": "A2 Network recompute is correction only at about 15–20m or 3s in foreground",
+      "acceptance": "Near and far route requests require both their selected time and movement threshold.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "defaults to the motion-aware foreground balanced profile"
+      "testNamePattern": "applies precise"
     },
     {
       "parent": 206,
       "child": 209,
-      "acceptance": "A3 Background / allDay route cadence is unchanged",
+      "acceptance": "Idle foreground uses 300 seconds and 300 metres; idle background requests 600 seconds.",
       "testFile": "locationPolicy.test.ts",
-      "testNamePattern": "allDay ignores highAccuracy and uses Low GPS for the 8h budget"
+      "testNamePattern": "uses canonical sharing cadence"
     },
     {
       "parent": 206,
@@ -2105,9 +2105,9 @@
     {
       "parent": "foreground-navigation-20261006",
       "child": "location",
-      "acceptance": "iOS keeps the native MapKit user location when paused or covered by system UI; only true background hands GPS off, and sharing-off stops acquisition.",
+      "acceptance": "One Expo owner continues through map blur and system covers, transfers only in background, and stops when sharing is revoked.",
       "testFile": "pausedLocationOwnership.test.ts",
-      "testNamePattern": "keeps MapKit for paused and navigating iOS, preserves inactive fixes"
+      "testNamePattern": "keeps one Expo owner across navigation and map blur, then stops at background or revoked consent"
     },
     {
       "parent": "foreground-navigation-20261006",
@@ -2259,9 +2259,9 @@
     {
       "parent": 304,
       "child": 304,
-      "acceptance": "Repeated realtime rejoin failures do not postpone the 30 s fallback poll.",
+      "acceptance": "Repeated realtime rejoin failures do not postpone the scaled 60-second idle fallback poll.",
       "testFile": "useGroupStateRealtimeCadence.test.ts",
-      "testNamePattern": "keeps the 30 s fallback poll running"
+      "testNamePattern": "keeps the 60 s fallback poll running"
     },
     {
       "parent": 304,

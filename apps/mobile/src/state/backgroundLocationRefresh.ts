@@ -118,16 +118,16 @@ export async function recoverPendingLocationRefreshFromSample(
 
 /** Foreground/cold-start recovery: one GPS fix, one upload batch, per-group ACK. */
 let recoveryFlight: Promise<void> | null = null;
-export function recoverPendingLocationRefreshes(): Promise<void> {
+export function recoverPendingLocationRefreshes(suppliedPending?: PendingLocationRefresh[]): Promise<void> {
   if (recoveryFlight) return recoveryFlight;
-  recoveryFlight = recoverPendingRefreshes().finally(() => { recoveryFlight = null; });
+  recoveryFlight = recoverPendingRefreshes(suppliedPending).finally(() => { recoveryFlight = null; });
   return recoveryFlight;
 }
-async function recoverPendingRefreshes(): Promise<void> {
+async function recoverPendingRefreshes(suppliedPending?: PendingLocationRefresh[]): Promise<void> {
   if (AppState.currentState !== 'active') return;
   const access = await captureLocationAccess();
   if (!access) return;
-  const pending = (await listMyPendingLocationRefreshes().catch(() => []))
+  const pending = (suppliedPending ?? await listMyPendingLocationRefreshes().catch(() => []))
     .filter(row => row.groupId === access.groupId);
   if (pending.length === 0) return;
   if (!isLocationAccessCurrent(access)) {

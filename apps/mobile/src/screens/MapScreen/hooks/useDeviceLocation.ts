@@ -1,4 +1,5 @@
 import { locationSourceHealth, subscribeLocationSourceHealth } from '../../../native/locationSourceHealth';
+import { setSyncTimingProfile } from '../../../state/syncTiming';
 import * as Crypto from 'expo-crypto';
 import { createElement, useState, useCallback, useRef, type ReactElement, type RefObject, useSyncExternalStore } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
@@ -395,6 +396,7 @@ function DeviceLocationLifecycle({ owner, input }: {
     resources.watchdog = null;
     resources.appStateSubscription?.remove(); resources.appStateSubscription = null;
     resources.previous = null;
+    setSyncTimingProfile(false, 'allDay');
     setLocationAccessContext(null, false);
   });
   return createElement(DeviceLocationProfile, {
@@ -411,6 +413,7 @@ function DeviceLocationProfile({ owner, resources, input }: {
     const { groupId, highAccuracy, navigationTargetKey, teamNavigationActive, powerMode,
       accessReady, sharingEnabled, hasMembershipResolved, appState, foregroundLocationAvailable,
       refreshDeviceLocation, applySampleToUi, consumeForegroundSample } = input;
+    setSyncTimingProfile(highAccuracy, powerMode);
     const scopeChanged = !old || !Object.is(old.foregroundLocationAvailable, foregroundLocationAvailable)
       || !Object.is(old.groupId, groupId) || !Object.is(old.sharingEnabled, sharingEnabled)
       || !Object.is(old.hasMembershipResolved, hasMembershipResolved);
@@ -452,7 +455,6 @@ function DeviceLocationProfile({ owner, resources, input }: {
       void refreshDeviceLocation().catch(() => null).finally(() => { owner.forceSyncInFlightRef.current = false; });
     }
     if (scopeChanged && foregroundAllowed) void flushLocationOutbox().catch(() => undefined);
-    // Source silence is measured against the requested acquisition cadence.
     if (bootstrapChanged && foregroundAllowed) {
       resources.watchdog = setInterval(() => {
         void flushLocationOutbox().catch(() => undefined);
@@ -462,7 +464,6 @@ function DeviceLocationProfile({ owner, resources, input }: {
         void refreshDeviceLocation().catch(() => null).finally(() => { owner.forceSyncInFlightRef.current = false; });
       }, 30_000 * syncTimingScale(highAccuracy, powerMode));
     }
-    // DEV debug route: always feed samples into UI, independently of real GPS.
     // Debug samples stay local and never enter the team location outbox.
     if (debugChanged && watchAllowed) {
       resources.stopDebug = subscribeDebugLocation((sample: LocationSample) => {
@@ -472,7 +473,6 @@ function DeviceLocationProfile({ owner, resources, input }: {
         applySampleToUi(sample, now, { immediate: true });
       });
     }
-    // Expo owns foreground acquisition in the team workspace.
     if (watchChanged && watchAllowed) {
       let cancelled = false;
       let stop = () => {};

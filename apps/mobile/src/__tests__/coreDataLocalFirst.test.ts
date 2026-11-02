@@ -871,7 +871,6 @@ describe('OTA-04 contract surfaces', () => {
     expect(source).toContain('hydrateCoreEntityVersions');
     expect(source).toContain('listOpenCoreOperations');
     expect(source).toContain('openOperations');
-    expect(source).toContain('flushCoreOperationOutbox');
   });
 
   it('product code wires gathering mutations through outbox', () => {

@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(45);
+select plan(47);
 create table public.test_schedule_pushes(id bigint generated always as identity, payload jsonb);
 create or replace function extensions.notify_push(payload jsonb) returns void language sql as $$ insert into public.test_schedule_pushes(payload) values(payload) $$;
 insert into auth.users(id,email) values
@@ -23,6 +23,11 @@ insert into public.itinerary_items(id,group_id,title,latitude,longitude,position
  ('eeeeeeee-eeee-4eee-8eee-eeeeeeee0002','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','Replacement',25,121,1,1,null,'11111111-1111-4111-8111-111111111111');
 insert into public.itinerary_items(id,group_id,title,latitude,longitude,position,day,meet_at,meet_set_by,subgroup_id) values
  ('eeeeeeee-eeee-4eee-8eee-eeeeeeee0c02','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','Sub due',25,121,0,1,now()-interval '1 minute','33333333-3333-4333-8333-333333333333','eeeeeeee-eeee-4eee-8eee-eeeeeeee0c01');
+insert into public.itinerary_items(id,group_id,title,latitude,longitude,position,day) values
+ ('eeeeeeee-eeee-4eee-8eee-eeeeeeee0080','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','Pool preserved',25,121,9,null);
+select throws_ok($$insert into public.navigation_sessions(group_id,destination_id,destination_name,destination_latitude,destination_longitude,started_by,request_id)
+ values('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','eeeeeeee-eeee-4eee-8eee-eeeeeeee0080','Pool preserved',25,121,'11111111-1111-4111-8111-111111111111',gen_random_uuid())$$,
+ '22023','navigation destination missing or closed','legacy direct navigation cannot target the unscheduled pool');
 select set_config('request.jwt.claim.sub','',true);
 select is(public.process_meet_time_pushes(),2,'one due occurrence starts each independent scope without a foreground actor');
 select is((select count(*)::integer from navigation_sessions where status='active'),2,'main and subgroup active independently');
@@ -51,6 +56,8 @@ select set_config('request.jwt.claim.sub','11111111-1111-4111-8111-111111111111'
 update public.itinerary_items set meet_at=now()-interval '20 seconds' where id='eeeeeeee-eeee-4eee-8eee-eeeeeeee0002';
 select set_config('request.jwt.claim.sub','',true);
 select is(public.process_meet_time_pushes(),1,'different due target uses core replacement');
+select ok((select day is null and position=9 from public.itinerary_items where id='eeeeeeee-eeee-4eee-8eee-eeeeeeee0080'),
+ 'scheduled promotion preserves unscheduled pool day and position');
 select is((select status from navigation_sessions where destination_id='eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'),'cancelled','replacement terminates old same-scope session');
 select is((select status from navigation_sessions where destination_id='eeeeeeee-eeee-4eee-8eee-eeeeeeee0c02'),'active','replacement preserves other scope');
 select ok((select started_at from navigation_sessions where destination_id='eeeeeeee-eeee-4eee-8eee-eeeeeeee0002') > (select started_at from navigation_sessions where destination_id='eeeeeeee-eeee-4eee-8eee-eeeeeeee0001'),'same-tick scheduled replacements preserve newest-session ordering');

@@ -2172,18 +2172,18 @@ begin
   perform 1 from public.groups where id = new.group_id for update;
   select * into v_target from public.itinerary_items
     where id = new.destination_id and group_id = new.group_id;
-  if not found or v_target.closed_at is not null then
+  if not found or v_target.closed_at is not null or v_target.day is null then
     raise exception 'navigation destination missing or closed' using errcode = '22023';
   end if;
   if exists (select 1 from public.itinerary_items i
     where i.group_id = new.group_id and i.subgroup_id is not distinct from v_target.subgroup_id
-      and coalesce(i.day, 1) = coalesce(v_target.day, 1) and i.closed_at is null
+      and i.day = v_target.day and i.closed_at is null
       and i.position < v_target.position) then
     select jsonb_agg(jsonb_build_object('id', i.id, 'day', coalesce(i.day, 1), 'position', i.position)
       order by (i.id = v_target.id) desc, i.position, i.id)
     into v_updates from public.itinerary_items i
     where i.group_id = new.group_id and i.subgroup_id is not distinct from v_target.subgroup_id
-      and coalesce(i.day, 1) = coalesce(v_target.day, 1) and i.closed_at is null;
+      and i.day = v_target.day and i.closed_at is null;
     if new.origin = 'scheduled' then
       perform hither_private.reorder_itinerary_items_actor(new.group_id, v_updates, new.started_by);
     else

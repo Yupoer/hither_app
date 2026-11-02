@@ -36,6 +36,7 @@ import WaveLoading from '../components/WaveLoading';
 import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
 import { refreshTeamLocations } from '../utils/refreshTeamLocations';
+import { syncGroup } from '../state/groupSync';
 import { showAppNotice } from '../state/appNotice';
 import { captureLocationAccess, isLocationAccessCurrent } from '../state/locationPrivacy';
 
@@ -389,6 +390,7 @@ export default function MapScreen({ route, navigation }: Props) {
     loadError,
     refreshing,
     refresh,
+    applyRecoverySnapshot,
     refreshLocalSnapshot,
     applyOptimisticGathering,
     openOperations,
@@ -2367,6 +2369,11 @@ export default function MapScreen({ route, navigation }: Props) {
     setRefreshingLocations(true);
     try {
       const result = await refreshTeamLocations({
+        exchange: isDemoGroup(groupId) ? undefined : async options => {
+          const result = await syncGroup({ groupId, refresh: options });
+          return { pulled: await applyRecoverySnapshot(result.recovery), request: result.refreshRequest,
+            acknowledgedIds: result.acknowledgedIds };
+        },
         pull: () => refresh('poll_manual_refresh'),
         uploadSelf: () => refreshDeviceLocation({ requireUpload: true }),
         requestPeers: () => requestGroupLocationRefresh(groupId),
@@ -2388,7 +2395,7 @@ export default function MapScreen({ route, navigation }: Props) {
     } finally {
       setRefreshingLocations(false);
     }
-  }, [groupId, refreshingLocations, refresh, refreshDeviceLocation, refreshCooldownUntil, serverTimeOffsetMs, t]);
+  }, [groupId, refreshingLocations, refresh, applyRecoverySnapshot, refreshDeviceLocation, refreshCooldownUntil, serverTimeOffsetMs, t]);
 
   const fitAllMembers = useCallback(() => {
     void runUiAction(

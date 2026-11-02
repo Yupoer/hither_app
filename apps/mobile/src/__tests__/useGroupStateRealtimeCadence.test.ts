@@ -1,4 +1,5 @@
 jest.mock('../state/groupSync', () => ({ subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
+jest.mock('../state/backgroundLocationRefresh', () => ({ recoverPendingLocationRefreshes: jest.fn(async () => undefined) }));
 import React from 'react';
 import type { GroupState } from '../types';
 import { getVisibleGroupSeed } from '../state/visibleGroupSeed';

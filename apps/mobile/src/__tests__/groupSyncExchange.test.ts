@@ -19,6 +19,12 @@ function reply(overrides: Record<string, unknown> = {}) {
     acknowledgedIds: [], snapshot: {}, ...overrides }, error: null };
 }
 beforeEach(() => { mockRpc.mockReset(); mockActor.mockResolvedValue('actor'); });
+it('retains a collected draft owner when authentication returns to a different batch actor', async () => {
+  const foreign = { ...operation('a', 1), actorId: 'actor-b' };
+  await expect(exchangeGroup({ groupId: 'group', actorId: 'actor', operations: [foreign], events: [], refresh: {} }))
+    .rejects.toMatchObject({ code: '28000', message: 'account_changed' });
+  expect(mockRpc).not.toHaveBeenCalled();
+});
 it('sends heterogeneous core operations and GPS in one request and retains omitted operation results', async () => {
   mockRpc.mockResolvedValue(reply({ coreResults: [{ operation_id: 'a', status: 'accepted', entity_version: 1 }],
     locationResult: { acceptedIds: ['gps'], rejected: [] },
