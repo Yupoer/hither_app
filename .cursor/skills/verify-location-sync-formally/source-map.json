@@ -1,0 +1,55 @@
+{
+  "status": "reviewed-integrated-source",
+  "syncCommit": "9cfcd9b46926cf55b33a809015897b9238c1e1f5",
+  "assumedExternalBoundary": "exchangeGroup and the server execute as the captured actor and return actor-bound results. This model/replay does not cover lazy authenticated transport changing credentials, GroupSyncService.exchangeGroup, or SQL p_actor_id versus auth.uid() rejection before effects.",
+  "excludedOwners": {
+    "apps/mobile/src/api/services/GroupSyncService.ts": "exchangeGroup serializes the captured p_actor_id. Mocked by this replay; verify in owning adapter tests.",
+    "supabase/migrations/20261102152359_group_sync_exchange.sql": "sync_group compares p_actor_id with auth.uid() before core, GPS or refresh effects. Not executed by this replay or proved by this model; verify actual SQL mismatch cases."
+  },
+  "sources": {
+    "apps/mobile/src/state/groupSync.ts": {
+      "sha256": "c73eee308244894417796d330dddcf0fd671dbba0834eccd228301cf30d96f2d",
+      "functions": [
+        "syncGroup",
+        "subscribeGroupSyncSnapshots"
+      ],
+      "modelActions": [
+        "Prepare",
+        "Receive",
+        "LoseReply",
+        "Publish",
+        "Finish"
+      ],
+      "contract": "One actor/group mixed exchange; final actor check gates synchronous publication of the recovery snapshot and its pendingRefreshes to the same listeners. Replay requires exact successful first/retry publication counts, expected first-call success or domain error, command forwarding and actor fencing. It does not cover command execution or GPS freshness."
+    },
+    "apps/mobile/src/state/locationOutbox.ts": {
+      "sha256": "1cda6e6e42bc1eb8be62ab16bb30791f211ea56ee5466ec117d0d5ab0daa1998",
+      "functions": [
+        "createLocationOutbox.runFlush",
+        "createLocationOutbox.exchange",
+        "exchangeLocationOutbox",
+        "SQLiteLocationOutboxDatabase.resolveBatch"
+      ],
+      "modelActions": [
+        "Prepare",
+        "Settle(Gps)",
+        "SwitchAccount"
+      ],
+      "contract": "Actor/group selection, consent/access and post-upload actor fencing; accepted IDs settle together while omitted/lost results retain rows. Scoped count/nextDue use the same actor/group. Permanent rejects, denied consent, background refresh consumption and demo uploads remain outside this bounded target."
+    },
+    "apps/mobile/src/state/coreOperationOutbox.ts": {
+      "sha256": "c50ccf611d230109b6b88d8682fd0cfb7064453c0eed03db730aa9063f976c67",
+      "functions": [
+        "createCoreOperationOutbox.flush",
+        "createCoreOperationOutbox.handleSubmitResult"
+      ],
+      "modelActions": [
+        "Prepare",
+        "SettleCore",
+        "SwitchAccount"
+      ],
+      "contract": "Ordered same-owner core prefix; missing result stops before mutation; each accepted result settles independently after actor guard."
+    }
+  },
+  "sourceHashEncoding": "UTF-8 with CRLF normalized to LF"
+}
