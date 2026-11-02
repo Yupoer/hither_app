@@ -1,8 +1,8 @@
-import { backgroundLocationOptions } from '../state/backgroundJourneyController';
 import {
   createMotionState,
   locationPolicy,
-  POWER_BUDGET_NOTE,
+  syncTimingScale,
+  routeLocationPolicy,
   quantizeCoordinates,
   reduceMotionState,
   resolveTrackingMode,
@@ -34,86 +34,22 @@ const atOrigin = (atMs: number): LocationGateState => ({
 });
 
 describe('locationPolicy', () => {
-  it('defaults to the motion-aware foreground balanced profile', () => {
-    const p = locationPolicy(false);
-    expect(p.accuracy).toBe('balanced');
-    expect(p.distanceInterval).toBe(10);
-    expect(p.timeInterval).toBe(5_000);
-    expect(p.uploadMinDistanceM).toBe(8);
-    expect(p.uploadHeartbeatMs).toBe(10_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
-    expect(p.stationaryAfterMs).toBe(45_000);
-    expect(p.uploadHeartbeatStationaryMs).toBeGreaterThan(p.uploadHeartbeatMs);
-    expect(p.routeCoordDecimals).toBe(4);
-    expect(p.realtimeLocationDebounceMs).toBe(250);
-    expect(p.routeMinDistanceM).toBe(18);
-    expect(p.routeMinIntervalMs).toBe(3_000);
+  it.each([
+    [true, 'journey', false, 'high', 15_000, 10, 15_000, 180_000],
+    [false, 'journey', false, 'high', 60_000, 100, 90_000, 360_000],
+    [true, 'allDay', false, 'balanced', 300_000, 300, 300_000, 300_000],
+    [false, 'foreground', false, 'balanced', 300_000, 300, 300_000, 300_000],
+    [false, 'allDay', true, 'balanced', 600_000, 300, 600_000, 600_000],
+  ] as const)('uses canonical sharing cadence %s/%s/background%s', (precise, mode, background, accuracy, interval, distance, moving, stationary) => {
+    expect(locationPolicy(precise, mode, background)).toMatchObject({ accuracy, timeInterval: interval,
+      distanceInterval: distance, uploadMinIntervalMs: interval, uploadMinDistanceM: distance,
+      uploadHeartbeatMs: moving, uploadHeartbeatStationaryMs: stationary });
   });
 
-  it('uses the faster high-accuracy profile only when enabled in foreground', () => {
-    const p = locationPolicy(true);
-    expect(p.accuracy).toBe('high');
-    expect(p.distanceInterval).toBe(5);
-    expect(p.timeInterval).toBe(5_000);
-    expect(p.uploadMinDistanceM).toBe(8);
-    expect(p.uploadMinIntervalMs).toBe(5_000);
-    expect(p.uploadHeartbeatMs).toBe(10_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
-    expect(p.routeCoordDecimals).toBe(5);
-    expect(p.realtimeLocationDebounceMs).toBe(250);
-    expect(p.routeMinDistanceM).toBe(15);
-    expect(p.routeMinIntervalMs).toBe(3_000);
-  });
-
-  it('allDay ignores highAccuracy and uses Low GPS for the 8h budget', () => {
-    const p = locationPolicy(true, 'allDay');
-    expect(p.accuracy).toBe('low');
-    expect(p.distanceInterval).toBe(150);
-    expect(p.uploadHeartbeatMs).toBe(120_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(120_000);
-    expect(p.uploadMinDistanceM).toBe(150);
-    expect(p.routeMinDistanceM).toBe(100);
-    expect(p.routeMinIntervalMs).toBe(75_000);
-    expect(POWER_BUDGET_NOTE.allDay8hTargetPct).toBe(20);
-  });
-
-  it('journey balanced is denser than allDay but not High', () => {
-    const p = locationPolicy(false, 'journey');
-    expect(p.accuracy).toBe('balanced');
-    expect(p.uploadHeartbeatMs).toBeLessThan(locationPolicy(false, 'allDay').uploadHeartbeatMs);
-  });
-
-  it('uses fitness High accuracy for walking team navigation', () => {
-    expect(backgroundLocationOptions('journey', false, 'teamNavigation')).toMatchObject({
-      accuracy: 4,
-      activityType: 3,
-      showsBackgroundLocationIndicator: true,
-      pausesUpdatesAutomatically: false,
-      deferredUpdatesDistance: 0,
-      deferredUpdatesInterval: 0,
-    });
-  });
-
-  it('never promotes manual walking precision to BestForNavigation', () => {
-    expect(backgroundLocationOptions('journey', true, 'navigationMax')).toMatchObject({
-      accuracy: 5,
-      activityType: 3,
-      pausesUpdatesAutomatically: false,
-    });
-  });
-
-  it('prevents indefinite passive presence stalls in the Expo fallback', () => {
-    expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
-      accuracy: 2,
-      activityType: 1,
-      pausesUpdatesAutomatically: false,
-      showsBackgroundLocationIndicator: false,
-    });
-  });
 });
 
 describe('motion cadence', () => {
-  const policy = locationPolicy(false);
+  const policy = locationPolicy(false, 'journey');
 
   it('starts moving and stays moving while significantly relocating', () => {
     let state = createMotionState(1_000);
@@ -241,27 +177,27 @@ describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
     expect(shouldRunBackgroundLocation('group-1', 'background', true, false)).toBe(false);
   });
 
-  it('journey targets 10s moving / 60s stationary with real samples', () => {
+  it('journey targets 60s minimum and 90s/360s heartbeats with real samples', () => {
     const p = locationPolicy(false, 'journey');
-    expect(p.uploadMinIntervalMs).toBe(10_000);
-    expect(p.uploadHeartbeatMs).toBe(15_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
+    expect(p.uploadMinIntervalMs).toBe(60_000);
+    expect(p.uploadHeartbeatMs).toBe(90_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(360_000);
   });
 
-  it('precise journey mode alone enables the 5-second high-frequency floor', () => {
+  it('precise journey keeps the explicit 15-second floor', () => {
     const p = locationPolicy(true, 'journey');
-    expect(p.uploadMinIntervalMs).toBe(5_000);
-    expect(p.uploadHeartbeatMs).toBe(5_000);
-    expect(p.uploadHeartbeatStationaryMs).toBe(60_000);
+    expect(p.uploadMinIntervalMs).toBe(15_000);
+    expect(p.uploadHeartbeatMs).toBe(15_000);
+    expect(p.uploadHeartbeatStationaryMs).toBe(180_000);
     expect(p.uiMinIntervalMs).toBe(500);
   });
 
-  it('non-journey sharing refreshes liveness at most every 2 minutes (#196 D2)', () => {
+  it('idle heartbeats respect the five-minute sharing minimum', () => {
     const allDay = locationPolicy(false, 'allDay');
     const fg = locationPolicy(false, 'foreground');
-    expect(allDay.uploadHeartbeatMs).toBeLessThanOrEqual(120_000);
-    expect(allDay.uploadHeartbeatStationaryMs).toBeLessThanOrEqual(120_000);
-    expect(fg.uploadHeartbeatStationaryMs).toBeLessThanOrEqual(120_000);
+    expect(allDay.uploadHeartbeatMs).toBe(300_000);
+    expect(allDay.uploadHeartbeatStationaryMs).toBe(300_000);
+    expect(fg.uploadHeartbeatStationaryMs).toBe(300_000);
   });
 
   it('same-coord heartbeat still uploads so updated_at moves', () => {
@@ -273,14 +209,14 @@ describe('shouldWatchLocation / shouldRunBackgroundLocation', () => {
 });
 
 describe('shouldAcceptUiSample', () => {
-  const policy = locationPolicy(false);
+  const policy = locationPolicy(false, 'journey');
 
   it('accepts the first sample', () => {
     expect(shouldAcceptUiSample(origin, 1_000, empty, policy)).toBe(true);
   });
 
   it('accepts a meaningful move past uiMinDistanceM', () => {
-    expect(shouldAcceptUiSample(moved(policy.uiMinDistanceM + 5), 2_000, atOrigin(1_000), policy)).toBe(true);
+    expect(shouldAcceptUiSample(moved(policy.uiMinDistanceM + 5), 1_000 + policy.uiMinIntervalMs, atOrigin(1_000), policy)).toBe(true);
   });
 
   it('drops jitter within uiMinIntervalMs', () => {
@@ -301,7 +237,7 @@ describe('shouldAcceptUiSample', () => {
 });
 
 describe('shouldUploadSample', () => {
-  const policy = locationPolicy(false);
+  const policy = locationPolicy(false, 'journey');
 
   it('accepts the first sample', () => {
     expect(shouldUploadSample(origin, 1_000, empty, policy)).toBe(true);
@@ -310,7 +246,7 @@ describe('shouldUploadSample', () => {
   it('uploads after a large enough move and min interval', () => {
     expect(
       shouldUploadSample(
-        moved(55),
+        moved(150),
         1_000 + policy.uploadMinIntervalMs,
         atOrigin(1_000),
         policy,
@@ -371,7 +307,7 @@ describe('shouldUploadSample', () => {
 });
 
 describe('shouldRecomputeRoute', () => {
-  const policy = locationPolicy(false);
+  const policy = locationPolicy(false, 'journey');
 
   it('recomputes on first sample', () => {
     expect(shouldRecomputeRoute(origin, 1_000, empty, policy)).toBe(true);
@@ -422,21 +358,21 @@ describe('virtual 30-minute journey request bounds', () => {
 
   it('bounds normal moving uploads by the 10-second minimum', () => {
     const policy = locationPolicy(false, 'journey');
-    expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 10);
+    expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 60);
     expect(countUploads(policy)).toBeGreaterThan(0);
   });
 
   it('bounds precise moving uploads by the 5-second minimum', () => {
     const policy = locationPolicy(true, 'journey');
-    expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 5);
+    expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 15);
     expect(countUploads(policy)).toBeGreaterThan(0);
   });
 
   it('does not recalculate routes on every background/foreground fix', () => {
     const normal = countRoutes(locationPolicy(false, 'journey'));
     const precise = countRoutes(locationPolicy(true, 'journey'));
-    expect(normal).toBeLessThanOrEqual(30 * 60 / 50);
-    expect(precise).toBeLessThanOrEqual(30 * 60 / 12);
+    expect(normal).toBeLessThanOrEqual(30 * 60 / 300);
+    expect(precise).toBeLessThanOrEqual(30 * 60 / 36);
     expect(normal).toBeGreaterThan(0);
     expect(precise).toBeGreaterThan(0);
   });
@@ -449,3 +385,20 @@ describe('quantizeCoordinates', () => {
     );
   });
 });
+
+ describe('automatic timing and near/far routes', () => {
+   it('shares one automatic time scale while leaving the user one-shot bound separate', () => {
+     expect(syncTimingScale(true, 'journey')).toBe(3);
+     expect(syncTimingScale(false, 'journey')).toBe(6);
+     expect(syncTimingScale(true, 'allDay')).toBe(2);
+   });
+   it.each([[true, true, 9_000, 15], [false, true, 18_000, 18],
+     [true, false, 36_000, 20], [false, false, 300_000, 100]] as const)(
+     'applies precise%s near%s route time and movement together', (precise, near, interval, distance) => {
+       const policy = routeLocationPolicy(precise, near);
+       expect(policy).toMatchObject({ routeMinIntervalMs: interval, routeMinDistanceM: distance });
+       expect(shouldRecomputeRoute(moved(distance + 5), interval - 1, atOrigin(0), policy)).toBe(false);
+       expect(shouldRecomputeRoute(moved(distance - 2), interval, atOrigin(0), policy)).toBe(false);
+       expect(shouldRecomputeRoute(moved(distance + 5), interval, atOrigin(0), policy)).toBe(true);
+     });
+ });

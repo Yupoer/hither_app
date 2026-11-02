@@ -2,7 +2,7 @@ import type { Coordinates } from '../types';
 import { distanceMeters } from './geo';
 
 /** Foreground UI, passive presence, and journey profiles. Uploads only use real sensor fixes.
- * iOS live updates use OS-managed default/fitness profiles; Expo fallback uses explicit accuracy.
+ * iOS live updates use the OS-managed default profile; Expo uses ordinary accuracy.
  * Battery targets require device measurements and are not guarantees.
  */
 export type LocationPowerMode = 'foreground' | 'allDay' | 'journey';
@@ -15,15 +15,14 @@ export function isForegroundLocationState(appState: string): boolean {
 /** Choose a single foreground acquisition owner from the local navigation intent. */
 export function foregroundLocationConfiguration(input: {
   navigationActive: boolean;
-  nativeMapAvailable: boolean;
   highAccuracy: boolean;
   sharingEnabled: boolean;
   hasMembership: boolean;
   appState: string;
-}): { owner: 'none' | 'mapkit' | 'expo'; highAccuracy: boolean; powerMode: LocationPowerMode } {
+}): { owner: 'none' | 'expo'; highAccuracy: boolean; powerMode: LocationPowerMode } {
   const allowed = input.sharingEnabled && input.hasMembership && isForegroundLocationState(input.appState);
   return {
-    owner: !allowed ? 'none' : input.nativeMapAvailable ? 'mapkit' : 'expo',
+    owner: allowed ? 'expo' : 'none',
     // Preserve the preference at the caller; a paused journey never promotes GPS.
     highAccuracy: input.navigationActive && input.highAccuracy,
     powerMode: input.navigationActive ? 'journey' : 'allDay',
@@ -108,81 +107,44 @@ export const POWER_BUDGET_NOTE = {
   precise8hEstimatePct: 40,
 } as const;
 
+export function syncTimingScale(highAccuracy: boolean, powerMode: LocationPowerMode): number {
+  return powerMode === 'journey' ? highAccuracy ? 3 : 6 : 2;
+}
+
 export function locationPolicy(
   highAccuracy: boolean,
   powerMode: LocationPowerMode = 'foreground',
+  background = false,
 ): LocationPolicy {
-  // All-day background: ignore highAccuracy — budget requires Low GPS.
-  if (powerMode === 'allDay') {
-    return {
-      accuracy: 'low',
-      distanceInterval: 150,
-      timeInterval: 150_000,
-      uiMinDistanceM: 50,
-      uiMinIntervalMs: 40_000,
-      uploadMinDistanceM: 150,
-      uploadMinIntervalMs: 150_000,
-      // Evaluate liveness only on real fixes; the OS may deliver them later
-      // than this upload budget (native passive cadence is 150 seconds).
-      uploadHeartbeatMs: 120_000,
-      uploadHeartbeatStationaryMs: 120_000,
-      stationaryAfterMs: 90_000,
-      routeMinDistanceM: 100,
-      routeMinIntervalMs: 75_000,
-      routeCoordDecimals: 3,
-      realtimeLocationDebounceMs: 6_000,
-    };
-  }
-
-  if (powerMode === 'journey') {
-    return highAccuracy
-      ? {
-          accuracy: 'high',
-          distanceInterval: 8,
-          timeInterval: 5_000,
-          uiMinDistanceM: 8,
-          // React projection is capped at 2 Hz. Raw fixes remain available to
-          // arrival/navigation consumers through the location hook callback.
-          uiMinIntervalMs: 500,
-          uploadMinDistanceM: 8,
-          uploadMinIntervalMs: 5_000,
-          uploadHeartbeatMs: 5_000,
-          uploadHeartbeatStationaryMs: 60_000,
-          stationaryAfterMs: 45_000,
-          routeMinDistanceM: 20,
-          routeMinIntervalMs: 12_000,
-          routeCoordDecimals: 5,
-          realtimeLocationDebounceMs: 2_000,
-        }
-      : {
-          accuracy: 'balanced',
-          distanceInterval: 10,
-          timeInterval: 10_000,
-          uiMinDistanceM: 30,
-          // React projection is capped at 1 Hz. Raw fixes are not discarded.
-          uiMinIntervalMs: 1_000,
-          uploadMinDistanceM: 10,
-          uploadMinIntervalMs: 10_000,
-          uploadHeartbeatMs: 15_000,
-          uploadHeartbeatStationaryMs: 60_000,
-          stationaryAfterMs: 45_000,
-          routeMinDistanceM: 60,
-          routeMinIntervalMs: 50_000,
-          routeCoordDecimals: 4,
-          realtimeLocationDebounceMs: 5_000,
-        };
-  }
-
+  const journey = powerMode === 'journey';
+  const interval = journey ? highAccuracy ? 15_000 : 60_000 : background ? 600_000 : 300_000;
+  const distance = journey ? highAccuracy ? 10 : 100 : 300;
   return {
-    accuracy: highAccuracy ? 'high' : 'balanced',
-    distanceInterval: highAccuracy ? 5 : 10, timeInterval: 5_000,
-    uiMinDistanceM: 5, uiMinIntervalMs: highAccuracy ? 500 : 1_000,
-    uploadMinDistanceM: 8, uploadMinIntervalMs: 5_000,
-    uploadHeartbeatMs: 10_000, uploadHeartbeatStationaryMs: 60_000,
-    stationaryAfterMs: 45_000,
-    routeMinDistanceM: highAccuracy ? 15 : 18, routeMinIntervalMs: 3_000,
-    routeCoordDecimals: highAccuracy ? 5 : 4, realtimeLocationDebounceMs: 250,
+    accuracy: journey ? 'high' : 'balanced',
+    distanceInterval: distance,
+    timeInterval: interval,
+    uiMinDistanceM: journey ? highAccuracy ? 8 : 30 : 50,
+    uiMinIntervalMs: journey ? highAccuracy ? 500 : 1_000 : 40_000,
+    uploadMinDistanceM: distance,
+    uploadMinIntervalMs: interval,
+    uploadHeartbeatMs: journey ? highAccuracy ? 15_000 : 90_000 : interval,
+    uploadHeartbeatStationaryMs: journey ? highAccuracy ? 180_000 : 360_000 : interval,
+    stationaryAfterMs: journey ? 45_000 : 90_000,
+    routeMinDistanceM: highAccuracy ? 20 : 100,
+    routeMinIntervalMs: highAccuracy ? 36_000 : 300_000,
+    routeCoordDecimals: highAccuracy ? 5 : 4,
+    realtimeLocationDebounceMs: journey ? highAccuracy ? 6_000 : 30_000 : 12_000,
   };
+}
+
+export function routeLocationPolicy(highAccuracy: boolean, nearTarget: boolean): LocationPolicy {
+  const policy = locationPolicy(highAccuracy, 'journey');
+  return nearTarget ? { ...policy, routeMinDistanceM: highAccuracy ? 15 : 18,
+    routeMinIntervalMs: highAccuracy ? 9_000 : 18_000 } : policy;
+}
+
+export function locationStaleAfterMs(highAccuracy: boolean, powerMode: LocationPowerMode): number {
+  return Math.max(30_000, locationPolicy(highAccuracy, powerMode).timeInterval * 2);
 }
 
 export function shouldWatchLocation(
