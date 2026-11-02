@@ -583,11 +583,11 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           flushLocationOutbox(),
         );
         if (controller.isCurrent(config) && isLocationAccessCurrent(access)
-          && await AsyncStorage.getItem('@hither/pending-location-refresh')) {
+          && (upload.pendingRefreshes !== undefined || await AsyncStorage.getItem('@hither/pending-location-refresh'))) {
           const { recoverPendingLocationRefreshFromSample } = await import('./backgroundLocationRefresh');
           await recoverPendingLocationRefreshFromSample(config.groupId, {
             timestamp: latest.timestamp, coordinates: coords, accuracy: accuracyM,
-          }).catch(() => undefined);
+          }, upload.pendingRefreshes).catch(() => undefined);
         }
         if (upload.retryScheduled > 0) {
           await diagnostics.write({

@@ -1,7 +1,8 @@
-jest.mock('../state/groupSync', () => ({ syncGroup: async ({ groupId }: { groupId: string }) => ({
+jest.mock('../state/groupSync', () => ({ syncGroup: jest.fn(async ({ groupId }: { groupId: string }) => ({
   location: await jest.requireActual('../state/locationOutbox').exchangeLocationOutbox(groupId, 'user-1',
     require('../api/services/LocationService').ingestLocationBatch),
-}) }));
+  pendingRefreshes: [{ groupId, requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00.123456Z' }],
+})) }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
 jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'user-1' }));
 jest.mock('react-native', () => ({ AppState: { currentState: 'active' } }));
@@ -276,12 +277,46 @@ it('retains the original durable event while access is pending and uploads only 
       acceptedIds: events.map(row => row.id), rejected: [],
     }));
     setLocationAccessContext('g1', true, true);
-    await expect(flushLocationOutbox()).resolves.toMatchObject({ sent: 1, acceptedIds: [original.id], remaining: 0 });
+    await expect(flushLocationOutbox()).resolves.toMatchObject({ sent: 1, acceptedIds: [original.id], remaining: 0,
+      pendingRefreshes: [{ groupId: 'g1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00.123456Z' }] });
     expect(ingestLocationBatch).toHaveBeenCalledWith([original]);
     await enqueueLocationOutbox({ ...original, id: '00000000-0000-4000-8000-000000000888' });
     setLocationAccessContext(null, false);
     await expect(flushLocationOutbox()).resolves.toMatchObject({ sent: 0, remaining: 0 });
   } finally {
+    jest.restoreAllMocks();
+  }
+});
+
+it('acknowledges Demo uploads locally without entering the real group exchange', async () => {
+  const { DEMO_GROUP_ID } = require('../api/demo');
+  const { setLocationAccessContext } = require('../state/locationPrivacy');
+  const { ingestLocationBatch } = require('../api/services/LocationService');
+  const { syncGroup } = require('../state/groupSync');
+  const database = new MemoryLocationOutboxDatabase();
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'initialize').mockImplementation(() => database.initialize());
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'insert').mockImplementation(row => database.insert(row));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'removeExpired').mockImplementation(now => database.removeExpired(now));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'getDue').mockImplementation((now, limit) => database.getDue(now, limit));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'resolveBatch').mockImplementation((ids, failed) => database.resolveBatch(ids, failed));
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'count').mockImplementation(() => database.count());
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'purge').mockImplementation(() => database.purge());
+  jest.spyOn(SQLiteLocationOutboxDatabase.prototype, 'nextDue').mockResolvedValue(null);
+  const exchangeImplementation = syncGroup.getMockImplementation();
+  syncGroup.mockClear().mockImplementation(async () => { throw new Error('Demo reached the real group exchange'); });
+  ingestLocationBatch.mockClear().mockImplementation(async (events: LocationUploadEvent[]) => ({
+    acceptedIds: events.map(row => row.id), rejected: [],
+  }));
+  try {
+    setLocationAccessContext(DEMO_GROUP_ID, true, true);
+    const original = event({ groupId: DEMO_GROUP_ID, capturedAt: Date.now(), actorId: 'user-1' });
+    await enqueueLocationOutbox(original);
+    await expect(flushLocationOutbox(1)).resolves.toMatchObject({ sent: 1, acceptedIds: [original.id], remaining: 0 });
+    expect(ingestLocationBatch).toHaveBeenCalledWith([original]);
+    expect(syncGroup).not.toHaveBeenCalled();
+    expect(database.entries.size).toBe(0);
+  } finally {
+    syncGroup.mockImplementation(exchangeImplementation);
     jest.restoreAllMocks();
   }
 });

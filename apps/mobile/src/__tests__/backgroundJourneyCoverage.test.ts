@@ -727,7 +727,7 @@ describe('background journey lifecycle and callback gate', () => {
     await handleBackgroundLocations({ data: { locations: [sample] } });
     expect(mockRecoverRefreshSample).toHaveBeenCalledWith(baseConfig.groupId, expect.objectContaining({
       timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 },
-    }));
+    }), undefined);
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
   });
 

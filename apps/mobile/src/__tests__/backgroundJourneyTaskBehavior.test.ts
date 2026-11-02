@@ -31,7 +31,8 @@ const mockDiagnostics = {
   write: jest.fn(async () => undefined),
 };
 const mockEnqueue = jest.fn(async (..._args: unknown[]) => undefined);
-const mockFlush = jest.fn(async (..._args: unknown[]) => ({ retryScheduled: 0, discarded: 0, remaining: 0 }));
+const mockFlush = jest.fn(async (..._args: unknown[]): Promise<import('../state/locationOutbox').LocationFlushResult> => ({ sent: 0, retryScheduled: 0, discarded: 0, remaining: 0 }));
+const mockRecoverFromSample = jest.fn(async (..._args: unknown[]) => undefined);
 const mockPurge = jest.fn(async (..._args: unknown[]) => undefined);
 const mockAckNavigation = jest.fn(async (..._args: unknown[]) => undefined);
 const mockClearLiveActivities = jest.fn(async (..._args: unknown[]) => undefined);
@@ -63,6 +64,9 @@ jest.mock('../state/locationOutbox', () => ({
   enqueueLocationOutbox: (...args: unknown[]) => mockEnqueue(...args),
   flushLocationOutbox: (...args: unknown[]) => mockFlush(...args),
   purgeLocationOutbox: (...args: unknown[]) => mockPurge(...args),
+}));
+jest.mock('../state/backgroundLocationRefresh', () => ({
+  recoverPendingLocationRefreshFromSample: (...args: unknown[]) => mockRecoverFromSample(...args),
 }));
 
 const {
@@ -109,7 +113,7 @@ describe('background journey native task wiring', () => {
     mockLocation.hasStartedLocationUpdatesAsync.mockResolvedValue(false);
     mockLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     mockLocation.requestBackgroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
-    mockFlush.mockResolvedValue({ retryScheduled: 0, discarded: 0, remaining: 0 });
+    mockFlush.mockResolvedValue({ sent: 0, retryScheduled: 0, discarded: 0, remaining: 0 });
     mockArrivalRows.mockResolvedValue([]);
     mockTaskCallback = mockTaskCallback ?? undefined;
   });
@@ -175,6 +179,20 @@ describe('background journey native task wiring', () => {
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
       event: 'background_op_timeline',
     }));
+  });
+
+  it('delivers the same sample and returned pending commands without requiring a push marker', async () => {
+    await stopBackgroundJourney();
+    await startBackgroundJourney({ ...baseConfig, permissionsPrepared: true });
+    const pending = [{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00.123456Z' }];
+    mockFlush.mockResolvedValueOnce({ sent: 1, retryScheduled: 0, discarded: 0, remaining: 0, pendingRefreshes: pending });
+    const sample = { ...locationSample, timestamp: Date.now(), coords: { ...locationSample.coords, latitude: 25.01 } };
+    expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
+    await mockTaskCallback!({ data: { locations: [sample] }, error: null });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(mockRecoverFromSample).toHaveBeenCalledWith('group-1', {
+      timestamp: sample.timestamp, coordinates: { latitude: 25.01, longitude: 121 }, accuracy: 8,
+    }, pending);
   });
 
   it('does not process background GPS callbacks while inactive system UI covers the map', async () => {

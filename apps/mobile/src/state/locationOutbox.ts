@@ -7,7 +7,9 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   ingestLocationBatch,
   type LocationBatchResult,
+  type PendingLocationRefresh,
 } from '../api/services/LocationService';
+import { isDemoGroup } from '../api/demo';
 import type { Coordinates } from '../types';
 import type { TrackingMode } from '../utils/locationPolicy';
 import { createSingleFlightFlush } from '../utils/locationOutboxFlush';
@@ -23,6 +25,7 @@ const MAX_BACKOFF_MS = 60_000;
 export interface LocationFlushResult {
   sent: number;
   acceptedIds?: string[];
+  pendingRefreshes?: PendingLocationRefresh[];
   nextRetryAt?: number;
   discarded: number;
   remaining: number;
@@ -489,7 +492,10 @@ export async function flushLocationOutbox(
     return { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   }
   const result: LocationFlushResult = access
-    ? await (await import('./groupSync')).syncGroup({ groupId: access.groupId, maxLocationEntries: maxEntries }).then(result => result.location)
+    ? isDemoGroup(access.groupId)
+      ? await outbox.flush(maxEntries)
+      : await (await import('./groupSync')).syncGroup({ groupId: access.groupId, maxLocationEntries: maxEntries })
+        .then(result => ({ ...result.location, pendingRefreshes: result.pendingRefreshes }))
     : { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   clearTimeout(retryTimer);
   if (result.remaining > 0 && AppState.currentState === 'active') {

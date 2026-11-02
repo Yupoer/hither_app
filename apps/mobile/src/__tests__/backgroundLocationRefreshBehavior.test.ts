@@ -1,9 +1,11 @@
 const mockQueuedGps: Array<{ id: string }> = [];
 const mockOriginalReceipt = jest.fn();
+const mockSyncRequest = jest.fn();
 jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'actor-a' }));
 jest.mock('../state/groupSync', () => ({
  getAcceptedLocationReceipt: (...args: unknown[]) => mockOriginalReceipt(...args),
  syncGroup: async ({ groupId, refresh }: any) => {
+  mockSyncRequest({ groupId, refresh });
   const events = mockQueuedGps.splice(0);
   const result = events.length ? await mockIngest(events) : { acceptedIds: [], rejected: [] };
   const access = await require('../state/locationPrivacy').captureLocationAccess(groupId);
@@ -297,20 +299,53 @@ describe('durable location refresh recovery', () => {
   });
 });
 
-it('reuses the original accepted same-callback event when recovering its exact peer request', async () => {
+it('uses returned pending rows without a push marker or list read and reuses the original accepted receipt', async () => {
   setLocationAccessContext('group-1', true, true);
   mockAck.mockResolvedValue(true);
   mockQueuedGps.length = 0;
   mockStore.clear();
   mockAppState.currentState = 'background';
   const sample = { ...fix, timestamp: Date.now() + 1 };
-  mockStore.set('@hither/pending-location-refresh', JSON.stringify({ groupId: 'group-1', requestedAt: sample.timestamp - 1 }));
-  mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
+  const requestedAt = '2026-08-13T00:00:00.123456Z';
+  const pending = [{ groupId: 'group-1', requestedBy: 'leader', requestedAt }];
   mockOriginalReceipt.mockReturnValue({ id: 'original-event', groupId: 'group-1', capturedAt: sample.timestamp, receivedAt: '2026-08-13T00:00:01Z' });
-  mockIngest.mockClear(); mockAck.mockClear();
-  await recoverPendingLocationRefreshFromSample('group-1', sample);
+  mockIngest.mockClear(); mockAck.mockClear(); mockListPending.mockClear(); mockSyncRequest.mockClear();
+  await recoverPendingLocationRefreshFromSample('group-1', sample, pending);
   expect(mockIngest).not.toHaveBeenCalled();
   expect(mockQueuedGps).toEqual([]);
-  expect(mockAck).toHaveBeenCalledWith('group-1','2026-08-13T00:00:00Z');
+  expect(mockAck).toHaveBeenCalledWith('group-1', requestedAt);
+  expect(mockSyncRequest).toHaveBeenCalledWith({ groupId: 'group-1', refresh: { acknowledgements: [{ requestedAt, eventId: 'original-event' }] } });
+  expect(mockListPending).not.toHaveBeenCalled();
+  expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
+});
+
+it('treats an empty returned pending packet as authoritative without a redundant list read', async () => {
+  setLocationAccessContext('group-1', true, true);
+  mockStore.clear();
+  mockAppState.currentState = 'background';
+  const sample = { ...fix, timestamp: Date.now() + 1 };
+  mockStore.set('@hither/pending-location-refresh', JSON.stringify({ groupId: 'group-1', requestedAt: sample.timestamp - 1 }));
+  mockListPending.mockClear(); mockSyncRequest.mockClear();
+  await recoverPendingLocationRefreshFromSample('group-1', sample, []);
+  expect(mockListPending).not.toHaveBeenCalled();
+  expect(mockSyncRequest).not.toHaveBeenCalled();
+  expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
+});
+
+it('retains recovery intent after a returned pending command has an unconfirmed ACK', async () => {
+  setLocationAccessContext('group-1', true, true);
+  mockStore.clear();
+  mockQueuedGps.length = 0;
+  mockAppState.currentState = 'background';
+  const sample = { ...fix, timestamp: Date.now() + 1 };
+  const pending = [{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00.123456Z' }];
+  mockOriginalReceipt.mockReturnValue({ id: 'original-event', groupId: 'group-1', capturedAt: sample.timestamp, receivedAt: '2026-08-13T00:00:01Z' });
+  mockAck.mockResolvedValueOnce(false).mockResolvedValue(true);
+  mockListPending.mockClear().mockResolvedValue(pending);
+  await expect(recoverPendingLocationRefreshFromSample('group-1', sample, pending)).rejects.toThrow('refresh_ack_not_confirmed');
+  expect(mockStore.has('@hither/pending-location-refresh')).toBe(true);
+  expect(mockListPending).not.toHaveBeenCalled();
+  await recoverPendingLocationRefreshFromSample('group-1', { ...sample, timestamp: Date.now() + 2 });
+  expect(mockListPending).toHaveBeenCalledTimes(1);
   expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
 });

@@ -43,7 +43,7 @@ function harness(started = false) {
 }
 
 describe('background journey controller', () => {
-  it('uses fitness High accuracy for walking team navigation', async () => {
+  it('uses ordinary High accuracy and Other activity for walking team navigation', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -71,14 +71,14 @@ describe('background journey controller', () => {
     };
     expect(opts).toMatchObject({
       accuracy: 4,
-      activityType: 3,
+      activityType: 1,
       pausesUpdatesAutomatically: false,
       deferredUpdatesDistance: 0,
       deferredUpdatesInterval: 0,
     });
   });
 
-  it('never promotes manual walking precision to BestForNavigation', async () => {
+  it('keeps manual walking precision at ordinary High accuracy', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -105,8 +105,8 @@ describe('background journey controller', () => {
       pausesUpdatesAutomatically: boolean;
     };
     expect(opts).toMatchObject({
-      accuracy: 5,
-      activityType: 3,
+      accuracy: 4,
+      activityType: 1,
       pausesUpdatesAutomatically: false,
     });
   });
@@ -135,12 +135,11 @@ describe('background journey controller', () => {
       accuracy: number;
       pausesUpdatesAutomatically: boolean;
     };
-    // An actual active team journey uses the High fitness profile.
     expect(opts.accuracy).toBe(4);
     expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
-  it('uses Highest accuracy options when highAccuracy is enabled on journey', async () => {
+  it('uses ordinary High accuracy and a 10-metre interval for precise journey sharing', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -151,9 +150,8 @@ describe('background journey controller', () => {
       accuracy: number;
       distanceInterval: number;
     };
-    // Legacy highAccuracy maps to manualHighAccuracy (Highest=5), never BestForNavigation=6.
-    expect(opts.accuracy).toBe(5);
-    expect(opts.distanceInterval).toBe(8);
+    expect(opts.accuracy).toBe(4);
+    expect(opts.distanceInterval).toBe(10);
   });
 
   it('keeps no active journey passive even when the precise preference remains enabled', async () => {
@@ -179,13 +177,13 @@ describe('background journey controller', () => {
       }),
     ).toBe('passiveBackground');
     expect(location.startLocationUpdatesAsync.mock.calls[0][1]).toMatchObject({
-      accuracy: 2,
-      timeInterval: 150_000,
+      accuracy: 3,
+      timeInterval: 600_000,
       activityType: 1, showsBackgroundLocationIndicator: false,
     });
   });
 
-  it('allDay uses Low accuracy and ignores highAccuracy for the 8h budget', async () => {
+  it('allDay uses Balanced accuracy and a 10-minute deferral despite the precise preference', async () => {
     const { controller, location } = harness();
 
     await expect(
@@ -201,8 +199,8 @@ describe('background journey controller', () => {
       deferredUpdatesInterval: number;
       pausesUpdatesAutomatically: boolean;
     };
-    expect(opts.accuracy).toBe(2);
-    expect(opts.deferredUpdatesInterval).toBe(150_000);
+    expect(opts.accuracy).toBe(3);
+    expect(opts.deferredUpdatesInterval).toBe(600_000);
     expect(opts.pausesUpdatesAutomatically).toBe(false);
   });
 
