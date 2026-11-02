@@ -64,7 +64,7 @@ export function resolveTrackingMode(input: TrackingModeInput): TrackingMode {
 }
 
 export interface LocationPolicy {
-  accuracy: 'low' | 'balanced' | 'high';
+  accuracy: 'balanced' | 'high';
   /** Native OS distance filter (metres). */
   distanceInterval: number;
   /** Android minimum interval between reports (ms). iOS largely ignores this. */
@@ -143,8 +143,8 @@ export function routeLocationPolicy(highAccuracy: boolean, nearTarget: boolean):
     routeMinIntervalMs: highAccuracy ? 9_000 : 18_000 } : policy;
 }
 
-export function locationStaleAfterMs(highAccuracy: boolean, powerMode: LocationPowerMode): number {
-  return Math.max(30_000, locationPolicy(highAccuracy, powerMode).timeInterval * 2);
+export function locationStaleAfterMs(highAccuracy: boolean, powerMode: LocationPowerMode, background = false): number {
+  return Math.max(30_000, locationPolicy(highAccuracy, powerMode, background).timeInterval * 2);
 }
 
 export function shouldWatchLocation(

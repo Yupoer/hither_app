@@ -39,10 +39,10 @@ const sample = (latitude = 25): LocationSample => ({
 function createLocationProbe() {
   let feed!: ReturnType<typeof useDeviceLocation>;
   function Probe({ group = 'group-a', sharing = true, nativeMap = false, passive = false,
-    highAccuracy = false, accessReady = true, incoming }: { group?: string; sharing?: boolean; nativeMap?: boolean;
-    passive?: boolean; highAccuracy?: boolean; accessReady?: boolean; incoming?: (sample: LocationSample, now: number) => void }) {
+    highAccuracy = false, accessReady = true, incoming, target }: { group?: string; sharing?: boolean; nativeMap?: boolean;
+    passive?: boolean; highAccuracy?: boolean; accessReady?: boolean; target?: string; incoming?: (sample: LocationSample, now: number) => void }) {
     feed = useDeviceLocation({ groupId: group, highAccuracy, powerMode: passive ? 'allDay' : 'journey',
-      accessReady, nativeMapLocationEnabled: nativeMap, sharingEnabled: sharing, hasMembership: true, onIncomingSample: incoming });
+      accessReady, navigationTargetKey: target, sharingEnabled: sharing, hasMembership: true, onIncomingSample: incoming });
     return feed.lifecycle;
   }
   return { Probe, get feed() { return feed; } };
@@ -91,7 +91,7 @@ it('releases a late watch Promise and fences its callback after group/source rep
   mockWatch.mockImplementationOnce(accept => { oldAccept = accept; return new Promise(resolve => { finish = resolve; }); });
   await act(async () => { tree = create(React.createElement(Probe)); });
   await act(async () => { tree!.update(React.createElement(Probe, { group: 'group-b', nativeMap: true })); });
-  expect(mockWatch).toHaveBeenCalledTimes(1);
+  expect(mockWatch).toHaveBeenCalledTimes(2);
   const lateStop = jest.fn();
   await act(async () => { finish(lateStop); oldAccept(sample(26)); });
   expect(lateStop).toHaveBeenCalledTimes(1);
@@ -103,7 +103,7 @@ it('releases a late watch Promise and fences its callback after group/source rep
   expect(mockRemove).toHaveBeenCalledTimes(1);
 });
 
-it('runs the real watchdog only outside allDay and never retimestamps a cached sample', async () => {
+it('scales the watchdog to acquisition silence and never retimestamps a cached sample', async () => {
   const probe = createLocationProbe();
   const { Probe } = probe;
   await act(async () => { tree = create(React.createElement(Probe, { passive: true, nativeMap: true })); });
@@ -117,7 +117,7 @@ it('runs the real watchdog only outside allDay and never retimestamps a cached s
   expect(mockRead).toHaveBeenCalledTimes(bootstrapReads + 1);
   expect(mockRead).toHaveBeenLastCalledWith(false, 'journey');
   expect(probe.feed.deviceCoordsAcceptedAtMs).toBe(acceptedAt);
-  expect(mockWatch).not.toHaveBeenCalled();
+  expect(mockWatch).toHaveBeenCalledTimes(2);
 });
 
 it('keeps debug fixes local and publishes the latest incoming callback without restarting the source', async () => {
@@ -333,9 +333,9 @@ it('recovers manual GPS after failed watcher setup and failed automatic reads', 
   mockRead.mockRejectedValueOnce(new Error('watchdog_fix_failed'));
   jest.mocked(flushLocationOutbox).mockRejectedValueOnce(new Error('initial_flush_failed'));
   await act(async () => { tree = create(React.createElement(Probe)); });
-  await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(360_000); });
   mockRead.mockResolvedValueOnce(sample(26));
-  await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
+  await act(async () => { await jest.advanceTimersByTimeAsync(360_000); });
   expect(probe.feed.deviceCoords).toEqual({ latitude: 26, longitude: 121 });
   expect(enqueueLocationOutbox).toHaveBeenCalledTimes(1);
 });
@@ -351,3 +351,19 @@ it('suspends sensors and queued uploads until initial access inputs resolve', as
   expect(await captureLocationAccess('group-a')).not.toBeNull();
   expect(flushLocationOutbox).toHaveBeenCalledTimes(1);
 });
+
+ it('requests a real fix for a changed target or arrival undo without restarting sharing', async () => {
+   const probe = createLocationProbe(); const { Probe } = probe;
+   await act(async () => { tree = create(React.createElement(Probe, { target: 'first' })); });
+   await act(async () => { probe.feed.consumeForegroundSample(sample()); });
+   const initialReads = mockRead.mock.calls.length;
+   await act(async () => { tree!.update(React.createElement(Probe, { target: 'next' })); });
+   expect(mockRead).toHaveBeenCalledTimes(initialReads + 1);
+   await act(async () => { probe.feed.consumeForegroundSample({ ...sample(25.000001), timestamp: Date.now() + 1 }); });
+   expect(probe.feed.deviceCoords?.latitude).toBe(25.000001);
+   await act(async () => { tree!.update(React.createElement(Probe, { target: '' })); });
+   expect(mockRead).toHaveBeenCalledTimes(initialReads + 1);
+   await act(async () => { tree!.update(React.createElement(Probe, { target: 'next' })); });
+   expect(mockRead).toHaveBeenCalledTimes(initialReads + 2);
+   expect(mockWatch).toHaveBeenCalledTimes(1);
+ });

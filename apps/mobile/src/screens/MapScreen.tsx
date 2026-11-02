@@ -31,7 +31,7 @@ import { useMemberPresence } from './MapScreen/hooks/useMemberPresence';
 import { useMapScopeControls } from './MapScreen/hooks/useMapScopeControls';
 import { useGatheringCompletion } from './MapScreen/hooks/useGatheringCompletion';
 import { reconcileRouteOnOpen } from '../utils/routeOpenSync';
-import { foregroundLocationConfiguration, isForegroundLocationState } from '../utils/locationPolicy';
+import { foregroundLocationConfiguration, isForegroundLocationState, locationStaleAfterMs } from '../utils/locationPolicy';
 import WaveLoading from '../components/WaveLoading';
 import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundReconcile } from '../state/useForegroundReconcile';
@@ -1184,30 +1184,35 @@ export default function MapScreen({ route, navigation }: Props) {
       && (op.actorId ?? op.payload.actorId) === user?.id && op.status !== 'conflict'),
   });
 
+  const localNavigationArrived = Boolean(navTarget && myCompletedDestinationIds.has(navTarget.id));
   const effectiveNavigationActive = Boolean(journeyActive && navTarget && !navigationStoppedLocally);
+  const routeFixKey = effectiveNavigationActive && !localNavigationArrived
+    ? [navTarget?.id, navTarget?.coordinates.latitude, navTarget?.coordinates.longitude].join('|') : '';
+  const [routeFixRequest, setRouteFixRequest] = useState(() => ({ key: routeFixKey, after: Date.now() }));
+  if (routeFixRequest.key !== routeFixKey) setRouteFixRequest({ key: routeFixKey, after: Date.now() });
   const foregroundLocation = foregroundLocationConfiguration({
-    navigationActive: effectiveNavigationActive, nativeMapAvailable: Platform.OS === 'ios' && mapFocused,
+    navigationActive: effectiveNavigationActive,
     highAccuracy, sharingEnabled: preferencesReady && sharingEnabled,
     hasMembership: members.some(member => member.userId === user?.id), appState: AppState.currentState,
   });
   const {
     deviceCoords,
+    sourceHealth,
     deviceAccuracyM,
     deviceCoordsAcceptedAtMs,
     appState,
     refreshDeviceLocation,
-    consumeForegroundSample,
     latestLocationSampleRef,
     lifecycle: deviceLocationLifecycle,
   } = useDeviceLocation({
     accessReady: preferencesReady && (state !== null || groupStateError === 'not_member'),
-    groupId: mapFocused || effectiveNavigationActive ? groupId : null,
+    groupId,
     highAccuracy: foregroundLocation.highAccuracy,
     powerMode: foregroundLocation.powerMode,
     teamNavigationActive: effectiveNavigationActive,
-    nativeMapLocationEnabled: foregroundLocation.owner === 'mapkit',
+    navigationTargetKey: routeFixKey,
     sharingEnabled: preferencesReady && sharingEnabled,
-    hasMembership: (mapFocused || effectiveNavigationActive) && members.some(m => m.userId === user?.id),
+    hasMembership: members.some(m => m.userId === user?.id),
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
   navigationOriginRef.current = deviceCoords ?? undefined;
@@ -1360,13 +1365,15 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Prefer local prefs (available before inPassiveMode is derived below) so
   // passive mode can skip MapKit work without a temporal dead zone.
-  const mapRoutesEnabled = effectiveNavigationActive && !(preferencesReady && passiveCompanionMode);
+  const mapRoutesEnabled = effectiveNavigationActive && !localNavigationArrived && !(preferencesReady && passiveCompanionMode);
   const { selfRoute, memberRoutes, selfRouteGeneration, lifecycle: mapKitRouteLifecycle } = useMapKitRoutes({
-    selfCoordinates: fromCoords,
+    selfCoordinates: routeFixRequest.key === routeFixKey && deviceCoordsAcceptedAtMs != null
+      && deviceCoordsAcceptedAtMs >= routeFixRequest.after ? deviceCoords ?? undefined : undefined,
     members: [], // Member routes are already disabled by this hook; no peer-coordinate cloning.
     gathering: mapRoutesEnabled ? activePoint : null,
     travelMode,
     highAccuracy: mapRoutesEnabled ? highAccuracy : false,
+    arrivalRadiusM: localArrivalRadiusM,
   });
 
   // Foreground arrival: tools slider is the product geofence (30/50/100/300).
@@ -1966,6 +1973,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const { lifecycle: stragglerReportingLifecycle,
     stragglers,
   } = useStragglerReporting({
+    navigationActive: effectiveNavigationActive,
     fromCoords,
     group,
     groupId,
@@ -2062,7 +2070,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveMembers = members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null));
   const liveMemberArrived = liveMembers.map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId));
   const liveGathered = navTarget ? liveMemberArrived.filter(Boolean).length : undefined;
-  const localNavigationArrived = Boolean(navTarget && myCompletedDestinationIds.has(navTarget.id));
   const personalArrivalEventSnapshot = navTarget && user?.id
     ? personalArrivalEvent(remoteArrivals, arrivalOperations, user.id, navTarget.id, arrivalSessionScope, remoteArrivalCorrections)
     : undefined;
@@ -2080,7 +2087,7 @@ export default function MapScreen({ route, navigation }: Props) {
    * active — not a permanent 5s polling loop on MapScreen (spec: no extra poll).
    */
   const [progressClockMs, setProgressClockMs] = useState(() => Date.now());
-  const PERSONAL_PROGRESS_STALE_MS = 30_000;
+  const PERSONAL_PROGRESS_STALE_MS = locationStaleAfterMs(foregroundLocation.highAccuracy, foregroundLocation.powerMode);
   const progressDeadlineLifecycle = (
     <MapProgressDeadlineResource
       journeyActive={journeyActive}
@@ -4167,6 +4174,11 @@ export default function MapScreen({ route, navigation }: Props) {
   return <>{screenLifecycle}{(
     <>
     <View style={styles.flex}>
+      {sharingEnabled && (sourceHealth.kind === 'interrupted' || sourceHealth.kind === 'permissionDenied') && (
+        <View accessibilityRole="alert" style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#6b3a20' }}>
+          <Text style={{ color: '#fff' }}>{t(sourceHealth.kind === 'permissionDenied' ? 'map.locationPermissionDenied' : 'map.locationInterrupted')}</Text>
+        </View>
+      )}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}
       {!inPassiveMode ? (
         <GroupMap
@@ -4174,7 +4186,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ref={mapRef}
           cameraState={mapCameraState}
           members={members}
-          showsUserLocation={foregroundLocation.owner === 'mapkit'}
+          showsUserLocation={false}
           gathering={activePoint}
           destinations={mapDestinations}
           dailyAccommodations={mapDailyAccommodations}
@@ -4192,7 +4204,7 @@ export default function MapScreen({ route, navigation }: Props) {
           // broadcast or local follower plan). When paused, keep a light path
           // to the selected card so ETA still makes sense.
           routePoints={selfRoute?.points}
-          selfCoordinates={fromCoords}
+          selfCoordinates={deviceCoords}
           routeColor={accent}
           // Settled detent only (not heightSV) so we don't re-render the map
           // mid-drag; top tracks measured carousel card height.
@@ -4200,9 +4212,6 @@ export default function MapScreen({ route, navigation }: Props) {
           bottomOverlap={bottomPad}
           chromeStage={chromeStage}
           chromeBottomOffset={chromeBottomOffset}
-          onUserLocationSample={
-            Platform.OS === 'ios' ? consumeForegroundSample : undefined
-          }
           onLongPressCoordinate={handleLongPressCoordinate}
           onRequestGoHome={goHomeCreateOrJoin}
         />

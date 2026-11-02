@@ -2,6 +2,8 @@ import type { ZhDict } from './zh';
 
 /** English (en) catalog. Must share the same key set as zh. */
 export const en: Record<keyof ZhDict, string> = {
+  'map.locationInterrupted': 'Location updates interrupted. Waiting for a new GPS fix.',
+  'map.locationPermissionDenied': 'Location permission is unavailable. Enable it in Settings.',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
   'map.refreshReceiptsUnavailable': 'Refresh requested. Member responses could not be confirmed; check each member’s last location time.',

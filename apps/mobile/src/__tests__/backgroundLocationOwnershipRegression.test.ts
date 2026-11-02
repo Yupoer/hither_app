@@ -19,8 +19,8 @@ jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => ({
   hasBackgroundLocation: () => mockHasNative(),
   startBackgroundLocation: (options: object) => mockStartNative(options),
   stopBackgroundLocation: () => mockStopNative(),
-  addListener: (_name: string, listener: typeof mockBackgroundListener) => {
-    mockBackgroundListener = listener;
+  addListener: (name: string, listener: typeof mockBackgroundListener) => {
+    if (name === 'onBackgroundLocation') mockBackgroundListener = listener;
     return { remove: mockRemoveListener };
   },
 }) }));
@@ -235,6 +235,6 @@ it.each([
   const presence = backgroundPresenceConfig(noJourney);
   expect(resolveBackgroundTrackingMode(presence)).toBe('passiveBackground');
   expect(backgroundLocationOptions(presence.powerMode!, presence.highAccuracy ?? false,
-    resolveBackgroundTrackingMode(presence))).toMatchObject({ accuracy: 2, activityType: 1,
-    showsBackgroundLocationIndicator: false, distanceInterval: 150 });
+    resolveBackgroundTrackingMode(presence))).toMatchObject({ accuracy: 3, activityType: 1,
+    showsBackgroundLocationIndicator: false, distanceInterval: 300 });
 });

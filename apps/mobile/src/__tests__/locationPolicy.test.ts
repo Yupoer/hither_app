@@ -1,3 +1,4 @@
+import { backgroundLocationOptions } from '../state/backgroundJourneyController';
 import {
   createMotionState,
   locationPolicy,
@@ -45,7 +46,19 @@ describe('locationPolicy', () => {
       distanceInterval: distance, uploadMinIntervalMs: interval, uploadMinDistanceM: distance,
       uploadHeartbeatMs: moving, uploadHeartbeatStationaryMs: stationary });
   });
-
+  it('uses ordinary High and Other activity for both journey precision modes', () => {
+    for (const mode of ['teamNavigation', 'navigationMax'] as const) {
+      expect(backgroundLocationOptions('journey', mode === 'navigationMax', mode)).toMatchObject({
+        accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: true,
+        pausesUpdatesAutomatically: false, deferredUpdatesDistance: 0, deferredUpdatesInterval: 0 });
+    }
+  });
+  it('requests passive background at ten minutes without pausing', () => {
+    expect(backgroundLocationOptions('allDay', true, 'passiveBackground')).toMatchObject({
+      accuracy: 3, activityType: 1, timeInterval: 600_000, distanceInterval: 300,
+      deferredUpdatesDistance: 300, deferredUpdatesInterval: 600_000,
+      pausesUpdatesAutomatically: false, showsBackgroundLocationIndicator: false });
+  });
 });
 
 describe('motion cadence', () => {
@@ -356,13 +369,13 @@ describe('virtual 30-minute journey request bounds', () => {
     return requests;
   }
 
-  it('bounds normal moving uploads by the 10-second minimum', () => {
+  it('bounds normal moving uploads by the 60-second minimum', () => {
     const policy = locationPolicy(false, 'journey');
     expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 60);
     expect(countUploads(policy)).toBeGreaterThan(0);
   });
 
-  it('bounds precise moving uploads by the 5-second minimum', () => {
+  it('bounds precise moving uploads by the 15-second minimum', () => {
     const policy = locationPolicy(true, 'journey');
     expect(countUploads(policy)).toBeLessThanOrEqual(30 * 60 / 15);
     expect(countUploads(policy)).toBeGreaterThan(0);

@@ -9,7 +9,7 @@ import {
 } from '../screens/MapScreen/hooks/useMapKitRoutes';
 import { usePersonalProgressSurfaces } from '../screens/MapScreen/hooks/usePersonalProgressSurfaces';
 
-jest.mock('../native/maps', () => ({ getDirections: jest.fn() }));
+jest.mock('../native/maps', () => ({ getDirections: jest.fn(), directionsAvailable: jest.fn(() => true) }));
 
 const mockGetDirections = getDirections as jest.MockedFunction<typeof getDirections>;
 const gathering = { coordinates: { latitude: 25.05, longitude: 121.52 } };
@@ -227,7 +227,7 @@ describe('useMapKitRoutes + MapScreen progress surfaces (#145 Sol r4)', () => {
 
     // Advance wall clock past the full route interval so recompute can fire.
     await act(async () => {
-      jest.advanceTimersByTime(40_000);
+      jest.advanceTimersByTime(300_000);
     });
 
     await act(async () => {
@@ -615,3 +615,32 @@ it('does not start directions from a suspended uncommitted target render', async
   await act(async () => { tree.update(element(gathering, false)); });
   await act(async () => { tree.unmount(); });
 });
+
+ it('uses the target radius plus 300m to switch from far to near routing and stops after personal arrival', async () => {
+   jest.useFakeTimers(); jest.setSystemTime(1_000_000);
+   mockGetDirections.mockReset(); mockGetDirections.mockResolvedValue(null);
+   const far = { id: 'far', coordinates: { latitude: 25.02, longitude: 121.5 } };
+   const near = { id: 'near', coordinates: { latitude: 25.001, longitude: 121.5 } };
+   const start = { latitude: 25, longitude: 121.5 };
+   let routes!: ReturnType<typeof useMapKitRoutes>;
+   function Harness({ self, target, arrived = false }: { self: typeof start; target: typeof far; arrived?: boolean }) {
+     routes = useMapKitRoutes({ selfCoordinates: self, members: [], gathering: arrived ? null : target,
+       travelMode: 'walk', highAccuracy: true, arrivalRadiusM: 50 });
+     return routes.lifecycle;
+   }
+   let tree!: ReturnType<typeof create>;
+   try {
+     await act(async () => { tree = create(React.createElement(Harness, { self: start, target: far })); });
+     await act(async () => { jest.advanceTimersByTime(9_000); tree.update(React.createElement(Harness, { self: { ...start, latitude: 25.0003 }, target: far })); });
+     expect(mockGetDirections).toHaveBeenCalledTimes(1);
+     await act(async () => { jest.advanceTimersByTime(27_000); tree.update(React.createElement(Harness, { self: { ...start, latitude: 25.0004 }, target: far })); });
+     expect(mockGetDirections).toHaveBeenCalledTimes(2);
+     await act(async () => { tree.update(React.createElement(Harness, { self: { ...start, latitude: 25.0004 }, target: near })); });
+     expect(mockGetDirections).toHaveBeenCalledTimes(3);
+     await act(async () => { jest.advanceTimersByTime(9_000); tree.update(React.createElement(Harness, { self: { ...start, latitude: 25.0006 }, target: near })); });
+     expect(mockGetDirections).toHaveBeenCalledTimes(4);
+     await act(async () => { tree.update(React.createElement(Harness, { self: start, target: near, arrived: true })); });
+     expect(routes.selfRoute).toBeNull();
+     expect(mockGetDirections).toHaveBeenCalledTimes(4);
+   } finally { await act(async () => { tree?.unmount(); }); jest.useRealTimers(); }
+ });

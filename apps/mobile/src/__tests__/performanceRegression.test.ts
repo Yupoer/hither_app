@@ -47,17 +47,17 @@ describe('measured performance regressions', () => {
     expect(locationBoundary).toContain('powerMode: LocationPowerMode');
   });
 
-  it('uses MapKit as the iOS foreground location owner and keeps the native blue dot', () => {
+  it('keeps Expo as the foreground owner and preserves native map presentation', () => {
     expect(groupMap).toContain('showsUserLocation');
     expect(groupMap).toContain('onUserLocationSample');
     expect(groupMap).toContain('platformizedMapViewProps');
     expect(groupMap).not.toContain('Platform.OS');
     expect(mapsBoundary).toContain('onUserLocationChange');
-    expect(locationHook).toContain('nativeMapLocationEnabled');
+    expect(locationHook).not.toContain('nativeMapLocationEnabled');
     expect(locationHook).toContain('consumeForegroundSample');
-    expect(mapScreen).toContain("nativeMapLocationEnabled: foregroundLocation.owner === 'mapkit'");
+    expect(mapScreen).toContain('showsUserLocation={false}');
     expect(mapScreen).toContain('const mapRoutesEnabled = effectiveNavigationActive &&');
-    expect(mapScreen).toContain('consumeForegroundSample');
+    expect(mapScreen).toContain('selfCoordinates={deviceCoords}');
     expect(mapScreen).not.toContain('startNavigationEnergyMonitor(');
     expect(app).toContain('startPerformanceMonitor()');
     expect(performance).toContain('energyObservability.start(');
@@ -84,7 +84,7 @@ describe('measured performance regressions', () => {
 
   it('keeps debug route local and removes eager multi-round log drain patterns', () => {
     const debugStart = locationHook.indexOf('// DEV debug route');
-    const debugEnd = locationHook.indexOf('// Expo watch is fallback', debugStart);
+    const debugEnd = locationHook.indexOf('if (watchChanged && watchAllowed)', debugStart);
     const debugBlock = locationHook.slice(debugStart, debugEnd);
     expect(debugStart).toBeGreaterThanOrEqual(0);
     expect(debugBlock).toContain('applySampleToUi');

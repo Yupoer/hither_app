@@ -1,5 +1,7 @@
 /** Traditional Chinese (zh) catalog. Source of truth for key set. */
 export const zh = {
+  'map.locationInterrupted': '定位更新已中斷，正在等待新的 GPS 位置。',
+  'map.locationPermissionDenied': '目前無法取得定位權限，請至設定開啟。',
   'arrival.timeTitle': '選擇抵達時間',
   'arrival.timeLeader': '使用隊長抵達時間',
   'arrival.timeNow': '套用當下時間',

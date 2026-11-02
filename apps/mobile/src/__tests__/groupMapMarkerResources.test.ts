@@ -149,3 +149,16 @@ it('cancels Android readiness deadlines on background/unmount and keeps initial-
   expect((logEvent as jest.Mock).mock.calls.filter(args => args[0] === 'android_map_unmount')).toHaveLength(3);
   jest.useRealTimers();
 });
+
+ it('renders the self marker from the accepted sample without enabling native map acquisition', async () => {
+   const local = { latitude: 25.04, longitude: 121.52 };
+   const self = { userId: 'self', name: 'Self', role: 'follower' as const, status: 'active' as const };
+   let tree!: ReturnType<typeof create>;
+   try {
+     await act(async () => { tree = create(React.createElement(GroupMap, {
+       members: [self], currentUserId: 'self', showsUserLocation: false, selfCoordinates: local,
+     })); });
+     expect(tree.root.findByType(MapView).props.showsUserLocation).toBe(false);
+     expect(tree.root.findAllByType(Marker).map(marker => marker.props.coordinate)).toContainEqual(local);
+   } finally { await act(async () => { tree?.unmount(); }); }
+ });

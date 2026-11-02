@@ -1,14 +1,16 @@
 import { createElement, useState, type ReactElement } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { Coordinates } from '../../../types';
+import { distanceMeters } from '../../../utils/geo';
 import { cachedRouteRequest, type RouteCacheEntry } from '../../../utils/routeRequestCache';
 import {
   getDirections,
+  directionsAvailable,
   type DirectionsResult,
   type TravelMode,
 } from '../../../native/maps';
 import {
-  locationPolicy,
+  routeLocationPolicy,
   quantizeCoordinates,
   shouldRecomputeRoute,
   type LocationGateState,
@@ -30,6 +32,7 @@ interface MapKitRouteInputs {
   gathering?: RouteTarget | null;
   travelMode: TravelMode;
   highAccuracy?: boolean;
+  arrivalRadiusM?: number;
 }
 
 export interface MapKitRoutesState {
@@ -122,6 +125,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState & 
     gathering,
     travelMode,
     highAccuracy = false,
+    arrivalRadiusM = 50,
   } = inputs;
   // Target identity is exact; origin jitter remains governed by the route gate.
   // Hide old-target geometry during render, before the directions effect runs.
@@ -141,7 +145,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState & 
     selfRouteGeneration: 0, setState,
   }));
   const lifecycle = createElement(MapKitRouteLifecycle, { owner,
-    selfCoordinates, gathering, travelMode, highAccuracy, targetKey });
+    selfCoordinates, gathering, travelMode, highAccuracy, arrivalRadiusM, targetKey });
   if (state.targetKey !== targetKey) {
     return { selfRoute: null, memberRoutes: {},
       selfRouteGeneration: state.selfRouteGeneration, lifecycle };
@@ -151,7 +155,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState & 
 
 type CommittedRouteInput = Pick<MapKitRouteInputs,
   'selfCoordinates' | 'gathering' | 'travelMode'> & {
-  highAccuracy: boolean; targetKey: string; generation: number;
+  highAccuracy: boolean; arrivalRadiusM: number; targetKey: string; generation: number;
 };
 interface MapKitRouteOwner {
   cache: Map<string, RouteCacheEntry>;
@@ -163,18 +167,19 @@ interface MapKitRouteOwner {
   setState: (state: MapKitRoutesState & { targetKey: string }) => void;
 }
 
-function MapKitRouteLifecycle({ owner, selfCoordinates, gathering, travelMode, highAccuracy, targetKey }: {
+function MapKitRouteLifecycle({ owner, selfCoordinates, gathering, travelMode, highAccuracy, arrivalRadiusM, targetKey }: {
   owner: MapKitRouteOwner;
 } & Omit<CommittedRouteInput, 'generation'>): ReactElement {
   const [routeInput, setRouteInput] = useState(() => ({
-    selfCoordinates, gathering, travelMode, highAccuracy, targetKey, generation: 0,
+    selfCoordinates, gathering, travelMode, highAccuracy, arrivalRadiusM, targetKey, generation: 0,
   }));
   if (!Object.is(routeInput.selfCoordinates, selfCoordinates)
     || !Object.is(routeInput.gathering, gathering)
     || !Object.is(routeInput.travelMode, travelMode)
     || !Object.is(routeInput.highAccuracy, highAccuracy)
+    || !Object.is(routeInput.arrivalRadiusM, arrivalRadiusM)
     || !Object.is(routeInput.targetKey, targetKey)) {
-    setRouteInput({ selfCoordinates, gathering, travelMode, highAccuracy, targetKey,
+    setRouteInput({ selfCoordinates, gathering, travelMode, highAccuracy, arrivalRadiusM, targetKey,
       generation: routeInput.generation + 1 });
   }
   useMountEffect(() => () => {
@@ -190,8 +195,9 @@ function MapKitRouteRequest({ owner, input }: {
   owner: MapKitRouteOwner; input: CommittedRouteInput;
 }): null {
   useMountEffect(() => {
-    const { selfCoordinates, gathering, travelMode, highAccuracy, targetKey } = input;
-    const policy = locationPolicy(highAccuracy);
+    const { selfCoordinates, gathering, travelMode, highAccuracy, arrivalRadiusM, targetKey } = input;
+    const policy = routeLocationPolicy(highAccuracy, Boolean(selfCoordinates && gathering
+      && distanceMeters(selfCoordinates, gathering.coordinates) <= arrivalRadiusM + 300));
     const now = Date.now();
     const decimals = policy.routeCoordDecimals;
 
@@ -255,7 +261,7 @@ function MapKitRouteRequest({ owner, input }: {
     };
 
     // No target → clear polylines (nav stopped / arrived / next stop not set).
-    if (!gathering) {
+    if (!gathering || !directionsAvailable(travelMode)) {
       owner.selfRouteGeneration += 1;
       owner.setState({
         targetKey,

@@ -4,7 +4,7 @@ jest.mock('expo-crypto', () => ({ randomUUID: () => 'sample-id' }));
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 jest.mock('react-native', () => ({ AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) } }));
-jest.mock('../native', () => ({ location: { getCurrentLocation: jest.fn(async () => null), watchLocation: jest.fn() } }));
+jest.mock('../native', () => ({ location: { getCurrentLocation: jest.fn(async () => null), watchLocation: jest.fn(async () => () => {}) } }));
 jest.mock('../state/energyObservability', () => ({ energyObservability: { increment: jest.fn(), event: jest.fn() } }));
 jest.mock('../native/debugLocation', () => ({ isDebugRouteActive: () => false, subscribeDebugLocation: () => () => {} }));
 jest.mock('../state/locationOutbox', () => ({ enqueueLocationOutbox: jest.fn(async () => {}), flushLocationOutbox: jest.fn(async () => {}) }));
@@ -14,21 +14,19 @@ import { location } from '../native';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, and stops on map blur', async () => {
+it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, and keeps sharing while the map is blurred', async () => {
   jest.useFakeTimers();
   let feed!: ReturnType<typeof useDeviceLocation>;
   const incoming = jest.fn();
   function Probe({ focused }: { focused: boolean }) {
-    feed = useDeviceLocation({ groupId: focused ? 'g' : null, highAccuracy: false,
-      nativeMapLocationEnabled: true, hasMembership: focused, onIncomingSample: incoming });
+    feed = useDeviceLocation({ groupId: 'g', highAccuracy: false, powerMode: 'journey',
+      hasMembership: true, onIncomingSample: incoming });
     return feed.lifecycle;
   }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe, { focused: true })); });
-  // A silent MapKit startup still gets one initial fix for distance/ETA,
-  // without starting a second continuous GPS watcher.
-  expect(location.getCurrentLocation).toHaveBeenCalledWith(false, 'foreground');
-  expect(location.watchLocation).not.toHaveBeenCalled();
+  expect(location.getCurrentLocation).toHaveBeenCalledWith(false, 'journey');
+  expect(location.watchLocation).toHaveBeenCalledTimes(1);
   const sample = (latitude: number, timestamp: number) => ({ coordinates: { latitude, longitude: 121 }, accuracy: 5, timestamp });
   await act(async () => { feed.consumeForegroundSample(sample(25, 1000)); });
   // Normal journey/foreground projection is capped at 1 Hz and still filters
@@ -38,19 +36,17 @@ it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, 
   expect(incoming).toHaveBeenCalledTimes(2);
   expect(incoming.mock.calls[1][0].coordinates.latitude).toBe(25.000001);
   jest.advanceTimersByTime(1_000);
-  await act(async () => { feed.consumeForegroundSample(sample(25.0001, 2001)); });
-  expect(feed.deviceCoords?.latitude).toBe(25.0001);
+  await act(async () => { feed.consumeForegroundSample(sample(25.0002, 2001)); });
+  expect(feed.deviceCoords?.latitude).toBe(25.0002);
   expect(enqueueLocationOutbox).toHaveBeenCalledTimes(1);
   await act(async () => { feed.consumeForegroundSample(sample(26, 999)); });
-  expect(feed.deviceCoords?.latitude).toBe(25.0001);
+  expect(feed.deviceCoords?.latitude).toBe(25.0002);
   await act(async () => { renderer.update(React.createElement(Probe, { focused: false })); });
   await act(async () => { feed.consumeForegroundSample(sample(26, 1002)); });
-  expect(feed.deviceCoords?.latitude).toBe(25.0001);
-  // Reopening a map with no MapKit sample must restore the estimate origin.
-  (location.getCurrentLocation as jest.Mock).mockResolvedValueOnce(sample(26, Date.now()));
+  expect(feed.deviceCoords?.latitude).toBe(25.0002);
   await act(async () => { renderer.update(React.createElement(Probe, { focused: true })); });
-  expect(feed.deviceCoords?.latitude).toBe(26);
-  expect(location.watchLocation).not.toHaveBeenCalled();
+  expect(feed.deviceCoords?.latitude).toBe(25.0002);
+  expect(location.watchLocation).toHaveBeenCalledTimes(1);
   await act(async () => renderer.unmount());
   jest.useRealTimers();
 });
@@ -59,7 +55,7 @@ it('manual refresh requires this event to be accepted and passes precision to fr
   jest.useFakeTimers();
   jest.clearAllMocks();
   let feed!: ReturnType<typeof useDeviceLocation>;
-  function Probe() { feed = useDeviceLocation({ groupId: 'g', highAccuracy: true, nativeMapLocationEnabled: true }); return feed.lifecycle; }
+  function Probe() { feed = useDeviceLocation({ groupId: 'g', highAccuracy: true }); return feed.lifecycle; }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe)); });
   const sample = (timestamp: number) => ({ coordinates: { latitude: 25, longitude: 121 }, accuracy: 5, timestamp });

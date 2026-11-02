@@ -1,3 +1,4 @@
+import { locationSourceHealth } from '../native/locationSourceHealth';
 const mockLocationApi = {
   Accuracy: { High: 4, Low: 2, Balanced: 3 },
   requestForegroundPermissionsAsync: jest.fn(),
@@ -152,7 +153,7 @@ describe('native location boundary lifecycle', () => {
     const remove = jest.fn();
     mockLocationApi.watchPositionAsync.mockImplementationOnce((options: unknown, callback: (position: unknown) => void) => {
       onPosition = callback;
-      expect(options).toMatchObject({ accuracy: 4, distanceInterval: 8, timeInterval: 5_000 });
+      expect(options).toMatchObject({ accuracy: 4, distanceInterval: 10, timeInterval: 15_000 });
       return Promise.resolve({ remove });
     });
 
@@ -275,4 +276,25 @@ describe('native location boundary lifecycle', () => {
     mockIsAccessCurrent.mockReturnValue(false);
     await expect(watchLocation(jest.fn())).resolves.toEqual(expect.any(Function));
   });
+  it('exposes Expo setup and stream errors and clears them only on a delivered fix', async () => {
+    mockLocationApi.watchPositionAsync.mockReset();
+    mockLocationApi.watchPositionAsync.mockRejectedValueOnce(new Error('watch setup failed'));
+    const failedStop = await watchLocation(jest.fn(), false, 'journey');
+    expect(locationSourceHealth()).toEqual({ kind: 'interrupted', message: 'watch setup failed' });
+    failedStop();
+    let onPosition!: (position: unknown) => void;
+    let onError!: (message: string) => void;
+    mockLocationApi.watchPositionAsync.mockImplementationOnce((_options: unknown, success: typeof onPosition, error: typeof onError) => {
+      onPosition = success; onError = error;
+      return Promise.resolve({ remove: jest.fn() });
+    });
+    const stop = await watchLocation(jest.fn(), false, 'journey');
+    expect(locationSourceHealth().kind).toBe('interrupted');
+    onError('provider stopped');
+    expect(locationSourceHealth()).toEqual({ kind: 'interrupted', message: 'provider stopped' });
+    onPosition(nativePosition);
+    expect(locationSourceHealth()).toEqual({ kind: 'receiving', lastCapturedAt: nativePosition.timestamp });
+    stop();
+  });
+
 });
