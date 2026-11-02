@@ -117,6 +117,13 @@ class World {
     }
     throw new Error(`Did not observe ${description}: ${JSON.stringify(value)}`);
   }
+  async processMeetTimes() {
+    this.check();
+    const count = require('./backend-schedule.cjs').processDue(this.backend);
+    this.recordEvidence?.({ type: 'scheduler', name: 'process_meet_time_pushes', count });
+    await this.settle();
+    return count;
+  }
   async close() {
     if (this.closed) return;
     this.closed = true;

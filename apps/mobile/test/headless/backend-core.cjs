@@ -53,7 +53,7 @@ function itineraryState(b, groupId) {
       coordinates: { latitude: d.latitude, longitude: d.longitude }, sourceDestinationId: d.source_destination_id ?? null })) };
 }
 
-function apply(b, { args: a, userId }) {
+function apply(b, { args: a, userId, navigationOrigin = 'manual' }) {
   keys(a, 'p_operation_id p_group_id p_actor_id p_entity_type p_entity_id p_entity_version p_operation_type p_payload p_sequence p_dependency_ids p_created_at');
   assert.equal(a.p_actor_id, userId, 'Wire actor ownership');
   assert(Number.isSafeInteger(a.p_sequence) && a.p_sequence > 0, 'Integer core sequence');
@@ -90,7 +90,7 @@ function apply(b, { args: a, userId }) {
     const target = b.itinerary.find(d => d.id === p.activeDestinationId && d.group_id === group.id);
     if ((target?.subgroup_id ?? null) !== scope) return conflict('scope_mismatch');
     const requestId = p.navigationRequestId ?? a.p_operation_id;
-    const result = startSession(b, group.id, p.activeDestinationId, requestId, userId, true, requestId);
+    const result = startSession(b, group.id, p.activeDestinationId, requestId, userId, true, requestId, navigationOrigin);
     if (result.error) return conflict('invalid_transition', result.error.message);
     const session = result.data;
     entity = { groupId: group.id, sessionId: session.id, navigationSessionId: session.id, journeyPhase: 'en_route', journeyStatus: 'going', scope: scope ?? 'main', status: 'active', destinationId: session.destination_id, activeDestinationId: session.destination_id, pointStatuses: { [session.destination_id]: 'en_route' }, phaseChangedAt: b.now, entityVersion: version, version: session.version };
@@ -110,7 +110,9 @@ function apply(b, { args: a, userId }) {
     const patch = type === 'edit_destination' ? p.patch : { meetAt: p.meetAt, meetRedMinutes: p.meetRedMinutes };
     const fields = { title: 'title', address: 'address', day: 'day', subgroupId: 'subgroup_id', kind: 'kind', stayAnchor: 'stay_anchor', providerPlaceId: 'provider_place_id', meetAt: 'meet_at', meetRedMinutes: 'meet_red_minutes', emoji: 'emoji', markerColor: 'marker_color' };
     for (const key of Object.keys(patch)) assert(fields[key], `Unknown destination patch ${key}`);
+    const previous = structuredClone(destination);
     for (const [key, value] of Object.entries(patch)) destination[fields[key]] = value;
+    require('./backend-schedule.cjs').changed(b, destination, previous, userId);
     b.publish('itinerary_items', destination);
   } else if (type === 'delete_destination' || type === 'complete_destination') {
     if (!destination) return conflict('target_deleted');

@@ -1744,6 +1744,64 @@
           ]
         }
       ]
+    },
+    {
+      "id": "LOC-04",
+      "title": "Mixed offline queues exchange one batch and consume returned peer state",
+      "critical": true,
+      "sources": [
+        "src/state/coreOperationOutbox.ts",
+        "src/state/locationOutbox.ts",
+        "src/state/useGroupState.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessLocationSyncScenario.test.ts",
+          "pattern": "exchanges offline Start and GPS once",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LOC-05",
+      "title": "Members backend refresh survives missing self GPS and requires exact connected peer ACK",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx",
+        "src/state/backgroundLocationRefresh.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessLocationSyncScenario.test.ts",
+          "pattern": "actual members refresh reads without self GPS",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "NAV-03",
+      "title": "Idle background callback delivery and explicit scheduled Start retain owner policy and one occurrence",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
+        "src/state/useNavigationSession.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessLocationSyncScenario.test.ts",
+          "pattern": "passive background callback uploads at 600 seconds",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
     }
   ]
 }

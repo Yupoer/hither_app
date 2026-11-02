@@ -31,6 +31,11 @@ function execute(b, { kind, name, args: a = {}, userId }) {
   if (name === 'report_straggler') {
     keys(a, 'p_group_id p_member_id p_distance_m');
     if (!leader(b, a.p_group_id, userId) || !member(b, a.p_group_id, a.p_member_id)) return fail('leader_required');
+    const target = member(b, a.p_group_id, a.p_member_id);
+    const active = [...b.sessions.values()].find(session => session.group_id === a.p_group_id && session.scope_subgroup_id == null
+      && session.status === 'active' && b.itinerary.some(item => item.id === session.destination_id && item.day != null && !item.closed_at && item.subgroup_id == null));
+    if (member(b, a.p_group_id, userId).subgroup_id != null) return fail('leader_required');
+    if (!active || target.subgroup_id != null || target.solo) return ok(null);
     if (b.groups.get(a.p_group_id).straggler_alerts !== true) return ok(null);
     const row = { id: randomUUID(), group_id: a.p_group_id, sender_id: userId, kind: 'straggler', member_id: a.p_member_id, member_name: b.profiles.get(a.p_member_id)?.nickname ?? '成員', distance_m: a.p_distance_m, created_at: iso(b) };
     b.tables.group_alerts.push(row); b.publish('group_alerts', row, 'INSERT'); return ok(null);

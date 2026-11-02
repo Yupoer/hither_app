@@ -87,4 +87,10 @@ module.exports = [
     'Actual card clock saves shortcut and warning threshold via the supported remote update branch, issues no durable operation, and clear nulls meet time.'),
   ...require('./scenarios-map-controls.cjs'),
   ...require('./scenarios-map-archive.cjs'),
+  scenario('headlessLocationSyncScenario', 'MAP-NAV-02,MAP-LOC-03', 'exchanges offline Start and GPS once',
+    'Actual offline card Start and GPS retain queue identities through restart. One mixed sync exchanges both and settles ACKs while applying returned peer state; the connected peer receives the shared target.'),
+  scenario('headlessLocationSyncScenario', 'MAP-LOC-03', 'actual members refresh reads without self GPS',
+    'Actual members refresh reads backend despite denied self GPS, requests the connected peer, and counts only its exact accepted-sample ACK. Immediate retry retains cooldown.'),
+  scenario('headlessLocationSyncScenario', 'MAP-LOC-07,MAP-MEET-01', 'passive background callback uploads at 600 seconds',
+    'A paused background sharing callback uploads into the peer without straggler reports. The captain saves meet time through actual controls. Explicit cron starts one shared scheduled session and supported Live Activity; active owner has a faster cadence.'),
 ];

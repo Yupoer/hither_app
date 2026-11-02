@@ -6,8 +6,8 @@ This map describes user paths and observable proof for the headless React and Ja
 | --- | --- | --- | --- |
 | `teams` | [Accounts and teams](teams.md) | Guest confirmation, create, join, reenter, leave. | Email, signup, recovery, OAuth, account upgrade, profile. |
 | `itinerary` | [Destinations and itinerary](itinerary.md) | Dropped pins, two days, hotel, move to day, close history. | Search, manual coordinates, favorites, KML, member suggestions, subgroup, drag, date, bulk changes. |
-| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Manual End and completion, location refresh, consent, missed events, native adapter branch. |
-| `members` | [Members and notifications](members.md) | Trio roster, coordinates, solo and rejoin, departure notices, muted category. | Invitations, split and merge, kick, profile, preference controls, route tour. |
+| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Mixed queued sync, passive background callbacks, explicit scheduled Start, manual End and completion, consent, native adapter branch. |
+| `members` | [Members and notifications](members.md) | Trio roster, coordinates, solo and rejoin, departure notices, muted category. | Backend/peer refresh, navigation-only separation, invitations, split and merge, kick, profile, preference controls, route tour. |
 | `store` | [Store and Premium](store.md) | None. | Map store, rewarded ad, redemption, Premium plans, purchase, restore, promo. |
 
 ## Baseline preconditions
@@ -44,6 +44,8 @@ $env:HITHER_HEADLESS_EVIDENCE = Join-Path $verifySuiteDirectory 'worlds'
 Save the selected command, its stdout, stderr, and exit code alongside that JSON. Require a nonzero executed test count, no failed cases, and both declared platform cases. A skipped entry point stays unexecuted. The suites close each World in `finally`; retain the JSON and action records after they finish. To cover every mapped entry together, use the full headless command in the skill once, then require the functional scenario report to pass. That denominator includes the parent integrations listed below.
 
 ## Proof and skip reporting
+
+For the location sync maintenance pass, source and live scope is `journey` and `members` changed behavior. Use their selected commands. Other feature areas remain outside this pass, and a partial Jest report must not be passed to the complete denominator reporter.
 
 Report each entry point as passed, failed, or unexecuted. Record a missing fixture precondition as a failed journey with the reason in the feature's `Gotchas`. Do not weaken the journey or change its entry point to pass it. Keep failure artifacts after cleanup.
 

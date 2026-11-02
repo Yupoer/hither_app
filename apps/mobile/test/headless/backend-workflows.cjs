@@ -11,7 +11,7 @@ function scopeAllowed(b, groupId, scope, userId) {
   return Boolean(subgroup && (membership.role === 'leader' && membership.subgroup_id == null || membership.subgroup_id === scope && subgroup.leader_id === userId));
 }
 
-function startSession(b, groupId, destinationId, requestId, userId, replace = false, sessionId = requestId) {
+function startSession(b, groupId, destinationId, requestId, userId, replace = false, sessionId = requestId, origin = 'manual') {
   const destination = b.itinerary.find(d => d.id === destinationId && d.group_id === groupId);
   if (!destination || destination.day == null || destination.closed_at) return fail('invalid_destination', '22023');
   const scope = destination.subgroup_id ?? null;
@@ -30,7 +30,7 @@ function startSession(b, groupId, destinationId, requestId, userId, replace = fa
   const roster = b.memberships.filter(m => m.group_id === groupId && (m.subgroup_id ?? null) === scope);
   const session = { id: sessionId, group_id: groupId, scope_subgroup_id: scope, destination_id: destination.id,
     destination_name: destination.title, destination_latitude: destination.latitude, destination_longitude: destination.longitude,
-    arrival_radius_m: 50, started_by: userId, request_id: requestId, started_at: iso(b),
+    arrival_radius_m: 50, started_by: userId, request_id: requestId, started_at: iso(b), origin,
     expires_at: new Date(b.now + 86400000).toISOString(), status: 'active', version: 1,
     navigation_member_states: roster.map(m => ({ user_id: m.user_id })) };
   b.sessions.set(session.id, session);

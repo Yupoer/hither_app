@@ -155,7 +155,7 @@ operation('map.location.native-sample', ['MAP-LOC-01', 'MAP-LOC-02', 'MAP-ARRIVA
     event: 'onUserLocationChange', nativeEvent: { coordinate: input },
   } }));
 button('map.location.refresh', ['MAP-LOC-03'], 'refreshAllLocations', 'map-refresh-locations',
-  'Actual screen refresh coordinates self upload, peer request, cooldown and acknowledged result.');
+  'Actual screen reads backend independently of self GPS, requests connected peers, and separates self upload from exact peer ACK results and cooldown.');
 button('map.location.locate', ['MAP-LOC-03'], 'locateMe', 'map-locate-me',
   'Actual screen centers cached GPS then refreshes device location with actual permission and fresh-sample rules.');
 operations['map.location.locate'].sources = [...source(screen, 'locateMe'), ...source(component('MapRecenterControl'), 'map-locate-me')];
