@@ -6,7 +6,8 @@ const { GROUP_ID, LEADER, PEER, DESTINATION } = require('../../test/headless/bac
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = {
   presentation: { hosts: { testId?: string; checked?: boolean; text?: string }[];
-    mapRoutePoints: { latitude: number; longitude: number }[] | null; preferences: { sharingEnabled: boolean } };
+    mapRoutePoints: { latitude: number; longitude: number }[] | null;
+    mapMembers: NonNullable<CoreGroupSnapshot['members']> | null; preferences: { sharingEnabled: boolean } };
   durable: { snapshot: CoreGroupSnapshot; operations: CoreOperation[]; locations: { id: string; actor_id: string }[] };
   external: { watches: number; alerts: number; alertDetails: { message: string }[];
     backgroundTasks: { name: string; options: { timeInterval: number; distanceInterval: number; accuracy: number } }[] };
@@ -14,8 +15,7 @@ type Observation = {
     receipts: { method: string; value?: { timeInterval?: number; activityType?: number } }[] };
 };
 type SyncCall = { name: string; deviceId: string; args: { p_core_operations: { operation_id: string }[];
-  p_location_events: { id: string; actorId: string }[]; p_refresh: { requestPeers?: boolean; requestedAt?: string } };
-  result: { data: { acknowledgedIds: string[] } } };
+  p_location_events: { id: string; actorId: string }[]; p_refresh: { requestPeers?: boolean; requestedAt?: string } } };
 const has = (value: Observation, id: string) => value.presentation.hosts.some(host => host.testId === id);
 
 describe.each(['ios', 'android'])('changed location exchange on %s', platform => {
@@ -79,6 +79,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
     try {
       const leader = await map(world, 'mixed-leader', LEADER);
       const peer = await map(world, 'mixed-peer', PEER);
+      await world.advance(300000);
       leader.online = false;
       leader.realtime = false;
       await leader.perform('map.card.toggle', { destinationId: DESTINATION });
@@ -93,15 +94,30 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       if (!operation) throw new Error('Expected durable Start operation');
       const operationId = operation.id;
       const locationIds = pending.durable.locations.map(row => row.id);
-      await world.advance(300000);
       await peer.gps(25.015, 121.515, { accuracy: 5 });
       await world.waitFor(peer, () => world.backend.locations.get(`${GROUP_ID}:${PEER}`)?.latitude === 25.015, 'peer upload while leader disconnected');
-      await leader.restart();
-      expect((await leader.observe()).durable.operations.some((row: CoreOperation) => row.id === operationId)).toBe(true);
+      await world.settle();
+      expect((await leader.observe()).durable.locations.map((row: { id: string }) => row.id).sort()).toEqual([...locationIds].sort());
+      world.check();
+      expect(leader.pending.size).toBe(0);
+      expect(leader.child.kill()).toBe(true);
+      let exitTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([leader.exited, new Promise((_, reject) => {
+          exitTimer = setTimeout(() => reject(new Error('Intentional process stop deadline')), 5000);
+        })]);
+      } finally { clearTimeout(exitTimer); }
+      leader.child = null;
+      await leader.boot();
+      await world.settle();
+      const restored: Observation = await leader.observe();
+      expect(restored.durable.operations.some(row => row.id === operationId)).toBe(true);
+      expect(restored.durable.locations.map(row => row.id).sort()).toEqual([...locationIds].sort());
       leader.online = true;
       for (let attempt = 0; attempt < 12; attempt++) {
         await world.advance(30000);
-        if ((await leader.observe()).durable.operations.length === 0) break;
+        const progress: Observation = await leader.observe();
+        if (progress.durable.operations.length === 0 && progress.durable.locations.length === 0) break;
       }
       const settled: Observation = await world.waitFor(leader, (value: Observation) => value.durable.operations.length === 0
         && value.durable.locations.length === 0 && value.durable.snapshot.members?.some(member => member.userId === PEER && member.coordinates?.latitude === 25.015), 'mixed ACK and returned peer state');
@@ -114,11 +130,12 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
     } finally { await world.close(); }
   });
 
-  it('MAP-LOC-03 actual members refresh reads without self GPS and counts only the connected peer exact ACK', async () => {
+  it('MAP-LOC-03 actual members refresh reads without self GPS and handles the peer command without a push hint', async () => {
     const world = new World();
     try {
       const leader = await map(world, 'refresh-leader', LEADER);
       const peer = await map(world, 'refresh-peer', PEER);
+      await world.advance(300000);
       await leader.input({ kind: 'permission', status: 'denied' });
       await expand(world, leader);
       const before = world.backend.trace.length;
@@ -129,8 +146,9 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       expect(request.acknowledgements).toEqual([]);
       expect(world.backend.trace.slice(before).some((call: SyncCall) => call.deviceId === 'refresh-leader' && call.name === 'sync_group')).toBe(true);
       const watches = (await peer.observe()).external.watches;
-      await peer.input({ kind: 'notification', content: { title: '', body: '', data: { category: 'location_refresh', groupId: GROUP_ID } } });
-      await world.waitFor(peer, (value: Observation) => value.external.watches > watches, 'peer real refresh watcher');
+      await world.advance(1);
+      await peer.gps(25.033, 121.533, { accuracy: 5 });
+      await world.waitFor(peer, (value: Observation) => value.external.watches > watches, 'ordinary exchange command starts peer refresh without a push');
       expect(request.acknowledgements).toEqual([]);
       await world.advance(1);
       await peer.gps(25.034, 121.534, { accuracy: 5 });
@@ -167,7 +185,17 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await world.advance(600000);
       const sample = { timestamp: world.now, coords: { latitude: 25.021, longitude: 121.511, accuracy: 5 }, stationary: false };
       await leader.input({ kind: 'task', name: passive.external.backgroundTasks[0].name, value: { data: { locations: [sample] }, error: null } });
-      await world.waitFor(peer, (value: Observation) => value.durable.snapshot.members?.some(member => member.userId === LEADER && member.coordinates?.latitude === sample.coords.latitude), 'passive callback reaches recipient');
+      await world.settle();
+      await world.advance(250);
+      await world.waitFor(peer, (value: Observation) => value.presentation.mapMembers?.some(member => member.userId === LEADER
+        && member.coordinates?.latitude === sample.coords.latitude && member.coordinates.longitude === sample.coords.longitude
+        && member.capturedAt === new Date(sample.timestamp).toISOString() && member.locationSource === 'background_task'), 'passive callback renders for recipient');
+      const acceptedEventId = [...world.backend.locationEvents.values()].find((event: {
+        id: string; actorId: string; capturedAt: number; source: string;
+      }) => event.actorId === LEADER && event.capturedAt === sample.timestamp && event.source === 'background_task')?.id;
+      expect(world.backend.locationReceipts.get(acceptedEventId)).toMatchObject({
+        groupId: GROUP_ID, capturedAt: sample.timestamp, receivedAt: new Date(sample.timestamp).toISOString(),
+      });
       expect(world.backend.tables.group_alerts.filter((row: { kind: string }) => row.kind === 'straggler')).toEqual([]);
       await leader.input({ kind: 'appState', value: 'active' });
       await leader.perform('map.card.toggle', { destinationId: DESTINATION });
@@ -183,6 +211,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await world.advance(1);
       expect(world.backend.sessions.size).toBe(0);
       await world.processMeetTimes();
+      await world.advance(300);
       const session = world.backend.sessions.get(destination.meet_schedule_occurrence_id);
       expect(session).toMatchObject({ origin: 'scheduled', started_by: LEADER, destination_id: DESTINATION });
       for (const device of [leader, peer]) await world.waitFor(device, (value: Observation) =>

@@ -1,13 +1,18 @@
-jest.mock('expo-sqlite', () => ({ openDatabaseAsync: jest.fn() }));
-jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+jest.mock('expo-sqlite', () => {
+  const { open } = jest.requireActual('../../test/headless/sqlite.cjs');
+  return { openDatabaseAsync: jest.fn(async () => open(':memory:')) };
+});
+jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: async () => null }));
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' }, AppState: { currentState: 'active' } }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => `uuid-${Math.random()}`) }));
 const mockTransport: jest.Mock = jest.fn(async (_op: unknown) => { throw new Error('offline'); });
 const mockActor = jest.fn(async () => 'actor-a');
 const mockHarness: { coreDb: any; outboxDb: any } = { coreDb: null, outboxDb: null };
+jest.mock('../api/services/GroupSyncService', () => ({ exchangeGroup: (input: unknown) => mockTransport(input) }));
 jest.mock('../api/services/CoreDataService', () => ({
   applyCoreOperation: (op: unknown) => mockTransport(op), fetchCoreEntityVersions: async () => [],
 }));
-jest.mock('../api/services/_helpers', () => ({ requireLocalActorId: () => mockActor(), orThrow: (error: unknown) => { if (error) throw error; } }));
+jest.mock('../api/services/_helpers', () => ({ requireLocalActorId: () => mockActor(), requireUserId: () => mockActor(), orThrow: (error: unknown) => { if (error) throw error; } }));
 jest.mock('../state/coreDataStore', () => {
   const actual = jest.requireActual('../state/coreDataStore');
   const coreDb = new actual.MemoryCoreDataDatabase();
@@ -269,13 +274,29 @@ it.each([false, true])('rejected active delete restores only its own gathering c
   await getCoreDataStore().saveRemoteGroupState({ ...state, destinations: [...state.destinations,
     { ...state.destinations[0], id: 'd2', order: 1, kind: 'stop' }] });
   let rejectDelete: (() => void) | undefined;
-  mockTransport.mockImplementation((op: any) => op.operationType === 'delete_destination'
-    ? new Promise(resolve => { rejectDelete = () => resolve({ status: 'conflict', operationId: op.id,
-      conflict: { code: 'unauthorized', message: 'leader changed', operationId: op.id,
-        entityType: op.entityType, entityId: op.entityId, occurredAt: Date.now() } }); })
-    : Promise.reject(new Error('offline')));
-  await enqueueDestinationDelete({ groupId: 'g', destinationId: 'd', sessionId: 'old-session' });
-  await new Promise(resolve => setTimeout(resolve, 0));
+  let markSubmitted!: () => void;
+  const submitted = new Promise<void>(resolve => { markSubmitted = resolve; });
+  mockTransport.mockImplementation((input: { operations: import('../types/coreData').CoreOperation[] }) => {
+    const op = input.operations.find(operation => operation.operationType === 'delete_destination');
+    if (!op) return Promise.reject(new Error('offline'));
+    return new Promise(resolve => {
+      markSubmitted();
+      rejectDelete = () => resolve({
+      coreResults: new Map([[op.id, { status: 'conflict', operationId: op.id,
+        conflict: { code: 'unauthorized', message: 'leader changed', operationId: op.id,
+          entityType: op.entityType, entityId: op.entityId, occurredAt: Date.now() } }]]),
+      locationResult: { acceptedIds: [], rejected: [] }, locationReceipts: [], pendingRefreshes: [],
+      refreshAcknowledgements: [], refreshRequest: null, acknowledgedIds: [],
+      recovery: { state, generatedAt: null, revision: '1', entityVersions: {} },
+    }); });
+  });
+  const deletion = await enqueueDestinationDelete({ groupId: 'g', destinationId: 'd', sessionId: 'old-session' });
+  await submitted;
+  expect(mockTransport).toHaveBeenCalledTimes(1);
+  expect(mockTransport).toHaveBeenCalledWith(expect.objectContaining({
+    groupId: 'g', actorId: 'actor-a', events: [], refresh: {},
+    operations: [expect.objectContaining({ id: deletion.id, actorId: 'actor-a', operationType: 'delete_destination' })],
+  }));
   expect(rejectDelete).toBeDefined();
   if (laterStart) await enqueueLeaderGatheringStart('g', { activeDestinationId: 'd2',
     navigationRequestId: 'new-session', flushImmediately: false });

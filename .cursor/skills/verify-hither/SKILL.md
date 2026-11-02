@@ -60,7 +60,7 @@ For a custom scenario with a live `World`, the read-only instance check is `worl
 
 ## Drive
 
-When the request limits verification to changed behavior, select the affected named cases from the feature map. For the location exchange update, use `--testNamePattern="changed location exchange on"`. Do not run the recorded trip or full suite for that scoped request. A partial report has no complete functional denominator. Keep the same Doctor, evidence and cleanup requirements for the selected cases.
+When the request limits verification to changed behavior, select the affected named cases from the feature map. For the location exchange update, use `-Driver jest --runTestsByPath src/__tests__/headlessLocationSyncScenario.test.ts --testNamePattern="changed location exchange on"`. The suite driver already supplies all headless files; do not append the same file to it a second time. Do not run the recorded trip or full suite for that scoped request. A partial report has no complete functional denominator. Keep the same Doctor, evidence and cleanup requirements for the selected cases.
 
 Run the recorded mixed-platform journey. This is the default proof for the first four mapped features. It does not cover every entry point in those features or the store feature. Read each feature's additional commands before claiming broader coverage.
 
@@ -171,4 +171,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Complete verification requires every functiona
 
 For maintenance, use `pstack:maintain-verification-skill` and update this map when a route, callback, fixture contract, or observable result changes. Inventory alignment and executed feature coverage remain separate claims.
 
-Location exchange maintenance covers only [journey](features/journey.md) and [members](features/members.md). Its source-reviewed recipes remain unexecuted until the selected runs finish on the integrated product revision. Record the actual outcome after those drives; editing a recipe alone does not establish `changed` or `clean`.
+Location exchange maintenance covers only [journey](features/journey.md) and [members](features/members.md). Both have outcome `changed`: eight unique iOS/Android cases passed against product commit `9cfcd9b46926cf55b33a809015897b9238c1e1f5` on 2026-11-03. The local proof index is `.audit/location-sync/headless-retry-result.md`; it retains earlier failures and the passing evidence for each case. All recorded Worlds removed their scratch state and closed their children. This scoped result does not establish a complete feature denominator, native OS behavior or hosted delivery. Review source drift before reusing it.

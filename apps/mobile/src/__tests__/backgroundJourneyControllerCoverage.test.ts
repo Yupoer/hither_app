@@ -54,11 +54,11 @@ describe('background journey controller state transitions', () => {
     expect(resolveBackgroundTrackingMode({ ...base, appState: 'background', teamNavigationActive: true })).toBe('teamNavigation');
     expect(resolveBackgroundTrackingMode({ ...base, appState: 'background', highAccuracy: true })).toBe('navigationMax');
     expect(backgroundLocationOptions('journey', true, 'navigationMax')).toMatchObject({
-      accuracy: 5, timeInterval: 5_000, deferredUpdatesDistance: 0,
+      accuracy: 4, timeInterval: 15_000, deferredUpdatesDistance: 0,
     });
     expect(backgroundLocationOptions('journey', true, 'passiveBackground')).toMatchObject({
       activityType: 1, showsBackgroundLocationIndicator: false,
-      accuracy: 2, timeInterval: 150_000, deferredUpdatesInterval: 150_000,
+      accuracy: 3, timeInterval: 600_000, deferredUpdatesInterval: 600_000,
     });
   });
 
@@ -135,7 +135,7 @@ it.each([
   const { controller, location } = harness();
   await controller.start({ ...base, powerMode: 'journey', highAccuracy: true, ...invalid });
   expect(location.startLocationUpdatesAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-    accuracy: 2, timeInterval: 150_000, activityType: 1, showsBackgroundLocationIndicator: false,
+    accuracy: 3, timeInterval: 600_000, activityType: 1, showsBackgroundLocationIndicator: false,
   }));
 });
 
@@ -147,7 +147,7 @@ it('migrates an old native passive owner even when its persisted power profile i
   await controller.start(passive);
   expect(location.stopLocationUpdatesAsync).toHaveBeenCalled();
   expect(location.startLocationUpdatesAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-    accuracy: 2, activityType: 1, showsBackgroundLocationIndicator: false,
+    accuracy: 3, activityType: 1, showsBackgroundLocationIndicator: false,
   }));
 });
 
@@ -159,7 +159,7 @@ it('restores a same-owner passive mode if background navigation acquisition fail
   await expect(controller.start({ ...base, actorId: 'actor', highAccuracy: true })).rejects.toThrow('permission_changed');
   expect(await controller.load()).toMatchObject({ actorId: 'actor', powerMode: 'allDay' });
   expect(location.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
-    accuracy: 2, activityType: 1, showsBackgroundLocationIndicator: false,
+    accuracy: 3, activityType: 1, showsBackgroundLocationIndicator: false,
   }));
 });
 

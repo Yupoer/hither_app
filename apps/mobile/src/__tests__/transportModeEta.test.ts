@@ -4,7 +4,7 @@ import { useMapKitRoutes } from '../screens/MapScreen/hooks/useMapKitRoutes';
 import { getDirections } from '../native/maps';
 import { etaSecondsFor, type TravelMode } from '../utils/geo';
 import { derivePersonalProgress } from '../utils/personalProgress';
-jest.mock('../native/maps', () => ({ getDirections: jest.fn() }));
+jest.mock('../native/maps', () => ({ getDirections: jest.fn(), directionsAvailable: jest.fn(() => true) }));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { act, create } = require('react-test-renderer');
 const mockRoute = getDirections as jest.MockedFunction<typeof getDirections>;

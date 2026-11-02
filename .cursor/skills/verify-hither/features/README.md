@@ -47,6 +47,8 @@ Save the selected command, its stdout, stderr, and exit code alongside that JSON
 
 For the location sync maintenance pass, source and live scope is `journey` and `members` changed behavior. Use their selected commands. Other feature areas remain outside this pass, and a partial Jest report must not be passed to the complete denominator reporter.
 
+The 2026-11-03 pass records `changed` for both scoped features: eight unique iOS/Android Map cases passed on product commit `9cfcd9b46926cf55b33a809015897b9238c1e1f5`. Source inventory and registry audits passed separately. The local evidence index `.audit/location-sync/headless-retry-result.md` records accepted case names, retained failed attempts and verified cleanup. Other feature areas were not reevaluated.
+
 Report each entry point as passed, failed, or unexecuted. Record a missing fixture precondition as a failed journey with the reason in the feature's `Gotchas`. Do not weaken the journey or change its entry point to pass it. Keep failure artifacts after cleanup.
 
 The [operation inventory](../../../../apps/mobile/test/headless/operation-inventory.json) and [functional scenario denominator](../../../../apps/mobile/test/headless/functional-scenarios.json) support this user-facing map. Neither substitutes for the map or actual execution. Source fingerprints require source review when behavior changes; do not regenerate them to erase a mismatch.
