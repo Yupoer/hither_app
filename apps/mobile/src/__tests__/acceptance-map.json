@@ -2948,6 +2948,55 @@
       "acceptance": "Self departure removes the member from the leader roster and delivers one member-left participation notification under the current master contract.",
       "testFile": "headlessNotificationJourneyScenario.test.ts",
       "testNamePattern": "leaving the group updates"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "Ordinary positioning uses the requested precise/general/idle and passive-background cadence, and automatic heartbeat/route work follows its mode scale.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "uses canonical sharing cadence|uses ordinary High|requests passive background at ten minutes|shares one automatic time scale|applies precise"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "Mixed RPCs serialize heterogeneous core/GPS inputs once, preserve omitted results and require the original captured actor through a lazy account switch.",
+      "testFile": "groupSyncExchange.test.ts",
+      "testNamePattern": "sends heterogeneous core operations and GPS|retains a collected draft owner|pins the original actor"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "On both mobile platforms an abrupt offline process restart preserves original Start/GPS IDs, which settle through one mixed exchange and project the returned peer state.",
+      "testFile": "headlessLocationSyncScenario.test.ts",
+      "testNamePattern": "exchanges offline Start and GPS once"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "The actual members refresh reads server state with self GPS denied and consumes a peer refresh command without a push hint, requiring the exact request ACK.",
+      "testFile": "headlessLocationSyncScenario.test.ts",
+      "testNamePattern": "actual members refresh reads without self GPS and handles the peer command without a push hint"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "The mounted Map shows an SDK interruption until a new fix; personal arrival removes only the self route while subsequent sharing continues.",
+      "testFile": "headlessLocationSyncScenario.test.ts",
+      "testNamePattern": "shows SDK interruption until a new fix and stops only the arrived personal route"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "A controlled passive-background callback after600seconds renders its receipt for the peer; the explicit scheduler fixture starts one shared navigation with eligible Live Activity intent and faster active background options.",
+      "testFile": "headlessLocationSyncScenario.test.ts",
+      "testNamePattern": "passive background callback uploads at 600 seconds and explicit captain schedule starts shared navigation once"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "Idle navigation performs no straggler distance/report work, resets its hysteresis, and active reporting remains available after personal arrival.",
+      "testFile": "stragglerNavigationBehavior.test.ts",
+      "testNamePattern": "does no idle distance work, resets hysteresis/report state, and keeps reporting after personal arrival"
     }
   ]
 }
