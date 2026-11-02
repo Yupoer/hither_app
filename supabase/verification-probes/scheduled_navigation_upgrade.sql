@@ -1,3 +1,5 @@
+-- Requires scheduled_navigation_upgrade.seed.sql before migration 20261102152223.
+-- CI runs this probe separately from post-migration *.test.sql regressions.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
