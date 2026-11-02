@@ -30,7 +30,7 @@ const operation = (id: string, sequence: number): CoreOperation => ({
   id, actorId: 'actor-a', groupId: 'group', entityType: 'itinerary', entityId: 'group',
   entityVersion: 0, operationType: 'reorder_destinations', payload: { updates: [] }, sequence,
   dependencyIds: sequence === 2 ? ['core-1'] : [], status: 'pending', attempts: 0,
-  nextAttemptAt: 0, createdAt: sequence, updatedAt: sequence,
+  nextAttemptAt: 0, createdAt: sequence, updatedAt: sequence, conflictResult: null,
 });
 
 beforeEach(async () => {

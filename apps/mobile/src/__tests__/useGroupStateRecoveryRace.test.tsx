@@ -502,7 +502,7 @@ describe('useGroupState recovery snapshot race', () => {
   it.each(['settled', 'pending-itinerary', 'older-itinerary'] as const)(
     'merges the final archive recovery independently of equal-version gathering protection (%s)', async mode => {
       const second = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
-      const intermediate = { ...withDestinations('Archive after first delete', [second]),
+      const intermediate: GroupState = { ...withDestinations('Archive after first delete', [second]),
         group: { ...state('Archive after first delete').group, journeyStatus: 'paused' as const } };
       const empty = { ...intermediate, destinations: [], nextDestination: undefined };
       let durable = { state: intermediate, source: 'remote', itineraryVersion: 1,
