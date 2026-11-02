@@ -4,7 +4,7 @@ export interface CoreSyncAttempt {
   remaining: number;
 }
 /** One bounded foreground worker. Backoff eligibility remains owned by the queue. */
-export function createCoreSyncScheduler(flush: () => Promise<CoreSyncAttempt>, foreground = true) {
+export function createCoreSyncScheduler(flush: () => Promise<CoreSyncAttempt>, foreground = true, timingScale: () => number = () => 1) {
   let active = foreground;
   let stopped = false;
   let running = false;
@@ -25,25 +25,25 @@ export function createCoreSyncScheduler(flush: () => Promise<CoreSyncAttempt>, f
       failures = 0;
       if (result.remaining > 0) {
         emptyWakeFlushConsumed = false;
-        next = result.sent + result.duplicates > 0 ? 500 : 30_000;
+        next = (result.sent + result.duplicates > 0 ? 500 : 30_000) * timingScale();
       }
     } catch {
-      next = Math.min(15 * 60_000, 30_000 * 2 ** Math.min(failures++, 5));
+      next = Math.min(15 * 60_000, 30_000 * 2 ** Math.min(failures++, 5)) * timingScale();
     } finally {
       running = false;
       const wokeDuringFlush = wakeRequested;
       wakeRequested = false;
-      if (wokeDuringFlush && next === 30_000) {
+      if (wokeDuringFlush && next === 30_000 * timingScale()) {
         // A newly enqueued operation may be immediately eligible even when an
         // older head was waiting on per-operation backoff. The queue remains
         // the authority on eligibility, so this short retry cannot storm the
         // network.
-        next = 500;
+        next = 500 * timingScale();
       } else if (wokeDuringFlush && next === null && !emptyWakeFlushConsumed) {
         // Outbox status notifications can arrive while the final flush is
         // running. Allow one follow-up read to catch work inserted during it,
         // then stop even if that empty read notifies itself again.
-        next = 500;
+        next = 500 * timingScale();
         emptyWakeFlushConsumed = true;
       } else if (next === null) {
         emptyWakeFlushConsumed = false;
@@ -60,13 +60,13 @@ export function createCoreSyncScheduler(flush: () => Promise<CoreSyncAttempt>, f
         emptyWakeFlushConsumed = false;
         clearTimeout(timer);
         timer = undefined;
-        schedule(500);
+        schedule(500 * timingScale());
       }
     },
     setForeground: (value: boolean) => {
       active = value;
       if (!active) { clearTimeout(timer); timer = undefined; }
-      else schedule(500);
+      else schedule(500 * timingScale());
     },
     stop: () => { stopped = true; clearTimeout(timer); timer = undefined; },
   };

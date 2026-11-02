@@ -5,14 +5,6 @@ const migration = readFileSync(
   join(__dirname, '../../../../supabase/migrations/20260813100000_location_refresh_pending.sql'),
   'utf8',
 );
-const service = readFileSync(
-  join(__dirname, '../api/services/LocationService.ts'),
-  'utf8',
-);
-const refresh = readFileSync(
-  join(__dirname, '../state/backgroundLocationRefresh.ts'),
-  'utf8',
-);
 const controller = readFileSync(
   join(__dirname, '../state/backgroundJourneyController.ts'),
   'utf8',
@@ -51,17 +43,6 @@ describe('durable location refresh contract (#191)', () => {
     expect(pushRecipients).toContain('payload.recipient_ids');
     expect(readFileSync(join(__dirname, '../utils/refreshTeamLocations.ts'), 'utf8')).toContain('result.recipientIds');
     expect(mapScreen).not.toContain('expectedLocationRefreshRecipientIds');
-  });
-
-  it('uploads one fix for all pending groups and ACKs only accepted request versions', () => {
-    expect(service).toContain("rpc('list_my_pending_location_refreshes')");
-    expect(service).toContain("rpc('ack_my_location_refresh'");
-    expect(refresh).toContain('const events = pending.map');
-    expect(refresh).toContain('const accepted = new Set(result.acceptedIds)');
-    expect(refresh).toContain("if (!accepted.has(events[index].id)) throw new Error('refresh_upload_not_accepted')");
-    expect(refresh).toContain('ackMyLocationRefresh(row.groupId, row.requestedAt)');
-    expect(refresh).toContain('getCurrentLocation(false)');
-    expect(refresh).toContain('foreground_upload_failed');
   });
 
   it('prepares permissions while active and never prompts from a flagged background transition', () => {

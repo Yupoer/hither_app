@@ -1,3 +1,21 @@
+const mockQueuedGps: Array<{ id: string }> = [];
+const mockOriginalReceipt = jest.fn();
+jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'actor-a' }));
+jest.mock('../state/groupSync', () => ({
+ getAcceptedLocationReceipt: (...args: unknown[]) => mockOriginalReceipt(...args),
+ syncGroup: async ({ groupId, refresh }: any) => {
+  const events = mockQueuedGps.splice(0);
+  const result = events.length ? await mockIngest(events) : { acceptedIds: [], rejected: [] };
+  const access = await require('../state/locationPrivacy').captureLocationAccess(groupId);
+  const refreshAcknowledgements = [];
+  for (const ack of refresh.acknowledgements) {
+   const accepted = access && (result.acceptedIds.includes(ack.eventId) || mockOriginalReceipt())
+    ? await mockAck(groupId, ack.requestedAt) : false;
+   refreshAcknowledgements.push({ ...ack, accepted: accepted === true });
+  }
+  return { refreshAcknowledgements };
+ },
+}));
 jest.mock('../state/backgroundJourney', () => ({ reconcileBackgroundNavigation: jest.fn(async () => {}) }));
 const mockStore = new Map<string, string>();
 const mockAsyncStorage = {
@@ -41,7 +59,7 @@ jest.mock('../api/services/LocationService', () => ({
   listMyPendingLocationRefreshes: (...args: unknown[]) => mockListPending(...args),
 }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: mockDiagnostics }));
-jest.mock('../state/locationOutbox', () => ({ purgeLocationOutbox: () => mockPurgeOutbox() }));
+jest.mock('../state/locationOutbox', () => ({ purgeLocationOutbox: () => mockPurgeOutbox(), enqueueLocationOutbox: async (event: {id:string}) => { mockQueuedGps.push(event); } }));
 
 const {
   consumePendingLocationPermission,
@@ -67,6 +85,8 @@ const fix = {
 describe('durable location refresh recovery', () => {
   beforeEach(() => {
     mockStore.clear();
+    mockQueuedGps.length = 0;
+    mockOriginalReceipt.mockReset();
     setLocationAccessContext('group-1', true, true);
     mockAppState.currentState = 'active';
     jest.clearAllMocks();
@@ -275,4 +295,22 @@ describe('durable location refresh recovery', () => {
     expect(BACKGROUND_LOCATION_REFRESH_TASK).toBe('hither-background-location-refresh');
     expect(mockTaskCallback).toEqual(expect.any(Function));
   });
+});
+
+it('reuses the original accepted same-callback event when recovering its exact peer request', async () => {
+  setLocationAccessContext('group-1', true, true);
+  mockAck.mockResolvedValue(true);
+  mockQueuedGps.length = 0;
+  mockStore.clear();
+  mockAppState.currentState = 'background';
+  const sample = { ...fix, timestamp: Date.now() + 1 };
+  mockStore.set('@hither/pending-location-refresh', JSON.stringify({ groupId: 'group-1', requestedAt: sample.timestamp - 1 }));
+  mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
+  mockOriginalReceipt.mockReturnValue({ id: 'original-event', groupId: 'group-1', capturedAt: sample.timestamp, receivedAt: '2026-08-13T00:00:01Z' });
+  mockIngest.mockClear(); mockAck.mockClear();
+  await recoverPendingLocationRefreshFromSample('group-1', sample);
+  expect(mockIngest).not.toHaveBeenCalled();
+  expect(mockQueuedGps).toEqual([]);
+  expect(mockAck).toHaveBeenCalledWith('group-1','2026-08-13T00:00:00Z');
+  expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
 });

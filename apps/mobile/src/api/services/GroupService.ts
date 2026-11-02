@@ -42,7 +42,7 @@ import { generateInviteCode, requireUserId, orThrow } from './_helpers';
 import { mapDestination, type ItineraryRow } from './DestinationService';
 import {
   listDailyAccommodations,
-  type DailyAccommodation,
+  mapDailyAccommodation,
 } from './DailyAccommodationService';
 import {
   ANON_EXPIRED_ERROR,
@@ -390,12 +390,11 @@ export async function getGroupRecoverySnapshot(
       entityVersions: {},
     };
   }
-  await requireUserId();
-  const [{ data, error }, dailyAccommodations] = await Promise.all([
-    supabase.rpc('get_group_public_recovery_snapshot', { p_group_id: groupId }),
-    listDailyAccommodations(groupId),
-  ]);
-  orThrow(error);
+  const { syncGroup } = await import('../../state/groupSync');
+  return (await syncGroup({ groupId })).recovery;
+}
+
+export function mapGroupRecoverySnapshot(data: unknown): GroupRecoverySnapshot {
   if (!data || typeof data !== 'object') {
     throw new Error('group_recovery_snapshot_invalid');
   }
@@ -431,8 +430,8 @@ export async function getGroupRecoverySnapshot(
   const revision = typeof payload.realtime_revision === 'string'
     ? payload.realtime_revision
     : generatedAt ?? '0';
-  // Daily accommodations are a separate source of truth; batch-load (not per-day).
-  // Propagate load failures — do not present errors as "no stay".
+  if (!Array.isArray(payload.daily_accommodations)) throw new Error('group_sync_accommodations_missing');
+  const dailyAccommodations = payload.daily_accommodations.map(row => mapDailyAccommodation(row));
   return {
     state: {
       group: mapGroup(groupRow),

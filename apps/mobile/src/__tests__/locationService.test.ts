@@ -1,3 +1,5 @@
+const mockGroupSync = jest.fn();
+jest.mock('../state/groupSync', () => ({ syncGroup: (...args: unknown[]) => mockGroupSync(...args) }));
 jest.mock('expo-location', () => ({ getForegroundPermissionsAsync: jest.fn(async () => ({status:'granted'})) }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
 import { setLocationAccessContext } from '../state/locationPrivacy';
@@ -136,36 +138,15 @@ describe('LocationService durable refresh seams', () => {
     expect(mockSupabase.rpc).not.toHaveBeenCalled();
   });
 
-  it('maps refresh cooldown, pending rows, and versioned ACKs from RPC responses', async () => {
-    mockSupabase.rpc
-      .mockResolvedValueOnce({ data: { accepted: true, retry_after_seconds: 1.2 }, error: null })
-      .mockResolvedValueOnce({
-        data: [
-          { group_id: 'group-1', requested_by: 'leader-1', requested_at: '2026-08-13T00:00:00Z' },
-          { group_id: null, requested_by: 'bad', requested_at: 'bad' },
-        ],
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: true, error: null });
-
-    await expect(requestGroupLocationRefresh('group-1')).resolves.toEqual({
-      accepted: true,
-      retryAfterSeconds: 2,
-      recipientIds: [],
-    });
-    await expect(listMyPendingLocationRefreshes()).resolves.toEqual([{
-      groupId: 'group-1',
-      requestedBy: 'leader-1',
-      requestedAt: '2026-08-13T00:00:00Z',
-    }]);
-    await expect(ackMyLocationRefresh('group-1', '2026-08-13T00:00:00Z')).resolves.toBe(true);
-    expect(mockSupabase.rpc).toHaveBeenNthCalledWith(1, 'request_group_location_refresh', {
-      p_group_id: 'group-1',
-    });
-    expect(mockSupabase.rpc).toHaveBeenNthCalledWith(2, 'list_my_pending_location_refreshes');
-    expect(mockSupabase.rpc).toHaveBeenNthCalledWith(3, 'ack_my_location_refresh', {
-      p_group_id: 'group-1',
-      p_requested_at: '2026-08-13T00:00:00Z',
-    });
+  it('delegates refresh reads and original event ACKs through the shared exchange', async () => {
+    mockGroupSync.mockResolvedValueOnce({ refreshRequest: { accepted: true, retryAfterSeconds: 2, recipientIds: [] } })
+      .mockResolvedValueOnce({ pendingRefreshes: [{ groupId: 'group-1', requestedBy: 'leader-1', requestedAt: '2026-08-13T00:00:00Z' }] })
+      .mockResolvedValueOnce({ refreshAcknowledgements: [{ requestedAt: '2026-08-13T00:00:00Z', eventId: 'accepted-event', accepted: true }] });
+    await expect(requestGroupLocationRefresh('group-1')).resolves.toEqual({ accepted: true, retryAfterSeconds: 2, recipientIds: [] });
+    await expect(listMyPendingLocationRefreshes()).resolves.toEqual([{ groupId: 'group-1', requestedBy: 'leader-1', requestedAt: '2026-08-13T00:00:00Z' }]);
+    await expect(ackMyLocationRefresh('group-1','2026-08-13T00:00:00Z','accepted-event')).resolves.toBe(true);
+    expect(mockGroupSync).toHaveBeenNthCalledWith(1, { groupId: 'group-1', refresh: { requestPeers: true } });
+    expect(mockGroupSync).toHaveBeenNthCalledWith(2, { groupId: 'group-1' });
+    expect(mockGroupSync).toHaveBeenNthCalledWith(3, { groupId: 'group-1', refresh: { acknowledgements: [{ requestedAt: '2026-08-13T00:00:00Z', eventId: 'accepted-event' }] } });
   });
 });

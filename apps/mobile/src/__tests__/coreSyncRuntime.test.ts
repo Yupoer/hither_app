@@ -1,3 +1,4 @@
+jest.mock('../state/syncTiming', () => ({ currentSyncTimingScale: () => 1 }));
 const mockFlush = jest.fn();
 const mockAppRemove = jest.fn();
 const mockOutboxRemove = jest.fn();

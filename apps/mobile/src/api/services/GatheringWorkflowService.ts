@@ -294,7 +294,7 @@ export async function setDestinationArrival(
       navigationSessionId: boundSessionId,
       ...metadata,
     });
-    void core.getCoreOperationOutbox().flush().catch(() => undefined);
+    void core.flushCoreOperationOutbox().catch(() => undefined);
     return operation;
   }
   const { error } = await supabase.rpc('set_destination_arrival', {
@@ -332,7 +332,7 @@ export async function setDestinationArrivalAt(
       navigationSessionId: boundSessionId,
       ...metadata,
     });
-    void core.getCoreOperationOutbox().flush().catch(() => undefined);
+    void core.flushCoreOperationOutbox().catch(() => undefined);
     return operation;
   }
   const { error } = await supabase.rpc('set_destination_arrival_at', {
@@ -387,7 +387,7 @@ export async function correctDestinationArrival(input: {
         ...(input.note == null ? {} : { note: input.note }),
       },
     });
-    void core.getCoreOperationOutbox().flush().catch(() => undefined);
+    void core.flushCoreOperationOutbox().catch(() => undefined);
     return operation;
   }
   const { error } = await supabase.rpc('set_destination_arrival_at', {

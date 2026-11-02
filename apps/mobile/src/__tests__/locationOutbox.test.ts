@@ -1,3 +1,7 @@
+jest.mock('../state/groupSync', () => ({ syncGroup: async ({ groupId }: { groupId: string }) => ({
+  location: await jest.requireActual('../state/locationOutbox').exchangeLocationOutbox(groupId, 'user-1',
+    require('../api/services/LocationService').ingestLocationBatch),
+}) }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null) }));
 jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'user-1' }));
 jest.mock('react-native', () => ({ AppState: { currentState: 'active' } }));
@@ -280,4 +284,20 @@ it('retains the original durable event while access is pending and uploads only 
   } finally {
     jest.restoreAllMocks();
   }
+});
+
+it('settles only submitted own GPS and preserves trimmed and foreign rows with their original eligibility', async () => {
+  const db = new MemoryLocationOutboxDatabase();
+  const queue = createLocationOutbox(db, jest.fn(), () => 4_000);
+  await queue.enqueue(event({ id: 'old', actorId: 'a', capturedAt: 1_000 }));
+  await queue.enqueue(event({ id: 'new', actorId: 'a', capturedAt: 2_000 }));
+  await queue.enqueue(event({ id: 'foreign', actorId: 'b', capturedAt: 3_000 }));
+  const originalOld = db.entries.get('old');
+  const originalForeign = db.entries.get('foreign');
+  const send = jest.fn(async (events: LocationUploadEvent[]) => ({ acceptedIds: [events[0].id], rejected: [], notSubmittedIds: ['old'] }));
+  await queue.exchange('g1', 'a', send);
+  expect(send.mock.calls[0][0].map(row => row.id)).toEqual(['new', 'old']);
+  expect(db.entries.get('new')).toBeUndefined();
+  expect(db.entries.get('old')).toEqual(originalOld);
+  expect(db.entries.get('foreign')).toEqual(originalForeign);
 });

@@ -1,3 +1,8 @@
+jest.mock('../state/groupSync', () => ({ syncGroup: async ({ groupId }: { groupId: string }) => {
+ const { data, error } = await require('../api/supabase').supabase.rpc('sync_group', { p_group_id: groupId });
+ if (error) throw error;
+ return { recovery: require('../api/services/GroupService').mapGroupRecoverySnapshot(data && { ...data, daily_accommodations: data.daily_accommodations ?? [] }) };
+} }));
 import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
@@ -143,7 +148,7 @@ describe('GroupService pure mappers and group lifecycle', () => {
       expect(mapMember(membership as any, undefined, { ...fix, tracking_mode: 'navigationMax',
         navigation_session_id: 'session-1' }).locationAvailability).toBe('stale');
       expect(mapMember(membership as any, undefined, { ...fix, source: 'refresh_request' }).locationAvailability).toBe('stale');
-      clock.mockReturnValue(now + 30_000);
+      clock.mockReturnValue(now + 1_200_000);
       expect(mapMember(membership as any, undefined, fix).locationAvailability).toBe('stale');
     } finally { clock.mockRestore(); }
   });

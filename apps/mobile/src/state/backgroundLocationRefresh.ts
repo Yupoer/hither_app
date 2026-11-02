@@ -5,15 +5,16 @@ import * as TaskManager from 'expo-task-manager';
 import { AppState } from 'react-native';
 import { location } from '../native';
 import {
-  ackMyLocationRefresh,
-  ingestLocationBatch,
   listMyPendingLocationRefreshes,
 } from '../api/services/LocationService';
 import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessPending, type LocationAccess } from './locationPrivacy';
 import { reconcileBackgroundNavigation } from './backgroundJourney';
 import { diagnostics } from './diagnostics';
+import { syncGroup, getAcceptedLocationReceipt } from './groupSync';
+import { requireUserId } from '../api/services/_helpers';
 import {
   purgeLocationOutbox,
+  enqueueLocationOutbox,
 } from './locationOutbox';
 
 export const BACKGROUND_LOCATION_REFRESH_TASK =
@@ -66,27 +67,21 @@ async function uploadAndAckPendingRefreshes(
   access: LocationAccess,
 ): Promise<void> {
   if (!fix || pending.length === 0 || !isLocationAccessCurrent(access)) return;
-  const capturedAt = fix.timestamp;
-  const events = pending.map((row) => ({
-    id: Crypto.randomUUID(),
-    groupId: row.groupId,
-    navigationSessionId: null,
-    capturedAt,
-    coords: {
-      ...fix.coordinates,
-      accuracy: Math.max(0, fix.accuracy ?? 0),
-    },
-    trackingMode: 'passiveBackground',
-    source: 'refresh_request',
-    sequence: capturedAt,
-  }));
-  const result = await ingestLocationBatch(events);
-  const accepted = new Set(result.acceptedIds);
-  for (const [index, row] of pending.entries()) {
+  const actorId = await requireUserId();
+  for (const row of pending) {
     if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
-    if (!accepted.has(events[index].id)) throw new Error('refresh_upload_not_accepted');
-    // Versioned ACK: a newer request_at wins and is intentionally not deleted.
-    if (!await ackMyLocationRefresh(row.groupId, row.requestedAt)) throw new Error('refresh_ack_not_confirmed');
+    const original = getAcceptedLocationReceipt(actorId, row.groupId, fix.timestamp);
+    const eventId = original?.id ?? Crypto.randomUUID();
+    if (!original) await enqueueLocationOutbox({
+      id: eventId, groupId: row.groupId, navigationSessionId: null, capturedAt: fix.timestamp,
+      coords: { ...fix.coordinates, accuracy: Math.max(0, fix.accuracy ?? 0) },
+      trackingMode: 'passiveBackground', source: 'refresh_request', sequence: fix.timestamp,
+    });
+    const result = await syncGroup({ groupId: row.groupId,
+      refresh: { acknowledgements: [{ requestedAt: row.requestedAt, eventId }] } });
+    if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
+    if (!result.refreshAcknowledgements.some(ack => ack.eventId === eventId
+      && ack.requestedAt === row.requestedAt && ack.accepted)) throw new Error('refresh_ack_not_confirmed');
   }
 }
 

@@ -1,9 +1,12 @@
+import { syncTimingScale } from '../utils/locationPolicy';
 import { retainVisibleGroupSeed } from './visibleGroupSeed';
 import { createElement, Fragment, useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
 import { AppState, type AppStateStatus } from 'react-native';
 import { requestWithDeadline } from '../utils/requestDeadline';
 import { getGroupRecoverySnapshot } from '../api/client';
+import type { GroupRecoverySnapshot } from '../api/services/GroupService';
+import { subscribeGroupSyncSnapshots } from './groupSync';
 import { energyObservability } from './energyObservability';
 import { syncLocationSharing } from './locationSharingSync';
 import { classifyOperationError, getOperationErrorMessage, type OperationErrorClassification } from '../utils/operationError';
@@ -52,8 +55,8 @@ export const GROUP_POLL_INTERVAL_MS = 30_000;
  */
 export const GROUP_POLL_SUBSCRIBED_INTERVAL_MS = 120_000;
 
-export function groupPollIntervalMs(realtimeSubscribed: boolean): number {
-  return realtimeSubscribed ? GROUP_POLL_SUBSCRIBED_INTERVAL_MS : GROUP_POLL_INTERVAL_MS;
+export function groupPollIntervalMs(realtimeSubscribed: boolean, scale = 1): number {
+  return (realtimeSubscribed ? GROUP_POLL_SUBSCRIBED_INTERVAL_MS : GROUP_POLL_INTERVAL_MS) * scale;
 }
 
 /**
@@ -101,6 +104,7 @@ interface UseGroupStateResult {
   refresh: (reason?: GroupReloadReason) => Promise<boolean>;
   /** Read durable local writes without waiting for a remote refresh. */
   refreshLocalSnapshot: () => Promise<boolean>;
+  applyRecoverySnapshot: (recovery: GroupRecoverySnapshot) => Promise<boolean>;
   /** Where the current state was loaded from (OTA-04 local-first). */
   dataSource: GroupStateDataSource;
   /** Snapshot freshness for offline / stale banners. */
@@ -133,6 +137,8 @@ function useGroupStateOwner(
   options: UseGroupStateOptions = {},
 ) {
   const { myUserId = null } = options;
+  const highAccuracyRef = useRef(options.highAccuracy === true);
+  highAccuracyRef.current = options.highAccuracy === true;
   const [state, setState] = useState<GroupState | null>(null);
   /** Mirrors React state so recovery can merge + persist one authoritative snapshot. */
   const stateRef = useRef<GroupState | null>(null);
@@ -292,7 +298,7 @@ function useGroupStateOwner(
   // The SQLite transaction has already committed when this fires. Paint it
   // before any remote refresh; all screens share the same local projection.
 
-  const load = useCallback((reason: GroupReloadReason = 'unknown'): Promise<boolean> => {
+  const load = useCallback((reason: GroupReloadReason = 'unknown', suppliedRecovery?: GroupRecoverySnapshot): Promise<boolean> => {
     if (!groupId) return Promise.resolve(false);
     const actorId = myUserId;
     const generation = groupGenerationRef.current;
@@ -340,7 +346,7 @@ function useGroupStateOwner(
       try {
         energyObservability.increment('snapshot');
         energyObservability.event('snapshot');
-        const recovery = await requestWithDeadline(() => getGroupRecoverySnapshot(groupId));
+        const recovery = suppliedRecovery ?? await requestWithDeadline(() => getGroupRecoverySnapshot(groupId));
         if (!isCurrentRequest()) return false;
         // A local enqueue may have happened while the remote request was in
         // flight. Read its receipts before projecting this response so a
@@ -538,7 +544,7 @@ function useGroupStateOwner(
   const projectedState = useMemo(() => state
     ? projectPendingDestinations(state, openOperations) : null, [state, openOperations]);
   return {
-    groupId, myUserId, stateRef, openOperationsRef, activeRef, groupIdRef, debounceRef, locationDebounceRef, realtimeReadyRef, scheduleReloadRef, pendingPatchesRef, myUserIdRef, loadInFlightRef, loadInFlightContextRef, pendingReloadRef, pendingReloadReasonRef, groupGenerationRef, inFlightRevisionRef, latestRevisionRef, identityLeaseRef, applyLocalSnapshot, refreshOpenOperations, isOlderRevision, loadRef, setState, setLoading, setDataSource, setOpenOperations, setSnapshotFreshness, setEmptyLocalSnapshot, setError, setLoadError, setRefreshing, setAppState, appState, memberIdsKey,
+    highAccuracyRef, groupId, myUserId, stateRef, openOperationsRef, activeRef, groupIdRef, debounceRef, locationDebounceRef, realtimeReadyRef, scheduleReloadRef, pendingPatchesRef, myUserIdRef, loadInFlightRef, loadInFlightContextRef, pendingReloadRef, pendingReloadReasonRef, groupGenerationRef, inFlightRevisionRef, latestRevisionRef, identityLeaseRef, applyLocalSnapshot, refreshOpenOperations, isOlderRevision, loadRef, setState, setLoading, setDataSource, setOpenOperations, setSnapshotFreshness, setEmptyLocalSnapshot, setError, setLoadError, setRefreshing, setAppState, appState, memberIdsKey,
     seedState: state,
     snapshot: {
       state: projectedState,
@@ -549,6 +555,7 @@ function useGroupStateOwner(
       refreshing,
       refresh,
       refreshLocalSnapshot,
+      applyRecoverySnapshot: (recovery: GroupRecoverySnapshot) => load('poll_manual_refresh', recovery),
       dataSource,
     snapshotFreshness,
       emptyLocalSnapshot,
@@ -621,7 +628,11 @@ function GroupOutboxProjection({ owner }: { owner: GroupStateOwner }) {
         if (!cancelled && !applied) void refreshOpenOperations(groupId);
       });
     });
-    return () => { cancelled = true; unsubscribe(); };
+    const unsubscribeSnapshots = subscribeGroupSyncSnapshots((actorId, recovery) => {
+      if (!cancelled && actorId === owner.myUserIdRef.current && recovery.state.group.id === groupId
+        && !owner.loadInFlightRef.current) void owner.loadRef.current('itinerary_mutation', recovery);
+    });
+    return () => { cancelled = true; unsubscribe(); unsubscribeSnapshots(); };
 
   });
   return null;
@@ -750,7 +761,7 @@ function GroupForegroundRealtime({ owner }: { owner: GroupStateOwner }) {
     const schedulePoll = () => {
       clearTimeout(pollTimer);
       if (stopped) return;
-      const delay = groupPollIntervalMs(realtimeReadyRef.current);
+      const delay = groupPollIntervalMs(realtimeReadyRef.current, syncTimingScale(owner.highAccuracyRef.current, owner.stateRef.current?.group.journeyStatus === 'going' ? 'journey' : 'allDay'));
       pollDueAt = Date.now() + delay;
       pollTimer = setTimeout(async () => {
         pollDueAt = Infinity;
@@ -765,7 +776,7 @@ function GroupForegroundRealtime({ owner }: { owner: GroupStateOwner }) {
     const setRealtimeReady = (ready: boolean) => {
       if (realtimeReadyRef.current === ready) return;
       realtimeReadyRef.current = ready;
-      if (ready || pollDueAt > Date.now() + groupPollIntervalMs(false)) schedulePoll();
+      if (ready || pollDueAt > Date.now() + groupPollIntervalMs(false, syncTimingScale(owner.highAccuracyRef.current, owner.stateRef.current?.group.journeyStatus === 'going' ? 'journey' : 'allDay'))) schedulePoll();
     };
 
     const filter = `group_id=eq.${groupId}`;

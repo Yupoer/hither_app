@@ -1,3 +1,4 @@
+jest.mock('../state/groupSync', () => ({ subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
 import React from 'react';
 import type { GroupState } from '../types';
 
@@ -737,7 +738,7 @@ describe('useGroupState recovery snapshot race', () => {
     expect(api.error).toBe('not_member');
     await act(async () => root.unmount());
   });
-  it('keeps the live roster on a failed read and repairs missed events on the next 30-second poll', async () => {
+  it('keeps the live roster on a failed read and repairs missed events on the next 60-second idle poll', async () => {
     const first = state('live');
     mockRecovery.mockResolvedValue(snapshot(first, '2026-09-29T00:00:01Z'));
     let api!: ReturnType<typeof useGroupState>;
@@ -754,7 +755,7 @@ describe('useGroupState recovery snapshot race', () => {
     expect(api.dataSource).toBe('local_cache');
     expect(api.state?.group.name).toBe('live');
     mockRecovery.mockResolvedValue(snapshot(state('repaired'), '2026-09-29T00:00:02Z'));
-    await act(async () => { jest.advanceTimersByTime(30_000); });
+    await act(async () => { jest.advanceTimersByTime(60_000); });
     expect(api.state?.group.name).toBe('repaired');
     await act(async () => root.unmount());
   });

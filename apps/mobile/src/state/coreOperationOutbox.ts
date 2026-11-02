@@ -839,6 +839,7 @@ export function createCoreOperationOutbox(
   now: () => number = Date.now,
   idFactory: () => string = () => Crypto.randomUUID(),
   actorGuard?: CoreActorGuard,
+  timingScale: () => number = () => 1,
 ) {
   // Production uses one SQLite transaction for the snapshot and outbox. Link
   // the memory doubles too, so rollback tests cover the same boundary,
@@ -1949,7 +1950,9 @@ export function createCoreOperationOutbox(
       });
     },
 
-    flush(maxEntries = MAX_BATCH): Promise<CoreOutboxFlushResult> {
+    flush(maxEntries = MAX_BATCH, groupId?: string, submitBatch?: (
+      operations: CoreOperation[],
+    ) => Promise<Map<string, ApplyCoreOperationResult | 'retry' | 'not_submitted'>>): Promise<CoreOutboxFlushResult> {
       return runTransport(async () => {
         await initialize();
         const current = now();
@@ -2020,11 +2023,40 @@ export function createCoreOperationOutbox(
             Boolean(operation.actorId && operation.actorId !== actor),
           );
           due = dueCandidates
-            .filter((operation) => !operation.actorId || operation.actorId === actor)
+            .filter((operation) => (!operation.actorId || operation.actorId === actor)
+              && (!groupId || operation.groupId === groupId))
             .slice(0, Math.max(0, maxEntries));
         }
 
-        for (const operation of due) {
+        if (groupId) due = due.filter(operation => operation.groupId === groupId);
+        if (submitBatch && currentActorGuard) due = due.filter(operation => operation.actorId === visibleActor);
+        if (submitBatch && due.length) {
+          const head = due[0];
+          const prefix: CoreOperation[] = [];
+          const selected = new Set<string>();
+          const all = (await outboxDb.listAll()).filter(row => row.groupId === head.groupId
+            && row.actorId === head.actorId).sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)
+              || a.createdAt - b.createdAt);
+          for (const row of all) {
+            if (row.status === 'acked' || row.status === 'conflict') continue;
+            if (prefix.length >= Math.min(20, maxEntries)
+              || (row.status !== 'inflight' && row.nextAttemptAt > current)
+              || all.some(prior => dependsOn(row, prior) && prior.status !== 'acked' && !selected.has(prior.id))) break;
+            prefix.push(row); selected.add(row.id);
+          }
+          due = prefix;
+        }
+        let batchResults: Map<string, ApplyCoreOperationResult | 'retry' | 'not_submitted'> | undefined;
+        let batchError: unknown;
+        if (submitBatch && due.length) {
+          try { batchResults = await submitBatch(due); } catch (error) { batchError = error; }
+        }
+        for (const selectedOperation of due) {
+          // Earlier receipts may atomically rewrite this durable descendant's aliases.
+          const operation = await outboxDb.get(selectedOperation.id);
+          if (!operation) continue;
+          const batchResult = batchResults?.get(operation.id);
+          if (submitBatch && !batchError && (batchResult === undefined || batchResult === 'not_submitted')) break;
           if (operation.actorId && currentActorGuard) {
             const actor = await currentActorGuard();
             if (!actor) {
@@ -2048,7 +2080,10 @@ export function createCoreOperationOutbox(
           await runCoreDataWriteLock(() => outboxDb.update(inflight));
 
           try {
-            const result = await submit(operation);
+            if (batchError) throw batchError;
+            if (batchResult === 'retry') throw new Error('group_sync_retry');
+            const result = submitBatch ? batchResult : await submit(operation);
+            if (!result || typeof result === 'string') break;
             if (operation.actorId && currentActorGuard) {
               const actorAfterSubmit = await currentActorGuard();
               if (actorAfterSubmit !== operation.actorId) {
@@ -2082,6 +2117,7 @@ export function createCoreOperationOutbox(
             if (kind === 'sent') sent += 1;
             else if (kind === 'duplicate') duplicates += 1;
             else conflicts += 1;
+            if (submitBatch && kind === 'conflict') break;
           } catch (error) {
             const classification = classifyOperationError(error, { mutation: true });
             if (isAuthenticationError(error) || classification.requiresSession) {
@@ -2111,19 +2147,21 @@ export function createCoreOperationOutbox(
                 status: 'conflict', operationId: operation.id, conflict,
               }, now());
               conflicts += 1;
+              if (submitBatch) break;
               continue;
             }
             await runCoreDataWriteLock(() => outboxDb.update({
               ...operation,
               status: 'failed',
               attempts,
-              nextAttemptAt: now() + backoffMs(attempts),
+              nextAttemptAt: now() + backoffMs(attempts) * timingScale(),
               lastError: error instanceof Error ? error.message : String(error),
               inflightStartedAt: undefined,
               updatedAt: now(),
             }));
             retryScheduled += 1;
             notifyCoreOutboxChanged();
+            if (submitBatch) break;
           }
         }
 
@@ -2137,12 +2175,19 @@ export function createCoreOperationOutbox(
             ? await outboxDb.countPending()
             : (await outboxDb.listAll()).filter((row) =>
               (row.status === 'pending' || row.status === 'failed' || row.status === 'inflight')
-              && (!row.actorId || row.actorId === visibleActor),
+              && (!row.actorId || row.actorId === visibleActor) && (!groupId || row.groupId === groupId),
             ).length,
           retryScheduled,
           paused,
         };
       });
+    },
+
+    async pendingGroupIds(): Promise<string[]> {
+      await initialize();
+      const actor = currentActorGuard ? await currentActorGuard() : undefined;
+      return [...new Set((await outboxDb.listAll()).filter(row => isOpenOperation(row)
+        && (!currentActorGuard || row.actorId === actor)).map(row => row.groupId))];
     },
 
     retryFailedOperation(id: string): Promise<void> {

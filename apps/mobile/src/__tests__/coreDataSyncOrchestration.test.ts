@@ -1,3 +1,19 @@
+jest.mock('../state/groupSync', () => ({ syncQueuedGroups: async (maxEntries = 20) => {
+ const queue = require('../state/coreDataSync').getCoreOperationOutbox();
+ const aggregate = { sent: 0, duplicates: 0, conflicts: 0, remaining: 0, retryScheduled: 0 };
+ for (const groupId of await queue.pendingGroupIds()) {
+  const result = await queue.flush(maxEntries, groupId, async (operations: import('../types/coreData').CoreOperation[]) => {
+   const results = new Map();
+   for (const operation of operations) {
+    const result = await mockApplyCoreOperation(operation); results.set(operation.id, result);
+    if (result.status === 'conflict') break;
+   }
+   return results;
+  });
+  for (const key of Object.keys(aggregate) as Array<keyof typeof aggregate>) aggregate[key] += result[key];
+ }
+ return aggregate;
+} }));
 import { operationWirePayload } from '../state/itineraryRollback';
 import { retainVisibleGroupSeed } from '../state/visibleGroupSeed';
 /**
