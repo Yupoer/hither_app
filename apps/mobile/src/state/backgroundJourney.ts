@@ -1,3 +1,4 @@
+import { reportLocationSourceHealth } from '../native/locationSourceHealth';
 import { notifyJourneyApproach } from './journeyNotifications';
 import { resolveEtaSnapshot } from '../utils/liveActivityEta';
 import { AppState } from 'react-native';
@@ -28,6 +29,7 @@ import {
 import {
   createMotionState,
   locationPolicy,
+  syncTimingScale,
   reduceMotionState,
   shouldUploadSample,
   type LocationGateState,
@@ -190,6 +192,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
 
       try {
         if (error) {
+          reportLocationSourceHealth({ kind: 'interrupted', message: error instanceof Error ? error.message : String(error) });
           await diagnostics.write({
             event: 'location_callback',
             success: false,
@@ -230,6 +233,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           || latest.timestamp <= (config.lastProcessedLocationAt ?? -Infinity)
           || (latestSample && latestSample.epoch === config.trackingEpoch
             && latest.timestamp <= latestSample.timestamp)) return;
+        reportLocationSourceHealth({ kind: 'receiving', lastCapturedAt: latest.timestamp });
         const now = Date.now();
         const accuracyM = latest.coords.accuracy ?? undefined;
         const freshArrivalFix = canEvaluateSynchronizedArrival({ sampledAt: latest.timestamp,
@@ -480,7 +484,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           );
         }
 
-        if (Date.now() - lastControlSyncAt >= (config.powerMode === 'journey' ? 15_000 : 150_000)) {
+        if (Date.now() - lastControlSyncAt >= (config.powerMode === 'journey' ? 15_000 : 150_000) * syncTimingScale(Boolean(config.highAccuracy), config.powerMode ?? 'journey')) {
           void reconcileBackgroundNavigation(config.groupId, true).catch(() => undefined);
         }
 
@@ -501,7 +505,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         // Live Activity estimates have their own cadence; location-upload
         // filtering must not discard a due estimate from a fresh GPS sample.
         if (config.powerMode === 'journey' && controller.isCurrent(config) && isLocationAccessCurrent(access)
-          && (arrival.status !== previousArrival.status || now - lastCloudProgressAt >= 15_000)) {
+          && (arrival.status !== previousArrival.status || now - lastCloudProgressAt >= 15_000 * syncTimingScale(Boolean(config.highAccuracy), config.powerMode ?? 'journey'))) {
           lastCloudProgressAt = now;
           void updateLiveActivityProgress(config.groupId, config.destinationId,
             { ...progress, etaTargetAtMs: etaSnapshot?.etaTargetAtMs }, config.accentHex,
@@ -516,6 +520,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             trackingMode === 'manualHighAccuracy' ||
             (powerMode === 'journey' && Boolean(config.highAccuracy)),
           powerMode,
+          true,
         );
         motionState = reduceMotionState(motionState, coords, now, policy, accuracyM);
         const shouldUpload = shouldUploadSample(
@@ -526,6 +531,12 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           motionState.cadence,
         );
         if (!shouldUpload && arrival.status === previousArrival.status) {
+          if (await AsyncStorage.getItem('@hither/pending-location-refresh')) {
+            const { recoverPendingLocationRefreshFromSample } = await import('./backgroundLocationRefresh');
+            await recoverPendingLocationRefreshFromSample(config.groupId, {
+              timestamp: latest.timestamp, coordinates: coords, accuracy: accuracyM,
+            });
+          }
           await timeBackgroundStage(stages, 'diagnostics_write', () =>
             diagnostics.write({
               event: 'location_rejected_distance',
@@ -572,11 +583,11 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           flushLocationOutbox(),
         );
         if (controller.isCurrent(config) && isLocationAccessCurrent(access)
-          && await AsyncStorage.getItem('@hither/pending-location-refresh')) {
+          && (upload.pendingRefreshes !== undefined || await AsyncStorage.getItem('@hither/pending-location-refresh'))) {
           const { recoverPendingLocationRefreshFromSample } = await import('./backgroundLocationRefresh');
           await recoverPendingLocationRefreshFromSample(config.groupId, {
             timestamp: latest.timestamp, coordinates: coords, accuracy: accuracyM,
-          }).catch(() => undefined);
+          }, upload.pendingRefreshes).catch(() => undefined);
         }
         if (upload.retryScheduled > 0) {
           await diagnostics.write({

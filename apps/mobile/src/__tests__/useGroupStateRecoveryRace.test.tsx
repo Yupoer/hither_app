@@ -1,3 +1,4 @@
+jest.mock('../state/groupSync', () => ({ subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
 import React from 'react';
 import type { GroupState } from '../types';
 
@@ -90,6 +91,27 @@ describe('useGroupState recovery snapshot race', () => {
   afterEach(() => {
     jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  it('applies a supplied exchange after an older read without another network request or queue drain', async () => {
+    let settle!: (value: ReturnType<typeof snapshot>) => void;
+    mockRecovery.mockImplementation(() => new Promise(resolve => { settle = resolve; }));
+    let api!: ReturnType<typeof useGroupState>;
+    function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return api.lifecycle; }
+    let root!: { unmount: () => void };
+    await act(async () => { root = create(React.createElement(Harness)); });
+    try {
+      const receive = require('../state/groupSync').subscribeGroupSyncSnapshots.mock.calls[0][0] as
+        (actorId: string, recovery: ReturnType<typeof snapshot>) => void;
+      const next = snapshot(state('batched'), '2026-11-02T00:00:02Z');
+      let applied!: Promise<boolean>;
+      await act(async () => { receive('actor-a', next); applied = api.applyRecoverySnapshot(next); });
+      await act(async () => { settle(snapshot(state('older'), '2026-11-02T00:00:01Z')); });
+      await act(async () => { expect(await applied).toBe(true); });
+      expect(api.state?.group.name).toBe('batched');
+      expect(mockRecovery).toHaveBeenCalledTimes(1);
+      expect(mockFlushOutbox).not.toHaveBeenCalled();
+    } finally { await act(async () => root.unmount()); }
   });
 
   it('exposes the real cold-start error and recovers without a local snapshot', async () => {
@@ -477,6 +499,50 @@ describe('useGroupState recovery snapshot race', () => {
     };
   }
 
+  it.each(['settled', 'pending-itinerary', 'older-itinerary'] as const)(
+    'merges the final archive recovery independently of equal-version gathering protection (%s)', async mode => {
+      const second = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+      const intermediate: GroupState = { ...withDestinations('Archive after first delete', [second]),
+        group: { ...state('Archive after first delete').group, journeyStatus: 'paused' as const } };
+      const empty = { ...intermediate, destinations: [], nextDestination: undefined };
+      let durable = { state: intermediate, source: 'remote', itineraryVersion: 1,
+        activeGathering: { groupId: 'group-1', journeyPhase: 'staying', activeDestinationId: null,
+          pointStatuses: {}, phaseChangedAt: 1_000, entityVersion: 1 } };
+      mockReadSnapshot.mockImplementation(async () => durable);
+      mockHydrateVersions.mockImplementation(async (_id: string, merged: GroupState) => {
+        durable = { ...durable, state: merged };
+      });
+      mockRecovery.mockResolvedValue({ ...snapshot(intermediate, '2026-10-22T00:00:01Z'),
+        entityVersions: { 'active_gathering:group-1': 1, 'itinerary:group-1': 1 } });
+      let api!: ReturnType<typeof useGroupState>;
+      function Harness() { api = useGroupState('group-1', { myUserId: 'actor-a' }); return api.lifecycle; }
+      let root!: { unmount: () => void };
+      await act(async () => { root = create(React.createElement(Harness)); });
+      try {
+        expect(api.state?.destinations.map(destination => destination.id)).toEqual([second]);
+        durable = { ...durable, state: empty, itineraryVersion: 2,
+          activeGathering: { ...durable.activeGathering, entityVersion: 2 } };
+        if (mode === 'pending-itinerary') mockListOperations.mockResolvedValue([{
+          id: 'later-edit', actorId: 'actor-a', groupId: 'group-1', entityType: 'itinerary', entityId: 'group-1',
+          entityVersion: 2, operationType: 'edit_destination', payload: { destinationId: second, patch: { title: 'Later edit' } },
+          sequence: 5, dependencyIds: [], createdAt: 1_000, updatedAt: 1_000, status: 'pending', attempts: 0,
+          nextAttemptAt: 1_000, conflictResult: null,
+        }]);
+        const finalRecovery = { ...snapshot(empty, '2026-10-22T00:00:01Z'),
+          entityVersions: { 'active_gathering:group-1': 2, 'itinerary:group-1': mode === 'older-itinerary' ? 1 : 2 } };
+        await act(async () => { expect(await api.applyRecoverySnapshot(finalRecovery)).toBe(true); });
+        const expected = mode === 'settled' ? [] : [second];
+        expect(api.state?.destinations.map(destination => destination.id)).toEqual(expected);
+        expect(durable.state.destinations.map(destination => destination.id)).toEqual(expected);
+        expect(api.state?.group.journeyStatus).toBe('paused');
+        expect(mockHydrateVersions).toHaveBeenLastCalledWith('group-1', expect.objectContaining({
+          destinations: expected.map(id => expect.objectContaining({ id })),
+        }), finalRecovery.entityVersions);
+        expect(api.openOperations.map(operation => operation.id)).toEqual(mode === 'pending-itinerary' ? ['later-edit'] : []);
+      } finally { await act(async () => root.unmount()); }
+    },
+  );
+
   it('persists fenced membership merge and does not schedule poll undo (#167)', async () => {
     const nonempty = withDestinations('local cards', ['a', 'b']);
     const emptyMembers = {
@@ -737,7 +803,7 @@ describe('useGroupState recovery snapshot race', () => {
     expect(api.error).toBe('not_member');
     await act(async () => root.unmount());
   });
-  it('keeps the live roster on a failed read and repairs missed events on the next 30-second poll', async () => {
+  it('keeps the live roster on a failed read and repairs missed events on the next 60-second idle poll', async () => {
     const first = state('live');
     mockRecovery.mockResolvedValue(snapshot(first, '2026-09-29T00:00:01Z'));
     let api!: ReturnType<typeof useGroupState>;
@@ -754,7 +820,7 @@ describe('useGroupState recovery snapshot race', () => {
     expect(api.dataSource).toBe('local_cache');
     expect(api.state?.group.name).toBe('live');
     mockRecovery.mockResolvedValue(snapshot(state('repaired'), '2026-09-29T00:00:02Z'));
-    await act(async () => { jest.advanceTimersByTime(30_000); });
+    await act(async () => { jest.advanceTimersByTime(60_000); });
     expect(api.state?.group.name).toBe('repaired');
     await act(async () => root.unmount());
   });

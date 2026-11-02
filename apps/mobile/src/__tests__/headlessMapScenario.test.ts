@@ -94,15 +94,16 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await run(device, 'map.place.center');
       await run(device, 'map.place.cancel');
       expect((await device.observe()).durable.snapshot.destinations).toHaveLength(1);
-      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'apply_core_operation_v3')).toEqual([]);
-      world.hold('apply_core_operation_v3');
+      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group')
+        .flatMap((call: { args: { p_core_operations: unknown[] } }) => call.args.p_core_operations)).toEqual([]);
+      world.hold('sync_group', { matches: (operation: { args: { p_core_operations: unknown[] } }) => operation.args.p_core_operations.length > 0 });
       await drop(device, '  Local pool stop  ');
       await run(device, 'map.place.pool');
       const local = await world.waitFor(device, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'add_destination') && value.durable.snapshot.destinations.some(row => row.title === 'Local pool stop'), 'real Map durable add');
       expect(local.durable.snapshot.destinations.find((row: { title: string }) => row.title === 'Local pool stop')).toMatchObject({ day: null });
       expect(has(local, 'confirm-place-name')).toBe(false);
       expect(world.backend.itinerary).toHaveLength(1);
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       expect(world.backend.itinerary.filter((row: { title: string }) => row.title === 'Local pool stop')).toHaveLength(1);
       expect((await device.observe()).durable.operations).toEqual([]);
       const addedId = world.backend.itinerary.find((row: { title: string }) => row.title === 'Local pool stop').id;
@@ -432,8 +433,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
         points: [{ latitude: 25.03, longitude: 121.53 }, { latitude: 25.04, longitude: 121.53 }] } } });
       const sample = async (latitude: number) => {
         await world.advance(1000);
-        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
-        else await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
         await world.settle();
       };
       await sample(25.03);
@@ -550,17 +550,22 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     const world = new World();
     try {
       const device = await map(world);
-      world.hold('ingest_location_batch', { phase: 'delivery' });
+      world.hold('sync_group', { deviceId: 'map', phase: 'delivery',
+        matches: (operation: { args: { p_location_events: unknown[] } }) => operation.args.p_location_events.length > 0 });
       await startTrip(world, device);
       const active = await world.waitFor(device, (value: MapObservation) =>
-        [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active')
+        value.durable.operations.some(row => row.operationType === 'start_gathering')
           && field(value, `gather-nav-${DESTINATION}`)?.label === '結束導航',
-      'Start accepted before location upload ACK');
+      'fresh Start is durable and actionable before location upload ACK');
       expect(active.external.alertDetails).toEqual([]);
-      expect(world.held.some((item: { operation: { name: string } }) =>
-        item.operation.name === 'ingest_location_batch')).toBe(true);
+      expect(world.held.some((item: { operation: { name: string; args: { p_location_events: unknown[] } } }) =>
+        item.operation.name === 'sync_group' && item.operation.args.p_location_events.length > 0)).toBe(true);
+      expect(active.durable.locations.length).toBeGreaterThan(0);
+      await world.release('sync_group');
+      await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: { status: string }) =>
+        session.status === 'active'), 'server Start converges after shared ACK');
     } finally {
-      await world.release('ingest_location_batch');
+      await world.release('sync_group');
       await world.close();
     }
   });
@@ -593,8 +598,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       if (role === 'member') {
         await world.advance(1000);
-        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-        else await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
         const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')), 'member automatic arrival reflected');
         expect(field(arrived, `gather-nav-${DESTINATION}`)?.label).toBe('前往中');
         expect(field(arrived, `gather-nav-${DESTINATION}`)?.disabled).toBe(true);
@@ -622,7 +626,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     const world = new World();
     try {
       const device = await map(world);
-      world.hold('apply_core_operation_v3', { phase: 'delivery' });
+      world.hold('sync_group', { phase: 'delivery', matches: (operation: { args: { p_core_operations: unknown[] } }) => operation.args.p_core_operations.length > 0 });
       await startTrip(world, device);
       await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 1, 'durable Start before ACK');
       await run(device, 'map.journey.command', { destinationId: DESTINATION });
@@ -630,7 +634,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(ended.durable.operations.map((row: { operationType: string }) => row.operationType)).toEqual(['start_gathering', 'end_gathering']);
       expect(ended.durable.operations[1].dependencyIds).toContain(ended.durable.operations[0].id);
       expect(field(ended, `gather-nav-${DESTINATION}`)?.label).toBe('開始');
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       await world.advance(300);
       await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 0, 'terminal intents accepted');
       expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({ status: 'cancelled' })]);
@@ -690,14 +694,13 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const session = [...world.backend.sessions.values()][0];
       const sample = async (latitude: number, accuracy: number) => {
         await world.advance(1000);
-        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy, timestamp: world.now });
-        else await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy, timestamp: world.now });
+        await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy, timestamp: world.now });
         await world.settle();
       };
       await sample(25.04, 200);
       expect(world.backend.tables.destination_arrivals).toEqual([]);
       expect((await device.observe()).durable.operations.filter((row: { operationType: string }) => row.operationType === 'record_arrival')).toEqual([]);
-      world.hold('apply_core_operation_v3', { deviceId: 'map', phase: 'execution' });
+      world.hold('sync_group', { deviceId: 'map', phase: 'execution', matches: (operation: { args: { p_core_operations: unknown[] } }) => operation.args.p_core_operations.length > 0 });
       await sample(25.04, 5);
       const pending = await world.waitFor(device, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'record_arrival') && value.presentation.hosts.some(host => host.label?.endsWith('1/2')), 'automatic arrival projects count before ACK');
       expect(pending.durable.operations.find((row: { operationType: string }) => row.operationType === 'record_arrival')?.payload).toMatchObject({ actorId: LEADER, source: 'automatic', navigationSessionId: session.id, arrivedAt: new Date(world.now).toISOString() });
@@ -705,7 +708,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(pending.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
       expect(field(pending, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
       expect(field(pending, `gather-complete-${DESTINATION}`)?.label).toBe('完成行程');
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       await world.waitFor(device, (value: MapObservation) => value.durable.operations.length === 0 && world.backend.tables.destination_arrivals.length === 1, 'automatic arrival accepted');
       const arrival = { ...world.backend.tables.destination_arrivals[0] };
       expect(arrival).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, source: 'automatic' });
@@ -728,8 +731,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const session = [...world.backend.sessions.values()][0];
       await world.advance(1000);
       if (platform === 'ios') await world.waitFor(device, (value: MapObservation) => has(value, 'group-map-native'), 'leader native map before automatic arrival');
-      if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-      else await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
       const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')) && world.backend.tables.destination_arrivals.length === 1, 'automatic personal arrival reflected');
       expect(world.backend.tables.destination_arrivals[0]).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, arrived_at: new Date(world.now).toISOString(), source: 'automatic' });
       expect(field(arrived, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
@@ -741,8 +743,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect((await peer.observe()).presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
       await world.advance(1000);
       if (platform === 'ios') await world.waitFor(peer, (value: MapObservation) => has(value, 'group-map-native'), 'member native map before automatic arrival');
-      if (platform === 'ios') await run(peer, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-      else await peer.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      await peer.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
       await world.waitFor(peer, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'last roster member automatic arrival accepted');
       expect(world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER)).toMatchObject({ navigation_session_id: session.id, source: 'automatic' });
       await world.advance(2500);
@@ -769,8 +770,11 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await device.input({ kind: 'alert', index: 1 });
       await world.settle();
       expect(world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER)).toMatchObject({ arrived_at: null, navigation_session_id: session.id });
-      const correction = world.backend.trace.find((call: { args?: { p_operation_type: string } }) => call.args?.p_operation_type === 'leader_correct_arrival');
-      expect(correction.args.p_payload).toMatchObject({ actorId: LEADER, targetUserId: PEER, sessionId: session.id, arrivedAt: null, source: 'leader_correction' });
+      const corrections = world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group')
+        .flatMap((call: { args: { p_core_operations: { operation_type: string; payload: unknown }[] } }) => call.args.p_core_operations)
+        .filter((operation: { operation_type: string }) => operation.operation_type === 'leader_correct_arrival');
+      expect(corrections).toHaveLength(2);
+      expect(corrections[1].payload).toMatchObject({ actorId: LEADER, targetUserId: PEER, sessionId: session.id, arrivedAt: null, source: 'leader_correction' });
     } finally { await world.close(); }
   });
 
@@ -808,7 +812,8 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary[0].meet_at).toBeTruthy();
       expect(world.backend.itinerary[0].meet_red_minutes).toBe(5);
       expect(world.backend.trace.some((call: { name: string; steps: unknown[][] }) => call.name === 'itinerary_items' && call.steps.some(step => step[0] === 'update'))).toBe(true);
-      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'apply_core_operation_v3')).toEqual([]);
+      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group')
+        .flatMap((call: { args: { p_core_operations: unknown[] } }) => call.args.p_core_operations)).toEqual([]);
       await run(device, 'map.meet.open', { destinationId: DESTINATION });
       await run(device, 'map.meet.clear');
       await world.settle();

@@ -56,7 +56,7 @@ describe('syncAuthority', () => {
       previous,
       remote,
       null,
-      { preserveLocalGathering: true },
+      { preserveLocalGathering: true, preserveLocalItinerary: true },
     );
     expect(merged.destinations).toHaveLength(1);
     expect(merged.group.journeyStatus).toBe('going');

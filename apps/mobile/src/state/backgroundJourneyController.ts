@@ -68,7 +68,7 @@ export interface BackgroundJourneyConfig {
   personalArrivalCorrectionAtMs?: number;
   /**
    * Only meaningful for `powerMode: 'journey'`.
-   * All-day presence always uses the Low-accuracy budget profile.
+   * All-day presence always uses the ordinary Balanced profile.
    */
   highAccuracy?: boolean;
   /**
@@ -162,43 +162,15 @@ export function backgroundLocationOptions(
     mode === 'passiveBackground' ? 'allDay' : 'journey';
   // Never allow highAccuracy to override allDay (budget).
   const precise = mode === 'navigationMax' || mode === 'manualHighAccuracy';
-  const policy = locationPolicy(precise, powerProfile);
+  const policy = locationPolicy(precise, powerProfile, true);
 
-  // Expo Accuracy: Lowest=1 Low=2 Balanced=3 High=4 Highest=5 BestForNavigation=6
-  // Walking/team navigation must not default to BestForNavigation (6).
-  const accuracyCode = mode === 'navigationMax' || mode === 'manualHighAccuracy'
-    ? 5
-    : mode === 'teamNavigation'
-      ? 4
-      : policy.accuracy === 'high'
-        ? 4
-        : policy.accuracy === 'low'
-          ? 2
-          : 3;
-
-  const deferredInterval = powerProfile === 'journey' ? 0 : mode === 'passiveBackground'
-    ? 150_000
-    : mode === 'navigationMax'
-      ? 15_000
-      : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
-        ? 30_000
-        : highAccuracy
-          ? 20_000
-          : 60_000;
-  const deferredDistance = powerProfile === 'journey' ? 0 : mode === 'passiveBackground'
-    ? 150
-    : mode === 'navigationMax'
-      ? 20
-      : mode === 'teamNavigation' || mode === 'manualHighAccuracy'
-        ? 30
-        : highAccuracy
-          ? 30
-          : 60;
+  const accuracyCode = policy.accuracy === 'high' ? 4 : 3;
+  const deferredInterval = powerProfile === 'journey' ? 0 : 600_000;
+  const deferredDistance = powerProfile === 'journey' ? 0 : 300;
 
   return {
     accuracy: accuracyCode,
-    // Fitness=3 for journey navigation; Other=1 for passive presence.
-    activityType: powerProfile === 'journey' ? 3 : 1,
+    activityType: 1,
     distanceInterval: policy.distanceInterval,
     timeInterval: policy.timeInterval,
     deferredUpdatesDistance: deferredDistance,

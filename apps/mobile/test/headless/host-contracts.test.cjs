@@ -201,6 +201,6 @@ test('view observations retain committed map inputs and each rendered member tim
     assert.deepEqual(host.observeViews(root).mapMembers, [next]);
     assert.equal(host.observeViews(root).flockRows[0].lastUpdated, next.capturedAt);
     await act(async () => root.update(React.createElement(rn.View)));
-    assert.deepEqual(host.observeViews(root), { mapMembers: null, flockRows: [] });
+    assert.deepEqual(host.observeViews(root), { mapMembers: null, mapRoutePoints: null, flockRows: [] });
   } finally { await act(async () => root.unmount()); }
 });

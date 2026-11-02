@@ -886,3 +886,63 @@ it('rolls back a terminal transport rejection using local history while preservi
   expect(projectPendingDestinations(groupStateFromCoreSnapshot(recreated), await queue.getPendingItineraryOperations('group-a'))
     .destinations.map(item => item.id)).toEqual(['independent', 'rejected']);
 });
+
+describe('mixed exchange ordered durable settlement', () => {
+  it('sends dependent prefix once, rereads alias rewrites, and leaves omitted suffix untouched', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    const legacy = jest.fn();
+    const queue = makeQueue(db, legacy);
+    const a = await queue.enqueueMutation({ ...mutation('g'), operationType: 'add_destination', payload: { destinationId: 'local' } });
+    const b = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'local', patch: { title: 'Edit' } } });
+    const c = await queue.enqueueMutation({ ...mutation('g'), entityType: 'active_gathering', operationType: 'start_gathering', payload: { activeDestinationId: 'local' } });
+    const original = await queue.getOperation(c.id);
+    const send = jest.fn(async (ops: CoreOperation[]) => new Map([
+      [ops[0].id, { status: 'accepted' as const, operationId: ops[0].id, entityVersion: 1, effects: { destinationIdAliases: { local: 'canonical' } } }],
+      [ops[1].id, accepted(ops[1])],
+    ]));
+    const first = await queue.flush(20, 'g', send);
+    expect(first.sent).toBe(2);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0].map(op => op.id)).toEqual([a.id, b.id, c.id]);
+    expect(legacy).not.toHaveBeenCalled();
+    expect(await queue.getOperation(c.id)).toMatchObject({ id: c.id, status: 'pending', attempts: 0,
+      nextAttemptAt: original?.nextAttemptAt, dependencyIds: original?.dependencyIds,
+      payload: { activeDestinationId: 'canonical' } });
+    const replay = jest.fn(async (ops: CoreOperation[]) => new Map(ops.map(op => [op.id, accepted(op)])));
+    await queue.flush(20, 'g', replay);
+    expect(replay.mock.calls[0][0][0]).toMatchObject({ id: c.id, payload: { activeDestinationId: 'canonical' } });
+  });
+
+  it('keeps the original IDs after a lost reply and backs off only the attempted head', async () => {
+    const db = new MemoryCoreOperationOutboxDatabase();
+    let clock = 1_000;
+    const queue = makeQueue(db, jest.fn(), { value: 'actor-a' }, () => clock);
+    const a = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'a', patch: {} } });
+    const b = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'b', patch: {} } });
+    const originalB = await queue.getOperation(b.id);
+    await queue.flush(20, 'g', async () => { throw new Error('lost reply'); });
+    expect(await queue.getOperation(a.id)).toMatchObject({ id: a.id, attempts: 1, status: 'failed' });
+    expect(await queue.getOperation(b.id)).toEqual(originalB);
+    clock = 1_000_000;
+    const replay = jest.fn(async (ops: CoreOperation[]) => new Map(ops.map(op => [op.id, { operationId: op.id, entityVersion: op.entityVersion + 1, status: 'duplicate' as const }])));
+    await queue.flush(20, 'g', replay);
+    expect(replay.mock.calls[0][0].map(op => op.id)).toEqual([a.id, b.id]);
+    expect(await queue.getOperation(a.id)).toBeNull();
+    expect(await queue.getOperation(b.id)).toBeNull();
+  });
+});
+
+it('pauses an original actor lane on a lazy-auth mismatch without mutating its head or suffix', async () => {
+  const db = new MemoryCoreOperationOutboxDatabase();
+  const actor = { value: 'actor-a' as string | null };
+  const queue = makeQueue(db, jest.fn(), actor);
+  const a = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'a', patch: {} } });
+  const b = await queue.enqueueMutation({ ...mutation('g'), operationType: 'edit_destination', payload: { destinationId: 'b', patch: {} } });
+  const original = [await queue.getOperation(a.id), await queue.getOperation(b.id)];
+  const result = await queue.flush(20, 'g', async () => {
+    actor.value = 'actor-b';
+    throw Object.assign(new Error('account_changed'), { code: '28000' });
+  });
+  expect(result).toMatchObject({ sent: 0, conflicts: 0, retryScheduled: 0, paused: true });
+  expect([await queue.getOperation(a.id), await queue.getOperation(b.id)]).toEqual(original);
+});

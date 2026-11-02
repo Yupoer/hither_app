@@ -1,3 +1,4 @@
+import { currentSyncTimingScale } from './syncTiming';
 import { getVisibleGroupSeed } from './visibleGroupSeed';
 import { insertFirstStop } from '../utils/firstStopInsertion';
 import { normalizeTripDepartureDate } from '../utils/tripDay';
@@ -46,6 +47,10 @@ const outbox: CoreOperationOutbox = createCoreOperationOutbox(
   sharedCoreDb,
   outboxDb,
   applyCoreOperation,
+  Date.now,
+  undefined,
+  undefined,
+  currentSyncTimingScale,
 );
 
 // Auth is deliberately injectable: the auth agent can provide the app's
@@ -135,17 +140,8 @@ export { subscribeCoreOutboxChanges };
 export async function flushCoreOperationOutbox(
   maxEntries?: number,
 ): Promise<Awaited<ReturnType<CoreOperationOutbox['flush']>>> {
-  let result = await outbox.flush(maxEntries);
-  // Each flush snapshots lane heads. Drain newly-unblocked descendants in a
-  // bounded burst; a later foreground retry handles longer queues and backoff.
-  for (let round = 0; round < 20 && result.remaining > 0 && !result.paused
-    && (result.sent + result.duplicates + result.conflicts > 0); round += 1) {
-    const next = await outbox.flush(maxEntries);
-    result = { ...next, sent: result.sent + next.sent, duplicates: result.duplicates + next.duplicates,
-      conflicts: result.conflicts + next.conflicts, retryScheduled: result.retryScheduled + next.retryScheduled };
-    if (next.sent + next.duplicates + next.conflicts === 0) break;
-  }
-  return result;
+  const { syncQueuedGroups } = await import('./groupSync');
+  return syncQueuedGroups(maxEntries);
 }
 
 export async function initializeCoreDataLayer(): Promise<void> {
@@ -652,7 +648,7 @@ export async function enqueueLeaderGatheringStart(
       subgroupId: options.subgroupId,
     });
   if (options.flushImmediately !== false) {
-    void outbox.flush().catch(() => undefined);
+    void flushCoreOperationOutbox().catch(() => undefined);
   }
   return { local, base: appliedBase, operationId: operation.id };
 }
@@ -696,7 +692,7 @@ export async function enqueueLeaderGatheringSwitch(
       subgroupId: options.subgroupId,
     });
   if (options.flushImmediately !== false) {
-    void outbox.flush().catch(() => undefined);
+    void flushCoreOperationOutbox().catch(() => undefined);
   }
   return { local, base: appliedBase, operationId: operation.id };
 }
@@ -755,7 +751,7 @@ export async function enqueueLeaderGatheringEnd(
     expectedSessionStartedAt: options.expectedSessionStartedAt,
     subgroupId: options.subgroupId,
   });
-  if (options.flushImmediately !== false) void outbox.flush().catch(() => undefined);
+  if (options.flushImmediately !== false) void flushCoreOperationOutbox().catch(() => undefined);
   return { local };
 }
 
@@ -784,7 +780,7 @@ export async function enqueuePersonalNavigationResponse(input: {
     response: input.response,
     baseVersion,
   });
-  void outbox.flush().catch(() => undefined);
+  void flushCoreOperationOutbox().catch(() => undefined);
 }
 
 /**

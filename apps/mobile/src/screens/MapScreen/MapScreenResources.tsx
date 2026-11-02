@@ -19,6 +19,7 @@ import { AppState, Keyboard, Platform } from "react-native";
 import { notifyJourneyApproach } from "../../state/journeyNotifications";
 import { shouldFireApproachNotify } from "../../utils/approachNotify";
 import { getCoreOperationOutbox, subscribeCoreOutboxChanges } from "../../state/coreDataSync";
+import { subscribeGroupSyncSnapshots } from '../../state/groupSync';
 import { energyObservability } from "../../state/energyObservability";
 import { readAddPlaceTourCompletedLocal, retryPendingAddPlaceTourAccountSync } from "../../featureTour";
 import { consumePendingLocationPermission, recoverPendingLocationRefreshes } from "../../state/backgroundLocationRefresh";
@@ -59,6 +60,7 @@ function MapArrivalOutboxJob({ input }: { input: MapArrivalOutboxInput }) {
 
 type MapForegroundNavigationInput = {
   groupId: string | null;
+  actorId: string | null;
   navigationSessionState: Pick<ReturnType<typeof useNavigationSession>, 'refresh'>;
   refresh: ReturnType<typeof useGroupState>['refresh'];
 };
@@ -66,6 +68,7 @@ type MapForegroundNavigationInput = {
 export function MapForegroundNavigationResource(input: MapForegroundNavigationInput) {
   const [previous, setPrevious] = useState({ input, generation: 0 });
   if (!Object.is(previous.input.groupId, input.groupId)
+    || !Object.is(previous.input.actorId, input.actorId)
     || !Object.is(previous.input.navigationSessionState.refresh, input.navigationSessionState.refresh)
     || !Object.is(previous.input.refresh, input.refresh)) {
     setPrevious({ input, generation: previous.generation + 1 });
@@ -74,15 +77,21 @@ export function MapForegroundNavigationResource(input: MapForegroundNavigationIn
 }
 
 function MapForegroundNavigationJob({ input }: { input: MapForegroundNavigationInput }) {
-  const { groupId, navigationSessionState, refresh } = input;
+  const { groupId, actorId, navigationSessionState, refresh } = input;
   useMountEffect(() => {
+    let active = true;
     const onAppState = (next: string) => {
       if (next !== 'active' || !groupId) return;
       void navigationSessionState.refresh().catch(() => undefined);
       void refresh().catch(() => undefined);
     };
     const sub = AppState.addEventListener('change', onAppState);
-    return () => sub.remove();
+    const unsubscribeSnapshots = subscribeGroupSyncSnapshots((replyActorId, recovery, pendingRefreshes) => {
+      if (active && actorId && replyActorId === actorId && recovery.state.group.id === groupId && pendingRefreshes.length > 0) {
+        void recoverPendingLocationRefreshes(pendingRefreshes).catch(() => undefined);
+      }
+    });
+    return () => { active = false; sub.remove(); unsubscribeSnapshots(); };
   });
   return null;
 }

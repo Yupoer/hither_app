@@ -15,9 +15,9 @@ const mockStore = {
 const mockOutbox = {
   enqueueArrival: jest.fn(),
   enqueueMutation: jest.fn(),
-  flush: jest.fn(),
 };
 const mockCoreSync = {
+  flushCoreOperationOutbox: jest.fn(),
   ensureCoreSnapshot: jest.fn(),
   getCoreDataStore: jest.fn(() => mockStore),
   getCoreOperationOutbox: jest.fn(() => mockOutbox),
@@ -74,7 +74,7 @@ beforeEach(() => {
     entityVersion: 0, syncedAt: 0, updatedAt: 0, source: 'local_cache',
   } satisfies CoreGroupSnapshot);
   mockStore.database.findSnapshotGroupForDestination.mockResolvedValue(null);
-  mockOutbox.flush.mockResolvedValue(undefined);
+  mockCoreSync.flushCoreOperationOutbox.mockResolvedValue(undefined);
   mockedSupabase.getLocalAuthActorId.mockResolvedValue('actor-1');
   mockedSupabase.auth.getSession.mockResolvedValue({
     data: { session: { access_token: 'token', user: { id: 'actor-1' } } }, error: null,
@@ -158,9 +158,9 @@ describe('GatheringWorkflowService durable and remote adapters', () => {
     await expect(setDestinationArrivalAt('d-1', 'u-1', false, null)).resolves.toBeUndefined();
     expect(mockOutbox.enqueueArrival).toHaveBeenLastCalledWith('g-1', 'd-1', expect.objectContaining({ arrived: false, arrivedAt: null }));
 
-    mockOutbox.flush.mockRejectedValueOnce(new Error('flush later'));
+    mockCoreSync.flushCoreOperationOutbox.mockRejectedValueOnce(new Error('flush later'));
     await expect(setDestinationArrival('d-1', 'u-1', true)).resolves.toBeUndefined();
-    mockOutbox.flush.mockRejectedValueOnce(new Error('flush later'));
+    mockCoreSync.flushCoreOperationOutbox.mockRejectedValueOnce(new Error('flush later'));
     await expect(setDestinationArrivalAt('d-1', 'u-1', true, '2026-09-19T00:00:00Z')).resolves.toBeUndefined();
     await Promise.resolve();
   });

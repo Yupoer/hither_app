@@ -89,3 +89,16 @@ it('expedites an in-flight wake and bounds self-notifying empty flushes', async 
   scheduler.stop();
   expect(jest.getTimerCount()).toBe(0);
 });
+
+it('scales the automatic recovery interval while retaining one in-flight worker', async () => {
+  const flush = jest.fn(async () => ({ sent: 0, duplicates: 0, remaining: 1 }));
+  const scheduler = createCoreSyncScheduler(flush, true, () => 6);
+  scheduler.wake();
+  await jest.advanceTimersByTimeAsync(3_000);
+  expect(flush).toHaveBeenCalledTimes(1);
+  await jest.advanceTimersByTimeAsync(179_999);
+  expect(flush).toHaveBeenCalledTimes(1);
+  await jest.advanceTimersByTimeAsync(1);
+  expect(flush).toHaveBeenCalledTimes(2);
+  scheduler.stop();
+});

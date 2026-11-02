@@ -1,3 +1,4 @@
+import { reportLocationSourceHealth } from './locationSourceHealth';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import { AppState } from 'react-native';
@@ -11,7 +12,8 @@ const native = requireOptionalNativeModule<{
   hasBackgroundLocation(): Promise<boolean>;
   startBackgroundLocation(options: object): Promise<boolean>;
   stopBackgroundLocation(): Promise<void>;
-  addListener(name: string, listener: (sample: NativeFix) => void): { remove(): void };
+  addListener(name: 'onBackgroundLocation', listener: (sample: NativeFix) => void): { remove(): void };
+  addListener(name: 'onBackgroundLocationError', listener: (error: { code: string }) => void): { remove(): void };
 }>('HitherLocation');
 const supported = native?.supportsBackgroundLiveUpdates?.() === true;
 export const nativeBackgroundAvailable = supported;
@@ -46,17 +48,23 @@ export function prepareNativeBackgroundLocation(enabled: boolean): Promise<boole
 }
 
 export function observeNativeBackgroundLocation(onSample: (sample: NativeFix) => void): void {
-  if (supported) native!.addListener('onBackgroundLocation', onSample);
+  if (!supported) return;
+  native!.addListener('onBackgroundLocation', sample => {
+    if (isLocationAccessEnabled()) reportLocationSourceHealth({ kind: 'receiving', lastCapturedAt: sample.timestamp });
+    onSample(sample);
+  });
+  native!.addListener('onBackgroundLocationError', error => {
+    if (isLocationAccessEnabled()) reportLocationSourceHealth({ kind: 'interrupted', message: error.code });
+  });
 }
 
 subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) void prepareNativeBackgroundLocation(false).catch(() => undefined);
 });
 
-const usesJourneyActivity = (options: object) => (options as { activityType?: number }).activityType === 3
-  && (options as { showsBackgroundLocationIndicator?: boolean }).showsBackgroundLocationIndicator === true;
+const usesJourneyActivity = (options: object) => (options as { showsBackgroundLocationIndicator?: boolean }).showsBackgroundLocationIndicator === true;
 
-/** One background owner; passive presence always uses the legacy low profile. */
+/** One background owner; passive presence uses the ordinary Balanced profile. */
 export const backgroundLocationAdapter: BackgroundLocationAdapter = {
   requestForegroundPermissionsAsync: Location.requestForegroundPermissionsAsync,
   requestBackgroundPermissionsAsync: Location.requestBackgroundPermissionsAsync,

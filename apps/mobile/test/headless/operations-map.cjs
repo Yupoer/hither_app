@@ -148,14 +148,8 @@ button('map.arrival.manage', ['MAP-ARRIVAL-04'], 'arrivalManage open onPress', '
 operation('map.arrival.correct', ['MAP-ARRIVAL-04'], screen, 'handleArrival', '{ destinationId: string, userId: string }',
   'Actual historical correction preserves closedBySessionId, actor and null timestamp correction semantics.',
   (app, { destinationId, userId }) => press(app, `history-arrival-${destinationId}-${userId}`));
-operation('map.location.native-sample', ['MAP-LOC-01', 'MAP-LOC-02', 'MAP-ARRIVAL-02', 'MAP-PROGRESS-01', 'MAP-PROGRESS-02'], component('GroupMap'), 'onUserLocationSample',
-  '{ latitude: number, longitude: number, accuracy?: number, timestamp?: number }',
-  'Actual iOS MapKit callback enters source ownership, freshness, privacy, arrival and progress guards.',
-  (app, input) => app.host.call({ kind: 'nativeEvent', testId: 'group-map-native', value: {
-    event: 'onUserLocationChange', nativeEvent: { coordinate: input },
-  } }));
 button('map.location.refresh', ['MAP-LOC-03'], 'refreshAllLocations', 'map-refresh-locations',
-  'Actual screen refresh coordinates self upload, peer request, cooldown and acknowledged result.');
+  'Actual screen reads backend independently of self GPS, requests connected peers, and separates self upload from exact peer ACK results and cooldown.');
 button('map.location.locate', ['MAP-LOC-03'], 'locateMe', 'map-locate-me',
   'Actual screen centers cached GPS then refreshes device location with actual permission and fresh-sample rules.');
 operations['map.location.locate'].sources = [...source(screen, 'locateMe'), ...source(component('MapRecenterControl'), 'map-locate-me')];
@@ -369,6 +363,15 @@ exports.operations = operations;
 exports.scenarios = require('./scenarios-map.cjs');
 exports.catalog = () => Object.entries(operations).map(([name, { run, ...metadata }]) => ({ name, ...metadata }));
 exports.lifecycle = [
+  { name: 'map.location.foreground', inventory: ['MAP-LOC-01', 'MAP-LOC-02'],
+    sources: source('src/screens/MapScreen/hooks/useDeviceLocation.ts', 'consumeForegroundSample'),
+    trigger: 'On both platforms the Expo watch delivers external GPS through privacy, freshness and upload rules; SDK errors update visible source health.',
+    scenarios: ['headlessMapControlsScenario.test.ts::actual fresh samples drive location',
+      'headlessLocationSyncScenario.test.ts::shows SDK interruption until a new fix'] },
+  { name: 'map.progress.approach', inventory: ['MAP-PROGRESS-02'],
+    sources: source(screen, 'approachNoticeLifecycle'),
+    trigger: 'Actual GPS, route results and navigation state feed approach notices and the Live Activity projection.',
+    scenarios: ['headlessMapScenario.test.ts::actual GPS directions feed card metrics'] },
   { name: 'map.arrival.foreground', inventory: ['MAP-ARRIVAL-02', 'MAP-ARRIVAL-05'],
     sources: source('src/screens/MapScreen.tsx', 'evaluateForegroundArrival'),
     trigger: 'Real GPS callbacks reject poor fixes, project and durably enqueue the automatic session arrival, then accept its receipt without an active-card manual control.',

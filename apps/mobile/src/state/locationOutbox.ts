@@ -1,3 +1,4 @@
+import { currentSyncTimingScale } from './syncTiming';
 import { AppState } from 'react-native';
 import { requireUserId } from '../api/services/_helpers';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -6,7 +7,9 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   ingestLocationBatch,
   type LocationBatchResult,
+  type PendingLocationRefresh,
 } from '../api/services/LocationService';
+import { isDemoGroup } from '../api/demo';
 import type { Coordinates } from '../types';
 import type { TrackingMode } from '../utils/locationPolicy';
 import { createSingleFlightFlush } from '../utils/locationOutboxFlush';
@@ -22,6 +25,7 @@ const MAX_BACKOFF_MS = 60_000;
 export interface LocationFlushResult {
   sent: number;
   acceptedIds?: string[];
+  pendingRefreshes?: PendingLocationRefresh[];
   nextRetryAt?: number;
   discarded: number;
   remaining: number;
@@ -66,8 +70,8 @@ export interface LocationOutboxDatabase {
     acceptedIds: string[],
     failed: Array<Pick<LocationOutboxEntry, 'id' | 'attempts' | 'nextAttemptAt'>>,
   ): Promise<void>;
-  count(): Promise<number>;
-  nextDue?(): Promise<number | null>;
+  count(groupId?: string, actorId?: string): Promise<number>;
+  nextDue?(groupId?: string, actorId?: string): Promise<number | null>;
   purge(): Promise<void>;
 }
 
@@ -125,7 +129,7 @@ function payloadOf(entry: LocationOutboxEntry): string {
 
 function eventOf(entry: LocationOutboxEntry): LocationUploadEvent {
   const { attempts: _attempts, nextAttemptAt: _next, expiresAt: _expires, ...event } = entry;
-  return event;
+  return { ...event, sequence: normalizeLocationSequence(event.sequence) };
 }
 
 function rowToEntry(row: LocationOutboxRow): LocationOutboxEntry {
@@ -212,17 +216,21 @@ export class SQLiteLocationOutboxDatabase implements LocationOutboxDatabase {
     });
   }
 
-  async count(): Promise<number> {
+  async count(groupId?: string, actorId?: string): Promise<number> {
     const database = await this.openDatabase();
     const row = await database.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) AS count FROM location_outbox',
+      groupId ? "SELECT COUNT(*) AS count FROM location_outbox WHERE group_id = ? AND json_extract(payload, '$.actorId') = ?"
+        : 'SELECT COUNT(*) AS count FROM location_outbox',
+      ...(groupId ? [groupId, actorId ?? null] : []),
     );
     return row?.count ?? 0;
   }
 
-  async nextDue(): Promise<number | null> {
+  async nextDue(groupId?: string, actorId?: string): Promise<number | null> {
     const db = await this.openDatabase();
-    const row = await db.getFirstAsync<{ due: number | null }>('SELECT MIN(next_attempt_at) AS due FROM location_outbox');
+    const row = await db.getFirstAsync<{ due: number | null }>(groupId
+      ? "SELECT MIN(next_attempt_at) AS due FROM location_outbox WHERE group_id = ? AND json_extract(payload, '$.actorId') = ?"
+      : 'SELECT MIN(next_attempt_at) AS due FROM location_outbox', ...(groupId ? [groupId, actorId ?? null] : []));
     return row?.due ?? null;
   }
 
@@ -295,6 +303,7 @@ export function createLocationOutbox(
   upload: LocationOutboxUploader,
   now: () => number = Date.now,
   legacyStorage?: LegacyStorage,
+  timingScale: () => number = () => 1,
 ) {
   let serial = Promise.resolve();
   let initialization: Promise<void> | null = null;
@@ -338,13 +347,16 @@ export function createLocationOutbox(
     return initialization;
   };
 
-  const runFlush = (maxEntries: number): Promise<LocationFlushResult> =>
+  const runFlush = (maxEntries: number, uploader = upload, groupId?: string, actorId?: string): Promise<LocationFlushResult> =>
     runSerial(async () => {
       await initialize();
       const current = now();
       await database.removeExpired(current);
-      const due = await database.getDue(current, Math.max(0, maxEntries));
-      if (due.length === 0) {
+      const candidates = await database.getDue(current, groupId ? Number.MAX_SAFE_INTEGER : Math.max(0, maxEntries));
+      const due = groupId ? candidates.filter(event => event.groupId === groupId && event.actorId === actorId)
+        .sort((a, b) => b.capturedAt - a.capturedAt || b.sequence - a.sequence)
+        .slice(0, Math.max(0, maxEntries)) : candidates;
+      if (due.length === 0 && !groupId) {
         return {
           sent: 0,
           discarded: 0,
@@ -357,7 +369,7 @@ export function createLocationOutbox(
       let threw = false;
       let result: LocationBatchResult;
       try {
-        result = await upload(due.map(eventOf));
+        result = await uploader(due.map(eventOf));
       } catch {
         threw = true;
         result = { acceptedIds: [], rejected: [] };
@@ -378,23 +390,24 @@ export function createLocationOutbox(
       );
       const resolvedIds = [...accepted, ...discarded];
       const failed = due
-        .filter((entry) => !accepted.has(entry.id) && !discarded.has(entry.id))
+        .filter((entry) => !accepted.has(entry.id) && !discarded.has(entry.id)
+          && !result.notSubmittedIds?.includes(entry.id))
         .map((entry) => {
           const attempts = entry.attempts + 1;
           // Bounded exponential backoff (cap MAX_BACKOFF_MS).
           return {
             id: entry.id,
             attempts,
-            nextAttemptAt: current + Math.min(MAX_BACKOFF_MS, 2 ** attempts * 1_000),
+            nextAttemptAt: current + Math.min(MAX_BACKOFF_MS, 2 ** attempts * 1_000) * timingScale(),
           };
         });
       await database.resolveBatch(resolvedIds, failed);
       return {
         sent: accepted.size,
         acceptedIds: [...accepted],
-        ...(database.nextDue ? { nextRetryAt: await database.nextDue() ?? undefined } : {}),
+        ...(database.nextDue ? { nextRetryAt: await database.nextDue(groupId, actorId) ?? undefined } : {}),
         discarded: discarded.size,
-        remaining: await database.count(),
+        remaining: await database.count(groupId, actorId),
         retryScheduled: failed.length,
       };
     });
@@ -426,8 +439,19 @@ export function createLocationOutbox(
       return singleFlight.flush();
     },
 
+    exchange(groupId: string, actorId: string, uploader: LocationOutboxUploader, maxEntries = MAX_BATCH): Promise<LocationFlushResult> {
+      return runFlush(Math.min(MAX_BATCH, maxEntries), uploader, groupId, actorId);
+    },
+
     count(): Promise<number> {
       return runSerial(async () => { await initialize(); return database.count(); });
+    },
+
+    pruneExpired(): Promise<void> {
+      return runSerial(async () => {
+        await initialize();
+        await database.removeExpired(now());
+      });
     },
 
     purge(): Promise<void> {
@@ -452,6 +476,7 @@ const outbox = createLocationOutbox(
   },
   Date.now,
   AsyncStorage,
+  currentSyncTimingScale,
 );
 
 export async function enqueueLocationOutbox(
@@ -468,20 +493,46 @@ export async function enqueueLocationOutbox(
 export async function flushLocationOutbox(
   maxEntries = MAX_BATCH,
 ): Promise<LocationFlushResult> {
+  await outbox.pruneExpired();
   const access = await captureLocationAccess();
   if (access === null) {
     if (!isLocationAccessPending()) await outbox.purge();
     return { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   }
   const result: LocationFlushResult = access
-    ? await outbox.flush(maxEntries)
+    ? isDemoGroup(access.groupId)
+      ? await outbox.flush(maxEntries)
+      : await (await import('./groupSync')).syncGroup({ groupId: access.groupId, maxLocationEntries: maxEntries })
+        .then(result => ({ ...result.location, pendingRefreshes: result.pendingRefreshes }))
     : { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
+  scheduleLocationOutboxRetry(result);
+  return result;
+}
+
+function scheduleLocationOutboxRetry(result: LocationFlushResult): void {
   clearTimeout(retryTimer);
   if (result.remaining > 0 && AppState.currentState === 'active') {
     retryTimer = setTimeout(() => {
       if (AppState.currentState === 'active') void flushLocationOutbox().catch(() => undefined);
     }, Math.max(1_000, (result.nextRetryAt ?? Date.now() + 2_000) - Date.now()));
   }
+}
+
+export async function exchangeLocationOutbox(groupId: string, actorId: string,
+  uploader: LocationOutboxUploader, maxEntries = MAX_BATCH): Promise<LocationFlushResult> {
+  const access = await captureLocationAccess(groupId);
+  if (!access) {
+    await uploader([]);
+    return { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
+  }
+  const result = await outbox.exchange(groupId, actorId, async events => {
+    if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
+    const result = await uploader(events);
+    if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
+    if (await requireUserId() !== actorId) throw new Error('account_changed');
+    return result;
+  }, maxEntries);
+  scheduleLocationOutboxRetry(result);
   return result;
 }
 

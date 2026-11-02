@@ -1,3 +1,8 @@
+jest.mock('../state/groupSync', () => ({ syncGroup: async ({ groupId, refresh }: { groupId: string; refresh: { requestPeers: boolean } }) => {
+  const { exchangeGroup } = jest.requireActual('../api/services/GroupSyncService');
+  const { requireUserId } = jest.requireActual('../api/services/_helpers');
+  return exchangeGroup({ groupId, actorId: await requireUserId(), operations: [], events: [], refresh });
+} }));
 import { configureDefaultAuthRecovery } from '../api/authRecovery';
 // Mock the supabase singleton so importing the client does not pull in
 // react-native-url-polyfill / AsyncStorage (native-only) or require env vars.
@@ -498,9 +503,12 @@ describe('notifications, commands & journey', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it('requests a group-wide location refresh through the server cooldown RPC', async () => {
+  it('requests a group-wide location refresh through the mixed exchange', async () => {
     mockedRpc.mockResolvedValue({
-      data: { accepted: true, retry_after_seconds: 60 },
+      data: { coreResults: [], locationResult: { acceptedIds: [], rejected: [] }, locationReceipts: [],
+        pendingRefreshes: [], refreshAcknowledgements: [], acknowledgedIds: [],
+        snapshot: { group: { id: 'g1', name: 'Team' }, daily_accommodations: [] },
+        refreshRequest: { accepted: true, retry_after_seconds: 60, recipient_ids: [] } },
       error: null,
     });
 
@@ -509,8 +517,9 @@ describe('notifications, commands & journey', () => {
       retryAfterSeconds: 60,
       recipientIds: [],
     });
-    expect(mockedRpc).toHaveBeenCalledWith('request_group_location_refresh', {
-      p_group_id: 'g1',
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+    expect(mockedRpc).toHaveBeenCalledWith('sync_group', {
+      p_group_id: 'g1', p_actor_id: 'uid', p_core_operations: [], p_location_events: [], p_refresh: { requestPeers: true },
     });
   });
 
@@ -609,7 +618,10 @@ describe('notifications, commands & journey', () => {
 
   it('returns the server cooldown when another member already requested a refresh', async () => {
     mockedRpc.mockResolvedValue({
-      data: { accepted: false, retry_after_seconds: 37 },
+      data: { coreResults: [], locationResult: { acceptedIds: [], rejected: [] }, locationReceipts: [],
+        pendingRefreshes: [], refreshAcknowledgements: [], acknowledgedIds: [],
+        snapshot: { group: { id: 'g1', name: 'Team' }, daily_accommodations: [] },
+        refreshRequest: { accepted: false, retry_after_seconds: 37, recipient_ids: [] } },
       error: null,
     });
 
@@ -617,6 +629,10 @@ describe('notifications, commands & journey', () => {
       accepted: false,
       retryAfterSeconds: 37,
       recipientIds: [],
+    });
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+    expect(mockedRpc).toHaveBeenCalledWith('sync_group', {
+      p_group_id: 'g1', p_actor_id: 'uid', p_core_operations: [], p_location_events: [], p_refresh: { requestPeers: true },
     });
   });
 

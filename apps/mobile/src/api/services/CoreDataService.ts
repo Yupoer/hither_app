@@ -186,7 +186,7 @@ export async function applyCoreOperation(
   };
 }
 
-function mapApplyRpcResult(
+export function mapApplyRpcResult(
   operation: CoreOperation,
   data: unknown,
 ): ApplyCoreOperationResult {

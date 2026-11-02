@@ -15,7 +15,7 @@ describe.each(['ios', 'android'])('actual disconnection tolerance on %s', platfo
       const queued = await world.waitFor(device, (value: { durable: { locations: { id: string }[] } }) => value.durable.locations.length === 1);
       const row = queued.durable.locations[0];
       expect(row.expires_at - row.captured_at).toBe(24 * 60 * 60 * 1000);
-      const ingestions = () => world.backend.trace.filter((call: { name: string }) => call.name === 'ingest_location_batch');
+      const ingestions = () => world.backend.trace.filter((call: { name: string; args: { p_location_events: unknown[] } }) => call.name === 'sync_group' && call.args.p_location_events.length > 0);
       const before = ingestions().length;
       for (const now of [row.expires_at - 1, row.expires_at]) {
         await device.dispose();

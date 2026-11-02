@@ -1,3 +1,4 @@
+jest.mock('../state/groupSync', () => ({ subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
 import { isOwnLocationChange } from '../utils/locationPolicy';
 
 describe('isOwnLocationChange', () => {

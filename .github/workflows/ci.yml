@@ -268,6 +268,16 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: node supabase/scripts/strip-migration-bom.mjs
 
+      - name: Scheduled navigation pre-migration upgrade regression
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/hither-scheduled-upgrade" --no-save --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+          node supabase/tests/run-security-local.mjs \
+            "$RUNNER_TEMP/hither-scheduled-upgrade/node_modules/@electric-sql/pglite/dist/index.js" \
+            --before-migration=20261102152223_scheduled_navigation_start.sql:../verification-probes/scheduled_navigation_upgrade.seed.sql \
+            ../verification-probes/scheduled_navigation_upgrade.sql
+
       - name: All Supabase SQL regressions (pgTAP)
         shell: bash
         working-directory: ${{ github.workspace }}

@@ -11,7 +11,7 @@ describe('sample metadata freshness allowance', () => {
   const presence = { locationTrackingMode: 'passiveBackground', locationSource: 'background_task',
     locationNavigationSessionId: null };
   it.each([[119_999, true, true], [120_000, true, false], [150_000, true, false],
-    [179_999, true, false], [180_000, false, false]])('preserves capture age %sms across presence and journey', (age, passiveFresh, journeyFresh) => {
+    [179_999, true, false], [180_000, true, false], [1_199_999, true, false], [1_200_000, false, false]])('preserves capture age %sms across presence and journey', (age, passiveFresh, journeyFresh) => {
     const timestamp = new Date(NOW - (age as number)).toISOString();
     expect(isLocationSampleFresh(timestamp, presence, NOW)).toBe(passiveFresh);
     expect(isLocationSampleFresh(timestamp, { ...presence, locationTrackingMode: 'navigationMax',

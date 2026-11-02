@@ -1,3 +1,4 @@
+import { locationStaleAfterMs } from './locationPolicy';
 export type LocationFreshness =
   | { unit: 'missing' | 'justNow' }
   | { unit: 'minutes' | 'hours'; value: number };
@@ -13,11 +14,11 @@ export interface LocationSampleMetadata {
 }
 
 export function locationFreshnessLimitMs(metadata: LocationSampleMetadata = {}): number {
-  // A background task with no navigation session is the 150s presence owner.
-  // Missing metadata and explicit refreshes retain the conservative 120s limit.
-  return metadata.locationTrackingMode === 'passiveBackground'
+  if (metadata.locationTrackingMode === 'passiveBackground'
     && metadata.locationSource === 'background_task'
-    && metadata.locationNavigationSessionId === null ? 180_000 : 120_000;
+    && metadata.locationNavigationSessionId === null) return locationStaleAfterMs(false, 'allDay', true);
+  if (metadata.locationTrackingMode === 'foreground') return locationStaleAfterMs(false, 'allDay');
+  return locationStaleAfterMs(false, 'journey');
 }
 
 export function isLocationSampleFresh(

@@ -1,3 +1,4 @@
+import { reportLocationSourceHealth } from './locationSourceHealth';
 import { nextBackgroundLocation } from './backgroundLocation';
 /** Device positioning boundary; consent is checked before and after asynchronous work. */
 import * as Location from 'expo-location';
@@ -123,9 +124,7 @@ function expoLocationOptions(
   const accuracy =
     policy.accuracy === 'high'
       ? Location.Accuracy.High
-      : policy.accuracy === 'low'
-        ? Location.Accuracy.Low
-        : Location.Accuracy.Balanced;
+      : Location.Accuracy.Balanced;
   return {
     accuracy,
     distanceInterval: policy.distanceInterval,
@@ -147,6 +146,7 @@ export async function getCurrentLocation(
     ? await requestPermission()
     : (await Location.getForegroundPermissionsAsync()).status === 'granted';
   if (!granted || !isLocationAccessCurrent(access)) {
+    if (!granted) reportLocationSourceHealth({ kind: 'permissionDenied' });
     return null;
   }
   if (!isForegroundLocationState(AppState.currentState)) {
@@ -163,10 +163,13 @@ export async function getCurrentLocation(
       clearTimeout(timeout);
       unsubscribe();
       sub?.remove();
-      if (!sample) { resolve(null); return; }
-      void Location.getForegroundPermissionsAsync().then(permission =>
-        resolve(permission.status === 'granted' && isLocationAccessCurrent(access) ? sample : null),
-      ).catch(() => resolve(null));
+      if (!sample) { if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message: 'location_unavailable' }); resolve(null); return; }
+      void Location.getForegroundPermissionsAsync().then(permission => {
+        const current = isLocationAccessCurrent(access);
+        if (current) reportLocationSourceHealth(permission.status === 'granted'
+          ? { kind: 'receiving', lastCapturedAt: sample.timestamp } : { kind: 'permissionDenied' });
+        resolve(permission.status === 'granted' && current ? sample : null);
+      }).catch(() => resolve(null));
     };
     const timeout = setTimeout(() => finish(null), 15_000);
     unsubscribe = subscribeLocationAccessChanges(() => finish(null));
@@ -195,12 +198,16 @@ export async function watchLocation(
     ? await requestPermission()
     : (await Location.getForegroundPermissionsAsync()).status === 'granted';
   if (!granted || !isLocationAccessCurrent(access)) {
+    if (!granted) reportLocationSourceHealth({ kind: 'permissionDenied' });
     return () => {};
   }
   let unsubscribeDebug = () => {};
   try {
     const accept = (sample: LocationSample) => {
-      if (isLocationAccessCurrent(access) && isForegroundLocationState(AppState.currentState)) onSample(sample);
+      if (isLocationAccessCurrent(access) && isForegroundLocationState(AppState.currentState)) {
+        reportLocationSourceHealth({ kind: 'receiving', lastCapturedAt: sample.timestamp });
+        onSample(sample);
+      }
     };
     unsubscribeDebug = subscribeDebugLocation(accept);
     const sub = await Location.watchPositionAsync(
@@ -208,6 +215,7 @@ export async function watchLocation(
       (position) => {
         if (!isDebugRouteActive()) accept(toSample(position));
       },
+      message => { if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message }); },
     );
     const stop = () => {
       unsubscribeDebug();
@@ -216,8 +224,9 @@ export async function watchLocation(
     if (!isLocationAccessCurrent(access)) { stop(); return () => {}; }
     const unsubscribeAccess = subscribeLocationAccessChanges(stop);
     return () => { unsubscribeAccess(); stop(); };
-  } catch {
+  } catch (error) {
     unsubscribeDebug();
+    if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message: error instanceof Error ? error.message : String(error) });
     return () => {};
   }
 }

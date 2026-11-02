@@ -1146,13 +1146,13 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       )}
 
       {members.map((m) => {
-        if (!m.coordinates) return null;
-        // Self uses native showsUserLocation — no avatar pin.
-        if (currentUserId && m.userId === currentUserId) return null;
+        if (!m.coordinates && m.userId !== currentUserId) return null;
+        const isSelf = currentUserId === m.userId;
+        if (isSelf && (showsUserLocation || !selfCoordinates)) return null;
         return (
           <MemberMarker
             key={m.userId}
-            member={m}
+            member={isSelf && selfCoordinates ? { ...m, coordinates: selfCoordinates } : m}
             appActive={allowMarkerMotion}
             reduceMotion={reduceMotion}
             accent={colors.accent}

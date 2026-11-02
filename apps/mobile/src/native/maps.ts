@@ -20,6 +20,7 @@ import { parseCoordinatePair } from '../utils/coordinateDestination';
 import { decodePlusCode, extractPlusCode } from '../utils/plusCode';
 import {
   MapsProxyError,
+  isMapsServiceCircuitOpen,
   proxyGetDirections,
   proxySearchPlaces,
 } from './googleMapsProxy';
@@ -462,6 +463,12 @@ export async function searchPlaces(
     if (options?.throwOnError) throw error;
     return [];
   }
+}
+
+export function directionsAvailable(travelMode: TravelMode): boolean {
+  const nativeMode = HitherMaps && travelMode !== 'bicycle'
+    && !(Platform.OS === 'ios' && travelMode === 'transit');
+  return Boolean(nativeMode) || !isMapsServiceCircuitOpen();
 }
 
 export async function getDirections(

@@ -1,0 +1,57 @@
+{
+  "status": "reviewed-integrated-source",
+  "syncCommit": "988a85be743da4f92de20e35ef1e951da9891b0b",
+  "assumedExternalBoundary": "exchangeGroup and the server execute as the captured actor and return actor-bound results. This model/replay does not cover lazy authenticated transport changing credentials, GroupSyncService.exchangeGroup, or SQL p_actor_id versus auth.uid() rejection before effects.",
+  "boundedRowLifetime": "All modeled/replayed GPS rows remain unexpired throughout the run. Intentional removal after local TTL expiry, including pruneExpired before authentication, is outside the ACK/deletion invariant and is verified by the owning outbox tests.",
+  "excludedRetryScheduling": "Replay fixes the external AppState boundary to background and invokes a second sync explicitly after advancing its controlled clock. scheduleLocationOutboxRetry, timer firing, foreground retry cadence and delivery liveness are outside this bound; internal queue selection/settlement algorithms remain real.",
+  "excludedOwners": {
+    "apps/mobile/src/api/services/GroupSyncService.ts": "exchangeGroup serializes the captured p_actor_id. Mocked by this replay; verify in owning adapter tests.",
+    "supabase/migrations/20261102152359_group_sync_exchange.sql": "sync_group compares p_actor_id with auth.uid() before core, GPS or refresh effects. Not executed by this replay or proved by this model; verify actual SQL mismatch cases."
+  },
+  "sources": {
+    "apps/mobile/src/state/groupSync.ts": {
+      "sha256": "2f6ba2afab462e6caf40caf7c7cda3c82c075710d2870e10e04d2278e109ace0",
+      "functions": [
+        "syncGroup",
+        "subscribeGroupSyncSnapshots"
+      ],
+      "modelActions": [
+        "Prepare",
+        "Receive",
+        "LoseReply",
+        "Publish",
+        "Finish"
+      ],
+      "contract": "One actor/group mixed exchange; final actor check gates synchronous publication of the recovery snapshot and its pendingRefreshes to the same listeners. Original mixed-transport failures propagate through both missing-reply seams after durable retry bookkeeping. Replay requires exact successful first/retry publication counts, expected first-call success or lost_reply/account_changed domain error, command forwarding and actor fencing. It does not cover command execution or GPS freshness."
+    },
+    "apps/mobile/src/state/locationOutbox.ts": {
+      "sha256": "1bc9aeb82c8b8b882c7846eeffaafc37b222f2ac0bcc96ae39d6a43e471a9ff6",
+      "functions": [
+        "createLocationOutbox.runFlush",
+        "createLocationOutbox.exchange",
+        "exchangeLocationOutbox",
+        "SQLiteLocationOutboxDatabase.resolveBatch"
+      ],
+      "modelActions": [
+        "Prepare",
+        "Settle(Gps)",
+        "SwitchAccount"
+      ],
+      "contract": "Actor/group selection, consent/access and post-upload actor fencing; accepted IDs settle together while omitted/lost results retain unexpired rows. Scoped count/nextDue use the same actor/group. Reviewed pre-auth TTL pruning and the queue-owned retry scheduling call do not change this settlement mapping. TTL pruning, retry timer execution, permanent rejects, denied consent, background refresh consumption and demo uploads remain outside this bounded target."
+    },
+    "apps/mobile/src/state/coreOperationOutbox.ts": {
+      "sha256": "c50ccf611d230109b6b88d8682fd0cfb7064453c0eed03db730aa9063f976c67",
+      "functions": [
+        "createCoreOperationOutbox.flush",
+        "createCoreOperationOutbox.handleSubmitResult"
+      ],
+      "modelActions": [
+        "Prepare",
+        "SettleCore",
+        "SwitchAccount"
+      ],
+      "contract": "Ordered same-owner core prefix; missing result stops before mutation; each accepted result settles independently after actor guard."
+    }
+  },
+  "sourceHashEncoding": "UTF-8 with CRLF normalized to LF"
+}

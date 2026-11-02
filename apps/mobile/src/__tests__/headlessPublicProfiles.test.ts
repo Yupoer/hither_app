@@ -13,13 +13,13 @@ describe.each(['ios', 'android'])('headless public profile contract on %s', plat
       await world.waitFor(leader, (value: any) => value.presentation?.session.user?.name === 'Leader', 'own profile hydration');
       await peer.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(peer, (value: any) => value.group.state?.members.find((member: any) => member.userId === LEADER)?.name === 'Leader', 'teammate identity hydration');
-      const reads = () => world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot').length;
+      const reads = () => world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group').length;
       const before = reads();
-      const recoveryReads = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot');
+      const recoveryReads = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group');
       expect(recoveryReads.length).toBeGreaterThan(0);
       for (const call of recoveryReads) {
-        expect(call.result.data.profiles).toHaveLength(2);
-        for (const profile of call.result.data.profiles) expect(Object.keys(profile).sort()).toEqual(['avatar', 'avatar_color', 'id', 'nickname']);
+        expect(call.result.data.snapshot.profiles).toHaveLength(2);
+        for (const profile of call.result.data.snapshot.profiles) expect(Object.keys(profile).sort()).toEqual(['avatar', 'avatar_color', 'id', 'nickname']);
       }
       expect(world.backend.trace.filter((call: any) => call.name === 'get_group_recovery_snapshot')).toEqual([]);
       await leader.perform('preferences.setLanguage', { args: ['en'] });
@@ -52,12 +52,12 @@ describe.each(['ios', 'android'])('headless public profile contract on %s', plat
         { code: '42501', message: 'public recovery denied' },
         { code: 'NETWORK_ERROR', message: 'Network request failed' },
       ]) {
-        world.backend.failNext({ kind: 'rpc', name: 'get_group_public_recovery_snapshot', userId: PEER }, error);
+        world.backend.failNext({ kind: 'rpc', name: 'sync_group', userId: PEER }, error);
         await peer.perform('group.refresh');
         const failed = await peer.observe();
         expect(failed.group.error).toEqual(expect.any(String));
         expect(failed.group.error.length).toBeGreaterThan(0);
-        const recoveryCalls = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot');
+        const recoveryCalls = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group');
         expect(recoveryCalls[recoveryCalls.length - 1].result.error).toEqual(error);
       }
       expect(world.backend.trace.filter((call: any) => call.name === 'get_group_recovery_snapshot')).toEqual([]);

@@ -20,21 +20,27 @@ const mockStorage = {
   }),
   removeItem: jest.fn(async () => undefined),
 };
-const mockRpc = jest.fn((name: string, input: { p_events: LocationBatchEvent[] }) => {
-  if (name !== 'ingest_location_batch') throw new Error('Unexpected RPC ' + name);
-  return { abortSignal: async () => {
-    mockReceived.push(...input.p_events);
-    return { data: { acceptedIds: input.p_events.map(event => event.id), rejected: [] }, error: null };
-  } };
+const mockRpc = jest.fn((name: string, input: { p_group_id: string; p_actor_id: string; p_core_operations: unknown[]; p_location_events: LocationBatchEvent[] }) => {
+  if (name !== 'sync_group') throw new Error('Unexpected RPC ' + name);
+  if (input.p_actor_id !== 'user-1' || input.p_core_operations.length) throw new Error('Unexpected mixed actor/core payload');
+  mockReceived.push(...input.p_location_events);
+  const result = Promise.resolve({ data: {
+    coreResults: [], locationResult: { acceptedIds: input.p_location_events.map(event => event.id), rejected: [] },
+    locationReceipts: input.p_location_events.map(event => ({ id: event.id, groupId: event.groupId,
+      capturedAt: event.capturedAt, receivedAt: new Date().toISOString() })),
+    pendingRefreshes: [], refreshAcknowledgements: [], refreshRequest: null, acknowledgedIds: [],
+    snapshot: { group: { id: input.p_group_id, name: 'Team' }, daily_accommodations: [] },
+  }, error: null });
+  return Object.assign(result, { abortSignal: () => result });
 });
 jest.mock('@react-native-async-storage/async-storage', () => mockStorage);
 jest.mock('expo-sqlite', () => ({ openDatabaseAsync: mockOpen }));
 jest.mock('expo-location', () => ({ getForegroundPermissionsAsync: async () => ({ status: 'granted' }) }));
 jest.mock('expo-crypto', () => ({ randomUUID: () => '00000000-0000-4000-8000-000000000777' }));
-jest.mock('react-native', () => ({ AppState: { currentState: 'active' } }));
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' }, AppState: { currentState: 'active' } }));
 jest.mock('../api/supabase', () => ({ supabase: {
   auth: { getSession: async () => ({ data: { session: { access_token: 'fixture-token', expires_at: 4_000_000_000, user: { id: 'user-1' } } }, error: null }) },
-  rpc: mockRpc,
+  rpc: mockRpc, getLocalAuthActorId: async () => 'user-1',
 } }));
 
 type ProbeDatabase = Pick<SQLiteDatabase, 'getAllAsync' | 'closeAsync'>;
@@ -67,7 +73,7 @@ it.each(['flush access', 'upload access'])('retains queued GPS through one faile
   try {
     privacy.setLocationAccessContext(original.groupId, true, true);
     await outbox.enqueueLocationOutbox(original);
-    mockFailReadAt = mockReadCount + (checkpoint === 'flush access' ? 1 : 2);
+    mockFailReadAt = mockReadCount + (checkpoint === 'flush access' ? 1 : 3);
     const [failedFlush] = await Promise.allSettled([outbox.flushLocationOutbox()]);
     const rowsAfterFailure = await database.getAllAsync<{ id: string; captured_at: number; payload: string }>(
       'SELECT id, captured_at, payload FROM location_outbox');
@@ -89,6 +95,11 @@ it.each(['flush access', 'upload access'])('retains queued GPS through one faile
       trackingMode: original.trackingMode, source: original.source });
     expect(recoveredFlush).toMatchObject({ sent: 1, acceptedIds: [original.id], discarded: 0, remaining: 0 });
     expect(mockReceived).toEqual([original]);
+    expect(mockRpc).toHaveBeenCalledTimes(checkpoint === 'flush access' ? 1 : 2);
+    expect(mockRpc).toHaveBeenLastCalledWith('sync_group', {
+      p_group_id: original.groupId, p_actor_id: original.actorId, p_core_operations: [],
+      p_location_events: [original], p_refresh: {},
+    });
   } finally {
     await outbox.purgeLocationOutbox();
     await database.closeAsync();

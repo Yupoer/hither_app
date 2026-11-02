@@ -233,7 +233,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     } : undefined,
     startBackgroundLocation: platform === 'ios' ? async options => {
       assert(options && typeof options === 'object' && !Array.isArray(options));
-      assert.equal(options.activityType, 3);
+      assert.equal(options.activityType, 1);
       assert.equal(options.showsBackgroundLocationIndicator, true);
       effect('nativeLocation.start', options); fail(location, 'startError');
       locationRunning = Boolean(locationSupported && locationPrepared && location.permission === 'granted' && location.startResult);

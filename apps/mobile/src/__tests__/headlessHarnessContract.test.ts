@@ -34,14 +34,41 @@ describe('headless harness contract', () => {
       const device = await world.device({ id: 'clock', userId: LEADER });
       await device.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(device, (value: { group: { dataSource: string } }) => value.group.dataSource === 'remote');
-      await world.advance(185_000);
+      await world.advance(245_000);
       const observed = await device.observe();
       expect(observed.now).toBe(world.now);
       expect(observed.group.serverTimeOffsetMs).toBe(0);
-      const snapshots = world.backend.trace.filter((call: { name: string }) => call.name === 'get_group_public_recovery_snapshot');
+      const snapshots = world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group');
       expect(snapshots.length).toBeGreaterThan(1);
       expect(snapshots.at(-1).at).toBeLessThan(world.now);
-      expect(Date.parse(snapshots.at(-1).result.data.generated_at)).toBe(snapshots.at(-1).at);
+      expect(Date.parse(snapshots.at(-1).result.data.snapshot.generated_at)).toBe(snapshots.at(-1).at);
+    } finally { await world.close(); }
+  });
+
+  it('holds only matched GPS exchange payloads while empty reads continue and releases the original event', async () => {
+    const world = new World();
+    try {
+      world.hold('sync_group', { matches: (operation: { args: { p_location_events: unknown[] } }) =>
+        operation.args.p_location_events.length > 0 });
+      const actor = await world.device({ id: 'matched', userId: LEADER });
+      const peer = await world.device({ id: 'reader', userId: PEER });
+      for (const device of [actor, peer]) await device.perform('group.observe', { groupId: GROUP_ID });
+      await world.waitFor(actor, (value: { group: { dataSource: string } }) => value.group.dataSource === 'remote', 'unmatched snapshot read');
+      await actor.gps(25.03, 121.53);
+      const pending = await world.waitFor(actor, (value: { durable: { locations: { id: string }[] } }) =>
+        value.durable.locations.length === 1 && world.held.length === 1, 'matched exchange held');
+      const eventId = pending.durable.locations[0].id;
+      expect(world.held[0].operation.args.p_location_events[0].id).toBe(eventId);
+      expect(world.backend.locationEvents.has(eventId)).toBe(false);
+      await peer.perform('group.refresh');
+      expect((await peer.observe()).group.dataSource).toBe('remote');
+      expect(world.held).toHaveLength(1);
+      await world.release('sync_group');
+      await world.advance(250);
+      await world.waitFor(peer, (value: { group: { state: { members: { userId: string; coordinates?: { latitude: number } }[] } } }) =>
+        value.group.state.members.some(member => member.userId === LEADER && member.coordinates?.latitude === 25.03), 'released original fix');
+      expect(world.backend.locationReceipts.get(eventId)).toMatchObject({ id: eventId, groupId: GROUP_ID });
+      expect((await actor.observe()).durable.locations).toEqual([]);
     } finally { await world.close(); }
   });
 

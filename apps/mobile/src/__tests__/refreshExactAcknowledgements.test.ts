@@ -68,3 +68,19 @@ it('maps the server cooldown deadline into local time without adding RPC delay',
   });
   expect(result.cooldownUntil).toBe(61_000);
 });
+
+it('folds manual backend reads, peer requests and exact receipts independently of failed self GPS', async () => {
+  const pull = jest.fn(); const requestPeers = jest.fn(); const getAcknowledgedRecipientIds = jest.fn();
+  const exchange = jest.fn(async (options: {requestPeers?:boolean;requestedAt?:string}) => ({
+    pulled: true, request: options.requestPeers ? request : null,
+    acknowledgedIds: options.requestedAt ? ['peer'] : [],
+  }));
+  const result = await refreshTeamLocations({ pull, requestPeers, getAcknowledgedRecipientIds,
+    uploadSelf: async () => false, exchange, getMembers: () => [{userId:'peer'}], cooling: false });
+  expect(result).toMatchObject({ initialPulled: true, pulled: true, selfUploaded: false,
+    acknowledgementsAvailable: true, respondedUserIds: ['peer'] });
+  expect(exchange).toHaveBeenNthCalledWith(1, {requestPeers:true});
+  expect(exchange).toHaveBeenNthCalledWith(2, {requestedAt});
+  expect(pull).not.toHaveBeenCalled(); expect(requestPeers).not.toHaveBeenCalled();
+  expect(getAcknowledgedRecipientIds).not.toHaveBeenCalled();
+});

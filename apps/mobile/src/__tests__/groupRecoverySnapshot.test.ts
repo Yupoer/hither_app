@@ -6,7 +6,6 @@ const migration = readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 const hook = readFileSync(join(__dirname, '../state/useGroupState.ts'), 'utf8');
-const service = readFileSync(join(__dirname, '../api/services/GroupService.ts'), 'utf8');
 
 describe('Ticket 2 single recovery snapshot contract', () => {
   it('returns all state families in one RPC with member authorization', () => {
@@ -31,7 +30,6 @@ describe('Ticket 2 single recovery snapshot contract', () => {
   });
 
   it('uses the single RPC and guards stale responses with revisions', () => {
-    expect(service).toContain("supabase.rpc('get_group_public_recovery_snapshot'");
     expect(hook).toContain('latestRevisionRef');
     expect(hook).toContain('isOlderRevision');
     expect(hook).not.toContain('getGroupState(groupId)');

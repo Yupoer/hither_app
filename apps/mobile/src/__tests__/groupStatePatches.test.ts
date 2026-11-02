@@ -61,12 +61,12 @@ describe('locationPatchFromRealtimePayload', () => {
 });
 
 describe('applyMemberLocationPatches', () => {
-  it('preserves actual passive metadata and applies 180s to capture age while resetting missing metadata', () => {
+  it('preserves actual passive metadata and applies twenty minutes to capture age while resetting missing metadata', () => {
     const now = Date.parse('2026-01-03T00:00:00Z');
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const payload = { eventType: 'UPDATE', new: { user_id: 'peer', latitude: 25.2, longitude: 121.2,
-        captured_at: new Date(now - 150_000).toISOString(), updated_at: new Date(now).toISOString(),
+        captured_at: new Date(now - 1_199_999).toISOString(), updated_at: new Date(now).toISOString(),
         tracking_mode: 'passiveBackground', source: 'background_task', navigation_session_id: null } };
       const patch = locationPatchFromRealtimePayload(payload);
       if (!patch || patch === 'full-reload') throw new Error('valid metadata row rejected');
@@ -79,9 +79,9 @@ describe('applyMemberLocationPatches', () => {
         locationSource: undefined, locationNavigationSessionId: undefined }])!;
       expect(unknown.members[1].locationAvailability).toBe('stale');
       expect(unknown.members[1].locationTrackingMode).toBeUndefined();
-      clock.mockReturnValue(now + 30_000);
+      clock.mockReturnValue(now + 1);
       const expired = applyMemberLocationPatches(first, [{ ...patch,
-        updatedAt: new Date(now + 30_000).toISOString() }])!;
+        updatedAt: new Date(now + 1).toISOString() }])!;
       expect(expired.members[1].locationAvailability).toBe('stale');
       expect(expired.members[1].capturedAt).toBe(payload.new.captured_at);
     } finally { clock.mockRestore(); }

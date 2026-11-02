@@ -228,7 +228,7 @@ describe('background journey lifecycle and callback gate', () => {
     await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null,
       powerMode: 'allDay', appState: 'background' })).resolves.toBe('started');
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledWith(
-      expect.any(String), expect.objectContaining({ accuracy: 2, pausesUpdatesAutomatically: false }));
+      expect.any(String), expect.objectContaining({ accuracy: 3, timeInterval: 600_000, pausesUpdatesAutomatically: false }));
     const now = Date.now();
     await handleBackgroundLocations({ data: { locations: [location(now)] } });
     expect(mockEnqueueLocation).toHaveBeenCalledWith(expect.objectContaining({
@@ -241,7 +241,7 @@ describe('background journey lifecycle and callback gate', () => {
     jest.advanceTimersByTime(60_000);
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.0001)] } });
     expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
-    jest.advanceTimersByTime(61_000);
+    jest.advanceTimersByTime(540_000);
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.0002)] } });
     expect(mockEnqueueLocation).toHaveBeenCalledTimes(2);
     expect((await loadBackgroundJourney())?.powerMode).toBe('allDay');
@@ -459,7 +459,7 @@ describe('background journey lifecycle and callback gate', () => {
     expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
   });
 
-  it('delivers background estimates at 5 seconds and cloud progress at 15 seconds', async () => {
+  it('delivers background estimates at 5 seconds and cloud progress at 90 seconds', async () => {
     await startBackgroundJourney(baseConfig);
     mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
       sharingEnabled: true, session: { id: baseConfig.navigationSessionId }, target: baseConfig.target });
@@ -478,9 +478,9 @@ describe('background journey lifecycle and callback gate', () => {
     await sample(5000);
     expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenCalledTimes(nativeCount + 1);
     expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(cloudCount);
-    await sample(14999);
+    await sample(89999);
     expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(cloudCount);
-    await sample(15000);
+    await sample(90000);
     expect(mockUpdateLiveActivity).toHaveBeenCalledTimes(cloudCount + 1);
   });
 
@@ -587,7 +587,7 @@ describe('background journey lifecycle and callback gate', () => {
     }));
 
     mockFlushLocation.mockResolvedValueOnce({ retryScheduled: 0, discarded: 1, remaining: 0 });
-    jest.advanceTimersByTime(10_000);
+    jest.advanceTimersByTime(60_000);
     await task({ data: { locations: [location(Date.now(), 25.001)] } });
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
       event: 'location_upload_discarded', errorCode: 'permanent_reject',
@@ -694,7 +694,7 @@ describe('background journey lifecycle and callback gate', () => {
     const target = { ...baseConfig.target, id: 'destination-2', coordinates: { latitude: 25.003, longitude: 121 } };
     mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
       sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target });
-    jest.advanceTimersByTime(14_999);
+    jest.advanceTimersByTime(44_999);
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.002)] } });
     expect(mockNavigationContext).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1);
@@ -711,13 +711,13 @@ describe('background journey lifecycle and callback gate', () => {
       navigationSessionId: null });
     expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'allDay' });
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
-      expect.objectContaining({ accuracy: 2, timeInterval: 150_000 }));
+      expect.objectContaining({ accuracy: 3, timeInterval: 600_000 }));
     mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
       sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target: baseConfig.target });
     await reconcileBackgroundNavigation(baseConfig.groupId);
     expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'journey' });
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
-      expect.objectContaining({ accuracy: 5, timeInterval: 5_000 }));
+      expect.objectContaining({ accuracy: 4, timeInterval: 15_000 }));
   });
 
   it('passes a real presence fix to a pending refresh without starting another GPS owner', async () => {
@@ -727,7 +727,7 @@ describe('background journey lifecycle and callback gate', () => {
     await handleBackgroundLocations({ data: { locations: [sample] } });
     expect(mockRecoverRefreshSample).toHaveBeenCalledWith(baseConfig.groupId, expect.objectContaining({
       timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 },
-    }));
+    }), undefined);
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
   });
 
@@ -735,7 +735,7 @@ describe('background journey lifecycle and callback gate', () => {
     await startCurrent();
     let finishControl!: (value: unknown) => void;
     mockNavigationContext.mockImplementationOnce(() => new Promise(resolve => { finishControl = resolve; }));
-    jest.advanceTimersByTime(15_000);
+    jest.advanceTimersByTime(90_000);
     const sampledAt = Date.now();
     await handleBackgroundLocations({ data: { locations: [location(sampledAt)] } });
     expect(mockArrival).toHaveBeenCalledWith(expect.objectContaining({ source: 'automatic',

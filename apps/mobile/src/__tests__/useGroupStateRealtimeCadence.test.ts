@@ -1,3 +1,4 @@
+jest.mock('../state/groupSync', () => ({ subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
 import React from 'react';
 import type { GroupState } from '../types';
 import { getVisibleGroupSeed } from '../state/visibleGroupSeed';
@@ -169,32 +170,32 @@ describe('useGroupState realtime cadence', () => {
     expect(liveProfileChannel()).toBeUndefined();
   });
 
-  it('polls every 30 s without realtime, backs off while SUBSCRIBED, and returns to 30 s when the channel drops', async () => {
+  it('polls every 60 s without realtime, backs off while SUBSCRIBED, and returns to 60 s when the channel drops', async () => {
     const { root } = await mount();
     let calls = mockRecovery.mock.calls.length;
 
-    await advance(GROUP_POLL_INTERVAL_MS);
+    await advance(GROUP_POLL_INTERVAL_MS * 2);
     expect(mockRecovery.mock.calls.length).toBe(calls + 1);
 
     await act(async () => { groupChannel().status?.('SUBSCRIBED'); await flush(); });
     calls = mockRecovery.mock.calls.length;
-    await advance(GROUP_POLL_INTERVAL_MS);
+    await advance(GROUP_POLL_INTERVAL_MS * 2);
     expect(mockRecovery.mock.calls.length).toBe(calls);
-    await advance(GROUP_POLL_SUBSCRIBED_INTERVAL_MS - GROUP_POLL_INTERVAL_MS);
+    await advance((GROUP_POLL_SUBSCRIBED_INTERVAL_MS - GROUP_POLL_INTERVAL_MS) * 2);
     expect(mockRecovery.mock.calls.length).toBe(calls + 1);
 
     await act(async () => { groupChannel().status?.('CHANNEL_ERROR'); await flush(); });
     calls = mockRecovery.mock.calls.length;
-    await advance(GROUP_POLL_INTERVAL_MS);
+    await advance(GROUP_POLL_INTERVAL_MS * 2);
     expect(mockRecovery.mock.calls.length).toBe(calls + 1);
 
     await act(async () => root.unmount());
     calls = mockRecovery.mock.calls.length;
-    await advance(GROUP_POLL_SUBSCRIBED_INTERVAL_MS);
+    await advance(GROUP_POLL_SUBSCRIBED_INTERVAL_MS * 2);
     expect(mockRecovery.mock.calls.length).toBe(calls);
   });
 
-  it('keeps the 30 s fallback poll running while realtime fails to rejoin every 10 s', async () => {
+  it('keeps the 60 s fallback poll running while realtime fails to rejoin every 10 s', async () => {
     const { root } = await mount();
     await act(async () => { groupChannel().status?.('SUBSCRIBED'); await flush(); });
     const calls = mockRecovery.mock.calls.length;
@@ -204,7 +205,7 @@ describe('useGroupState realtime cadence', () => {
       await advance(10_000);
     }
 
-    expect(mockRecovery.mock.calls.length - calls).toBe(20);
+    expect(mockRecovery.mock.calls.length - calls).toBe(10);
     await act(async () => root.unmount());
   });
 
@@ -212,9 +213,9 @@ describe('useGroupState realtime cadence', () => {
     const { root } = await mount();
     mockRecovery.mockImplementation(() => new Promise(() => undefined));
     const calls = mockRecovery.mock.calls.length;
-    await advance(GROUP_POLL_INTERVAL_MS);
+    await advance(GROUP_POLL_INTERVAL_MS * 2);
     expect(mockRecovery.mock.calls.length).toBe(calls + 1);
-    await advance(GROUP_POLL_INTERVAL_MS * 3);
+    await advance(GROUP_POLL_INTERVAL_MS * 6);
     expect(mockRecovery.mock.calls.length).toBe(calls + 1);
     await act(async () => root.unmount());
   });

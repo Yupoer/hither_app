@@ -49,6 +49,7 @@ import {
 } from "./recipients.ts";
 import { eventIdsFromPayload } from "./eventId.ts";
 import { deliverWithSenderFallback } from "./senderFallback.ts";
+import { navigationRemoteRecipients, navigationStartRecipients } from "./navigationStart.ts";
 
 interface MembershipRow {
   user_id: string;
@@ -466,7 +467,7 @@ async function handleNavigationSession(
   // Fence delayed events within their own scope; a newer subgroup session
   // must not suppress the main team's event or replace its activities.
   const { data: target, error: targetError } = await supabase.from("navigation_sessions")
-    .select("id, scope_key, scope_subgroup_id").eq("group_id", payload.group_id)
+    .select("id, scope_key, scope_subgroup_id, origin").eq("group_id", payload.group_id)
     .eq("id", payload.session_id).maybeSingle();
   if (targetError) throw targetError;
   if (!target) return json({ sent: 0, ignored: "deleted_session" });
@@ -478,8 +479,9 @@ async function handleNavigationSession(
   if (!latest || latest.id !== payload.session_id || latest.status !== payload.status
     || latest.version !== payload.version) return json({ sent: 0, ignored: "superseded_session_event" });
   members = navigationScopeMembers(members, target.scope_subgroup_id);
-  const controlTokens = await loadTokenRows(members.filter(member => !member.solo
-    && member.user_id !== payload.sender_id).map(member => member.user_id));
+  const origin = target.origin === 'scheduled' ? 'scheduled' : 'manual';
+  const controlTokens = await loadTokenRows(navigationRemoteRecipients({ origin, senderId: payload.sender_id,
+    userIds: members.filter(member => !member.solo).map(member => member.user_id) }));
   const controlReport = await sendBackgroundLocationRefreshes(controlTokens, payload);
   if (controlReport.failures.length > 0) console.warn("navigation_control_delivery_failed");
 
@@ -519,7 +521,10 @@ async function handleNavigationSession(
       ((handleRows ?? []) as { user_id: string }[]).map((row) => row.user_id),
     );
     // Reuse existing handles when switching; they must not keep the old destination.
-    const existingUsers = eligibleUserIds.filter(id => usersWithHandle.has(id));
+    const recipients = navigationStartRecipients({ origin, senderId: payload.sender_id,
+      userIds: eligibleUserIds, usersWithHandle,
+      usersWithStartToken: new Set(startRowsRaw.map(row => row.user_id)) });
+    const existingUsers = recipients.existingUserIds;
     let existingReport = emptyReport();
     if (existingUsers.length) {
       const { error } = await supabase.from("live_activity_sessions")
@@ -532,14 +537,8 @@ async function handleNavigationSession(
         .filter(row => existingUsers.includes(row.user_id));
       existingReport = await sendLiveActivities(handles, members, memberByUser, payload);
     }
-    // Starter starts locally; devices that already have a handle must not PTS.
-    const startRows = startRowsRaw.filter(
-      (row) => row.user_id !== payload.sender_id && !usersWithHandle.has(row.user_id),
-    );
-    const usersWithStartToken = new Set(startRows.map((row) => row.user_id));
-    const fallbackUserIds = eligibleUserIds.filter(
-      (userId) => !usersWithStartToken.has(userId) && userId !== payload.sender_id,
-    );
+    const startRows = startRowsRaw.filter(row => recipients.startUserIds.includes(row.user_id));
+    const fallbackUserIds = recipients.alertUserIds;
     const fallbackTokenRows = await loadTokenRows(fallbackUserIds);
 
     let startReport = emptyReport();
@@ -602,7 +601,7 @@ async function handleNavigationSession(
       const deadStartUsers = startRows
         .filter((row) => deadStartTokens.includes(row.push_to_start_token))
         .map((row) => row.user_id)
-        .filter((userId) => userId !== payload.sender_id);
+        .filter((userId) => origin === 'manual' && userId !== payload.sender_id);
       const deadStartFallbackRows = await loadTokenRows(deadStartUsers);
       fallbackReport = mergeReports(fallbackReport, await sendAlerts(deadStartFallbackRows, payload));
     }

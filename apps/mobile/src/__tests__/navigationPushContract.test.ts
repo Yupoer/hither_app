@@ -56,7 +56,6 @@ describe('navigation ActivityKit push orchestration', () => {
 
   it('excludes starter / existing handles from PTS and sends full ContentState (#194 A1/A2/A6)', () => {
     expect(handler).toContain('usersWithHandle');
-    expect(handler).toContain('row.user_id !== payload.sender_id');
     expect(handler).toContain('memberEmojis');
     expect(handler).toContain('memberArrived');
     expect(handler).toContain('last_progress_bucket');

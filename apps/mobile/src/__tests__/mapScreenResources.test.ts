@@ -24,6 +24,13 @@ const mockAppSubscribe = jest.fn((_event: string, listener: (state: string) => v
   mockAppListeners.add(listener);
   return { remove: () => { mockAppListeners.delete(listener); } };
 });
+type GroupSyncListener = Parameters<typeof import('../state/groupSync').subscribeGroupSyncSnapshots>[0];
+const mockGroupSyncListeners = new Set<GroupSyncListener>();
+const mockGroupSyncSubscribe = jest.fn((listener: GroupSyncListener) => {
+  mockGroupSyncListeners.add(listener);
+  return () => { mockGroupSyncListeners.delete(listener); };
+});
+const mockRecoverPending = jest.fn(async (..._args: unknown[]) => undefined);
 const mockGetItem = jest.fn<Promise<string | null>, [string]>();
 const mockSharingLoads: { actor: string; resolve: (value: boolean | null) => void; reject: (error: Error) => void }[] = [];
 const mockLeaseRelease = jest.fn();
@@ -43,6 +50,9 @@ jest.mock('../state/coreDataSync', () => ({
   }) }),
   subscribeCoreOutboxChanges: (listener: () => void) => mockOutboxSubscribe(listener),
 }));
+jest.mock('../state/groupSync', () => ({
+  subscribeGroupSyncSnapshots: (listener: GroupSyncListener) => mockGroupSyncSubscribe(listener),
+}));
 jest.mock('../state/energyObservability', () => ({
   energyObservability: { mountWorkload: (...args: Parameters<typeof mockMountWorkload>) => mockMountWorkload(...args), setTrackingMode: jest.fn() },
 }));
@@ -53,7 +63,7 @@ jest.mock('../state/locationSharingSync', () => ({
 }));
 jest.mock('../state/journeyNotifications', () => ({ notifyJourneyApproach: jest.fn() }));
 jest.mock('../featureTour', () => ({ readAddPlaceTourCompletedLocal: jest.fn(), retryPendingAddPlaceTourAccountSync: jest.fn() }));
-jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationPermission: jest.fn(), recoverPendingLocationRefreshes: jest.fn() }));
+jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationPermission: jest.fn(), recoverPendingLocationRefreshes: (...args: unknown[]) => mockRecoverPending(...args) }));
 jest.mock('../native', () => ({ location: {} }));
 jest.mock('../api/client', () => ({ listFavoritePlaces: jest.fn() }));
 
@@ -67,6 +77,7 @@ describe('MapScreen named resources', () => {
     mockSharingLoads.length = 0;
     mockOutboxListeners.clear();
     mockAppListeners.clear();
+    mockGroupSyncListeners.clear();
   });
   afterEach(() => {
     act(() => tree?.unmount());
@@ -149,7 +160,7 @@ describe('MapScreen named resources', () => {
     const refresh = jest.fn(async () => true);
     const nextRefresh = jest.fn(async () => true);
     const sessionRefresh = jest.fn(async () => null);
-    const props = { groupId: 'a', refresh, navigationSessionState: { refresh: sessionRefresh } };
+    const props = { groupId: 'a', actorId: 'alice', refresh, navigationSessionState: { refresh: sessionRefresh } };
     act(() => { tree = create(React.createElement(React.StrictMode, null, React.createElement(MapForegroundNavigationResource, props))); });
     expect(mockAppSubscribe).toHaveBeenCalledTimes(2);
     expect(mockAppListeners.size).toBe(1);
@@ -162,6 +173,60 @@ describe('MapScreen named resources', () => {
     expect(sessionRefresh).toHaveBeenCalledTimes(1);
     act(() => tree?.unmount());
     tree = undefined;
+    expect(mockAppListeners.size).toBe(0);
+  });
+
+  it('consumes supplied refresh commands only for the mounted actor and group and releases the listener', () => {
+    const refresh = jest.fn(async () => true);
+    const sessionRefresh = jest.fn(async () => null);
+    const render = (actorId: string | null, groupId: string) => React.createElement(MapForegroundNavigationResource, {
+      actorId, groupId, refresh, navigationSessionState: { refresh: sessionRefresh },
+    });
+    const recovery = (groupId: string): Parameters<GroupSyncListener>[1] => ({
+      state: {
+        group: { id: groupId, name: 'Flock', inviteCode: 'INVITE', createdBy: 'alice', journeyStatus: 'paused',
+          stragglerAlerts: false, stragglerThresholdM: 100 },
+        members: [], destinations: [], subgroups: [],
+      },
+      generatedAt: null, revision: '2026-11-02T00:00:00Z', entityVersions: {},
+    });
+    const pending = [{ groupId: 'a', requestedBy: 'peer', requestedAt: '2026-11-02T00:00:01.123456Z' }];
+    act(() => { tree = create(render('alice', 'a')); });
+    const aliceListener = mockGroupSyncSubscribe.mock.calls[0][0];
+    aliceListener('bob', recovery('a'), pending);
+    aliceListener('alice', recovery('b'), pending);
+    aliceListener('alice', recovery('a'), []);
+    expect(mockRecoverPending).not.toHaveBeenCalled();
+    aliceListener('alice', recovery('a'), pending);
+    expect(mockRecoverPending.mock.calls).toEqual([[pending]]);
+
+    act(() => tree?.update(render('bob', 'a')));
+    expect(mockGroupSyncListeners.size).toBe(1);
+    const bobListener = mockGroupSyncSubscribe.mock.calls[1][0];
+    aliceListener('alice', recovery('a'), pending);
+    bobListener('alice', recovery('a'), pending);
+    expect(mockRecoverPending).toHaveBeenCalledTimes(1);
+    bobListener('bob', recovery('a'), pending);
+    expect(mockRecoverPending).toHaveBeenCalledTimes(2);
+
+    act(() => tree?.update(render('bob', 'b')));
+    const nextGroupListener = mockGroupSyncSubscribe.mock.calls[2][0];
+    bobListener('bob', recovery('a'), pending);
+    nextGroupListener('bob', recovery('a'), pending);
+    expect(mockRecoverPending).toHaveBeenCalledTimes(2);
+    const nextPending = [{ ...pending[0], groupId: 'b' }];
+    nextGroupListener('bob', recovery('b'), nextPending);
+    expect(mockRecoverPending).toHaveBeenLastCalledWith(nextPending);
+
+    act(() => tree?.update(render(null, 'b')));
+    const signedOutListener = mockGroupSyncSubscribe.mock.calls[3][0];
+    signedOutListener('bob', recovery('b'), nextPending);
+    expect(mockRecoverPending).toHaveBeenCalledTimes(3);
+    act(() => tree?.unmount());
+    tree = undefined;
+    nextGroupListener('bob', recovery('b'), nextPending);
+    expect(mockRecoverPending).toHaveBeenCalledTimes(3);
+    expect(mockGroupSyncListeners.size).toBe(0);
     expect(mockAppListeners.size).toBe(0);
   });
 
@@ -200,7 +265,7 @@ describe('MapScreen named resources', () => {
         React.createElement(React.Fragment, { key: 'map-owner-arrival-outbox' },
           React.createElement(MapArrivalOutboxResource, { groupId: group, user: { id: 'alice' }, setArrivalOperations: publish })),
         React.createElement(React.Fragment, { key: 'map-owner-foreground-navigation' },
-          React.createElement(MapForegroundNavigationResource, { groupId: group, refresh, navigationSessionState: { refresh: sessionRefresh } })));
+          React.createElement(MapForegroundNavigationResource, { groupId: group, actorId: 'alice', refresh, navigationSessionState: { refresh: sessionRefresh } })));
     }
     act(() => { tree = create(React.createElement(Owner, { group: 'a', refresh: firstRefresh })); });
     act(() => tree?.update(React.createElement(Owner, { group: 'b', refresh: secondRefresh })));

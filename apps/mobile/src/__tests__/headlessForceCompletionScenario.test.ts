@@ -45,7 +45,7 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
       expect([...world.backend.sessions.values()][0].status).toBe('active');
       expect(world.backend.tables.destination_arrivals).toHaveLength(0);
       expect((await leader.observe()).durable.operations).toEqual([]);
-      world.hold('apply_core_operation_v3', { deviceId: 'leader', phase: 'execution' });
+      world.hold('sync_group', { deviceId: 'leader', phase: 'execution', matches: (operation: { args: { p_core_operations: unknown[] } }) => operation.args.p_core_operations.length > 0 });
       await complete(leader);
       await leader.input({ kind: 'alert', index: 1 });
       const local = await world.waitFor(leader, (value: Observation) => value.durable.operations.some(row => row.operationType === 'complete_destination'), 'durable completion before transport');
@@ -53,7 +53,7 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
       expect(local.durable.snapshot.destinations.find((row: { id: string }) => row.id === DESTINATION).closedAt).toBeTruthy();
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       expect([...world.backend.sessions.values()][0].status).toBe('active');
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       await world.waitFor(leader, () => !!world.backend.itinerary[0].closed_at, 'confirmed forced completion');
       expect([...world.backend.sessions.values()][0].status).toBe('completed');
       expect(world.backend.itinerary[0].closed_by_session_id).toBe(sessionId);

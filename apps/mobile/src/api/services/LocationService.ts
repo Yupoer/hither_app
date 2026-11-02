@@ -5,7 +5,6 @@ import { supabase } from '../supabase';
 import { demoUpdateMyLocation, isDemoGroup } from '../demo';
 import type { Coordinates } from '../../types';
 import { requireUserId, orThrow } from './_helpers';
-import { normalizeLocationRefreshRecipientIds } from '../../utils/locationRefreshResponse';
 import { captureLocationAccess, isLocationAccessCurrent } from '../../state/locationPrivacy';
 import { normalizeLocationSequence } from '../../utils/locationSequence';
 
@@ -35,16 +34,12 @@ export interface LocationBatchEvent {
 }
 
 export interface LocationBatchResult {
+  notSubmittedIds?: string[];
   acceptedIds: string[];
   rejected: Array<{ id: string; reason: string }>;
 }
 
-interface LocationRefreshRow {
-  accepted?: boolean;
-  retry_after_seconds?: number;
-  recipient_ids?: unknown;
-  requested_at?: string;
-}
+
 
 export interface PendingLocationRefresh {
   groupId: string;
@@ -127,64 +122,30 @@ export async function ingestLocationBatch(
 export async function requestGroupLocationRefresh(
   groupId: string,
 ): Promise<LocationRefreshResult> {
-  await requireUserId();
-  const { data, error } = await supabase.rpc('request_group_location_refresh', {
-    p_group_id: groupId,
-  });
-  orThrow(error);
-
-  const row = (data ?? {}) as LocationRefreshRow;
-  return {
-    accepted: row.accepted === true,
-    retryAfterSeconds: Math.max(0, Math.ceil(row.retry_after_seconds ?? 0)),
-    recipientIds: normalizeLocationRefreshRecipientIds(row.recipient_ids),
-    requestedAt: row.requested_at,
-  };
+  const { syncGroup } = await import('../../state/groupSync');
+  const result = (await syncGroup({ groupId, refresh: { requestPeers: true } })).refreshRequest;
+  if (!result) throw new Error('group_sync_refresh_request_missing');
+  return result;
 }
 
 export async function listMyPendingLocationRefreshes(): Promise<PendingLocationRefresh[]> {
-  await requireUserId();
-  const { data, error } = await supabase.rpc('list_my_pending_location_refreshes');
-  orThrow(error);
-  return (Array.isArray(data) ? data : []).flatMap((row) => {
-    const value = row as {
-      group_id?: unknown;
-      requested_by?: unknown;
-      requested_at?: unknown;
-    };
-    return typeof value.group_id === 'string'
-      && typeof value.requested_by === 'string'
-      && typeof value.requested_at === 'string'
-      ? [{
-          groupId: value.group_id,
-          requestedBy: value.requested_by,
-          requestedAt: value.requested_at,
-        }]
-      : [];
-  });
+  const access = await captureLocationAccess();
+  if (!access) return [];
+  const { syncGroup } = await import('../../state/groupSync');
+  return (await syncGroup({ groupId: access.groupId })).pendingRefreshes;
 }
 
-export async function ackMyLocationRefresh(
-  groupId: string,
-  requestedAt: string,
-): Promise<boolean> {
-  await requireUserId();
-  const { data, error } = await supabase.rpc('ack_my_location_refresh', {
-    p_group_id: groupId,
-    p_requested_at: requestedAt,
-  });
-  orThrow(error);
-  return data === true;
+export async function ackMyLocationRefresh(groupId: string, requestedAt: string, eventId?: string): Promise<boolean> {
+  if (!eventId) throw new Error('location_refresh_receipt_required');
+  const { syncGroup } = await import('../../state/groupSync');
+  const result = await syncGroup({ groupId, refresh: { acknowledgements: [{ requestedAt, eventId }] } });
+  return result.refreshAcknowledgements.some(row => row.requestedAt === requestedAt && row.eventId === eventId && row.accepted);
 }
 
 /** Only explicit recipient ACKs for this request version count as responses. */
 export async function getGroupLocationRefreshAcknowledgements(
   groupId: string, requestedAt: string,
 ): Promise<string[]> {
-  await requireUserId();
-  const { data, error } = await supabase.rpc('get_group_location_refresh_acknowledgements', {
-    p_group_id: groupId, p_requested_at: requestedAt,
-  });
-  orThrow(error);
-  return normalizeLocationRefreshRecipientIds(data);
+  const { syncGroup } = await import('../../state/groupSync');
+  return (await syncGroup({ groupId, refresh: { requestedAt } })).acknowledgedIds;
 }

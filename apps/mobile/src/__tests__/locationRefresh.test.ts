@@ -34,13 +34,6 @@ describe('remote location refresh wiring', () => {
     expect(task).toContain('TaskManager.defineTask');
     expect(task).toContain('Notifications.registerTaskAsync');
     expect(task).toContain('location.getCurrentLocation');
-    // Durable pending rows are uploaded directly and ACKed by requested_at;
-    // the refresh path no longer relies on the local journey outbox.
-    expect(task).toContain('listMyPendingLocationRefreshes');
-    expect(task).toContain('ingestLocationBatch');
-    expect(task).toContain('ackMyLocationRefresh');
-    expect(task).not.toContain('enqueueLocationOutbox');
-    expect(task).not.toContain('flushLocationOutbox');
     expect(task).toContain('rememberPendingLocationPermission');
     expect(task).toContain('consumePendingLocationPermission');
     const permissionResource = readFileSync(join(__dirname, '../screens/MapScreen/MapScreenResources.tsx'), 'utf8');

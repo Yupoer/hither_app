@@ -84,7 +84,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
       await owner.stop();
       await wrapper.prepareNativeBackgroundLocation(false);
       expect(native.dispose().location).toMatchObject({ running: false, prepared: false });
-      expect(native.dispose().location.processListeners).toBeLessThanOrEqual(1);
+      expect([0, 2]).toContain(native.dispose().location.processListeners);
     }
     expect(tasks.size).toBe(0);
     expect(jest.getTimerCount()).toBe(0);
@@ -96,14 +96,14 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     load();
     state.currentState = 'background';
     await expect(owner.start(config({ powerMode: 'allDay' }))).resolves.toBe('started');
-    expect(tasks.get(taskName)).toMatchObject({ accuracy: 2, activityType: 1, showsBackgroundLocationIndicator: false });
+    expect(tasks.get(taskName)).toMatchObject({ accuracy: 3, activityType: 1, showsBackgroundLocationIndicator: false });
     state.currentState = 'active';
     await startJourney();
     expect(await owner.load()).toMatchObject({ navigationSessionId: 'journey', destinationId: 'target', powerMode: 'journey' });
     expect(wrapper.nativeBackgroundAvailable).toBe(platform === 'ios');
     expect(native.observe().location).toMatchObject({ supported: platform === 'ios', running: platform === 'ios' });
     expect(tasks.size).toBe(platform === 'ios' ? 0 : 1);
-    if (platform === 'android') expect(tasks.get(taskName)).toMatchObject({ accuracy: 4, activityType: 3, showsBackgroundLocationIndicator: true });
+    if (platform === 'android') expect(tasks.get(taskName)).toMatchObject({ accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: true });
     const starts = () => calls.filter(call => call.method === 'expo.start').length
       + native.observe().receipts.filter((call: { method: string }) => call.method === 'nativeLocation.start').length;
     const started = starts();
@@ -111,7 +111,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     expect(starts()).toBe(started);
     await owner.start(config({ powerMode: 'allDay' }));
     expect(native.observe().location).toMatchObject({ running: false, prepared: false });
-    expect(tasks.get(taskName)).toMatchObject({ accuracy: 2, activityType: 1, showsBackgroundLocationIndicator: false });
+    expect(tasks.get(taskName)).toMatchObject({ accuracy: 3, activityType: 1, showsBackgroundLocationIndicator: false });
     await owner.stop();
     expect(values.has(configKey)).toBe(false);
     expect(tasks.size).toBe(0);
@@ -148,7 +148,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     load();
     expect(wrapper.nativeBackgroundAvailable).toBe(false);
     await startJourney();
-    expect(tasks.get(taskName)).toMatchObject({ activityType: 3, showsBackgroundLocationIndicator: true });
+    expect(tasks.get(taskName)).toMatchObject({ activityType: 1, showsBackgroundLocationIndicator: true });
     expect(native.observe().receipts.filter((call: { method: string }) => call.method.startsWith('nativeLocation.'))).toEqual([]);
     await owner.stop();
     sdk.background = 'denied';
@@ -220,22 +220,22 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
       expect(observed).not.toHaveBeenCalled();
       return;
     }
-    expect(native.observe().location.listeners).toBe(2);
+    expect(native.observe().location.listeners).toBe(3);
     await native.input({ kind: 'nativeLocation', sample });
     await expect(refresh).resolves.toEqual(sample);
     expect(observed).toHaveBeenCalledWith(sample);
-    expect(native.observe().location.listeners).toBe(1);
+    expect(native.observe().location.listeners).toBe(2);
     const abort = new AbortController();
     const cancelled = wrapper.nextBackgroundLocation(abort.signal);
     await settle();
     abort.abort();
     await expect(cancelled).resolves.toBeNull();
-    expect(native.observe().location.listeners).toBe(1);
+    expect(native.observe().location.listeners).toBe(2);
     const timeout = wrapper.nextBackgroundLocation(new AbortController().signal);
     await settle();
     await jest.advanceTimersByTimeAsync(15000);
     await expect(timeout).resolves.toBeNull();
-    expect(native.observe().location.listeners).toBe(1);
+    expect(native.observe().location.listeners).toBe(2);
     expect(native.observe().receipts.filter((call: { method: string }) => call.method === 'nativeLocation.start')).toHaveLength(1);
   });
 

@@ -60,6 +60,8 @@ For a custom scenario with a live `World`, the read-only instance check is `worl
 
 ## Drive
 
+When the request limits verification to changed behavior, select the affected named cases from the feature map. For the location exchange update, use `-Driver jest --runTestsByPath src/__tests__/headlessLocationSyncScenario.test.ts --testNamePattern="changed location exchange on"`. The suite driver already supplies all headless files; do not append the same file to it a second time. Do not run the recorded trip or full suite for that scoped request. A partial report has no complete functional denominator. Keep the same Doctor, evidence and cleanup requirements for the selected cases.
+
 Run the recorded mixed-platform journey. This is the default proof for the first four mapped features. It does not cover every entry point in those features or the store feature. Read each feature's additional commands before claiming broader coverage.
 
 ```powershell
@@ -168,3 +170,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Complete verification requires every functiona
 ```
 
 For maintenance, use `pstack:maintain-verification-skill` and update this map when a route, callback, fixture contract, or observable result changes. Inventory alignment and executed feature coverage remain separate claims.
+
+Location exchange maintenance records `changed` for [journey](features/journey.md), [members](features/members.md) and [itinerary recovery](features/itinerary.md). The original eight unique iOS/Android cases passed on product `9cfcd9b`; CI-derived recovery fixes were reviewed at product `988a85be743da4f92de20e35ef1e951da9891b0b`, with affected-only reruns. Local proof indexes are `.audit/location-sync/headless-retry-result.md`, `hook-ci-alignment-result.md` and `ci-map-alignment.md` in that audit directory. They retain failures, accepted cases and verified child/scratch cleanup. The follow-up covers 53 unique hook cases, two member-refresh Map cases and 24 Map cases including authoritative empty recovery. This scoped result does not establish a complete feature denominator, native OS behavior or hosted delivery. Review source drift before reusing it.

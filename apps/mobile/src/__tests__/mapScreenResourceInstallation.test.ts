@@ -19,6 +19,7 @@ function mockLifecycle(name: string) { return React.createElement(MockLifecycle,
 
 const mockEmpty: never[] = [];
 const mockAsync = jest.fn(async () => true);
+jest.mock('../state/groupSync', () => ({ syncGroup: jest.fn(), subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
 const mockStartFrame = jest.fn();
 const mockOutboxListeners = new Set<() => void>();
 const mockAppListeners = new Set<(state: string) => void>();
@@ -34,7 +35,7 @@ const mockPrefs = { ready: false, passiveCompanionMode: false, highAccuracy: fal
   setSharingEnabled: jest.fn(), setMeetRedMin: jest.fn(), setHighAccuracy: jest.fn(), setLiveActivityEnabled: jest.fn(),
   setArrivalRadiusM: jest.fn(), setPassiveCompanionMode: jest.fn() };
 const mockGroup = { lifecycle: mockLifecycle('group-state'), state: null as GroupState | null, loading: true, error: null, loadError: null, refreshing: false,
-  refresh: mockAsync, refreshLocalSnapshot: mockAsync, applyOptimisticGathering: jest.fn(), openOperations: mockEmpty,
+  refresh: mockAsync, applyRecoverySnapshot: mockAsync, refreshLocalSnapshot: mockAsync, applyOptimisticGathering: jest.fn(), openOperations: mockEmpty,
   serverTimeOffsetMs: 0, emptyLocalSnapshot: true, dataSource: 'none' };
 const mockDevice = { lifecycle: mockLifecycle('device-location'), deviceCoords: null as Coordinates | null, deviceAccuracyM: null, deviceCoordsAcceptedAtMs: null,
   appState: 'active', refreshDeviceLocation: mockAsync, consumeForegroundSample: jest.fn(), latestLocationSampleRef: { current: null } };

@@ -5,15 +5,17 @@ import * as TaskManager from 'expo-task-manager';
 import { AppState } from 'react-native';
 import { location } from '../native';
 import {
-  ackMyLocationRefresh,
-  ingestLocationBatch,
   listMyPendingLocationRefreshes,
+  type PendingLocationRefresh,
 } from '../api/services/LocationService';
 import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessPending, type LocationAccess } from './locationPrivacy';
 import { reconcileBackgroundNavigation } from './backgroundJourney';
 import { diagnostics } from './diagnostics';
+import { syncGroup, getAcceptedLocationReceipt } from './groupSync';
+import { requireUserId } from '../api/services/_helpers';
 import {
   purgeLocationOutbox,
+  enqueueLocationOutbox,
 } from './locationOutbox';
 
 export const BACKGROUND_LOCATION_REFRESH_TASK =
@@ -24,12 +26,6 @@ const PENDING_LOCATION_PERMISSION_KEY = '@hither/pending-location-permission';
 interface LocationRefreshPayload {
   category?: string;
   groupId?: string;
-}
-
-interface PendingRefreshRow {
-  groupId: string;
-  requestedBy: string;
-  requestedAt: string;
 }
 
 function parsePayload(data: unknown): LocationRefreshPayload | null {
@@ -53,40 +49,36 @@ function parsePayload(data: unknown): LocationRefreshPayload | null {
     : null;
 }
 
-async function rememberPendingRefresh(groupId: string): Promise<void> {
+async function rememberPendingRefresh(groupId: string): Promise<string> {
+  const raw = JSON.stringify({ groupId, requestedAt: Date.now() });
   await AsyncStorage.setItem(
     PENDING_LOCATION_REFRESH_KEY,
-    JSON.stringify({ groupId, requestedAt: Date.now() }),
+    raw,
   );
+  return raw;
 }
 
 async function uploadAndAckPendingRefreshes(
   fix: Awaited<ReturnType<typeof location.getCurrentLocation>>,
-  pending: PendingRefreshRow[],
+  pending: PendingLocationRefresh[],
   access: LocationAccess,
 ): Promise<void> {
   if (!fix || pending.length === 0 || !isLocationAccessCurrent(access)) return;
-  const capturedAt = fix.timestamp;
-  const events = pending.map((row) => ({
-    id: Crypto.randomUUID(),
-    groupId: row.groupId,
-    navigationSessionId: null,
-    capturedAt,
-    coords: {
-      ...fix.coordinates,
-      accuracy: Math.max(0, fix.accuracy ?? 0),
-    },
-    trackingMode: 'passiveBackground',
-    source: 'refresh_request',
-    sequence: capturedAt,
-  }));
-  const result = await ingestLocationBatch(events);
-  const accepted = new Set(result.acceptedIds);
-  for (const [index, row] of pending.entries()) {
+  const actorId = await requireUserId();
+  for (const row of pending) {
     if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
-    if (!accepted.has(events[index].id)) throw new Error('refresh_upload_not_accepted');
-    // Versioned ACK: a newer request_at wins and is intentionally not deleted.
-    if (!await ackMyLocationRefresh(row.groupId, row.requestedAt)) throw new Error('refresh_ack_not_confirmed');
+    const original = getAcceptedLocationReceipt(actorId, row.groupId, fix.timestamp);
+    const eventId = original?.id ?? Crypto.randomUUID();
+    if (!original) await enqueueLocationOutbox({
+      id: eventId, groupId: row.groupId, navigationSessionId: null, capturedAt: fix.timestamp,
+      coords: { ...fix.coordinates, accuracy: Math.max(0, fix.accuracy ?? 0) },
+      trackingMode: 'passiveBackground', source: 'refresh_request', sequence: fix.timestamp,
+    });
+    const result = await syncGroup({ groupId: row.groupId,
+      refresh: { acknowledgements: [{ requestedAt: row.requestedAt, eventId }] } });
+    if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
+    if (!result.refreshAcknowledgements.some(ack => ack.eventId === eventId
+      && ack.requestedAt === row.requestedAt && ack.accepted)) throw new Error('refresh_ack_not_confirmed');
   }
 }
 
@@ -96,36 +88,46 @@ async function uploadAndAckPendingRefreshes(
 export async function recoverPendingLocationRefreshFromSample(
   groupId: string,
   fix: NonNullable<Awaited<ReturnType<typeof location.getCurrentLocation>>>,
+  suppliedPending?: PendingLocationRefresh[],
 ): Promise<void> {
-  const raw = await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY);
-  if (!raw || AppState.currentState === 'active') return;
-  let marker: { groupId?: string; requestedAt?: number };
-  try { marker = JSON.parse(raw); } catch { return; }
-  if (marker.groupId !== groupId || fix.timestamp < (marker.requestedAt ?? 0)) return;
+  if (AppState.currentState === 'active') return;
+  let raw = await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY);
+  let matchingMarker = false;
+  if (raw) {
+    try {
+      const marker: { groupId?: string; requestedAt?: number } = JSON.parse(raw);
+      matchingMarker = marker.groupId === groupId && fix.timestamp >= (marker.requestedAt ?? 0);
+    } catch { /* An exchange reply can recover independently of a legacy marker. */ }
+  }
+  if (suppliedPending === undefined && !matchingMarker) return;
   const access = await captureLocationAccess(groupId);
   if (!access) return;
-  const pending = (await listMyPendingLocationRefreshes()).filter(row => row.groupId === groupId);
+  const pending = (suppliedPending ?? await listMyPendingLocationRefreshes()).filter(row => row.groupId === groupId);
   if (!isLocationAccessCurrent(access)) return;
+  if (pending.length > 0 && !raw) {
+    raw = await rememberPendingRefresh(groupId);
+    matchingMarker = true;
+  }
   await uploadAndAckPendingRefreshes(fix, pending, access);
   if (!isLocationAccessCurrent(access)) return;
   // Preserve a newer marker written while this request was being uploaded.
-  if (await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY) === raw) {
+  if (matchingMarker && await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY) === raw) {
     await AsyncStorage.removeItem(PENDING_LOCATION_REFRESH_KEY);
   }
 }
 
 /** Foreground/cold-start recovery: one GPS fix, one upload batch, per-group ACK. */
 let recoveryFlight: Promise<void> | null = null;
-export function recoverPendingLocationRefreshes(): Promise<void> {
+export function recoverPendingLocationRefreshes(suppliedPending?: PendingLocationRefresh[]): Promise<void> {
   if (recoveryFlight) return recoveryFlight;
-  recoveryFlight = recoverPendingRefreshes().finally(() => { recoveryFlight = null; });
+  recoveryFlight = recoverPendingRefreshes(suppliedPending).finally(() => { recoveryFlight = null; });
   return recoveryFlight;
 }
-async function recoverPendingRefreshes(): Promise<void> {
+async function recoverPendingRefreshes(suppliedPending?: PendingLocationRefresh[]): Promise<void> {
   if (AppState.currentState !== 'active') return;
   const access = await captureLocationAccess();
   if (!access) return;
-  const pending = (await listMyPendingLocationRefreshes().catch(() => []))
+  const pending = (suppliedPending ?? await listMyPendingLocationRefreshes().catch(() => []))
     .filter(row => row.groupId === access.groupId);
   if (pending.length === 0) return;
   if (!isLocationAccessCurrent(access)) {

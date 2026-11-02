@@ -19,7 +19,7 @@ const actions = {
   'location.refresh': {
     inventory: ['MAP-LOC-03'], sources: [{ file: 'src/screens/MapScreen/hooks/useDeviceLocation.ts', symbol: 'refreshDeviceLocation' }],
     entry: 'useDeviceLocation.refreshDeviceLocation', level: 'hook', input: '{}',
-    completion: 'Supply fresh GPS while pending. Resolves coordinates only after the exact location event is acknowledged, including when the continuous watcher receives the fix first.',
+    completion: 'Supply a qualifying GPS fix while pending. Resolves only after its exact event is acknowledged, including a qualifying already accepted sample and the continuous-watcher race. Original capture and receipt times remain distinct from request time.',
     run: app => app.location.refreshDeviceLocation({ requireUpload: true }),
   },
   'journey.start': {

@@ -21,7 +21,7 @@ const schemas = {
   coordination_requests: { fields: 'id group_id subgroup_id created_by subject subject_kind options deadline policy default_outcome status resolved_outcome resolution_source resolved_at resolved_by applied_operation_id created_at updated_at', modes: ['select'] },
   coordination_responses: { fields: 'id request_id user_id option_id responded_at updated_at', modes: ['select'] },
   itinerary_operations: { fields: 'id group_id subgroup_id version operation_type payload source_request_id created_by created_at', modes: ['select'] },
-  navigation_sessions: { fields: 'id group_id scope_subgroup_id destination_id destination_name destination_latitude destination_longitude arrival_radius_m started_by request_id started_at expires_at status version navigation_member_states', modes: ['select'] },
+  navigation_sessions: { fields: 'id group_id scope_subgroup_id destination_id destination_name destination_latitude destination_longitude arrival_radius_m started_by request_id started_at expires_at status version navigation_member_states origin', modes: ['select'] },
   navigation_session_history: { fields: 'group_id navigation_session_id destination_id user_id arrived arrived_at recorded_at corrected_at corrected_by correction_note', modes: ['select'] },
   navigation_member_states: { fields: 'navigation_session_id user_id local_status detail latest_distance_m latest_accuracy_m live_activity_id acknowledged_at arrived_at updated_at', modes: ['select'] },
   push_tokens: { fields: 'user_id device_id token platform updated_at', owner: 'user_id', modes: ['upsert'], conflict: 'user_id,token' },
@@ -67,6 +67,7 @@ function initialize(b, { LEADER, PEER }) {
   b.verifiedPurchases = new Map();
   b.purchaseLedger = new Map();
   b.notificationOutbox = [];
+  b.scheduledPushes = [];
   b.arrivalEvents = [];
   b.sessionHistory = new Map();
   b.failures = [];
@@ -159,7 +160,11 @@ function executeTable(b, operation) {
           if (input.id && all.some(row => row.id === input.id)) return fail('duplicate key', '23505');
           if (name === 'visited_waypoints' && (input.user_id !== userId || !member(b, input.group_id, userId))) return fail('not_member');
           const row = { id: randomUUID(), created_at: iso(b), ...(name === 'visited_waypoints' ? { arrived_at: iso(b) } : {}), ...structuredClone(input) }; all.push(row); rows.push(row);
-        } else rows.forEach(row => Object.assign(row, structuredClone(input)));
+        } else rows.forEach(row => {
+          const previous = structuredClone(row);
+          Object.assign(row, structuredClone(input));
+          if (name === 'itinerary_items') require('./backend-schedule.cjs').changed(b, row, previous, userId);
+        });
       }
       rows.forEach((row, index) => b.publish(name, row, mode === 'update' ? 'UPDATE' : 'INSERT', oldGroups[index]));
     }

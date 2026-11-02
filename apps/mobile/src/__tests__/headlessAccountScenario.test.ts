@@ -238,6 +238,10 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
         straggler_alerts: false, straggler_threshold_m: 750 });
       await leader.perform('group.setJourneyTarget', { args: [GROUP_ID, null] });
       await leader.perform('group.setStragglerConfig', { args: [GROUP_ID, true, 500] });
+      const alertsWithoutTarget = world.backend.tables.group_alerts.length;
+      await leader.perform('group.reportStraggler', { args: [GROUP_ID, PEER] });
+      expect(world.backend.tables.group_alerts).toHaveLength(alertsWithoutTarget);
+      await leader.perform('map.service.navigation.start', { args: [GROUP_ID, DESTINATION, 'account-straggler-session'] });
       await leader.perform('group.reportStraggler', { args: [GROUP_ID, PEER] });
       expect(world.backend.tables.group_alerts.at(-1)).toMatchObject({ member_id: PEER, distance_m: null, sender_id: LEADER });
       await expect(peer.perform('group.reportStraggler', { args: [GROUP_ID, LEADER, 600] })).rejects.toThrow('leader_required');

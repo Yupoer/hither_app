@@ -15,8 +15,9 @@ type MapObservation = {
 type CoreCall = {
   deviceId: string;
   name: string;
-  args: { p_operation_id: string; p_operation_type: string; p_actor_id: string; p_dependency_ids: string[];
-    p_sequence: number; p_payload: Record<string, unknown> };
+  userId: string;
+  args: { p_actor_id: string; p_core_operations: { operation_id: string; operation_type: string; dependency_ids: string[];
+    sequence: number; payload: Record<string, unknown> }[] };
 };
 
 const control = (value: MapObservation, id: string) => value.presentation.hosts.find(host => host.testId === id);
@@ -116,13 +117,14 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
       expect(world.backend.groups.get(GROUP_ID)).toMatchObject({ journey_status: 'paused', active_destination_id: null });
       expect(world.backend.itinerary).toEqual(itineraryBefore);
       expect(world.backend.tables.destination_arrivals).toEqual([]);
-      const receipts: CoreCall[] = world.backend.trace.filter((call: CoreCall) => call.deviceId === 'leader' && call.name === 'apply_core_operation_v3');
-      expect(receipts.map(call => call.args.p_operation_id)).toEqual(ids);
-      expect(receipts.map(call => call.args.p_operation_type)).toEqual(['start_gathering', 'end_gathering']);
-      expect(receipts.map(call => call.args.p_actor_id)).toEqual([LEADER, LEADER]);
-      expect(receipts.map(call => call.args.p_sequence)).toEqual([start.sequence, end.sequence]);
-      expect(receipts[1].args.p_dependency_ids).toContain(start.id);
-      expect(receipts[1].args.p_payload).toMatchObject({ navigationSessionId: start.id });
+      const exchanges: CoreCall[] = world.backend.trace.filter((call: CoreCall) => call.deviceId === 'leader' && call.name === 'sync_group' && call.args.p_core_operations.length > 0);
+      const receipts = exchanges.flatMap(call => call.args.p_core_operations);
+      expect(receipts.map(call => call.operation_id)).toEqual(ids);
+      expect(receipts.map(call => call.operation_type)).toEqual(['start_gathering', 'end_gathering']);
+      expect(exchanges.every(call => call.userId === LEADER && call.args.p_actor_id === LEADER)).toBe(true);
+      expect(receipts.map(call => call.sequence)).toEqual([start.sequence, end.sequence]);
+      expect(receipts[1].dependency_ids).toContain(start.id);
+      expect(receipts[1].payload).toMatchObject({ navigationSessionId: start.id });
       expect([...world.backend.receipts.keys()]).toEqual(ids);
       expect(world.backend.receipts.get(end.id).entity).toMatchObject({ journeyPhase: 'staying', activeDestinationId: null });
     } finally { await world.close(); }

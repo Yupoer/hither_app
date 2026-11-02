@@ -13,6 +13,7 @@ const mockNativeMetrics = {
   markLaunchPhase: jest.fn(),
   signpost: jest.fn(),
 };
+const mockProxyCircuit = jest.fn(() => false);
 const mockProxySearch = jest.fn();
 const mockProxyDirections = jest.fn();
 const mockEnergy = {
@@ -27,6 +28,7 @@ jest.mock('expo-modules-core', () => ({
     name === 'HitherMaps' ? mockNativeMaps : name === 'HitherMetrics' ? mockNativeMetrics : null,
 }));
 jest.mock('../native/googleMapsProxy', () => ({
+  isMapsServiceCircuitOpen: () => mockProxyCircuit(),
   MapsProxyError: class MapsProxyError extends Error {
     code: string;
     status: number;
@@ -44,6 +46,7 @@ jest.mock('../state/energyObservability', () => ({ energyObservability: mockEner
 
 import {
   defaultMapTransitProps,
+  directionsAvailable,
   getDirections,
   handlePlatformizedUserLocationChange,
   matchesPlaceQuery,
@@ -301,3 +304,13 @@ describe('native metrics bridge', () => {
     expect(mockNativeMetrics.signpost).toHaveBeenCalledWith('launch', 'event', 'token');
   });
 });
+
+ it('retains native walking and driving when the known proxy circuit is disabled', () => {
+   mockPlatform.OS = 'ios'; mockProxyCircuit.mockReturnValue(true);
+   expect(directionsAvailable('walk')).toBe(true);
+   expect(directionsAvailable('drive')).toBe(true);
+   expect(directionsAvailable('bicycle')).toBe(false);
+   expect(directionsAvailable('transit')).toBe(false);
+   mockProxyCircuit.mockReturnValue(false);
+   expect(directionsAvailable('bicycle')).toBe(true);
+ });

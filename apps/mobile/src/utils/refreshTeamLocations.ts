@@ -9,6 +9,11 @@ export async function refreshTeamLocations(input: {
   getMembers: () => readonly LocationRefreshMemberSnapshot[];
   /** Reads durable exact-version ACKs; ordinary newer GPS is not a response. */
   getAcknowledgedRecipientIds?: (requestedAt: string) => Promise<string[]>;
+  exchange?: (input: { requestPeers?: boolean; requestedAt?: string }) => Promise<{
+    pulled: boolean;
+    request: { accepted: boolean; retryAfterSeconds: number; recipientIds: string[]; requestedAt?: string } | null;
+    acknowledgedIds: string[];
+  }>;
   cooling: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -20,10 +25,12 @@ export async function refreshTeamLocations(input: {
   const sleep = input.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   const baselineLastUpdated = new Map(input.getMembers().map(m => [m.userId, m.uploadedAt ?? m.lastUpdated]));
   const bounded = <T>(work: Promise<T>, timeoutMs = 10_000) => requestWithDeadline(() => work, timeoutMs);
-  const firstPull = bounded(input.pull()).catch(() => false);
+  const firstExchange = input.exchange ? bounded(input.exchange({ requestPeers: !input.cooling })) : null;
+  const firstPull = (firstExchange ? firstExchange.then(reply => reply.pulled) : bounded(input.pull())).catch(() => false);
   // Include permission/session/storage waits, not only the native sensor timeout.
   const self = bounded(input.uploadSelf(), 35_000).then(value => Boolean(value), () => false);
-  const request = input.cooling ? Promise.resolve(null) : bounded(input.requestPeers()).catch(() => null);
+  const request = firstExchange ? firstExchange.then(reply => reply.request).catch(() => null)
+    : input.cooling ? Promise.resolve(null) : bounded(input.requestPeers()).catch(() => null);
   const result = await request;
   const serverDeadline = result?.requestedAt && input.serverTimeOffsetMs != null
     ? Date.parse(result.requestedAt) + 60_000 - input.serverTimeOffsetMs : NaN;
@@ -36,17 +43,19 @@ export async function refreshTeamLocations(input: {
   let acknowledgementsAvailable = result?.accepted === true && expectedUserIds.length === 0;
   let acknowledgedRecipientIds: string[] = [];
   const readAcknowledgements = async () => {
-    if (expectedUserIds.length && result?.requestedAt && input.getAcknowledgedRecipientIds) {
+    if (expectedUserIds.length && result?.requestedAt && (input.exchange || input.getAcknowledgedRecipientIds)) {
       // Missing/unavailable receipt endpoint is unknown, never an inferred ACK.
       try {
-        acknowledgedRecipientIds = await bounded(input.getAcknowledgedRecipientIds(result.requestedAt));
+        acknowledgedRecipientIds = input.exchange
+          ? (await bounded(input.exchange({ requestedAt: result.requestedAt }))).acknowledgedIds
+          : await bounded(input.getAcknowledgedRecipientIds!(result.requestedAt));
         acknowledgementsAvailable = true;
       } catch {
         acknowledgementsAvailable = false;
       }
     }
   };
-  if (expectedUserIds.length && result?.requestedAt && input.getAcknowledgedRecipientIds) {
+  if (expectedUserIds.length && result?.requestedAt && (input.exchange || input.getAcknowledgedRecipientIds)) {
     const deadline = now() + (input.timeoutMs ?? 20_000);
     while (true) {
       await readAcknowledgements();
@@ -56,8 +65,13 @@ export async function refreshTeamLocations(input: {
   }
   const initialPulled = await firstPull;
   const selfUploaded = await self;
-  const pulled = await bounded(input.pull()).catch(() => false);
-  await readAcknowledgements();
+  const finalExchange = input.exchange
+    ? await bounded(input.exchange({ requestedAt: result?.requestedAt })).catch(() => null) : null;
+  const pulled = input.exchange ? finalExchange?.pulled === true : await bounded(input.pull()).catch(() => false);
+  if (finalExchange) {
+    acknowledgedRecipientIds = finalExchange.acknowledgedIds;
+    acknowledgementsAvailable = result?.accepted === true;
+  } else await readAcknowledgements();
   return {
     cooldownUntil, acknowledgementsAvailable,
     requestUnavailable: !input.cooling && result == null,
