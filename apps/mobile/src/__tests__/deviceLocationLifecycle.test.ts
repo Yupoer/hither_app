@@ -223,6 +223,22 @@ it('keeps required-upload failure when the shared watcher event is not acknowled
   expect(enqueueLocationOutbox).toHaveBeenCalledTimes(1);
 });
 
+it.each([false, true])('preserves the required-upload error unless the captured actor changed (%s)', async accountChanged => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe)); });
+  mockRead.mockResolvedValueOnce(sample(26));
+  let failUpload!: (error: Error) => void;
+  jest.mocked(flushLocationOutbox).mockImplementationOnce(() => new Promise((_resolve, reject) => { failUpload = reject; }));
+  let refresh!: ReturnType<typeof probe.feed.refreshDeviceLocation>;
+  await act(async () => { refresh = probe.feed.refreshDeviceLocation({ requireUpload: true }); });
+  const error = new Error(accountChanged ? 'account_changed' : 'lost_reply');
+  const expected = accountChanged ? expect(refresh).resolves.toBeNull() : expect(refresh).rejects.toBe(error);
+  if (accountChanged) jest.mocked(getLocalAuthActorId).mockResolvedValue('replacement-actor');
+  await act(async () => { failUpload(error); });
+  await expected;
+  expect(enqueueLocationOutbox).toHaveBeenCalledTimes(1);
+});
+
 it('forces an upload when the fresh watcher sample was below its normal upload gate', async () => {
   const probe = createLocationProbe();
   const { Probe } = probe;

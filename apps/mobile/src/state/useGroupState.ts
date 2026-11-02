@@ -7,7 +7,6 @@ import { requestWithDeadline } from '../utils/requestDeadline';
 import { getGroupRecoverySnapshot } from '../api/client';
 import type { GroupRecoverySnapshot } from '../api/services/GroupService';
 import { subscribeGroupSyncSnapshots } from './groupSync';
-import { recoverPendingLocationRefreshes } from './backgroundLocationRefresh';
 import { energyObservability } from './energyObservability';
 import { syncLocationSharing } from './locationSharingSync';
 import { classifyOperationError, getOperationErrorMessage, type OperationErrorClassification } from '../utils/operationError';
@@ -381,9 +380,17 @@ function useGroupStateOwner(
           const durableAhead = durable && typeof recoveryGatheringVersion === 'number'
             && durable.activeGathering.entityVersion > 0
             && durable.activeGathering.entityVersion >= recoveryGatheringVersion;
-          const preserveLocalGathering = Boolean(durableAhead) || openOperationsRef.current.some(
+          const pendingGathering = openOperationsRef.current.some(
             (operation) => isLeaderGatheringOperation(operation),
           );
+          const preserveLocalGathering = Boolean(durableAhead) || pendingGathering;
+          const pendingItinerary = openOperationsRef.current.some(operation => operation.entityType === 'itinerary'
+            && operation.entityId === groupId && operation.status !== 'conflict'
+            && operation.operationType !== 'record_arrival');
+          const recoveryItineraryVersion = recovery.entityVersions[`itinerary:${groupId}`];
+          const preserveLocalItinerary = preserveLocalGathering && (pendingGathering || pendingItinerary
+            || typeof recoveryItineraryVersion !== 'number'
+            || recoveryItineraryVersion < (durable?.itineraryVersion ?? 0));
           const previous = durableAhead && durable
             ? { ...(stateRef.current ?? groupStateFromCoreSnapshot(durable)),
                 group: groupStateFromCoreSnapshot(durable).group }
@@ -419,6 +426,7 @@ function useGroupStateOwner(
             myUserIdRef.current,
             {
               preserveLocalGathering,
+              preserveLocalItinerary,
               reloadReason: loadReason,
             },
           );
@@ -629,10 +637,9 @@ function GroupOutboxProjection({ owner }: { owner: GroupStateOwner }) {
         if (!cancelled && !applied) void refreshOpenOperations(groupId);
       });
     });
-    const unsubscribeSnapshots = subscribeGroupSyncSnapshots((actorId, recovery, pendingRefreshes) => {
+    const unsubscribeSnapshots = subscribeGroupSyncSnapshots((actorId, recovery) => {
       if (!cancelled && actorId === owner.myUserIdRef.current && recovery.state.group.id === groupId) {
         void owner.loadRef.current('itinerary_mutation', recovery);
-        if (pendingRefreshes.length > 0) void recoverPendingLocationRefreshes(pendingRefreshes).catch(() => undefined);
       }
     });
     return () => { cancelled = true; unsubscribe(); unsubscribeSnapshots(); };

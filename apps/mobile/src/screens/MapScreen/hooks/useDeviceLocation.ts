@@ -292,7 +292,14 @@ export function useDeviceLocation({
         && receipt.accessRevision === access.generation
         ? receipt.completion
         : enqueueUpload(fix, now, requestedGroup);
-      if (options?.requireUpload) await upload;
+      if (options?.requireUpload) {
+        try { await upload; } catch (error) {
+          if (await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || requestedGroup !== groupIdRef.current
+            || !sharingEnabledRef.current || !hasMembershipRef.current
+            || !isForegroundLocationState(AppState.currentState)) return null;
+          throw error;
+        }
+      }
       else if (options?.waitForUpload === false) void upload.catch(() => undefined);
       else await upload.catch(() => undefined);
     }

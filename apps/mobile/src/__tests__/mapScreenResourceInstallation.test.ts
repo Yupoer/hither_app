@@ -19,7 +19,7 @@ function mockLifecycle(name: string) { return React.createElement(MockLifecycle,
 
 const mockEmpty: never[] = [];
 const mockAsync = jest.fn(async () => true);
-jest.mock('../state/groupSync', () => ({ syncGroup: jest.fn() }));
+jest.mock('../state/groupSync', () => ({ syncGroup: jest.fn(), subscribeGroupSyncSnapshots: jest.fn(() => jest.fn()) }));
 const mockStartFrame = jest.fn();
 const mockOutboxListeners = new Set<() => void>();
 const mockAppListeners = new Set<(state: string) => void>();

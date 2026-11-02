@@ -447,6 +447,13 @@ export function createLocationOutbox(
       return runSerial(async () => { await initialize(); return database.count(); });
     },
 
+    pruneExpired(): Promise<void> {
+      return runSerial(async () => {
+        await initialize();
+        await database.removeExpired(now());
+      });
+    },
+
     purge(): Promise<void> {
       return runSerial(async () => {
         await initialize();
@@ -486,6 +493,7 @@ export async function enqueueLocationOutbox(
 export async function flushLocationOutbox(
   maxEntries = MAX_BATCH,
 ): Promise<LocationFlushResult> {
+  await outbox.pruneExpired();
   const access = await captureLocationAccess();
   if (access === null) {
     if (!isLocationAccessPending()) await outbox.purge();
@@ -497,13 +505,17 @@ export async function flushLocationOutbox(
       : await (await import('./groupSync')).syncGroup({ groupId: access.groupId, maxLocationEntries: maxEntries })
         .then(result => ({ ...result.location, pendingRefreshes: result.pendingRefreshes }))
     : { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
+  scheduleLocationOutboxRetry(result);
+  return result;
+}
+
+function scheduleLocationOutboxRetry(result: LocationFlushResult): void {
   clearTimeout(retryTimer);
   if (result.remaining > 0 && AppState.currentState === 'active') {
     retryTimer = setTimeout(() => {
       if (AppState.currentState === 'active') void flushLocationOutbox().catch(() => undefined);
     }, Math.max(1_000, (result.nextRetryAt ?? Date.now() + 2_000) - Date.now()));
   }
-  return result;
 }
 
 export async function exchangeLocationOutbox(groupId: string, actorId: string,
@@ -513,13 +525,15 @@ export async function exchangeLocationOutbox(groupId: string, actorId: string,
     await uploader([]);
     return { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   }
-  return outbox.exchange(groupId, actorId, async events => {
+  const result = await outbox.exchange(groupId, actorId, async events => {
     if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
     const result = await uploader(events);
     if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
     if (await requireUserId() !== actorId) throw new Error('account_changed');
     return result;
   }, maxEntries);
+  scheduleLocationOutboxRetry(result);
+  return result;
 }
 
 export function purgeLocationOutbox(): Promise<void> {

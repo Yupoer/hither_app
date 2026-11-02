@@ -32,6 +32,7 @@ export async function syncGroup(input: { groupId: string; refresh?: GroupRefresh
   const run = async () => {
     if (await requireUserId() !== actorId) throw new Error('account_changed');
     let reply: ExchangeReply | undefined;
+    let exchangeError: unknown;
     let location: LocationFlushResult | undefined;
     let attempted = false;
     const send = async (operations: CoreOperation[]) => {
@@ -39,18 +40,23 @@ export async function syncGroup(input: { groupId: string; refresh?: GroupRefresh
       location = await exchangeLocationOutbox(input.groupId, actorId, async events => {
         const access = events.length ? await captureLocationAccess(input.groupId, true) : null;
         const permittedEvents = access ? events : [];
-        reply = await exchangeGroup({ groupId: input.groupId, actorId, operations, events: permittedEvents,
-          refresh: input.refresh ?? {}, signal: access?.signal });
+        try {
+          reply = await exchangeGroup({ groupId: input.groupId, actorId, operations, events: permittedEvents,
+            refresh: input.refresh ?? {}, signal: access?.signal });
+        } catch (error) {
+          exchangeError = error;
+          throw error;
+        }
         return { ...reply.locationResult,
           rejected: [...reply.locationResult.rejected, ...events.filter(event => !permittedEvents.includes(event))
             .map(event => ({ id: event.id, reason: access === null ? 'local_location_access_denied' : 'retryable' }))] };
       }, input.maxLocationEntries);
-      if (!reply) throw new Error('group_sync_response_missing');
+      if (!reply) throw exchangeError ?? new Error('group_sync_response_missing');
       return reply.coreResults;
     };
     const core = await getCoreOperationOutbox().flush(input.maxCoreEntries ?? 20, input.groupId, send);
     if (!attempted) await send([]);
-    if (!reply || !location) throw new Error('group_sync_response_missing');
+    if (!reply || !location) throw exchangeError ?? new Error('group_sync_response_missing');
     if (await requireUserId() !== actorId) throw new Error('account_changed');
     for (const receipt of reply.locationReceipts) {
       const key = JSON.stringify([actorId, input.groupId]);

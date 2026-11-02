@@ -472,6 +472,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const foregroundNavigationLifecycle = (
     <MapForegroundNavigationResource
       groupId={groupId}
+      actorId={user?.id ?? null}
       navigationSessionState={navigationSessionState}
       refresh={refresh}
     />

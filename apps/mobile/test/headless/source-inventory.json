@@ -5757,7 +5757,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "d908744e0c08d0c8bb146ef2dd5ad144c8bd77fac7a9f3cce19f7197966a5049"
+    "hash": "16aa15db9be03e1179a937e5058bcf5ddbc2eed405ddf84e903041235c5d2c16"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6459,13 +6459,13 @@
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
     "kind": "export",
     "name": "MapForegroundNavigationResource",
-    "hash": "42ae8b9608b47fea3713f7dc14bfa9a66210692f8578ad51830a60c0ddf764ce"
+    "hash": "333f1cc3692f1fdddb4e31faa7f20871d34a6bb28db21fab680137ca9b9bcb38"
   },
   {
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "55f5bc18b96e953830dedcd79774bb7b95eeb79d6c13aea54a6bece57eb5b046"
+    "hash": "72fd590cf286a253e8b86a4e882c8b6ad4208abc05a75448881ad1837cf35592"
   },
   {
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
@@ -8001,7 +8001,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "c0bcb443fd8bbd5902e80b7369c89f568ace0f162387504e58a6d096f0c3876a"
+    "hash": "e8c10494e143e86d9ab42e22844f261a7b0d0a8da592cfb01dfd224fcd11b4c7"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -9597,7 +9597,7 @@
     "file": "src/state/groupSync.ts",
     "kind": "export",
     "name": "syncGroup",
-    "hash": "3c0a2394ac8ce63ffbb656bdf41f022f848cb6957d39a4808ccdc8d738723fab"
+    "hash": "3f8bc27fbf02e281ff480b2567b0b99a2ad7468876a8b700645c58fa25b913c9"
   },
   {
     "file": "src/state/groupSync.ts",
@@ -9669,7 +9669,7 @@
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "createLocationOutbox",
-    "hash": "3109dcaf9573516213e1497a260d9fab618dc1bda1cee096b317809a5f740e4d"
+    "hash": "cbfdf6015ce58b09d0a376274929db6abe985ee07308f62d6f6577c94d162de8"
   },
   {
     "file": "src/state/locationOutbox.ts",
@@ -9681,13 +9681,13 @@
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "flushLocationOutbox",
-    "hash": "30441efe7bf50c1993911f82d5bf26b2b653bd2fb3ef0b43e935e5c6873babd0"
+    "hash": "b6cc0d8abd2ae864deb00437c4c6f32f57544b264f1053549ac0f91cda2db29e"
   },
   {
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "exchangeLocationOutbox",
-    "hash": "e1645b6d2c103596dbbf628bf22a0ac907b7dee18b3fee88a30159a04c458436"
+    "hash": "917e68f39e20fde0cbdb275ef71eaa0a205662ff140733e8d923ea8dd50fe0e9"
   },
   {
     "file": "src/state/locationOutbox.ts",
@@ -10071,7 +10071,7 @@
     "file": "src/state/useGroupState.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "18ee11d8898c4e2de0889d4321158558e8bf98fca19599449b4c62eda4015e40"
+    "hash": "601d81548e8f01141ff54fe68aadea30f6215b6cee2e905f42189ccbc9f52ec2"
   },
   {
     "file": "src/state/useGroupState.ts",
@@ -12531,7 +12531,7 @@
     "file": "src/utils/syncAuthority.ts",
     "kind": "export",
     "name": "mergeRemoteGroupStatePreservingOwnLocation",
-    "hash": "cf450c502bdeea38c4dc27b32dc8d0121ea3abaa7895f08933911893bc24796d"
+    "hash": "c49712d053bea452156b631213f3c66e1e1b442511c202b0ff45a683d1a07e22"
   },
   {
     "file": "src/utils/syncAuthority.ts",

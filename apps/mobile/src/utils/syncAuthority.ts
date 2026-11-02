@@ -118,6 +118,7 @@ export function describeRecoveryMerge(input: {
 
 export interface MergeRemoteGroupOptions {
   preserveLocalGathering?: boolean;
+  preserveLocalItinerary?: boolean;
   /** Trigger that caused this recovery load. */
   reloadReason?: GroupReloadReason | null;
 }
@@ -160,11 +161,11 @@ export function mergeRemoteGroupStatePreservingOwnLocation(
   // Leader transition is local-first. Membership-only empty snapshots must not
   // wipe non-empty cards either (#167).
   const preserveDestinations =
-    (options.preserveLocalGathering || fenceEmptyItinerary)
+    (options.preserveLocalItinerary || fenceEmptyItinerary)
     && previous.destinations.length > 0
     && remote.destinations.length === 0;
 
-  if (!options.preserveLocalGathering && !fenceEmptyItinerary) {
+  if (!options.preserveLocalGathering && !options.preserveLocalItinerary && !fenceEmptyItinerary) {
     return { ...remote, members };
   }
 
