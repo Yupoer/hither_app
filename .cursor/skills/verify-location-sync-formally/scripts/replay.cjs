@@ -130,7 +130,7 @@ exports.run = async function run(repo) {
     const switched = switchAt === 'before-reply' || switchAt === 'after-gps'
       || switchAt === 'before-core-settlement' && (loss || coreAcks > 0);
     assert.equal(actor, switched ? 'B' : 'A', 'account switch stimulus must reach its selected boundary');
-    const expectedError = loss ? 'group_sync_response_missing' : switched ? 'account_changed' : null;
+    const expectedError = loss ? 'lost_reply' : switched ? 'account_changed' : null;
     assert.equal(error, expectedError, 'first exchange must resolve or reject with its expected domain outcome');
     const firstPublications = loss || switched ? 0 : 1;
     assert.equal(projections.length, firstPublications, 'first exchange publication count must match its outcome');
@@ -177,5 +177,5 @@ exports.run = async function run(repo) {
   assert.ok(publicationMutationCaught, 'scratch missing listener dispatch mutation escaped');
   await scenario({ coreAcks: 1, gpsMask: 1, loss: false, switchAt: 'none' });
   for (const file of owners) assert.equal(fs.readFileSync(path.join(repo, file), 'utf8'), sources[file], 'product source changed during replay');
-  return { scenarios, mutationCaught, publicationMutationCaught, restoredBaselinePassed: true, sourceSha256: Object.fromEntries(owners.map(file => [file, hash(sources[file])])), scope: 'Real syncGroup, core flush/settlement, GPS exchange/settlement, exact successful snapshot/pending-refresh publication counts and first-call domain outcomes. External network, auth/privacy, SQLite driver and native packages mocked. No SQL/server/device execution. Assumes captured-actor execution; does not cover lazy authentication switching or p_actor_id/auth.uid rejection before effects.' };
+  return { scenarios, mutationCaught, publicationMutationCaught, restoredBaselinePassed: true, sourceSha256: Object.fromEntries(owners.map(file => [file, hash(sources[file])])), scope: 'Real syncGroup, core flush/settlement, GPS exchange/settlement, exact successful snapshot/pending-refresh publication counts and first-call domain outcomes. All GPS rows remain unexpired; local TTL pruning, including pre-auth pruning, is outside this bound. External network, auth/privacy, SQLite driver and native packages mocked. No SQL/server/device execution. Assumes captured-actor execution; does not cover lazy authentication switching or p_actor_id/auth.uid rejection before effects.' };
 };
