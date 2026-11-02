@@ -27,7 +27,7 @@ On Windows, run the same suites with a CPU budget and a retained resource report
 
 The default 4.5% Windows Job CPU rate applies only to this launch and its descendants. The launcher restores its environment and own rate. Use -Driver jest for specific Jest files, or -Driver trip for the recorded trip. Resource reports keep CPU time, elapsed time, measured host CPU share, native exit and launcher errors. The Node commands above remain available on other hosts and for uncapped diagnostics.
 
-External substitutes are explicit React Native/Expo capabilities, map/search and file inputs, auth/OAuth, purchases, ads, notifications, Live Activity, updates, the native SQLite open call and a Supabase SDK/backend contract. GPS inputs travel through Expo `watchPositionAsync` and the real native wrapper. The backend returns fixture wire rows and receipts; it does not execute Postgres functions, RLS, triggers or an actual Realtime service. Unsupported external methods, RPCs, tables, query shapes, actions and accidental network attempts remain fatal even when production catches them.
+External substitutes are explicit React Native/Expo capabilities, map/search and file inputs, auth/OAuth, purchases, ads, notifications, Live Activity, updates, the native SQLite open call and a Supabase SDK/backend contract. GPS inputs travel through Expo `watchPositionAsync` and the real native wrapper. The scheduler fixture assigns distinct millisecond creation timestamps to scheduled starts within one controlled-clock tick, representing the SQL creation-clock ordering without advancing World time. The backend returns fixture wire rows and receipts; it does not execute Postgres functions, RLS, triggers or an actual Realtime service. Unsupported external methods, RPCs, tables, query shapes, actions and accidental network attempts remain fatal even when production catches them.
 
 ## Programmatic scenarios
 
@@ -68,6 +68,7 @@ For screen operations, use a real screen device, for example `{ id: 'map', userI
 | Input | Shape | Boundary |
 | --- | --- | --- |
 | GPS | `{kind:'gps', latitude, longitude, accuracy?, timestamp?}` | Current Expo callbacks. `gps(lat,lng,options)` is shorthand. |
+| Location error | `{kind:'locationError', message:string}` | Current Expo watch error callbacks; removed subscriptions receive no error. |
 | Retired GPS | `{kind:'retiredGps', latitude, longitude, timestamp?}` | Deliberately delivers an old removed OS callback for fencing tests. |
 | App state | `{kind:'appState', value:'active'|'inactive'|'background'}` | Actual AppState subscribers. |
 | Focus | `{kind:'appFocus', value:'blur'|'focus'}` | Actual Android AppState focus subscribers. |
@@ -99,7 +100,7 @@ The runner saves exact command inputs with actor generation in `inputs.jsonl`, a
 
 ## Coverage and limits
 
-For a changed-location-only pass, run `--testNamePattern="changed location exchange on"` with retained World evidence. Its three scenarios cover mixed offline queues and returned state, the real members refresh with a connected peer, and passive background callback delivery plus the captain's saved schedule. `world.processMeetTimes()` explicitly invokes the `process_meet_time_pushes` backend fixture. `world.advance()` never invokes that cron. Inspect `scheduledPushes` in retained backend evidence for the scheduled navigation envelope. These are external contract fixtures; actual SQL, deployed cron, push delivery and OS background wakeups require their own evidence. Do not present this partial run as the complete functional denominator.
+For a changed-location-only pass, run `--testNamePattern="changed location exchange on"` with retained World evidence. Its four scenarios cover visible SDK interruption and recovery with personal arrival and continued sharing, mixed offline queues and returned state, the real members refresh with a connected peer, and passive background callback delivery plus the captain's saved schedule. `world.processMeetTimes()` explicitly invokes the `process_meet_time_pushes` backend fixture. `world.advance()` never invokes that cron. Inspect `scheduledPushes` in retained backend evidence for the scheduled navigation envelope. These are external contract fixtures; actual SQL, deployed cron, push delivery and OS background wakeups require their own evidence. Do not present this partial run as the complete functional denominator.
 
 Functional scenarios specify iOS and Android platform modes. The resolver selects production platform files as well as Platform.OS branches; inspect `presentation.resolved` when asserting this distinction. A mixed-platform scenario publishes from iOS to an Android peer. Existing location and journey cases cover pending-before-ACK, missed-event recovery at the subscribed 120 second fallback poll, offline persistence/restart/retry, account/privacy fences and Start/End ordering. Domain scenario suites add actual screen and provider operations. Run the current suites and report their results; historical test counts do not establish a new head's coverage.
 

@@ -17,7 +17,7 @@ function processDue(b) {
   for (const row of [...b.itinerary].sort((a, c) => (a.meet_at ?? '').localeCompare(c.meet_at ?? '') || a.id.localeCompare(c.id))) {
     const meetAt = Date.parse(row.meet_at);
     if (!row.meet_schedule_occurrence_id || row.meet_schedule_consumed_at || !Number.isFinite(meetAt)
-      || meetAt <= b.now - 7200000 || meetAt > b.now + (row.meet_red_minutes ?? 10) * 60000
+      || meetAt <= b.now - 7200000 || meetAt > b.now + (row.meet_red_minutes ?? 5) * 60000
       || row.closed_at || row.day == null || row.latitude == null || row.longitude == null
       || !scopeAllowed(b, row.group_id, row.subgroup_id, row.meet_set_by)) continue;
     if (meetAt > b.now) {
@@ -34,7 +34,7 @@ function processDue(b) {
     if (!active) {
       const result = require('./backend-core.cjs').apply(b, { userId: row.meet_set_by, navigationOrigin: 'scheduled', args: {
         p_operation_id: row.meet_schedule_occurrence_id, p_group_id: row.group_id, p_actor_id: row.meet_set_by,
-        p_entity_type: 'active_gathering', p_entity_id: row.subgroup_id ?? row.group_id, p_entity_version: 0,
+        p_entity_type: 'active_gathering', p_entity_id: row.group_id, p_entity_version: 0,
         p_operation_type: 'start_gathering', p_payload: { activeDestinationId: row.id, subgroupId: row.subgroup_id ?? null,
           navigationRequestId: row.meet_schedule_occurrence_id }, p_sequence: row.meet_schedule_revision,
         p_dependency_ids: [], p_created_at: row.meet_at,

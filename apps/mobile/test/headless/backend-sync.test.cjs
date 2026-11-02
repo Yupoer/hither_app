@@ -4,7 +4,7 @@ const { Backend, GROUP_ID, LEADER, PEER, DESTINATION } = require('./backend.cjs'
 const b = new Backend(() => {});
 const sync = (userId, core = [], events = [], refresh = {}) => b.execute('sync-contract', {
   kind: 'rpc', name: 'sync_group', steps: [], userId,
-  args: { p_group_id: GROUP_ID, p_core_operations: core, p_location_events: events, p_refresh: refresh },
+  args: { p_group_id: GROUP_ID, p_actor_id: userId, p_core_operations: core, p_location_events: events, p_refresh: refresh },
 });
 const core = (id, sequence, type, payload) => ({ operation_id: id, entity_type: 'itinerary', entity_id: DESTINATION,
   entity_version: 0, operation_type: type, payload, sequence, dependency_ids: [], created_at: new Date(b.now).toISOString() });
@@ -52,6 +52,15 @@ assert.equal(denied.data.coreResults[0].status, 'conflict');
 assert.deepEqual(denied.data.coreResults[1], { operation_id: 'suffix', status: 'not_submitted' });
 assert.equal(b.itinerary[0].title, 'Saved in exchange');
 assert.equal(sync(PEER, [], [event('wrong-actor', LEADER)]).error.code, '42501');
+const beforeRace = { receipts: b.receipts.size, commands: b.tables.commands.length, refreshes: b.locationRefreshes.length };
+const staleActor = b.execute('sync-contract', { kind: 'rpc', name: 'sync_group', steps: [], userId: PEER,
+  args: { p_group_id: GROUP_ID, p_actor_id: LEADER,
+    p_core_operations: [{ ...core('stale-actor', 1, 'send_command', { type: 'custom', message: 'Queued by A' }),
+      entity_type: 'group', entity_id: GROUP_ID }],
+    p_location_events: [], p_refresh: { requestPeers: true } } });
+assert.deepEqual(staleActor.error, { message: 'account_changed', code: '28000' });
+assert.deepEqual({ receipts: b.receipts.size, commands: b.tables.commands.length, refreshes: b.locationRefreshes.length }, beforeRace,
+  'Stale A envelope under B credentials cannot become a B command or refresh');
 assert.throws(() => sync(LEADER, [], [], { invented: true }), /Unknown refresh field/);
 assert.throws(() => sync(LEADER, [core('backward-a', 2, 'set_solo', { userId: LEADER, solo: false }), core('backward-b', 1, 'set_solo', { userId: LEADER, solo: false })]), /Core prefix must preserve sequence/);
 console.log('Mixed group sync fixture contracts passed');

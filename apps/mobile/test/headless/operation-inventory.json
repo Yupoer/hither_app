@@ -1165,7 +1165,7 @@
     {
       "id": "MAP-LOC-01",
       "area": "Independent slice D: journey navigation / device / routes / progress",
-      "source": "H/useDeviceLocation:220 consumeForegroundSample <- Expo watch OR GroupMap.onUserLocationSample M:7074"
+      "source": "H/useDeviceLocation consumeForegroundSample <- Expo watch on both platforms; MapKit displays the user location"
     },
     {
       "id": "MAP-LOC-02",

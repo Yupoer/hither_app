@@ -240,6 +240,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       const flock = root.root.findAll(node => node.type?.name === 'FlockRow' && !availability(node).hidden);
       return {
         mapMembers: map ? structuredClone(map.props.members) : null,
+        mapRoutePoints: map?.props.routePoints ? structuredClone(map.props.routePoints) : null,
         flockRows: flock.map(node => ({ userId: node.props.userId, name: node.props.name,
           lastUpdated: node.props.lastUpdated, serverTimeOffsetMs: node.props.serverTimeOffsetMs, solo: node.props.solo, sharingEnabled: node.props.sharingEnabled,
           text: node.findAll(child => child.type === 'host:Text').map(child =>

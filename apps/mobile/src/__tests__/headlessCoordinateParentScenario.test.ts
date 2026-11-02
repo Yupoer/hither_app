@@ -49,11 +49,7 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
     const world = new World();
     try {
       const device = await map(world);
-      if (platform === 'ios') {
-        await device.perform('map.location.native-sample', { latitude: 25.032, longitude: 121.522, accuracy: 4, timestamp: world.now });
-      } else {
-        await device.gps(25.032, 121.522, { accuracy: 4 });
-      }
+      await device.gps(25.032, 121.522, { accuracy: 4 });
       await world.settle();
       await openCoordinates(world, device);
       const opened = await device.observe();

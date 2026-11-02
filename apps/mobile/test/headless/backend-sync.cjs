@@ -11,8 +11,9 @@ function timestampMicros(value) {
 }
 
 function execute(b, { args: a, userId }) {
-  keys(a, 'p_group_id p_core_operations p_location_events p_refresh');
+  keys(a, 'p_group_id p_actor_id p_core_operations p_location_events p_refresh');
   if (!userId) return fail('not authenticated', '28000');
+  if (a.p_actor_id !== userId) return fail('account_changed', '28000');
   if (!member(b, a.p_group_id, userId)) return fail('not_member');
   assert(Array.isArray(a.p_core_operations) && a.p_core_operations.length <= 20, 'Core envelope contract');
   assert(Array.isArray(a.p_location_events) && a.p_location_events.length <= 50, 'Location envelope contract');
@@ -37,7 +38,7 @@ function execute(b, { args: a, userId }) {
       continue;
     }
     const result = require('./backend-core.cjs').apply(b, { userId, args: {
-      p_operation_id: operation.operation_id, p_group_id: a.p_group_id, p_actor_id: userId,
+      p_operation_id: operation.operation_id, p_group_id: a.p_group_id, p_actor_id: a.p_actor_id,
       p_entity_type: operation.entity_type, p_entity_id: operation.entity_id, p_entity_version: operation.entity_version,
       p_operation_type: operation.operation_type, p_payload: operation.payload, p_sequence: operation.sequence,
       p_dependency_ids: operation.dependency_ids, p_created_at: operation.created_at,

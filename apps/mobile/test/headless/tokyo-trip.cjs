@@ -150,8 +150,7 @@ async function gps(actor, point) {
   const input = { latitude: point.latitude, longitude: point.longitude, accuracy: 5, timestamp: world.now };
   samples[actor] = input;
   await devices[actor].gps(point.latitude, point.longitude, input);
-  if (devices[actor].spec.platform === 'ios') await devices[actor].perform('map.location.native-sample', input);
-  await capture(actor, 'gps.sample', { ...input, sources: devices[actor].spec.platform === 'ios' ? ['expoWatch','MapKit'] : ['expoWatch'] });
+  await capture(actor, 'gps.sample', { ...input, sources: ['expoWatch'] });
   return advance(300, 'Location projection debounce');
 }
 async function arriveAll(destinationId, point) {

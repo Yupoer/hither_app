@@ -432,8 +432,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
         points: [{ latitude: 25.03, longitude: 121.53 }, { latitude: 25.04, longitude: 121.53 }] } } });
       const sample = async (latitude: number) => {
         await world.advance(1000);
-        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
-        else await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy: 5, timestamp: world.now });
         await world.settle();
       };
       await sample(25.03);
@@ -593,8 +592,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(world.backend.itinerary[0].closed_at).toBeNull();
       if (role === 'member') {
         await world.advance(1000);
-        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-        else await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+        await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
         const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')), 'member automatic arrival reflected');
         expect(field(arrived, `gather-nav-${DESTINATION}`)?.label).toBe('前往中');
         expect(field(arrived, `gather-nav-${DESTINATION}`)?.disabled).toBe(true);
@@ -690,8 +688,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const session = [...world.backend.sessions.values()][0];
       const sample = async (latitude: number, accuracy: number) => {
         await world.advance(1000);
-        if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude, longitude: 121.53, accuracy, timestamp: world.now });
-        else await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy, timestamp: world.now });
+        await device.input({ kind: 'gps', latitude, longitude: 121.53, accuracy, timestamp: world.now });
         await world.settle();
       };
       await sample(25.04, 200);
@@ -728,8 +725,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       const session = [...world.backend.sessions.values()][0];
       await world.advance(1000);
       if (platform === 'ios') await world.waitFor(device, (value: MapObservation) => has(value, 'group-map-native'), 'leader native map before automatic arrival');
-      if (platform === 'ios') await run(device, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-      else await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
       const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')) && world.backend.tables.destination_arrivals.length === 1, 'automatic personal arrival reflected');
       expect(world.backend.tables.destination_arrivals[0]).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, arrived_at: new Date(world.now).toISOString(), source: 'automatic' });
       expect(field(arrived, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
@@ -741,8 +737,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect((await peer.observe()).presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
       await world.advance(1000);
       if (platform === 'ios') await world.waitFor(peer, (value: MapObservation) => has(value, 'group-map-native'), 'member native map before automatic arrival');
-      if (platform === 'ios') await run(peer, 'map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-      else await peer.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
+      await peer.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
       await world.waitFor(peer, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'last roster member automatic arrival accepted');
       expect(world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER)).toMatchObject({ navigation_session_id: session.id, source: 'automatic' });
       await world.advance(2500);

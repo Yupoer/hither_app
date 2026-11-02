@@ -38,4 +38,29 @@ b.now += 60000;
 assert.equal(processDue(b), 0, 'Same active target consumes without a replacement session');
 assert.equal(b.sessions.size, 1);
 assert(destination.meet_schedule_consumed_at);
+
+const simultaneous = new Backend(() => {});
+const subgroupId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+simultaneous.tables.subgroups.push({ id: subgroupId, group_id: GROUP_ID, leader_id: PEER });
+const template = { ...simultaneous.itinerary[0] };
+for (const [index, subgroup] of [null, null, subgroupId].entries()) {
+  const row = index === 0 ? simultaneous.itinerary[0] : { ...template,
+    id: `eeeeeeee-eeee-4eee-8eee-${String(index).padStart(12, '0')}`, subgroup_id: subgroup };
+  if (index > 0) simultaneous.itinerary.push(row);
+  simultaneous.execute('schedule-contract', { kind: 'table', name: 'itinerary_items', userId: LEADER,
+    steps: [['update', { meet_at: new Date(simultaneous.now + 360000).toISOString() }], ['eq', 'id', row.id]] });
+}
+assert.equal(processDue(simultaneous), 0, 'Database default warning window is five minutes');
+simultaneous.now += 60000;
+assert.equal(processDue(simultaneous), 3);
+simultaneous.now += 300000;
+const transactionTime = simultaneous.now;
+assert.equal(processDue(simultaneous), 3);
+const starts = [...simultaneous.sessions.values()];
+assert.equal(new Set(starts.map(s => s.started_at)).size, 3, 'Scheduled starts receive distinct creation clock timestamps');
+assert.equal(starts[0].status, 'cancelled');
+assert.equal(starts[1].status, 'active');
+assert.equal(starts[2].scope_subgroup_id, subgroupId);
+assert.equal(simultaneous.operationSignatures.get(starts[2].id).entityId, GROUP_ID, 'Subgroup active-gathering identity remains group ID');
+assert.equal(simultaneous.now, transactionTime, 'Creation-clock ordering does not advance the World clock');
 console.log('Explicit scheduled navigation fixture contracts passed');

@@ -275,13 +275,11 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     try {
       const device = await map(world);
       const before = await device.observe();
-      if (platform === 'ios') await device.perform('map.location.native-sample', { latitude: 25.031, longitude: 121.521, accuracy: 4, timestamp: world.now });
-      else await device.gps(25.031, 121.521, { accuracy: 4 });
+      await device.gps(25.031, 121.521, { accuracy: 4 });
       await world.settle();
       expect(world.backend.locations.get(`${GROUP_ID}:${LEADER}`)).toMatchObject({ latitude: 25.031, longitude: 121.521 });
       const stale = { latitude: 25.4, longitude: 121.9, accuracy: 4, timestamp: world.now - 120000 };
-      if (platform === 'ios') await device.perform('map.location.native-sample', stale);
-      else await device.gps(stale.latitude, stale.longitude, stale);
+      await device.gps(stale.latitude, stale.longitude, stale);
       await world.settle();
       expect(world.backend.locations.get(`${GROUP_ID}:${LEADER}`)).toMatchObject({ latitude: 25.031, longitude: 121.521 });
       const cameraBefore = (await device.observe()).presentation.receipts.length;

@@ -1802,6 +1802,26 @@
           ]
         }
       ]
+    },
+    {
+      "id": "LOC-06",
+      "title": "Map shows location interruption and stops the arrived personal route while sharing continues",
+      "critical": true,
+      "sources": [
+        "src/screens/MapScreen.tsx",
+        "src/native/location.ts",
+        "src/screens/MapScreen/hooks/useMapKitRoutes.ts"
+      ],
+      "cases": [
+        {
+          "file": "src/__tests__/headlessLocationSyncScenario.test.ts",
+          "pattern": "shows SDK interruption until a new fix",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        }
+      ]
     }
   ]
 }

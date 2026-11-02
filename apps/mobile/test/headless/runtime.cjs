@@ -127,7 +127,7 @@ exports.run = async function run(jest) {
   const storage = store('async');
   const secure = store('secure');
   const appListeners = new Set();
-  const watches = new Set();
+  const watches = new Map();
   const retiredWatches = new Set();
   const channels = new Set();
   const handles = new Map();
@@ -191,7 +191,7 @@ exports.run = async function run(jest) {
   }));
   jest.doMock('expo-location', () => strict('expo-location', {
     __esModule: true,
-    Accuracy: { High: 6, Balanced: 3, Low: 2 },
+    Accuracy: { Lowest: 1, Low: 2, Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
     requestForegroundPermissionsAsync: async () => ({ ...permission }),
     getForegroundPermissionsAsync: readForegroundPermission,
     getBackgroundPermissionsAsync: async () => ({ ...permission }),
@@ -199,9 +199,10 @@ exports.run = async function run(jest) {
     hasStartedLocationUpdatesAsync: async name => backgroundTasks.has(name),
     startLocationUpdatesAsync: async (name, options) => { assert.equal(typeof name, 'string'); backgroundTasks.set(name, options); },
     stopLocationUpdatesAsync: async name => { backgroundTasks.delete(name); },
-    watchPositionAsync: async (options, callback) => {
+    watchPositionAsync: async (options, callback, errorHandler) => {
       assert(options && typeof callback === 'function');
-      watches.add(callback);
+      assert(errorHandler === undefined || typeof errorHandler === 'function');
+      watches.set(callback, errorHandler);
       return { remove: () => { watches.delete(callback); retiredWatches.add(callback); } };
     },
   }));
@@ -426,7 +427,10 @@ exports.run = async function run(jest) {
           assert(Number.isFinite(input.longitude) && Math.abs(input.longitude) <= 180);
           const sample = { coords: { latitude: input.latitude, longitude: input.longitude, accuracy: input.accuracy ?? 5 },
             timestamp: input.timestamp ?? Date.now() };
-          for (const callback of [...(input.kind === 'gps' ? watches : retiredWatches)]) callback(sample);
+          for (const callback of [...(input.kind === 'gps' ? watches.keys() : retiredWatches)]) callback(sample);
+        } else if (input.kind === 'locationError') {
+          assert.equal(typeof input.message, 'string');
+          for (const errorHandler of watches.values()) errorHandler?.(input.message);
         } else if (input.kind === 'appState') {
           assert(['active', 'inactive', 'background'].includes(input.value));
           appState.currentState = input.value;
@@ -553,7 +557,7 @@ exports.run = async function run(jest) {
       if (residual.native.location) {
         assert.equal(residual.native.location.running, false, 'Native location owner leaked');
         assert.equal(residual.native.location.prepared, false, 'Native background activity leaked');
-        assert([0, 1].includes(residual.native.location.processListeners), 'Temporary native location listener leaked');
+        assert([0, 2].includes(residual.native.location.processListeners), 'Temporary native location listener leaked');
       }
       assert([0, 2].includes(residual.native.iapProcessListeners), 'Unexpected process-owned IAP listeners');
       assert.equal(residual.updates.listeners, 0, 'Updates listener leaked');

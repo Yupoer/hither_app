@@ -5,7 +5,8 @@ const { GROUP_ID, LEADER, PEER, DESTINATION } = require('../../test/headless/bac
 
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = {
-  presentation: { hosts: { testId?: string; checked?: boolean; text?: string }[]; preferences: { sharingEnabled: boolean } };
+  presentation: { hosts: { testId?: string; checked?: boolean; text?: string }[];
+    mapRoutePoints: { latitude: number; longitude: number }[] | null; preferences: { sharingEnabled: boolean } };
   durable: { snapshot: CoreGroupSnapshot; operations: CoreOperation[]; locations: { id: string; actor_id: string }[] };
   external: { watches: number; alerts: number; alertDetails: { message: string }[];
     backgroundTasks: { name: string; options: { timeInterval: number; distanceInterval: number; accuracy: number } }[] };
@@ -32,6 +33,46 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       value: phase === 'onBegin' ? {} : { translationY: -250, velocityY: 0 }, success: true });
     await world.settle();
   }
+
+  it('MAP-LOC-01 MAP-ARRIVAL-02 shows SDK interruption until a new fix and stops only the arrived personal route', async () => {
+    const world = new World();
+    try {
+      const leader = await map(world, 'health-arrival', LEADER);
+      await leader.input({ kind: 'mapsConfigure', patch: { route: { distanceMeters: 1000, expectedTravelTimeSeconds: 600,
+        points: [{ latitude: 25.031, longitude: 121.53 }, { latitude: 25.04, longitude: 121.53 }] } } });
+      const interrupted = (value: Observation) => value.presentation.hosts.some(host =>
+        /Location updates interrupted|定位更新已中斷/.test(host.text ?? ''));
+      expect(interrupted(await leader.observe())).toBe(false);
+      await leader.input({ kind: 'locationError', message: 'Location provider unavailable' });
+      await world.waitFor(leader, interrupted, 'visible SDK interruption');
+      await world.advance(1000);
+      await leader.gps(25.03, 121.53, { accuracy: 5 });
+      await world.waitFor(leader, (value: Observation) => !interrupted(value), 'new fix clears interruption');
+      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      const watches = (await leader.observe()).external.watches;
+      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(leader, (value: Observation) => value.external.watches > watches, 'Start fresh-fix watcher');
+      await world.advance(1000);
+      await leader.gps(25.031, 121.53, { accuracy: 5 });
+      await world.waitFor(leader, (value: Observation) => Boolean(value.presentation.mapRoutePoints?.length), 'active self route rendered');
+      await world.advance(1000);
+      await leader.gps(25.04, 121.53, { accuracy: 5 });
+      await world.waitFor(leader, (value: Observation) => value.presentation.mapRoutePoints === null
+        && world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === LEADER), 'arrival clears only personal route');
+      expect(world.backend.itinerary[0].closed_at).toBeNull();
+      const routeRequests = (value: { maps: { receipts: { method: string; value?: { action?: string } }[] } }) =>
+        value.maps.receipts.filter(receipt => receipt.method === 'maps.getDirections'
+          || receipt.method === 'maps.proxy' && receipt.value?.action === 'route').length;
+      const requestsAtArrival = routeRequests(await leader.observe());
+      await world.advance(60000);
+      await leader.gps(25.041, 121.531, { accuracy: 5 });
+      const sharing: Observation = await world.waitFor(leader, () =>
+        world.backend.locations.get(`${GROUP_ID}:${LEADER}`)?.latitude === 25.041, 'sharing continues after personal arrival');
+      expect(sharing.presentation.preferences.sharingEnabled).toBe(true);
+      expect(sharing.presentation.mapRoutePoints).toBeNull();
+      expect(routeRequests(await leader.observe())).toBe(requestsAtArrival);
+    } finally { await world.close(); }
+  });
 
   it('MAP-NAV-02 MAP-LOC-03 exchanges offline Start and GPS once and consumes the returned peer snapshot', async () => {
     const world = new World();
@@ -122,7 +163,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await leader.perform('map.tab', { index: 0 });
       await leader.input({ kind: 'appState', value: 'background' });
       const passive: Observation = await world.waitFor(leader, (value: Observation) => value.external.backgroundTasks.length === 1, 'idle sharing background owner');
-      expect(passive.external.backgroundTasks[0].options).toMatchObject({ timeInterval: 600000, distanceInterval: 300 });
+      expect(passive.external.backgroundTasks[0].options).toMatchObject({ timeInterval: 600000, distanceInterval: 300, accuracy: 3 });
       await world.advance(600000);
       const sample = { timestamp: world.now, coords: { latitude: 25.021, longitude: 121.511, accuracy: 5 }, stationary: false };
       await leader.input({ kind: 'task', name: passive.external.backgroundTasks[0].name, value: { data: { locations: [sample] }, error: null } });
@@ -156,7 +197,10 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
         ? value.native.location.running : value.external.backgroundTasks.some(task => task.options.timeInterval < 600000), 'active background owner cadence');
       if (platform === 'ios') expect(active.native.receipts.some(receipt => receipt.method === 'nativeLocation.start'
         && receipt.value?.timeInterval !== undefined && receipt.value.timeInterval < 600000 && receipt.value.activityType === 1)).toBe(true);
-      else expect(active.external.backgroundTasks[0].options.timeInterval).toBeLessThan(600000);
+      else {
+        expect(active.external.backgroundTasks[0].options.timeInterval).toBeLessThan(600000);
+        expect(active.external.backgroundTasks[0].options.accuracy).toBe(4);
+      }
     } finally { await world.close(); }
   });
 });

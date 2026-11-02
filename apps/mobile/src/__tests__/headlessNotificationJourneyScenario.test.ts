@@ -56,8 +56,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       await world.waitFor(leaderMap, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'session committed');
       const memberMap = await map(world, platform, 'member-map', PEER);
       await world.advance(1000);
-      if (platform === 'ios') await memberMap.perform('map.location.native-sample', { latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
-      else await memberMap.gps(25.04, 121.53, { accuracy: 5, timestamp: world.now });
+      await memberMap.gps(25.04, 121.53, { accuracy: 5, timestamp: world.now });
       await world.waitFor(leader, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'member arrival committed');
       const leaderResult = await world.waitFor(leader, (value: Observation) => notices(value).length === 1, 'leader receives member arrival');
       const memberResult = await world.waitFor(memberNotice, (value: Observation) => notices(value).length === 1, 'member receives own arrival');
