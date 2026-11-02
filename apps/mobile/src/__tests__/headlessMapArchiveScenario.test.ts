@@ -32,11 +32,11 @@ describe.each(['ios', 'android'])('actual development Map archive on %s', platfo
       && value.durable.snapshot.destinations.length === 0 && value.durable.operations.length === 0, 'archived destinations and drained operations');
     expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({ status: 'cancelled' })]);
     expect(world.backend.groups.get(GROUP_ID)).toMatchObject({ journey_status: 'paused', active_destination_id: null });
-    const commands = world.backend.trace.filter((call: { name: string }) => call.name === 'apply_core_operation_v3')
-      .map((call: { args: { p_operation_type: string; p_payload: { destinationId?: string } } }) => call.args);
-    expect(commands.filter((call: { p_operation_type: string }) => call.p_operation_type === 'delete_destination')
-      .map((call: { p_payload: { destinationId?: string } }) => call.p_payload.destinationId)).toEqual([DESTINATION, SECOND]);
-    expect(commands.some((call: { p_operation_type: string }) => call.p_operation_type === 'end_gathering')).toBe(true);
+    const commands = world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group')
+      .flatMap((call: { args: { p_core_operations: { operation_type: string; payload: { destinationId?: string } }[] } }) => call.args.p_core_operations);
+    expect(commands.filter((call: { operation_type: string }) => call.operation_type === 'delete_destination')
+      .map((call: { payload: { destinationId?: string } }) => call.payload.destinationId)).toEqual([DESTINATION, SECOND]);
+    expect(commands.some((call: { operation_type: string }) => call.operation_type === 'end_gathering')).toBe(true);
     expect(has(value, `gather-arrival-${DESTINATION}`)).toBe(false);
     expect(value.external.alerts).toBe(0);
   }

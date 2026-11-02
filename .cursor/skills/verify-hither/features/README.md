@@ -45,9 +45,9 @@ Save the selected command, its stdout, stderr, and exit code alongside that JSON
 
 ## Proof and skip reporting
 
-For the location sync maintenance pass, source and live scope is `journey` and `members` changed behavior. Use their selected commands. Other feature areas remain outside this pass, and a partial Jest report must not be passed to the complete denominator reporter.
+For the location sync maintenance pass, source and live scope is `journey`, `members` and the affected authoritative-empty `itinerary` recovery. Use their selected commands. A partial Jest report must not be passed to the complete denominator reporter.
 
-The 2026-11-03 pass records `changed` for both scoped features: eight unique iOS/Android Map cases passed on product commit `9cfcd9b46926cf55b33a809015897b9238c1e1f5`. Source inventory and registry audits passed separately. The local evidence index `.audit/location-sync/headless-retry-result.md` records accepted case names, retained failed attempts and verified cleanup. Other feature areas were not reevaluated.
+The 2026-11-03 pass records `changed` for these scoped features. The initial eight unique Map cases passed on product `9cfcd9b`; recovery corrections were reviewed at product `988a85be743da4f92de20e35ef1e951da9891b0b`. Source inventory and registry audits passed separately. Local audit indexes `headless-retry-result.md`, `hook-ci-alignment-result.md` and `ci-map-alignment.md` record original and affected-only rerun evidence, retained failures and verified cleanup. The other feature maps were not maintained in this pass.
 
 Report each entry point as passed, failed, or unexecuted. Record a missing fixture precondition as a failed journey with the reason in the feature's `Gotchas`. Do not weaken the journey or change its entry point to pass it. Keep failure artifacts after cleanup.
 

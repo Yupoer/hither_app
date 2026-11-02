@@ -65,7 +65,8 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
       expect(has(invalid, 'coordinate-submit')).toBe(true);
       expect(invalid.durable.snapshot.destinations).toHaveLength(1);
       expect(invalid.durable.operations).toEqual([]);
-      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'apply_core_operation_v3')).toEqual([]);
+      expect(world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group')
+        .flatMap((call: { args: { p_core_operations: unknown[] } }) => call.args.p_core_operations)).toEqual([]);
       await device.perform('map.coordinates.cancel');
       expect(has(await device.observe(), 'coordinate-submit')).toBe(false);
       expect(world.backend.itinerary).toHaveLength(1);
@@ -78,7 +79,7 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
       const device = await map(world);
       await openCoordinates(world, device);
       await fill(device, '  Coordinate pool stop  ');
-      world.hold('apply_core_operation_v3');
+      world.hold('sync_group', { matches: (operation: { args: { p_core_operations: unknown[] } }) => operation.args.p_core_operations.length > 0 });
       await device.perform('map.coordinates.submit');
       const local = await world.waitFor(device, (value: Observation) => value.durable.operations.some(row => row.operationType === 'add_destination')
         && value.durable.snapshot.destinations.some(row => row.title === 'Coordinate pool stop'), 'coordinate durable add before ACK');
@@ -87,7 +88,7 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
       ]);
       expect(has(local, 'coordinate-submit')).toBe(false);
       expect(world.backend.itinerary).toHaveLength(1);
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       expect(world.backend.itinerary.filter((row: { title: string }) => row.title === 'Coordinate pool stop')).toEqual([
         expect.objectContaining({ day: null, latitude: 25.031, longitude: 121.551, subgroup_id: null }),
       ]);

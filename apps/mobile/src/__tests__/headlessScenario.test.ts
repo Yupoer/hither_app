@@ -1,13 +1,17 @@
 const { World } = require('../../test/headless/world.cjs');
 const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
-const SUBSCRIBED_GROUP_POLL_MS = 120_000;
+const SUBSCRIBED_GROUP_POLL_MS = 240_000;
+const locationExchange = (operation: any) => operation.args.p_location_events.length > 0;
+const locationCalls = (world: any) => world.backend.trace.filter((call: any) => call.name === 'sync_group' && locationExchange(call));
+const coreOperations = (world: any) => world.backend.trace.filter((call: any) => call.name === 'sync_group')
+  .flatMap((call: any) => call.args.p_core_operations);
 
 async function settleLocationStartup(world: any, device: any) {
   await device.gps(25, 121.5);
   await world.waitFor(device, (value: any) => value.external.watches === 1 && value.pending.length === 0
     && value.durable.locations.length === 0, 'startup one-shot completed and acknowledged');
-  await world.advance(5_000);
-  return world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').length;
+  await world.advance(300_000);
+  return locationCalls(world).length;
 }
 
 async function startJourneyWithNewFix(world: any, device: any) {
@@ -31,21 +35,21 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.state?.members.length === 2, 'leader recovery');
       await world.waitFor(b, (value: any) => value.group.state?.members.length === 2, 'peer recovery');
-      world.hold('ingest_location_batch');
+      world.hold('sync_group', { matches: locationExchange });
       await a.gps(25.033, 121.565);
       const pending = await world.waitFor(a, (value: any) => value.durable.locations.length === 1, 'persisted GPS before ACK');
       expect(pending.location.coordinates).toEqual({ latitude: 25.033, longitude: 121.565 });
-      await world.release('ingest_location_batch');
+      await world.release('sync_group');
       await world.advance(250);
       const peer = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.033,
         'peer location projection');
       expect(peer.group.state.members.find((m: any) => m.userId === LEADER).coordinates.longitude).toBe(121.565);
       expect((await a.observe()).durable.locations).toEqual([]);
-      expect(world.backend.trace.some((call: any) => call.name === 'ingest_location_batch' && call.userId === LEADER)).toBe(true);
+      expect(world.backend.trace.some((call: any) => call.name === 'sync_group' && call.args.p_location_events.length > 0 && call.userId === LEADER)).toBe(true);
     } finally { await world.close(); }
   });
 
-  it('repairs missed Realtime at the subscribed 120 second poll and restores an offline peer snapshot after restart', async () => {
+  it('repairs missed Realtime at the subscribed idle poll and restores an offline peer snapshot after restart', async () => {
     const world = new World();
     try {
       const a = await world.device({ id: 'leader', userId: LEADER, platform });
@@ -53,24 +57,24 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.perform('group.observe', { groupId: GROUP_ID });
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(b, (value: any) => value.group.dataSource === 'remote', 'initial remote peer');
+      await b.input({ kind: 'consentContext', enabled: false });
       b.realtime = false;
       await a.gps(25.1, 121.5);
       await world.settle();
-      const before = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot').length;
+      const before = world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group').length;
       await world.advance(29999);
-      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot')).toHaveLength(before);
+      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group')).toHaveLength(before);
       await world.advance(1);
-      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot')).toHaveLength(before);
+      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group')).toHaveLength(before);
       await world.advance(SUBSCRIBED_GROUP_POLL_MS - 30001);
-      // Keep the missed sample fresh while waiting for the subscribed fallback.
-      await a.gps(25.1, 121.5);
       expect((await b.observe()).group.state.members.find((m: any) => m.userId === LEADER).coordinates).toBeUndefined();
-      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot')).toHaveLength(before);
+      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group')).toHaveLength(before);
       await world.advance(1);
       const recovered = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.1, 'poll repair');
       expect(recovered.group.dataSource).toBe('remote');
-      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'get_group_public_recovery_snapshot')).toHaveLength(before + 1);
-      expect(world.backend.trace.some((call: any) => call.deviceId === 'peer' && call.name === 'daily_accommodations' && call.at === world.now)).toBe(true);
+      expect(world.backend.trace.filter((call: any) => call.deviceId === 'peer' && call.name === 'sync_group')).toHaveLength(before + 1);
+      expect(world.backend.trace.findLast((call: any) => call.deviceId === 'peer' && call.name === 'sync_group')
+        .result.data.snapshot.daily_accommodations).toEqual([]);
       b.online = false;
       const oldPid = recovered.pid;
       await b.restart();
@@ -101,9 +105,9 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await world.advance(250);
       await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 24.9, 'replayed fix');
       expect((await a.observe()).durable.locations).toEqual([]);
-      const receipt = world.backend.trace.find((call: any) => call.name === 'ingest_location_batch' && call.args.p_events.some((event: any) => event.id === id));
+      const receipt = world.backend.trace.find((call: any) => call.name === 'sync_group' && call.args.p_location_events.length > 0 && call.args.p_location_events.some((event: any) => event.id === id));
       expect(receipt.userId).toBe(LEADER);
-      expect(receipt.args.p_events[0].actorId).toBe(LEADER);
+      expect(receipt.args.p_location_events[0].actorId).toBe(LEADER);
     } finally { await world.close(); }
   });
 
@@ -118,19 +122,19 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.gps(25.01, 121.51);
       await world.settle();
       const timestamp = (await a.observe()).location.acceptedAt;
-      const sent = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').length;
+      const sent = locationCalls(world).length;
       await a.gps(22, 120, { timestamp: timestamp - 1 });
       await world.settle();
       expect((await a.observe()).location.coordinates.latitude).toBe(25.01);
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(sent);
-      await world.advance(60000);
-      world.hold('ingest_location_batch', { deviceId: 'leader' });
+      expect(locationCalls(world)).toHaveLength(sent);
+      await world.advance(300000);
+      world.hold('sync_group', { matches: locationExchange, deviceId: 'leader' });
       await a.gps(25.2, 121.7);
       await world.waitFor(a, (value: any) => value.pending.length === 1, 'held upload');
       await a.input({ kind: 'consentContext', enabled: false });
       await a.input({ kind: 'retiredGps', latitude: 23, longitude: 120, timestamp: world.now + 1 });
-      await world.release('ingest_location_batch');
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(sent);
+      await world.release('sync_group');
+      expect(locationCalls(world)).toHaveLength(sent);
       expect((await a.observe()).location.coordinates.latitude).toBe(25.2);
       expect((await a.observe()).external.watches).toBe(0);
       expect((await b.observe()).external.watches).toBeGreaterThan(0);
@@ -149,15 +153,16 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.gps(25.01, 121.51);
       await world.settle();
       await world.advance(250);
-      world.hold('get_group_public_recovery_snapshot', { phase: 'delivery', deviceId: 'peer' });
+      world.hold('sync_group', { phase: 'delivery', deviceId: 'peer',
+        matches: (operation: any) => operation.args.p_core_operations.length === 0 && operation.args.p_location_events.length === 0 });
       const refresh = b.perform('group.refresh').catch((error: Error) => error);
       await world.settle();
-      await world.advance(5000);
+      await world.advance(300000);
       await a.gps(25.1, 121.6);
       await world.settle();
       await world.advance(250);
       await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.1, 'newer Realtime fix');
-      await world.release('get_group_public_recovery_snapshot');
+      await world.release('sync_group');
       expect(await refresh).not.toBeInstanceOf(Error);
       expect((await b.observe()).group.state.members.find((m: any) => m.userId === LEADER).coordinates.latitude).toBe(25.1);
       await b.input({ kind: 'appState', value: 'background' });
@@ -178,13 +183,13 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'initial owner');
       a.online = false;
       await a.gps(25.03, 121.55);
-      await world.waitFor(a, (value: any) => value.durable.locations.length === 1 && value.durable.locations[0].attempts > 0, 'owned offline row');
+      const original = await world.waitFor(a, (value: any) => value.durable.locations.length === 1 && value.durable.locations[0].attempts > 0, 'owned offline row');
       await a.input({ kind: 'account', userId: PEER, platform });
       expect((await a.observe()).actorId).toBe(PEER);
       a.online = true;
       await world.advance(30000);
-      expect((await a.observe()).durable.locations).toEqual([]);
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toEqual([]);
+      expect((await a.observe()).durable.locations.map((row: any) => row.id)).toEqual(original.durable.locations.map((row: any) => row.id));
+      expect(locationCalls(world)).toEqual([]);
       expect((await b.observe()).group.state.members.find((m: any) => m.userId === LEADER).coordinates).toBeUndefined();
       expect((await b.observe()).actorId).toBe(PEER);
     } finally { await world.close(); }
@@ -198,14 +203,14 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.perform('group.observe', { groupId: GROUP_ID });
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
-      world.hold('apply_core_operation_v3');
+      world.hold('sync_group', { matches: (operation: any) => operation.args.p_core_operations.length > 0 });
       await startJourneyWithNewFix(world, a);
       const optimistic = await world.waitFor(a, (value: any) => value.journey.targetId === DESTINATION && value.durable.operations.length > 0, 'durable optimistic Start');
       expect(optimistic.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
       expect(optimistic.durable.operations[0].actorId).toBe(LEADER);
       await a.perform('journey.start', { destinationId: DESTINATION });
       expect((await a.observe()).durable.operations.filter((row: any) => row.operationType === 'start_gathering')).toHaveLength(1);
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       await world.advance(300);
       await world.waitFor(b, (value: any) => value.journey.targetId === DESTINATION, 'peer Start');
       expect((await a.observe()).durable.operations).toEqual([]);
@@ -217,9 +222,9 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       expect(finished.journey.targetId).toBeNull();
       expect(finished.durable.snapshot.activeGathering.journeyPhase).toBe('staying');
       expect(finished.durable.operations).toEqual([]);
-      const operations = world.backend.trace.filter((call: any) => call.name === 'apply_core_operation_v3');
-      expect(operations.map((call: any) => call.args.p_operation_type)).toEqual(['start_gathering', 'end_gathering']);
-      expect(operations[1].args.p_payload.navigationSessionId).toBe(operations[0].args.p_operation_id);
+      const operations = coreOperations(world);
+      expect(operations.map((call: any) => call.operation_type)).toEqual(['start_gathering', 'end_gathering']);
+      expect(operations[1].payload.navigationSessionId).toBe(operations[0].operation_id);
     } finally { await world.close(); }
   });
 
@@ -249,9 +254,10 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await world.advance(300);
       await world.waitFor(b, (value: any) => value.group.state?.destinations.length === 1, 'peer deleted destination');
       expect((await a.observe()).group.state.destinations).toHaveLength(1);
-      const operations = world.backend.trace.filter((call: any) => call.name === 'apply_core_operation_v3');
-      expect(operations.map((call: any) => call.args.p_operation_type)).toEqual(['add_destination', 'reorder_destinations', 'delete_destination']);
-      expect(operations.every((call: any) => call.userId === LEADER)).toBe(true);
+      const operations = coreOperations(world);
+      expect(operations.map((call: any) => call.operation_type)).toEqual(['add_destination', 'reorder_destinations', 'delete_destination']);
+      expect(world.backend.trace.filter((call: any) => call.name === 'sync_group' && call.args.p_core_operations.length > 0)
+        .every((call: any) => call.userId === LEADER && call.args.p_actor_id === LEADER)).toBe(true);
       expect((await a.observe()).durable.operations).toEqual([]);
     } finally { await world.close(); }
   });
@@ -264,19 +270,19 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.perform('group.observe', { groupId: GROUP_ID });
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
-      world.hold('apply_core_operation_v3', { phase: 'delivery' });
+      world.hold('sync_group', { matches: (operation: any) => operation.args.p_core_operations.length > 0, phase: 'delivery' });
       await startJourneyWithNewFix(world, a);
       await world.waitFor(a, (value: any) => value.journey.targetId === DESTINATION && value.pending.length > 0, 'held Start acceptance');
       await a.perform('journey.stop');
       const ended = await world.waitFor(a, (value: any) => !value.journey.targetId && value.durable.operations.length === 2, 'durable End after Start');
       expect(ended.durable.operations.map((row: any) => row.operationType)).toEqual(['start_gathering', 'end_gathering']);
       expect(ended.durable.operations[1].dependencyIds).toContain(ended.durable.operations[0].id);
-      await world.release('apply_core_operation_v3');
+      await world.release('sync_group');
       await world.advance(300);
       await world.waitFor(a, (value: any) => !value.journey.targetId && value.durable.operations.length === 0, 'accepted terminal state');
       await world.waitFor(b, (value: any) => !value.journey.targetId && value.group.state?.group.journeyStatus === 'paused', 'peer terminal state');
-      const receipts = world.backend.trace.filter((call: any) => call.name === 'apply_core_operation_v3');
-      expect(receipts.map((call: any) => call.args.p_operation_type)).toEqual(['start_gathering', 'end_gathering']);
+      const receipts = coreOperations(world);
+      expect(receipts.map((call: any) => call.operation_type)).toEqual(['start_gathering', 'end_gathering']);
     } finally { await world.close(); }
   });
 
@@ -294,7 +300,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       expect(denied.external.watches).toBe(0);
       expect(denied.location.coordinates).toBeNull();
       expect(denied.durable.locations).toEqual([]);
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toEqual([]);
+      expect(locationCalls(world)).toEqual([]);
       await a.input({ kind: 'permission', status: 'granted' });
       await a.input({ kind: 'appState', value: 'background' });
       await a.input({ kind: 'appState', value: 'active' });
@@ -330,9 +336,9 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await world.waitFor(a, (value: any) => value.durable.operations.length === 0 && !value.journey.targetId, 'replayed FIFO');
       const peer = await world.waitFor(b, (value: any) => value.group.state?.group.journeyStatus === 'paused' && !value.journey.targetId, 'peer after replay');
       expect(peer.navigation.session).toBeNull();
-      const receipts = world.backend.trace.filter((call: any) => call.name === 'apply_core_operation_v3');
-      expect(receipts.map((call: any) => call.args.p_operation_id)).toEqual(ids);
-      expect(receipts.map((call: any) => call.args.p_operation_type)).toEqual(['start_gathering', 'end_gathering']);
+      const receipts = coreOperations(world);
+      expect(receipts.map((call: any) => call.operation_id)).toEqual(ids);
+      expect(receipts.map((call: any) => call.operation_type)).toEqual(['start_gathering', 'end_gathering']);
     } finally { await world.close(); }
   });
 
@@ -345,11 +351,11 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
       a.online = false;
-      world.hold('ingest_location_batch', { phase: 'delivery', deviceId: 'leader' });
+      world.hold('sync_group', { matches: locationExchange, phase: 'delivery', deviceId: 'leader' });
       await a.gps(25.08, 121.58);
       await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'held offline failure');
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toEqual([]);
-      await world.release('ingest_location_batch');
+      expect(locationCalls(world)).toEqual([]);
+      await world.release('sync_group');
       const failed = await world.waitFor(a, (value: any) => value.durable.locations[0]?.attempts > 0, 'offline retry row');
       expect(failed.durable.locations).toHaveLength(1);
       expect((await b.observe()).group.state.members.find((m: any) => m.userId === LEADER).coordinates).toBeUndefined();
@@ -378,10 +384,10 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       expect(observed.group.state.members.find((m: any) => m.userId === LEADER).coordinates.longitude).toBe(121.51);
       expect((await b.observe()).location.coordinates.latitude).toBe(25.02);
       expect((await b.observe()).durable.locations).toEqual([]);
-      const calls = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch');
+      const calls = locationCalls(world);
       expect(calls).toHaveLength(2);
-      expect(calls[1].result.data.acceptedIds).toEqual([]);
-      expect(calls[1].result.data.rejected).toEqual([{ id: calls[1].args.p_events[0].id, reason: 'stale_sample' }]);
+      expect(calls[1].result.data.locationResult.acceptedIds).toEqual([]);
+      expect(calls[1].result.data.locationResult.rejected).toEqual([{ id: calls[1].args.p_location_events[0].id, reason: 'stale_sample' }]);
       expect(world.realtimeTrace.filter((entry: any) => entry.deviceId === 'peer' && entry.event.table === 'member_locations')).toHaveLength(1);
     } finally { await world.close(); }
   });
@@ -394,22 +400,22 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.perform('group.observe', { groupId: GROUP_ID });
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(b, (value: any) => value.group.dataSource === 'remote', 'peer ready');
-      world.hold('ingest_location_batch', { phase: 'delivery', deviceId: 'leader' });
+      world.hold('sync_group', { matches: locationExchange, phase: 'delivery', deviceId: 'leader' });
       await a.gps(25.03, 121.53);
       const pending = await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'accepted event before ACK');
       const eventId = pending.durable.locations[0].id;
       await world.advance(250);
       const first = await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.03, 'first delivery');
       await a.restart();
-      await world.release('ingest_location_batch');
-      await world.advance(3000);
+      await world.release('sync_group');
+      await world.advance(4000);
       await world.waitFor(a, (value: any) => value.durable.locations.length === 0, 'duplicate ACK');
       const final = await b.observe();
       expect(final.group.state.members.find((m: any) => m.userId === LEADER)).toEqual(first.group.state.members.find((m: any) => m.userId === LEADER));
-      const calls = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch');
+      const calls = locationCalls(world);
       expect(calls).toHaveLength(2);
-      expect(calls.map((call: any) => call.args.p_events[0].id)).toEqual([eventId, eventId]);
-      expect(calls[1].result.data.acceptedIds).toEqual([eventId]);
+      expect(calls.map((call: any) => call.args.p_location_events[0].id)).toEqual([eventId, eventId]);
+      expect(calls[1].result.data.locationResult.acceptedIds).toEqual([eventId]);
       expect(world.realtimeTrace.filter((entry: any) => entry.deviceId === 'peer' && entry.event.table === 'member_locations')).toHaveLength(1);
     } finally { await world.close(); }
   });
@@ -423,7 +429,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
       const previousUploads = await settleLocationStartup(world, a);
-      world.hold('ingest_location_batch', { deviceId: 'leader' });
+      world.hold('sync_group', { matches: locationExchange, deviceId: 'leader' });
       await a.input({ kind: 'permissionRead', action: 'holdNext' });
       let refreshFinished = false;
       const refresh = a.perform('location.refresh').then((value: unknown) => { refreshFinished = true; return value; },
@@ -436,22 +442,22 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       expect((await a.observe()).durable.locations).toHaveLength(1);
       await a.input({ kind: 'permissionRead', action: 'release' });
       expect(refreshFinished).toBe(false);
-      await world.release('ingest_location_batch', { keep: true });
+      await world.release('sync_group', { keep: true });
       const pending = await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1
         && value.durable.locations[0].captured_at === world.now + 1, 'newest event awaiting its own ACK');
       expect({ refreshFinished, outcome: refreshFinished ? await refresh : undefined }).toEqual({ refreshFinished: false, outcome: undefined });
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(previousUploads + 1);
+      expect(locationCalls(world)).toHaveLength(previousUploads + 1);
       await world.advance(1);
-      await world.release('ingest_location_batch');
+      await world.release('sync_group');
       expect(await refresh).toEqual({ latitude: 25.07, longitude: 121.57 });
       await world.advance(250);
       await world.waitFor(b, (value: any) => value.group.state?.members.find((m: any) => m.userId === LEADER)?.coordinates?.latitude === 25.07, 'newest peer fix');
       expect((await a.observe()).location.coordinates).toEqual({ latitude: 25.07, longitude: 121.57 });
       expect((await a.observe()).durable.locations).toEqual([]);
-      const uploads = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').slice(previousUploads);
+      const uploads = locationCalls(world).slice(previousUploads);
       expect(uploads).toHaveLength(2);
-      expect(uploads[1].result.data.acceptedIds).toEqual([pending.durable.locations[0].id]);
-      expect(uploads.map((call: any) => call.args.p_events[0].coords.latitude)).toEqual([25.06, 25.07]);
+      expect(uploads[1].result.data.locationResult.acceptedIds).toEqual([pending.durable.locations[0].id]);
+      expect(uploads.map((call: any) => call.args.p_location_events[0].coords.latitude)).toEqual([25.06, 25.07]);
     } finally { await world.close(); }
   });
 
@@ -462,20 +468,20 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'original account ready');
       const previousUploads = await settleLocationStartup(world, a);
-      world.hold('ingest_location_batch', { phase: 'delivery', deviceId: 'switching' });
+      world.hold('sync_group', { matches: locationExchange, phase: 'delivery', deviceId: 'switching' });
       const refresh = a.perform('location.refresh').catch((error: Error) => error);
       await world.waitFor(a, (value: any) => value.external.watches === 2, 'manual one-shot plus continuous observers');
       await a.gps(25.06, 121.56);
-      await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'original actor ACK held');
+      const original = await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'original actor ACK held');
       await a.input({ kind: 'account', userId: PEER, platform });
       expect((await a.observe()).actorId).toBe(PEER);
-      await world.release('ingest_location_batch');
+      await world.release('sync_group');
       expect(await refresh).toBeNull();
-      const uploads = world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch').slice(previousUploads);
+      const uploads = locationCalls(world).slice(previousUploads);
       expect(uploads).toHaveLength(1);
       expect(uploads[0].userId).toBe(LEADER);
-      expect(uploads[0].args.p_events[0].actorId).toBe(LEADER);
-      expect((await a.observe()).durable.locations).toEqual([]);
+      expect(uploads[0].args.p_location_events[0].actorId).toBe(LEADER);
+      expect((await a.observe()).durable.locations.map((row: any) => row.id)).toEqual(original.durable.locations.map((row: any) => row.id));
     } finally { await world.close(); }
   });
 
@@ -488,7 +494,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await b.perform('group.observe', { groupId: GROUP_ID });
       await world.waitFor(a, (value: any) => value.group.dataSource === 'remote', 'leader ready');
       const previousUploads = await settleLocationStartup(world, a);
-      world.hold('ingest_location_batch');
+      world.hold('sync_group', { matches: locationExchange });
       let refreshFinished = false;
       const refresh = a.perform('location.refresh').then((value: unknown) => {
         refreshFinished = true;
@@ -498,7 +504,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       await a.gps(25.06, 121.56);
       await world.waitFor(a, (value: any) => value.pending.length === 1 && value.durable.locations.length === 1, 'watcher event waiting for ACK');
       expect(refreshFinished).toBe(false);
-      await world.release('ingest_location_batch');
+      await world.release('sync_group');
       const outcome = await refresh;
       expect(outcome).toEqual({ latitude: 25.06, longitude: 121.56 });
       await world.settle();
@@ -507,7 +513,7 @@ describe.each(['ios', 'android'])('headless multiplayer scenarios on %s', platfo
       expect(peer.group.state.members.find((m: any) => m.userId === LEADER).coordinates.longitude).toBe(121.56);
       expect((await a.observe()).location.coordinates.latitude).toBe(25.06);
       expect((await a.observe()).durable.locations).toEqual([]);
-      expect(world.backend.trace.filter((call: any) => call.name === 'ingest_location_batch')).toHaveLength(previousUploads + 1);
+      expect(locationCalls(world)).toHaveLength(previousUploads + 1);
     } finally { await world.close(); }
   });
 });

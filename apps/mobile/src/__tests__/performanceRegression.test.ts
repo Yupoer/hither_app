@@ -83,7 +83,7 @@ describe('measured performance regressions', () => {
   });
 
   it('keeps debug route local and removes eager multi-round log drain patterns', () => {
-    const debugStart = locationHook.indexOf('// DEV debug route');
+    const debugStart = locationHook.indexOf('if (debugChanged && watchAllowed)');
     const debugEnd = locationHook.indexOf('if (watchChanged && watchAllowed)', debugStart);
     const debugBlock = locationHook.slice(debugStart, debugEnd);
     expect(debugStart).toBeGreaterThanOrEqual(0);

@@ -39,9 +39,10 @@ class World {
     await device.boot();
     return device;
   }
-  hold(rpcName, { phase = 'execution', deviceId } = {}) {
+  hold(rpcName, { phase = 'execution', deviceId, matches } = {}) {
     assert(['execution', 'delivery'].includes(phase));
-    this.holds.set(rpcName, { phase, deviceId });
+    assert(matches === undefined || typeof matches === 'function', 'Hold matches must be a predicate');
+    this.holds.set(rpcName, { phase, deviceId, matches });
   }
   async release(rpcName, { keep = false } = {}) {
     if (!keep) this.holds.delete(rpcName);
@@ -202,7 +203,8 @@ class Device {
         const item = { device: this, generation, id: message.id, operation: message.operation, requestedAt: message.requestedAt };
         this.world.revision++;
         const hold = this.world.holds.get(message.operation.name);
-        if (hold && (!hold.deviceId || hold.deviceId === this.spec.id)) {
+        if (hold && (!hold.deviceId || hold.deviceId === this.spec.id)
+          && (!hold.matches || hold.matches(message.operation))) {
           if (hold.phase === 'delivery') {
             try { item.result = this.world.execute(this, item.operation, item.requestedAt); }
             catch (error) { this.world.fatals.push(error.stack ?? String(error)); }

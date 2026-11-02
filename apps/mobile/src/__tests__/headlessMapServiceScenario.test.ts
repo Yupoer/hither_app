@@ -198,8 +198,10 @@ describe.each(['ios', 'android'])('real Map callable service contracts on %s', p
       await world.settle();
       await service(actor, 'gathering.correct-arrival', { destinationId: DESTINATION, targetUserId: PEER, arrived: true, sessionId: session.id });
       await world.settle();
-      const correction = world.backend.trace.find((call: { args?: { p_operation_type?: string } }) => call.args?.p_operation_type === 'leader_correct_arrival');
-      expect(correction.args.p_payload).toMatchObject({ actorId: LEADER, targetUserId: PEER, arrivedAt: null, source: 'leader_correction', sessionId: session.id });
+      const correction = world.backend.trace.filter((call: { name: string }) => call.name === 'sync_group')
+        .flatMap((call: { args: { p_core_operations: { operation_type: string; payload: object }[] } }) => call.args.p_core_operations)
+        .find((operation: { operation_type: string }) => operation.operation_type === 'leader_correct_arrival');
+      expect(correction.payload).toMatchObject({ actorId: LEADER, targetUserId: PEER, arrivedAt: null, source: 'leader_correction', sessionId: session.id });
       await service(actor, 'history.record', GROUP_ID, 'Visited', { latitude: 25.4, longitude: 121.8 });
       const history = await service(actor, 'history.list', GROUP_ID);
       expect(history).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Visited', userId: LEADER })]));

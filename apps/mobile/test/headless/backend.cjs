@@ -64,7 +64,11 @@ class Backend {
         if (!domain.member(this, args.p_group_id, userId)) return domain.fail('not_member');
         return ok(this.snapshot(args.p_group_id));
       }
-      if (name === 'sync_group') return require('./backend-sync.cjs').execute(this, operation);
+      if (name === 'sync_group') {
+        const result = require('./backend-sync.cjs').execute(this, operation);
+        trace.result = structuredClone(result);
+        return result;
+      }
       if (name === 'ingest_location_batch') return ok(require('./backend-location.cjs').ingest(this, operation));
       if (name === 'apply_core_operation_v3') return require('./backend-core.cjs').apply(this, operation);
       throw new Error(`Unsupported backend RPC ${name}`);

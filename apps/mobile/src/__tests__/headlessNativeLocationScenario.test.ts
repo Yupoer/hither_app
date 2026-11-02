@@ -84,7 +84,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
       await owner.stop();
       await wrapper.prepareNativeBackgroundLocation(false);
       expect(native.dispose().location).toMatchObject({ running: false, prepared: false });
-      expect(native.dispose().location.processListeners).toBeLessThanOrEqual(1);
+      expect([0, 2]).toContain(native.dispose().location.processListeners);
     }
     expect(tasks.size).toBe(0);
     expect(jest.getTimerCount()).toBe(0);
@@ -220,22 +220,22 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
       expect(observed).not.toHaveBeenCalled();
       return;
     }
-    expect(native.observe().location.listeners).toBe(2);
+    expect(native.observe().location.listeners).toBe(3);
     await native.input({ kind: 'nativeLocation', sample });
     await expect(refresh).resolves.toEqual(sample);
     expect(observed).toHaveBeenCalledWith(sample);
-    expect(native.observe().location.listeners).toBe(1);
+    expect(native.observe().location.listeners).toBe(2);
     const abort = new AbortController();
     const cancelled = wrapper.nextBackgroundLocation(abort.signal);
     await settle();
     abort.abort();
     await expect(cancelled).resolves.toBeNull();
-    expect(native.observe().location.listeners).toBe(1);
+    expect(native.observe().location.listeners).toBe(2);
     const timeout = wrapper.nextBackgroundLocation(new AbortController().signal);
     await settle();
     await jest.advanceTimersByTimeAsync(15000);
     await expect(timeout).resolves.toBeNull();
-    expect(native.observe().location.listeners).toBe(1);
+    expect(native.observe().location.listeners).toBe(2);
     expect(native.observe().receipts.filter((call: { method: string }) => call.method === 'nativeLocation.start')).toHaveLength(1);
   });
 

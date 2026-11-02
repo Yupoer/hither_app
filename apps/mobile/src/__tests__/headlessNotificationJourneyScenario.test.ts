@@ -85,19 +85,31 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       const member = await observer(world, platform, 'member-notifications', PEER, 'follower');
       const solo = await observer(world, platform, 'solo-notifications', OTHER, 'follower');
       await leader.perform('group.reportStraggler', { args: [GROUP_ID, PEER, 800] });
-      const result = await world.waitFor(member, (value: Observation) => value.native.scheduled.length === 1, 'member straggler alert');
+      expect(world.backend.tables.group_alerts).toEqual([]);
+      const leaderMap = await map(world, platform, 'leader-map', LEADER);
+      const watches = (await leaderMap.observe()).external.watches;
+      await leaderMap.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(leaderMap, (value: { external: { watches: number } }) => value.external.watches > watches, 'fresh navigation fix requested');
+      await world.advance(1000);
+      await leaderMap.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
+      await world.waitFor(leaderMap, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'active navigation admits separation');
+      const leaderBefore = (await leader.observe()).native.scheduled.length;
+      const memberBefore = (await member.observe()).native.scheduled.length;
+      const soloBefore = (await solo.observe()).native.scheduled.length;
+      await leader.perform('group.reportStraggler', { args: [GROUP_ID, PEER, 800] });
+      const result = await world.waitFor(member, (value: Observation) => value.native.scheduled.length === memberBefore + 1, 'member straggler alert');
       const alert = world.backend.tables.group_alerts[0];
       expect(alert).toMatchObject({ group_id: GROUP_ID, sender_id: LEADER, member_id: PEER, kind: 'straggler', distance_m: 800 });
-      expect(result.native.scheduled[0].input.content.data).toMatchObject({ category: 'journey', senderId: LEADER, groupId: GROUP_ID });
-      await world.waitFor(leader, (value: Observation) => value.native.scheduled.length === 1, 'detector receives straggler alert');
-      expect((await solo.observe()).native.scheduled).toEqual([]);
+      expect(result.native.scheduled[memberBefore].input.content.data).toMatchObject({ category: 'journey', senderId: LEADER, groupId: GROUP_ID });
+      await world.waitFor(leader, (value: Observation) => value.native.scheduled.length === leaderBefore + 1, 'detector receives straggler alert');
+      expect((await solo.observe()).native.scheduled).toHaveLength(soloBefore);
       expect(world.realtimeTrace.some((entry: { deviceId: string; event: { table: string; new: { id: string } } }) =>
         entry.deviceId === 'member-notifications' && entry.event.table === 'group_alerts' && entry.event.new.id === alert.id)).toBe(true);
       world.backend.publish('group_alerts', alert, 'INSERT');
       await world.settle();
-      expect((await leader.observe()).native.scheduled).toHaveLength(1);
-      expect((await member.observe()).native.scheduled).toHaveLength(1);
-      expect((await solo.observe()).native.scheduled).toEqual([]);
+      expect((await leader.observe()).native.scheduled).toHaveLength(leaderBefore + 1);
+      expect((await member.observe()).native.scheduled).toHaveLength(memberBefore + 1);
+      expect((await solo.observe()).native.scheduled).toHaveLength(soloBefore);
     } finally { await world.close(); }
   });
 
