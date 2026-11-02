@@ -10,6 +10,7 @@ export interface UseStragglerReportingInput {
   group: Group | null;
   groupId: string | null;
   isLeader: boolean;
+  navigationActive: boolean;
   state: GroupState | null;
   user: User | null;
 }
@@ -19,15 +20,14 @@ export function useStragglerReporting({
   group,
   groupId,
   isLeader,
+  navigationActive,
   state,
   user,
 }: UseStragglerReportingInput) {
 
-  // --- Straggler alerts (leader-only, 1:N vs leader GPS) ----------------------
-  // Followers never run distance logic; they only receive APNs from the leader.
-  // Configuration UI was removed; detection still reads group fields from DB.
+  const reportingEnabled = isLeader && navigationActive;
   const { stragglers } = useStragglerAlerts(state, fromCoords ?? undefined, {
-    enabled: !!isLeader,
+    enabled: reportingEnabled,
     leaderUserId: user?.id,
     alertsEnabled: group?.stragglerAlerts ?? true,
     thresholdM: group?.stragglerThresholdM ?? 500,
@@ -35,7 +35,7 @@ export function useStragglerReporting({
   // On newly flagged members (hysteresis in the hook), leader fans out APNs
   // via RPC — no local notification (would double-fire for the leader).
   const lastStragglerIdsRef = useRef<Set<string>>(new Set());
-  const committedStragglerReportLifecycle = createElement(CommittedStragglerReport, { isLeader, groupId, lastStragglerIdsRef, stragglers });
+  const committedStragglerReportLifecycle = createElement(CommittedStragglerReport, { isLeader: reportingEnabled, groupId, lastStragglerIdsRef, stragglers });
   return {
     lifecycle: createElement(Fragment, { key: 'straggler-reporting-runtime' }, committedStragglerReportLifecycle),
     stragglers,

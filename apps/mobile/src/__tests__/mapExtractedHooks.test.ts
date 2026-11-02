@@ -172,7 +172,7 @@ describe('MapScreen extracted hooks', () => {
     const flagged = [{ userId: 'peer', distanceM: 900 }];
     jest.mocked(useStragglerAlerts).mockReturnValue({ stragglers: flagged } as ReturnType<typeof useStragglerAlerts>);
     jest.mocked(reportStraggler).mockRejectedValue(new Error('offline'));
-    const input = { groupId: 'team', group: null, state: null, user: null, fromCoords: undefined, isLeader: true } satisfies UseStragglerReportingInput;
+    const input = { groupId: 'team', group: null, state: null, user: null, fromCoords: undefined, isLeader: true, navigationActive: true } satisfies UseStragglerReportingInput;
     const mounted = await mountHook(useStragglerReporting, input);
     await mounted.update(input);
     expect(reportStraggler).toHaveBeenCalledTimes(1);

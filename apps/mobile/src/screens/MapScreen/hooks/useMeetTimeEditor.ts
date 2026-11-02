@@ -47,8 +47,6 @@ export function useMeetTimeEditor({
   // Meet labels / location freshness tick inside small memo children
   // (MeetCountdown, LocationFreshnessText) so MapScreen is not re-rendered on a timer.
 
-  // The soonest gathering point whose meet time is still ahead — schedule local
-  // due + red-threshold warning as a device-side backup to server APNs.
   const nextMeet = useMemo(() => {
     const now = Date.now();
     return (
@@ -193,19 +191,8 @@ function MeetTimeRemindersCommit({ nextMeet, meetRedMin, t }: {
         .then(track);
     }
 
-    void notifications
-      .scheduleLocalNotificationAt(
-        {
-          title: t('meetTime.notifyTitle'),
-          body: t('meetTime.notifyBody', { title: nextMeet.title }),
-          data: { kind: 'meetTime', destinationId: nextMeet.id },
-        },
-        meetAt,
-      )
-      .then(track);
-
     const off = notifications.addForegroundListener((data) => {
-      if (data.kind === 'meetTime' || data.kind === 'meetTimeWarn') alertBuzz();
+      if (data.kind === 'meetTimeWarn') alertBuzz();
     });
     return () => {
       cancelled = true;

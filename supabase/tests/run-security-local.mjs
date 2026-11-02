@@ -10,6 +10,7 @@ const { PGlite } = await import(pathToFileURL(runtime).href);
 const { pgcrypto } = await import(pathToFileURL(resolve(runtime, '../contrib/pgcrypto.js')).href);
 const db = new PGlite({ extensions: { pgcrypto } });
 const explicitPublicGrants = process.argv.includes('--explicit-public-grants');
+const beforeMigration = process.argv.find(arg => arg.startsWith('--before-migration='))?.slice('--before-migration='.length).split(':');
 const root = new URL('../', import.meta.url);
 const read = name => readFileSync(new URL(name, root), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
 try {
@@ -40,6 +41,7 @@ try {
   `);
   let applied = 0;
   for (const name of readdirSync(new URL('migrations/', root)).filter(name => name.endsWith('.sql')).sort()) {
+    if (beforeMigration?.[0] === name) await db.exec(read('tests/' + beforeMigration[1]));
     // PGlite lacks external HTTP and background scheduler workers.
     const sql = read('migrations/' + name).replace(/create extension if not exists (pg_net|pg_cron)[^;]*;/gi, '');
     try { await db.exec(sql); applied++; }
@@ -77,7 +79,7 @@ try {
       execute 'select array_agg(q::text) from ('||$2||') q' into expected;
       assert actual is not distinct from expected, $3; return 'ok - '||$3; end$$;
   `);
-  const tests = process.argv.slice(3).filter(arg => arg !== '--explicit-public-grants');
+  const tests = process.argv.slice(3).filter(arg => !arg.startsWith('--'));
   for (const name of tests.length ? tests : ['security_group_command_import_arrival.test.sql', 'feedback_limits.test.sql']) {
     try {
       const output = await db.exec(read('tests/' + name).replace(/create extension if not exists pgtap[^;]*;/gi, ''));

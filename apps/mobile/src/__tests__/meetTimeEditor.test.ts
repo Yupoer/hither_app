@@ -65,7 +65,7 @@ describe('useMeetTimeEditor', () => {
     renderer = undefined;
   });
 
-  it('schedules a red-zone warning and a due reminder for the soonest future meet time only', async () => {
+  it('schedules only the soonest red-zone warning and preserves cancellation without a duplicate due alert', async () => {
     const soon = new Date(Date.now() + 60 * 60_000).toISOString();
     const later = new Date(Date.now() + 3 * 60 * 60_000).toISOString();
     const past = new Date(Date.now() - 60_000).toISOString();
@@ -75,11 +75,10 @@ describe('useMeetTimeEditor', () => {
     const scheduled = mockSchedule.mock.calls.map(([payload, at]) => [payload.data, at.getTime()]);
     expect(scheduled).toEqual([
       [{ kind: 'meetTimeWarn', destinationId: 'soon' }, Date.parse(soon) - 20 * 60_000],
-      [{ kind: 'meetTime', destinationId: 'soon' }, Date.parse(soon)],
     ]);
     await act(async () => renderer?.unmount());
     renderer = undefined;
-    expect(mockCancel.mock.calls.map(([id]) => id).sort()).toEqual(['n-meetTime', 'n-meetTimeWarn']);
+    expect(mockCancel.mock.calls.map(([id]) => id)).toEqual(['n-meetTimeWarn']);
     expect(mockOff).toHaveBeenCalled();
   });
 
@@ -123,7 +122,7 @@ describe('useMeetTimeEditor', () => {
     let resolve!: (value: string) => void;
     const late = new Promise<string>(done => { resolve = done; });
     mockSchedule.mockImplementationOnce(() => late);
-    await render(input({ destinations: [stop('late', { meetAt: new Date(Date.now() + 60_000).toISOString() })] }));
+    await render(input({ destinations: [stop('late', { meetAt: new Date(Date.now() + 60 * 60_000).toISOString() })] }));
     await act(async () => { renderer?.unmount(); });
     renderer = undefined;
     await act(async () => { resolve('late-notification'); });
