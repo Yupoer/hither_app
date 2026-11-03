@@ -386,10 +386,17 @@ Deno.serve(async (req) => {
       payload.category,
     );
 
-    const tokenRows = await loadTokenRows(allowedAlertUsers);
-    const refreshCandidates = locationRefreshRecipientIds(payload);
-    const refreshTokenRows = await loadTokenRows(refreshCandidates);
-    const liveSessions = await loadLiveSessions(payload, members, sender);
+    const [tokenResult, refreshTokenResult, liveSessionResult] = await Promise.allSettled([
+      loadTokenRows(allowedAlertUsers),
+      loadTokenRows(locationRefreshRecipientIds(payload)),
+      loadLiveSessions(payload, members, sender),
+    ]);
+    if (tokenResult.status === "rejected") throw tokenResult.reason;
+    if (refreshTokenResult.status === "rejected") throw refreshTokenResult.reason;
+    if (liveSessionResult.status === "rejected") throw liveSessionResult.reason;
+    const tokenRows = tokenResult.value;
+    const refreshTokenRows = refreshTokenResult.value;
+    const liveSessions = liveSessionResult.value;
 
     if (tokenRows.length === 0 && refreshTokenRows.length === 0 && liveSessions.length === 0) {
       return json({
@@ -492,7 +499,7 @@ async function handleNavigationSession(
   const isStart = payload.status === "active" && payload.version === 1;
 
   if (isStart) {
-    const [tokenResponse, groupResponse, destinationResponse] = await Promise.all([
+    const [tokenResponse, groupResponse, destinationResponse, handleResponse] = await Promise.all([
       eligibleUserIds.length > 0
         ? supabase
           .from("device_live_activity_tokens")
@@ -504,21 +511,19 @@ async function handleNavigationSession(
       supabase.from("groups").select("name").eq("id", payload.group_id).maybeSingle(),
       supabase.from("itinerary_items").select("title").eq("id", payload.destination_id)
         .maybeSingle(),
+      supabase.from("live_activity_sessions").select("user_id")
+        .eq("group_id", payload.group_id)
+        .gt("expires_at", new Date().toISOString())
+        .not("push_token", "is", null),
     ]);
     if (tokenResponse.error) throw tokenResponse.error;
     if (groupResponse.error) throw groupResponse.error;
     if (destinationResponse.error) throw destinationResponse.error;
+    if (handleResponse.error) throw handleResponse.error;
 
     const startRowsRaw = (tokenResponse.data ?? []) as DeviceLiveActivityTokenRow[];
-    const { data: handleRows, error: handleError } = await supabase
-      .from("live_activity_sessions")
-      .select("user_id")
-      .eq("group_id", payload.group_id)
-      .gt("expires_at", new Date().toISOString())
-      .not("push_token", "is", null);
-    if (handleError) throw handleError;
     const usersWithHandle = new Set(
-      ((handleRows ?? []) as { user_id: string }[]).map((row) => row.user_id),
+      ((handleResponse.data ?? []) as { user_id: string }[]).map((row) => row.user_id),
     );
     // Reuse existing handles when switching; they must not keep the old destination.
     const recipients = navigationStartRecipients({ origin, senderId: payload.sender_id,
@@ -548,17 +553,22 @@ async function handleNavigationSession(
       const gatheringTitle =
         (destinationResponse.data?.title as string | undefined) ?? "集合點";
       const userIds = members.filter((member) => !member.solo).map((member) => member.user_id);
-      const { data: startProfiles, error: startProfileError } = userIds.length > 0
-        ? await supabase.from("profiles").select("id, avatar").in("id", userIds)
-        : { data: [], error: null };
+      const [
+        { data: startProfiles, error: startProfileError },
+        { data: startArrivals, error: startArrivalError },
+      ] = await Promise.all([
+        userIds.length > 0
+          ? supabase.from("profiles").select("id, avatar").in("id", userIds)
+          : Promise.resolve({ data: [], error: null }),
+        supabase.from("destination_arrivals").select("user_id")
+          .eq("destination_id", payload.destination_id)
+          .eq("navigation_session_id", payload.session_id),
+      ]);
       if (startProfileError) throw startProfileError;
+      if (startArrivalError) throw startArrivalError;
       const avatarByUser = new Map(
         (startProfiles ?? []).map((row) => [row.id as string, (row.avatar as string | null) ?? "🙂"]),
       );
-      const { data: startArrivals, error: startArrivalError } = await supabase.from("destination_arrivals")
-        .select("user_id").eq("destination_id", payload.destination_id)
-        .eq("navigation_session_id", payload.session_id);
-      if (startArrivalError) throw startArrivalError;
       const arrivedIds = new Set((startArrivals ?? []).map(row => row.user_id));
       const visibleMembers = members;
       const memberEmojis = visibleMembers.map(
@@ -750,16 +760,18 @@ async function sendLiveActivities(
   const destinationIds = [...new Set(sessions.map((session) => session.destination_id))];
   const userIds = members.map((member) => member.user_id);
 
-  const [{ data: destinations, error: destinationError }, { data: profiles, error: profileError }] =
-    await Promise.all([
-      supabase.from("itinerary_items").select("id, title").in("id", destinationIds),
-      supabase.from("profiles").select("id, avatar").in("id", userIds),
-    ]);
+  const [
+    { data: destinations, error: destinationError },
+    { data: profiles, error: profileError },
+    { data: arrivals, error: arrivalError },
+  ] = await Promise.all([
+    supabase.from("itinerary_items").select("id, title").in("id", destinationIds),
+    supabase.from("profiles").select("id, avatar").in("id", userIds),
+    supabase.from("destination_arrivals").select("destination_id, user_id")
+      .in("destination_id", destinationIds),
+  ]);
   if (destinationError) throw destinationError;
   if (profileError) throw profileError;
-
-  const { data: arrivals, error: arrivalError } = await supabase.from("destination_arrivals")
-    .select("destination_id, user_id").in("destination_id", destinationIds);
   if (arrivalError) throw arrivalError;
   const arrivedKeys = new Set((arrivals ?? []).map(row => `${row.destination_id}:${row.user_id}`));
   const titleByDestination = new Map(
