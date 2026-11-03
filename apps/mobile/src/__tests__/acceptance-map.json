@@ -2997,6 +2997,83 @@
       "acceptance": "Idle navigation performs no straggler distance/report work, resets its hysteresis, and active reporting remains available after personal arrival.",
       "testFile": "stragglerNavigationBehavior.test.ts",
       "testNamePattern": "does no idle distance work, resets hysteresis/report state, and keeps reporting after personal arrival"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Recipient lookups overlap after preferences and retain the original token failure priority.",
+      "testFile": "sendPushReadBatches.test.ts",
+      "testNamePattern": "starts alert-token and live-session reads together|keeps the earlier token-read failure"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Navigation start overlaps independent handles and batches profile and arrival content before delivery.",
+      "testFile": "sendPushReadBatches.test.ts",
+      "testNamePattern": "starts all navigation-start reads together and then batches profiles with arrivals"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Live Activity update content reads overlap and complete before sending.",
+      "testFile": "sendPushReadBatches.test.ts",
+      "testNamePattern": "starts destination, profile and arrival reads together"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Authorization and latest-session checks still reject invalid requests before delivery-data reads.",
+      "testFile": "sendPushReadBatches.test.ts",
+      "testNamePattern": "rejects an invalid webhook secret|rejects a nonmember sender|ignores superseded navigation events"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "A current arrival ACK starts both refreshes together and preserves soft refresh errors.",
+      "testFile": "arrivalFeedbackContract.test.ts",
+      "testNamePattern": "starts both arrival refreshes after a current ACK"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Store and route refreshes overlap only after authoritative entitlement refresh completes.",
+      "testFile": "mapExtractedHooks.test.ts",
+      "testNamePattern": "refreshes store and route together only after the activated entitlement is ready"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Tour completion, account intent and reset intent reads overlap while reset precedence remains effective.",
+      "testFile": "groupFeatureTourRound2.test.ts",
+      "testNamePattern": "starts all completion reads together|reevaluate after successful clear|reevaluate after failed account clear"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Tour eligibility reads overlap and wait for replay intent while retaining unmount cancellation.",
+      "testFile": "groupFeatureTourRound2.test.ts",
+      "testNamePattern": "starts both onboarding reads together|does not activate after unmount"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Stage Two target and placement measurements overlap and preserve clipping and fallback.",
+      "testFile": "groupFeatureTourOverlayFix.test.ts",
+      "testNamePattern": "starts target and placement measurement together|returns a clipped members target|falls back to stageTwoPlacement"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "Actual App arrival remains durable and deduplicated on iOS and Android adapters.",
+      "testFile": "headlessMapScenario.test.ts",
+      "testNamePattern": "actual GPS arrival ignores poor fixes"
+    },
+    {
+      "parent": 368,
+      "child": 368,
+      "acceptance": "An actual Map Store purchase refreshes the parent benefit before dismissal on both platform adapters.",
+      "testFile": "headlessStoreEntriesScenario.test.ts",
+      "testNamePattern": "buys monthly through Map Store and refreshes parent Tools before dismissing"
     }
   ]
 }
