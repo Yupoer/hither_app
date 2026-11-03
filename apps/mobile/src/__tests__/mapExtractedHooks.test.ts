@@ -106,6 +106,38 @@ describe('MapScreen extracted hooks', () => {
     await mounted.unmount();
   });
 
+  it('refreshes store and route together only after the activated entitlement is ready', async () => {
+    const entitlement = deferred<Awaited<ReturnType<UseStoreEntitlementsInput['refreshEntitlement']>>>();
+    const store = deferred<Awaited<ReturnType<typeof getStoreSnapshot>>>();
+    const route = deferred<void>();
+    jest.mocked(getStoreSnapshot).mockResolvedValue({ liveActivityEffective: false, extraPointCredits: 0 });
+    const input: UseStoreEntitlementsInput = {
+      groupId: 'team', isAnonymous: false, isPro: false, openPaywall: jest.fn(),
+      refreshEntitlement: jest.fn(() => entitlement.promise), syncFromDatabase: jest.fn(() => route.promise),
+      setExtraPointCredits: jest.fn(), setLiveActivityEffective: jest.fn(),
+    };
+    const mounted = await mountHook(useStoreEntitlements, input);
+    jest.mocked(getStoreSnapshot).mockClear().mockReturnValueOnce(store.promise);
+    let completed = false;
+    let activation!: Promise<void>;
+    await act(async () => { activation = mounted.value.handleEntitlementActivated().then(() => { completed = true; }); });
+    expect(getStoreSnapshot).not.toHaveBeenCalled();
+    expect(input.syncFromDatabase).not.toHaveBeenCalled();
+    await act(async () => { entitlement.resolve(null); });
+    expect(getStoreSnapshot).toHaveBeenCalledWith('team');
+    expect(input.syncFromDatabase).toHaveBeenCalledTimes(1);
+    await act(async () => { route.resolve(); });
+    expect(completed).toBe(false);
+    await act(async () => {
+      store.resolve({ liveActivityEffective: true, extraPointCredits: 7 });
+      await activation;
+    });
+    expect(input.setLiveActivityEffective).toHaveBeenLastCalledWith(true);
+    expect(input.setExtraPointCredits).toHaveBeenLastCalledWith(7);
+    expect(completed).toBe(true);
+    await mounted.unmount();
+  });
+
   it('renders projected local arrivals before disconnected history finishes', async () => {
     const remote = deferred<Awaited<ReturnType<typeof fetchVisitedWaypoints>>>();
     jest.mocked(fetchVisitedWaypoints).mockReturnValue(remote.promise);

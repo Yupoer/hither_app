@@ -1592,8 +1592,10 @@ export default function MapScreen({ route, navigation }: Props) {
         .then(async status => {
           if (status !== 'acked') return;
           if (!stillCurrent()) return;
-          await loadGatheringWorkflow().catch(() => undefined);
-          await refresh().catch(() => undefined);
+          await Promise.all([
+            loadGatheringWorkflow().catch(() => undefined),
+            refresh().catch(() => undefined),
+          ]);
         })
         .catch(() => undefined);
     } catch (error) {

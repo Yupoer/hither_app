@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+import ts from 'typescript';
 
 const source = readFileSync(join(__dirname, '../screens/MapScreen.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
@@ -103,7 +105,48 @@ describe('foreground arrival feedback', () => {
     expect(shared).toContain('void syncArrival(operation)');
     expect(shared).toContain('.then(async status =>');
     expect(shared).toContain("if (status !== 'acked') return;");
-    expect(shared).toContain('await loadGatheringWorkflow().catch(() => undefined)');
-    expect(shared).toContain('await refresh().catch(() => undefined)');
   });
+});
+
+it('starts both arrival refreshes after a current ACK and keeps either refresh failure soft', async () => {
+  const path = join(__dirname, '../screens/MapScreen.tsx');
+  const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let callback: ts.ArrowFunction | undefined;
+  function findArrivalAcknowledgment(node: ts.Node): void {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === 'then' && ts.isCallExpression(node.expression.expression)
+      && ts.isIdentifier(node.expression.expression.expression)
+      && node.expression.expression.expression.text === 'syncArrival'
+      && node.arguments[0] && ts.isArrowFunction(node.arguments[0])) {
+      callback = node.arguments[0];
+    }
+    ts.forEachChild(node, findArrivalAcknowledgment);
+  }
+  findArrivalAcknowledgment(source);
+  if (!callback) throw new Error('The production arrival acknowledgment callback was not found');
+  let rejectWorkflow!: (error: Error) => void;
+  let rejectRefresh!: (error: Error) => void;
+  const loadGatheringWorkflow = jest.fn(() => new Promise<void>((_, reject) => { rejectWorkflow = reject; }));
+  const refresh = jest.fn(() => new Promise<void>((_, reject) => { rejectRefresh = reject; }));
+  const stillCurrent = jest.fn(() => false);
+  const edge: { callback?: (status: string) => Promise<void> } = {};
+  const compiled = ts.transpileModule(`exports.callback = ${callback.getText(source)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  runInNewContext(compiled, { exports: edge, loadGatheringWorkflow, refresh, stillCurrent });
+  if (!edge.callback) throw new Error('The production callback could not be loaded');
+  await edge.callback('pending');
+  await edge.callback('acked');
+  expect(loadGatheringWorkflow).not.toHaveBeenCalled();
+  expect(refresh).not.toHaveBeenCalled();
+  stillCurrent.mockReturnValue(true);
+  let completed = false;
+  const acknowledgment = edge.callback('acked').then(() => { completed = true; });
+  expect(loadGatheringWorkflow).toHaveBeenCalledTimes(1);
+  expect(refresh).toHaveBeenCalledTimes(1);
+  rejectWorkflow(new Error('workflow offline'));
+  await Promise.resolve();
+  expect(completed).toBe(false);
+  rejectRefresh(new Error('group offline'));
+  await expect(acknowledgment).resolves.toBeUndefined();
 });
