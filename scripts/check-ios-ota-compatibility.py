@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject iOS OTA when the recorded installed binary cannot run this checkout."""
+"""Admit iOS OTA only with recorded binary provenance or reviewed compatibility."""
 
 import argparse
 import json
@@ -29,7 +29,8 @@ def git(repo, *args):
 
 def check(repo, source_sha, manifest_path):
     result = {"eligible": False, "reason": "unknown", "runtimeVersion": None,
-              "binarySourceSha": None, "nonOtaMobilePaths": []}
+              "binarySourceSha": None, "comparisonBaselineSha": None,
+              "nonOtaMobilePaths": []}
     if not SHA.fullmatch(source_sha):
         result["reason"] = "invalid_source_sha"
         return result
@@ -45,10 +46,36 @@ def check(repo, source_sha, manifest_path):
     if not isinstance(manifest, dict):
         result["reason"] = "invalid_binary_record"
         return result
-    binary_sha = manifest.get("sourceSha")
-    result["binarySourceSha"] = binary_sha
+    kind = manifest.get("kind", "binary_provenance")
+    reviewed_paths = {}
+    if kind == "reviewed_compatibility":
+        comparison_sha = manifest.get("comparisonBaselineSha")
+        reviewed_paths = manifest.get("reviewedMobilePaths")
+        if (manifest.get("schemaVersion") != 2 or "sourceSha" in manifest
+                or "binarySourceSha" not in manifest or manifest["binarySourceSha"] is not None
+                or not isinstance(reviewed_paths, dict)
+                or any(not isinstance(pair, dict)
+                       or set(pair) != {"baselineBlobSha", "reviewedBlobSha"}
+                       or any(value is not None and
+                              (not isinstance(value, str) or not SHA.fullmatch(value))
+                              for value in pair.values())
+                       for pair in reviewed_paths.values())):
+            result["reason"] = "invalid_binary_record"
+            return result
+    elif kind == "binary_provenance":
+        comparison_sha = manifest.get("sourceSha")
+        result["binarySourceSha"] = comparison_sha
+        if (manifest.get("schemaVersion", 1) != 1
+                or any(key in manifest for key in
+                       ("binarySourceSha", "comparisonBaselineSha", "reviewedMobilePaths"))):
+            result["reason"] = "invalid_binary_record"
+            return result
+    else:
+        result["reason"] = "invalid_binary_record"
+        return result
+    result["comparisonBaselineSha"] = comparison_sha
     result["runtimeVersion"] = manifest.get("runtimeVersion")
-    if (not isinstance(binary_sha, str) or not SHA.fullmatch(binary_sha)
+    if (not isinstance(comparison_sha, str) or not SHA.fullmatch(comparison_sha)
             or manifest.get("platform") != "ios"
             or manifest.get("channel") != "production"
             or not isinstance(manifest.get("buildNumber"), str)
@@ -64,9 +91,11 @@ def check(repo, source_sha, manifest_path):
         evidence_path = (repo / evidence).resolve(strict=True)
         evidence_path.relative_to(repo.resolve())
         evidence_text = evidence_path.read_text()
-        expected_evidence = (binary_sha, manifest.get("runtimeVersion"),
+        expected_evidence = (comparison_sha, manifest.get("runtimeVersion"),
                              manifest.get("appVersion"), manifest["buildNumber"],
                              manifest["channel"], manifest["appleState"])
+        if kind == "reviewed_compatibility":
+            expected_evidence += (kind,)
         if any(not isinstance(value, str) or value not in evidence_text
                for value in expected_evidence):
             result["reason"] = "binary_evidence_mismatch"
@@ -75,13 +104,14 @@ def check(repo, source_sha, manifest_path):
         result["reason"] = "missing_binary_evidence"
         return result
     try:
-        git(repo, "merge-base", "--is-ancestor", binary_sha, source_sha)
+        git(repo, "merge-base", "--is-ancestor", comparison_sha, source_sha)
     except subprocess.CalledProcessError:
-        result["reason"] = "binary_source_not_ancestor"
+        result["reason"] = ("comparison_baseline_not_ancestor" if kind == "reviewed_compatibility"
+                            else "binary_source_not_ancestor")
         return result
     try:
         changed = git(repo, "diff", "--no-renames", "--name-only", "-z",
-                      binary_sha, source_sha).decode().split("\0")
+                      comparison_sha, source_sha).decode().split("\0")
     except (UnicodeError, subprocess.CalledProcessError):
         result["reason"] = "cannot_compare_binary_source"
         return result
@@ -108,7 +138,26 @@ def check(repo, source_sha, manifest_path):
         result["reason"] = "binary_runtime_or_channel_mismatch"
         return result
 
-    if unsafe:
+    if kind == "reviewed_compatibility":
+        if set(reviewed_paths) != set(unsafe):
+            result["reason"] = "mobile_native_or_config_changed"
+            return result
+        try:
+            for revision, field in ((comparison_sha, "baselineBlobSha"),
+                                    (source_sha, "reviewedBlobSha")):
+                entries = git(repo, "ls-tree", "-r", "-z", revision, "--", *unsafe)
+                blobs = {}
+                for entry in entries.decode().split("\0"):
+                    if entry:
+                        metadata, path = entry.split("\t", 1)
+                        blobs[path] = metadata.split()[2]
+                if any(pair[field] != blobs.get(path) for path, pair in reviewed_paths.items()):
+                    result["reason"] = "reviewed_compatibility_blob_mismatch"
+                    return result
+        except (UnicodeError, subprocess.CalledProcessError):
+            result["reason"] = "cannot_compare_binary_source"
+            return result
+    elif unsafe:
         result["reason"] = "mobile_native_or_config_changed"
         return result
     result["eligible"] = True
@@ -127,7 +176,8 @@ def main():
         result = check(repo, args.source_sha, repo / args.manifest)
     except (OSError, UnicodeError, subprocess.CalledProcessError):
         result = {"eligible": False, "reason": "not_a_git_checkout", "runtimeVersion": None,
-                  "binarySourceSha": None, "nonOtaMobilePaths": []}
+                  "binarySourceSha": None, "comparisonBaselineSha": None,
+                  "nonOtaMobilePaths": []}
     print(json.dumps(result, sort_keys=True))
     return 0 if result["eligible"] else 1
 

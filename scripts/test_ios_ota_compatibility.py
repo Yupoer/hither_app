@@ -34,6 +34,7 @@ class IosOtaCompatibilityTests(unittest.TestCase):
             "EXUpdatesURL": "https://u.expo.dev/test",
         }))
         self.write("apps/mobile/src/screens/MapScreen/Screen.tsx", "export const label = '開始';\n")
+        self.write("apps/mobile/modules/hither-location/ios/Location.swift", "let profile = 1\n")
         self.commit("binary source")
         self.binary_source = self.git("rev-parse", "HEAD").strip()
         self.write("docs/binary.md", f"Verified installed binary source {self.binary_source}, "
@@ -65,6 +66,36 @@ class IosOtaCompatibilityTests(unittest.TestCase):
                              capture_output=True, text=True)
         self.assertFalse(run.stderr, run.stderr)
         return run.returncode, json.loads(run.stdout)
+
+    def record_reviewed_compatibility(self):
+        native = "apps/mobile/modules/hither-location/ios/Location.swift"
+        wrapper = "apps/mobile/src/native/locationHealth.ts"
+        self.write(native, "let profile = 2\n")
+        self.write(wrapper, "export const health = 'waiting';\n")
+        self.commit("review compatible native inputs")
+        record = {
+            "schemaVersion": 2, "kind": "reviewed_compatibility",
+            "platform": "ios", "channel": "production", "binarySourceSha": None,
+            "comparisonBaselineSha": self.binary_source,
+            "runtimeVersion": "0.1.13", "appVersion": "0.1.13", "buildNumber": "77",
+            "appleState": "IN_BETA_TESTING", "evidence": "docs/binary.md",
+            "reviewedMobilePaths": {
+                native: {
+                    "baselineBlobSha": self.git("rev-parse", f"{self.binary_source}:{native}").strip(),
+                    "reviewedBlobSha": self.git("rev-parse", f"HEAD:{native}").strip(),
+                },
+                wrapper: {
+                    "baselineBlobSha": None,
+                    "reviewedBlobSha": self.git("rev-parse", f"HEAD:{wrapper}").strip(),
+                },
+            },
+        }
+        self.write("docs/binary.md", f"reviewed_compatibility baseline {self.binary_source}, "
+                   "binary source unknown, version/runtime 0.1.13, build 77, "
+                   "production, IN_BETA_TESTING\n")
+        self.write("release/ios-production-binary.json", json.dumps(record))
+        self.commit("record reviewed compatibility without binary provenance")
+        return record
 
     def test_pure_ui_change_can_use_matching_binary(self):
         self.write("apps/mobile/src/screens/MapScreen/Screen.tsx",
@@ -117,6 +148,56 @@ class IosOtaCompatibilityTests(unittest.TestCase):
         self.assertEqual(result["reason"], "mobile_native_or_config_changed")
         self.assertIn("apps/mobile/src/native/location.ts", result["nonOtaMobilePaths"])
         self.assertIn("apps/mobile/assets/icon.png", result["nonOtaMobilePaths"])
+
+    def test_reviewed_compatibility_admits_exact_existing_and_added_blobs(self):
+        record = self.record_reviewed_compatibility()
+        code, result = self.gate()
+        self.assertEqual(code, 0)
+        self.assertTrue(result["eligible"])
+        self.assertIsNone(result["binarySourceSha"])
+        self.assertEqual(result["comparisonBaselineSha"], self.binary_source)
+        self.assertEqual(result["nonOtaMobilePaths"], sorted(record["reviewedMobilePaths"]))
+
+    def test_reviewed_compatibility_rejects_later_input_drift(self):
+        self.record_reviewed_compatibility()
+        self.write("apps/mobile/modules/hither-location/ios/Location.swift", "let newCapability = 3\n")
+        self.commit("add unreviewed capability")
+        code, result = self.gate()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(result["reason"], "reviewed_compatibility_blob_mismatch")
+
+    def test_reviewed_compatibility_checks_baseline_blob_and_path_set(self):
+        record = self.record_reviewed_compatibility()
+        path = "apps/mobile/modules/hither-location/ios/Location.swift"
+        baseline_blob = record["reviewedMobilePaths"][path]["baselineBlobSha"]
+        record["reviewedMobilePaths"][path]["baselineBlobSha"] = "f" * 40
+        self.write("release/ios-production-binary.json", json.dumps(record))
+        code, result = self.gate()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(result["reason"], "reviewed_compatibility_blob_mismatch")
+        record["reviewedMobilePaths"][path]["baselineBlobSha"] = baseline_blob
+        self.write("release/ios-production-binary.json", json.dumps(record))
+        self.write("apps/mobile/assets/icon.png", b"unreviewed icon")
+        self.commit("add unreviewed native input")
+        code, result = self.gate()
+        self.assertNotEqual(code, 0)
+        self.assertEqual(result["reason"], "mobile_native_or_config_changed")
+
+    def test_reviewed_compatibility_rejects_ambiguous_or_invalid_records(self):
+        record = self.record_reviewed_compatibility()
+        path = "apps/mobile/modules/hither-location/ios/Location.swift"
+        variants = (
+            {**record, "sourceSha": self.binary_source},
+            {**record, "binarySourceSha": self.binary_source},
+            {**record, "kind": "unreviewed"},
+            {**record, "reviewedMobilePaths": {path: {"reviewedBlobSha": "f" * 40}}},
+        )
+        for variant in variants:
+            with self.subTest(record=variant):
+                self.write("release/ios-production-binary.json", json.dumps(variant))
+                code, result = self.gate()
+                self.assertNotEqual(code, 0)
+                self.assertEqual(result["reason"], "invalid_binary_record")
 
     def test_missing_record_and_unrelated_source_do_not_publish(self):
         code, result = self.gate("release/missing.json")

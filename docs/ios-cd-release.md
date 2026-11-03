@@ -75,7 +75,7 @@ automatically select or dispatch native work.
 | --- | --- |
 | [CD workflow](../.github/workflows/cd-ios-testflight.yml) | Trust, modes, prerequisites, locks, fixed commands and artifact transport. |
 | [CI admission](../scripts/check-release-ci.mjs) | Exact source, repository, master-push run and current successful attempt. |
-| [Compatibility gate](../scripts/check-ios-ota-compatibility.py) | Conservative source/runtime/channel admission from the checked-in binary record. It does not inspect an installed App. |
+| [Compatibility gate](../scripts/check-ios-ota-compatibility.py) | Conservative source/runtime/channel admission from binary provenance or exact reviewed compatibility blobs. It does not inspect an installed App. |
 | [OTA verifier](../scripts/verify-ios-ota-publication.py) | Published identity, exact-group readback and latest production-channel iOS identity. It does not observe client application. |
 | [Inventory reducer](../scripts/inspect-ios-release-inventory.py) | Sanitized independent EAS metadata, including blocked results. EAS candidates do not prove Apple processing or installation. |
 | [Simulator gate](../scripts/run-ios-release-launch.py) | Full source-equivalent Release build, two cold starts and sanitized diagnostics. It does not launch the signed device IPA. |
@@ -85,30 +85,33 @@ automatically select or dispatch native work.
 ## Production OTA and compatibility policy
 
 The unattended `ota` route requires the reviewed
-[binary record](../release/ios-production-binary.json). It names an ancestor
-source, runtime, app version, build, production channel, Apple state and evidence.
-The current record is build 76, runtime `0.1.11`, from `164ca5c`; it does not
-establish an installed `0.1.13` binary. Update it only with evidence actually
-checked. A non-object JSON record returns structured `invalid_binary_record`.
-No compatibility admission rule is relaxed by this repair.
+[compatibility record](../release/ios-production-binary.json). Legacy version 1
+records use `sourceSha` for observed binary provenance. Version 2 records use
+`kind: reviewed_compatibility`, an ancestor `comparisonBaselineSha`, an explicitly
+unknown `binarySourceSha: null` and exact reviewed mobile blob pairs. Both kinds
+name the runtime, app version, build, production channel, Apple state and
+evidence. Ambiguous provenance and non-object records return structured
+`invalid_binary_record`.
 
 The already approved local Hither release path treats the latest GitHub source
 as the authoritative compatibility comparison baseline. This operator source
 attestation is distinct from observed binary provenance. Missing historical
 build 79 IPA bytes alone are not a mandatory blocker for that approved path.
-Real runtime compatibility, authentication and a publication receipt still need
-their own evidence. This unattended workflow retains its conservative record;
-it does not manufacture build 79 provenance or a `0.1.13` manifest from the
-operator attestation. A historical IPA is unnecessary when other trustworthy
-evidence establishes the required binary facts.
+The guarded CD route can now represent that attestation through a version 2
+record. The [current review](ios-production-compatibility-20261103.md) records
+build 79 and runtime `0.1.13` against the working `017bf952` OTA baseline. It does
+not manufacture Build 79 source provenance. Real runtime compatibility,
+authentication and a publication receipt still need their own evidence.
 
-The gate compares every mobile change since the recorded binary source with a
-conservative JavaScript, TypeScript and test allowlist. Native code, modules,
-targets, plugins, patches, app config, package changes, assets and unknown mobile
-paths stop OTA. It checks the app and embedded iOS runtime, EAS production build
-channel and active unconditional production branch. A missing, stale or
-incompatible record stops before publication. Inspect the evidence and choose
-an authorized route explicitly.
+The gate compares every mobile change since the recorded binary source or
+comparison baseline with a conservative JavaScript, TypeScript and test
+allowlist. Native code, modules, targets, plugins, patches, app config, package
+changes, assets and unknown mobile paths stop OTA unless the version 2 record
+lists that exact path set and matches every baseline and reviewed blob SHA.
+There is no directory exemption. The gate checks the app and embedded iOS
+runtime and EAS production build channel. The publication verifier separately
+checks the active unconditional production branch. A missing, stale or
+incompatible record stops before publication.
 
 Set `backend_verified=true` for `ota` or `submit` only after required production
 backend changes are deployed and verified. This is an operator attestation;
