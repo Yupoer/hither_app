@@ -114,25 +114,25 @@ export async function measureTourStepRects(opts: {
     return { targetRect: null, placementRect: null };
   }
 
-  const rect = await measureTargetWithRetry({
-    measure: opts.measure,
-    target: opts.step.target,
-    maxAttempts: opts.step.openStageTwo ? 10 : opts.step.expandCard ? 8 : 5,
-    retryDelayMs: 80,
-    requireStable: opts.requireStable ?? Boolean(opts.step.expandCard),
-    sleep,
-  });
-
-  let place: LayoutRectangle | null = null;
-  if (opts.step.openStageTwo) {
-    place = await measureTargetWithRetry({
+  const [rect, place] = await Promise.all([
+    measureTargetWithRetry({
       measure: opts.measure,
-      target: 'stageTwoPlacement',
-      maxAttempts: 5,
+      target: opts.step.target,
+      maxAttempts: opts.step.openStageTwo ? 10 : opts.step.expandCard ? 8 : 5,
       retryDelayMs: 80,
+      requireStable: opts.requireStable ?? Boolean(opts.step.expandCard),
       sleep,
-    });
-  }
+    }),
+    opts.step.openStageTwo
+      ? measureTargetWithRetry({
+        measure: opts.measure,
+        target: 'stageTwoPlacement',
+        maxAttempts: 5,
+        retryDelayMs: 80,
+        sleep,
+      })
+      : null,
+  ]);
 
   if (opts.step.openStageTwo) {
     const clipped = clipRectToWindow(rect, opts.winW, opts.winH);

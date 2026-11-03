@@ -75,8 +75,7 @@ export function useStoreEntitlements({
 
   const handleEntitlementActivated = useCallback(async () => {
     await refreshEntitlement(groupId);
-    await refreshStoreEntitlements();
-    await syncFromDatabase();
+    await Promise.all([refreshStoreEntitlements(), syncFromDatabase()]);
   }, [groupId, refreshEntitlement, refreshStoreEntitlements, syncFromDatabase]);
 
   const openPaywallForLiveActivity = useCallback(() => {

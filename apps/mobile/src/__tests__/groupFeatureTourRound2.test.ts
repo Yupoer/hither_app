@@ -1,7 +1,9 @@
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ textScale: 1, boldText: false }) }));
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GROUP_FEATURE_TOUR_STORAGE_KEY } from '../featureTour/constants';
 import { measureTargetWithRetry } from '../featureTour/measureTarget';
+import { readOnboardingReplayIntent, readOnboardingState } from '../onboarding/sync';
 import { placeTourCard } from '../featureTour/overlayLayout';
 import {
   pickTourDestinationId,
@@ -106,6 +108,16 @@ function flush() {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('R2: per-account pending tour sync', () => {
@@ -292,6 +304,110 @@ describe('R2: hook observable lifecycle', () => {
       ...overrides,
     };
   }
+
+  it('starts all completion reads together and waits for reset intent after a failed pending read', async () => {
+    const local = deferred<string | null>();
+    const pending = deferred<string | null>();
+    const reset = deferred<string | null>();
+    const getItem = jest.mocked(AsyncStorage.getItem);
+    const originalGetItem = getItem.getMockImplementation();
+    getItem.mockImplementation((key) => {
+      if (key === GROUP_FEATURE_TOUR_STORAGE_KEY) return local.promise;
+      if (key === GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY) return pending.promise;
+      if (key === GROUP_FEATURE_TOUR_RESET_INTENT_KEY) return reset.promise;
+      throw new Error(`Unexpected storage key ${key}`);
+    });
+    const box: { latest?: ReturnType<typeof useGroupFeatureTour> } = {};
+    let tree: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        tree = create(React.createElement(HookProbe, {
+          input: baseInput({ accountId: null, accountPreferences: { groupFeatureTourCompleted: true } }),
+          onSnapshot: (value) => { box.latest = value; },
+        }));
+      });
+      expect(getItem).toHaveBeenCalledWith(GROUP_FEATURE_TOUR_STORAGE_KEY);
+      expect(getItem).toHaveBeenCalledWith(GROUP_FEATURE_TOUR_ACCOUNT_SYNC_PENDING_KEY);
+      expect(getItem).toHaveBeenCalledWith(GROUP_FEATURE_TOUR_RESET_INTENT_KEY);
+      expect(box.latest?.tourActive).toBe(false);
+
+      local.resolve(null);
+      pending.reject(new Error('storage unavailable'));
+      await flush();
+      expect(readOnboardingState).not.toHaveBeenCalled();
+      expect(box.latest?.tourActive).toBe(false);
+
+      reset.resolve('1');
+      await flush();
+      expect(box.latest?.tourActive).toBe(true);
+      expect(AsyncStorage.setItem).not.toHaveBeenCalledWith(GROUP_FEATURE_TOUR_STORAGE_KEY, '1');
+    } finally {
+      local.resolve(null);
+      pending.resolve(null);
+      reset.resolve('1');
+      await flush();
+      await act(async () => tree?.unmount());
+      getItem.mockImplementation(originalGetItem);
+    }
+  });
+
+  it('starts both onboarding reads together and waits for replay intent before activation', async () => {
+    const onboarding = deferred<Awaited<ReturnType<typeof readOnboardingState>>>();
+    const replay = deferred<boolean>();
+    jest.mocked(readOnboardingState).mockReturnValueOnce(onboarding.promise);
+    jest.mocked(readOnboardingReplayIntent).mockReturnValueOnce(replay.promise);
+    const box: { latest?: ReturnType<typeof useGroupFeatureTour> } = {};
+    let tree: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        tree = create(React.createElement(HookProbe, {
+          input: baseInput(),
+          onSnapshot: (value) => { box.latest = value; },
+        }));
+      });
+      await flush();
+      expect(readOnboardingState).toHaveBeenCalled();
+      expect(readOnboardingReplayIntent).toHaveBeenCalled();
+      expect(box.latest?.tourActive).toBe(false);
+
+      onboarding.resolve({ completed: true, answers: {}, completedAt: '2026-11-03T00:00:00.000Z' });
+      await flush();
+      expect(box.latest?.tourActive).toBe(false);
+
+      replay.resolve(false);
+      await flush();
+      expect(box.latest?.tourActive).toBe(true);
+      expect(box.latest?.step?.id).toBe('collapsedCard');
+    } finally {
+      onboarding.resolve(null);
+      replay.resolve(false);
+      await flush();
+      await act(async () => tree?.unmount());
+    }
+  });
+
+  it('does not activate after unmount while onboarding eligibility is still loading', async () => {
+    const replay = deferred<boolean>();
+    jest.mocked(readOnboardingReplayIntent).mockReturnValueOnce(replay.promise);
+    const input = baseInput();
+    let tree: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        tree = create(React.createElement(HookProbe, { input, onSnapshot: () => {} }));
+      });
+      await flush();
+      expect(readOnboardingReplayIntent).toHaveBeenCalled();
+      expect(input.measureTarget).not.toHaveBeenCalled();
+      await act(async () => tree?.unmount());
+      replay.resolve(false);
+      await flush();
+      expect(input.measureTarget).not.toHaveBeenCalled();
+    } finally {
+      replay.resolve(false);
+      await flush();
+      await act(async () => tree?.unmount());
+    }
+  });
 
   it('unlocks next and previous with centered copy when a native measurement never returns', async () => {
     jest.useFakeTimers();
