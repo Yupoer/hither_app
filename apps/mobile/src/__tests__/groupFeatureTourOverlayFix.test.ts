@@ -407,6 +407,48 @@ describe('retreatTour', () => {
 });
 
 describe('Stage Two members measurement', () => {
+  it('starts target and placement measurement together and waits for both rects', async () => {
+    const members = { x: -8, y: 480, width: 400, height: 220 };
+    const tabs = { x: 16, y: 420, width: 358, height: 48 };
+    let resolveTarget!: (rect: typeof members) => void;
+    let resolvePlacement!: (rect: typeof tabs) => void;
+    const target = new Promise<typeof members>((resolve) => { resolveTarget = resolve; });
+    const placement = new Promise<typeof tabs>((resolve) => { resolvePlacement = resolve; });
+    const measure = jest.fn(async (id: string) => {
+      if (id === 'paneMembers') return target;
+      if (id === 'stageTwoPlacement') return placement;
+      return null;
+    });
+    let settled = false;
+    const result = measureTourStepRects({
+      measure,
+      step: TOUR_STEPS.find((step) => step.id === 'paneMembers')!,
+      winW: 390,
+      winH: 844,
+      sleep: async () => undefined,
+    }).then((rects) => { settled = true; return rects; });
+    try {
+      await flush();
+      expect(measure).toHaveBeenCalledWith('paneMembers');
+      expect(measure).toHaveBeenCalledWith('stageTwoPlacement');
+      expect(settled).toBe(false);
+
+      resolveTarget(members);
+      await flush();
+      expect(settled).toBe(false);
+
+      resolvePlacement(tabs);
+      await expect(result).resolves.toEqual({
+        targetRect: clipRectToWindow(members, 390, 844),
+        placementRect: tabs,
+      });
+    } finally {
+      resolveTarget(members);
+      resolvePlacement(tabs);
+      await result;
+    }
+  });
+
   it('returns a clipped members target and tab placement', async () => {
     const members = { x: -8, y: 480, width: 400, height: 220 };
     const tabs = { x: 16, y: 420, width: 358, height: 48 };

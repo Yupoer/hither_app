@@ -143,10 +143,16 @@ export function useGroupFeatureTour(
 
   const reevaluate = useCallback(() => {
     void (async () => {
-      let local = await readGroupFeatureTourCompletedLocal();
-      const accountId = committedInputRef.current.accountId;
-      const pending = await readTourAccountSyncPending();
-      const resetIntent = await readTourResetIntent();
+      const [localState, pending, resetIntent] = await Promise.all([
+        readGroupFeatureTourCompletedLocal().then((local) => ({
+          local,
+          accountId: committedInputRef.current.accountId,
+        })),
+        readTourAccountSyncPending(),
+        readTourResetIntent(),
+      ]);
+      let local = localState.local;
+      const { accountId } = localState;
       const prefsDone = committedInputRef.current.accountPreferences?.groupFeatureTourCompleted === true;
 
       // Prefer per-account pending desired value over stale session prefs.
@@ -376,8 +382,10 @@ function GroupTourEligibilityLoadCommit({ committedInputRef, committedInput, gat
         readOnboardingReplayIntent,
         isOnboardingCompleteForTourGate,
       } = await import('../onboarding/sync');
-      const onboarding = await readOnboardingState();
-      const replayIntent = await readOnboardingReplayIntent();
+      const [onboarding, replayIntent] = await Promise.all([
+        readOnboardingState(),
+        readOnboardingReplayIntent(),
+      ]);
       if (cancelled) return;
       const onboardingOk = isOnboardingCompleteForTourGate({
         storageCompleted: Boolean(onboarding?.completed),
