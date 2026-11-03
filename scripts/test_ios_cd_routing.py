@@ -38,6 +38,7 @@ for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-o
     assert all(runs(name, mode) == (mode in ("build-only", "submit")) for name in native), mode
     assert runs("Pin CocoaPods to checked-in lockfile", mode) == (mode in (
         "preflight", "validate-release", "build-only", "submit")), mode
+    assert runs("Verify native Xcode environment", mode) == (mode != "ota"), mode
     assert runs("Build and cold-launch full Release simulator app", mode) == (mode in ("validate-release", "build-only", "submit")), mode
     assert runs("Upload Release launch receipt", mode) == (mode in ("validate-release", "build-only", "submit")), mode
     diagnostic_condition = steps["Upload sanitized Release launch failure diagnostic"]["if"]
@@ -49,7 +50,7 @@ for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-o
 
 ota_publish = steps["Publish and verify production iOS OTA"]["body"]
 assert "env:exec production" in ota_publish
-assert "EAS_BUILD_PROFILE=production npx --yes eas-cli@21.0.2 update" in ota_publish
+assert "EAS_BUILD_PROFILE=production bunx --package eas-cli@21.0.2 eas update" in ota_publish
 assert "          EAS_BUILD_PROFILE: production" not in ota_publish
 assert "EXUpdatesRequestHeaders" in steps["Verify IPA and record source"]["body"]
 build_receipt = steps["Verify IPA and record source"]["body"]
@@ -59,6 +60,11 @@ assert "assert updates.get('EXUpdatesRuntimeVersion') == config['runtimeVersion'
 assert "assert updates.get('EXUpdatesRequestHeaders', {}).get('expo-channel-name') == 'production'" in build_receipt
 assert "    if: inputs.mode == 'inspect-release'" in source
 assert "    if: inputs.mode != 'inspect-release'" in source
+assert "    runs-on: ${{ inputs.mode == 'ota' && 'ubuntu-latest' || 'xcode-27' }}" in source
+assert "      DEVELOPER_DIR: ${{ inputs.mode != 'ota' && '/Applications/Xcode_27.0.app/Contents/Developer' || '' }}" in source
+assert "xcodebuild" not in steps["Verify pinned master source"]["body"]
+assert "xcodebuild -version" in steps["Verify native Xcode environment"]["body"]
+assert source.index("- name: Initialize iOS attempt journal") < source.index("- name: Verify native Xcode environment")
 assert source.index("- name: Pin CocoaPods to checked-in lockfile") < source.index(
     "- name: Build and cold-launch full Release simulator app")
 
@@ -98,7 +104,7 @@ for name in ("Finalize inventory attempt outcome", "Finalize iOS attempt outcome
     assert steps[name]["if"] == "always()", name
 for guard, initialize, finalize in (
         ("Verify pinned inventory source", "Initialize inventory attempt journal", "Finalize inventory attempt outcome"),
-        ("Verify pinned master source and Xcode", "Initialize iOS attempt journal", "Finalize iOS attempt outcome")):
+        ("Verify pinned master source", "Initialize iOS attempt journal", "Finalize iOS attempt outcome")):
     assert source.index(f"- name: {guard}") < source.index(f"- name: {initialize}")
     assert "id: trusted_source" in steps[guard]["body"]
     assert steps[initialize]["if"] is None

@@ -271,7 +271,7 @@ function evaluateCondition(condition, mode) {
 }
 
 test('actual workflow routes guard to four release modes with step-only token and job-local read permission', () => {
-  const source = readFileSync(new URL('../.github/workflows/cd-ios-testflight.yml', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../.github/workflows/cd-ios-testflight.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const ios = workflowJob(source, 'ios');
   const inventory = workflowJob(source, 'inventory');
   assert.ok(ios && inventory);
@@ -293,8 +293,8 @@ test('actual workflow routes guard to four release modes with step-only token an
   assert.equal([...source.matchAll(/^\s*actions: read$/gm)].length, 1);
   assert.doesNotMatch(inventory, /check-release-ci|actions: read|GITHUB_TOKEN/);
   assert.ok(ios.indexOf('node-version: 22.16.0') < ios.indexOf(guard));
-  assert.ok(ios.indexOf(guard) < ios.indexOf('- name: Install and verify native dependencies'));
+  assert.ok(ios.indexOf(guard) < ios.indexOf('- name: Install and verify mobile dependencies'));
   assert.match(source, /^concurrency:\n  group: \$\{\{ contains\(fromJSON\('\["ota","build-only","submit","validate-release"\]'\), inputs\.mode\) && 'cd-ios-production' \|\| format\('cd-ios-diagnostic-\{0\}-\{1\}', github\.run_id, github\.run_attempt\) \}\}\n  cancel-in-progress: false$/m);
-  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   assert.match(workflowJob(ci, 'scope'), /^          node --test .+ scripts\/check-release-ci\.test\.mjs$/m);
 });

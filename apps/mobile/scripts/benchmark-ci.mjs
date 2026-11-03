@@ -120,12 +120,10 @@ export function runBenchmark(options) {
       (options.mode === 'plain' ? plan.coverage.eligibleAppPaths.length !== 0 : plan.coverage.eligibleAppPaths.length === 0)) {
     throw new Error('Benchmark preflight did not establish the requested mode and coverage scope');
   }
-  const npmVersion = process.platform === 'win32'
-    ? execFileSync(process.execPath, [path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js'), '--version'], { encoding: 'utf8' }).trim()
-    : execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
+  const bunVersion = execFileSync('bun', ['--version'], { encoding: 'utf8' }).trim();
   const cpu = os.cpus();
   const result = { schemaVersion: 1, mode: options.mode, candidateWorkers: options.candidateWorkers,
-    context: { nodeVersion: process.version, npmVersion, platform: process.platform, arch: process.arch,
+    context: { nodeVersion: process.version, bunVersion, platform: process.platform, arch: process.arch,
       osRelease: os.release(), cpuCount: cpu.length, cpuModel: cpu[0]?.model, totalMemoryBytes: os.totalmem(),
       initialLoadAverage: os.loadavg(), imageOS: process.env.ImageOS || null, imageVersion: process.env.ImageVersion || null },
     cachePolicy: 'empty identical Jest and headless compiled caches before every sample',

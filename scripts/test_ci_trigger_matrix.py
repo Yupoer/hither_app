@@ -43,7 +43,8 @@ upgrade = re.search(
 )
 assert upgrade, "scheduled navigation upgrade requires its own pre-migration replay"
 assert "@electric-sql/pglite@0.5.8" in upgrade.group(1), "upgrade replay runtime must be pinned"
-assert 'npm install --prefix "$RUNNER_TEMP/hither-scheduled-upgrade"' in upgrade.group(1)
+assert 'mkdir -p "$RUNNER_TEMP/hither-scheduled-upgrade"' in upgrade.group(1)
+assert 'bun install --cwd "$RUNNER_TEMP/hither-scheduled-upgrade" --no-save --ignore-scripts' in upgrade.group(1)
 assert "node supabase/tests/run-security-local.mjs" in upgrade.group(1)
 assert '"$RUNNER_TEMP/hither-scheduled-upgrade/node_modules/@electric-sql/pglite/dist/index.js"' in upgrade.group(1)
 assert "--before-migration=20261102152223_scheduled_navigation_start.sql:../verification-probes/scheduled_navigation_upgrade.seed.sql" in upgrade.group(1)

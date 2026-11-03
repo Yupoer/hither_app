@@ -5,6 +5,35 @@ on `master` with the reviewed 40-character `source_sha`. The workflow verifies
 exact checkout and master ancestry before executing selected-checkout helpers.
 All six modes are manual. A Git push alone does not publish.
 
+`inspect-release` and `ota` use `ubuntu-latest`. The four native modes use
+`xcode-27` and verify Xcode 27.0 before native work. OTA skips Xcode and CocoaPods
+setup while retaining source, CI, backend, compatibility, intent and readback
+guards.
+
+## Install CI and CD dependencies
+
+CI and CD use pinned Bun 1.4.4 with Node 22 retained for Jest, Node test runners,
+Expo, EAS and dependency postinstall scripts. `bun run test` still runs Jest.
+The EAS command remains pinned as `bunx --package eas-cli@21.0.2 eas`.
+EAS local native builds still select npm internally from `package-lock.json`.
+Changing that selection requires a separate app lockfile migration. This change
+covers the workflow-owned commands and preserves the native build inputs.
+
+[The shared installer](../scripts/install-mobile-dependencies.sh) runs
+`bun install --frozen-lockfile`. Bun imports the canonical `package-lock.json`
+in memory without writing a Bun lockfile or changing dependency versions.
+The installer explicitly runs the locked Skia and unrs-resolver postinstall
+scripts with Node, then applies all patches with `--error-on-fail`. Skia needs
+that script to copy the prebuilt native libraries used by its podspec.
+
+Normal CI installs a fresh dependency tree. Previous npm cache timings do not
+establish Bun cache acceptance. The manual cache benchmark remains available
+with a new Bun cache key and receipt schema. It compares actual installed
+package names and versions against the lockfile, hashes the installed layout
+and patched targets, and checks runtime alignment. It does not require npm's
+`node_modules/.package-lock.json`. Enable installed-tree reuse only after Bun
+passes the existing runner-specific benchmark criteria.
+
 ## Full delivery and evidence map
 
 ```mermaid

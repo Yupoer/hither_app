@@ -36,6 +36,8 @@ jobs:
           ref: master
           persist-credentials: false
 
+      - uses: ./.github/actions/setup-mobile
+
       - name: Record starting commit
         id: start
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -54,7 +56,7 @@ jobs:
 
             The app lives in `apps/mobile` (React Native + Expo SDK 57, Supabase backend).
             Read `CLAUDE.md` first and follow its rules. The CI gates you must keep green:
-              cd apps/mobile && npm ci && npm test && npm run test:meta && npm run test:coverage:changed && npm run typecheck && npx expo install --check
+              cd apps/mobile && bash ../../scripts/install-mobile-dependencies.sh && bun run test && bun run test:meta && bun run test:coverage:changed && bun run typecheck && bunx --no-install expo install --check
             Expo Go compatibility is the #1 recurring failure class — native access must stay
             behind `src/native/` with a JS fallback; do not branch on Platform.OS in UI.
 
@@ -64,7 +66,7 @@ jobs:
             branch and opens a draft PR for a maintainer to review.
           claude_args: >-
             --allowedTools
-            "Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git add *),Bash(git commit *),Bash(gh issue view *),Bash(npm ci*),Bash(npm test*),Bash(npm run *),Bash(npx expo install --check*),Edit,Read,Write,Glob,Grep"
+            "Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git add *),Bash(git commit *),Bash(gh issue view *),Bash(bash ../../scripts/install-mobile-dependencies.sh*),Bash(bun run *),Bash(bunx --no-install expo install --check*),Edit,Read,Write,Glob,Grep"
 
       - name: Bundle agent commits
         id: bundle

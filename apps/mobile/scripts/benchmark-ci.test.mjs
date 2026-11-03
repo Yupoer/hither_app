@@ -91,6 +91,7 @@ test('real CLI delegates ten samples, resets both caches, preserves incumbent fl
     const output = fs.readFileSync(path.join(app, 'test-artifacts/benchmark-plain/comparison.json'), 'utf8');
     assert.doesNotMatch(output, /PRIVATE_|assertionResults|headless-scenarios.md/);
     assert.equal(JSON.parse(output).samples.length, 10);
+    assert.match(JSON.parse(output).context.bunVersion, /^\d+\.\d+\.\d+/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
