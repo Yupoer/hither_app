@@ -3771,7 +3771,7 @@
     "file": "src/featureTour/measureTarget.ts",
     "kind": "export",
     "name": "measureTourStepRects",
-    "hash": "d51380d0821f1edf50c9a8ac85cd36b5ccd44343e02f00d99f2292d0b92c382b"
+    "hash": "e438c8b878ff5d4e27d5423ff71a3fc240734d04395cf76262fdc611c62861d9"
   },
   {
     "file": "src/featureTour/overlayLayout.ts",
@@ -4047,7 +4047,7 @@
     "file": "src/featureTour/useGroupFeatureTour.tsx",
     "kind": "export",
     "name": "useGroupFeatureTour",
-    "hash": "aca47f02ce9104a3eb2664a0c94d288c97116a9f59a7b6d7fcdd6218369fa12d"
+    "hash": "c6f721dcf88cce85647102461f02ecc8c848a1f2a07c3e7d9ea28e9ef74eb8e2"
   },
   {
     "file": "src/featureTour/useGroupFeatureTour.tsx",
@@ -4065,7 +4065,7 @@
     "file": "src/featureTour/useGroupFeatureTour.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "df03dc5608e77c96b79bde6c76f5ec55ca6d566223a780b59b32118bdc4f3c96"
+    "hash": "e340f768494de2100a52867a009d10fd750ae2ac975aac050a435d5530bbf358"
   },
   {
     "file": "src/featureTour/useGroupFeatureTour.tsx",
@@ -5757,7 +5757,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "16aa15db9be03e1179a937e5058bcf5ddbc2eed405ddf84e903041235c5d2c16"
+    "hash": "276286306c952be1f263ad95cfac24db61a7cc7a026085a67029da367703b0b5"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -8343,7 +8343,7 @@
     "file": "src/screens/MapScreen/hooks/useStoreEntitlements.ts",
     "kind": "export",
     "name": "useStoreEntitlements",
-    "hash": "ac1986c43bc2c3688bdebc63ce2309c6a45a946afe073c39b3c11622a0f35454"
+    "hash": "75bafa617f53fbe958d61e32df5d159b4599b88b279743f52c7d08b11dc22de4"
   },
   {
     "file": "src/screens/MapScreen/hooks/useStoreEntitlements.ts",

@@ -12,7 +12,7 @@ import { useVisitHistory, type UseVisitHistoryInput } from '../screens/MapScreen
 import { useGroupActions, type UseGroupActionsInput } from '../screens/MapScreen/hooks/useGroupActions';
 import { useAccountActions, type UseAccountActionsInput } from '../screens/MapScreen/hooks/useAccountActions';
 import { useStragglerReporting, type UseStragglerReportingInput } from '../screens/MapScreen/hooks/useStragglerReporting';
-import { getStoreSnapshot } from '../api/services/StoreService';
+import { getStoreSnapshot, mapStoreSnapshot } from '../api/services/StoreService';
 import { Alert } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { clearLiveActivities } from '../state/useLiveActivity';
@@ -33,7 +33,9 @@ jest.mock('../api/client', () => ({
   fetchVisitedWaypoints: jest.fn(), leaveGroups: jest.fn(), reportStraggler: jest.fn(),
   saveOnboardingProfile: jest.fn(), getNotificationPreferences: jest.fn(), setNotificationPreferences: jest.fn(), setSolo: jest.fn(),
 }));
-jest.mock('../api/services/StoreService', () => ({ getStoreSnapshot: jest.fn() }));
+jest.mock('../api/services/StoreService', () => ({
+  ...jest.requireActual('../api/services/StoreService'), getStoreSnapshot: jest.fn(),
+}));
 jest.mock('../state/useLiveActivity', () => ({ clearLiveActivities: jest.fn() }));
 jest.mock('../state/useStragglerAlerts', () => ({ useStragglerAlerts: jest.fn() }));
 jest.mock('../featureTour', () => ({
@@ -110,7 +112,7 @@ describe('MapScreen extracted hooks', () => {
     const entitlement = deferred<Awaited<ReturnType<UseStoreEntitlementsInput['refreshEntitlement']>>>();
     const store = deferred<Awaited<ReturnType<typeof getStoreSnapshot>>>();
     const route = deferred<void>();
-    jest.mocked(getStoreSnapshot).mockResolvedValue({ liveActivityEffective: false, extraPointCredits: 0 });
+    jest.mocked(getStoreSnapshot).mockResolvedValue(mapStoreSnapshot({ ok: true }));
     const input: UseStoreEntitlementsInput = {
       groupId: 'team', isAnonymous: false, isPro: false, openPaywall: jest.fn(),
       refreshEntitlement: jest.fn(() => entitlement.promise), syncFromDatabase: jest.fn(() => route.promise),
@@ -129,7 +131,7 @@ describe('MapScreen extracted hooks', () => {
     await act(async () => { route.resolve(); });
     expect(completed).toBe(false);
     await act(async () => {
-      store.resolve({ liveActivityEffective: true, extraPointCredits: 7 });
+      store.resolve(mapStoreSnapshot({ ok: true, live_activity_effective: true, extra_point_credits: 7 }));
       await activation;
     });
     expect(input.setLiveActivityEffective).toHaveBeenLastCalledWith(true);
