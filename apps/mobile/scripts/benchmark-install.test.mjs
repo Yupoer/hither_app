@@ -9,21 +9,25 @@ import { comparePair, installedIdentity } from './benchmark-install.mjs';
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-install-benchmark-'));
   fs.mkdirSync(path.join(root, 'node_modules/example'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'node_modules/example/node_modules/@scope/nested'), { recursive: true });
   fs.mkdirSync(path.join(root, 'patches'));
   fs.mkdirSync(path.join(root, 'scripts'));
-  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/example': { version: '1.0.0' } } }));
-  fs.writeFileSync(path.join(root, 'node_modules/.package-lock.json'), JSON.stringify({ packages: { 'node_modules/example': { version: '1.0.0' } } }));
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ packages: {
+    'node_modules/parent/node_modules/example': { version: '1.0.0' },
+    'node_modules/@scope/nested': { version: '2.0.0' },
+  } }));
   fs.writeFileSync(path.join(root, 'node_modules/example/package.json'), JSON.stringify({ name: 'example', version: '1.0.0' }));
+  fs.writeFileSync(path.join(root, 'node_modules/example/node_modules/@scope/nested/package.json'), JSON.stringify({ name: '@scope/nested', version: '2.0.0' }));
   fs.writeFileSync(path.join(root, 'node_modules/example/patched.js'), 'patched implementation');
   fs.writeFileSync(path.join(root, 'patches/example+1.0.0.patch'), '+++ b/node_modules/example/patched.js\n');
   return root;
 }
 
-test('installed identity covers locked package versions and every patched target', () => {
+test('installed identity reads the actual Bun layout and covers locked versions and every patched target', () => {
   const root = fixture();
   try {
     const original = installedIdentity(root);
-    assert.equal(original.packageCount, 1);
+    assert.equal(original.packageCount, 2);
     assert.deepEqual(original.patchedTargets.map(target => target.path), ['node_modules/example/patched.js']);
     fs.writeFileSync(path.join(root, 'node_modules/example/patched.js'), 'wrong implementation');
     assert.notDeepEqual(installedIdentity(root), original);
@@ -35,11 +39,11 @@ test('installed identity covers locked package versions and every patched target
 });
 
 test('pair comparison rejects a miss, key drift and unequal patched installation', () => {
-  const baseline = { schemaVersion: 1, arm: 'baseline', pair: 1, key: 'exact-key', cacheHit: false, elapsedMs: 100,
+  const baseline = { schemaVersion: 2, arm: 'baseline', pair: 1, key: 'exact-key', cacheHit: false, elapsedMs: 100,
     identity: { packageCount: 1, patchedTargets: ['hash'] }, runtimeAlignment: 'passed' };
   const candidate = { ...baseline, arm: 'candidate', cacheHit: true, elapsedMs: 80 };
   assert.equal(comparePair(baseline, candidate).correctnessEqual, true);
-  for (const override of [{ cacheHit: false }, { key: 'other' }, { identity: { patchedTargets: ['wrong'] } }, { runtimeAlignment: 'failed' }]) {
+  for (const override of [{ schemaVersion: 1 }, { cacheHit: false }, { key: 'other' }, { identity: { patchedTargets: ['wrong'] } }, { runtimeAlignment: 'failed' }]) {
     assert.throws(() => comparePair(baseline, { ...candidate, ...override }));
   }
 });

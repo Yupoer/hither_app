@@ -15,15 +15,27 @@ const write = (file, value) => {
 export function installedIdentity(root) {
   const lockBytes = fs.readFileSync(path.join(root, 'package-lock.json'));
   const lock = JSON.parse(lockBytes);
-  const installedBytes = fs.readFileSync(path.join(root, 'node_modules/.package-lock.json'));
-  const installed = JSON.parse(installedBytes);
-  const packages = Object.entries(installed.packages).sort(([a], [b]) => a.localeCompare(b)).map(([location, entry]) => {
-    const manifest = read(path.join(root, location, 'package.json'));
-    if (entry.version !== lock.packages[location]?.version || manifest.version !== entry.version) {
-      throw new Error(`Installed package does not match the lock (${location})`);
+  const locked = new Set(Object.entries(lock.packages).filter(([location]) => location).map(([location, entry]) =>
+    `${entry.name || location.split('node_modules/').at(-1)}@${entry.version}`));
+  const packages = [];
+  function visit(directory) {
+    for (const entry of fs.readdirSync(path.join(root, directory), { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || !entry.isDirectory()) continue;
+      const location = `${directory}/${entry.name}`;
+      if (entry.name.startsWith('@')) {
+        visit(location);
+        continue;
+      }
+      const manifest = read(path.join(root, location, 'package.json'));
+      if (!locked.has(`${manifest.name}@${manifest.version}`)) {
+        throw new Error(`Installed package does not match the lock (${location})`);
+      }
+      packages.push([location, manifest.name, manifest.version]);
+      if (fs.existsSync(path.join(root, location, 'node_modules'))) visit(`${location}/node_modules`);
     }
-    return [location, manifest.name, manifest.version];
-  });
+  }
+  visit('node_modules');
+  packages.sort(([a], [b]) => a.localeCompare(b));
   if (!packages.length) throw new Error('Installed dependency identity is empty');
   const targets = new Set();
   const patches = fs.readdirSync(path.join(root, 'patches')).filter(name => name.endsWith('.patch')).sort().map(name => {
@@ -35,12 +47,12 @@ export function installedIdentity(root) {
   });
   if (!patches.length) throw new Error('Installed patch identity is empty');
   const patchedTargets = [...targets].sort().map(file => ({ path: file, sha256: hash(fs.readFileSync(path.join(root, file))) }));
-  return { lockSha256: hash(lockBytes), installedLockSha256: hash(installedBytes), packageCount: packages.length,
+  return { lockSha256: hash(lockBytes), packageCount: packages.length,
     packagesSha256: hash(JSON.stringify(packages)), patches, patchedTargets };
 }
 
 export function comparePair(baseline, candidate) {
-  if (baseline.schemaVersion !== 1 || candidate.schemaVersion !== 1 || !Number.isInteger(baseline.pair) ||
+  if (baseline.schemaVersion !== 2 || candidate.schemaVersion !== 2 || !Number.isInteger(baseline.pair) ||
       baseline.pair < 1 || baseline.pair > 5 || !baseline.key ||
       !(baseline.identity?.packageCount > 0) || !baseline.identity.patchedTargets?.length ||
       baseline.arm !== 'baseline' || candidate.arm !== 'candidate' || baseline.pair !== candidate.pair ||
@@ -50,7 +62,7 @@ export function comparePair(baseline, candidate) {
       [baseline.elapsedMs, candidate.elapsedMs].some(value => !Number.isFinite(value) || value <= 0)) {
     throw new Error('Install pair requires an exact cache hit and equal locked dependency, patch and runtime evidence');
   }
-  return { schemaVersion: 1, pair: baseline.pair, key: baseline.key, correctnessEqual: true,
+  return { schemaVersion: 2, pair: baseline.pair, key: baseline.key, correctnessEqual: true,
     baselineMs: baseline.elapsedMs, candidateMs: candidate.elapsedMs, identity: baseline.identity,
     runtimeAlignment: 'passed', candidateCacheHit: true, adoptionRequires: 'five pairs with max(candidate) < min(baseline)' };
 }
@@ -81,7 +93,7 @@ function main(args) {
     const identity = installedIdentity(appRoot);
     const runtime = spawnSync(process.execPath, ['scripts/verify-runtime-alignment.mjs'], { cwd: appRoot, stdio: 'inherit' });
     if (runtime.error || runtime.signal || runtime.status !== 0) throw new Error('Installed dependency runtime alignment failed');
-    write(options.output, { schemaVersion: 1, pair: Number(options.pair), arm: options.arm, key: options.key,
+    write(options.output, { schemaVersion: 2, pair: Number(options.pair), arm: options.arm, key: options.key,
       cacheHit: options['cache-hit'] === 'true', elapsedMs, identity, runtimeAlignment: 'passed' });
   } else {
     if (!options.baseline || !options.candidate) throw new Error('compare requires --baseline and --candidate');

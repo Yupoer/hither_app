@@ -23,11 +23,12 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22.16.0
-          cache: npm
-          cache-dependency-path: apps/mobile/package-lock.json
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
 
       - name: Install JS deps
-        run: npm ci
+        run: bash ../../scripts/install-mobile-dependencies.sh
 
       - name: Confirm Xcode 26.6 + fixed SDK 57 Hermes floor
         run: |

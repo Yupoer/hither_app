@@ -25,6 +25,9 @@ FAKE_EAS = r'''
 import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
+if args[:3] != ['--package', 'eas-cli@21.0.2', 'eas']:
+    sys.exit(91)
+args = args[3:]
 root = Path(os.environ['HITHER_FAKE_ROOT'])
 fault = os.environ.get('HITHER_FAKE_FAULT', '')
 branch = '00000000-0000-4000-8000-000000000001'
@@ -80,7 +83,7 @@ class CdAttemptTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         commands = self.root / "bin"
         commands.mkdir()
-        for name, body in (("npx", f"#!{sys.executable}\n" + FAKE_EAS),
+        for name, body in (("bunx", f"#!{sys.executable}\n" + FAKE_EAS),
                            ("git", '#!/bin/sh\nprintf "%s\\trefs/heads/master\\n" "$SOURCE_SHA"\n'),
                            ("node", '#!/bin/sh\nif [ "$1" = scripts/check-release-ci.mjs ]; then exit "${HITHER_FAKE_CI_EXIT:-0}"; fi\nprintf "0.1.13\\n"\n')):
             path = commands / name

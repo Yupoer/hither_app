@@ -62,6 +62,10 @@ jobs:
         with:
           node-version: 22
 
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
       - name: Verify workflow tooling
         working-directory: ${{ github.workspace }}
         run: |
@@ -77,7 +81,7 @@ jobs:
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
           node --test apps/mobile/scripts/check-changed-coverage.test.mjs apps/mobile/scripts/check-ci-evidence.test.mjs apps/mobile/scripts/check-quick.test.mjs apps/mobile/scripts/benchmark-ci.test.mjs apps/mobile/scripts/benchmark-install.test.mjs scripts/ci-shadow-plan.test.mjs scripts/mobile-install-key.test.mjs scripts/check-release-ci.test.mjs
-          bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh
+          bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh scripts/install-mobile-dependencies.sh
 
       - name: Classify rules and documentation changes
         id: scope
@@ -105,9 +109,6 @@ jobs:
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-mobile
-        with:
-          installed-cache: 'true'
-          save-cache: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/deliver/')) }}
 
       - name: Resolve META_PARENT
         id: test_meta
@@ -159,14 +160,14 @@ jobs:
             core.info(`Resolved META_PARENT=${m[1]}`);
 
       - name: Test meta (L1 map + L2 anti-fake)
-        run: npm run test:meta
+        run: bun run test:meta
         env:
           META_PARENT: ${{ steps.test_meta.outputs.parent }}
 
       - name: Node tests and changed functions ≥85%
         run: |
           node test/headless/scenario-coverage.test.cjs
-          npm run test:ci
+          bun run test:ci
           node test/headless/scenario-coverage.cjs test-artifacts/node-jest.raw.json test-artifacts/headless-scenarios.md > test-artifacts/headless-scenarios.raw.json
           node scripts/check-ci-evidence.mjs
         env:
@@ -198,29 +199,27 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: ./.github/actions/setup-mobile
-        with:
-          installed-cache: 'true'
 
       - name: Component tests (jest-expo)
-        run: npm test -- --config jest.config.components.js --runInBand --silent
+        run: bun run test --config jest.config.components.js --runInBand --silent
         env:
           NODE_OPTIONS: --experimental-vm-modules
 
       - name: Lint (eslint — full tree; featureTour at error severity)
-        run: npm run lint
+        run: bun run lint
 
       - name: Typecheck (tsc)
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: Verify iOS runtime alignment
-        run: npm run verify:runtime
+        run: bun run verify:runtime
 
       - name: Expo dependency check (version drift = Expo Go crashes)
-        run: npx --yes expo install --check
+        run: bunx --no-install expo install --check
 
       - name: Expo doctor
         # SDK 57 includes the Hermes fix; keep the current advisory check enabled.
-        run: npx --yes expo-doctor@1.20.4
+        run: bunx expo-doctor@1.20.4
 
       - name: HTTPS recovery browser behavior
         working-directory: ${{ github.workspace }}
@@ -236,6 +235,10 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
 
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
         with:
@@ -272,7 +275,8 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}
         run: |
-          npm install --prefix "$RUNNER_TEMP/hither-scheduled-upgrade" --no-save --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.8
+          mkdir -p "$RUNNER_TEMP/hither-scheduled-upgrade"
+          bun install --cwd "$RUNNER_TEMP/hither-scheduled-upgrade" --no-save --ignore-scripts @electric-sql/pglite@0.5.8
           node supabase/tests/run-security-local.mjs \
             "$RUNNER_TEMP/hither-scheduled-upgrade/node_modules/@electric-sql/pglite/dist/index.js" \
             --before-migration=20261102152223_scheduled_navigation_start.sql:../verification-probes/scheduled_navigation_upgrade.seed.sql \
@@ -435,11 +439,11 @@ jobs:
         run: |
           rm -rf apps/mobile/node_modules
           node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/start-baseline.json"
-      - name: Clean npm install first
+      - name: Clean Bun install first
         if: contains(fromJSON('[1,3,5]'), matrix.pair)
         working-directory: apps/mobile
         shell: bash
-        run: npm ci
+        run: bash ../../scripts/install-mobile-dependencies.sh
       - name: Validate baseline first
         if: contains(fromJSON('[1,3,5]'), matrix.pair)
         shell: bash
@@ -486,11 +490,11 @@ jobs:
         run: |
           rm -rf apps/mobile/node_modules
           node apps/mobile/scripts/benchmark-install.mjs start --output "$RUNNER_TEMP/start-baseline.json"
-      - name: Clean npm install second
+      - name: Clean Bun install second
         if: contains(fromJSON('[2,4]'), matrix.pair)
         working-directory: apps/mobile
         shell: bash
-        run: npm ci
+        run: bash ../../scripts/install-mobile-dependencies.sh
       - name: Validate baseline second
         if: contains(fromJSON('[2,4]'), matrix.pair)
         shell: bash
