@@ -1,11 +1,9 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { glass } from '../glass';
+import { StyleSheet, View } from 'react-native';
 import type { MapRecenterControlProps } from './MapRecenterControl';
-import SwiftUIGlassSurface from './SwiftUIGlassSurface';
+import NativeGlassButton from './NativeGlassButton';
 
-/** Native Liquid Glass capsule background with ordinary accessible RN controls. */
+/** Native SwiftUI controls preserve the system glass press interaction. */
 export default function MapRecenterControl({
   onFitAll,
   onLocate,
@@ -15,26 +13,24 @@ export default function MapRecenterControl({
 }: MapRecenterControlProps) {
   return (
     <View style={[styles.root, style]}>
-      <SwiftUIGlassSurface shape="capsule" style={StyleSheet.absoluteFill} />
-      <Pressable
-        style={styles.button}
+      <NativeGlassButton
+        size={46}
+        systemImage="arrow.up.left.and.arrow.down.right"
+        imageSize={20}
+        foregroundColor="#fff"
         onPress={onFitAll}
         testID="map-fit-all"
-        accessibilityRole="button"
         accessibilityLabel={fitAllLabel}
-      >
-        <Ionicons name="expand-outline" size={20} color={glass.textPrimary} />
-      </Pressable>
-      <View style={styles.divider} />
-      <Pressable
-        style={styles.button}
+      />
+      <NativeGlassButton
+        size={46}
+        systemImage="location.fill"
+        imageSize={20}
+        foregroundColor="#fff"
         onPress={onLocate}
         testID="map-locate-me"
-        accessibilityRole="button"
         accessibilityLabel={locateLabel}
-      >
-        <Ionicons name="navigate" size={20} color={glass.textPrimary} />
-      </Pressable>
+      />
     </View>
   );
 }
@@ -43,11 +39,8 @@ const styles = StyleSheet.create({
   root: {
     width: 50,
     height: 96,
-    borderRadius: 25,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: glass.hairlineSoft,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'visible',
   },
-  button: { width: 50, height: 47, alignItems: 'center', justifyContent: 'center' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 });

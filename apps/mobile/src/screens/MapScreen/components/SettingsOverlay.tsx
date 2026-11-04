@@ -1,7 +1,6 @@
-import WaveLoading from '../../../components/WaveLoading';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
-import {
+import { ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -527,7 +526,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             accessibilityRole="button"
             style={[styles.accountBtn, { backgroundColor: accent, borderColor: accent, opacity: savingGroupAvatar ? 0.6 : 1 }]}
           >
-            {savingGroupAvatar ? <WaveLoading color="#fff" /> : <Text style={[styles.accountBtnText, { color: '#fff' }]}>{t('settings.customQuickCommandSave')}</Text>}
+            {savingGroupAvatar ? <ActivityIndicator accessibilityRole="progressbar" color="#fff" /> : <Text style={[styles.accountBtnText, { color: '#fff' }]}>{t('settings.customQuickCommandSave')}</Text>}
           </TouchableOpacity>
         </View>
       </SettingsChildSheet>
@@ -725,7 +724,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             >
               {applyingOta ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <WaveLoading color="#fff" />
+                  <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
                   <Text style={[styles.accountBtnText, { color: '#fff' }]}>
                     {t('settings.applyingOta')}
                   </Text>

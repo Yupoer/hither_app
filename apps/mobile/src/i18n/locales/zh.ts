@@ -1095,7 +1095,7 @@ export const zh = {
   'nav.a11yEndHint': '按下後結束此集合點並回到停留狀態',
   'nav.endNavigation': '結束導航',
   'nav.startUnavailableTitle': '無法開始導航',
-  'nav.startLocationUnavailable': '目前無法取得可靠的即時位置，請確認定位權限後再試。',
+  'nav.startLocationUnavailable': '暫時無法取得足夠精確的目前位置。請移至定位訊號較好的地方再試，或前往設定確認定位與精確位置已開啟。',
   'nav.alreadyWithinArrivalRange': '已在設定的抵達範圍內，無需開始行程。',
   'nav.completeJourney': '完成行程',
   'nav.a11yCompleteHint': '按下後完成此集合點',

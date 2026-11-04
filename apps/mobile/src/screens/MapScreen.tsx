@@ -48,7 +48,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from 'react';
-import {
+import { ActivityIndicator,
   AccessibilityInfo,
   Alert,
   AppState,
@@ -98,6 +98,7 @@ import CoordinateDestinationSheet from '../components/CoordinateDestinationSheet
 import type { CoordinateDestinationInput } from '../utils/coordinateDestination';
 import FeedbackSheet from '../components/FeedbackSheet';
 import { AmicroButton } from '../components/AmicroButton';
+import NativeGlassButton from '../components/NativeGlassButton';
 import { HitherText } from '../components/HitherText';
 import MapRecenterControl from '../components/MapRecenterControl';
 import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
@@ -208,7 +209,7 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
-import { requestPermission as requestLocationPermission, type LocationSample } from '../native/location';
+import { requestPermission as requestLocationPermission, type LocationSampleAcceptance } from '../native/location';
 import {
   recoverPendingLocationRefreshes,
 } from '../state/backgroundLocationRefresh';
@@ -784,7 +785,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   /** Resolves Amicro search Promise when OverlaySheet open animation completes. */
-  const searchOpenCompleteResolveRef = useRef<(() => void) | null>(null);
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
   const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
@@ -1122,8 +1122,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // Commands read this bridge at tap time, after the current render has settled.
   const navigationOriginRef = useRef<Coordinates | undefined>(undefined);
   const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
-  const acquireNavigationFixRef = useRef<() => Promise<LocationSample | null>>(async () => null);
-  const acquireNavigationFix = useCallback(() => acquireNavigationFixRef.current(), []);
+  const acquireNavigationFixRef = useRef<Parameters<typeof useJourneyNavigation>[0]['acquireStartFix']>(async () => null);
+  const acquireNavigationFix = useCallback((acceptsSample: LocationSampleAcceptance) => acquireNavigationFixRef.current(acceptsSample), []);
   const {
     lifecycle: journeyNavigationLifecycle,
     navigationStoppedLocally,
@@ -1205,6 +1205,7 @@ export default function MapScreen({ route, navigation }: Props) {
     deviceCoordsAcceptedAtMs,
     appState,
     refreshDeviceLocation,
+    refreshDeviceLocationSample,
     latestLocationSampleRef,
     lifecycle: deviceLocationLifecycle,
   } = useDeviceLocation({
@@ -1219,10 +1220,9 @@ export default function MapScreen({ route, navigation }: Props) {
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
   navigationOriginRef.current = deviceCoords ?? undefined;
-  acquireNavigationFixRef.current = async () => {
-    if (!await refreshDeviceLocation({ waitForUpload: false })) return null;
-    return latestLocationSampleRef.current;
-  };
+  acquireNavigationFixRef.current = acceptsSample => refreshDeviceLocationSample({
+    waitForUpload: false, acceptsSample,
+  });
   const navigationStartFrameLifecycle = (
     <MapNavigationStartFrameResource
       deviceCoords={deviceCoords}
@@ -2423,14 +2423,6 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const closeSearch = useCallback(() => {
     setSearchVisible(false);
-    // If the sheet closes before open-complete, still release the Amicro busy state.
-    searchOpenCompleteResolveRef.current?.();
-    searchOpenCompleteResolveRef.current = null;
-  }, []);
-
-  const handleSearchOpenComplete = useCallback(() => {
-    searchOpenCompleteResolveRef.current?.();
-    searchOpenCompleteResolveRef.current = null;
   }, []);
 
   const openCoordinateDestination = useCallback(() => {
@@ -3333,23 +3325,16 @@ export default function MapScreen({ route, navigation }: Props) {
             ref={(n) => setTourTargetRef('search', n)}
             collapsable={false}
           >
-          <AmicroButton
-            icon="search"
-            activeIcon="close"
-            color="#fff"
+          <NativeGlassButton
+            systemImage="magnifyingglass"
+            foregroundColor="#fff"
             size={46}
             style={styles.headerIconBtn}
             accessibilityLabel={t('map.searchA11y')}
             testID="map-search"
-            onPress={lightTap}
-            onAnimationComplete={async () => {
-              // Ticket 05: animation complete → sheet open complete → reset.
-              // Resolve from DestinationSearch / OverlaySheet onOpenComplete
-              // (320 ms open), not a two-frame approximation.
+            onPress={() => {
+              lightTap();
               setSearchVisible(true);
-              await new Promise<void>((resolve) => {
-                searchOpenCompleteResolveRef.current = resolve;
-              });
             }}
           />
           </View>
@@ -3360,16 +3345,14 @@ export default function MapScreen({ route, navigation }: Props) {
           ref={(n) => setTourTargetRef('settings', n)}
           collapsable={false}
         >
-        <AmicroButton
-          icon="settings-outline"
-          mode="rotate"
-          color="#fff"
+        <NativeGlassButton
+          systemImage="gearshape"
+          foregroundColor="#fff"
           size={46}
           style={styles.headerIconBtn}
           accessibilityLabel={t('map.overlaySettings')}
           testID="map-settings"
-          onPress={lightTap}
-          onAnimationComplete={openSettingsFromSheet}
+          onPress={() => { lightTap(); openSettingsFromSheet(); }}
         />
         </View>
         <Pressable
@@ -4134,7 +4117,7 @@ export default function MapScreen({ route, navigation }: Props) {
         <View style={styles.flex}>
           <View style={styles.loading}>
             <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
-            {refreshing ? <WaveLoading color={accent} /> : null}
+            {refreshing ? <ActivityIndicator accessibilityRole="progressbar" color={accent} /> : null}
             <Pressable
               disabled={refreshing}
               accessibilityState={{ disabled: refreshing, busy: refreshing }}
@@ -4164,7 +4147,7 @@ export default function MapScreen({ route, navigation }: Props) {
     return <>{screenLifecycle}{(
       <View style={styles.loading}>
         <Text style={styles.loadingText}>{loadError?.kind === 'offline_transport' ? t('coreData.emptySnapshot') : loadError?.kind === 'unknown' ? t('coreData.loadFailed') : groupStateError ?? t('coreData.loadFailed')}</Text>
-        {refreshing ? <WaveLoading color={accent} /> : null}
+        {refreshing ? <ActivityIndicator accessibilityRole="progressbar" color={accent} /> : null}
         <Pressable
           disabled={refreshing}
           accessibilityState={{ disabled: refreshing, busy: refreshing }}
@@ -4686,7 +4669,6 @@ export default function MapScreen({ route, navigation }: Props) {
       <DestinationSearch
         visible={searchVisible}
         onClose={closeSearch}
-        onOpenComplete={handleSearchOpenComplete}
         onOpenCoordinates={openCoordinateDestination}
         biasRegion={biasRegion}
         // Don't persist on pick — stage the place for the bottom confirm card

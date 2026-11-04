@@ -25,19 +25,19 @@ export default function NativeRoleActionButton({
 }: NativeRoleActionButtonProps) {
   const resolvedSystemImage = systemImage === 'keypad' ? 'circle.grid.3x3.fill' : systemImage;
   return (
-    <Host style={[{ flex: 1, aspectRatio: 1 }, style]} colorScheme="dark">
+    <Host style={[{ flex: 1, aspectRatio: 1, overflow: 'visible' }, style]} colorScheme="dark">
       <Button
         onPress={onPress}
         testID={testID}
         modifiers={[
           buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'glass' : 'bordered'),
           buttonBorderShape('roundedRectangle', 30),
-          frame({ minWidth: 0, maxWidth: 10000, minHeight: 0, maxHeight: 10000 }),
+          frame({ minWidth: 0, maxWidth: Infinity, minHeight: 0, maxHeight: Infinity }),
           accessibilityLabel(a11yLabel),
           ...(isDisabled ? [disabled(true)] : []),
         ]}
       >
-        <VStack alignment="center" spacing={10} modifiers={[padding({ all: 16 }), frame({ minWidth: 0, maxWidth: 10000, minHeight: 0, maxHeight: 10000 })]}>
+        <VStack alignment="center" spacing={10} modifiers={[padding({ all: 16 }), frame({ minWidth: 0, maxWidth: Infinity, minHeight: 0, maxHeight: Infinity })]}>
           <VStack alignment="center" spacing={0} modifiers={[frame({ height: 56 })]}>
             <Image systemName={resolvedSystemImage as never} size={42} color="#fff" />
           </VStack>

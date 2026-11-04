@@ -1,7 +1,6 @@
 import React from 'react';
-import { View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { AmicroButton } from '../../../components/AmicroButton';
-import WaveLoading from '../../../components/WaveLoading';
 import { type TranslationKey } from '../../../i18n';
 import { useForegroundClock } from '../../../state/foregroundUi';
 import { lightTap } from '../../../utils/haptics';
@@ -33,7 +32,7 @@ export const RefreshLocationsButton = React.memo(function RefreshLocationsButton
     {clockLifecycle}
     {refreshing ? (
       <View style={styles.refreshLocationsButton} accessibilityLabel={t('map.refreshLocationsA11y')}>
-        <WaveLoading size="small" color={accent} />
+        <ActivityIndicator accessibilityRole="progressbar" size="small" color={accent} />
       </View>
     ) : (
     <AmicroButton

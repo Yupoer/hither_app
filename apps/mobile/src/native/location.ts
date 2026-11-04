@@ -22,6 +22,8 @@ export interface LocationSample {
   timestamp: number;
 }
 
+export type LocationSampleAcceptance = (sample: LocationSample) => boolean;
+
 export interface LocationPermissionState {
   foregroundStatus: Location.PermissionStatus;
   foregroundCanAskAgain: boolean;
@@ -135,12 +137,13 @@ function expoLocationOptions(
 export async function getCurrentLocation(
   highAccuracy = false,
   powerMode: LocationPowerMode = 'foreground',
+  acceptsSample?: LocationSampleAcceptance,
 ): Promise<LocationSample | null> {
   const access = await captureLocationAccess();
   if (!access) return null;
   if (isDebugRouteActive()) {
     const debugSample = getDebugLocationSample();
-    if (debugSample) return debugSample;
+    if (debugSample && (!acceptsSample || acceptsSample(debugSample))) return debugSample;
   }
   const granted = AppState.currentState === 'active'
     ? await requestPermission()
@@ -157,11 +160,13 @@ export async function getCurrentLocation(
     let sub: Location.LocationSubscription | undefined;
     let settled = false;
     let unsubscribe = () => {};
+    let appStateSubscription: { remove(): void } | undefined;
     const finish = (sample: LocationSample | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       unsubscribe();
+      appStateSubscription?.remove();
       sub?.remove();
       if (!sample) { if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message: 'location_unavailable' }); resolve(null); return; }
       void Location.getForegroundPermissionsAsync().then(permission => {
@@ -173,8 +178,20 @@ export async function getCurrentLocation(
     };
     const timeout = setTimeout(() => finish(null), 15_000);
     unsubscribe = subscribeLocationAccessChanges(() => finish(null));
-    void Location.watchPositionAsync(expoLocationOptions(highAccuracy, powerMode),
-      position => finish(toSample(position)), () => finish(null))
+    appStateSubscription = AppState.addEventListener('change', state => {
+      if (!isForegroundLocationState(state)) finish(null);
+    });
+    const options = expoLocationOptions(highAccuracy, powerMode);
+    if (acceptsSample) {
+      options.accuracy = Location.Accuracy.High;
+      options.distanceInterval = 0;
+      options.timeInterval = 1_000;
+    }
+    void Location.watchPositionAsync(options,
+      position => {
+        const sample = toSample(position);
+        if (!acceptsSample || acceptsSample(sample)) finish(sample);
+      }, () => finish(null))
       .then(subscription => {
         sub = subscription;
         if (settled || !isLocationAccessCurrent(access)) { sub.remove(); finish(null); }

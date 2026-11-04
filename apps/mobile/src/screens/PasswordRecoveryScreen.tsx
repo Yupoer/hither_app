@@ -1,7 +1,6 @@
 import { useMountEffect } from '../hooks/useMountEffect';
-import WaveLoading from '../components/WaveLoading';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import AuthField from '../components/AuthField';
 import SafePressable from '../components/SafePressable';
 import CrookIcon from '../components/CrookIcon';
@@ -114,7 +113,7 @@ export default function PasswordRecoveryScreen() {
         testID="recovery-submit"
         style={[styles.cta, !canSubmit && styles.disabled]}
       >
-        {busy ? <WaveLoading color="#fff" /> : <Text style={styles.ctaText}>{t('login.completeRecovery')}</Text>}
+        {busy ? <ActivityIndicator accessibilityRole="progressbar" color="#fff" /> : <Text style={styles.ctaText}>{t('login.completeRecovery')}</Text>}
       </SafePressable>
     </View>
   );

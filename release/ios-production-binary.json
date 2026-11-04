@@ -29,7 +29,7 @@
     },
     "apps/mobile/src/native/location.ts": {
       "baselineBlobSha": "fd7d26543f1fd00287722393f5632758108e7c6f",
-      "reviewedBlobSha": "de0505beddb664fde887197b061faeac1eddc8d9"
+      "reviewedBlobSha": "43afdcfec22513347debccb17f2681238574a49e"
     },
     "apps/mobile/src/native/locationSourceHealth.ts": {
       "baselineBlobSha": null,

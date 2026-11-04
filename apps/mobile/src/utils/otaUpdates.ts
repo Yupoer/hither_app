@@ -2,7 +2,7 @@
  * Production OTA bootstrap for TestFlight / store builds.
  *
  * Native startup checks follow the embedded Expo.plist configuration. The JS
- * boot and foreground checks also fetch and apply actionable updates when ready.
+ * startup check downloads updates and applies them before the initial UI is ready.
  *
  * Manual Settings "立即更新" and automatic bootstrap share a single-flight
  * lifecycle so double-taps / concurrent apply cannot stack reloads.
@@ -46,6 +46,7 @@ export type OtaApplyStatus =
   | 'no_update'
   | 'fetch_failed'
   | 'reload_failed'
+  | 'deferred'
   | 'reloading';
 
 export interface OtaApplyResult {
@@ -58,6 +59,7 @@ export interface OtaApplyOptions {
   manual?: boolean;
   /** Pending update already known; skip checkForUpdateAsync. */
   skipCheck?: boolean;
+  canReloadAutomatically?: () => boolean;
 }
 
 let inFlight: Promise<OtaApplyResult> | null = null;
@@ -67,7 +69,6 @@ let inFlight: Promise<OtaApplyResult> | null = null;
  * a successful manual follow-up reload).
  */
 let pendingManualFollowUp: OtaApplyOptions | null = null;
-let appStateSub: { remove: () => void } | null = null;
 
 function result(status: OtaApplyStatus): OtaApplyResult {
   return { status, reloading: status === 'reloading' };
@@ -143,6 +144,9 @@ async function runOtaApply(opts: OtaApplyOptions): Promise<OtaApplyResult> {
       return result(manual ? 'fetch_failed' : 'no_update');
     }
 
+    if (!manual && opts.canReloadAutomatically && !opts.canReloadAutomatically()) {
+      return result('deferred');
+    }
     try {
       await Updates.reloadAsync();
       return result('reloading');
@@ -177,6 +181,7 @@ export async function applyOtaUpdate(
   const request: OtaApplyOptions = {
     manual: Boolean(opts?.manual),
     skipCheck: Boolean(opts?.skipCheck),
+    canReloadAutomatically: opts?.canReloadAutomatically,
   };
 
   if (inFlight) {
@@ -226,26 +231,26 @@ export function isOtaApplyInFlight(): boolean {
 }
 
 /**
- * Start background OTA checks: once on boot, and when the app returns to
- * foreground (so a downloaded-but-pending update can apply without a kill).
+ * Download once at startup. After the initial UI or a background transition,
+ * leave the downloaded update for the next launch or explicit manual apply.
  */
-export function startOtaUpdateBootstrap(): () => void {
+export function startOtaUpdateBootstrap(canReloadAutomatically: () => boolean = () => true): () => void {
   if (!isOtaUsable()) return () => undefined;
 
-  // Share single-flight with manual apply — never start a second reload.
-  void applyOtaUpdate({ manual: false });
-
+  let active = true;
+  let backgrounded = AppState.currentState === 'background';
   const onAppState = (next: AppStateStatus) => {
-    if (next === 'active') {
-      void applyOtaUpdate({ manual: false });
-    }
+    if (next === 'background') backgrounded = true;
   };
-
-  appStateSub?.remove();
-  appStateSub = AppState.addEventListener('change', onAppState);
+  const appStateSub = AppState.addEventListener('change', onAppState);
+  void applyOtaUpdate({
+    manual: false,
+    canReloadAutomatically: () => active && !backgrounded
+      && AppState.currentState === 'active' && canReloadAutomatically(),
+  });
 
   return () => {
-    appStateSub?.remove();
-    appStateSub = null;
+    active = false;
+    appStateSub.remove();
   };
 }

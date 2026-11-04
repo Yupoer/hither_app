@@ -1,11 +1,10 @@
-import WaveLoading from '../../../components/WaveLoading';
 /**
  * Store pane shell + wired balance / ad CTA / catalog redeem.
  * Extracted from MapScreen so the sheet host stays thin.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
-import {
+import { ActivityIndicator,
   AccessibilityInfo,
   Alert,
   AppState,
@@ -1079,7 +1078,7 @@ export const StorePane = React.memo(function StorePane({
 
       {loading && !snapshot ? (
         <View style={styles.shellCard} testID="store-loading">
-          <WaveLoading color={accent} />
+          <ActivityIndicator accessibilityRole="progressbar" color={accent} />
           <Text style={styles.shellHint}>{t('store.loading')}</Text>
         </View>
       ) : null}
@@ -1293,7 +1292,7 @@ function ProductCard({
         accessibilityLabel={t('store.redeem')}
       >
         {redeeming ? (
-          <WaveLoading color="#111" />
+          <ActivityIndicator accessibilityRole="progressbar" color="#111" />
         ) : (
           <Text style={[styles.redeemText, (!canAfford || disabled) && styles.ctaTextMuted]}>
             {t('store.redeem')}

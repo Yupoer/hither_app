@@ -3,14 +3,14 @@ import { legacyNavigationSessionKey, readEndedNavigationSessions, rememberEndedN
 import { showOperationFailure } from '../../../state/appNotice';
 import * as Crypto from 'expo-crypto';
 import { createElement, Fragment, useState, useMemo, useCallback, useRef, type Dispatch, type SetStateAction, type RefObject } from 'react';
-import { Alert, type ScrollView } from 'react-native';
+import { Alert, Linking, type ScrollView } from 'react-native';
 import { getOperationErrorMessage } from '../../../utils/operationError';
 import { distanceMeters } from '../../../utils/geo';
 import { canEvaluateSynchronizedArrival } from '../../../utils/synchronizedArrival';
 import { followCarouselIndexAfterPromote } from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
-import type { LocationSample } from '../../../native/location';
+import type { LocationSample, LocationSampleAcceptance } from '../../../native/location';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 import { presentExternalMapsChooser } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
@@ -57,7 +57,7 @@ interface UseJourneyNavigationParams {
   fromCoords: Coordinates | undefined;
   /** Read the latest device fix when location ownership is declared later. */
   getFromCoords?: () => Coordinates | undefined;
-  acquireStartFix: () => Promise<LocationSample | null>;
+  acquireStartFix: (acceptsSample: LocationSampleAcceptance) => Promise<LocationSample | null>;
   arrivalRadiusM: number;
   refresh: () => void;
   t: (key: string, params?: Record<string, any>) => string;
@@ -565,25 +565,40 @@ export function useJourneyNavigation({
     return result;
   }, [isLeader, locallyStopped, navTargetId, groupId, actorId, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession, endedContext, setSelectedIndex, mapRef, onLocalSessionIdChange, frameStartedDestination]);
 
+  const showStartLocationUnavailable = useCallback(() => {
+    Alert.alert(t('nav.startUnavailableTitle'), t('nav.startLocationUnavailable'), [
+      { text: t('common.ok'), style: 'cancel' },
+      { text: t('location.openSettings'), onPress: () => {
+        void Linking.openSettings().catch(() => {
+          Alert.alert(t('nav.startUnavailableTitle'), t('interaction.error'));
+        });
+      } },
+    ]);
+  }, [t]);
+
   const acquireAndStart = useCallback(async (dest: Destination, index: number, switchFromDestinationId?: string) => {
     if (startAttemptRef.current?.destinationId === dest.id
       && startAttemptRef.current.groupId === groupId && startAttemptRef.current.actorId === actorId) return;
     const attemptId = ++startAttemptSequenceRef.current;
     const requestedAt = Date.now();
+    const acceptsSample: LocationSampleAcceptance = sample => {
+      const coords = sample.coordinates;
+      return sample.timestamp >= requestedAt
+        && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)
+        && Math.abs(coords.latitude) <= 90 && Math.abs(coords.longitude) <= 180
+        && canEvaluateSynchronizedArrival({ sampledAt: sample.timestamp, now: Date.now(),
+          accuracyM: sample.accuracy, radiusM: arrivalRadiusRef.current });
+    };
     startAttemptRef.current = { id: attemptId, destinationId: dest.id, groupId, actorId };
     try {
-      const fix = await acquireStartFix();
+      const fix = await acquireStartFix(acceptsSample);
       if (startAttemptRef.current?.id !== attemptId || !mountedRef.current
         || currentGroupRef.current !== groupId || currentActorRef.current !== actorId
         || !currentLeaderRef.current) return;
       const radius = arrivalRadiusRef.current;
       const coords = fix?.coordinates;
-      if (!fix || !coords || fix.timestamp < requestedAt
-        || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)
-        || Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180
-        || !canEvaluateSynchronizedArrival({ sampledAt: fix.timestamp, now: Date.now(),
-          accuracyM: fix.accuracy, radiusM: radius })) {
-        Alert.alert(t('nav.startUnavailableTitle'), t('nav.startLocationUnavailable'));
+      if (!fix || !coords || !acceptsSample(fix)) {
+        showStartLocationUnavailable();
         return;
       }
       if (distanceMeters(coords, dest.coordinates) < radius) {
@@ -594,12 +609,12 @@ export function useJourneyNavigation({
     } catch {
       if (startAttemptRef.current?.id === attemptId && mountedRef.current
         && currentGroupRef.current === groupId && currentActorRef.current === actorId) {
-        Alert.alert(t('nav.startUnavailableTitle'), t('nav.startLocationUnavailable'));
+        showStartLocationUnavailable();
       }
     } finally {
       if (startAttemptRef.current?.id === attemptId) startAttemptRef.current = null;
     }
-  }, [acquireStartFix, actorId, enqueueTeamCommand, groupId, t]);
+  }, [acquireStartFix, actorId, enqueueTeamCommand, groupId, t, showStartLocationUnavailable]);
 
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {

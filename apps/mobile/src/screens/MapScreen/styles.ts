@@ -903,12 +903,9 @@ export const makeStyles = (
     headerIconBtn: {
       width: 46,
       height: 46,
-      borderRadius: 23,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.08)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: glass.hairline,
+      overflow: 'visible',
       flexShrink: 0,
       marginTop: 0,
     },

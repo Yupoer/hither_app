@@ -56,3 +56,14 @@ only the listed path set and exact blob pairs. A later native, dependency,
 configuration, asset or wrapper change requires a new compatibility review.
 Publication retains the separate successful master CI, current-master,
 backend-attestation, active-route, retained-intent and remote-readback guards.
+
+## Location acquisition review, 2026-11-04
+
+The reviewed `apps/mobile/src/native/location.ts` blob changes from
+`de0505beddb664fde887197b061faeac1eddc8d9` to `43afdcfec22513347debccb17f2681238574a49e`. This file executes in JavaScript. It adds an optional sample acceptance callback to the existing one-shot wrapper, requests the installed Expo location API's existing High accuracy with zero distance and one-second intervals for that bounded request, and removes its subscription on background. The platform calls remain `watchPositionAsync`, foreground permission reads and React Native AppState events. No new native export, argument shape, event, dependency, permission or entitlement is required.
+
+The navigation caller retains post-tap freshness and arrival-accuracy checks. A qualified one-shot result may be used even when the continuous feed has a coarse future-dated sample. Continuous sensor ownership and its saved power policy remain unchanged. The native regression suites cover filtering, deadline, cancellation and candidate selection.
+
+The SwiftUI button changes reuse the already installed `@expo/ui` Button, Host, frame and button-style capabilities. Their `.ios.tsx` files are JavaScript presentation code. This task changes no compiled Swift, Objective-C, native dependencies or app configuration.
+
+Only this reviewed wrapper blob changes in the compatibility record. The original seven-path set, comparison baseline, operator attestation, runtime `0.1.13`, app `0.1.13`, build `79`, channel `production` and `IN_BETA_TESTING` evidence retain their stated limits. The exact binary source remains unknown. Final publication still requires the full exact-blob gate, successful CI, current master and remote update readback.

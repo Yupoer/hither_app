@@ -431,6 +431,7 @@ export function GatheringCarousel({
                               ref={active ? (n) => setTourTargetRef('arrivalProgress', n) : undefined}
                               collapsable={false}
                               style={styles.arrivalPeopleChip}
+                              testID={`gather-card-members-${dest.id}`}
                               disabled={!isLeader || !flockNavigatingThis}
                               onPress={(event) => {
                                 event.stopPropagation();
@@ -439,11 +440,13 @@ export function GatheringCarousel({
                                 setOverlay('arrival');
                               }}
                               accessibilityRole="button"
-                              accessibilityLabel={`${t('map.arrivalProgress')} ${arrivedHere}/${totalMembers}`}
+                              accessibilityLabel={flockNavigatingThis
+                                ? `${t('map.arrivalProgress')} ${arrivedHere}/${totalMembers}`
+                                : `${t('map.tabMembers')} ${totalMembers}`}
                             >
                               <Ionicons name="people-outline" size={16} color={accent} />
                               <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={[styles.arrivalPeopleValue, { color: accent }]}>
-                                {flockNavigatingThis ? <>{arrivedHere}/{totalMembers}</> : '—'}
+                                {flockNavigatingThis ? <>{arrivedHere}/{totalMembers}</> : totalMembers}
                               </Text>
                             </Pressable>
                           </View>

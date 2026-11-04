@@ -1,12 +1,11 @@
 import { useMountEffect } from '../hooks/useMountEffect';
-import WaveLoading from './WaveLoading';
 /**
  * Shared Premium subscription presentation for Paywall (settings) and Store (inline).
  * Purchase/restore authority stays in premiumPurchaseFlow; this only owns UI + CTA state.
  * `showRestore` is true for Settings Paywall and false for the Store pane.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import {
+import { ActivityIndicator,
   Alert,
   Linking,
   Modal,
@@ -519,7 +518,7 @@ export default React.memo(function PremiumPresentation({
           ]}
         >
           {busy === 'purchase' ? (
-            <WaveLoading color="#fff" />
+            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
           ) : (
             <Text style={styles.ctaText}>
               {hasPremium
@@ -542,7 +541,7 @@ export default React.memo(function PremiumPresentation({
             testID={`${testID}-restore`}
           >
             {busy === 'restore' ? (
-              <WaveLoading color={accent} />
+              <ActivityIndicator accessibilityRole="progressbar" color={accent} />
             ) : (
               <Text style={[styles.restoreText, { color: accent }]}>{t('paywall.restore')}</Text>
             )}
@@ -588,7 +587,7 @@ export default React.memo(function PremiumPresentation({
                   testID="paywall-redeem-submit"
                 >
                   {busy === 'redeem' ? (
-                    <WaveLoading color={accent} size="small" />
+                    <ActivityIndicator accessibilityRole="progressbar" color={accent} size="small" />
                   ) : (
                     <Text style={[styles.restoreText, { color: accent }]}>{t('account.redeemCta')}</Text>
                   )}

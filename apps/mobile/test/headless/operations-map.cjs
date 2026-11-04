@@ -30,8 +30,8 @@ operation('map.tab', ['MAP-SHELL-01', 'MAP-SHELL-05'], screen, 'selectSheetPane'
   (app, { index }) => app.host.call({ kind: 'nativeEvent', testId: 'sheet-pane-tabs', value: app.platform === 'ios'
     ? { event: 'onSelectionChange', nativeEvent: { index } }
     : { event: 'onChange', nativeEvent: { selectedSegmentIndex: index } } }));
-button('map.search.open', ['MAP-DEST-14', 'Q01'], 'sheetHeader search AmicroButton', 'map-search',
-  'Real AmicroButton completion opens DestinationSearch and retains its open-complete busy barrier.');
+button('map.search.open', ['MAP-DEST-14', 'Q01'], 'sheetHeader search NativeGlassButton', 'map-search',
+  'The real native button opens DestinationSearch directly.');
 operation('map.search.query', ['Q01', 'Q02', 'Q04'], component('DestinationSearch'), 'onChangeText',
   '{ value: string }', 'Normalized query enters the actual 450 ms effect; results remain owned by its current sequence.',
   (app, { value }) => text(app, 'place-search-query', value));
@@ -165,7 +165,7 @@ identifiedButton('map.travel-mode', ['MAP-TOOLS-01', 'MAP-ROUTES-01', 'MAP-PROGR
 button('map.passive.enter', ['MAP-TOOLS-01'], 'setPassiveCompanionMode(true)', 'tools-enter-passive',
   'Actual preference switches display and map ownership without changing sharing consent or team journey.');
 button('map.passive.exit', ['MAP-TOOLS-01'], 'exitPassiveCompanionMode', 'passive-switch-back',
-  'Actual AmicroButton restores dense map presentation.', panel('PassiveCompanionPanel'));
+  'The real native button restores dense map presentation.', panel('PassiveCompanionPanel'));
 operation('map.live-activity.toggle', ['MAP-TOOLS-01'], screen, 'handleToolsLiveActivityChange', '{ enabled: boolean }',
   'Actual entitlement gate persists allowed preference or opens subscription and keeps the toggle false.',
   (app, { enabled }) => app.host.call({ kind: 'toggle', testId: 'tools-live-activity-toggle', value: enabled }));

@@ -245,10 +245,11 @@ export function useDeviceLocation({
    *   upload continues. Journey Start uses this so network latency cannot
    *   turn a fresh GPS fix stale before the durable command is queued.
    */
-  const refreshDeviceLocation = useCallback(async (options?: {
+  const refreshDeviceLocationSample = useCallback(async (options?: {
     requireUpload?: boolean;
     waitForUpload?: boolean;
-  }): Promise<Coordinates | null> => {
+    acceptsSample?: (sample: LocationSample) => boolean;
+  }): Promise<LocationSample | null> => {
     const sampleAtRequest = lastSampleAtRef.current;
     energyObservability.increment('location_callback');
     const requestedGroup = groupIdRef.current;
@@ -257,8 +258,9 @@ export function useDeviceLocation({
     const access = await captureLocationAccess(requestedGroup);
     if (!access) return null;
     const acquiredFix = await location.getCurrentLocation(
-      highAccuracyRef.current,
-      powerModeRef.current,
+      options?.acceptsSample ? true : highAccuracyRef.current,
+      options?.acceptsSample ? 'foreground' : powerModeRef.current,
+      options?.acceptsSample,
     );
     if (!acquiredFix || await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || !sharingEnabledRef.current || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || !isForegroundLocationState(AppState.currentState)) return null;
     const now = Date.now();
@@ -272,11 +274,15 @@ export function useDeviceLocation({
           && acquiredFix.coordinates.latitude === latest.coordinates.latitude
           && acquiredFix.coordinates.longitude === latest.coordinates.longitude
           && acquiredFix.accuracy === latest.accuracy));
-    if (!accepted && !observedDuringRequest) {
+    const acceptedForRequest = options?.acceptsSample != null
+      && isUsableLocationSample(acquiredFix) && options.acceptsSample(acquiredFix);
+    if (!accepted && !observedDuringRequest && !acceptedForRequest) {
       if (options?.requireUpload) throw new Error('no_new_location_sample');
       return null;
     }
-    const fix = latest && observedDuringRequest ? latest : acquiredFix;
+    const fix = latest && observedDuringRequest
+      && (!options?.acceptsSample || options.acceptsSample(latest)) ? latest : acquiredFix;
+    if (options?.acceptsSample && !options.acceptsSample(fix)) return null;
     if (accepted) {
       energyObservability.increment('location_accepted');
       energyObservability.event('location_acquisition');
@@ -288,7 +294,7 @@ export function useDeviceLocation({
     if (groupIdRef.current && sharingEnabledRef.current && hasMembershipRef.current) {
       uploadGateRef.current = { lastCoords: fix.coordinates, lastAtMs: now };
       const receipt = latestUploadRef.current;
-      const upload = receipt?.sample === latest && receipt.groupId === requestedGroup
+      const upload = receipt?.sample === fix && receipt.groupId === requestedGroup
         && receipt.accessRevision === access.generation
         ? receipt.completion
         : enqueueUpload(fix, now, requestedGroup);
@@ -306,8 +312,15 @@ export function useDeviceLocation({
     if (await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || requestedGroup !== groupIdRef.current
       || !sharingEnabledRef.current || !hasMembershipRef.current
       || !isForegroundLocationState(AppState.currentState)) return null;
-    return fix.coordinates;
+    return fix;
   }, [acceptIncomingSample, applySampleToUi, enqueueUpload]);
+
+  const refreshDeviceLocation = useCallback(async (options?: {
+    requireUpload?: boolean;
+    waitForUpload?: boolean;
+  }): Promise<Coordinates | null> => (
+    await refreshDeviceLocationSample(options)
+  )?.coordinates ?? null, [refreshDeviceLocationSample]);
 
   const [sampleOwner] = useState<DeviceLocationSampleOwner>(() => ({
     uiGateRef, uploadGateRef, lastSampleAtRef, latestSampleRef, motionRef,
@@ -331,6 +344,7 @@ export function useDeviceLocation({
     appState,
     refreshDeviceLocation,
     consumeForegroundSample,
+    refreshDeviceLocationSample,
     /** Raw latest fix for imperative coordinator wiring; does not trigger renders. */
     latestLocationSampleRef: latestSampleRef,
   };

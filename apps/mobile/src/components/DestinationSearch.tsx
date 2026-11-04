@@ -1,8 +1,7 @@
-import WaveLoading from './WaveLoading';
 import { useForegroundUi } from '../state/foregroundUi';
 import React, { useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
-import {
+import { ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -218,7 +217,7 @@ export default React.memo(function DestinationSearch({
         ) : null}
 
         <View style={styles.statusRow} testID="search-status">
-          {searching ? <WaveLoading color={colors.accent} /> : null}
+          {searching ? <ActivityIndicator accessibilityRole="progressbar" color={colors.accent} /> : null}
           <Text style={styles.statusText}>{searching ? t('search.searching')
             : query.trim() && results.length === 0
               ? t(searchError === 'quota' ? 'search.quota' : searchError === 'failed' ? 'search.failed' : 'search.noResults') : ''}</Text>
@@ -256,7 +255,7 @@ export default React.memo(function DestinationSearch({
                 ) : null}
               </View>
               {submittingId === placeSearchResultKey(item) ? (
-                <WaveLoading color={colors.accent} />
+                <ActivityIndicator accessibilityRole="progressbar" color={colors.accent} />
               ) : null}
             </Pressable>
           )}
