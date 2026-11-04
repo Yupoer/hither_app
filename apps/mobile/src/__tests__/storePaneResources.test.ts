@@ -11,7 +11,7 @@ const mockCreateSession = jest.fn(async () => ({ ok: true, sessionRef: 'reward-1
 const mockLoad = jest.fn(async () => 'no_fill');
 const mockDispose = jest.fn();
 jest.mock('react-native', () => ({
-  View: 'View', Text: 'Text', Pressable: 'Pressable', Platform: { OS: 'ios' },
+  View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator', Platform: { OS: 'ios' },
   StyleSheet: { create: (s: unknown) => s }, Alert: { alert: jest.fn() },
   findNodeHandle: () => 7, AccessibilityInfo: { setAccessibilityFocus: jest.fn() },
   AppState: { addEventListener: (_: string, listener: (state: string) => void) => {
@@ -23,7 +23,6 @@ jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true, default: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => {}), removeItem: jest.fn(async () => {}) },
 }));
-jest.mock('../components/WaveLoading', () => 'WaveLoading');
 jest.mock('../components/PremiumBanner', () => 'PremiumBanner');
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ scale: 1, boldText: false }) }));
 jest.mock('../api/services/StoreService', () => ({

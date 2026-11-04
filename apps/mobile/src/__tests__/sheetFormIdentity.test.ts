@@ -8,7 +8,7 @@ import FeedbackSheet from '../components/FeedbackSheet';
 let mockCommands: CustomQuickCommand[] = [{ label: 'One', message: 'First' }, { label: 'Two', message: 'Second' }];
 const mockSubmitFeedback = jest.fn();
 jest.mock('react-native', () => ({
-  Modal: 'Modal', View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Button', ScrollView: 'Scroll',
+  Modal: 'Modal', View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Button', ScrollView: 'Scroll', ActivityIndicator: 'ActivityIndicator',
   Alert: { alert: jest.fn() }, StyleSheet: { create: (value: unknown) => value, hairlineWidth: 1 },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -17,7 +17,6 @@ jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: { a
 jest.mock('../state/SessionContext', () => ({ useSession: () => ({ customQuickCommands: mockCommands, setCustomQuickCommand: jest.fn() }) }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: (key: string) => key, language: 'en' }) }));
 jest.mock('../components/OverlaySheet', () => 'Sheet');
-jest.mock('../components/WaveLoading', () => 'Spinner');
 jest.mock('../screens/MapScreen/components/SettingsChildSheet', () => 'SettingsSheet');
 jest.mock('../api/feedback', () => ({ submitFeedback: (...args: unknown[]) => mockSubmitFeedback(...args) }));
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn(), logError: jest.fn() }));
