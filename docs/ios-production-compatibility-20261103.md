@@ -26,9 +26,9 @@ updates CI and CD tooling.
 No device acceptance or exact Build 79 IPA inspection is claimed. This review
 does not prove that a device has executed the candidate JavaScript.
 
-## Reviewed differences
+## Reviewed differences, 2026-11-03
 
-The existing conservative classifier finds exactly these seven mobile paths
+The 2026-11-03 review identified these seven mobile paths
 outside its ordinary source and test allowlist. The record pins each path's
 baseline and reviewed Git blob SHA. A `null` baseline blob means the file is
 absent at the comparison baseline.
@@ -66,4 +66,18 @@ The navigation caller retains post-tap freshness and arrival-accuracy checks. A 
 
 The SwiftUI button changes reuse the already installed `@expo/ui` Button, Host, frame and button-style capabilities. Their `.ios.tsx` files are JavaScript presentation code. This task changes no compiled Swift, Objective-C, native dependencies or app configuration.
 
-Only this reviewed wrapper blob changes in the compatibility record. The original seven-path set, comparison baseline, operator attestation, runtime `0.1.13`, app `0.1.13`, build `79`, channel `production` and `IN_BETA_TESTING` evidence retain their stated limits. The exact binary source remains unknown. Final publication still requires the full exact-blob gate, successful CI, current master and remote update readback.
+The root JavaScript entry `apps/mobile/App.tsx` is also reviewed explicitly.
+Its baseline blob is `d09ad5aa8ad3e7f93df952eb9dab03b54b341c01` and reviewed blob is `eca08afd3f796fa106d9cf3c6890bfb08159d195`.
+The baseline entry is identical to the last published source's entry.
+This task moves the existing OTA bootstrap into the themed navigation owner
+and adds a process-local eligibility ref. React hooks and the existing
+Expo Updates reload API remain the same. No compiled native input changes.
+
+The record now pins eight paths. The original seven remain recorded, and
+the root JavaScript entry is the eighth because the conservative classifier
+requires its own review. The classifier and exact-blob checks are unchanged.
+The comparison baseline, operator attestation, runtime `0.1.13`, app `0.1.13`,
+build `79`, channel `production` and `IN_BETA_TESTING` evidence retain their
+stated limits. The exact binary source remains unknown. Publication still
+requires the full exact-blob gate, successful CI, current master and remote
+update readback.

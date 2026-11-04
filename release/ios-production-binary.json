@@ -38,6 +38,10 @@
     "apps/mobile/src/native/maps.ts": {
       "baselineBlobSha": "ca00f9d93c918d0bb6bebe90f90b03c91a51370c",
       "reviewedBlobSha": "f61769965d05cf5a87896ea39463aaec2dea2bcf"
+    },
+    "apps/mobile/App.tsx": {
+      "baselineBlobSha": "d09ad5aa8ad3e7f93df952eb9dab03b54b341c01",
+      "reviewedBlobSha": "eca08afd3f796fa106d9cf3c6890bfb08159d195"
     }
   }
 }
