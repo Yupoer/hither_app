@@ -784,7 +784,6 @@ export default function MapScreen({ route, navigation }: Props) {
   // "Invite a teammate" picker, opened from my own subgroup card.
   const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
-  /** Resolves Amicro search Promise when OverlaySheet open animation completes. */
   // A place picked in search, awaiting the bottom "add / cancel" confirm card.
   const [pendingPlace, setPendingPlace] = useState<PlaceResult | null>(null);
   const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
