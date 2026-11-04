@@ -26,9 +26,9 @@ updates CI and CD tooling.
 No device acceptance or exact Build 79 IPA inspection is claimed. This review
 does not prove that a device has executed the candidate JavaScript.
 
-## Reviewed differences
+## Reviewed differences, 2026-11-03
 
-The existing conservative classifier finds exactly these seven mobile paths
+The 2026-11-03 review identified these seven mobile paths
 outside its ordinary source and test allowlist. The record pins each path's
 baseline and reviewed Git blob SHA. A `null` baseline blob means the file is
 absent at the comparison baseline.
@@ -56,3 +56,28 @@ only the listed path set and exact blob pairs. A later native, dependency,
 configuration, asset or wrapper change requires a new compatibility review.
 Publication retains the separate successful master CI, current-master,
 backend-attestation, active-route, retained-intent and remote-readback guards.
+
+## Location acquisition review, 2026-11-04
+
+The reviewed `apps/mobile/src/native/location.ts` blob changes from
+`de0505beddb664fde887197b061faeac1eddc8d9` to `43afdcfec22513347debccb17f2681238574a49e`. This file executes in JavaScript. It adds an optional sample acceptance callback to the existing one-shot wrapper, requests the installed Expo location API's existing High accuracy with zero distance and one-second intervals for that bounded request, and removes its subscription on background. The platform calls remain `watchPositionAsync`, foreground permission reads and React Native AppState events. No new native export, argument shape, event, dependency, permission or entitlement is required.
+
+The navigation caller retains post-tap freshness and arrival-accuracy checks. A qualified one-shot result may be used even when the continuous feed has a coarse future-dated sample. Continuous sensor ownership and its saved power policy remain unchanged. The native regression suites cover filtering, deadline, cancellation and candidate selection.
+
+The SwiftUI button changes reuse the already installed `@expo/ui` Button, Host, frame and button-style capabilities. Their `.ios.tsx` files are JavaScript presentation code. This task changes no compiled Swift, Objective-C, native dependencies or app configuration.
+
+The root JavaScript entry `apps/mobile/App.tsx` is also reviewed explicitly.
+Its baseline blob is `d09ad5aa8ad3e7f93df952eb9dab03b54b341c01` and reviewed blob is `eca08afd3f796fa106d9cf3c6890bfb08159d195`.
+The baseline entry is identical to the last published source's entry.
+This task moves the existing OTA bootstrap into the themed navigation owner
+and adds a process-local eligibility ref. React hooks and the existing
+Expo Updates reload API remain the same. No compiled native input changes.
+
+The record now pins eight paths. The original seven remain recorded, and
+the root JavaScript entry is the eighth because the conservative classifier
+requires its own review. The classifier and exact-blob checks are unchanged.
+The comparison baseline, operator attestation, runtime `0.1.13`, app `0.1.13`,
+build `79`, channel `production` and `IN_BETA_TESTING` evidence retain their
+stated limits. The exact binary source remains unknown. Publication still
+requires the full exact-blob gate, successful CI, current master and remote
+update readback.

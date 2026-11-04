@@ -1,7 +1,6 @@
-import WaveLoading from './WaveLoading';
 import React, { useRef, useState } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
-import {
+import { ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -171,7 +170,7 @@ export default function FeedbackSheet({
           accessibilityRole="button"
         >
           {status === 'sending' ? (
-            <WaveLoading color="#fff" />
+            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
           ) : (
             <Text style={styles.ctaText}>{t('feedback.send')}</Text>
           )}

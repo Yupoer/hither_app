@@ -1,10 +1,9 @@
 import { useMountEffect } from '../hooks/useMountEffect';
-import React, { useSyncExternalStore } from 'react';
+import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { cancelAnimation, Easing, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
-import { useAppState, useOptionalVisuals } from '../state/foregroundUi';
-import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
-import { authLoadingMotionAllowed, loadingDotOffset } from '../utils/loadingDots';
+import { useAppState } from '../state/foregroundUi';
+import { loadingDotOffset } from '../utils/loadingDots';
 
 export interface WaveLoadingProps {
   color: string;
@@ -13,12 +12,10 @@ export interface WaveLoadingProps {
   allowInactive?: boolean;
 }
 
-/** One continuous clock drives the same wave in screens, buttons and auth. */
+/** One continuous clock drives the full-screen waiting indicator. */
 export default function WaveLoading({ color, size = 32, style, allowInactive = false }: WaveLoadingProps) {
-  const visuals = useOptionalVisuals();
   const appState = useAppState();
-  const power = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
-  const animate = allowInactive ? authLoadingMotionAllowed(appState, power.thermalState, power.lowPowerMode) : visuals;
+  const animate = appState === 'active' || (allowInactive && appState === 'inactive');
   const reducedMotion = useReducedMotion() || !animate;
   const phase = useSharedValue(0);
   const width = typeof size === 'number' ? size : size === 'large' ? 64 : 24;

@@ -9,6 +9,7 @@ jest.mock('expo-updates', () => ({
 
 jest.mock('react-native', () => ({
   AppState: {
+    currentState: 'active',
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },
 }));
@@ -215,7 +216,7 @@ describe('otaUpdates', () => {
     expect(fetchUpdateAsync).toHaveBeenCalledTimes(manual ? 1 : 0);
   });
 
-  it('checks rollback on boot and foreground through the shared lifecycle', async () => {
+  it('checks at startup and preserves the current screen through foreground resumes', async () => {
     __setOtaUsableForTests(true);
     checkForUpdateAsync.mockResolvedValue(rollbackCheck);
     fetchUpdateAsync.mockResolvedValue(rollbackFetch);
@@ -225,10 +226,37 @@ describe('otaUpdates', () => {
     listener('background');
     expect(checkForUpdateAsync).toHaveBeenCalledTimes(1);
     listener('active');
-    await applyOtaUpdate();
-    expect(checkForUpdateAsync).toHaveBeenCalledTimes(2);
-    expect(reloadAsync).toHaveBeenCalledTimes(2);
+    listener('active');
+    await Promise.resolve();
+    expect(checkForUpdateAsync).toHaveBeenCalledTimes(1);
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
     stop();
+    stop();
+  });
+
+  it.each(['ui-ready', 'backgrounded', 'unmounted'])('downloads but defers a late startup update after %s', async reason => {
+    __setOtaUsableForTests(true);
+    let finishFetch!: (value: { isNew: boolean }) => void;
+    checkForUpdateAsync.mockResolvedValue({ isAvailable: true });
+    fetchUpdateAsync.mockImplementationOnce(() => new Promise(resolve => { finishFetch = resolve; }));
+    let startupPending = true;
+    const stop = startOtaUpdateBootstrap(() => startupPending);
+    for (let tick = 0; tick < 10 && !finishFetch; tick += 1) await Promise.resolve();
+    expect(finishFetch).toBeDefined();
+    if (reason === 'ui-ready') startupPending = false;
+    if (reason === 'backgrounded') {
+      const listener = jest.mocked(AppState.addEventListener).mock.calls.at(-1)?.[1];
+      listener?.('background');
+      listener?.('active');
+    }
+    if (reason === 'unmounted') stop();
+    const automatic = applyOtaUpdate();
+    finishFetch({ isNew: true });
+    await expect(automatic).resolves.toMatchObject({ status: 'deferred' });
+    expect(reloadAsync).not.toHaveBeenCalled();
+    fetchUpdateAsync.mockResolvedValue({ isNew: false });
+    await expect(applyOtaUpdate({ manual: true, skipCheck: true })).resolves.toMatchObject({ status: 'reloading' });
+    expect(reloadAsync).toHaveBeenCalledTimes(1);
     stop();
   });
 });

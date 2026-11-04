@@ -503,6 +503,17 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect' && value.presentation.session.user?.id === LEADER, 'real authenticated cold launch');
       await device.perform('home.teams');
       expect((await device.observe()).presentation.route.route).toBe('MyTeams');
+      await device.perform('teams.expand', { groupId: GROUP_ID });
+      await device.perform('teams.enter');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'Map'
+        && value.presentation.session.membership?.group.id === GROUP_ID, 'selected team Map');
+      for (const value of ['inactive', 'background', 'active']) await device.input({ kind: 'appState', value });
+      const resumed = await device.observe();
+      expect(resumed.presentation.route.route).toBe('Map');
+      expect(resumed.presentation.session.membership?.group.id).toBe(GROUP_ID);
+      await device.restart();
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect'
+        && value.presentation.session.user?.id === LEADER, 'cold restart returns to home');
       await device.perform('session.signout');
       const signedOut = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Login' && value.presentation.session.user === null, 'protected navigator remounted after signout');
       expect(signedOut.presentation.route.routes.map((route: any) => route.name)).toEqual(['Login']);

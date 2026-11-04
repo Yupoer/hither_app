@@ -1,5 +1,4 @@
 import SystemToggle from '../../../components/SystemToggle';
-import WaveLoading from '../../../components/WaveLoading';
 import { glass, accentMix } from '../../../glass';
 import { type TranslationKey } from '../../../i18n';
 import { NativeMenuHost } from '../../../native/menu';
@@ -10,7 +9,7 @@ import { SubgroupSection } from './SubgroupSection';
 import { statusIconForKind } from '../memberStatusSharing';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { View, Platform, Text, Pressable } from 'react-native';
+import { ActivityIndicator, View, Platform, Text, Pressable } from 'react-native';
 import type { MapStyles } from '../styles';
 import type { FontScaleBucket } from '../../../theme/typeScale';
 import type { PendingInvite, Subgroup } from '../../../types';
@@ -146,7 +145,7 @@ export function MembersPane({
             }}
             >
             {sharingApplying ? (
-              <WaveLoading size="small" color={sharingEnabled ? accent : glass.danger} />
+              <ActivityIndicator accessibilityRole="progressbar" size="small" color={sharingEnabled ? accent : glass.danger} />
             ) : (
               <Ionicons
                 name={sharingEnabled ? 'eye-outline' : 'eye-off-outline'}

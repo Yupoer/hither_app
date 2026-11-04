@@ -127,7 +127,7 @@ export default function NativeGlassButton({
       testID={testID}
       modifiers={modifiers}
     >
-      <HStack alignment="center" spacing={spacing ?? 8} modifiers={[frame({ width: fixedWidth, height: height ?? 52 })]}>
+      <HStack alignment="center" spacing={spacing ?? 8} modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity })]}>
         {systemImage ? (
           <Image
             systemName={systemImage as never}

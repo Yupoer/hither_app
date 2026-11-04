@@ -1,6 +1,5 @@
 import { type GroupMapHandle } from '../../../components/GroupMap';
 import NativeGlassButton from '../../../components/NativeGlassButton';
-import WaveLoading from '../../../components/WaveLoading';
 import { type TourTargetId } from '../../../featureTour';
 import { glass } from '../../../glass';
 import { type TranslationKey } from '../../../i18n';
@@ -13,7 +12,7 @@ import { shortEta } from '../../../utils/mapFormatters';
 import { runUiAction } from '../../../utils/uiAction';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Platform, Pressable, View, TextInput, Keyboard, Text } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, View, TextInput, Keyboard, Text } from 'react-native';
 import Animated from 'react-native-reanimated';
 import type { MapStyles } from '../styles';
 import type { AnimatedStyleHandle } from 'react-native-reanimated/lib/typescript/hook/commonTypes';
@@ -167,7 +166,7 @@ export function AddPlaceConfirmCard({
                     }}
                   >
                     {favoriteBusy ? (
-                      <WaveLoading size="small" color={accent} />
+                      <ActivityIndicator accessibilityRole="progressbar" size="small" color={accent} />
                     ) : (
                       <Ionicons
                         name={pendingIsFavorite ? 'star' : 'star-outline'}

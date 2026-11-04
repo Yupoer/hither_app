@@ -56,6 +56,20 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     await world.settle();
   }
 
+  it('shows the scoped gathering roster before anyone starts navigation', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      const observation = await device.observe();
+      const count = field(observation, `gather-card-members-${DESTINATION}`);
+      const memberCount = world.backend.memberships.filter((row: { group_id: string }) => row.group_id === GROUP_ID).length;
+      expect(memberCount).toBeGreaterThan(0);
+      expect(count?.label).toMatch(new RegExp(` ${memberCount}$`));
+      expect(count?.disabled).toBe(true);
+      expect(observation.durable.operations.filter((operation: { operationType: string }) => operation.operationType === 'leader_gathering_start')).toEqual([]);
+    } finally { await world.close(); }
+  });
+
   it('Q05 runs real coordinate validation, normalized submission and reopen initialization', async () => {
     const world = new World();
     try {

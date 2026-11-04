@@ -1,6 +1,5 @@
-import WaveLoading from './WaveLoading';
 import React, { useMemo, useState } from 'react';
-import {
+import { ActivityIndicator,
   Modal,
   Pressable,
   StyleSheet,
@@ -174,7 +173,7 @@ export default React.memo(function CoordinateDestinationSheet({
               accessibilityState={{ disabled: submitting }}
             >
               {submitting ? (
-                <WaveLoading color="#fff" />
+                <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
               ) : (
                 <Text style={styles.submitText}>{t('coord.submit')}</Text>
               )}

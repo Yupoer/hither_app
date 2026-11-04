@@ -1,7 +1,7 @@
 import { useMountEffect } from '../hooks/useMountEffect';
 import WaveLoading from './WaveLoading';
 import React, { useRef, useState } from 'react';
-import {
+import { ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -364,7 +364,7 @@ export function AccountSheetContent({
                   accessibilityRole="button"
                 >
                   {upgradeBusy ? (
-                    <WaveLoading color={accent} />
+                    <ActivityIndicator accessibilityRole="progressbar" color={accent} />
                   ) : (
                     <Text style={[styles.redeemText, { color: accent }]}>{t('account.submit')}</Text>
                   )}
@@ -417,7 +417,7 @@ export function AccountSheetContent({
                   testID="account-add-password"
                 >
                   {upgradeBusy ? (
-                    <WaveLoading color={accent} />
+                    <ActivityIndicator accessibilityRole="progressbar" color={accent} />
                   ) : (
                     <Text style={[styles.redeemText, { color: accent }]}>{t('account.addPasswordAction')}</Text>
                   )}

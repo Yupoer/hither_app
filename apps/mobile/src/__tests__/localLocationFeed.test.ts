@@ -25,7 +25,7 @@ it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, 
   }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe, { focused: true })); });
-  expect(location.getCurrentLocation).toHaveBeenCalledWith(false, 'journey');
+  expect(location.getCurrentLocation).toHaveBeenCalledWith(false, 'journey', undefined);
   expect(location.watchLocation).toHaveBeenCalledTimes(1);
   const sample = (latitude: number, timestamp: number) => ({ coordinates: { latitude, longitude: 121 }, accuracy: 5, timestamp });
   await act(async () => { feed.consumeForegroundSample(sample(25, 1000)); });
@@ -62,7 +62,7 @@ it('manual refresh requires this event to be accepted and passes precision to fr
   (location.getCurrentLocation as jest.Mock).mockResolvedValueOnce(sample(Date.now()));
   (flushLocationOutbox as jest.Mock).mockResolvedValueOnce({ acceptedIds: [], remaining: 1 });
   await act(async () => { await expect(feed.refreshDeviceLocation({ requireUpload: true })).rejects.toThrow('location_upload_not_confirmed'); });
-  expect(location.getCurrentLocation).toHaveBeenLastCalledWith(true, 'journey');
+  expect(location.getCurrentLocation).toHaveBeenLastCalledWith(true, 'journey', undefined);
   (location.getCurrentLocation as jest.Mock).mockResolvedValueOnce(sample(Date.now() + 1));
   (flushLocationOutbox as jest.Mock).mockResolvedValueOnce({ acceptedIds: ['sample-id'], remaining: 0 });
   await act(async () => { await expect(feed.refreshDeviceLocation({ requireUpload: true })).resolves.toEqual({ latitude: 25, longitude: 121 }); });

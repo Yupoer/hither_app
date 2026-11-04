@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   actionTile: {
     flex: 1,
     aspectRatio: 1,
-    overflow: 'hidden',
+    overflow: 'visible',
     elevation: 0,
   },
   /** Fixed gap between primary tiles and the my-teams CTA. */

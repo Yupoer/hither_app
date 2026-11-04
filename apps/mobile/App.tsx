@@ -253,6 +253,14 @@ function ThemedNavigation() {
   const navigatorReady =
     !initializing && needsOnboarding === false && fontsLoaded;
 
+  const startupReloadAllowedRef = useRef(true);
+  useEffect(() => {
+    if (!initializing && needsOnboarding !== null && fontsLoaded) {
+      startupReloadAllowedRef.current = false;
+    }
+  }, [initializing, needsOnboarding, fontsLoaded]);
+  useEffect(() => startOtaUpdateBootstrap(() => startupReloadAllowedRef.current), []);
+
   useEffect(() => {
     if (!navigatorReady) return;
     energyObservability.endSpan('launch');
@@ -410,9 +418,6 @@ export default function App() {
       energyObservability.endSpan('launch', launchSpan ?? undefined);
     };
   }, []);
-
-  // TestFlight/store: fetch + reload OTA without requiring a second cold start.
-  useEffect(() => startOtaUpdateBootstrap(), []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

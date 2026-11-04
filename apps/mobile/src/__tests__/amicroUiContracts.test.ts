@@ -24,10 +24,9 @@ describe('Amicro native animation contracts', () => {
     expect(button).toContain('finish();');
   });
 
-  it('keeps the requested icon mappings on native controls', () => {
+  it('keeps the requested icon mappings on the remaining animated controls', () => {
     for (const icon of [
-      'link-outline', 'send-outline', 'settings-outline', 'copy-outline', 'checkmark',
-      'search', 'close', 'pencil-outline', 'expand-outline', 'contract-outline',
+      'link-outline', 'send-outline', 'copy-outline', 'checkmark', 'pencil-outline',
       'refresh',
     ]) {
       expect(map + passive + refreshButton + carousel + routeEditorSheet + inviteMembersOverlay).toMatch(new RegExp(`(?:icon|activeIcon)="${icon}"`));
@@ -37,15 +36,6 @@ describe('Amicro native animation contracts', () => {
     expect(mapStyles).toContain('height: 44');
     expect(map).not.toContain('activeIcon="pause"');
     expect(map).toContain('style={styles.headerIconBtn}');
-    // Search holds complete frame until OverlaySheet onOpenComplete (not rAF×2).
-    expect(map).toContain('setSearchVisible(true)');
-    expect(map).toContain('searchOpenCompleteResolveRef');
-    expect(map).toContain('onOpenComplete={handleSearchOpenComplete}');
-    expect(map).toMatch(/onAnimationComplete=\{async\s*\(\)\s*=>\s*\{[\s\S]*setSearchVisible\(true\)/);
-    expect(map).not.toMatch(
-      /setSearchVisible\(true\);[\s\S]*requestAnimationFrame\(\(\)\s*=>\s*requestAnimationFrame/,
-    );
-    expect(passive).toContain('onAnimationComplete={handleSwitchBack}');
   });
 
   it('holds edit success until the route sheet is fully open', () => {

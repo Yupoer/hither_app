@@ -550,13 +550,16 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await device.input({ kind: 'updates.configure', value: { updateId: 'update-two' } });
       expect(await device.perform('ota.consumeOtaAppliedNotice')).toBe(true);
       await device.perform('ota.bootstrap.start');
-      await world.settle();
-      const beforeForeground = (await device.observe()).updates.receipts.length;
-      await device.input({ kind: 'appState', value: 'background' });
-      await device.input({ kind: 'appState', value: 'active' });
-      await world.settle();
-      expect((await device.observe()).updates.receipts.length).toBe(beforeForeground + 1);
-      await device.perform('ota.bootstrap.stop');
+      try {
+        await world.settle();
+        const beforeForeground = (await device.observe()).updates.receipts.length;
+        await device.input({ kind: 'appState', value: 'background' });
+        await device.input({ kind: 'appState', value: 'active' });
+        await world.settle();
+        expect((await device.observe()).updates.receipts.length).toBe(beforeForeground);
+      } finally {
+        await device.perform('ota.bootstrap.stop');
+      }
       await device.input({ kind: 'updates.configure', value: { isEnabled: false } });
       expect(await device.perform('ota.applyOtaUpdate')).toEqual({ status: 'disabled', reloading: false });
     } finally { await world.close(); }

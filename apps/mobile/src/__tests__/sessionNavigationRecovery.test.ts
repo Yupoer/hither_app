@@ -28,6 +28,18 @@ const { create, act } = require('react-test-renderer');
 const RootNavigator = require('../navigation/RootNavigator').default;
 
 describe('protected navigation after terminal session removal', () => {
+  it('retains the team route for the same account and starts at home after a process-style remount', async () => {
+    mockUser = { id: 'account-a' };
+    await act(async () => { renderer = create(React.createElement(RootNavigator)); });
+    await act(async () => { readNavigator().navigate('MyTeams'); readNavigator().navigate('Map'); });
+    mockUser = { id: 'account-a' };
+    await act(async () => { renderer.update(React.createElement(RootNavigator)); });
+    expect(readNavigator().history).toEqual(['RoleSelect', 'MyTeams', 'Map']);
+    await act(async () => { renderer.unmount(); });
+    await act(async () => { renderer = create(React.createElement(RootNavigator)); });
+    expect(readNavigator().history).toEqual(['RoleSelect']);
+    await act(async () => { renderer.unmount(); });
+  });
   it('mounts Login with no protected history and rejects queued Map navigation after logout', async () => {
     const original = console.error;
     const spy = jest.spyOn(console, 'error').mockImplementation((...args) => {

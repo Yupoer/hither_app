@@ -1,8 +1,7 @@
 import { useMountEffect } from '../hooks/useMountEffect';
-import WaveLoading from '../components/WaveLoading';
 import { useForegroundClock } from '../state/foregroundUi';
 import React, { useMemo, useState } from 'react';
-import {
+import { ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -548,7 +547,7 @@ export default function LoginScreen({ navigation }: Props) {
           ]}
         >
           {busy && !blockingBusy ? (
-            <WaveLoading color="#060b14" />
+            <ActivityIndicator accessibilityRole="progressbar" color="#060b14" />
           ) : (
             <Text style={styles.ctaText}>
               {panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
@@ -617,7 +616,7 @@ export default function LoginScreen({ navigation }: Props) {
           ]}
         >
           {busyAction === 'password_reset' ? (
-            <WaveLoading color="#060b14" />
+            <ActivityIndicator accessibilityRole="progressbar" color="#060b14" />
           ) : (
             <Text style={[styles.ctaText, { color: '#060b14', fontWeight: '800', fontSize: 16 }]} numberOfLines={1}>
               {resetSent ? t('login.resetResend') : '發送重設連結'}
@@ -651,7 +650,7 @@ export default function LoginScreen({ navigation }: Props) {
           style={[styles.cta, (busy || resendCooldown > 0) && styles.ctaDisabled]}
         >
           {busyAction === 'resend_confirmation' ? (
-            <WaveLoading color="#fff" />
+            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
           ) : (
             <Text style={styles.ctaText}>
               {resendCooldown > 0 ? `${t('login.resendConfirmation')} (${resendCooldown})` : t('login.resendConfirmation')}

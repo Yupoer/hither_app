@@ -10,7 +10,7 @@ const mockState = { currentState: 'active' };
 const mockListeners = new Set<(state: string) => void>();
 const mockRemove = jest.fn();
 const mockWatch = jest.fn<Promise<() => void>, [(sample: LocationSample) => void, boolean, string]>();
-const mockRead = jest.fn<Promise<LocationSample | null>, [boolean, string]>();
+const mockRead = jest.fn<Promise<LocationSample | null>, Parameters<typeof import('../native/location').getCurrentLocation>>();
 let mockDebug: (sample: LocationSample) => void;
 jest.mock('../api/supabase', () => ({ getLocalAuthActorId: jest.fn(async () => 'location-actor') }));
 jest.mock('react-native', () => ({ AppState: {
@@ -115,7 +115,7 @@ it('scales the watchdog to acquisition silence and never retimestamps a cached s
   await act(async () => { tree!.update(React.createElement(Probe, { passive: false, nativeMap: true })); });
   await act(async () => { jest.advanceTimersByTime(60_000); });
   expect(mockRead).toHaveBeenCalledTimes(bootstrapReads + 1);
-  expect(mockRead).toHaveBeenLastCalledWith(false, 'journey');
+  expect(mockRead).toHaveBeenLastCalledWith(false, 'journey', undefined);
   expect(probe.feed.deviceCoordsAcceptedAtMs).toBe(acceptedAt);
   expect(mockWatch).toHaveBeenCalledTimes(2);
 });
@@ -339,6 +339,45 @@ it('returns the newer watcher fix instead of an earlier one-shot fix without rol
   expect(probe.feed.deviceCoords).toEqual(newer.coordinates);
   expect(incoming).toHaveBeenCalledTimes(2);
   expect(enqueueLocationOutbox).toHaveBeenLastCalledWith(expect.objectContaining({ coordinates: { ...newer.coordinates, accuracy: 5 }, capturedAt: newer.timestamp }));
+});
+
+it('uses temporary high accuracy for Start and returns its qualified sample when a newer watcher sample is coarse', async () => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe, { passive: true })); });
+  let finishFix!: (fix: LocationSample) => void;
+  mockRead.mockImplementationOnce(() => new Promise(resolve => { finishFix = resolve; }));
+  const acceptsSample = (fix: LocationSample) => fix.accuracy != null && fix.accuracy <= 50;
+  const refresh = probe.feed.refreshDeviceLocationSample({ waitForUpload: false, acceptsSample });
+  await act(async () => {});
+  const precise = sample(26);
+  const coarse = { ...sample(27), timestamp: Date.now() + 1, accuracy: 500 };
+  await act(async () => { mockWatch.mock.calls[0][0](coarse); });
+  await act(async () => { finishFix(precise); });
+  await expect(refresh).resolves.toEqual(precise);
+  expect(mockRead).toHaveBeenLastCalledWith(true, 'foreground', acceptsSample);
+  expect(mockWatch).toHaveBeenCalledTimes(1);
+  expect(mockWatch).toHaveBeenLastCalledWith(expect.any(Function), false, 'allDay');
+  expect(enqueueLocationOutbox).toHaveBeenLastCalledWith(expect.objectContaining({
+    coordinates: { ...precise.coordinates, accuracy: 5 }, capturedAt: precise.timestamp,
+  }));
+});
+
+it('starts with a qualifying fresh fix even when a coarse future-dated sample predates the request', async () => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe, { passive: true })); });
+  const coarse = { ...sample(27), timestamp: Date.now() + 30_000, accuracy: 500 };
+  await act(async () => { probe.feed.consumeForegroundSample(coarse); });
+  expect(probe.feed.latestLocationSampleRef.current).toEqual(coarse);
+  const precise = sample(26);
+  const requestedAt = Date.now();
+  mockRead.mockResolvedValueOnce(precise);
+  const acceptsSample = (fix: LocationSample) => fix.timestamp >= requestedAt
+    && fix.timestamp <= Date.now() + 2_000 && fix.accuracy != null && fix.accuracy <= 50;
+  let result: LocationSample | null = null;
+  await act(async () => { result = await probe.feed.refreshDeviceLocationSample({ waitForUpload: false, acceptsSample }); });
+  expect(result).toEqual(precise);
+  expect(probe.feed.deviceCoords).toEqual(precise.coordinates);
+  expect(mockWatch).toHaveBeenCalledTimes(1);
 });
 
 it('recovers manual GPS after failed watcher setup and failed automatic reads', async () => {

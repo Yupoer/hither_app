@@ -1,10 +1,9 @@
-import WaveLoading from '../../../components/WaveLoading';
 /**
  * OTA-09 coordination request UI: list, detail (respond / override / outcome),
  * and minimal leader create form. Pull-to-refresh; navigation stays independent.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import {
+import { ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -285,7 +284,7 @@ export const CoordinationRequestsPanel = React.memo(function CoordinationRequest
           testID="coordination-create-submit"
         >
           {creating ? (
-            <WaveLoading color={accent} />
+            <ActivityIndicator accessibilityRole="progressbar" color={accent} />
           ) : (
             <Text style={[local.primaryBtnLabel, { color: accent }]}>
               {t('coordination.submit')}
@@ -468,7 +467,7 @@ export const CoordinationRequestsPanel = React.memo(function CoordinationRequest
 
       {loading && requests.length === 0 ? (
         <View style={local.center}>
-          <WaveLoading color={accent} />
+          <ActivityIndicator accessibilityRole="progressbar" color={accent} />
           <Text style={listStyles.overlayHint}>{t('coordination.loading')}</Text>
         </View>
       ) : null}

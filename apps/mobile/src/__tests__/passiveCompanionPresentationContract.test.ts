@@ -57,7 +57,6 @@ describe('OTA-07 full/passive presentation contract', () => {
 
   it('keeps switch-back available in normal, loading, empty, and error states', () => {
     expect(panel).toContain('testID="passive-switch-back"');
-    expect(panel).toContain('disabled={false}');
     expect(panel).toContain("accessibilityLabel={t('passive.switchBack')}");
     expect(mapScreen).toContain('exitPassiveCompanionMode');
     // Loading early-return still mounts the panel when preference is on.

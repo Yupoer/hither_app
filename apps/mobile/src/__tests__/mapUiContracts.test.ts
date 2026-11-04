@@ -673,7 +673,6 @@ describe('map UI placement contracts', () => {
     const roleButton = readFileSync(join(__dirname, '../components/NativeRoleActionButton.tsx'), 'utf8');
     expect(roleButton).toContain('backgroundColor');
     expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?elevation:\s*0/);
-    expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?overflow:\s*'hidden'/);
   });
 
   it('marquees overflow collapsed titles and uses role-correct nav labels', () => {

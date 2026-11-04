@@ -2,6 +2,7 @@ import React from 'react';
 
 let mockVisuals = true;
 let mockReducedMotion = false;
+let mockAppState = 'active';
 const mockValues: { value: number }[] = [];
 const mockCancel = jest.fn();
 const mockTiming = jest.fn((value: number) => value);
@@ -9,7 +10,7 @@ jest.mock('react-native', () => ({
   StyleSheet: { create: (value: unknown) => value }, View: 'View', Pressable: 'Pressable', Image: 'Image',
 }));
 jest.mock('../state/foregroundUi', () => ({
-  useOptionalVisuals: () => mockVisuals, useAppState: () => 'active',
+  useOptionalVisuals: () => mockVisuals, useAppState: () => mockAppState,
 }));
 jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: { accent: '#ffffff' } }) }));
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ scale: 1 }) }));
@@ -32,12 +33,13 @@ jest.mock('react-native-reanimated', () => ({
   },
 }));
 import WaveLoading from '../components/WaveLoading';
+import { updateRuntimePowerState } from '../state/runtimePowerState';
 import PrimaryButton from '../onboarding/steps/PrimaryButton';
 import MascotStep from '../onboarding/steps/MascotStep';
 const { act, create } = require('react-test-renderer');
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-beforeEach(() => { mockVisuals = true; mockReducedMotion = false; mockValues.length = 0; jest.clearAllMocks(); });
+beforeEach(() => { mockVisuals = true; mockReducedMotion = false; mockAppState = 'active'; mockValues.length = 0; jest.clearAllMocks(); });
 
 it('retains loading phase and dot instances while policy cancels and resumes the wave', async () => {
   let root: any;
@@ -45,17 +47,33 @@ it('retains loading phase and dot instances while policy cancels and resumes the
   const phase = mockValues[0];
   const dot = root.root.findAllByType('AnimatedView')[0];
   expect(phase.value).toBe(1);
-  mockVisuals = false;
+  mockAppState = 'background';
   await act(async () => { root.update(React.createElement(WaveLoading, { color: '#abc', size: 48 })); });
   expect(mockCancel).toHaveBeenCalledWith(phase);
   expect(phase.value).toBe(0);
   expect(root.root.findAllByType('AnimatedView')[0]).toBe(dot);
   expect(mockValues).toHaveLength(1);
-  mockVisuals = true;
+  mockAppState = 'active';
   await act(async () => { root.update(React.createElement(WaveLoading, { color: '#abc' })); });
   expect(phase.value).toBe(1);
   await act(async () => { root.unmount(); });
   expect(mockCancel).toHaveBeenLastCalledWith(phase);
+});
+
+it('animates required waiting with optional visuals paused or low power enabled, while respecting reduced motion', async () => {
+  mockVisuals = false;
+  let root: import('react-test-renderer').ReactTestRenderer;
+  await act(async () => { root = create(React.createElement(WaveLoading, { color: '#fff' })); });
+  expect(mockValues[0].value).toBe(1);
+  await act(async () => {
+    updateRuntimePowerState({ lowPowerMode: true, thermalState: 'serious' });
+    root.update(React.createElement(WaveLoading, { color: '#fff' }));
+  });
+  expect(mockValues[0].value).toBe(1);
+  mockReducedMotion = true;
+  await act(async () => { root.update(React.createElement(WaveLoading, { color: '#fff' })); });
+  expect(mockValues[0].value).toBe(0);
+  await act(async () => { root.unmount(); });
 });
 
 it('changes disabled color without remounting the primary button or restarting on label updates', async () => {
