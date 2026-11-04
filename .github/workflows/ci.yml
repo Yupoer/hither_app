@@ -296,15 +296,25 @@ jobs:
   jsi-ui-runtime:
     needs: scope
     if: fromJSON(needs.scope.outputs.expected_jobs)['jsi-ui-runtime']
-    # Swift's isIsolatingCurrentContext runtime hook requires macOS 26.
-    runs-on: macos-26
+    # Swift's isIsolatingCurrentContext runtime hook requires macOS 26 or later.
+    runs-on: xcode-27
     timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     defaults:
       run:
         working-directory: apps/mobile
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: ./.github/actions/setup-mobile
+      - name: Verify native host environment
+        run: |
+          xcodebuild -version | grep -E '^Xcode 27\.0(\.[0-9]+)?$'
+          sw_vers
+          uname -m | grep -Fx arm64
+          xcrun swiftc --version
+          xcrun --sdk macosx --show-sdk-version
+          python3 -c 'import platform; assert int(platform.mac_ver()[0].split(".")[0]) >= 26'
       - name: Exercise native foreground and headless snapshot races
         run: |
           swiftc -swift-version 5 modules/hither-live-activity/ios/HitherLiveActivitySnapshot.swift src/__tests__/native/HitherLiveActivitySnapshotTests.swift -o "$RUNNER_TEMP/hither-live-activity-snapshot-tests"
