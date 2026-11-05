@@ -4,12 +4,6 @@ import { supabase } from '../supabase';
 import { orThrow, requireUserId } from './_helpers';
 import { getOrCreateLiveActivityDeviceId } from './LiveActivityService';
 
-export interface DiagnosticUploadMetadata {
-  deviceId: string;
-  buildNumber: string;
-  appVersion: string;
-}
-
 export interface DiagnosticUploadRecord {
   id: string;
   timestamp: number;
@@ -26,16 +20,22 @@ export interface DiagnosticBatchResult {
 
 export async function ingestDiagnosticBatch(
   records: DiagnosticUploadRecord[],
-  metadata: DiagnosticUploadMetadata,
 ): Promise<DiagnosticBatchResult> {
   if (records.length === 0) return { acceptedIds: [], rejected: [] };
   const revision = getDiagnosticConsentRevision();
   if (!(await getDiagnosticConsentEnabled())) return { acceptedIds: [], rejected: [] };
   await requireUserId();
   if (!isDiagnosticConsentCurrent(revision)) return { acceptedIds: [], rejected: [] };
+  const deviceId = await getOrCreateLiveActivityDeviceId();
+  if (!isDiagnosticConsentCurrent(revision)) return { acceptedIds: [], rejected: [] };
   const submission = createDiagnosticSubmissionAbort(revision);
   const { data, error } = await Promise.resolve(supabase.rpc('ingest_diagnostic_batch', {
-    p_events: records.map((record) => ({ ...record, ...metadata })),
+    p_events: records.map((record) => ({
+      ...record,
+      deviceId,
+      buildNumber: record.payload.buildNumber ?? 'unknown',
+      appVersion: record.payload.appVersion ?? 'unknown',
+    })),
   }).abortSignal(submission.signal)).finally(submission.dispose);
   orThrow(error);
   const result = (data ?? {}) as Partial<DiagnosticBatchResult>;

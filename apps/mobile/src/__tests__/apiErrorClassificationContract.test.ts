@@ -19,7 +19,7 @@ jest.mock('expo-crypto', () => ({
   }),
 }));
 jest.mock('expo-constants', () => ({
-  nativeBuildVersion: '1',
+  platform: { ios: { buildNumber: '1' } },
   expoConfig: { version: '1.0.0' },
 }));
 jest.mock('expo-updates', () => ({

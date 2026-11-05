@@ -14,8 +14,7 @@ const callbacks: {
 jest.mock('expo-constants', () => ({
   __esModule: true,
   default: {
-    sessionId: 'device-session-1234',
-    nativeBuildVersion: '42',
+    platform: { ios: { buildNumber: '42' } },
     expoConfig: { version: '0.1.3' },
   },
 }));

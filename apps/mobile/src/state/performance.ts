@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as Updates from 'expo-updates';
 import { metrics } from '../native';
+import { nativeBuildNumber } from '../native/buildInfo';
 import {
   buildErrorDiagnostics,
   classifyUpstreamError,
@@ -336,7 +337,7 @@ function currentUpdateId(): string {
 
 function releaseContext(): PerformancePayload {
   return {
-    buildNumber: Constants.nativeBuildVersion ?? 'development',
+    buildNumber: nativeBuildNumber,
     appVersion: Constants.expoConfig?.version ?? 'development',
     updateId: currentUpdateId(),
     runtimeVersion: String(Updates.runtimeVersion ?? 'unknown'),

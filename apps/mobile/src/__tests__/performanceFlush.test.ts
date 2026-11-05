@@ -93,7 +93,7 @@ jest.mock('expo-crypto', () => ({
 }));
 
 jest.mock('expo-constants', () => ({
-  nativeBuildVersion: '1',
+  platform: { ios: { buildNumber: '1' } },
   expoConfig: { version: '1.0.0' },
 }));
 
@@ -218,6 +218,7 @@ describe('flushPerformance', () => {
     expect(errorRows[0]!.operation).toBe('error.js_fatal');
     const payload = JSON.parse(errorRows[0]!.payload) as Record<string, unknown>;
     expect(payload.exceptionKind).toBe('Error');
+    expect(payload.buildNumber).toBe('1');
     expect(typeof payload.stackHash).toBe('string');
     expect(payload).not.toHaveProperty('message');
     expect(payload).not.toHaveProperty('stack');

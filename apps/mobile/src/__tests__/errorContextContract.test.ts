@@ -30,7 +30,7 @@ jest.mock('expo-crypto', () => ({
   randomUUID: jest.fn(() => '00000000-0000-4000-8000-000000000099'),
 }));
 jest.mock('expo-constants', () => ({
-  nativeBuildVersion: '1',
+  platform: { ios: { buildNumber: '1' } },
   expoConfig: { version: '1.0.0' },
 }));
 jest.mock('expo-updates', () => ({

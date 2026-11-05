@@ -1,8 +1,7 @@
 jest.mock('expo-constants', () => ({
   __esModule: true,
   default: {
-    sessionId: 'device-session-1234',
-    nativeBuildVersion: '42',
+    platform: { ios: { buildNumber: '42' } },
     expoConfig: { version: '0.1.3' },
   },
 }));
@@ -90,7 +89,6 @@ class MemoryDiagnosticDatabase implements DiagnosticDatabase {
 
 const metadata = {
   sessionId: '00000000-0000-4000-8000-000000000999',
-  deviceId: 'device-session-1234',
   buildNumber: '42',
   appVersion: '0.1.3',
 };
@@ -134,7 +132,9 @@ it('routes ad steps through the consent-gated writer and handles upload failures
     await logStoreAdStep({ step: 'loaded', phase: 'load' });
     expect(flush).not.toHaveBeenCalled();
     await logStoreAdStep({ step: 'failed', phase: 'terminal', success: false });
-    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({ event: 'store_ad_load', source: 'store' }));
+    expect(write).toHaveBeenLastCalledWith(expect.objectContaining({
+      event: 'store_ad_load', source: 'store', buildNumber: '42',
+    }));
     expect(flush).toHaveBeenCalledTimes(1);
   } finally {
     write.mockRestore();
@@ -145,6 +145,21 @@ it('routes ad steps through the consent-gated writer and handles upload failures
 describe('bounded diagnostics', () => {
   beforeEach(() => {
     consentEnabled.value = true;
+  });
+
+  it('preserves the release snapshot of queued events across a binary upgrade', async () => {
+    const database = new MemoryDiagnosticDatabase();
+    const upload = jest.fn(async (records: DiagnosticRecord[]) => ({ acceptedIds: records.map(record => record.id), rejected: [] }));
+    const oldLaunch = createDiagnostics(database, upload, () => 1_000, metadata, () => 'old-event');
+    await oldLaunch.write({ event: 'diagnostic_error', buildNumber: 'caller-build', appVersion: 'caller-version' });
+    const newLaunch = createDiagnostics(database, upload, () => 2_000,
+      { sessionId: 'new-session', buildNumber: '43', appVersion: '0.1.4' }, () => 'new-event');
+    await newLaunch.write({ event: 'diagnostic_error' });
+    await newLaunch.flush();
+    expect(upload.mock.calls[0][0].map(record => ({ sessionId: record.sessionId, payload: record.payload }))).toEqual([
+      { sessionId: metadata.sessionId, payload: { buildNumber: '42', appVersion: '0.1.3' } },
+      { sessionId: 'new-session', payload: { buildNumber: '43', appVersion: '0.1.4' } },
+    ]);
   });
 
   it('skips insert and upload when diagnostic consent is off', async () => {
@@ -394,6 +409,7 @@ describe('bounded diagnostics', () => {
       updateId: 'eas-update-1',
       runtimeVersion: '56.0.0',
       appVersion: '0.1.3',
+      buildNumber: '42',
     });
 
     consentEnabled.value = false;
