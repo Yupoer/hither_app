@@ -13,8 +13,6 @@ import { ActivityIndicator,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused } from '@react-navigation/native';
-import MetalforgeBackground from '../components/MetalforgeBackground';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
@@ -46,7 +44,6 @@ const DISPLAY_FONT = 'Fredoka_600SemiBold';
  * session skips it and just reuses / renames the existing anon user.
  */
 export default function AuthScreen({ navigation, route }: Props) {
-  const isFocused = useIsFocused();
   const role = route.params?.role ?? 'leader';
   const isLeader = role === 'leader';
   const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
@@ -150,7 +147,6 @@ export default function AuthScreen({ navigation, route }: Props) {
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.fill}>
-        <MetalforgeBackground active={isFocused} />
         <View
           style={[
             styles.content,

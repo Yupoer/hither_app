@@ -75,8 +75,8 @@ describe('MetalforgeStarfield performance contract', () => {
 
 import { chargeBallsAt, changeChargeEmission, CHARGE_BALL_MAX_TRAVEL_MS, CHARGE_BALL_INTERVAL_MS, CHARGE_BALLS_PER_SECOND } from '../utils/starfieldParticles';
 
-it('starts outside the left edge and every new ball moves right at half the previous size', () => {
-  expect(CHARGE_BALL_INTERVAL_MS).toBe(1000 / 22);
+it('starts outside the left edge and every new ball moves right at the requested smaller size', () => {
+  expect(CHARGE_BALL_INTERVAL_MS).toBe(1000 / 44);
   const windows = [{ startedAt: 0 }];
   const birth = chargeBallsAt(0, 360, windows)[0];
   expect(birth.x + birth.radius).toBe(0);
@@ -93,15 +93,15 @@ it('starts outside the left edge and every new ball moves right at half the prev
         expect(ball.x).toBeLessThan(380 * 100 / 4000);
       }
     }
-    expect(current.length).toBeLessThanOrEqual(121);
-    expect(current.every(ball => ball.radius >= 2 && ball.radius <= 3.2)).toBe(true);
+    expect(current.length).toBeLessThanOrEqual(241);
+    expect(current.every(ball => ball.radius >= 2 / 1.5 && ball.radius <= 3.2 / 1.5)).toBe(true);
     previous = current;
   }
   expect(chargeBallsAt(1000, 0, windows)).toEqual([]);
 });
 
-it.each([0, 123.45, 2 ** 32])('emits the same 22 balls every second without cycle gaps from start %s', startedAt => {
-  expect(CHARGE_BALLS_PER_SECOND).toBe(11 * 2);
+it.each([0, 123.45, 2 ** 32])('emits the same 44 balls every second without cycle gaps from start %s', startedAt => {
+  expect(CHARGE_BALLS_PER_SECOND).toBe(22 * 2);
   const windows = [{ startedAt }];
   for (let second = 0; second < 120; second++) {
     const end = startedAt + (second + 1) * 1000;
@@ -122,7 +122,7 @@ it.each([320, 360, 720])('chooses random height positions with uniform coverage 
     const now = 123 + index * CHARGE_BALL_INTERVAL_MS;
     const birth = chargeBallsAt(now, width, windows).find(ball => ball.id === `123:${index}`)!;
     // Remove its gentle vertical drift to inspect the random birth coordinate.
-    const variation = (birth.radius / (width / 360) / 0.4 - 5) / 3;
+    const variation = (birth.radius / (width / 360) / (0.4 / 1.5) - 5) / 3;
     const position = (birth.y - birth.radius - Math.sin(variation * 6) * 3)
       / (fieldHeight - birth.radius * 2);
     positions.push(position);
@@ -188,8 +188,8 @@ it('wraps particle positions and twinkle without an end frame and pauses without
   const windows = [{ startedAt: 0 }];
   const birth = chargeBallsAt(0, 360, windows)[0];
   const later = chargeBallsAt(1000, 360, windows).find(ball => ball.id === birth.id)!;
-  const variation = (birth.radius / 0.4 - 5) / 3;
-  expect((later.x - birth.x) / (360 + 2 * birth.radius / 0.4)).toBeCloseTo(1000 * 1.25 / (5000 + variation * 1800));
+  const variation = (birth.radius / (0.4 / 1.5) - 5) / 3;
+  expect((later.x - birth.x) / (360 + 2 * birth.radius / (0.4 / 1.5))).toBeCloseTo(1000 * 1.25 / (5000 + variation * 1800));
   const shades = Array.from({ length: 16 }, (_, index) => chargeBallsAt(index * 200, 360, windows)[0].shade);
   expect(new Set(shades).size).toBeGreaterThan(8);
   const field = chargeBallsAt(3000, 360, windows);

@@ -1,6 +1,4 @@
-// The previous 93.33ms inlet emitted 10–11 balls per second. Double its
-// 11-ball second into a fixed integer rate instead of alternating counts.
-export const CHARGE_BALLS_PER_SECOND = 22;
+export const CHARGE_BALLS_PER_SECOND = 44;
 export const CHARGE_BALL_INTERVAL_MS = 1000 / CHARGE_BALLS_PER_SECOND;
 export const CHARGE_BALL_MAX_TRAVEL_MS = 6800 / 1.25;
 export const CHARGE_BALL_OPACITY_LEVELS = 16;
@@ -39,7 +37,7 @@ export function chargeBallsAt(now: number, width: number, windows: ChargeEmissio
       const vertical = (seed & 65535) / 65535;
       const variation = (seed >>> 16) / 65535;
       const baseRadius = (5 + variation * 3) * width / 360;
-      const radius = baseRadius * 0.4;
+      const radius = baseRadius * (0.4 / 1.5);
       // Preserve the exact velocity multiplier even though the exit margins shrink.
       const duration = (5000 + variation * 1800) / 1.25
         * (width + radius * 2) / (width + baseRadius * 2);
