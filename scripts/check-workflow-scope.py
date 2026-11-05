@@ -5,7 +5,8 @@ from pathlib import Path
 
 
 def product_required(paths):
-    return any(not p.endswith(".md") for p in paths)
+    return any(not p.endswith(".md") or p.startswith(".cursor/skills/verify-location-sync-formally/") or
+               p == ".agents/skills/verify-location-sync-formally/SKILL.md" for p in paths)
 
 
 def classify(event_name, base):

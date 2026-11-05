@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 export const ALL_GROUPS = Object.freeze([
   'auth-web', 'backend', 'ci-required', 'components', 'expo-dependencies', 'expo-doctor',
-  'jsi-ios27-runtime', 'jsi-ui-runtime', 'lint', 'node', 'runtime-alignment', 'test-meta', 'typecheck', 'workflow-tooling',
+  'jsi-ios27-runtime', 'jsi-ui-runtime', 'lint', 'location-sync-formal', 'node', 'runtime-alignment', 'test-meta', 'typecheck', 'workflow-tooling',
 ]);
 const ALWAYS_GROUPS = ['ci-required', 'test-meta', 'workflow-tooling'];
 const MANIFEST_PATH = 'scripts/ci-module-contracts.json';
@@ -131,7 +131,7 @@ export function observeShadowPlan({ identity, eligibleAppPaths, git }) {
 }
 
 export const JOB_GROUPS = Object.freeze({
-  verify: ['test-meta', 'node'],
+  verify: ['test-meta', 'node', 'location-sync-formal'],
   'mobile-checks': ['components', 'lint', 'typecheck', 'runtime-alignment', 'expo-dependencies', 'expo-doctor', 'auth-web'],
   backend: ['backend'],
   'jsi-ui-runtime': ['jsi-ui-runtime'],
