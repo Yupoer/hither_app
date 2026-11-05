@@ -360,11 +360,16 @@ def lldb_fixture(mode='stopped'):
         return True
     error = mock.Mock()
     error.Fail.return_value = mode == 'denied'
+    error.GetType.return_value = 1
+    error.GetError.return_value = 5 if mode == 'denied' else 0
+    error.GetCString.return_value = '/private/attach token=private' if mode == 'denied' else None
     target, process, thread, stack_frame = (mock.Mock() for _ in range(4))
     module = stack_frame.GetModule.return_value
     target.IsValid.return_value = process.IsValid.return_value = thread.IsValid.return_value = True
     stack_frame.IsValid.return_value = module.IsValid.return_value = True
     target.AttachToProcessWithID.return_value = process
+    target.GetTriple.return_value = 'arm64-apple-ios27.0-simulator'
+    target.GetPlatform.return_value.GetName.return_value = 'ios-simulator'
     process.GetProcessID.return_value = 123
     process.Continue.return_value = mock.Mock(Fail=lambda: False)
     process.Continue.side_effect = lambda: (calls.append('continue') or mock.Mock(Fail=lambda: False))
@@ -379,6 +384,7 @@ def lldb_fixture(mode='stopped'):
     process.Kill.return_value.Fail.return_value = False
     process.Detach.return_value.Fail.return_value = False
     thread.GetStopReason.return_value = 3
+    thread.GetStopDescription.return_value = 'private initial attach stop'
     thread.GetStopReasonDataCount.return_value = 1
     thread.GetStopReasonDataAtIndex.return_value = 5
     thread.GetNumFrames.return_value = 1
@@ -391,6 +397,7 @@ def lldb_fixture(mode='stopped'):
     module.GetUUIDString.return_value = frame()['uuid']
     stack_frame.GetFunctionName.return_value = 'hither_lldb_probe'
     debugger = mock.Mock()
+    debugger.EnableLog.return_value = True
     debugger.CreateTarget.return_value = target
     native = types.SimpleNamespace(SBTarget=type(target), SBProcess=type(process),
                                    SBThread=type(thread), SBFrame=type(stack_frame),
@@ -463,12 +470,13 @@ class BoundedCaptureRegressionTests(unittest.TestCase):
                 sampled = []
                 thread = process.GetSelectedThread.return_value
                 stack_frame = thread.GetFrameAtIndex.return_value
-                stack_frame.GetFunctionName.side_effect = lambda: (sampled.append(state['stop']) or 'hither_lldb_probe')
+                stack_frame.GetFunctionName.side_effect = lambda: (sampled.append((state['resumed'], state['stop'])) or 'hither_lldb_probe')
                 DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
                 result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
                 self.assertEqual(result['captureKind'], 'spontaneous_stop')
                 self.assertEqual(result['frames'], [frame()])
-                self.assertTrue(sampled and set(sampled) == {9})
+                self.assertEqual({stop for resumed, stop in sampled if not resumed}, {7})
+                self.assertEqual({stop for resumed, stop in sampled if resumed}, {9})
                 process.SendAsyncInterrupt.assert_not_called()
 
     def test_pending_spontaneous_stop_is_drained_before_requesting_interrupt(self):
@@ -566,8 +574,11 @@ class BoundedCaptureRegressionTests(unittest.TestCase):
                 return error
 
             def function_name():
-                self.assertGreater(state['stop_events'], 0,
-                                   'frame access must wait for removal of the new public stop event')
+                if state['resumed']:
+                    self.assertGreater(state['stop_events'], 0,
+                                       'post-continue frame access must wait for the new public stop event')
+                else:
+                    self.assertEqual(state['stop'], 7)
                 return 'hither_lldb_probe'
 
             process.Continue.side_effect = resume
@@ -620,6 +631,7 @@ class BoundedCaptureRegressionTests(unittest.TestCase):
             process = mock.Mock()
             process.poll.return_value = None
             with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                    mock.patch.object(DEBUGGER.subprocess, 'run', return_value=mock.Mock(returncode=0)), \
                     mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
                     mock.patch.object(DEBUGGER, '_stop_group'):
                 result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
@@ -676,6 +688,17 @@ class CaptureTests(unittest.TestCase):
             process.Kill.assert_called_once_with()
             process.Detach.assert_not_called()
             self.assertEqual(debugger.SetAsync.call_args_list, [mock.call(False), mock.call(True)])
+            debugger.EnableLog.assert_called_once_with('lldb', ['api', 'process'])
+            events = [json.loads(line) for line in (Path(directory) / 'lldb-private-events.jsonl').read_text().splitlines()]
+            self.assertEqual([event['event'] for event in events], [
+                'api_process_logging', 'target_create_begin', 'target_create_end', 'target_identity',
+                'attach_begin', 'attach_end', 'initial_attach_stop'])
+            self.assertEqual(events[3]['triple'], 'arm64-apple-ios27.0-simulator')
+            self.assertEqual(events[3]['platform'], 'ios-simulator')
+            self.assertEqual(events[-1]['stopId'], 7)
+            self.assertEqual(events[-1]['stopDescription'], 'private initial attach stop')
+            self.assertEqual(events[-1]['frames'], [{'pc': 1042, 'function': 'hither_lldb_probe'}])
+            self.assertNotIn('private', json.dumps(result))
 
     def test_denied_attach_has_no_continue_and_no_free_form_error(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture('denied') as (debugger, process, calls), \
@@ -685,6 +708,25 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'unavailable', 'stage': 'attach'})
             self.assertEqual(calls, [])
             process.Kill.assert_not_called()
+            events = [json.loads(line) for line in (Path(directory) / 'lldb-private-events.jsonl').read_text().splitlines()]
+            attached = next(event for event in events if event['event'] == 'attach_end')
+            self.assertEqual((attached['failed'], attached['errorType'], attached['errorCode']), (True, 1, 5))
+            self.assertEqual(attached['errorText'], '/private/attach token=private')
+            self.assertIn('Traceback', events[-1]['traceback'])
+            self.assertNotIn('private', json.dumps(result))
+
+    def test_target_creation_exception_retains_private_trace_and_distinct_progress(self):
+        with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, calls), \
+                mock.patch.object(DEBUGGER, '_same_executable', return_value=True):
+            debugger.CreateTarget.side_effect = RuntimeError('/private/target token=private')
+            DEBUGGER.lldb_capture(debugger, 123, '/installed/Hither', Path(directory))
+            result = json.loads((Path(directory) / DEBUGGER.CAPTURE_RESULT_NAME).read_text())
+            self.assertEqual(result, {'scope': 'diagnostic_replay', 'probe': 'unavailable', 'stage': 'target_create'})
+            self.assertEqual(calls, [])
+            events = [json.loads(line) for line in (Path(directory) / 'lldb-private-events.jsonl').read_text().splitlines()]
+            self.assertEqual(events[-2]['event'], 'target_create_begin')
+            self.assertIn('RuntimeError: /private/target token=private', events[-1]['traceback'])
+            self.assertNotIn('private', json.dumps(result))
 
     def test_identity_changed_after_attach_is_detached_without_continue_or_kill(self):
         with tempfile.TemporaryDirectory() as directory, lldb_fixture() as (debugger, process, calls), \
@@ -1153,6 +1195,7 @@ class DebuggerCommandResultTests(unittest.TestCase):
                     process = mock.Mock(returncode=status)
                     process.poll.return_value = None if timed_out else status
                     with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                            mock.patch.object(DEBUGGER.subprocess, 'run', return_value=mock.Mock(returncode=0)), \
                             mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
                             mock.patch.object(DEBUGGER, '_stop_group'):
                         result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
@@ -1180,6 +1223,7 @@ class DebuggerCommandResultTests(unittest.TestCase):
                 process = mock.Mock()
                 process.poll.return_value = None
                 with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                        mock.patch.object(DEBUGGER.subprocess, 'run', return_value=mock.Mock(returncode=0)), \
                         mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
                         mock.patch.object(DEBUGGER, '_stop_group', side_effect=cleanup_error):
                     result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
@@ -1194,6 +1238,36 @@ class DebuggerCommandResultTests(unittest.TestCase):
                     self.assertEqual(DEBUGGER.main(['replay', '--app', '/App.app', '--simulator', frame()['uuid'],
                                                    '--build', '77', '--original-result', '/original.json',
                                                    '--output', '/unused']), 1)
+    def test_target_creation_deadline_samples_collector_without_replacing_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            DEBUGGER._write_progress(output, 'target_create', 'target_create')
+            process = mock.Mock(pid=4321, returncode=-15)
+            process.poll.return_value = None
+            order = []
+
+            def sample(*args, **kwargs):
+                order.append('collector_sample')
+                self.assertEqual(args[0][:3], ('/usr/bin/sample', '4321', '1'))
+                self.assertEqual(Path(args[0][4]).name, 'collector-host-sample.txt')
+                self.assertEqual(kwargs['timeout'], 2)
+                raise subprocess.TimeoutExpired(args[0], 2)
+
+            with mock.patch.object(DEBUGGER.subprocess, 'Popen', return_value=process), \
+                    mock.patch.object(DEBUGGER.subprocess, 'run', side_effect=sample) as sampling, \
+                    mock.patch.object(DEBUGGER.time, 'monotonic', side_effect=[0, DEBUGGER.DEBUGGER_TIMEOUT + 1]), \
+                    mock.patch.object(DEBUGGER, '_stop_group', side_effect=lambda child: order.append('cleanup')):
+                result = DEBUGGER._run_lldb(123, '/installed/Hither', output)
+            self.assertEqual(order, ['collector_sample', 'cleanup'])
+            sampling.assert_called_once()
+            self.assertEqual((result['probe'], result['stage'], result['collectorPhase']),
+                             ('timeout', 'target_create', 'target_create'))
+            self.assertIs(result['lldbCommandTimedOut'], True)
+            self.assertNotIn('frames', result)
+            self.assertNotIn('collector_host_sample', result)
+            event = json.loads((output / 'lldb-private-events.jsonl').read_text())
+            self.assertEqual((event['event'], event['failureType']), ('collector_host_sample', 'TimeoutExpired'))
+
     def test_debugger_command_cleanup_failure_preserves_its_committed_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

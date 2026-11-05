@@ -2,7 +2,13 @@
 
 from pathlib import Path
 import json
+import os
 import re
+import subprocess
+import sys
+import tarfile
+import tempfile
+import textwrap
 
 
 workflow = Path(__file__).resolve().parents[1] / ".github/workflows/cd-ios-testflight.yml"
@@ -43,10 +49,12 @@ for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-o
     assert runs("Upload Release launch receipt", mode) == (mode in ("validate-release", "build-only", "submit")), mode
     for name in ("Encrypt Release launch screenshots", "Upload encrypted Release launch screenshots"):
         assert runs(name, mode) == (mode in ("validate-release", "build-only", "submit")), mode
-    diagnostic_condition = steps["Upload sanitized Release launch failure diagnostic"]["if"]
-    assert "failure()" in diagnostic_condition
-    assert (f"inputs.mode == '{mode}'" in diagnostic_condition) == (mode in (
-        "validate-release", "build-only", "submit")), mode
+    for name in ("Upload sanitized Release launch failure diagnostic", "Encrypt Release launch failure evidence",
+                 "Upload encrypted Release launch failure evidence"):
+        diagnostic_condition = steps[name]["if"]
+        assert "failure()" in diagnostic_condition
+        assert (f"inputs.mode == '{mode}'" in diagnostic_condition) == (mode in (
+            "validate-release", "build-only", "submit")), mode
     assert runs("Upload this IPA to TestFlight", mode) == (mode == "submit"), mode
     assert runs("Verify production release prerequisites", mode) == (mode in ("ota", "submit")), mode
 
@@ -81,9 +89,43 @@ assert source.index("- name: Verify IPA and record source") < source.index(
     "- name: Upload encrypted production IPA") < source.index("- name: Prepare TestFlight upload intent")
 assert "path: ${{ runner.temp }}/Hither-production.ipa.encrypted.der" in steps["Upload encrypted production IPA"]["body"]
 assert "if-no-files-found: error" in steps["Upload encrypted production IPA"]["body"]
+assert "path: ${{ runner.temp }}/hither-release-failure.encrypted.der" in steps[
+    "Upload encrypted Release launch failure evidence"]["body"]
+
+failure_script = textwrap.dedent(steps["Encrypt Release launch failure evidence"]["body"].split(
+    "--non-interactive <<'PY'\n", 1)[1].split("          PY\n", 1)[0])
+assert 'eas env:exec production "python3 -"' in steps["Encrypt Release launch failure evidence"]["body"]
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    products = root / "hither-release-derived/Build/Products/Release-iphonesimulator"
+    selected = [root / "hither-release-launch/diagnostic-replay/lldb.stdout.log",
+                products / "Hither.app/Hither",
+                products / "Hither.app.dSYM/Contents/Resources/DWARF/Hither"]
+    for path in selected:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("private fixture evidence")
+    selected[0].write_text("runtime failure: fixture-secret-token fixture-client-key")
+    selected[1].write_text("binary fixture-secret-token")
+    (root / "unrelated-credential.p8").write_text("must not collect")
+    (products / "unrelated-build-output.a").write_text("must not collect")
+    subprocess.run([sys.executable, "-c", failure_script], check=True, env={**os.environ,
+                   "RUNNER_TEMP": directory, "SOURCE_SHA": "a" * 40,
+                   "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1", "EXPO_TOKEN": "fixture-secret-token",
+                   "EXPO_PUBLIC_SUPABASE_ANON_KEY": "fixture-client-key"})
+    with tarfile.open(root / "hither-release-failure.tar.gz") as bundle:
+        assert {entry.name for entry in bundle.getmembers() if entry.isfile()} == {
+            *[path.relative_to(root).as_posix() for path in selected], "failure-evidence.json"}
+        manifest = json.load(bundle.extractfile("failure-evidence.json"))
+        assert bundle.extractfile(selected[0].relative_to(root).as_posix()).read() == b"runtime failure: [REDACTED] [REDACTED]"
+        assert bundle.extractfile(selected[1].relative_to(root).as_posix()).read() == b"binary fixture-secret-token"
+        assert manifest == {"sourceSha": "a" * 40, "runId": "123", "runAttempt": 1,
+                            "paths": ["hither-release-launch",
+                                      "hither-release-derived/Build/Products/Release-iphonesimulator/Hither.app",
+                                      "hither-release-derived/Build/Products/Release-iphonesimulator/Hither.app.dSYM"]}
 
 expo_steps = ("Read EAS production iOS metadata", "Publish and verify production iOS OTA",
               "Build and cold-launch full Release simulator app",
+              "Encrypt Release launch failure evidence",
               "Build signed production IPA on this runner", "Upload this IPA to TestFlight")
 for name in expo_steps:
     assert "EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}" in steps[name]["body"], name

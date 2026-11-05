@@ -425,6 +425,60 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Encrypt Release launch failure evidence
+        if: failure() && (inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit')
+        env:
+          EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
+        run: |
+          bunx --package eas-cli@21.0.2 eas env:exec production "python3 -" --non-interactive <<'PY'
+          import io, json, os, tarfile
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          products = root / 'hither-release-derived/Build/Products/Release-iphonesimulator'
+          candidates = [root / 'hither-release-launch', products / 'Hither.app']
+          candidates.extend(sorted(products.rglob('*.dSYM')))
+          available = [path for path in candidates if path.exists()]
+          manifest = {'sourceSha': os.environ['SOURCE_SHA'], 'runId': os.environ['GITHUB_RUN_ID'],
+                      'runAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
+                      'paths': [path.relative_to(root).as_posix() for path in available]}
+          contents = json.dumps(manifest, sort_keys=True).encode()
+          redactions = [value.encode() for key in ('EXPO_TOKEN', 'EXPO_PUBLIC_SUPABASE_ANON_KEY')
+                        if (value := os.environ.get(key))]
+          with tarfile.open(root / 'hither-release-failure.tar.gz', 'w:gz') as bundle:
+              for path in available:
+                  members = [path, *sorted(path.rglob('*'))] if path.is_dir() else [path]
+                  for member in members:
+                      entry = bundle.gettarinfo(str(member), arcname=member.relative_to(root).as_posix())
+                      if entry.isfile():
+                          if member.is_relative_to(root / 'hither-release-launch') and member.suffix in {'.log', '.json', '.jsonl', '.txt', '.ips'}:
+                              data = member.read_bytes()
+                              for secret in redactions:
+                                  data = data.replace(secret, b'[REDACTED]')
+                              entry.size = len(data)
+                              bundle.addfile(entry, io.BytesIO(data))
+                          else:
+                              with member.open('rb') as stream:
+                                  bundle.addfile(entry, stream)
+                      else:
+                          bundle.addfile(entry)
+              entry = tarfile.TarInfo('failure-evidence.json')
+              entry.size = len(contents)
+              bundle.addfile(entry, io.BytesIO(contents))
+          PY
+          openssl cms -encrypt -binary -aes256 -outform DER \
+            -in "$RUNNER_TEMP/hither-release-failure.tar.gz" \
+            -out "$RUNNER_TEMP/hither-release-failure.encrypted.der" \
+            ../../scripts/hither-debug-symbols-recipient.pem
+
+      - name: Upload encrypted Release launch failure evidence
+        if: failure() && (inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit')
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hither-ios-release-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-release-failure.encrypted.der
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Prepare signed build intent
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         run: |
