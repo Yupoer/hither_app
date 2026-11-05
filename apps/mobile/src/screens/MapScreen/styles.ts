@@ -619,7 +619,6 @@ export const makeStyles = (
     // Hide the bottom sheet while the confirm card is up without animating an
     // ancestor of its Liquid Glass surface.
     sheetHidden: { display: 'none' },
-    sheetBodyHidden: { display: 'none' },
     confirmTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     confirmTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     confirmControlRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },

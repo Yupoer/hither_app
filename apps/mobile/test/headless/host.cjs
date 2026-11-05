@@ -89,6 +89,14 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('@expo/vector-icons', () => strict('vector-icons', { Ionicons: make('Ionicons'), MaterialCommunityIcons: make('MaterialCommunityIcons') }));
   const animationValue = Symbol('headless reanimated value');
   const sharedCancellations = new WeakMap();
+  const reactions = new Set();
+  const evaluateReaction = reaction => {
+    const next = reaction.prepare();
+    if (Object.is(next, reaction.previous)) return;
+    const previous = reaction.previous;
+    reaction.previous = next;
+    reaction.respond(next, previous);
+  };
   const makeShared = initial => {
     let value = initial;
     let pendingId;
@@ -110,6 +118,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
           next.callback(finished);
         } });
       } else value = next;
+      for (const reaction of reactions) evaluateReaction(reaction);
     } });
     return shared;
   };
@@ -122,7 +131,16 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     scrollTo: (ref, x, y, animated) => ref.current?.scrollTo({ x, y, animated }),
     useAnimatedStyle: fn => fn(), useAnimatedProps: fn => fn(), useReducedMotion: () => true,
     useFrameCallback: () => React.useRef({ setActive() {} }).current,
-    useAnimatedReaction: () => {}, useAnimatedScrollHandler: value => value,
+    useAnimatedReaction: (prepare, respond) => {
+      const reaction = React.useRef({ prepare, respond, previous: null }).current;
+      reaction.prepare = prepare;
+      reaction.respond = respond;
+      React.useEffect(() => {
+        reactions.add(reaction);
+        return () => reactions.delete(reaction);
+      }, [reaction]);
+      React.useEffect(() => { evaluateReaction(reaction); });
+    }, useAnimatedScrollHandler: value => value,
     cancelAnimation: shared => sharedCancellations.get(shared)?.(), withTiming: sharedAnimation, withSpring: sharedAnimation, withDelay: (_, value) => value,
     withRepeat: value => value, withSequence: (...values) => values.at(-1), runOnJS: fn => fn,
     interpolate: (value, input, output) => output[0] + (value - input[0]) / (input.at(-1) - input[0]) * (output.at(-1) - output[0]),
@@ -238,7 +256,12 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     observeViews(root) {
       const map = root.root.findAll(node => node.type?.render?.name === 'GroupMap')[0];
       const flock = root.root.findAll(node => node.type?.name === 'FlockRow' && !availability(node).hidden);
+      const sheet = root.root.findAll(node => node.type?.name === 'BottomSheet' && node.props.testID === 'map-bottom-sheet')[0];
       return {
+        mapSheet: sheet ? {
+          height: sheet.props.height.value, settledIndex: sheet.props.index,
+          bodyMounted: sheet.findAll(node => node.type === 'host:View' && node.props.testID === 'sheet-pane-content-area').length > 0,
+        } : null,
         mapMembers: map ? structuredClone(map.props.members) : null,
         mapRoutePoints: map?.props.routePoints ? structuredClone(map.props.routePoints) : null,
         flockRows: flock.map(node => ({ userId: node.props.userId, name: node.props.name,
@@ -252,7 +275,8 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         ...availability(node),
         kind: node.type, testId: node.props.testID, label: node.props.accessibilityLabel ?? node.props.modifiers?.find(m => m.modifier === 'accessibilityLabel')?.args[0],
         disabled: Boolean(node.props.disabled || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0])),
-        value: node.props.value, text: node.children.filter(child => typeof child === 'string').join(''),
+        value: node.props.value, showsUserLocation: node.props.showsUserLocation,
+        text: node.children.filter(child => typeof child === 'string').join(''),
         secureTextEntry: node.props.secureTextEntry, selected: node.props.accessibilityState?.selected, checked: node.props.accessibilityState?.checked,
       })).filter(node => !node.hidden && (node.testId || node.label || node.text));
     },

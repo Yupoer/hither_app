@@ -3,6 +3,30 @@ const { LEADER, GROUP_ID } = require('../../test/headless/backend.cjs');
 
 describe.each(['ios', 'android'])('real App native host foundation on %s', platform => {
   jest.setTimeout(90000);
+  it('mounts the map sheet body during a held drag and releases it again at peek', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'sheet', userId: LEADER, platform, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      await world.settle();
+      const nativeMap = (await device.observe()).presentation.hosts.find((node: { testId?: string }) => node.testId === 'group-map-native');
+      expect(nativeMap.showsUserLocation).toBe(platform === 'ios');
+      const observeSheet = async () => (await device.observe()).presentation.mapSheet;
+      const peek = await observeSheet();
+      expect(peek).toEqual({ height: expect.any(Number), settledIndex: 0, bodyMounted: false });
+      const gesture = (phase: string, translationY = 0) => device.host.call({
+        kind: 'gesture', testId: 'map-bottom-sheet', phase, value: { translationY, velocityY: 0 },
+      });
+      await gesture('onBegin');
+      await gesture('onUpdate', -100);
+      expect(await observeSheet()).toEqual({ height: peek.height + 100, settledIndex: 0, bodyMounted: true });
+      await gesture('onUpdate', -200);
+      expect(await observeSheet()).toEqual({ height: peek.height + 200, settledIndex: 0, bodyMounted: true });
+      await gesture('onUpdate', 0);
+      expect(await observeSheet()).toEqual(peek);
+      await gesture('onEnd');
+      expect(await observeSheet()).toEqual(peek);
+    } finally { await world.close(); }
+  });
   it('direct screen mounts update observed route while navigation retains its stack', async () => {
     const world = new World();
     try {

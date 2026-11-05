@@ -101,6 +101,30 @@ beforeEach(() => {
   updateRuntimePowerState({ thermalState: 'nominal', lowPowerMode: false });
 });
 
+it('renders one capsule with separate accessible team and self recenter actions', async () => {
+  const { default: MapRecenterControl } = await import('../components/MapRecenterControl.ios');
+  const onFitAll = jest.fn(), onLocate = jest.fn();
+  let root: any;
+  await act(async () => { root = create(React.createElement(MapRecenterControl, {
+    onFitAll, onLocate, fitAllLabel: 'Show team', locateLabel: 'Show me',
+  })); });
+  expect(root.root.findAllByType('GlassSurface')).toHaveLength(1);
+  expect(root.root.findByType('GlassSurface').props.shape).toBe('capsule');
+  const fit = root.root.findByProps({ testID: 'map-fit-all' });
+  const locate = root.root.findByProps({ testID: 'map-locate-me' });
+  expect(fit.props.accessibilityRole).toBe('button');
+  expect(fit.props.accessibilityLabel).toBe('Show team');
+  expect(locate.props.accessibilityRole).toBe('button');
+  expect(locate.props.accessibilityLabel).toBe('Show me');
+  await act(async () => { fit.props.onPress(); });
+  expect(onFitAll).toHaveBeenCalledTimes(1);
+  expect(onLocate).not.toHaveBeenCalled();
+  await act(async () => { locate.props.onPress(); });
+  expect(onFitAll).toHaveBeenCalledTimes(1);
+  expect(onLocate).toHaveBeenCalledTimes(1);
+  await act(async () => { root.unmount(); });
+});
+
 it('cancels mid-dismiss on lock, retains child drafts, and completes the current close once after resume', async () => {
   const height = mockValue(300), dismissY = mockValue(0);
   const completed = jest.fn(), mounted = jest.fn();

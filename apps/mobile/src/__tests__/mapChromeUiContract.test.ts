@@ -5,17 +5,19 @@ const root = join(__dirname, '..');
 const read = (name: string) => readFileSync(join(root, name), 'utf8');
 
 describe('map chrome native surface contract', () => {
-  it('uses native glass buttons with room for the system press expansion', () => {
+  it('uses one native capsule around both accessible recenter targets', () => {
     const map = read('screens/MapScreen.tsx');
     const native = read('components/MapRecenterControl.ios.tsx');
     const surface = read('components/SwiftUIGlassSurface.ios.tsx');
     expect(map).toContain('<MapRecenterControl');
     expect(map).toContain('chromeStage={chromeStage}');
     expect(map).toContain('chromeBottomOffset={chromeBottomOffset}');
-    expect((native.match(/<NativeGlassButton/g) ?? [])).toHaveLength(2);
+    expect((native.match(/<SwiftUIGlassSurface/g) ?? [])).toHaveLength(1);
+    expect(native).toContain('shape="capsule"');
+    expect(native).not.toContain('NativeGlassButton');
     expect(native).toContain('onPress={onFitAll}');
     expect(native).toContain('onPress={onLocate}');
-    expect(native).toContain("overflow: 'visible'");
+    expect(native).toContain("overflow: 'hidden'");
     expect(surface).toContain('glassEffect({');
     expect(surface).toContain("variant: 'regular'");
     expect(surface).not.toContain('opacity:');
