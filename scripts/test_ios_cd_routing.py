@@ -31,7 +31,7 @@ def runs(name, mode):
 ota = ("Verify OTA compatibility and current master", "Publish and verify production iOS OTA",
        "Upload OTA receipt")
 native = ("Build signed production IPA on this runner", "Verify IPA and record source",
-          "Upload build receipt")
+          "Upload build receipt", "Encrypt verified production IPA", "Upload encrypted production IPA")
 
 for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-only", "submit"):
     assert all(runs(name, mode) == (mode == "ota") for name in ota), mode
@@ -76,6 +76,11 @@ screenshots = steps["Upload encrypted Release launch screenshots"]["body"]
 assert "path: ${{ runner.temp }}/hither-release-screenshots.encrypted.der" in screenshots
 assert "if-no-files-found: error" in screenshots
 assert "cold-start-1.png cold-start-2.png" in steps["Encrypt Release launch screenshots"]["body"]
+assert source.index("- name: Verify IPA and record source") < source.index(
+    "- name: Encrypt verified production IPA") < source.index(
+    "- name: Upload encrypted production IPA") < source.index("- name: Prepare TestFlight upload intent")
+assert "path: ${{ runner.temp }}/Hither-production.ipa.encrypted.der" in steps["Upload encrypted production IPA"]["body"]
+assert "if-no-files-found: error" in steps["Upload encrypted production IPA"]["body"]
 
 expo_steps = ("Read EAS production iOS metadata", "Publish and verify production iOS OTA",
               "Build and cold-launch full Release simulator app",

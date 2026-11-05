@@ -72,6 +72,11 @@ artifact，依 [符號檔解密方式](crash-investigation.md#retain-signed-buil
 launch receipt 的 `screenshotSha256`、`screenshotBytes` 後實際查看畫面。
 Artifact 保留 14 天；原始截圖、tar、私鑰及原生日誌均不上傳公開 artifact。
 
+簽署 IPA 通過驗證後，同樣以 CMS 加密保存為 `hither-ios-ipa-RUN_ID-RUN_ATTEMPT`
+artifact，保留 14 天。取回解密後，核對 build receipt 的 `ipa_sha256` 並長期保留
+同一成品。上傳中斷時先查當次 journal、EAS／Apple 狀態，再決定是否提交這份
+既有 IPA；不要因 runner 消失而直接重建或重複上傳。
+
 檢查器以同次啟動的 stdout/stderr 檔案補充 console 證據，每個 stream 最多解析
 1 MB，原始檔保留在 runner，不上傳。第二次成功後 App 仍可寫入，直到 App／runner
 結束；一般檔案沒有 byte 上限。

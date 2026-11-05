@@ -515,6 +515,23 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Encrypt verified production IPA
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        run: |
+          openssl cms -encrypt -binary -aes256 -outform DER \
+            -in "$RUNNER_TEMP/Hither-production.ipa" \
+            -out "$RUNNER_TEMP/Hither-production.ipa.encrypted.der" \
+            ../../scripts/hither-debug-symbols-recipient.pem
+
+      - name: Upload encrypted production IPA
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hither-ios-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/Hither-production.ipa.encrypted.der
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Encrypt matched native debug symbols
         if: inputs.mode == 'build-only' || inputs.mode == 'submit'
         run: |
