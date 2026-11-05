@@ -11,9 +11,9 @@ permissions:
 
 jobs:
   pod-install:
-    runs-on: macos-26
+    runs-on: xcode-27
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
     defaults:
       run:
         working-directory: apps/mobile
@@ -30,9 +30,9 @@ jobs:
       - name: Install JS deps
         run: bash ../../scripts/install-mobile-dependencies.sh
 
-      - name: Confirm Xcode 26.6 + fixed SDK 57 Hermes floor
+      - name: Confirm Xcode 27.0 + fixed SDK 57 Hermes floor
         run: |
-          xcodebuild -version | grep -q '^Xcode 26.6$'
+          xcodebuild -version | grep -E '^Xcode 27\.0(\.[0-9]+)?$'
           python3 - <<'PY'
           import json, pathlib
           pods = json.loads(pathlib.Path("ios/Podfile.properties.json").read_text())
