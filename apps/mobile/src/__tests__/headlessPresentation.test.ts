@@ -3,6 +3,31 @@ const { LEADER, GROUP_ID } = require('../../test/headless/backend.cjs');
 
 describe.each(['ios', 'android'])('real App native host foundation on %s', platform => {
   jest.setTimeout(90000);
+  it('persists the executing OTA identity at consented launch and foreground resume', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'release-trail', userId: LEADER, platform, mode: 'app',
+        updatesFixtures: { isEmbeddedLaunch: false, updateId: 'executing-update', runtimeVersion: '0.1.14' } });
+      await world.settle();
+      expect(await device.host.call({ kind: 'press', testId: 'onboarding-skip' })).toEqual({ invoked: true });
+      await world.waitFor(device, (value: any) => value.presentation.preferences?.ready && value.presentation.session && !value.presentation.session.initializing, 'App preferences and session ready');
+      expect(await device.perform('diagnostics.list')).toEqual([]);
+      await device.perform('preferences.setDiagnosticUploadEnabled', { args: [true] });
+      await world.settle();
+      const launches = await device.perform('diagnostics.list');
+      const launch = launches.find((record: any) => record.event === 'app_foreground' && record.payload.source === 'launch');
+      expect(launch?.payload).toEqual({ source: 'launch', updateId: 'executing-update', runtimeVersion: '0.1.14' });
+      await device.input({ kind: 'appState', value: 'inactive' });
+      await device.input({ kind: 'appState', value: 'active' });
+      await world.settle();
+      const resumed = await device.perform('diagnostics.list');
+      expect(resumed.some((record: any) => record.event === 'app_foreground' && record.payload.source === 'resume'
+        && record.payload.updateId === 'executing-update')).toBe(true);
+      await device.restart();
+      await world.settle();
+      expect((await device.perform('diagnostics.list')).some((record: any) => record.id === launch.id)).toBe(true);
+    } finally { await world.close(); }
+  });
   it('mounts the map sheet body during a held drag and releases it again at peek', async () => {
     const world = new World();
     try {

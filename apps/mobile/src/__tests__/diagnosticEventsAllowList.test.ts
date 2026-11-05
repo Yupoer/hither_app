@@ -34,6 +34,7 @@ function parseAllowedEvents(checkBody: string): Set<string> {
 
 /** Events the mobile client currently emits into diagnostics.write / remote upload path. */
 const CLIENT_EMITTED_EVENTS = [
+  'app_foreground',
   'background_op_timeline',
   'background_op_near_watchdog',
   'metric_payload_classified',

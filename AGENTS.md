@@ -8,6 +8,7 @@
 - 完整 iOS 產品交付在固定遠端 SHA 後判斷全部尚未交付差異。現有 binary 能完整承載時發布 `production` OTA；有原生或相容性缺口時優先使用手動 `.github/workflows/cd-ios-testflight.yml`，在 GitHub `xcode-27` runner 執行 `preflight`、`build-only` 或 `submit`。此雲端路徑尚未完成簽署建置、完整冷啟動、Apple processing 與實機驗收驗證，不能以 branch CI 或 preflight 代替；缺少必要驗證時先回報，不自動改用 Mac。既有 `mac-codex` 僅作明確要求時的備選。後端相依變更先部署並驗證。純文件、純後端或明確 Git-only 範圍不製造 OTA 或 IPA。
 - 完整發布以 [hither-release](C:/Users/alexs/.codex/skills/hither-release/SKILL.md) 的現有交付入口執行；明確指定的平台、channel 或 Git-only／OTA-only／build-only 範圍優先。commit 與 push 本身不會自動發布。
 - 分開核實並回報本地審查、測試、遠端 master、CI、OTA 或 TestFlight 狀態與實機驗收。Jest、typecheck、archive 或 Apple processing 均不等於實機已驗收。
+- 固定產品設定見 [產品決策紀錄](docs/product-decision-log.md#定位與地圖固定契約)。修改原生自身藍點、定位精度上限或定位膠囊前須有使用者明確變更要求；粒子參數另行調整。
 
 ## 註解與相容程式碼
 

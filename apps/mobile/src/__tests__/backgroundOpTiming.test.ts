@@ -94,20 +94,25 @@ describe('crash class distinction', () => {
     ).toBe('previous_launch_incomplete');
   });
 
-  it('classifies MetricKit spool JSON without requiring full schema', () => {
+  it('classifies actual nested MetricKit metadata beyond a large call stack', () => {
     const { classifyMetricPayload } = require('../utils/crashClass') as typeof import('../utils/crashClass');
     expect(
       classifyMetricPayload(
         'diagnostic',
-        JSON.stringify({ terminationReason: '0x8BADF00D watchdog' }),
+        JSON.stringify({ crashDiagnostics: [{ diagnosticMetaData: { terminationReason: '0x8BADF00D watchdog' } }] }),
       ),
     ).toBe('watchdog');
     expect(
       classifyMetricPayload(
         'diagnostic',
-        JSON.stringify({ exceptionType: 'EXC_BAD_ACCESS' }),
+        JSON.stringify({ crashDiagnostics: [{
+          callStackTree: { frames: 'x'.repeat(4_000) },
+          diagnosticMetaData: { signal: 11, exceptionType: 1, terminationReason: 'Namespace SIGNAL, Code 0xb' },
+        }] }),
       ),
     ).toBe('sig11');
+    expect(classifyMetricPayload('diagnostic', '{')).toBe('unknown_native');
+    expect(classifyMetricPayload('metric', '{}')).toBe('unclassified');
   });
 
   it('App wires crash class into previous_launch and metric drain (source)', () => {

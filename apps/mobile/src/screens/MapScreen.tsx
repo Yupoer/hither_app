@@ -4456,7 +4456,7 @@ export default function MapScreen({ route, navigation }: Props) {
         }}
         header={sheetHeader}
       >
-        {sheetExposed && uiVisible && showDenseChrome && !confirmCardReady && sheetChildren}
+        {sheetExposed && showDenseChrome && !confirmCardReady && sheetChildren}
       </BottomSheet>
       </Animated.View>
 

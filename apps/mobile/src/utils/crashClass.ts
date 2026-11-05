@@ -115,67 +115,36 @@ export function classifyCrashClass(input: CrashClassInput): CrashClass {
   return 'unclassified';
 }
 
-/**
- * Best-effort classification from a MetricKit spool payload JSON string.
- * Scans only allow-listed keys / short substrings — never stores the raw JSON.
- */
 export function classifyMetricPayload(
   kind: string | null | undefined,
   json: string | null | undefined,
 ): CrashClass {
   const metricKind = (kind ?? '').toLowerCase();
-  let terminationReason: string | null = null;
-  let exceptionType: string | null = null;
-  let signal: string | number | null = null;
-  let errorMessage: string | null = null;
-
-  if (typeof json === 'string' && json.length > 0) {
-    try {
-      const parsed = JSON.parse(json) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const obj = parsed as Record<string, unknown>;
-        const readStr = (keys: string[]): string | null => {
-          for (const k of keys) {
-            const v = obj[k];
-            if (typeof v === 'string' && v.length > 0) return v.slice(0, 160);
-          }
-          return null;
-        };
-        terminationReason = readStr([
-          'terminationReason',
-          'termination_reason',
-          'exceptionReason',
-        ]);
-        exceptionType = readStr([
-          'exceptionType',
-          'exception_type',
-          'signalName',
-        ]);
-        const sig = obj.signal ?? obj.signalNumber ?? obj.exceptionCode;
-        if (typeof sig === 'number' || typeof sig === 'string') signal = sig;
-        // Bounded substring scan when structure is nested MXDiagnosticPayload-style.
-        if (!terminationReason && !exceptionType) {
-          const snippet = json.slice(0, 2_000).toLowerCase();
-          if (snippet.includes('watchdog') || snippet.includes('0x8badf00d')) {
-            errorMessage = 'watchdog';
-          } else if (snippet.includes('sigsegv') || snippet.includes('exc_bad_access')) {
-            errorMessage = 'exc_bad_access';
-          } else if (snippet.includes('sigbus')) {
-            errorMessage = 'sigbus';
-          }
-        }
-      }
-    } catch {
-      // Malformed spool — fall through to kind-only classification.
-    }
+  if (typeof json !== 'string' || json.length === 0) return classifyCrashClass({ metricKind });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return classifyCrashClass({ metricKind });
   }
-
-  return classifyCrashClass({
-    event: metricKind.includes('diagnostic') ? 'metric_diagnostic' : 'metric',
-    metricKind,
-    terminationReason,
-    exceptionType,
-    signal,
-    errorMessage,
-  });
+  if (!parsed || typeof parsed !== 'object'
+      || !('crashDiagnostics' in parsed) || !Array.isArray(parsed.crashDiagnostics)) {
+    return classifyCrashClass({ metricKind });
+  }
+  for (const crash of parsed.crashDiagnostics) {
+    if (!crash || typeof crash !== 'object' || !('diagnosticMetaData' in crash)) continue;
+    const metadata: unknown = crash.diagnosticMetaData;
+    if (!metadata || typeof metadata !== 'object') continue;
+    const signal = 'signal' in metadata ? metadata.signal : undefined;
+    const terminationReason = 'terminationReason' in metadata ? metadata.terminationReason : undefined;
+    const exceptionType = 'exceptionType' in metadata ? metadata.exceptionType : undefined;
+    const result = classifyCrashClass({
+      metricKind: 'crash',
+      signal: typeof signal === 'number' || typeof signal === 'string' ? signal : undefined,
+      terminationReason: typeof terminationReason === 'string' ? terminationReason : undefined,
+      exceptionType: typeof exceptionType === 'string' ? exceptionType : undefined,
+    });
+    if (result !== 'unknown_native') return result;
+  }
+  return classifyCrashClass({ metricKind });
 }
