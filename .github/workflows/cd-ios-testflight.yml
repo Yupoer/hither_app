@@ -397,6 +397,25 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Encrypt Release launch screenshots
+        if: inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
+        run: |
+          tar -C "$RUNNER_TEMP/hither-release-launch" -cf "$RUNNER_TEMP/hither-release-screenshots.tar" \
+            cold-start-1.png cold-start-2.png
+          openssl cms -encrypt -binary -aes256 -outform DER \
+            -in "$RUNNER_TEMP/hither-release-screenshots.tar" \
+            -out "$RUNNER_TEMP/hither-release-screenshots.encrypted.der" \
+            ../../scripts/hither-debug-symbols-recipient.pem
+
+      - name: Upload encrypted Release launch screenshots
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit'
+        with:
+          name: hither-ios-release-screenshots-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-release-screenshots.encrypted.der
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload sanitized Release launch failure diagnostic
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: failure() && (inputs.mode == 'validate-release' || inputs.mode == 'build-only' || inputs.mode == 'submit')
@@ -493,6 +512,23 @@ jobs:
         with:
           name: hither-ios-receipt-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hither-receipt.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Encrypt verified production IPA
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        run: |
+          openssl cms -encrypt -binary -aes256 -outform DER \
+            -in "$RUNNER_TEMP/Hither-production.ipa" \
+            -out "$RUNNER_TEMP/Hither-production.ipa.encrypted.der" \
+            ../../scripts/hither-debug-symbols-recipient.pem
+
+      - name: Upload encrypted production IPA
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hither-ios-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/Hither-production.ipa.encrypted.der
           if-no-files-found: error
           retention-days: 14
 
