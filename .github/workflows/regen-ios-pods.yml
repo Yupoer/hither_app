@@ -51,12 +51,12 @@ jobs:
 
       - name: CocoaPods install (fresh lock for RN/Hermes)
         run: |
-          gem install cocoapods -N
+          gem install cocoapods --version 1.16.2 --no-document
           cd ios
           # Drop stale snapshot from prior RN so prebuilt pods can re-resolve.
           rm -f Podfile.lock
           rm -rf Pods
-          pod install --repo-update
+          ruby -e 'require "rubygems"; gem "cocoapods", "= 1.16.2"; load Gem.bin_path("cocoapods", "pod", "= 1.16.2")' -- install --repo-update
         env:
           COCOAPODS_DISABLE_STATS: "true"
 
