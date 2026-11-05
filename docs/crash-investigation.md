@@ -33,7 +33,9 @@ A matching UUID and resolved function establish the fault site. Read its callers
 
 ## Identify the JavaScript release
 
-The app records consented `app_foreground` events with `source` set to `launch` or `resume`, plus the executing `updateId` and `runtimeVersion`. These records use the existing SQLite queue and survive restart until upload. Join their diagnostic session to `diagnostic_sessions` for the native build and installation identity.
+The app records consented `app_foreground` events with `source` set to `launch` or `resume`, plus the executing `updateId` and `runtimeVersion`. Every diagnostic event captures its native build and app version when written to SQLite. Upload preserves that snapshot across restarts and binary upgrades. Older queued events without a snapshot use `unknown`, rather than the uploading binary's version.
+
+Native build and app version come from `expo-application`'s `nativeBuildVersion` and `nativeApplicationVersion`, backed by the binary's platform metadata. The unsupported Expo Constants top-level `nativeBuildVersion` field and its empty Android platform map are not native build sources. Diagnostic uploads and MetricKit uploads use the same persisted installation ID. Join diagnostic sessions to `diagnostic_sessions` for that installation identity; a process session ID is not an installation ID.
 
 Correlate the incident timestamp with events from the same installation and native build. Keep timestamp timezone information from the report. The crash report's upload time and the current OTA at upload are not the original crash's execution identity. If no preceding release record exists, report that attribution as unknown.
 

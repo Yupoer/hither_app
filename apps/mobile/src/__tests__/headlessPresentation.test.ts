@@ -16,7 +16,8 @@ describe.each(['ios', 'android'])('real App native host foundation on %s', platf
       await world.settle();
       const launches = await device.perform('diagnostics.list');
       const launch = launches.find((record: any) => record.event === 'app_foreground' && record.payload.source === 'launch');
-      expect(launch?.payload).toEqual({ source: 'launch', updateId: 'executing-update', runtimeVersion: '0.1.14' });
+      expect(launch?.payload).toEqual({ source: 'launch', updateId: 'executing-update', runtimeVersion: '0.1.14',
+        buildNumber: '79', appVersion: 'headless' });
       await device.input({ kind: 'appState', value: 'inactive' });
       await device.input({ kind: 'appState', value: 'active' });
       await world.settle();
