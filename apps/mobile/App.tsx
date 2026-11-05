@@ -18,6 +18,7 @@ import {
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as Updates from 'expo-updates';
 import { useFonts, Fredoka_500Medium, Fredoka_600SemiBold } from '@expo-google-fonts/fredoka';
 import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
@@ -142,6 +143,12 @@ function ThemedNavigation() {
     let cancelled = false;
     const consentRevision = getDiagnosticConsentRevision();
     const isCurrent = () => !cancelled && isDiagnosticConsentCurrent(consentRevision);
+    const recordForeground = (source: 'launch' | 'resume') => diagnostics.write({
+      event: 'app_foreground',
+      source,
+      updateId: Updates.isEmbeddedLaunch ? 'embedded' : Updates.updateId ?? 'embedded',
+      runtimeVersion: String(Updates.runtimeVersion ?? 'unknown'),
+    });
     configurePerformanceTracing(uploadPerformanceBatch);
     configureLogBatchScheduler(async () => {
       if (!isCurrent()) return { sent: 0, remaining: 0 };
@@ -179,6 +186,7 @@ function ThemedNavigation() {
     // Login / consent restored: flush any queued errors immediately.
     void flushPerformance().catch(() => undefined);
     let stopMonitor: (() => void) | null = null;
+    void recordForeground('launch').catch(() => undefined);
     void metrics
       .setCollectionEnabled(true)
       .then(() => {
@@ -194,6 +202,7 @@ function ThemedNavigation() {
       }
       setPerformanceAppState(next);
       if (next === 'active') {
+        void recordForeground('resume').catch(() => undefined);
         void flushPerformance().catch(() => undefined);
       }
     };

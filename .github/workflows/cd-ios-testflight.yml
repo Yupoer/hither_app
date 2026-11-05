@@ -427,6 +427,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.HITHER_GITHUB_ACTIONS }}
           INTENT_RETAINED: ${{ steps.build_intent_upload.outcome }}
+          GYM_ARCHIVE_PATH: ${{ runner.temp }}/hither-signed-production.xcarchive
         run: |
           [[ "$INTENT_RETAINED" == success ]] || { echo 'Signed build intent retention is required'; exit 1; }
           test -n "$EXPO_TOKEN" || { echo 'GitHub Actions HITHER_GITHUB_ACTIONS secret is required for Expo'; exit 1; }
@@ -480,6 +481,10 @@ jobs:
             "$SOURCE_SHA" "$RELEASE_MODE" "$version" "$build" "$runtime" production "$digest" "$GITHUB_RUN_ID" \
             > "$RUNNER_TEMP/hither-receipt.txt"
           cat "$RUNNER_TEMP/hither-receipt.txt" >> "$GITHUB_STEP_SUMMARY"
+          python3 ../../scripts/retain-ios-debug-symbols.py \
+            --archive "$RUNNER_TEMP/hither-signed-production.xcarchive" \
+            --app "$app" --widget "$widget" --ipa "$ipa" \
+            --output "$RUNNER_TEMP/hither-ios-debug-symbols"
           python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase ipa_verification --status passed
 
       - name: Upload build receipt
@@ -490,6 +495,25 @@ jobs:
           path: ${{ runner.temp }}/hither-receipt.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Encrypt matched native debug symbols
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        run: |
+          tar -C "$RUNNER_TEMP/hither-ios-debug-symbols" -cf "$RUNNER_TEMP/hither-ios-debug-symbols.tar" \
+            manifest.json Hither.app.dSYM HitherActivityWidget.appex.dSYM
+          openssl cms -encrypt -binary -aes256 -outform DER \
+            -in "$RUNNER_TEMP/hither-ios-debug-symbols.tar" \
+            -out "$RUNNER_TEMP/hither-ios-debug-symbols.encrypted.der" \
+            ../../scripts/hither-debug-symbols-recipient.pem
+
+      - name: Upload encrypted native debug symbols
+        if: inputs.mode == 'build-only' || inputs.mode == 'submit'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hither-ios-symbols-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hither-ios-debug-symbols.encrypted.der
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Prepare TestFlight upload intent
         if: inputs.mode == 'submit'

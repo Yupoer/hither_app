@@ -4,7 +4,7 @@ import { StyleSheet, Text, View, ScrollView, Alert, useWindowDimensions } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useTheme } from '../state/PreferencesContext';
 import { lightTap, alertBuzz } from '../utils/haptics';
@@ -18,7 +18,6 @@ import { avatarForGroup, displayMemberAvatar } from '../constants/avatars';
 import { runUiAction } from '../utils/uiAction';
 import { useTranslation } from '../i18n';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
-import MetalforgeBackground from '../components/MetalforgeBackground';
 import NativeGlassButton from '../components/NativeGlassButton';
 import NativeTeamCard from '../components/NativeTeamCard';
 import NativeTeamsButton from '../components/NativeTeamsButton';
@@ -27,7 +26,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'MyTeams'>;
 
 export default function MyTeamsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const isFocused = useIsFocused();
   const { width: windowWidth } = useWindowDimensions();
   const availableRowWidth = Math.max(0, windowWidth - 100);
   const enterBtnWidth = Math.round(availableRowWidth * 0.72);
@@ -143,7 +141,6 @@ export default function MyTeamsScreen({ navigation }: Props) {
   return (
     <View style={styles.fill}>
       {joinedGroupsLifecycle}
-      <MetalforgeBackground active={isFocused} />
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <NativeGlassButton
           systemImage="chevron.left"

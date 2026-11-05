@@ -18,9 +18,8 @@ jest.mock('expo-crypto', () => ({
     return `a1b2c3d4-e5f6-7890-abcd-${String(uuidSeq).padStart(12, '0')}`;
   }),
 }));
-jest.mock('expo-constants', () => ({
-  nativeBuildVersion: '1',
-  expoConfig: { version: '1.0.0' },
+jest.mock('expo-application', () => ({
+  nativeBuildVersion: '1', nativeApplicationVersion: '1.0.0',
 }));
 jest.mock('expo-updates', () => ({
   isEnabled: false,

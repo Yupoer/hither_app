@@ -21,7 +21,7 @@
     "file": "App.tsx",
     "kind": "lifecycle",
     "name": "useEffect",
-    "hash": "84870d0b16a9d5e7641831a7a7a410f8bd01a5ae8f8e4d02f4ab21dce727a45a"
+    "hash": "d916080b0578e1f3ea5e908df107df00003e16e824424d9ff1c60fe7ab4ccef9"
   },
   {
     "file": "App.tsx",
@@ -783,7 +783,7 @@
     "file": "src/api/services/DiagnosticService.ts",
     "kind": "export",
     "name": "ingestDiagnosticBatch",
-    "hash": "362913a8219b55012c96a961ce0599a1f8a30af2c57bf72cdcd2e602fbf9412f"
+    "hash": "1a62a4e350ac58bdb98a30df8da961cf27620fb4a0d2b7ae7abba5637f71bab9"
   },
   {
     "file": "src/api/services/DiagnosticService.ts",
@@ -2613,7 +2613,7 @@
     "file": "src/components/MapRecenterControl.ios.tsx",
     "kind": "export",
     "name": "MapRecenterControl",
-    "hash": "f3a292cd2c9305b567c6a55425a2ab3bc242bc70b0042c2a3a7ae491850ae9b1"
+    "hash": "cb33438993a35d5b2846abe9e905501507d656a70fe5703308a5f01677e53374"
   },
   {
     "file": "src/components/MapRecenterControl.ios.tsx",
@@ -2667,7 +2667,7 @@
     "file": "src/components/MetalforgeBackground.tsx",
     "kind": "export",
     "name": "METALFORGE_PARAMETERS",
-    "hash": "db11e6828863869b38f672b29e3e36efd5bc0f716a8cb6aeb47085ca25015929"
+    "hash": "45e8b92ae4d1b6e2a2b4e4c29b190647d64d8d730f44b355421c8089da60ede4"
   },
   {
     "file": "src/components/MetalforgeBackground.tsx",
@@ -4827,7 +4827,7 @@
     "file": "src/navigation/RootNavigator.tsx",
     "kind": "export",
     "name": "RootNavigator",
-    "hash": "af1592813b804e87a50bfe709fa3d9cba4deb78f3bb838fcc0be81a7f0cecf69"
+    "hash": "130d9d1b286f9ac0c402046c4e88a8fc5c9b2b4496fc3a0350831cd4d2e16303"
   },
   {
     "file": "src/onboarding/OnboardingScreen.tsx",
@@ -5469,7 +5469,7 @@
     "file": "src/screens/AuthScreen.tsx",
     "kind": "export",
     "name": "AuthScreen",
-    "hash": "2d8f544db947f08b55f0f6af77619854b352945513511ddd6626cd212f16330f"
+    "hash": "84b0d38abdf08b796e59ed5495913d899c72635ec4a53caf67f9290654e8cd86"
   },
   {
     "file": "src/screens/AuthScreen.tsx",
@@ -5769,7 +5769,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "f5469d09418752cdacbcf6047ca847b07977f9c665ff1f36f80d5e31d9c79e41"
+    "hash": "013a9c5f9f40b478192f78ab30a65932886f96b6e09b96400f991fe9072116dc"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -8415,13 +8415,13 @@
     "file": "src/screens/MapScreen/styles.ts",
     "kind": "export",
     "name": "makeStyles",
-    "hash": "72601bfc4df432a22217482005f71d3f954b02b742b14326e3ca097af6293961"
+    "hash": "ed3f5d24dec7ffd16336ccacf46097ea6cf81f709a2800fe5ca1fbb072ee308f"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
     "kind": "export",
     "name": "MyTeamsScreen",
-    "hash": "00cd5f61fa8eb9cab3ed8dc74ddd79ee67b0dc3394d3f4d1795ea8c8a39bc2eb"
+    "hash": "c2e61f67d17aca3ecf8f3713e6041135adb5878b0b0749b1ab86a65a79f66b24"
   },
   {
     "file": "src/screens/MyTeamsScreen.tsx",
@@ -8535,7 +8535,7 @@
     "file": "src/screens/RoleSelectScreen.tsx",
     "kind": "export",
     "name": "RoleSelectScreen",
-    "hash": "67c9d0b2a2061e4b200f21220460472da0709c432320c03fa53c1a65339cc0dc"
+    "hash": "6c8df889e14c6c5e6132607db1222e2b974f4f95181e84a3999fdcd1dd676259"
   },
   {
     "file": "src/screens/RoleSelectScreen.tsx",
@@ -9369,7 +9369,7 @@
     "file": "src/state/diagnostics.ts",
     "kind": "export",
     "name": "createDiagnostics",
-    "hash": "abcb89596f23d2700a89f9daa93e60e3434b4f43c4afec7df5878c7e2cb3a398"
+    "hash": "271fc06f6ae8d37c835815b16fc2c529f2dea2015f19cff5b992b68fd5b44304"
   },
   {
     "file": "src/state/diagnostics.ts",
@@ -10935,7 +10935,7 @@
     "file": "src/utils/crashClass.ts",
     "kind": "export",
     "name": "classifyMetricPayload",
-    "hash": "6fad52f5862844531465d5628f8ffdd748fc2ca48e8aa9f0695375a10010ccc1"
+    "hash": "08be01a922e1854388cf12f8d862ec339a11ab5cf7b91d52b0d72c7ee4e1ee2d"
   },
   {
     "file": "src/utils/deleteAccount.ts",
@@ -12453,7 +12453,7 @@
     "file": "src/utils/starfieldParticles.ts",
     "kind": "export",
     "name": "chargeBallsAt",
-    "hash": "28d9861ae243d286d5720e5bd7cbe226472a490a88a1a5a664bb25bf1af486d2"
+    "hash": "cab2c83a8d11cdfc18a1bd3ba1a500935a99d202eee639d6154e84df767c5d2a"
   },
   {
     "file": "src/utils/starfieldPhase.ts",

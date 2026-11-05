@@ -34,7 +34,7 @@ exports.installNavigation = ({ jest, host }) => {
   };
   jest.doMock('@react-navigation/native', () => native);
   jest.doMock('@react-navigation/native-stack', () => ({ createNativeStackNavigator: () => ({
-    Navigator: ({ children, initialRouteName }) => {
+    Navigator: ({ children, initialRouteName, layout }) => {
       const [route, setRoute] = React.useState({ name: initialRouteName, params: undefined });
       render = setRoute;
       React.useEffect(() => { state.routes = [{ name: initialRouteName, params: undefined }]; }, []);
@@ -46,7 +46,9 @@ exports.installNavigation = ({ jest, host }) => {
       const screens = React.Children.toArray(children).filter(React.isValidElement);
       const screen = screens.find(node => node.props.name === route.name);
       assert(screen, `Unregistered route ${route.name}`);
-      return React.createElement(screen.props.component, { navigation: nav, route });
+      const content = React.createElement(screen.props.component, { navigation: nav, route });
+      const routes = state.routes.length ? state.routes : [route];
+      return layout ? layout({ state: { index: routes.length - 1, routes }, navigation: nav, descriptors: {}, children: content }) : content;
     }, Screen: () => { throw new Error('Screen registration rendered outside navigator'); },
   }) }));
   host.navigation = nav;

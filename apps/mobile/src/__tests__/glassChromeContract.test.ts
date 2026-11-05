@@ -59,7 +59,7 @@ describe('glass chrome native material contract', () => {
     expect(mapScreen).not.toContain('surfaceOpacity={MAP_SURFACE_OPACITY}');
     expect(mapScreen).toContain('<SwiftUIGlassSurface');
     expect(mapScreen).toContain('useSwiftUIGlassSurface');
-    expect(recenterIos).toContain('<NativeGlassButton');
+    expect(recenterIos).toContain('<SwiftUIGlassSurface shape="capsule"');
     expect(swiftUiSurfaceIos).toContain("variant: 'regular'");
     expect(swiftUiSurfaceIos).toContain('interactive: false');
     expect(swiftUiSurfaceIos).not.toContain('opacity:');

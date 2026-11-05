@@ -21,7 +21,6 @@ import LanguagePicker from '../components/LanguagePicker';
 import NativeGlassButton from '../components/NativeGlassButton';
 import NativeRoleActionButton from '../components/NativeRoleActionButton';
 import NativeTeamsButton from '../components/NativeTeamsButton';
-import MetalforgeBackground from '../components/MetalforgeBackground';
 import { useSession } from '../state/SessionContext';
 import { useJoinedGroups } from '../state/useJoinedGroups';
 import { getCachedMyJoinedGroups } from '../api/services/GroupService';
@@ -88,7 +87,6 @@ export default function RoleSelectScreen({ navigation }: Props) {
     <View style={styles.fill}>
       {joinedGroupsLifecycle}
       <RoleEntranceMotion key={entranceIdentity.generation} entrance={entrance} isFocused={isFocused} visuals={visuals} reducedMotion={reducedMotion} />
-      <MetalforgeBackground active={isFocused} />
       <View style={[styles.leftChrome, { top: insets.top + 8 }]}>
         <LanguagePicker variant="menu" />
       </View>

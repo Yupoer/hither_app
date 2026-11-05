@@ -11,14 +11,7 @@ const callbacks: {
   member?: (state: MemberNavigationState) => void;
 } = {};
 
-jest.mock('expo-constants', () => ({
-  __esModule: true,
-  default: {
-    sessionId: 'device-session-1234',
-    nativeBuildVersion: '42',
-    expoConfig: { version: '0.1.3' },
-  },
-}));
+jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { version: '0.1.3' } } }));
 jest.mock('expo-updates', () => ({
   updateId: 'eas-update-test',
   runtimeVersion: '56.0.0',

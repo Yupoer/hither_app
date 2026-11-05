@@ -3074,6 +3074,62 @@
       "acceptance": "An actual Map Store purchase refreshes the parent benefit before dismissal on both platform adapters.",
       "testFile": "headlessStoreEntriesScenario.test.ts",
       "testNamePattern": "buys monthly through Map Store and refreshes parent Tools before dismissing"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "One navigator-owned moving background survives home, create, join and teams transitions while hidden Map work stops.",
+      "testFile": "metalforgeBackgroundLifecycle.test.ts",
+      "testNamePattern": "keeps one moving navigator backdrop"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "The actual Map host mounts content during a held drag, unmounts at idle peek, and requests the native iOS user-location indicator.",
+      "testFile": "headlessPresentation.test.ts",
+      "testNamePattern": "mounts the map sheet body during a held drag"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "Gathering particles use the requested smaller radius and emit twice the previous count without changing their visible lifetime.",
+      "testFile": "metalforgeStarfield.test.ts",
+      "testNamePattern": "requested smaller size|emits the same 44 balls"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "The native recenter wrapper retains one capsule and both accessible targets.",
+      "testFile": "mapChromeUiContract.test.ts",
+      "testNamePattern": "uses one native capsule around both accessible recenter targets"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "Journey precision modes stay within ordinary High accuracy and Other activity.",
+      "testFile": "locationPolicy.test.ts",
+      "testNamePattern": "uses ordinary High and Other activity"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "Queued diagnostic events preserve their writing binary release snapshot after an app upgrade.",
+      "testFile": "diagnostics.test.ts",
+      "testNamePattern": "preserves the release snapshot of queued events"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "The real App persists the executing OTA identity on consented launch and foreground resume.",
+      "testFile": "headlessPresentation.test.ts",
+      "testNamePattern": "persists the executing OTA identity"
+    },
+    {
+      "parent": 375,
+      "child": 375,
+      "acceptance": "Large MetricKit call stacks retain searchable signal classification from actual nested diagnostic metadata.",
+      "testFile": "backgroundOpTiming.test.ts",
+      "testNamePattern": "classifies actual nested MetricKit metadata"
     }
   ]
 }

@@ -20,35 +20,35 @@ public class HitherLiveActivityModule: Module {
   // explicitly on pause/leave, so a long staleness window avoids premature
   // "stale" UI without leaving zombies (the end call removes them).
   private static let staleInterval: TimeInterval = 2 * 60 * 60
-  private var pushToStartTask: Task<Void, Never>?
-  private var activityTokenTasks: [String: Task<Void, Never>] = [:]
-  private var latestPushToStartToken: String?
+  private let observers = HitherLiveActivityObservers()
   private let snapshotUpdates = HitherLiveActivityUpdateQueue()
 
   @available(iOS 17.2, *)
   private func observePushToStartTokens() {
-    guard pushToStartTask == nil else { return }
-    pushToStartTask = Task { [weak self] in
-      for await token in Activity<HitherGroupAttributes>.pushToStartTokenUpdates {
-        guard !Task.isCancelled else { return }
-        let tokenString = token.hexString
-        self?.latestPushToStartToken = tokenString
-        self?.sendEvent("onPushToStartToken", ["token": tokenString])
+    observers.observePushToStart {
+      Task { [weak self] in
+        for await token in Activity<HitherGroupAttributes>.pushToStartTokenUpdates {
+          guard !Task.isCancelled else { return }
+          let tokenString = token.hexString
+          self?.observers.latestPushToStartToken = tokenString
+          self?.sendEvent("onPushToStartToken", ["token": tokenString])
+        }
       }
     }
   }
 
   @available(iOS 16.2, *)
   private func observePushToken(for activity: Activity<HitherGroupAttributes>) {
-    guard activityTokenTasks[activity.id] == nil else { return }
-    activityTokenTasks[activity.id] = Task { [weak self] in
-      for await token in activity.pushTokenUpdates {
-        self?.sendEvent("onPushToken", [
-          "activityId": activity.id,
-          "pushToken": token.hexString,
-          "navigationSessionId": activity.content.state.navigationSessionId as Any,
-          "destinationId": activity.content.state.destinationId as Any,
-        ])
+    observers.observeActivity(id: activity.id) {
+      Task { [weak self] in
+        for await token in activity.pushTokenUpdates {
+          self?.sendEvent("onPushToken", [
+            "activityId": activity.id,
+            "pushToken": token.hexString,
+            "navigationSessionId": activity.content.state.navigationSessionId as Any,
+            "destinationId": activity.content.state.destinationId as Any,
+          ])
+        }
       }
     }
   }
@@ -82,10 +82,7 @@ public class HitherLiveActivityModule: Module {
     }
 
     OnDestroy {
-      self.pushToStartTask?.cancel()
-      self.pushToStartTask = nil
-      self.activityTokenTasks.values.forEach { $0.cancel() }
-      self.activityTokenTasks.removeAll()
+      self.observers.stop()
     }
 
     AsyncFunction("startPushToStartTokenObservation") {
@@ -94,7 +91,7 @@ public class HitherLiveActivityModule: Module {
         return
       }
       self.observePushToStartTokens()
-      if let token = self.latestPushToStartToken {
+      if let token = self.observers.latestPushToStartToken {
         self.sendEvent("onPushToStartToken", ["token": token])
       }
     }

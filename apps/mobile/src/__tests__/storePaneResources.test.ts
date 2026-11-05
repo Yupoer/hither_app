@@ -19,7 +19,7 @@ jest.mock('react-native', () => ({
   } },
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Icon' }));
-jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
+jest.mock('expo-application', () => ({ nativeBuildVersion: null, nativeApplicationVersion: null }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true, default: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => {}), removeItem: jest.fn(async () => {}) },
 }));

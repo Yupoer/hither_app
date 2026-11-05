@@ -92,9 +92,8 @@ jest.mock('expo-crypto', () => ({
   randomUUID: jest.fn(() => `id-${Math.random().toString(36).slice(2, 10)}`),
 }));
 
-jest.mock('expo-constants', () => ({
-  nativeBuildVersion: '1',
-  expoConfig: { version: '1.0.0' },
+jest.mock('expo-application', () => ({
+  nativeBuildVersion: '1', nativeApplicationVersion: '1.0.0',
 }));
 
 jest.mock('expo-updates', () => ({
@@ -218,6 +217,8 @@ describe('flushPerformance', () => {
     expect(errorRows[0]!.operation).toBe('error.js_fatal');
     const payload = JSON.parse(errorRows[0]!.payload) as Record<string, unknown>;
     expect(payload.exceptionKind).toBe('Error');
+    expect(payload.buildNumber).toBe('1');
+    expect(payload.appVersion).toBe('1.0.0');
     expect(typeof payload.stackHash).toBe('string');
     expect(payload).not.toHaveProperty('message');
     expect(payload).not.toHaveProperty('stack');

@@ -32,10 +32,7 @@ let sessionCallback: ((session: NavigationSession) => void) | undefined;
 let memberCallback: ((state: MemberNavigationState) => void) | undefined;
 
 jest.mock('react-native', () => ({ AppState: mockAppState }));
-jest.mock('expo-constants', () => ({
-  __esModule: true,
-  default: { nativeBuildVersion: '42', expoConfig: { version: '0.1.0' } },
-}));
+jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { version: '0.1.0' } } }));
 jest.mock('expo-updates', () => ({ updateId: 'update-1', runtimeVersion: '56.0.0' }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: mockDiagnostics }));
 jest.mock('../api/services/_helpers', () => ({ requireUserId: (...args: unknown[]) => mockRequireUserId(...args) }));

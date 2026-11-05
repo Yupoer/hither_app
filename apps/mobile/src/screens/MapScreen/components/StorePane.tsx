@@ -51,7 +51,7 @@ import {
   tailId,
   truncateDiagText,
 } from '../../../state/diagnostics';
-import Constants from 'expo-constants';
+import { nativeBuildNumber } from '../../../native/buildInfo';
 import PremiumBanner from '../../../components/PremiumBanner';
 
 
@@ -567,7 +567,7 @@ export const StorePane = React.memo(function StorePane({
     let sessionRef: string | null = null;
     verifyingRef.current = false;
     adSeqRef.current = 0;
-    const buildNumber = String(Constants.nativeBuildVersion ?? 'dev');
+    const buildNumber = nativeBuildNumber;
     const platform = Platform.OS === 'ios' ? 'ios' : 'android';
     const attemptTail = tailId(
       `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,

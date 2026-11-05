@@ -1,11 +1,10 @@
-import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   ingestDiagnosticBatch,
   type DiagnosticBatchResult,
-  type DiagnosticUploadMetadata,
 } from '../api/services/DiagnosticService';
+import { nativeAppVersion, nativeBuildNumber } from '../native/buildInfo';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
 import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
@@ -282,14 +281,13 @@ function sanitizeRecord(record: DiagnosticRecord): DiagnosticRecord {
 
 type DiagnosticUploader = (
   records: DiagnosticRecord[],
-  metadata: DiagnosticUploadMetadata,
 ) => Promise<DiagnosticBatchResult>;
 
 export function createDiagnostics(
   database: DiagnosticDatabase,
   upload: DiagnosticUploader,
   now: () => number,
-  metadata: DiagnosticUploadMetadata & { sessionId: string },
+  metadata: { sessionId: string; buildNumber: string; appVersion: string },
   uuid: () => string,
   mode: DiagnosticMode = 'verbose',
 ) {
@@ -336,7 +334,7 @@ export function createDiagnostics(
           sessionId: metadata.sessionId,
           event: input.event,
           navigationSessionId: input.navigationSessionId ?? null,
-          payload: sanitize(input),
+          payload: sanitize({ ...input, buildNumber: metadata.buildNumber, appVersion: metadata.appVersion }),
           attempts: 0,
           uploadedAt: null,
         });
@@ -373,7 +371,7 @@ export function createDiagnostics(
           return { sent: 0, remaining: 0 };
         }
         try {
-          result = await upload(pending, metadata);
+          result = await upload(pending);
         } catch {
           result = { acceptedIds: [], rejected: [] };
         }
@@ -424,9 +422,8 @@ export function createDiagnostics(
 
 const metadata = {
   sessionId: Crypto.randomUUID(),
-  deviceId: Constants.sessionId || 'unknown-device',
-  buildNumber: Constants.nativeBuildVersion ?? 'development',
-  appVersion: Constants.expoConfig?.version ?? 'development',
+  buildNumber: nativeBuildNumber,
+  appVersion: nativeAppVersion,
 };
 
 export const diagnostics = createDiagnostics(

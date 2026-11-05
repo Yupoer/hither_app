@@ -57,7 +57,6 @@ describe('ActivityKit remote push contract', () => {
     expect(nativeModule).toContain('Activity<HitherGroupAttributes>.pushToStartTokenUpdates');
     expect(nativeModule).toContain('#available(iOS 17.2, *)');
     expect(nativeModule).toContain('onPushToStartToken');
-    expect(nativeModule).toContain('pushToStartTask');
     expect(nativeModule).toContain('OnCreate');
     expect(nativeModule).toContain('OnDestroy');
     expect(jsBridge).toContain('addPushToStartTokenListener');

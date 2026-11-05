@@ -77,6 +77,7 @@ jobs:
           python3 -B scripts/test_ios_cd_routing.py
           python3 -B scripts/test_ios_cd_outcome.py
           python3 -B scripts/test_ios_cd_attempt.py
+          python3 -B scripts/test_ios_debug_symbols.py
           python3 -B scripts/test_ios_release_inventory.py
           python3 -B scripts/test_ios_release_launch_gate.py
           node scripts/test-ci-meta.mjs
@@ -349,6 +350,10 @@ jobs:
         run: |
           swiftc -swift-version 5 modules/hither-live-activity/ios/HitherLiveActivitySnapshot.swift src/__tests__/native/HitherLiveActivitySnapshotTests.swift -o "$RUNNER_TEMP/hither-live-activity-snapshot-tests"
           "$RUNNER_TEMP/hither-live-activity-snapshot-tests"
+      - name: Exercise concurrent Live Activity observer lifetime
+        run: |
+          swiftc -swift-version 5 -sanitize=thread modules/hither-live-activity/ios/HitherLiveActivityObservers.swift src/__tests__/native/HitherLiveActivityObserversTests.swift -o "$RUNNER_TEMP/hither-live-activity-observers-tests"
+          "$RUNNER_TEMP/hither-live-activity-observers-tests"
       - name: Exercise optimized UI and JavaScript actor contexts
         run: |
           python3 scripts/build-jsi-executor-probe.py "$RUNNER_TEMP/hither-jsi-probe" --host --release

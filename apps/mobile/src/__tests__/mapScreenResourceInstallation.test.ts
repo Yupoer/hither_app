@@ -132,10 +132,17 @@ jest.mock('react-native', () => ({
   StyleSheet: { create: (value: unknown) => value, absoluteFillObject: {}, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 390, height: 844, fontScale: 1, scale: 1 }),
 }));
-jest.mock('react-native-reanimated', () => ({ __esModule: true, default: { View: 'animated-view' },
-  useSharedValue: (value: number) => require('react').useRef({ value }).current,
-  useAnimatedStyle: () => ({}), interpolate: jest.fn(), Extrapolation: {}, withSpring: jest.fn(),
-}));
+jest.mock('react-native-reanimated', () => {
+  const { install } = require('../../test/headless/host.cjs');
+  const { createStrict } = require('../../test/headless/runtime.cjs');
+  const modules = new Map<string, unknown>();
+  const fatal = (message: string) => { throw new Error(message); };
+  install({
+    jest: { doMock: (name: string, factory: () => unknown) => modules.set(name, factory()) },
+    spec: { platform: 'ios' }, strict: createStrict(fatal), fatal, appState: {}, alertQueue: [],
+  });
+  return modules.get('react-native-reanimated');
+});
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'icon' }));
 jest.mock('expo-clipboard', () => ({}));

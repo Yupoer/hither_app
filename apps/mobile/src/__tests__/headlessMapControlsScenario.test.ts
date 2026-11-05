@@ -251,8 +251,12 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       const ad = await world.waitFor(device, (value: Observation) => value.native.ads.length === 1, 'Map rewarded ad');
       const reference = ad.native.ads[0].options.serverSideVerificationOptions.customData;
       await device.input({ kind: 'adEvent', event: 'loaded' });
+      await device.input({ kind: 'appFocus', value: 'blur' });
+      await device.input({ kind: 'appState', value: 'inactive' });
       await device.input({ kind: 'adEvent', event: 'earned', value: { amount: 999 } });
       await device.input({ kind: 'adEvent', event: 'closed' });
+      await device.input({ kind: 'appState', value: 'active' });
+      await device.input({ kind: 'appFocus', value: 'focus' });
       await world.waitFor(device, () => world.backend.rewardSessions.get(reference).status === 'verifying', 'Map SSV pending');
       expect(world.backend.wallets.get(LEADER)).toBe(9);
       creditReward(world.backend, reference);

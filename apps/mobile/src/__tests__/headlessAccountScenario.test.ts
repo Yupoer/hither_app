@@ -499,7 +499,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await device.perform('diagnostics.write', { args: [{ event: 'headless_record', count: 3, success: false, password: 'secret', latitude: 25 }] });
       const records = await device.perform('diagnostics.list');
       expect(records).toHaveLength(1);
-      expect(records[0].payload).toEqual({ count: 3, success: false });
+      expect(records[0].payload).toEqual({ count: 3, success: false, buildNumber: '79', appVersion: 'headless' });
       expect(await device.perform('diagnostics.summary')).toMatchObject({ total: 1, pending: 1, byEvent: { headless_record: 1 } });
       const exported = JSON.parse(await device.perform('diagnostics.exportJson'));
       expect(exported).toMatchObject({ schemaVersion: 1, records });

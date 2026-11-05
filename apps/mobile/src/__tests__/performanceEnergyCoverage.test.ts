@@ -104,9 +104,8 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => `perf-${++uuid}`) }));
-jest.mock('expo-constants', () => ({
-  __esModule: true,
-  default: { nativeBuildVersion: '42', expoConfig: { version: '0.1.0' } },
+jest.mock('expo-application', () => ({
+  nativeBuildVersion: '42', nativeApplicationVersion: '0.1.0',
 }));
 jest.mock('expo-updates', () => ({
   isEmbeddedLaunch: true,

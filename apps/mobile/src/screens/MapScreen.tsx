@@ -66,6 +66,8 @@ import { ActivityIndicator,
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
+  runOnJS,
   interpolate,
   Extrapolation,
   withSpring,
@@ -735,6 +737,14 @@ export default function MapScreen({ route, navigation }: Props) {
   }, [insets.top, windowHeight, sheetHeaderH]);
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
+  const [sheetExposed, setSheetExposed] = useState(false);
+  useAnimatedReaction(
+    () => heightSV.value > detents[0],
+    (exposed, previous) => {
+      if (exposed !== previous) runOnJS(setSheetExposed)(exposed);
+    },
+    [detents],
+  );
   /** Mid/Full sheet body: 成員 · 路線 · 工具 · 商店. */
   const [selectedSection, setSelectedSection] = useState<SheetPaneKey>('members');
   /** Store deep-link product highlight (e.g. locked Live Activity → store). */
@@ -4178,7 +4188,7 @@ export default function MapScreen({ route, navigation }: Props) {
           ref={mapRef}
           cameraState={mapCameraState}
           members={members}
-          showsUserLocation={false}
+          showsUserLocation={Platform.OS === 'ios'}
           gathering={activePoint}
           destinations={mapDestinations}
           dailyAccommodations={mapDailyAccommodations}
@@ -4446,14 +4456,7 @@ export default function MapScreen({ route, navigation }: Props) {
         }}
         header={sheetHeader}
       >
-        <Animated.View
-          style={detent === 0 ? styles.sheetBodyHidden : undefined}
-          pointerEvents={detent === 0 ? 'none' : 'auto'}
-          accessibilityElementsHidden={detent === 0}
-          importantForAccessibility={detent === 0 ? 'no-hide-descendants' : 'auto'}
-        >
-          {sheetChildren}
-        </Animated.View>
+        {sheetExposed && showDenseChrome && !confirmCardReady && sheetChildren}
       </BottomSheet>
       </Animated.View>
 

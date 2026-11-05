@@ -1,4 +1,5 @@
 import React from 'react';
+import { View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import LoginScreen from '../screens/LoginScreen';
 import RoleSelectScreen from '../screens/RoleSelectScreen';
@@ -7,6 +8,7 @@ import MapScreen from '../screens/MapScreen';
 import MyTeamsScreen from '../screens/MyTeamsScreen';
 import { useTheme } from '../state/PreferencesContext';
 import { useSession } from '../state/SessionContext';
+import MetalforgeBackground from '../components/MetalforgeBackground';
 
 /**
  * Route names and params for the root stack. A logged-out launch starts on
@@ -36,14 +38,21 @@ export default function RootNavigator() {
     <Stack.Navigator
       key={user?.id ?? 'signed-out'}
       initialRouteName={user ? 'RoleSelect' : 'Login'}
+      layout={({ state, children }) => {
+        const route = state.routes[state.index].name;
+        return <View style={{ flex: 1 }}>
+          <MetalforgeBackground active={route === 'RoleSelect' || route === 'Auth' || route === 'MyTeams'} />
+          {children}
+        </View>;
+      }}
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="RoleSelect" component={RoleSelectScreen} />
-      <Stack.Screen name="Auth" component={AuthScreen} />
+      <Stack.Screen name="RoleSelect" component={RoleSelectScreen} options={{ contentStyle: { backgroundColor: 'transparent' } }} />
+      <Stack.Screen name="Auth" component={AuthScreen} options={{ contentStyle: { backgroundColor: 'transparent' } }} />
       {/* Map is a full team workspace: disable interactive / full-screen pop so
           list swipe-to-delete and peak horizontal pans never return to RoleSelect. */}
       {user && <Stack.Screen
@@ -54,7 +63,7 @@ export default function RootNavigator() {
           fullScreenGestureEnabled: false,
         }}
       />}
-      {user && <Stack.Screen name="MyTeams" component={MyTeamsScreen} />}
+      {user && <Stack.Screen name="MyTeams" component={MyTeamsScreen} options={{ contentStyle: { backgroundColor: 'transparent' } }} />}
     </Stack.Navigator>
   );
 }

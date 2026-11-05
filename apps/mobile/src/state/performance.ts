@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as Updates from 'expo-updates';
 import { metrics } from '../native';
+import { nativeAppVersion, nativeBuildNumber } from '../native/buildInfo';
 import {
   buildErrorDiagnostics,
   classifyUpstreamError,
@@ -336,8 +336,8 @@ function currentUpdateId(): string {
 
 function releaseContext(): PerformancePayload {
   return {
-    buildNumber: Constants.nativeBuildVersion ?? 'development',
-    appVersion: Constants.expoConfig?.version ?? 'development',
+    buildNumber: nativeBuildNumber,
+    appVersion: nativeAppVersion,
     updateId: currentUpdateId(),
     runtimeVersion: String(Updates.runtimeVersion ?? 'unknown'),
     launchPhase: lastLaunchPhase,
