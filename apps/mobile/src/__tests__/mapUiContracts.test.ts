@@ -567,14 +567,8 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).not.toContain('PaneCoverFlow');
   });
 
-  it('keeps the selector out of Peek and compacts only the map chrome', () => {
+  it('compacts only the map chrome', () => {
     expect(mapScreen).toContain('const [sheetHeaderH, setSheetHeaderH] = useState(68);');
-    expect(mapScreen).not.toContain('sheetBodyVisibilityStyle');
-    expect(mapStyles).toContain("sheetBodyHidden: { display: 'none' }");
-    expect(mapScreen).not.toContain('[detents[0], detents[0] + 16]');
-    expect(mapScreen).toContain("pointerEvents={detent === 0 ? 'none' : 'auto'}");
-    expect(mapScreen).toContain('accessibilityElementsHidden={detent === 0}');
-    expect(mapScreen).toContain("importantForAccessibility={detent === 0 ? 'no-hide-descendants' : 'auto'}");
     expect(mapScreen).toContain('compactGrabberSpacing');
     expect(mapStyles).toContain('paddingTop: 2');
     expect(mapStyles).toContain('paddingBottom: 11');

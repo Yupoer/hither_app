@@ -16,6 +16,8 @@ function MockNavigator({ initialRouteName, children }: { initialRouteName: strin
   });
 }
 jest.mock('@react-navigation/native-stack', () => ({ createNativeStackNavigator: () => ({ Navigator: MockNavigator, Screen: () => null }) }));
+jest.mock('react-native', () => ({ View: 'view' }));
+jest.mock('../components/MetalforgeBackground', () => () => null);
 jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: mockUser }) }));
 jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: {} }) }));
 jest.mock('../screens/LoginScreen', () => () => null);
