@@ -1,11 +1,10 @@
-import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   ingestDiagnosticBatch,
   type DiagnosticBatchResult,
 } from '../api/services/DiagnosticService';
-import { nativeBuildNumber } from '../native/buildInfo';
+import { nativeAppVersion, nativeBuildNumber } from '../native/buildInfo';
 import { getDiagnosticConsentEnabled } from './diagnosticConsent';
 import { getHitherDatabase } from './hitherDatabase';
 import { notifyErrorRecorded, notifyLogRecorded } from './logBatchScheduler';
@@ -424,7 +423,7 @@ export function createDiagnostics(
 const metadata = {
   sessionId: Crypto.randomUUID(),
   buildNumber: nativeBuildNumber,
-  appVersion: Constants.expoConfig?.version ?? 'development',
+  appVersion: nativeAppVersion,
 };
 
 export const diagnostics = createDiagnostics(

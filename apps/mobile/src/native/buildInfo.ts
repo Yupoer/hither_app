@@ -1,5 +1,4 @@
-import Constants from 'expo-constants';
+import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 
-export const nativeBuildNumber = String(
-  Constants.platform?.ios?.buildNumber ?? Constants.platform?.android?.versionCode ?? 'development',
-);
+export const nativeBuildNumber = nativeBuildVersion ?? 'development';
+export const nativeAppVersion = nativeApplicationVersion ?? 'development';

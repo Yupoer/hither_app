@@ -220,9 +220,10 @@ exports.run = async function run(jest) {
   }));
   jest.doMock('expo-constants', () => ({ __esModule: true, default: {
     expoConfig: { version: 'headless' },
-    platform: spec.platform === 'android' ? { android: { versionCode: 79 } } : { ios: { buildNumber: '79' } },
+    platform: spec.platform === 'android' ? { android: {} } : { ios: { buildNumber: '79' } },
     executionEnvironment: spec.capabilities?.expoGo ? 'storeClient' : 'standalone', appOwnership: spec.capabilities?.expoGo ? 'expo' : 'standalone',
   }, ExecutionEnvironment: { StoreClient: 'storeClient' } }));
+  jest.doMock('expo-application', () => ({ nativeBuildVersion: '79', nativeApplicationVersion: 'headless' }));
   jest.doMock('expo-glass-effect', () => strict('Glass', { GlassView: noRender, isLiquidGlassAvailable: () => false }));
   jest.doMock('expo-blur', () => ({ BlurView: noRender }));
   jest.doMock('react-native-url-polyfill/auto', () => ({}));
