@@ -126,6 +126,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       expect(mixed).toHaveLength(1);
       expect(mixed[0].args.p_location_events.every((row: { actorId: string }) => row.actorId === LEADER)).toBe(true);
       expect(settled.durable.snapshot.activeGathering.activeDestinationId).toBe(DESTINATION);
+      await world.advance(300);
       await world.waitFor(peer, (value: Observation) => value.durable.snapshot.activeGathering.activeDestinationId === DESTINATION, 'recipient shared Start');
     } finally { await world.close(); }
   });
