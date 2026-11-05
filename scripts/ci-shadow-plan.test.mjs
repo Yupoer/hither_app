@@ -114,6 +114,29 @@ test('checked-in module and producer selectors name tracked sources', () => {
   }
 });
 
+test('formal registry follows the source map and selects its verification inputs', () => {
+  const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
+  const sourceMap = JSON.parse(fs.readFileSync(new URL('../.cursor/skills/verify-location-sync-formally/source-map.json', import.meta.url)));
+  const formal = registry.modules.find(module => module.id === 'location-sync-formal');
+  assert.deepEqual([...formal.paths].sort(), [
+    ...Object.keys(sourceMap.sources),
+    '.cursor/skills/verify-location-sync-formally/',
+    '.agents/skills/verify-location-sync-formally/SKILL.md',
+  ].sort());
+  for (const path of [
+    ...Object.keys(sourceMap.sources),
+    '.cursor/skills/verify-location-sync-formally/models/MixedSync.tla',
+    '.cursor/skills/verify-location-sync-formally/scripts/check.cjs',
+    '.cursor/skills/verify-location-sync-formally/source-map.json',
+    '.cursor/skills/verify-location-sync-formally/SKILL.md',
+    '.agents/skills/verify-location-sync-formally/SKILL.md',
+  ]) {
+    const report = plan([{ status: 'M', path }], { baseManifest: registry, headManifest: registry });
+    assert.ok(report.affectedModules.includes(formal.id), path);
+    assert.ok(report.proposedGroups.includes('location-sync-formal'), path);
+  }
+});
+
  test('workflow scope selects complete jobs and retains mandatory verification', () => {
   const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
   const decide = (eventName, product, paths) => decideWorkflowScope({eventName, product,
@@ -123,6 +146,9 @@ test('checked-in module and producer selectors name tracked sources', () => {
   assert.ok(Object.values(decide('pull_request', false, ['README.md']).expectedJobs).every(value => !value));
   assert.deepEqual(Object.entries(decide('pull_request', true, ['apps/mobile/src/utils/a.ts']).expectedJobs).filter(([,v]) => v).map(([job]) => job), ['verify', 'mobile-checks']);
   assert.deepEqual(Object.entries(decide('pull_request', true, ['apps/legal-site/auth.js']).expectedJobs).filter(([,v]) => v).map(([job]) => job), ['verify', 'mobile-checks']);
+  for (const file of ['apps/mobile/src/utils/a.ts', 'apps/legal-site/auth.js']) {
+    assert.ok(!decide('pull_request', true, [file]).groups.includes('location-sync-formal'), file);
+  }
   for (const file of ['supabase/functions/send-push/index.ts', 'apps/mobile/modules/a.ts', 'apps/mobile/src/__tests__/native/Probe.swift', 'unknown.ts', 'apps/mobile/package.json']) {
     assert.ok(Object.values(decide('pull_request', true, [file]).expectedJobs).every(Boolean), file);
   }
@@ -137,4 +163,25 @@ test('fixed workflow gates exactly match the planner registry', () => {
     assert.ok(block.includes(`if: fromJSON(needs.scope.outputs.expected_jobs)['${job}']`), job);
   }
   for (const output of ['product', 'mode', 'groups', 'expected_jobs']) assert.ok(workflow.includes(output + ": " + "$" + "{{ steps.scope.outputs." + output + " }}"));
+  const verify = workflow.slice(workflow.indexOf('  verify:')).split(/\r?\n  \S/)[0];
+  const selected = "contains(fromJSON(needs.scope.outputs.groups), 'location-sync-formal')";
+  const steps = [
+    'Set up Java for location sync verification', 'Download pinned TLA tools',
+    'Verify location sync model and real source replay', 'Upload location sync formal evidence',
+  ].map(name => verify.split(`      - name: ${name}`)[1].split(/\r?\n      - /)[0]);
+  for (const step of steps.slice(0, 3)) assert.ok(step.includes(`if: ${selected}`));
+  assert.match(steps[0], /uses: actions\/setup-java@[a-f0-9]{40}/);
+  assert.ok(steps[0].includes('distribution: temurin'));
+  assert.ok(steps[0].includes("java-version: '21'"));
+  assert.ok(steps[1].includes('https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar'));
+  assert.ok(steps[2].includes('working-directory: ${{ github.workspace }}'));
+  assert.ok(steps[2].includes('TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools-v1.7.4.jar'));
+  assert.ok(steps[2].includes('run: node .cursor/skills/verify-location-sync-formally/scripts/check.cjs'));
+  assert.ok(steps[3].includes(`if: always() && ${selected}`));
+  assert.ok(steps[3].includes('include-hidden-files: true'));
+  const evidencePaths = steps[3].split('path: |')[1].split('include-hidden-files:')[0].trim().split(/\r?\n/).map(line => line.trim());
+  assert.deepEqual(evidencePaths, [
+    '.cursor/skills/verify-location-sync-formally/.tmp/summary.json',
+    '.cursor/skills/verify-location-sync-formally/.tmp/*/tlc.log',
+  ]);
 });

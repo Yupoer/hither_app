@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": 3,
+  "version": 4,
   "fullFallbackPaths": [
     "supabase/",
     "apps/mobile/modules/",
@@ -54,6 +54,20 @@
         "runtime-alignment",
         "expo-dependencies",
         "expo-doctor"
+      ],
+      "consumers": []
+    },
+    {
+      "id": "location-sync-formal",
+      "paths": [
+        "apps/mobile/src/state/groupSync.ts",
+        "apps/mobile/src/state/locationOutbox.ts",
+        "apps/mobile/src/state/coreOperationOutbox.ts",
+        ".cursor/skills/verify-location-sync-formally/",
+        ".agents/skills/verify-location-sync-formally/SKILL.md"
+      ],
+      "groups": [
+        "location-sync-formal"
       ],
       "consumers": []
     },

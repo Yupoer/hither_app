@@ -110,6 +110,36 @@ jobs:
 
       - uses: ./.github/actions/setup-mobile
 
+      - name: Set up Java for location sync verification
+        if: contains(fromJSON(needs.scope.outputs.groups), 'location-sync-formal')
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Download pinned TLA tools
+        if: contains(fromJSON(needs.scope.outputs.groups), 'location-sync-formal')
+        run: curl --fail --location --output "$RUNNER_TEMP/tla2tools-v1.7.4.jar" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+
+      - name: Verify location sync model and real source replay
+        if: contains(fromJSON(needs.scope.outputs.groups), 'location-sync-formal')
+        working-directory: ${{ github.workspace }}
+        env:
+          TLA2TOOLS_JAR: ${{ runner.temp }}/tla2tools-v1.7.4.jar
+        run: node .cursor/skills/verify-location-sync-formally/scripts/check.cjs
+
+      - name: Upload location sync formal evidence
+        if: always() && contains(fromJSON(needs.scope.outputs.groups), 'location-sync-formal')
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hither-location-sync-formal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .cursor/skills/verify-location-sync-formally/.tmp/summary.json
+            .cursor/skills/verify-location-sync-formally/.tmp/*/tlc.log
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Resolve META_PARENT
         id: test_meta
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -556,8 +586,11 @@ jobs:
               `**Run:** ${runUrl}`,
               ``,
               `@claude The CI pipeline (\`.github/workflows/ci.yml\`) is red. Open the run above,`,
-              `read the failing step's logs, find the root cause, and deliver a reviewed fix.`,
-              `Gates are: jest, test:meta, test:coverage:changed, lint, tsc --noEmit, verify:runtime, expo install --check, expo-doctor, supabase test db (pgTAP). Keep the fix minimal.`,
+              `read the failing step's logs, reproduce the failure using the checked-in workflow, and make the smallest correct fix.`,
+              `Export the starting commit SHA as COVERAGE_BASE before editing. Run affected quick checks with bun run check:quick -- --base "$COVERAGE_BASE" from apps/mobile.`,
+              `Commit the candidate locally before bun run test:ci because changed-source coverage compares COVERAGE_BASE...HEAD. Use test:ci once for the full Node gate.`,
+              `Keep test:meta, typecheck, and the owning component, lint, runtime, Expo, formal, SQL, and native gates green as selected by this workflow.`,
+              `Close with the root cause, failure evidence, verification, and an evidence-based prevention choice. The existing check may be sufficient, need repair, or lack one distinct check or constraint. No new check is also valid when justified.`,
             ].join("\n");
             // Dedupe: skip if an open ci-failure issue already exists for this sha.
             const existing = await github.rest.issues.listForRepo({

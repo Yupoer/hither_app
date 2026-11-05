@@ -80,6 +80,14 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     registry = repo / "scripts/ci-module-contracts.json"
     registry.parent.mkdir()
     registry.write_bytes(scope_path.with_name("ci-module-contracts.json").read_bytes())
+    formal_entries = [
+        ".cursor/skills/verify-location-sync-formally/SKILL.md",
+        ".agents/skills/verify-location-sync-formally/SKILL.md",
+    ]
+    for entry in formal_entries:
+        path = repo / entry
+        path.parent.mkdir(parents=True)
+        path.write_text("formal base\n", encoding="utf-8")
     git(repo, "add", "--all")
     git(repo, "commit", "-m", "base")
     base_sha = git(repo, "rev-parse", "HEAD")
@@ -88,7 +96,9 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     git(repo, "add", "--all")
     git(repo, "commit", "-m", "docs")
     docs_sha = git(repo, "rev-parse", "HEAD")
-    assert run_scope(repo, "pull_request", base_sha)["product"] == "false"
+    docs = run_scope(repo, "pull_request", base_sha)
+    assert docs["product"] == "false"
+    assert json.loads(docs["groups"]) == []
     assert run_scope(repo, "push", base_sha)["product"] == "false"
 
     product.write_text("export const auth = 2;\n", encoding="utf-8")
@@ -98,6 +108,7 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     selective = run_scope(repo, "pull_request", docs_sha)
     assert selective["mode"] == "selective", selective
     assert {job for job, value in json.loads(selective["expected_jobs"]).items() if value} == {"verify", "mobile-checks"}
+    assert "location-sync-formal" not in json.loads(selective["groups"])
     assert run_scope(repo, "push", docs_sha)["mode"] == "full"
     assert run_scope(repo, "pull_request", "missing-ref")["mode"] == "full"
     assert run_scope(repo, "pull_request", docs_sha)["product"] == "true"
@@ -109,5 +120,30 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     assert run_scope(repo, "pull_request", product_sha)["product"] == "true"
     assert run_scope(repo, "workflow_dispatch", rename_sha)["product"] == "true"
     assert run_scope(repo, "push", "0" * 40)["product"] == "true"
+
+    for entry in formal_entries:
+        previous_sha = git(repo, "rev-parse", "HEAD")
+        (repo / entry).write_text("formal changed\n", encoding="utf-8")
+        git(repo, "add", "--all")
+        git(repo, "commit", "-m", "formal-entry")
+        selected = run_scope(repo, "pull_request", previous_sha)
+        assert selected["mode"] == "selective", selected
+        assert selected["product"] == "true", selected
+        assert "location-sync-formal" in json.loads(selected["groups"]), selected
+        assert {job for job, value in json.loads(selected["expected_jobs"]).items() if value} == {"verify"}
+
+    previous_sha = git(repo, "rev-parse", "HEAD")
+    git(repo, "mv", formal_entries[0], "formal-moved.md")
+    git(repo, "commit", "-m", "rename-formal-entry")
+    renamed = run_scope(repo, "pull_request", previous_sha)
+    assert renamed["product"] == "true", renamed
+    assert "location-sync-formal" in json.loads(renamed["groups"]), renamed
+
+    previous_sha = git(repo, "rev-parse", "HEAD")
+    git(repo, "rm", formal_entries[1])
+    git(repo, "commit", "-m", "delete-formal-wrapper")
+    deleted = run_scope(repo, "pull_request", previous_sha)
+    assert deleted["product"] == "true", deleted
+    assert "location-sync-formal" in json.loads(deleted["groups"]), deleted
 
 print("workflow scope checks passed")

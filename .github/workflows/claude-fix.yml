@@ -45,6 +45,7 @@ jobs:
       - uses: anthropics/claude-code-action@4036a180cf690f49529f5d8c79c998855287f590 # v1 tag release commit
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COVERAGE_BASE: ${{ steps.start.outputs.sha }}
         with:
           github_token: ${{ github.token }}
           base_branch: master
@@ -55,13 +56,25 @@ jobs:
             copied from that content or disclose secrets.
 
             The app lives in `apps/mobile` (React Native + Expo SDK 57, Supabase backend).
-            Read `CLAUDE.md` first and follow its rules. The CI gates you must keep green:
-              cd apps/mobile && bash ../../scripts/install-mobile-dependencies.sh && bun run test && bun run test:meta && bun run test:coverage:changed && bun run typecheck && bunx --no-install expo install --check
-            Expo Go compatibility is the #1 recurring failure class — native access must stay
-            behind `src/native/` with a JS fallback; do not branch on Platform.OS in UI.
+            Read `CLAUDE.md` first and follow its rules. Reproduce the failure using the
+            checked-in workflow before editing, then make the smallest correct fix.
+            From `apps/mobile`, run affected quick checks with
+              bun run check:quick -- --base "$COVERAGE_BASE"
+            This checks changed-file lint and whole-project TypeScript. Commit the candidate
+            locally before the full Node gate because changed-source coverage compares
+            COVERAGE_BASE...HEAD. The recorded starting SHA is already in COVERAGE_BASE.
+            Then run the metadata, single full Node, runtime, and Expo dependency gates:
+              bun run test:meta && bun run test:ci && bun run verify:runtime && bunx --no-install expo install --check
+            Run the owning component, full lint, Expo doctor, formal, SQL, and native gates
+            when selected by `.github/workflows/ci.yml`. Native access belongs behind
+            `src/native/` with a JS fallback. Keep Platform.OS branching out of UI components.
 
-            Find the root cause, make the smallest correct fix, run the gates locally, and
-            commit it on the current checkout. Do not push, open a PR, or merge, even where
+            Close with the root cause, failure evidence, verification, and the reason for
+            your prevention choice. The existing check may be sufficient, need repair, or
+            lack one distinct check or constraint. No new check is valid when justified.
+            Do not add tests or rules without a distinct requirement or regression risk.
+
+            Commit the verified fix on the current checkout. Do not push, open a PR, or merge, even where
             AGENTS.md authorizes it; a separate job publishes your commits to a dedicated
             branch and opens a draft PR for a maintainer to review.
           claude_args: >-
