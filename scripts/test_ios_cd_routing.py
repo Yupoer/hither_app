@@ -41,6 +41,8 @@ for mode in ("inspect-release", "ota", "preflight", "validate-release", "build-o
     assert runs("Verify native Xcode environment", mode) == (mode != "ota"), mode
     assert runs("Build and cold-launch full Release simulator app", mode) == (mode in ("validate-release", "build-only", "submit")), mode
     assert runs("Upload Release launch receipt", mode) == (mode in ("validate-release", "build-only", "submit")), mode
+    for name in ("Encrypt Release launch screenshots", "Upload encrypted Release launch screenshots"):
+        assert runs(name, mode) == (mode in ("validate-release", "build-only", "submit")), mode
     diagnostic_condition = steps["Upload sanitized Release launch failure diagnostic"]["if"]
     assert "failure()" in diagnostic_condition
     assert (f"inputs.mode == '{mode}'" in diagnostic_condition) == (mode in (
@@ -67,6 +69,13 @@ assert "xcodebuild -version" in steps["Verify native Xcode environment"]["body"]
 assert source.index("- name: Initialize iOS attempt journal") < source.index("- name: Verify native Xcode environment")
 assert source.index("- name: Pin CocoaPods to checked-in lockfile") < source.index(
     "- name: Build and cold-launch full Release simulator app")
+assert source.index("- name: Build and cold-launch full Release simulator app") < source.index(
+    "- name: Encrypt Release launch screenshots") < source.index(
+    "- name: Upload encrypted Release launch screenshots") < source.index("- name: Prepare signed build intent")
+screenshots = steps["Upload encrypted Release launch screenshots"]["body"]
+assert "path: ${{ runner.temp }}/hither-release-screenshots.encrypted.der" in screenshots
+assert "if-no-files-found: error" in screenshots
+assert "cold-start-1.png cold-start-2.png" in steps["Encrypt Release launch screenshots"]["body"]
 
 expo_steps = ("Read EAS production iOS metadata", "Publish and verify production iOS OTA",
               "Build and cold-launch full Release simulator app",
