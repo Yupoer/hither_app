@@ -77,6 +77,15 @@ artifact，保留 14 天。取回解密後，核對 build receipt 的 `ipa_sha25
 同一成品。上傳中斷時先查當次 journal、EAS／Apple 狀態，再決定是否提交這份
 既有 IPA；不要因 runner 消失而直接重建或重複上傳。
 
+冷啟動 gate 失敗時，另存 `hither-ios-release-failure-RUN_ID-RUN_ATTEMPT` 加密
+artifact，內容限該次 launch evidence 目錄、已編譯 Simulator App、相符產品目錄的
+dSYMs 與來源 manifest。打包時從同一 EAS production 環境讀取值，遮罩文字日誌中的
+workflow Expo token 與 Supabase 用戶端金鑰，保持編譯產物原樣。
+原始 console／LLDB 日誌只在 runner 或本機解密後讀取；
+公開 artifact 僅含 CMS encrypted DER，保留 14 天。原有公開診斷仍限白名單 JSON。
+取證 replay、collector 的 host sample 與正常 attach 初停都不能通過原始啟動 gate，
+也不能直接當作 App 自然發生的 SIGTRAP stack。
+
 檢查器以同次啟動的 stdout/stderr 檔案補充 console 證據，每個 stream 最多解析
 1 MB，原始檔保留在 runner，不上傳。第二次成功後 App 仍可寫入，直到 App／runner
 結束；一般檔案沒有 byte 上限。

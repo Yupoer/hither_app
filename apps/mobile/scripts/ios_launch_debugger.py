@@ -19,6 +19,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 import uuid
 
 
@@ -32,14 +33,15 @@ PROBES = frozenset(('stopped', 'exited', 'timeout', 'unavailable',
                     'not_eligible', 'identity_mismatch'))
 STOP_REASONS = frozenset(('signal', 'exception', 'other'))
 STAGES = frozenset(('launch_help', 'compile_probe', 'fixture_launch', 'replay_launch',
-                    'identity', 'attach', 'continue', 'frames', 'cleanup'))
+                    'identity', 'target_create', 'attach', 'continue', 'frames', 'cleanup'))
 CLEANUP_OPERATIONS = frozenset(('lldb_inspect', 'lldb_kill', 'lldb_detach',
                                 'lldb_command_group', 'fixture_group', 'replay_process'))
 CLEANUP_KINDS = frozenset(('api_error', 'os_error', 'exception'))
 CLEANUP_PHASES = frozenset(('reap', 'term', 'kill', 'wait'))
 EXCEPTION_TYPES = frozenset(('AttributeError', 'RuntimeError', 'TypeError', 'ValueError', 'other'))
 CAPTURE_KINDS = frozenset(('spontaneous_stop', 'timeout_sample'))
-COLLECTOR_PHASES = frozenset(('identity', 'attach', 'configure', 'continue', 'wait_stop',
+COLLECTOR_PHASES = frozenset(('identity', 'target_create', 'target_ready', 'attach', 'attached',
+                              'configure', 'continue', 'wait_stop',
                               'interrupt', 'frames', 'cleanup'))
 PROCESS_STATES = frozenset(('invalid', 'unloaded', 'connected', 'attaching', 'launching',
                             'stopped', 'running', 'stepping', 'crashed', 'detached',
@@ -596,6 +598,11 @@ def _continued_result(process, target, lldb, listener, baseline, output, stop_co
         time.sleep(0.05)
 
 
+def _write_private_debugger_event(output, event, **details):
+    with (Path(output) / 'lldb-private-events.jsonl').open('a', encoding='utf-8') as stream:
+        stream.write(json.dumps({'event': event, 'recordedAtSeconds': time.time(), **details}) + '\n')
+
+
 def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
     """Runs inside selected-Xcode LLDB's embedded Python, never host Python."""
     import lldb
@@ -611,15 +618,30 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
         if symbol_executable is not None:
             if _executable_digest(symbol_executable) != _executable_digest(executable):
                 raise _IdentityMismatch()
-        stage = 'attach'
-        _write_progress(output, stage, 'attach')
+        enabled = debugger.EnableLog('lldb', ['api', 'process'])
+        _write_private_debugger_event(output, 'api_process_logging', enabled=enabled)
         debugger.SetAsync(False)
+        stage = 'target_create'
+        _write_progress(output, stage, 'target_create')
+        _write_private_debugger_event(output, 'target_create_begin')
         target = debugger.CreateTarget(str(symbol_executable or executable))
-        if not isinstance(target, lldb.SBTarget) or not target.IsValid():
+        _write_progress(output, stage, 'target_ready')
+        valid_target = isinstance(target, lldb.SBTarget) and target.IsValid()
+        _write_private_debugger_event(output, 'target_create_end', valid=valid_target)
+        if not valid_target:
             raise _CommandFailure()
+        _write_private_debugger_event(output, 'target_identity', triple=target.GetTriple(),
+                                      platform=target.GetPlatform().GetName())
         error = lldb.SBError()
         listener = lldb.SBListener('hither.launch.capture')
+        stage = 'attach'
+        _write_progress(output, stage, 'attach')
+        _write_private_debugger_event(output, 'attach_begin')
         process = target.AttachToProcessWithID(listener, pid, error)
+        _write_progress(output, stage, 'attached')
+        _write_private_debugger_event(output, 'attach_end', failed=error.Fail(),
+                                      errorType=error.GetType(), errorCode=error.GetError(),
+                                      errorText=error.GetCString())
         if (error.Fail() or not isinstance(process, lldb.SBProcess)
                 or not process.IsValid()):
             raise _CommandFailure()
@@ -628,6 +650,16 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
         if process.GetProcessID() != pid or not _same_executable(pid, executable):
             raise _IdentityMismatch()
         owned = True
+        thread = process.GetSelectedThread()
+        if isinstance(thread, lldb.SBThread) and thread.IsValid():
+            frames = [thread.GetFrameAtIndex(index) for index in range(min(thread.GetNumFrames(), 16))]
+            _write_private_debugger_event(output, 'initial_attach_stop',
+                processState=_state_name(process.GetState(), lldb), stopId=process.GetStopID(),
+                stopReason=thread.GetStopReason(), stopDescription=thread.GetStopDescription(1024),
+                stopData=[thread.GetStopReasonDataAtIndex(index)
+                          for index in range(min(thread.GetStopReasonDataCount(), 16))],
+                frames=[{'pc': frame.GetPCAddress().GetLoadAddress(target),
+                         'function': frame.GetFunctionName()} for frame in frames])
         _write_progress(output, stage, 'configure')
         signals = process.GetUnixSignals()
         stop_configured = False
@@ -645,8 +677,10 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
         result = _continued_result(process, target, lldb, listener, baseline, output, stop_configured)
         stage = result.get('stage', stage)
     except _IdentityMismatch:
+        _write_private_debugger_event(output, 'exception', traceback=traceback.format_exc())
         result = _result('identity_mismatch')
     except Exception:
+        _write_private_debugger_event(output, 'exception', traceback=traceback.format_exc())
         result = _result('unavailable')
     finally:
         result['stage'] = stage
@@ -718,6 +752,17 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None, *,
                 time.sleep(0.05)
         except _CommandTimeout as error:
             timeout_stage = error.stage
+            try:
+                with (Path(output) / 'collector-host-sample-command.log').open('xb') as sample_log:
+                    sampled = subprocess.run(('/usr/bin/sample', str(process.pid), '1', '-file',
+                                              str(Path(output) / 'collector-host-sample.txt')),
+                                             stdin=subprocess.DEVNULL, stdout=sample_log,
+                                             stderr=subprocess.STDOUT, timeout=2, check=False)
+                _write_private_debugger_event(output, 'collector_host_sample',
+                                              commandExitStatus=sampled.returncode)
+            except (OSError, subprocess.TimeoutExpired) as sample_error:
+                _write_private_debugger_event(output, 'collector_host_sample',
+                                              failureType=type(sample_error).__name__)
         finally:
             try:
                 _stop_group(process)
@@ -734,7 +779,7 @@ def _run_lldb(pid, executable, output, attached=None, symbol_executable=None, *,
         if field in progress:
             result[field] = progress[field]
     if timeout_stage is not None and result.get('probe') == 'unavailable' and 'stage' not in result:
-        result.update(probe='timeout', stage=timeout_stage)
+        result.update(probe='timeout', stage=progress.get('stage', timeout_stage))
     result['collectorTimedOut'] = timeout_stage is not None or result.get('collectorTimedOut') is True
     result['lldbCommandTimedOut'] = timeout_stage is not None
     command_status = process.returncode
