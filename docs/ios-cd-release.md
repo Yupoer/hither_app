@@ -6,9 +6,9 @@ exact checkout and master ancestry before executing selected-checkout helpers.
 All six modes are manual. A Git push alone does not publish.
 
 `inspect-release` and `ota` use `ubuntu-latest`. The four native modes use
-`xcode-27` and verify Xcode 27.0 before native work. OTA skips Xcode and CocoaPods
-setup while retaining source, CI, backend, compatibility, intent and readback
-guards.
+`xcode-27` and verify Xcode 27.2 before native work. The workflow logs the full
+Xcode version and build number. OTA skips Xcode and CocoaPods setup while
+retaining source, CI, backend, compatibility, intent and readback guards.
 
 ## Install CI and CD dependencies
 
@@ -437,7 +437,7 @@ debugger output remains runner-local. The default command stays quiet.
 `launchHelp` retains only the help command's bounded exit code and three
 capability booleans. Help must still exit zero and advertise every required
 flag before compilation; raw help is not printed. The CI host check selects
-the same Xcode 27.0 bundle as CD and rejects version drift while retaining
+the same Xcode 27.2 bundle as CD and rejects version drift while retaining
 diagnostics, since the runner's default toolchain can differ.
 
 A replay observes another lifetime. The same installed native executable does
