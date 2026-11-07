@@ -387,7 +387,7 @@ def main(diagnostic):
         run("xcodebuild", "-workspace", str(MOBILE / "ios/Hither.xcworkspace"),
             "-scheme", "Hither", "-configuration", "Release", "-sdk", "iphonesimulator",
             "-destination", f"platform=iOS Simulator,id={simulator}",
-            "-derivedDataPath", str(derived), "CODE_SIGNING_ALLOWED=NO", "build",
+            "-derivedDataPath", str(derived), "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_IDENTITY=-", "build",
             cwd=MOBILE, timeout=5400, output=output / "xcodebuild.log")
     finally:
         plist.write_bytes(original_plist)
