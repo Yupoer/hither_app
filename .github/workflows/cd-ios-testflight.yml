@@ -190,7 +190,7 @@ jobs:
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       RELEASE_MODE: ${{ inputs.mode }}
-      DEVELOPER_DIR: ${{ inputs.mode != 'ota' && '/Applications/Xcode_27.2.app/Contents/Developer' || '' }}
+      DEVELOPER_DIR: ${{ inputs.mode != 'ota' && '/Applications/Xcode_27.0.app/Contents/Developer' || '' }}
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
     steps:
@@ -229,9 +229,7 @@ jobs:
         working-directory: .
         run: |
           test -d "$DEVELOPER_DIR"
-          xcode_version=$(xcodebuild -version)
-          printf '%s\n' "$xcode_version"
-          grep -Fxq 'Xcode 27.2' <<< "$xcode_version"
+          xcodebuild -version | grep -E '^Xcode 27\.0(\.[0-9]+)?$'
           sw_vers
           xcrun --sdk iphoneos --show-sdk-version
           xcrun simctl list runtimes
