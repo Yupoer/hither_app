@@ -260,7 +260,7 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                 tools.mkdir()
                 trace = root / "commands.jsonl"
                 for name, response in {"git": "a" * 40, "pod": "1.16.2",
-                                       "xcodebuild": "Xcode 27.0\nBuild version test",
+                                       "xcodebuild": "Xcode 27.2\nBuild version test",
                                        "xcrun": help_stdout}.items():
                     command = tools / name
                     error_output = help_stderr + '\nprivate help sentinel' if name == 'xcrun' else ''

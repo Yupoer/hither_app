@@ -347,8 +347,8 @@ def main(diagnostic):
     if pod_version != "1.16.2" or not lock.rstrip().endswith("COCOAPODS: 1.16.2"):
         raise RuntimeError("CocoaPods 1.16.2 must match the checked-in Podfile.lock")
     xcode = run("xcodebuild", "-version")
-    if not re.search(r"^Xcode 27\.0(?:\.[0-9]+)?$", xcode, re.M):
-        raise RuntimeError("Xcode 27.0 is required for the Release launch gate")
+    if "Xcode 27.2" not in xcode.splitlines():
+        raise RuntimeError("Xcode 27.2 is required for the Release launch gate")
     launch_help = run("xcrun", "simctl", "help", "launch", timeout=15, include_stderr=True)
     if not all(flag in launch_help for flag in ("--stdout", "--stderr")):
         raise RuntimeError("simctl launch must support stdout/stderr capture")
