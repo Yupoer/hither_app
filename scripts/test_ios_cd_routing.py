@@ -71,7 +71,7 @@ assert "assert updates.get('EXUpdatesRequestHeaders', {}).get('expo-channel-name
 assert "    if: inputs.mode == 'inspect-release'" in source
 assert "    if: inputs.mode != 'inspect-release'" in source
 assert "    runs-on: ${{ inputs.mode == 'ota' && 'ubuntu-latest' || 'xcode-27' }}" in source
-assert "      DEVELOPER_DIR: ${{ inputs.mode != 'ota' && '/Applications/Xcode_27.2.app/Contents/Developer' || '' }}" in source
+assert "      DEVELOPER_DIR: ${{ inputs.mode != 'ota' && '/Applications/Xcode_27.0.app/Contents/Developer' || '' }}" in source
 assert "xcodebuild" not in steps["Verify pinned master source"]["body"]
 assert "xcodebuild -version" in steps["Verify native Xcode environment"]["body"]
 assert source.index("- name: Initialize iOS attempt journal") < source.index("- name: Verify native Xcode environment")
