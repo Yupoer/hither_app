@@ -2980,9 +2980,16 @@
     {
       "parent": 366,
       "child": 366,
-      "acceptance": "The actual members refresh reads server state with self GPS denied and consumes a peer refresh command without a push hint, requiring the exact request ACK.",
+      "acceptance": "Members refresh reads server state with self GPS denied, reuses a fresh peer fix, and updates the stale peer row after the exact background refresh ACK without a result dialog.",
       "testFile": "headlessLocationSyncScenario.test.ts",
-      "testNamePattern": "actual members refresh reads without self GPS and handles the peer command without a push hint"
+      "testNamePattern": "actual members refresh reads without self GPS and only wakes a stale peer"
+    },
+    {
+      "parent": 366,
+      "child": 366,
+      "acceptance": "A peer can consume pending refresh commands returned by group sync without a push marker and acknowledge the original accepted fix.",
+      "testFile": "backgroundLocationRefreshBehavior.test.ts",
+      "testNamePattern": "uses returned pending rows without a push marker or list read"
     },
     {
       "parent": 366,
