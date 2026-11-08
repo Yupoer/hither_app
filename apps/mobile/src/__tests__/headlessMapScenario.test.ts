@@ -22,16 +22,11 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     await run(device, 'map.card.toggle', { destinationId: DESTINATION });
     return device;
   }
-  async function finishFreshStart(world: InstanceType<typeof World>, device: Device, previousWatches: number, latitude = 25.03) {
-    await world.waitFor(device, (value: MapObservation) => value.external.watches > previousWatches,
-      'Start requests a new location fix');
+  async function startTrip(world: InstanceType<typeof World>, device: Device, destinationId = DESTINATION, latitude = 25.03) {
+    await world.waitFor(device, (value: MapObservation) => value.external.watches > 0, 'foreground GPS watcher');
     await world.advance(1000);
     await device.gps(latitude, 121.53, { accuracy: 5, timestamp: world.now });
-  }
-  async function startTrip(world: InstanceType<typeof World>, device: Device, destinationId = DESTINATION, latitude = 25.03) {
-    const previousWatches = (await device.observe()).external.watches;
     await run(device, 'map.journey.command', { destinationId });
-    await finishFreshStart(world, device, previousWatches, latitude);
   }
   async function drop(device: Device, title: string, latitude = 25.05) {
     await run(device, 'map.pin.drop', { latitude, longitude: 121.54 });
@@ -689,9 +684,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await device.input({ kind: 'alert', index: 0 });
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(DESTINATION);
       await run(device, 'map.journey.command', { destinationId: secondId });
-      const previousWatches = (await device.observe()).external.watches;
       await device.input({ kind: 'alert', index: 1 });
-      await finishFreshStart(world, device, previousWatches);
       await world.waitFor(device, () => [...world.backend.sessions.values()].some((row: { status: string; destination_id: string }) => row.status === 'active' && row.destination_id === secondId), 'accepted switch target');
       expect([...world.backend.sessions.values()].find((row: { status: string }) => row.status === 'active').destination_id).toBe(secondId);
       expect(world.backend.itinerary.find((row: { id: string }) => row.id === secondId).position).toBeLessThan(world.backend.itinerary.find((row: { id: string }) => row.id === DESTINATION).position);

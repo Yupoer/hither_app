@@ -166,16 +166,16 @@
     {
       "parent": 298,
       "child": "gather-card-followup",
-      "acceptance": "Every Start uses a new location sample and refuses an unreliable or within-range origin; End invalidates the prior session before stale completion can run.",
+      "acceptance": "Start uses a reliable recent location when available, refuses a known within-range origin, and never lets a delayed Start supersede End.",
       "testFile": "journeyDurableCommands.test.ts",
-      "testNamePattern": "refuses Start below|rejects a cached fix|marks End synchronously|acquires a new route origin"
+      "testNamePattern": "refuses Start below|fits the route from a recent, accurate cached fix|marks End synchronously|ignores repeated Start taps"
     },
     {
       "parent": 298,
       "child": "gather-card-followup",
-      "acceptance": "Start receives a fresh location fix while a delayed location upload continues without blocking the durable journey command.",
-      "testFile": "deviceLocationLifecycle.test.ts",
-      "testNamePattern": "returns a fresh Start fix before a delayed location upload completes|keeps a fresh Start fix available when its location upload fails offline"
+      "acceptance": "The real Map starts locally without a reliable fix and lets peers follow only after server receipt. Only a confirmed permission or device-service block offers Settings guidance.",
+      "testFile": "headlessJourneyEntriesScenario.test.ts",
+      "testNamePattern": "starts offline with|gives distinct Settings guidance"
     },
     {
       "parent": 298,

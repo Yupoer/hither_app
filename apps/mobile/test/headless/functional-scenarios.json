@@ -734,6 +734,22 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "starts offline with",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "gives distinct Settings guidance",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },

@@ -1130,7 +1130,7 @@
     {
       "id": "MAP-NAV-01",
       "area": "Independent slice D: journey navigation / device / routes / progress",
-      "source": "H/useJourneyNavigation:804 `startNavigation` <- M:7845 dispatch"
+      "source": "GatheringCarousel Start → useJourneyNavigation.startNavigation → native/location.getNavigationStartLocation"
     },
     {
       "id": "MAP-NAV-02",

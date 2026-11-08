@@ -211,7 +211,7 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
-import { requestPermission as requestLocationPermission, type LocationSampleAcceptance } from '../native/location';
+import { getNavigationStartLocation, requestPermission as requestLocationPermission, type LocationSample } from '../native/location';
 import {
   recoverPendingLocationRefreshes,
 } from '../state/backgroundLocationRefresh';
@@ -1131,8 +1131,8 @@ export default function MapScreen({ route, navigation }: Props) {
   // Commands read this bridge at tap time, after the current render has settled.
   const navigationOriginRef = useRef<Coordinates | undefined>(undefined);
   const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
-  const acquireNavigationFixRef = useRef<Parameters<typeof useJourneyNavigation>[0]['acquireStartFix']>(async () => null);
-  const acquireNavigationFix = useCallback((acceptsSample: LocationSampleAcceptance) => acquireNavigationFixRef.current(acceptsSample), []);
+  const navigationStartSampleRef = useRef<LocationSample | null>(null);
+  const getStartLocation = useCallback(() => getNavigationStartLocation(() => navigationStartSampleRef.current), []);
   const {
     lifecycle: journeyNavigationLifecycle,
     navigationStoppedLocally,
@@ -1163,7 +1163,7 @@ export default function MapScreen({ route, navigation }: Props) {
     selectedDestination,
     fromCoords: undefined,
     getFromCoords: getNavigationOrigin,
-    acquireStartFix: acquireNavigationFix,
+    getStartLocation,
     arrivalRadiusM: localArrivalRadiusM,
     refresh,
     t,
@@ -1200,8 +1200,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const effectiveNavigationActive = Boolean(journeyActive && navTarget && !navigationStoppedLocally);
   const routeFixKey = effectiveNavigationActive && !localNavigationArrived
     ? [navTarget?.id, navTarget?.coordinates.latitude, navTarget?.coordinates.longitude].join('|') : '';
-  const [routeFixRequest, setRouteFixRequest] = useState(() => ({ key: routeFixKey, after: Date.now() }));
-  if (routeFixRequest.key !== routeFixKey) setRouteFixRequest({ key: routeFixKey, after: Date.now() });
   const foregroundLocation = foregroundLocationConfiguration({
     navigationActive: effectiveNavigationActive,
     highAccuracy, sharingEnabled: preferencesReady && sharingEnabled,
@@ -1214,7 +1212,6 @@ export default function MapScreen({ route, navigation }: Props) {
     deviceCoordsAcceptedAtMs,
     appState,
     refreshDeviceLocation,
-    refreshDeviceLocationSample,
     latestLocationSampleRef,
     lifecycle: deviceLocationLifecycle,
   } = useDeviceLocation({
@@ -1228,13 +1225,16 @@ export default function MapScreen({ route, navigation }: Props) {
     hasMembership: members.some(m => m.userId === user?.id),
     onIncomingSample: () => incomingArrivalHandlerRef.current(),
   });
-  navigationOriginRef.current = deviceCoords ?? undefined;
-  acquireNavigationFixRef.current = acceptsSample => refreshDeviceLocationSample({
-    waitForUpload: false, acceptsSample,
-  });
+  const latestNavigationSample = preferencesReady && sharingEnabled ? latestLocationSampleRef.current : null;
+  navigationStartSampleRef.current = latestNavigationSample;
+  const navigationRouteOrigin = latestNavigationSample && canEvaluateSynchronizedArrival({
+    sampledAt: latestNavigationSample.timestamp, now: Date.now(),
+    accuracyM: latestNavigationSample.accuracy, radiusM: localArrivalRadiusM,
+  }) ? latestNavigationSample.coordinates : undefined;
+  navigationOriginRef.current = navigationRouteOrigin;
   const navigationStartFrameLifecycle = (
     <MapNavigationStartFrameResource
-      deviceCoords={deviceCoords}
+      deviceCoords={navigationRouteOrigin ?? null}
       refreshStartFrame={refreshStartFrame}
     />
   );
@@ -1379,8 +1379,7 @@ export default function MapScreen({ route, navigation }: Props) {
   // passive mode can skip MapKit work without a temporal dead zone.
   const mapRoutesEnabled = effectiveNavigationActive && !localNavigationArrived && !(preferencesReady && passiveCompanionMode);
   const { selfRoute, memberRoutes, selfRouteGeneration, lifecycle: mapKitRouteLifecycle } = useMapKitRoutes({
-    selfCoordinates: routeFixRequest.key === routeFixKey && deviceCoordsAcceptedAtMs != null
-      && deviceCoordsAcceptedAtMs >= routeFixRequest.after ? deviceCoords ?? undefined : undefined,
+    selfCoordinates: navigationRouteOrigin,
     members: [], // Member routes are already disabled by this hook; no peer-coordinate cloning.
     gathering: mapRoutesEnabled ? activePoint : null,
     travelMode,
@@ -4405,6 +4404,10 @@ export default function MapScreen({ route, navigation }: Props) {
         routeDepartureDate={routeDepartureDate}
         selectedIndex={selectedIndex}
         selfRoute={selfRoute}
+        navigationRouteStatus={mapRoutesEnabled && !selfRoute
+          ? !sharingEnabled ? 'nav.waitingForLocationSharing'
+            : navigationRouteOrigin ? 'nav.waitingForDirections' : 'nav.waitingForLocation'
+          : null}
         sessionEligibleMembers={sessionEligibleMembers}
         setArrivalDestination={setArrivalDestination}
         setCarouselHeight={setCarouselHeight}

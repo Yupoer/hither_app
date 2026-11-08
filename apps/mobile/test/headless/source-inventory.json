@@ -4167,13 +4167,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "ae31c46f003c839ce673adbcfdb25c59994b81311aca6a39bbda3b1209c909b0"
+    "hash": "dc7d006387c18d07a414cf92715ad94028a090e37b9ef46b83af1f48724fa9e8"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "d68d0ded746daaf2df563d57cdfad704f10cf3b67c6ed250273bc89a0f804916"
+    "hash": "ff259ea299a90bc12631afe43c1a6015e66d75a00b9b968495af5f98abdf199a"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -4496,6 +4496,12 @@
   {
     "file": "src/native/location.ts",
     "kind": "export",
+    "name": "getNavigationStartLocation",
+    "hash": "1080c3fe50fb5ff69a39ae21336a0132957deca549152d512582cc6418e72853"
+  },
+  {
+    "file": "src/native/location.ts",
+    "kind": "export",
     "name": "classifyLocationPermissionUx",
     "hash": "4fc63d09772a95f9686a222416e2214670987f0e4abce4b8a5456c2325d5af59"
   },
@@ -4515,7 +4521,7 @@
     "file": "src/native/location.ts",
     "kind": "export",
     "name": "getCurrentLocation",
-    "hash": "94d58c802c196e56a4da342280cc8006176ccdd0025d54cf9a494faf1d350544"
+    "hash": "e638a128f6dd22d567354833a7c9c8428d2654a6edcefb4785d7726561b55d4c"
   },
   {
     "file": "src/native/location.ts",
@@ -5769,7 +5775,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "013a9c5f9f40b478192f78ab30a65932886f96b6e09b96400f991fe9072116dc"
+    "hash": "d9237829973922d603ccb73a121429b2b5b26b6b876238e657eab486b961ee89"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6855,7 +6861,7 @@
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
     "kind": "export",
     "name": "GatheringCarousel",
-    "hash": "9c2a1fb1627716b43c8d73ce1987963cf4978b5e4461481ce9c787f8a8708eb4"
+    "hash": "7cb6d7f025ec7cd88f84f09783bf0a0b9d1eeab8224151e37abf05f672d09c66"
   },
   {
     "file": "src/screens/MapScreen/components/GatheringCarousel.tsx",
@@ -7989,7 +7995,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "299006ef7c4b82c269e1fec558b56df3f00c5d87cbfe36ff198187c8c2337428"
+    "hash": "a2b1c88a2fece80536f4341e93042216f414303bb7dacf72f68066e9d713b9b0"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -8001,7 +8007,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "67b57fe8a319dc387ab49f1d876c6fff27e15a47e229a1010e44522d2281fda6"
+    "hash": "f76c6226253e64c7a5e43e70a3e4f7c117ca14bb759bcb608f9f946ab89e61ef"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -8115,7 +8121,7 @@
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
     "kind": "export",
     "name": "useJourneyNavigation",
-    "hash": "35e67f4ba13d44e89d989fe5c54eefbc3344bbde258ea3734ab984e7437d66df"
+    "hash": "0d1a19d62afbb5a7db69ddc6a1d2d35ce9297bedcad604a1dcaa72935ac906ae"
   },
   {
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",

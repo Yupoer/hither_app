@@ -3,14 +3,14 @@ import { legacyNavigationSessionKey, readEndedNavigationSessions, rememberEndedN
 import { showOperationFailure } from '../../../state/appNotice';
 import * as Crypto from 'expo-crypto';
 import { createElement, Fragment, useState, useMemo, useCallback, useRef, type Dispatch, type SetStateAction, type RefObject } from 'react';
-import { Alert, Linking, type ScrollView } from 'react-native';
+import { Alert, Linking, Platform, type ScrollView } from 'react-native';
 import { getOperationErrorMessage } from '../../../utils/operationError';
 import { distanceMeters } from '../../../utils/geo';
 import { canEvaluateSynchronizedArrival } from '../../../utils/synchronizedArrival';
 import { followCarouselIndexAfterPromote } from '../../../utils/journeyStartCarouselIdentity';
 import type { Coordinates, Destination, GroupState, JourneyStatus } from '../../../types';
 import type { NavigationSession } from '../../../types/navigation';
-import type { LocationSample, LocationSampleAcceptance } from '../../../native/location';
+import type { NavigationStartLocation } from '../../../native/location';
 import type { GroupMapHandle } from '../../../components/GroupMap';
 import { presentExternalMapsChooser } from '../../../native/externalNavigation';
 import type { TravelMode } from '../../../native/maps';
@@ -57,7 +57,7 @@ interface UseJourneyNavigationParams {
   fromCoords: Coordinates | undefined;
   /** Read the latest device fix when location ownership is declared later. */
   getFromCoords?: () => Coordinates | undefined;
-  acquireStartFix: (acceptsSample: LocationSampleAcceptance) => Promise<LocationSample | null>;
+  getStartLocation: () => Promise<NavigationStartLocation>;
   arrivalRadiusM: number;
   refresh: () => void;
   t: (key: string, params?: Record<string, any>) => string;
@@ -100,7 +100,7 @@ export function useJourneyNavigation({
   selectedDestination,
   fromCoords,
   getFromCoords,
-  acquireStartFix,
+  getStartLocation,
   arrivalRadiusM,
   refresh: _refresh,
   t,
@@ -161,7 +161,7 @@ export function useJourneyNavigation({
     const previous = startFrameRef.current;
     const sameFrame = previous?.context === endedContext && previous.destination.id === destination.id;
     if (sameFrame && previous.fitted) return;
-    const origin = startOrigin ?? getFromCoords?.() ?? fromCoords;
+    const origin = startOrigin ?? (sameFrame ? getFromCoords?.() ?? fromCoords : undefined);
     if (origin && mapRef.current) {
       mapRef.current.fitRoute([origin, destination.coordinates]);
     } else if (!sameFrame) {
@@ -295,12 +295,12 @@ export function useJourneyNavigation({
   );
 
   const startLocalRoutePlan = useCallback(
-    (dest: Destination, index: number) => {
+    (dest: Destination, index: number, startOrigin?: Coordinates) => {
       setLocalTargetId(dest.id);
       setSelectedIndex(index);
-      mapRef.current?.centerOn(dest.coordinates, { animated: false });
+      frameStartedDestination(dest, startOrigin);
     },
-    [mapRef, setSelectedIndex],
+    [frameStartedDestination, setSelectedIndex],
   );
 
   const runTeamEnd = useCallback(async (intent: TeamCommandIntent): Promise<boolean> => {
@@ -489,7 +489,7 @@ export function useJourneyNavigation({
     }
 
     if (!isLeader) {
-      if (action === 'start') startLocalRoutePlan(dest, index);
+      if (action === 'start') startLocalRoutePlan(dest, index, startOrigin);
       else setLocalTargetId(null);
       return Promise.resolve(true);
     }
@@ -565,56 +565,44 @@ export function useJourneyNavigation({
     return result;
   }, [isLeader, locallyStopped, navTargetId, groupId, actorId, startLocalRoutePlan, runTeamStart, runTeamEnd, createRequestId, navigationSession, endedContext, setSelectedIndex, mapRef, onLocalSessionIdChange, frameStartedDestination]);
 
-  const showStartLocationUnavailable = useCallback(() => {
-    Alert.alert(t('nav.startUnavailableTitle'), t('nav.startLocationUnavailable'), [
-      { text: t('common.ok'), style: 'cancel' },
-      { text: t('location.openSettings'), onPress: () => {
-        void Linking.openSettings().catch(() => {
-          Alert.alert(t('nav.startUnavailableTitle'), t('interaction.error'));
-        });
-      } },
-    ]);
-  }, [t]);
-
-  const acquireAndStart = useCallback(async (dest: Destination, index: number, switchFromDestinationId?: string) => {
+  const checkLocationAndStart = useCallback(async (dest: Destination, index: number, switchFromDestinationId?: string) => {
     if (startAttemptRef.current?.destinationId === dest.id
       && startAttemptRef.current.groupId === groupId && startAttemptRef.current.actorId === actorId) return;
     const attemptId = ++startAttemptSequenceRef.current;
-    const requestedAt = Date.now();
-    const acceptsSample: LocationSampleAcceptance = sample => {
-      const coords = sample.coordinates;
-      return sample.timestamp >= requestedAt
-        && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude)
-        && Math.abs(coords.latitude) <= 90 && Math.abs(coords.longitude) <= 180
-        && canEvaluateSynchronizedArrival({ sampledAt: sample.timestamp, now: Date.now(),
-          accuracyM: sample.accuracy, radiusM: arrivalRadiusRef.current });
-    };
+    const isCurrent = () => startAttemptRef.current?.id === attemptId && mountedRef.current
+      && currentGroupRef.current === groupId && currentActorRef.current === actorId
+      && currentLeaderRef.current === isLeader;
     startAttemptRef.current = { id: attemptId, destinationId: dest.id, groupId, actorId };
     try {
-      const fix = await acquireStartFix(acceptsSample);
-      if (startAttemptRef.current?.id !== attemptId || !mountedRef.current
-        || currentGroupRef.current !== groupId || currentActorRef.current !== actorId
-        || !currentLeaderRef.current) return;
-      const radius = arrivalRadiusRef.current;
-      const coords = fix?.coordinates;
-      if (!fix || !coords || !acceptsSample(fix)) {
-        showStartLocationUnavailable();
+      const location = await getStartLocation();
+      if (!isCurrent()) return;
+      if (location.kind !== 'available') {
+        const permissionDenied = location.kind === 'permissionDenied';
+        const buttons = [{ text: t('common.ok'), style: 'cancel' as const }];
+        const openSettings = permissionDenied ? () => Linking.openSettings()
+          : Platform.OS === 'android' ? () => Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS') : undefined;
+        Alert.alert(t('nav.startUnavailableTitle'),
+          t(permissionDenied ? 'map.locationPermissionDenied' : 'nav.startLocationServicesDisabled'),
+          openSettings ? [...buttons, { text: t('location.openSettings'), onPress: () => {
+            void openSettings().catch(() => Alert.alert(t('nav.startUnavailableTitle'), t('interaction.error')));
+          } }] : buttons);
         return;
       }
-      if (distanceMeters(coords, dest.coordinates) < radius) {
+      const { fix } = location;
+      const radius = arrivalRadiusRef.current;
+      const origin = fix && canEvaluateSynchronizedArrival({ sampledAt: fix.timestamp, now: Date.now(),
+        accuracyM: fix.accuracy, radiusM: radius }) ? fix.coordinates : undefined;
+      if (isLeader && origin && distanceMeters(origin, dest.coordinates) < radius) {
         Alert.alert(t('nav.startUnavailableTitle'), t('nav.alreadyWithinArrivalRange'));
         return;
       }
-      void enqueueTeamCommand('start', dest, index, switchFromDestinationId, coords);
+      void enqueueTeamCommand('start', dest, index, switchFromDestinationId, origin);
     } catch {
-      if (startAttemptRef.current?.id === attemptId && mountedRef.current
-        && currentGroupRef.current === groupId && currentActorRef.current === actorId) {
-        showStartLocationUnavailable();
-      }
+      if (isCurrent()) Alert.alert(t('nav.startUnavailableTitle'), t('interaction.error'));
     } finally {
       if (startAttemptRef.current?.id === attemptId) startAttemptRef.current = null;
     }
-  }, [acquireStartFix, actorId, enqueueTeamCommand, groupId, t, showStartLocationUnavailable]);
+  }, [actorId, enqueueTeamCommand, getStartLocation, groupId, isLeader, t]);
 
   const startNavigation = useCallback(
     async (dest: Destination, index: number) => {
@@ -643,19 +631,16 @@ export function useJourneyNavigation({
             { text: t('map.switchJourneyConfirm'), onPress: () => {
               dismiss();
               if (mountedRef.current && currentGroupRef.current === groupId && currentActorRef.current === actorId) {
-                void acquireAndStart(dest, index, currentId);
+                void checkLocationAndStart(dest, index, currentId);
               }
             } },
           ], { cancelable: true, onDismiss: dismiss });
           return;
         }
       }
-      // Location acquisition precedes the durable command. The queue still
-      // accepts End and later Start taps while the first write is pending.
-      if (isLeader) await acquireAndStart(dest, index);
-      else void enqueueTeamCommand('start', dest, index);
+      await checkLocationAndStart(dest, index);
     },
-    [acquireAndStart, enqueueTeamCommand, isLeader, locallyStopped, groupId, actorId, gatheringCacheKey, optimisticTeamTargetId,
+    [checkLocationAndStart, isLeader, locallyStopped, groupId, actorId, gatheringCacheKey, optimisticTeamTargetId,
       navigationSession, legacySharedTargetId, navigationDestinations, t],
   );
 

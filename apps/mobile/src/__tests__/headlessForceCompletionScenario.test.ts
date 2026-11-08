@@ -18,12 +18,8 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
     return device;
   }
   const complete = (device: Device) => device.perform('map.journey.complete', { destinationId: DESTINATION });
-  async function start(world: InstanceType<typeof World>, device: Device) {
-    const previousWatches = (await device.observe()).external.watches;
+  async function start(device: Device) {
     await device.perform('map.journey.command', { destinationId: DESTINATION });
-    await world.waitFor(device, (value: Observation) => value.external.watches > previousWatches, 'fresh Start location request');
-    await world.advance(1000);
-    await device.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
   }
 
   it('MAP-GATHER-03 manual force completion confirms before closing the original active session without inventing arrivals', async () => {
@@ -31,7 +27,7 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
     try {
       const leader = await map(world, LEADER, 'leader');
       expect(has(await leader.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
-      await start(world, leader);
+      await start(leader);
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'active shared session');
       const sessionId = [...world.backend.sessions.values()][0].id;
       const peer = await map(world, PEER, 'peer');
@@ -71,13 +67,13 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
     const world = new World();
     try {
       const leader = await map(world, LEADER, 'leader');
-      await start(world, leader);
+      await start(leader);
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'first active session');
       const originalId = [...world.backend.sessions.values()][0].id;
       await complete(leader);
       await leader.perform('map.journey.command', { destinationId: DESTINATION });
       await world.waitFor(leader, () => world.backend.sessions.get(originalId).status === 'cancelled', 'End only cancels original session');
-      await start(world, leader);
+      await start(leader);
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((row: { id: string; status: string }) => row.id !== originalId && row.status === 'active'), 'replacement session');
       await leader.input({ kind: 'alert', index: 1 });
       await world.settle();

@@ -82,6 +82,7 @@ export interface GatheringCarouselProps {
   routeDepartureDate: string | undefined;
   selectedIndex: number;
   selfRoute: DirectionsResult | null;
+  navigationRouteStatus?: 'nav.waitingForLocation' | 'nav.waitingForLocationSharing' | 'nav.waitingForDirections' | null;
   sessionEligibleMembers: MemberLocation[];
   setArrivalDestination: React.Dispatch<React.SetStateAction<Destination | null>>;
   setCarouselHeight: React.Dispatch<React.SetStateAction<number>>;
@@ -150,6 +151,7 @@ export function GatheringCarousel({
   routeDepartureDate,
   selectedIndex,
   selfRoute,
+  navigationRouteStatus,
   sessionEligibleMembers,
   setArrivalDestination,
   setCarouselHeight,
@@ -197,7 +199,9 @@ export function GatheringCarousel({
             const routeForDestination = activePoint?.id === dest.id ? selfRoute : null;
             // Active nav target: shared personal progress (local GPS, no backend wait).
             // Other cards: one-shot straight/route distance from last known fix.
-            const d = (navTarget?.id === dest.id && personalDistanceM != null)
+            const waitingForRoute = navTarget?.id === dest.id && navigationRouteStatus;
+            const waitingForPosition = waitingForRoute && waitingForRoute !== 'nav.waitingForDirections';
+            const d = waitingForPosition ? null : (navTarget?.id === dest.id && personalDistanceM != null)
               ? personalDistanceM
               : routeForDestination?.distanceMeters
                 ?? (fromCoords ? distanceMeters(fromCoords, dest.coordinates) : null);
@@ -245,7 +249,7 @@ export function GatheringCarousel({
                     ? 'bicycle-outline'
                     : 'bus-outline';
             // Route ETA/distance — always visible; expand only scales layout.
-            const etaSeconds = (navTarget?.id === dest.id && personalEtaSeconds != null)
+            const etaSeconds = waitingForPosition ? null : (navTarget?.id === dest.id && personalEtaSeconds != null)
               ? personalEtaSeconds
               : routeForDestination
                 ? routeForDestination.expectedTravelTimeSeconds
@@ -525,10 +529,11 @@ export function GatheringCarousel({
                               </View>
                               <Text
                                 style={styles.metricCaption}
+                                testID={waitingForRoute ? `gather-route-status-${dest.id}` : undefined}
                                 numberOfLines={2}
                                 maxFontSizeMultiplier={1.15}
                               >
-                                {routeForDestination
+                                {waitingForRoute ? t(waitingForRoute) : routeForDestination
                                   ? t('map.routeEstimate')
                                   : t('map.localEstimate')}
                               </Text>

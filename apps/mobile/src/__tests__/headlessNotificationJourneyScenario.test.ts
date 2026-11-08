@@ -48,11 +48,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       const other = await observer(world, platform, 'other-notifications', OTHER, 'follower');
       const memberNotice = await observer(world, platform, 'member-notifications', PEER, 'follower');
       const leaderMap = await map(world, platform, 'leader-map', LEADER);
-      const watches = (await leaderMap.observe()).external.watches;
       await leaderMap.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(leaderMap, (value: { external: { watches: number } }) => value.external.watches > watches, 'fresh Start fix requested');
-      await world.advance(1000);
-      await leaderMap.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
       await world.waitFor(leaderMap, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'session committed');
       const memberMap = await map(world, platform, 'member-map', PEER);
       await world.advance(1000);

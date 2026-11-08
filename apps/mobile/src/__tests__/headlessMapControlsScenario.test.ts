@@ -339,11 +339,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     const world = new World();
     try {
       const device = await map(world, LEADER, { nativeLocation: true });
-      const previousWatches = (await device.observe()).external.watches;
       await device.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(device, (value: Observation) => value.external.watches > previousWatches, 'fresh Start location request');
-      await world.advance(1000);
-      await device.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
       await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: any) => session.status === 'active'), 'actual Map navigation start');
       await world.settle();
       await device.input({ kind: 'appState', value: 'background' });

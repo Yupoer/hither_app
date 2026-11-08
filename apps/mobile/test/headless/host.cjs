@@ -61,7 +61,14 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     AppState: appState, Alert: { alert: (...args) => alertQueue.push(args) },
     Linking: strict('Linking', { getInitialURL: async () => null, addEventListener: (event, fn) => {
       assert.equal(event, 'url'); linkingListeners.add(fn); return { remove: () => linkingListeners.delete(fn) };
-    }, canOpenURL: async () => true, openURL: async url => receipts.push({ host: 'Linking', method: 'openURL', url }), createURL: value => `hither://${value}` }),
+    },
+    openSettings: async () => receipts.push({ host: 'Linking', method: 'openSettings' }),
+    sendIntent: async action => {
+      assert.equal(spec.platform, 'android');
+      assert.equal(action, 'android.settings.LOCATION_SOURCE_SETTINGS');
+      receipts.push({ host: 'Linking', method: 'sendIntent', action });
+    },
+    canOpenURL: async () => true, openURL: async url => receipts.push({ host: 'Linking', method: 'openURL', url }), createURL: value => `hither://${value}` }),
     StyleSheet: { create: value => value, flatten, hairlineWidth: 1, absoluteFill: {}, absoluteFillObject: {} },
     useWindowDimensions: () => dimensions, Dimensions: { get: () => dimensions, addEventListener: () => ({ remove() {} }) },
     Appearance: { setColorScheme() {}, getColorScheme: () => 'dark', addChangeListener: () => ({ remove() {} }) },

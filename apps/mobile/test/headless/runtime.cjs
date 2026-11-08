@@ -194,6 +194,7 @@ exports.run = async function run(jest) {
     Accuracy: { Lowest: 1, Low: 2, Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
     requestForegroundPermissionsAsync: async () => ({ ...permission }),
     getForegroundPermissionsAsync: readForegroundPermission,
+    hasServicesEnabledAsync: async () => spec.capabilities?.locationServices !== false,
     getBackgroundPermissionsAsync: async () => ({ ...permission }),
     requestBackgroundPermissionsAsync: async () => ({ ...permission }),
     hasStartedLocationUpdatesAsync: async name => backgroundTasks.has(name),
@@ -328,10 +329,8 @@ exports.run = async function run(jest) {
       groupId: app.groupId, actorId: app.userId, state: app.group.state,
       isLeader: app.group.state?.members.some(m => m.userId === app.userId && m.role === 'leader') ?? false,
       destinations, selectedDestination: destinations[0], fromCoords: app.location?.deviceCoords ?? undefined,
-      acquireStartFix: async () => {
-        const coordinates = await app.location.refreshDeviceLocation();
-        return coordinates ? app.location.latestLocationSampleRef.current : null;
-      },
+      getStartLocation: () => require('../../src/native/location').getNavigationStartLocation(
+        () => app.sharingEnabled ? app.location.latestLocationSampleRef.current : null),
       arrivalRadiusM: 50,
       refresh: app.group.refresh, t, mapRef, carouselRef, setSelectedIndex,
       navigationSession: app.navigation?.session, terminalSession: app.navigation.terminalSession,

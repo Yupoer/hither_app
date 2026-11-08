@@ -49,9 +49,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await leader.gps(25.03, 121.53, { accuracy: 5 });
       await world.waitFor(leader, (value: Observation) => !interrupted(value), 'new fix clears interruption');
       await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      const watches = (await leader.observe()).external.watches;
       await leader.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(leader, (value: Observation) => value.external.watches > watches, 'Start fresh-fix watcher');
       await world.advance(1000);
       await leader.gps(25.031, 121.53, { accuracy: 5 });
       await world.waitFor(leader, (value: Observation) => Boolean(value.presentation.mapRoutePoints?.length), 'active self route rendered');
@@ -83,9 +81,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       leader.online = false;
       leader.realtime = false;
       await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      const watches = (await leader.observe()).external.watches;
       await leader.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(leader, (value: Observation) => value.external.watches > watches, 'actual Start fresh-fix watcher');
       await world.advance(1000);
       await leader.gps(25.025, 121.525, { accuracy: 5 });
       const pending: Observation = await world.waitFor(leader, (value: Observation) =>

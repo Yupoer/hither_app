@@ -22,7 +22,17 @@ export interface LocationSample {
   timestamp: number;
 }
 
-export type LocationSampleAcceptance = (sample: LocationSample) => boolean;
+export type NavigationStartLocation =
+  | { kind: 'available'; fix: LocationSample | null }
+  | { kind: 'permissionDenied' | 'servicesDisabled' };
+
+export async function getNavigationStartLocation(
+  getLatestFix: () => LocationSample | null,
+): Promise<NavigationStartLocation> {
+  if (!await Location.hasServicesEnabledAsync()) return { kind: 'servicesDisabled' };
+  if ((await Location.getForegroundPermissionsAsync()).status !== 'granted') return { kind: 'permissionDenied' };
+  return { kind: 'available', fix: getLatestFix() };
+}
 
 export interface LocationPermissionState {
   foregroundStatus: Location.PermissionStatus;
@@ -137,13 +147,12 @@ function expoLocationOptions(
 export async function getCurrentLocation(
   highAccuracy = false,
   powerMode: LocationPowerMode = 'foreground',
-  acceptsSample?: LocationSampleAcceptance,
 ): Promise<LocationSample | null> {
   const access = await captureLocationAccess();
   if (!access) return null;
   if (isDebugRouteActive()) {
     const debugSample = getDebugLocationSample();
-    if (debugSample && (!acceptsSample || acceptsSample(debugSample))) return debugSample;
+    if (debugSample) return debugSample;
   }
   const granted = AppState.currentState === 'active'
     ? await requestPermission()
@@ -181,17 +190,8 @@ export async function getCurrentLocation(
     appStateSubscription = AppState.addEventListener('change', state => {
       if (!isForegroundLocationState(state)) finish(null);
     });
-    const options = expoLocationOptions(highAccuracy, powerMode);
-    if (acceptsSample) {
-      options.accuracy = Location.Accuracy.High;
-      options.distanceInterval = 0;
-      options.timeInterval = 1_000;
-    }
-    void Location.watchPositionAsync(options,
-      position => {
-        const sample = toSample(position);
-        if (!acceptsSample || acceptsSample(sample)) finish(sample);
-      }, () => finish(null))
+    void Location.watchPositionAsync(expoLocationOptions(highAccuracy, powerMode),
+      position => finish(toSample(position)), () => finish(null))
       .then(subscription => {
         sub = subscription;
         if (settled || !isLocationAccessCurrent(access)) { sub.remove(); finish(null); }

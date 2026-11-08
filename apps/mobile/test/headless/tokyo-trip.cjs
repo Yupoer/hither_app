@@ -125,15 +125,14 @@ async function showCard(actor, destinationId) {
 }
 async function start(destinationId, label) {
   await showCard('leader', destinationId);
-  const old = await devices.leader.observe();
   const before = {};
   for (const [name, device] of Object.entries(devices)) before[name] = notifications(await device.observe()).length;
-  await act('leader', 'map.journey.command', { destinationId });
-  await world.waitFor(devices.leader, o => o.external.watches > old.external.watches, 'fresh Start GPS watcher');
-  await advance(1000, 'Fresh fix after Start watcher');
+  await world.waitFor(devices.leader, o => o.external.watches > 0, 'foreground GPS watcher');
+  await advance(1000, 'Fresh fix before Start');
   const input = { latitude: 35.7000, longitude: 139.7700, accuracy: 5, timestamp: world.now };
   await devices.leader.gps(input.latitude, input.longitude, input);
   await capture('leader', 'gps.start-fix', input);
+  await act('leader', 'map.journey.command', { destinationId });
   await advance(5000, 'Shared journey polling');
   await capture('leader', 'journey.start.reactions', { destinationId, label }, null, o => {
     check(`${label} leader sees active target`, field(o.leader, `gather-nav-${destinationId}`)?.label === '結束導航', field(o.leader, `gather-nav-${destinationId}`));
