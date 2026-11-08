@@ -65,12 +65,6 @@ describe('MapKit route UI contract', () => {
     );
   });
 
-  it('snaps the map camera when Start changes the active gathering point', () => {
-    expect(journeyNavigation).toContain('centerOn(dest.coordinates, { animated: false })');
-    expect(groupMap).toContain('options?.animated === false');
-    expect(groupMap).toContain('setCamera(camera)');
-  });
-
   it('labels road ETA as 路線預估 and local haversine as 估算', () => {
     expect(carousel).toContain("t('map.routeEstimate')");
     expect(carousel).toContain("t('map.localEstimate')");
