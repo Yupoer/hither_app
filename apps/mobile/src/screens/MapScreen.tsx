@@ -9,7 +9,7 @@ import {
 import { MapAddPlaceTourResource } from './MapScreen/MapAddPlaceTourResource';
 import { MapArrivalCardsResource } from './MapScreen/MapArrivalCardsResource';
 import { MapForegroundArrivalResource } from './MapScreen/MapForegroundArrivalResource';
-import { MapAccessLossResource, MapRouteOpenResource, MapGatherRequestPagerResource } from './MapScreen/MapScreenChromeResources';
+import { MapAccessLossResource, MapRouteOpenResource } from './MapScreen/MapScreenChromeResources';
 import {
   MapArrivalOutboxResource,
   MapForegroundNavigationResource,
@@ -86,7 +86,7 @@ import {
   cameraOnSearchPick,
 } from '../utils/mapCameraFlow';
 import { notifyJourneyOperator } from '../state/journeyNotifications';
-import { recoverGatherRequestAfterFailedResolve, resolveGatherRequestSelection, sortGatherRequestsFifo } from '../utils/gatherRequestInbox';
+import { sortGatherRequestsFifo } from '../utils/gatherRequestInbox';
 import DestinationSearch from '../components/DestinationSearch';
 import DestinationReorderList from '../components/DestinationReorderList';
 import { getRuntimePowerState, subscribeRuntimePowerState } from '../state/runtimePowerState';
@@ -154,7 +154,9 @@ import { InviteTeammateSheet } from './MapScreen/components/InviteTeammateSheet'
 import { HistorySheet } from './MapScreen/components/HistorySheet';
 import { ArrivalTimeSheet } from './MapScreen/components/ArrivalTimeSheet';
 import { ArrivalManageSheet } from './MapScreen/components/ArrivalManageSheet';
-import { OpsCenterSheet } from './MapScreen/components/OpsCenterSheet';
+import { MemberInboxSheet } from './MapScreen/components/MemberInboxSheet';
+import { useMemberInbox } from './MapScreen/hooks/useMemberInbox';
+import { inboxNoticeId, projectMemberInbox, type MemberInboxEntry } from './MapScreen/memberInbox';
 import { InviteMembersOverlay } from './MapScreen/components/InviteMembersOverlay';
 import { RouteEditorSheet } from './MapScreen/components/RouteEditorSheet';
 import { GatheringCarousel } from './MapScreen/components/GatheringCarousel';
@@ -235,7 +237,7 @@ import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '..
 import { getOperationErrorMessage } from '../utils/operationError';
 
 import { notifications, type MapRegion, type PlaceResult } from '../native';
-import { addDestination, addDestinationsBatch, deleteDestination, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, sendCommand, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
+import { addDestination, addDestinationsBatch, deleteDestination, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, requestGatheringStart, resolveGatheringStart, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
@@ -578,19 +580,9 @@ export default function MapScreen({ route, navigation }: Props) {
     ? projectPersonalArrivals(remoteArrivals, arrivalOperations, user?.id ?? '', arrivalSessionScope, remoteArrivalCorrections) : [],
     [remoteArrivals, remoteArrivalCorrections, arrivalOperations, user?.id, arrivalSessionScope]);
   const [resolvingGatherRequestId, setResolvingGatherRequestId] = useState<string | null>(null);
-  /** Selected request id for Route pane horizontal FIFO inbox (#173). */
-  const [selectedGatherRequestId, setSelectedGatherRequestId] = useState<string | null>(null);
-  const gatherRequestPagerRef = useRef<ScrollView | null>(null);
-  const lastGatherRequestIdsRef = useRef<string[]>([]);
-  const pendingRemovedGatherRequestIdRef = useRef<string | null>(null);
-  const sortedGatherRequests = useMemo(
-    () => sortGatherRequestsFifo(gatherPointRequests),
-    [gatherPointRequests],
-  );
-  const sortedGatherRequestIds = useMemo(
-    () => sortedGatherRequests.map((r) => r.id),
-    [sortedGatherRequests],
-  );
+  const [memberInboxSelection, setMemberInboxSelection] = useState<{ groupId: string | null; viewerId?: string; actorId: string } | null>(null);
+  const memberInboxActorId = memberInboxSelection?.groupId === groupId && memberInboxSelection.viewerId === user?.id
+    ? memberInboxSelection.actorId : null;
 
   const mapDailyAccommodations = useMemo(() => {
     const departure = routeDepartureDate;
@@ -764,7 +756,7 @@ export default function MapScreen({ route, navigation }: Props) {
     | 'commands'
     | 'arrivalManage'
     | 'arrival'
-    | 'ops'
+    | 'coordination'
   >(null);
   const [arrivalDestination, setArrivalDestination] = useState<Destination | null>(null);
   /** Which custom quick-command slot the editor is targeting. */
@@ -2011,9 +2003,6 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
   const {
     exceptions: organizerExceptions,
-    openCount: exceptionOpenCount,
-    pendingKeys: exceptionPendingKeys,
-    markHandled: markExceptionHandled,
     lifecycle: organizerLifecycle,
   } = useOrganizerExceptions({
     enabled: !!isLeader,
@@ -2032,6 +2021,31 @@ export default function MapScreen({ route, navigation }: Props) {
     userId: user?.id,
     enabled: !!groupId && !isDemoGroup(groupId),
   });
+
+  const {
+    requests: startRequests, seen: inboxSeen, markSeen: markInboxSeen,
+    removeRequest: removeStartRequest, lifecycle: memberInboxLifecycle,
+  } = useMemberInbox(groupId && !isDemoGroup(groupId) ? groupId : null, user?.id);
+  const memberInbox = useMemo(() => projectMemberInbox({
+    startRequests,
+    destinationRequests: sortGatherRequestsFifo(gatherPointRequests),
+    notices: organizerExceptions,
+    coordination: coordination.requests,
+    memberIds: new Set(members.map(member => member.userId)),
+    userId: user?.id,
+    isLeader,
+    seen: inboxSeen,
+  }), [startRequests, gatherPointRequests, organizerExceptions, coordination.requests, members, user?.id, isLeader, inboxSeen]);
+  const openMemberInbox = useCallback((actorId: string) => {
+    const member = memberInbox.byMember.get(actorId);
+    if (!member?.count) return;
+    lightTap();
+    setMemberInboxSelection({ groupId, viewerId: user?.id, actorId });
+    markInboxSeen(member.entries.flatMap(entry => {
+      const id = inboxNoticeId(entry);
+      return id && !inboxSeen[id] ? [id] : [];
+    }));
+  }, [groupId, memberInbox, inboxSeen, markInboxSeen, user?.id]);
 
   // Same metric as locked initial (route stays route; never silent straight fallback).
   const liveDistance =
@@ -2779,19 +2793,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const handleGatherPointRequest = useCallback(async (requestId: string, approve: boolean) => {
     if (resolvingGatherRequestId) return;
     setResolvingGatherRequestId(requestId);
-    pendingRemovedGatherRequestIdRef.current = requestId;
-    // Snapshot before optimistic remove so offline resolve+reload can restore the card.
-    const removedSnapshot =
-      gatherPointRequests.find((row) => row.id === requestId) ?? null;
-    const remainingIds = sortedGatherRequestIds.filter((id) => id !== requestId);
-    const nextSelectedId = resolveGatherRequestSelection({
-      sortedIds: remainingIds,
-      previousSortedIds: sortedGatherRequestIds,
-      previousId: selectedGatherRequestId,
-      removedId: requestId,
-    });
-    setSelectedGatherRequestId(nextSelectedId);
-    // Optimistic remove so double-taps cannot re-fire the same pending card.
+    const removedSnapshot = gatherPointRequests.find((row) => row.id === requestId);
     setGatherPointRequests((prev) => prev.filter((row) => row.id !== requestId));
     try {
       await resolveGatherPointRequestResilient(requestId, approve, {
@@ -2806,19 +2808,8 @@ export default function MapScreen({ route, navigation }: Props) {
       }
     } catch (error) {
       logError('gather_request_resolve_failed', error, { requestId, approve });
-      pendingRemovedGatherRequestIdRef.current = null;
-      // Local restore first: reload may also fail offline (#173).
       if (removedSnapshot) {
-        const recovered = recoverGatherRequestAfterFailedResolve({
-          currentRequests: gatherPointRequests.filter((row) => row.id !== requestId),
-          removedSnapshot,
-          failedId: requestId,
-          fallbackSelectedId: nextSelectedId,
-        });
-        setGatherPointRequests(recovered.requests);
-        setSelectedGatherRequestId(recovered.selectedId);
-      } else {
-        setSelectedGatherRequestId(nextSelectedId);
+        setGatherPointRequests(prev => prev.some(row => row.id === requestId) ? prev : [...prev, removedSnapshot]);
       }
       void loadGatheringWorkflow().catch(() => undefined);
       Alert.alert(
@@ -2834,10 +2825,30 @@ export default function MapScreen({ route, navigation }: Props) {
     loadGatheringWorkflow,
     refresh,
     resolvingGatherRequestId,
-    selectedGatherRequestId,
-    sortedGatherRequestIds,
+    setGatherPointRequests,
     t,
   ]);
+
+  const handleMemberInboxRequest = useCallback(async (
+    entry: Extract<MemberInboxEntry, { kind: 'start' | 'destination' }>, approve: boolean,
+  ) => {
+    if (resolvingGatherRequestId) return;
+    if (entry.kind === 'destination') {
+      await handleGatherPointRequest(entry.request.id, approve);
+      return;
+    }
+    setResolvingGatherRequestId(entry.request.id);
+    try {
+      await resolveGatheringStart(entry.request.id, approve);
+      removeStartRequest(entry.request.id);
+      if (approve) void refresh().catch(error => logError('start_request_refresh_failed', error));
+    } catch (error) {
+      logError('start_request_resolve_failed', error, { requestId: entry.request.id });
+      showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+    } finally {
+      setResolvingGatherRequestId(null);
+    }
+  }, [handleGatherPointRequest, refresh, removeStartRequest, resolvingGatherRequestId, t]);
 
   const { lifecycle: gatheringCompletionLifecycle, promptCompleteAfterArrival } = useGatheringCompletion({
     groupId,
@@ -2908,11 +2919,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const requestLeaderStart = useCallback((destination: Destination) => {
     if (!groupId || requestingStartDestId) return;
     setRequestingStartDestId(destination.id);
-    void sendCommand(
-      groupId,
-      'request_start',
-      t('gathering.requestStartMessage', { title: destination.title }),
-    )
+    void requestGatheringStart(groupId, destination.id)
       .then(() => {
         Alert.alert(
           t('gathering.requestStartSentTitle'),
@@ -3257,10 +3264,12 @@ export default function MapScreen({ route, navigation }: Props) {
         accent={accent}
         onSelfMerge={doSelfMerge}
         onSelfSplit={doSelfSplit}
+        inboxCount={memberInbox.byMember.get(f.userId)?.count ?? 0}
+        onOpenInbox={() => openMemberInbox(f.userId)}
         onKick={() => confirmKickMember({ userId: f.userId, name: f.name })}
       />
     );
-  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent, isLeader, confirmKickMember, serverTimeOffsetMs, groupStateError]);
+  }, [user?.id, t, doSelfMerge, doSelfSplit, styles, accent, isLeader, confirmKickMember, serverTimeOffsetMs, groupStateError, memberInbox, openMemberInbox]);
 
   // Floating chrome rides just above the sheet's live top edge; its baseline
   // follows the sheet's animated gap to the screen bottom. At full the map
@@ -3644,6 +3653,7 @@ export default function MapScreen({ route, navigation }: Props) {
       myStatusKind={myStatusKind}
       mySubgroupId={mySubgroupId}
       openAndroidStatusSheet={openAndroidStatusSheet}
+      openCoordination={isLeader ? () => { lightTap(); setOverlay('coordination'); } : undefined}
       pendingInvites={pendingInvites}
       refreshAllLocations={refreshAllLocations}
       refreshCooldownUntil={refreshCooldownUntil}
@@ -3665,12 +3675,10 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, refreshingLocations, refreshAllLocations, refreshCooldownUntil, accent, highAccuracy,
     setHighAccuracy, pendingInvites, fontBucket, handleAcceptInvite, handleDeclineInvite,
     subgroups, topFlockMemo, renderFlockRow, flock, mySubgroupId, sentInvites,
-    applyPresenceMacroKind, openAndroidStatusSheet, myStatusKind, statusMenuItems,
+    applyPresenceMacroKind, openAndroidStatusSheet, myStatusKind, statusMenuItems, isLeader,
     sharingEnabled, handleSharingEnabledChangeAnimated, sharingApplying,
   ]);
 
-  const opsOpenCount = exceptionOpenCount + coordination.openCount;
-  const gatherRequestPageW = Math.max(200, windowWidth - 32);
   const routeMainDestinations = useMemo(
     () => (state?.destinations ?? []).filter((destination) => destination.subgroupId == null),
     [state?.destinations],
@@ -3829,43 +3837,21 @@ export default function MapScreen({ route, navigation }: Props) {
     toggleRouteScope,
     user?.id,
   ]);
-  const gatherRequestPagerLifecycle = (
-    <MapGatherRequestPagerResource
-      sortedGatherRequestIds={sortedGatherRequestIds}
-      selectedGatherRequestId={selectedGatherRequestId}
-      setSelectedGatherRequestId={setSelectedGatherRequestId}
-      lastGatherRequestIdsRef={lastGatherRequestIdsRef}
-      pendingRemovedGatherRequestIdRef={pendingRemovedGatherRequestIdRef}
-      gatherRequestPageW={gatherRequestPageW}
-      gatherRequestPagerRef={gatherRequestPagerRef}
-    />
-  );
   const routePaneBody = useMemo(() => (
     <RoutePane
-      accent={accent}
       canEditItinerary={canEditItinerary}
       destinations={destinations}
       extraPointCredits={extraPointCredits}
-      gatherRequestPageW={gatherRequestPageW}
-      gatherRequestPagerRef={gatherRequestPagerRef}
-      handleGatherPointRequest={handleGatherPointRequest}
       isLeader={isLeader}
       isMySubgroupLeader={isMySubgroupLeader}
-      members={members}
       myScopeId={myScopeId}
       nextStopDistLabel={nextStopDistLabel}
       nextStopTitle={nextStopTitle}
       openHistoryOverlay={openHistoryOverlay}
-      opsOpenCount={opsOpenCount}
       renderRouteScope={renderRouteScope}
-      resolvingGatherRequestId={resolvingGatherRequestId}
       routeMainDestinations={routeMainDestinations}
       routeSubgroupDestinations={routeSubgroupDestinations}
-      selectedGatherRequestId={selectedGatherRequestId}
       setOverlay={setOverlay}
-      setSelectedGatherRequestId={setSelectedGatherRequestId}
-      sortedGatherRequestIds={sortedGatherRequestIds}
-      sortedGatherRequests={sortedGatherRequests}
       styles={styles}
       subgroups={subgroups}
       t={t}
@@ -3874,10 +3860,7 @@ export default function MapScreen({ route, navigation }: Props) {
     t, styles, nextStopTitle, nextStopDistLabel, destinations.length,
     openHistoryOverlay, isLeader, canEditItinerary, openForRouteEditor,
     groupId, routeTripDays, routeDepartureDate, group, dailyAccommodations,
-    opsOpenCount, editButtonActive, extraPointCredits, accent,
-    sortedGatherRequests, sortedGatherRequestIds, selectedGatherRequestId,
-    gatherRequestPageW, resolvingGatherRequestId, members, subgroups,
-    handleGatherPointRequest, renderRouteScope, routeMainDestinations,
+    editButtonActive, extraPointCredits, subgroups, renderRouteScope, routeMainDestinations,
     routeSubgroupDestinations, myScopeId, isMySubgroupLeader,
   ]);
 
@@ -3945,12 +3928,14 @@ export default function MapScreen({ route, navigation }: Props) {
 
   const sheetPaneOptions = useMemo<SheetPaneTabOption[]>(
     () => [
-      { key: 'members', label: t('map.tabMembers') },
+      { key: 'members', label: t('map.tabMembers'), badge: memberInbox.total > 0
+        ? { count: memberInbox.total, accessibilityLabel: t('memberInbox.tabBadge', { count: memberInbox.total }) }
+        : undefined },
       { key: 'route', label: t('map.tabRoute') },
       { key: 'tools', label: t('map.tabTools') },
       { key: 'store', label: t('map.tabStore') },
     ],
-    [t],
+    [t, memberInbox.total],
   );
 
   const sheetChildren = useMemo(() => (
@@ -4023,7 +4008,7 @@ export default function MapScreen({ route, navigation }: Props) {
     <React.Fragment key="map-owner-add-place-tour">{addPlaceTourLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-arrival-cards">{arrivalCardsLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-foreground-arrival">{foregroundArrivalLifecycle}</React.Fragment>
-    <React.Fragment key="map-owner-gather-request-pager">{gatherRequestPagerLifecycle}</React.Fragment>
+    <React.Fragment key="map-owner-member-inbox">{memberInboxLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-accessLossLifecycle">{accessLossLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-routeOpenLifecycle">{routeOpenLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-arrivalOutboxLifecycle">{arrivalOutboxLifecycle}</React.Fragment>
@@ -4536,16 +4521,21 @@ export default function MapScreen({ route, navigation }: Props) {
         t={t}
       />
 
-      <OpsCenterSheet
+      <MemberInboxSheet
         accent={accent}
+        name={members.find(member => member.userId === memberInboxActorId)?.name ?? null}
+        entries={memberInbox.byMember.get(memberInboxActorId ?? '')?.entries ?? []}
         coordination={coordination}
-        exceptionPendingKeys={exceptionPendingKeys}
         isLeader={isLeader}
-        markExceptionHandled={markExceptionHandled}
-        organizerExceptions={organizerExceptions}
-        overlay={overlay}
-        setOverlay={setOverlay}
+        manageCoordination={overlay === 'coordination'}
+        busy={resolvingGatherRequestId !== null}
+        onResolve={handleMemberInboxRequest}
+        onClose={() => {
+          setMemberInboxSelection(null);
+          if (overlay === 'coordination') setOverlay(null);
+        }}
         styles={styles}
+        subgroups={subgroups}
         t={t}
       />
 

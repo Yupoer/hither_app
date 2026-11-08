@@ -107,7 +107,7 @@ jest.mock('../screens/MapScreen/components/InviteTeammateSheet', () => ({ __esMo
 jest.mock('../screens/MapScreen/components/HistorySheet', () => ({ __esModule: true, default: 'mock-view', HistorySheet: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/ArrivalTimeSheet', () => ({ __esModule: true, default: 'mock-view', ArrivalTimeSheet: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/ArrivalManageSheet', () => ({ __esModule: true, default: 'mock-view', ArrivalManageSheet: 'mock-view' }));
-jest.mock('../screens/MapScreen/components/OpsCenterSheet', () => ({ __esModule: true, default: 'mock-view', OpsCenterSheet: 'mock-view' }));
+jest.mock('../screens/MapScreen/components/MemberInboxSheet', () => ({ __esModule: true, default: 'mock-view', MemberInboxSheet: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/InviteMembersOverlay', () => ({ __esModule: true, default: 'mock-view', InviteMembersOverlay: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/RouteEditorSheet', () => ({ __esModule: true, default: 'mock-view', RouteEditorSheet: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/GatheringCarousel', () => ({ __esModule: true, default: 'mock-view', GatheringCarousel: 'mock-view' }));
@@ -163,6 +163,9 @@ jest.mock('../state/PreferencesContext', () => ({ usePreferences: () => mockPref
 jest.mock('../state/useGroupState', () => ({ useGroupState: () => mockGroup }));
 jest.mock('../state/useNavigationSession', () => ({ useNavigationSession: () => mockNavigationSession }));
 jest.mock('../state/useOrganizerExceptions', () => ({ useOrganizerExceptions: () => ({ lifecycle: mockLifecycle('organizer'), exceptions: mockEmpty, openCount: 0, pendingKeys: new Set() }) }));
+jest.mock('../screens/MapScreen/hooks/useMemberInbox', () => ({ useMemberInbox: () => ({
+  lifecycle: mockLifecycle('member-inbox'), requests: mockEmpty, seen: {}, markSeen: jest.fn(), removeRequest: jest.fn(),
+}) }));
 jest.mock('../state/useLiveActivity', () => ({ LiveActivityRuntime: () => mockLifecycle('live-activity') }));
 jest.mock('../state/useForegroundReconcile', () => ({ useForegroundReconcile: () => mockLifecycle('location-refresh') }));
 jest.mock('../screens/MapScreen/hooks/useDeviceLocation', () => ({ useDeviceLocation: () => mockDevice }));
@@ -212,7 +215,7 @@ it('mounts real resources through every MapScreen return and preserves the nativ
     addListener: jest.fn(), removeListener: jest.fn(), push: jest.fn(), replace: jest.fn(), pop: jest.fn(), popToTop: jest.fn(), popTo: jest.fn() };
   const props = { route: { key: 'map', name: 'Map' as const, params: { groupId: 'group' } }, navigation };
   const diagnostics = jest.spyOn(console, 'error');
-  const expectedLifecycles = ["carousel","completion","coordination","device-location","gather-card","gathering-workflow","group-role","group-state","group-tour","history","journey","live-activity","location-refresh","mapkit","meet-time","navigation","organizer","pending-place","presence","route-draft","route-tour","store","straggler","subgroup"];
+  const expectedLifecycles = ["carousel","completion","coordination","device-location","gather-card","gathering-workflow","group-role","group-state","group-tour","history","journey","live-activity","location-refresh","mapkit","meet-time","member-inbox","navigation","organizer","pending-place","presence","route-draft","route-tour","store","straggler","subgroup"];
   function assertLifecycles() {
     expect([...mockLifecycles.entries()].sort()).toEqual(expectedLifecycles.map(name => [name, 1]));
     expect(mockLifecycleMounts).toHaveBeenCalledTimes(expectedLifecycles.length);

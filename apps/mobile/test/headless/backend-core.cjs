@@ -17,7 +17,7 @@ const payloadFields = {
   record_arrival: 'actorId userId targetUserId destination arrived completeSolo arrivedAt navigationSessionId navigationSessionAliases sessionId deviceId occurredAt source note',
   leader_correct_arrival: 'actorId targetUserId userId arrived arrivedAt navigationSessionId sessionId deviceId occurredAt source note',
   set_navigation_response: 'sessionId userId response result',
-  send_command: 'type message latitude longitude expiresAt',
+  send_command: 'type message latitude longitude expiresAt destinationId',
 };
 
 function addDestination(b, groupId, payload, userId) {
@@ -181,12 +181,32 @@ function apply(b, { args: a, userId, navigationOrigin = 'manual' }) {
   } else if (type === 'set_navigation_response') {
     if (p.userId !== userId) return conflict('unauthorized');
     entity = { ...p, entityVersion: version, updatedAt: b.now };
+  } else if (type === 'send_command' && p.type === 'request_start' && p.destinationId) {
+    const destination = b.itinerary.find(d => d.id === p.destinationId && d.group_id === group.id);
+    if (!destination || destination.closed_at || destination.day == null) return conflict('validation');
+    const scope = destination.subgroup_id ?? null;
+    if (scope && scope !== m.subgroup_id && m.role !== 'leader') return conflict('unauthorized');
+    const captain = b.tables.subgroups.find(s => s.id === scope)?.leader_id;
+    const target = b.memberships.filter(r => r.user_id !== userId && scopeAllowed(b, group.id, scope, r.user_id))
+      .sort((a, c) => Number(c.user_id === captain) - Number(a.user_id === captain) || a.user_id.localeCompare(c.user_id))[0];
+    if (!target) return conflict('validation');
+    const row = { id: a.p_operation_id, group_id: group.id, sender_id: userId, target_user_id: target.user_id,
+      type: p.type, message: destination.title, destination_id: destination.id, request_status: 'pending', created_at: iso(b) };
+    b.tables.commands.push(row);
+    b.publish('commands', row, 'INSERT');
+    effects = { requestId: row.id, expiresAt: 'infinity' };
+    entity = { operationId: a.p_operation_id, accepted: true, expired: false };
   } else if (type === 'send_command') {
     const leaderCommands = ['gather', 'find_gathering', 'depart', 'rest', 'be_careful', 'go_left', 'go_right', 'stop', 'hurry_up'];
     assert([...leaderCommands, 'need_restroom', 'need_break', 'need_help', 'found_something', 'request_start', 'custom'].includes(p.type), 'Command type contract');
     if (leaderCommands.includes(p.type) && m.role !== 'leader') return conflict('unauthorized');
     const expiresAt = new Date(Math.min(b.now + 300000, Date.parse(p.expiresAt) || b.now + 300000)).toISOString();
     const category = m.role === 'leader' ? 'leader_commands' : 'follower_requests';
+    if (p.type === 'need_help' && Date.parse(expiresAt) > b.now) {
+      const row = { id: a.p_operation_id, group_id: group.id, sender_id: userId, type: p.type, created_at: iso(b), core_delivery: true };
+      b.tables.commands.push(row);
+      b.publish('commands', row, 'INSERT');
+    }
     const targets = Date.parse(expiresAt) <= b.now ? [] : b.memberships.filter(target => target.group_id === group.id && target.user_id !== userId
       && (m.subgroup_id == null || target.subgroup_id === m.subgroup_id || target.role === 'leader')
       && (p.type === 'request_start' ? target.role === 'leader' : !target.solo)

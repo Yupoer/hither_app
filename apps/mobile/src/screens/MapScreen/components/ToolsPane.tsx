@@ -22,7 +22,7 @@ export interface ToolsPaneProps {
   liveActivityUnlocked: boolean;
   openCustomQuickCommand: (slot?: number) => void;
   setArrivalRadiusM: (meters: number) => void;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   setPassiveCompanionMode: (on: boolean) => void;
   styles: MapStyles;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;

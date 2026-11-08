@@ -1305,7 +1305,7 @@
     {
       "id": "MAP-OPS-01",
       "area": "Map component and adjacent behavior closure list",
-      "source": "M:8598/8617/8632 exception actions -> `useOrganizerExceptions.markHandled`"
+      "source": "MapScreen.openMemberInbox and MemberInboxSheet read-only organizer notices"
     },
     {
       "id": "MAP-SHELL-01",

@@ -26,6 +26,7 @@ export interface MembersPaneProps {
   myStatusKind: PresenceMacroKind;
   mySubgroupId: string | undefined;
   openAndroidStatusSheet: () => void;
+  openCoordination?: () => void;
   pendingInvites: PendingInvite[];
   refreshAllLocations: () => Promise<void>;
   refreshCooldownUntil: number;
@@ -34,7 +35,7 @@ export interface MembersPaneProps {
   sentInvites: { id: string; inviteeName: string; }[];
   setHighAccuracy: (on: boolean) => void;
   setInviteSheetOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   sharingApplying: boolean;
   sharingEnabled: boolean;
   statusMenuItems: ({ id: "follow"; title: string; subtitle: string; selected: boolean; } | { id: "solo"; title: string; subtitle: string; selected: boolean; } | { id: "stealth"; title: string; subtitle: string; selected: boolean; })[];
@@ -56,6 +57,7 @@ export function MembersPane({
   myStatusKind,
   mySubgroupId,
   openAndroidStatusSheet,
+  openCoordination,
   pendingInvites,
   refreshAllLocations,
   refreshCooldownUntil,
@@ -226,6 +228,17 @@ export function MembersPane({
       )}
     
       <View style={styles.listGroup}>
+        {openCoordination ? (
+          <Pressable
+            style={styles.listRow}
+            testID="members-open-coordination"
+            onPress={openCoordination}
+            accessibilityRole="button"
+          >
+            <Text style={styles.listRowTitle}>{t('coordination.title')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={glass.textTertiary} />
+          </Pressable>
+        ) : null}
         <Pressable
           style={[styles.listRow, styles.listRowLast]}
           testID="map-invite-members"

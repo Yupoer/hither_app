@@ -36,7 +36,7 @@ export interface RouteEditorSheetProps {
   navTargetId: string | null;
   openForRouteEditor: Destination[];
   openKmlImportForScope: (scopeId?: string) => Promise<void>;
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
   routeDepartureDate: string | undefined;
   routeDraft: RouteDraft;
   routeDragPreview: React.ReactNode;
@@ -51,7 +51,7 @@ export interface RouteEditorSheetProps {
   routeTripDays: number | undefined;
   setEditButtonActive: React.Dispatch<React.SetStateAction<boolean>>;
   setFavoritePlaces: React.Dispatch<React.SetStateAction<FavoritePlace[]>>;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   setRouteDragPreview: React.Dispatch<React.SetStateAction<React.ReactNode>>;
   setRouteInteractionMode: React.Dispatch<React.SetStateAction<"drag" | "select" | "none">>;
   setRouteOverlayOpenComplete: React.Dispatch<React.SetStateAction<boolean>>;

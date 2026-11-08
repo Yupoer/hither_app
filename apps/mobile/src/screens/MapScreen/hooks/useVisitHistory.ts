@@ -20,7 +20,7 @@ export interface UseVisitHistoryInput {
   groupId: string | null;
   isLeader: boolean;
   members: MemberLocation[];
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
   routeDepartureDate: string | undefined;
   routeTripDays: number | undefined;
   user: User | null;
@@ -115,7 +115,7 @@ export function useVisitHistory({
 }
 
 function VisitedHistoryLoad({ overlay, loadHistory, groupId }: {
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
   loadHistory: () => Promise<void>;
   groupId: string | null;
 }) {
@@ -127,7 +127,7 @@ function VisitedHistoryLoad({ overlay, loadHistory, groupId }: {
 }
 
 function VisitedHistoryLoadCommit({ overlay, loadHistory, groupId }: {
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
   loadHistory: () => Promise<void>;
   groupId: string | null;
 }) {

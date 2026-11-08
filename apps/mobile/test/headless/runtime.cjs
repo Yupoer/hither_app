@@ -121,6 +121,7 @@ exports.run = async function run(jest) {
       multiRemove: async keys => { for (const key of keys) delete values[key]; write(); },
       getAllKeys: async () => Object.keys(values),
       setItem: async (key, value) => { values[key] = value; write(); },
+      mergeItem: async (key, value) => { values[key] = JSON.stringify({ ...JSON.parse(values[key] ?? '{}'), ...JSON.parse(value) }); write(); },
       removeItem: async key => { delete values[key]; write(); },
     };
   };

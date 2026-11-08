@@ -5,9 +5,8 @@ import type { RootStackParamList } from '../../navigation/RootNavigator';
 import type { useSession } from '../../state/SessionContext';
 import type { useGroupState } from '../../state/useGroupState';
 import type { useTranslation } from '../../i18n';
-import { Alert, type ScrollView } from 'react-native';
+import { Alert } from 'react-native';
 import { isDemoGroup } from "../../api/demo";
-import { gatherRequestPageIndex, resolveGatherRequestSelection } from '../../utils/gatherRequestInbox';
 
 type MapAccessLossInput = {
   user: Pick<NonNullable<ReturnType<typeof useSession>['user']>, 'id'> | null;
@@ -85,57 +84,6 @@ function MapRouteOpenJob({ input }: { input: MapRouteOpenInput }) {
     void syncFromDatabase().finally(() => {
       if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done';
     });
-  });
-  return null;
-}
-
-type MapGatherRequestPagerInput = {
-  sortedGatherRequestIds: string[];
-  selectedGatherRequestId: string | null;
-  setSelectedGatherRequestId: React.Dispatch<React.SetStateAction<string | null>>;
-  lastGatherRequestIdsRef: React.RefObject<string[]>;
-  pendingRemovedGatherRequestIdRef: React.RefObject<string | null>;
-  gatherRequestPageW: number;
-  gatherRequestPagerRef: React.RefObject<Pick<ScrollView, 'scrollTo'> | null>;
-};
-
-export function MapGatherRequestPagerResource(input: MapGatherRequestPagerInput) {
-  const committedSelectionIds = useRef<string[] | null>(null);
-  const [previous, setPrevious] = useState({ input, generation: 0 });
-  if (!Object.is(previous.input.sortedGatherRequestIds, input.sortedGatherRequestIds)
-    || !Object.is(previous.input.selectedGatherRequestId, input.selectedGatherRequestId)
-    || !Object.is(previous.input.gatherRequestPageW, input.gatherRequestPageW)) {
-    setPrevious({ input, generation: previous.generation + 1 });
-  }
-  return <MapGatherRequestPagerJob key={previous.generation} input={input} committedSelectionIds={committedSelectionIds} />;
-}
-
-function MapGatherRequestPagerJob({ input, committedSelectionIds }: {
-  input: MapGatherRequestPagerInput;
-  committedSelectionIds: React.RefObject<string[] | null>;
-}) {
-  useMountEffect(() => {
-    const {
-      sortedGatherRequestIds, selectedGatherRequestId, setSelectedGatherRequestId,
-      lastGatherRequestIdsRef, pendingRemovedGatherRequestIdRef, gatherRequestPageW, gatherRequestPagerRef,
-    } = input;
-    // Selection publication precedes its native page command in this one owner.
-    if (!Object.is(committedSelectionIds.current, sortedGatherRequestIds)) {
-      committedSelectionIds.current = sortedGatherRequestIds;
-      setSelectedGatherRequestId((prev) => {
-        const next = resolveGatherRequestSelection({
-          sortedIds: sortedGatherRequestIds,
-          previousSortedIds: lastGatherRequestIdsRef.current,
-          previousId: prev,
-          removedId: pendingRemovedGatherRequestIdRef.current,
-        });
-        lastGatherRequestIdsRef.current = sortedGatherRequestIds;
-        pendingRemovedGatherRequestIdRef.current = null;
-        return next;
-      });
-    }
-    const page = gatherRequestPageIndex(sortedGatherRequestIds, selectedGatherRequestId);
-    gatherRequestPagerRef.current?.scrollTo({ x: page * gatherRequestPageW, animated: true });
   });
   return null;
 }

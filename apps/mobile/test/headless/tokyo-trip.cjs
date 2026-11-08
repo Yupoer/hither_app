@@ -234,11 +234,13 @@ async function main() {
     });
     await add('memberA', { title: 'Day 1 Member suggested Sumida riverside', latitude: 35.7110, longitude: 139.8020 }, false);
     await expand('leader');
-    await act('leader', 'map.tab', { index: 1 });
+    await act('leader', 'map.tab', { index: 0 });
     await advance(2500, 'Leader suggestion inbox');
     const request = world.backend.tables.gather_point_requests.find(row => row.group_id === groupId && row.status === 'pending');
     assert.ok(request, 'member suggestion exists');
+    await act('leader', 'map.member.inbox', { userId: request.requester_id });
     await act('leader', 'map.suggestion.approve', { requestId: request.id });
+    await done('leader');
     await advance(2800, 'Approved suggestion recipient projections');
     await capture('leader', 'suggestion.approval.reactions', { requestId: request.id }, null, o => {
       for (const actor of Object.keys(devices)) check(`${actor} sees approved member suggestion`, destinations(o[actor]).some(row => row.title.includes('Sumida riverside')), destinations(o[actor]));

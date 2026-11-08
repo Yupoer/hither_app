@@ -416,8 +416,8 @@
   {
     "file": "src/api/client.ts",
     "kind": "export-alias",
-    "name": "{\n  mapNotificationPreferences,\n  savePushToken,\n  sendCommand,\n  getNotificationPreferences,\n  setNotificationPreferences,\n}",
-    "hash": "8a6b6b1e81d8876af1fdae6a3b279f04484a27a8c7367671e0157b6332403184"
+    "name": "{\n  mapNotificationPreferences,\n  savePushToken,\n  sendCommand,\n  requestGatheringStart,\n  fetchPendingStartRequests,\n  resolveGatheringStart,\n  getNotificationPreferences,\n  setNotificationPreferences,\n}",
+    "hash": "018f3202b0cb6d816684a74e8be5c70097621e68284ad333a87e50a6fe677c3c"
   },
   {
     "file": "src/api/client.ts",
@@ -1275,7 +1275,25 @@
     "file": "src/api/services/NotificationService.ts",
     "kind": "export",
     "name": "sendCommand",
-    "hash": "6b146ae5ea7db6352c3d7c51632f8f01bca98ac2330e2adfcefaac044506da58"
+    "hash": "f99bbea602a2dfa259660a2478d5afdbcc945c30477b70e98cb59707b2b6dd9f"
+  },
+  {
+    "file": "src/api/services/NotificationService.ts",
+    "kind": "export",
+    "name": "requestGatheringStart",
+    "hash": "97345259dbb6286948f184d57b09c31e2327434cdfe05a88c7fcbc8fc18bf466"
+  },
+  {
+    "file": "src/api/services/NotificationService.ts",
+    "kind": "export",
+    "name": "fetchPendingStartRequests",
+    "hash": "92cde96b40c13672c099d5567cd6292cc19c6f7b362d7457a391a5bc8304301a"
+  },
+  {
+    "file": "src/api/services/NotificationService.ts",
+    "kind": "export",
+    "name": "resolveGatheringStart",
+    "hash": "e10df179b8b46afd9c74793122b703935b603171951e4ac7275e4165466dfb9b"
   },
   {
     "file": "src/api/services/NotificationService.ts",
@@ -4167,13 +4185,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "1bfbced6e2db54a8220eec1392f68a1efc160b6d8b01e806134f2975c293ba51"
+    "hash": "8be8f8461357e635b8a36fab7d45c1f6d282e5555f5e86e665a6208f51af8626"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "78c0ba4371be6e07cbcc1a0c7b05a062568ab93cd85ea37288b47acbb12b5ec7"
+    "hash": "b86f3576c2dfddef42318dd43be112dab7bf1ff9174cad498f721b156b0356ee"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -5787,7 +5805,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "a9bda451de2c02e816afe321c9fcbc69df6b9da1500a51dc91f6574bfd40abc9"
+    "hash": "128588304a549bd99917f8f15b1dd10807e0f726e12ccf0970e86c4597d1567d"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -5866,6 +5884,12 @@
     "kind": "callback",
     "name": "onSelfSplit",
     "hash": "38019d4ba80bbce80569a36d5fba1b32d1518fe0c62d0b0985937b761a284a6a"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "callback",
+    "name": "onOpenInbox",
+    "hash": "165a38f7ebf21625d3387e5ba4400dcc623504b4cfb47233c4855c5f752a34f5"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6164,6 +6188,18 @@
   {
     "file": "src/screens/MapScreen.tsx",
     "kind": "callback",
+    "name": "onResolve",
+    "hash": "c3bef0f53ba8543d59668e53439935fa33bc8f26dc4449cc3db50ab043bb2daa"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "callback",
+    "name": "onClose",
+    "hash": "801c8b9b058710c66d93703d15a6281f61d8bb0c66838cb963d82f0b61c5f4ab"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "callback",
     "name": "onClose",
     "hash": "303b6b70ee76d25f7982783674a360a469c2516afa31f9360036a7e4d7411f5c"
   },
@@ -6442,18 +6478,6 @@
     "kind": "lifecycle",
     "name": "useMountEffect",
     "hash": "23bbfee741bdd3aa9d591346ff4e74c70d8927fd04fecc694faf5f205995f00f"
-  },
-  {
-    "file": "src/screens/MapScreen/MapScreenChromeResources.tsx",
-    "kind": "export",
-    "name": "MapGatherRequestPagerResource",
-    "hash": "760edfda3e7be5cce88212f1f9f8f038d63addf47000a376041b86cc7cbb7b61"
-  },
-  {
-    "file": "src/screens/MapScreen/MapScreenChromeResources.tsx",
-    "kind": "lifecycle",
-    "name": "useMountEffect",
-    "hash": "1c8489e88282e46fe71e5f6497bfb558a32e0bbaa01766d0d20a464fec2be17f"
   },
   {
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
@@ -6843,6 +6867,12 @@
     "file": "src/screens/MapScreen/components/FlockRow.tsx",
     "kind": "callback",
     "name": "onPress",
+    "hash": "4f3781c1cb0dc0fb36e5e571a65d30dc4f180ae4fe120209332eee952c73561e"
+  },
+  {
+    "file": "src/screens/MapScreen/components/FlockRow.tsx",
+    "kind": "callback",
+    "name": "onPress",
     "hash": "19d2806e61ba4a9aae195eef287efce29500465cf3297bf89d4fd7f5ccd8458b"
   },
   {
@@ -7116,10 +7146,34 @@
     "hash": "f528426db57280276620c968191d12c8dcabb3dbcceed3d86c97ed4930efe788"
   },
   {
+    "file": "src/screens/MapScreen/components/MemberInboxSheet.tsx",
+    "kind": "export",
+    "name": "MemberInboxSheet",
+    "hash": "f81c41add99bcc10bbe35c4dcd721554a4fa3fb20b5fd726d11e8c07deac5bcc"
+  },
+  {
+    "file": "src/screens/MapScreen/components/MemberInboxSheet.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "6a15f03c8068fc9737f4bf7b267fdee006014c09cf1a371c4b5547b1b5d5c0df"
+  },
+  {
+    "file": "src/screens/MapScreen/components/MemberInboxSheet.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "5fcf1b936a46015b014ff9bb392be45b257555bd3448ad3a39f7f6b3b126c881"
+  },
+  {
+    "file": "src/screens/MapScreen/components/MemberInboxSheet.tsx",
+    "kind": "callback",
+    "name": "onClose",
+    "hash": "c199587b7c612334309f642485003d5bdd3400ab64351e87ea6e28740632f623"
+  },
+  {
     "file": "src/screens/MapScreen/components/MembersPane.tsx",
     "kind": "export",
     "name": "MembersPane",
-    "hash": "9edf7e05563796b2daaee85a20176ddd63059e996d4251889edc037d4577992a"
+    "hash": "80c5a2e3c4fd266f49ba258c602383980ef92e6ded5cbf1e9f82c95fa2d2d303"
   },
   {
     "file": "src/screens/MapScreen/components/MembersPane.tsx",
@@ -7161,6 +7215,12 @@
     "file": "src/screens/MapScreen/components/MembersPane.tsx",
     "kind": "callback",
     "name": "onPress",
+    "hash": "ddead9ca66d9a583121b8ca358d97d3f2bc076cbf6c329245338d312aa3f4b65"
+  },
+  {
+    "file": "src/screens/MapScreen/components/MembersPane.tsx",
+    "kind": "callback",
+    "name": "onPress",
     "hash": "696db63d93d40f36450326e7cdc4552939393e735bbe3fa27d657a9bb1ae2404"
   },
   {
@@ -7168,36 +7228,6 @@
     "kind": "callback",
     "name": "onValueChange",
     "hash": "8c5a5c7e4e762cdeb27688abb546c72ce30b2dd1c9d2e00b49c117173ff59c84"
-  },
-  {
-    "file": "src/screens/MapScreen/components/OpsCenterSheet.tsx",
-    "kind": "export",
-    "name": "OpsCenterSheet",
-    "hash": "766211a8be50412840adc2e8457f3e5638d124ba6a5a63abeae23a7814c2072f"
-  },
-  {
-    "file": "src/screens/MapScreen/components/OpsCenterSheet.tsx",
-    "kind": "callback",
-    "name": "onClose",
-    "hash": "303b6b70ee76d25f7982783674a360a469c2516afa31f9360036a7e4d7411f5c"
-  },
-  {
-    "file": "src/screens/MapScreen/components/OpsCenterSheet.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "5e9620d6a60e847c854ca024ddf063d289678bc61273a204a727854e3be1da63"
-  },
-  {
-    "file": "src/screens/MapScreen/components/OpsCenterSheet.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "ece2bc19bcc2df8725e2c20b99e8104fd4dd7a179182bb079e79002a4e49b037"
-  },
-  {
-    "file": "src/screens/MapScreen/components/OpsCenterSheet.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "9356974239fd4d205237157f5d181a8c0a9accd49556198a141aecb172da797a"
   },
   {
     "file": "src/screens/MapScreen/components/PassiveCompanionPanel.tsx",
@@ -7401,43 +7431,13 @@
     "file": "src/screens/MapScreen/components/RoutePane.tsx",
     "kind": "export",
     "name": "RoutePane",
-    "hash": "661b7abc0acdc75aaa7dda529a73067b22b136a4c5f64eecb799ebadd5f04db1"
-  },
-  {
-    "file": "src/screens/MapScreen/components/RoutePane.tsx",
-    "kind": "callback",
-    "name": "onMomentumScrollEnd",
-    "hash": "221a45617fcbd216ad84a6e80b48f60b1fe475772346d0c0bb1f2c93c79ff15c"
-  },
-  {
-    "file": "src/screens/MapScreen/components/RoutePane.tsx",
-    "kind": "callback",
-    "name": "onLayout",
-    "hash": "574c33dd377464199623361efecf6a43944bc002398e7aafd48548de5e8e365f"
-  },
-  {
-    "file": "src/screens/MapScreen/components/RoutePane.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "0ba8efa3559057a0b66b03a294645f714d8cb07541911412fd13546474aa81d0"
-  },
-  {
-    "file": "src/screens/MapScreen/components/RoutePane.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "bdd5942b9a0cac4f5dcb7add8d3815313aa343c22e997b0d7c618aea48194043"
+    "hash": "295c61c89ca6bb432fc0ec52cc7ca1031e7bb8428ff7029f662d3cb81fb8eacf"
   },
   {
     "file": "src/screens/MapScreen/components/RoutePane.tsx",
     "kind": "callback",
     "name": "onPress",
     "hash": "45945587ae842436598ae2dbd2525b07a35f4a3b9d3257e1c24d895ea66d5ae2"
-  },
-  {
-    "file": "src/screens/MapScreen/components/RoutePane.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "17bb91b7aef38b57dc1e7ff6b2b49f1cafae13d641fb8d3fcb1028f8b39e98cc"
   },
   {
     "file": "src/screens/MapScreen/components/RoutePane.tsx",
@@ -8298,6 +8298,18 @@
     "hash": "2622060ccdd8d5c6ebcf8388d1ccc763656eef9c4c631d3b936e431f49ee7924"
   },
   {
+    "file": "src/screens/MapScreen/hooks/useMemberInbox.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "e0631f5762b5cc24e4806c7d81f24e39ffff93da9de2c6ffc64d8ea5b9a2a158"
+  },
+  {
+    "file": "src/screens/MapScreen/hooks/useMemberInbox.tsx",
+    "kind": "export",
+    "name": "useMemberInbox",
+    "hash": "c3db319f4d1c5e8c5ee85dbf75436a60a69fb770154c54c468953d3f495c3bf4"
+  },
+  {
     "file": "src/screens/MapScreen/hooks/useMemberPresence.ts",
     "kind": "export",
     "name": "useMemberPresence",
@@ -8434,6 +8446,18 @@
     "kind": "export",
     "name": "persistedReorderUpdates",
     "hash": "33dee4a3dc1928841d3804ee101b13b05c6091428c1854b8968c98083cc1a9db"
+  },
+  {
+    "file": "src/screens/MapScreen/memberInbox.ts",
+    "kind": "export",
+    "name": "inboxNoticeId",
+    "hash": "2621670414ccdab10dd3fe2d406c59a49ff2bb309b3418abc7bce44fdb546496"
+  },
+  {
+    "file": "src/screens/MapScreen/memberInbox.ts",
+    "kind": "export",
+    "name": "projectMemberInbox",
+    "hash": "ed11d9442206c28b546ed24f6349bc5e7a0eb76c8ccb85e8b7848d57b2a52804"
   },
   {
     "file": "src/screens/MapScreen/memberStatusSharing.ts",
@@ -10071,7 +10095,7 @@
     "file": "src/state/useGroupNotifications.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "780280c24c7a9bea6522f47f0e41c19a91504f84e2e70cdb4b4946c7f2a4a009"
+    "hash": "1c484ff9d7f538f0e111888278ba942910b5e6cc0b1e92ac31b0f6ddbdcd21f6"
   },
   {
     "file": "src/state/useGroupState.ts",
@@ -11242,36 +11266,6 @@
     "kind": "export",
     "name": "sortGatherRequestsFifo",
     "hash": "9423ab378a8e9d6e514c0773444e7801acb7bc42b369d6da171a219ea92b4ba3"
-  },
-  {
-    "file": "src/utils/gatherRequestInbox.ts",
-    "kind": "export",
-    "name": "resolveGatherRequestSelection",
-    "hash": "c4cf9eb16a9a11e640da8d2f544929a2371d000d1daf2018b35a054d4ef6c097"
-  },
-  {
-    "file": "src/utils/gatherRequestInbox.ts",
-    "kind": "export",
-    "name": "rollbackGatherRequestSelection",
-    "hash": "955a3dc20330f38d1c847d533c00c25e6e6de40c4f71b55924ab285ef3ccc086"
-  },
-  {
-    "file": "src/utils/gatherRequestInbox.ts",
-    "kind": "export",
-    "name": "restoreGatherRequestAfterFailedResolve",
-    "hash": "7aeb9bf4457923f6f75fdfb5d32d2193260fddc991fb2ecfa281366c2dec653b"
-  },
-  {
-    "file": "src/utils/gatherRequestInbox.ts",
-    "kind": "export",
-    "name": "recoverGatherRequestAfterFailedResolve",
-    "hash": "885c58df1abad620c6fa3eb4dea8face1da35bd2fd4ee0f58e5e89da4d1f0a5e"
-  },
-  {
-    "file": "src/utils/gatherRequestInbox.ts",
-    "kind": "export",
-    "name": "gatherRequestPageIndex",
-    "hash": "6d1f73cc5c3783391d0ae053f5f1015bd8770bbff56d8a2df677ea4f384b1296"
   },
   {
     "file": "src/utils/gatheringSessionOutbox.ts",

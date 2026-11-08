@@ -52,6 +52,14 @@ export async function sendCommand(
   message?: string,
   coords?: Coordinates,
 ): Promise<void> {
+  await enqueueCommand(groupId, {
+    type, message: message ?? null,
+    latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
+    expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+  });
+}
+
+async function enqueueCommand(groupId: string, payload: Record<string, string | number | null>): Promise<void> {
   if (isDemoGroup(groupId)) return;
   const { getCoreOperationOutbox, flushCoreOperationOutbox } = await import('../../state/coreDataSync');
   const uid = await requireLocalActorId();
@@ -59,11 +67,38 @@ export async function sendCommand(
   await getCoreOperationOutbox().enqueueMutation({
     operationId, actorId: uid, groupId, entityType: 'itinerary', entityId: operationId,
     operationType: 'send_command',
-    payload: { type, message: message ?? null,
-      latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
-      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() },
+    payload,
   });
   void flushCoreOperationOutbox().catch(() => undefined);
+}
+
+export interface PendingStartRequest {
+  id: string;
+  senderId: string;
+  title: string;
+}
+
+export async function requestGatheringStart(groupId: string, destinationId: string): Promise<void> {
+  await enqueueCommand(groupId, { type: 'request_start', destinationId });
+}
+
+export async function fetchPendingStartRequests(groupId: string, userId: string): Promise<PendingStartRequest[]> {
+  const { data, error } = await supabase.from('commands')
+    .select('id, sender_id, message')
+    .eq('group_id', groupId)
+    .eq('target_user_id', userId)
+    .eq('request_status', 'pending')
+    .order('created_at', { ascending: true });
+  orThrow(error);
+  return (data ?? []).map(row => ({ id: row.id, senderId: row.sender_id, title: row.message }));
+}
+
+export async function resolveGatheringStart(requestId: string, approve: boolean): Promise<void> {
+  const { error } = await supabase.rpc('resolve_gathering_start', {
+    p_request_id: requestId,
+    p_approve: approve,
+  });
+  orThrow(error);
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

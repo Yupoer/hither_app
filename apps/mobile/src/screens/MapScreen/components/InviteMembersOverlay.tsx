@@ -15,9 +15,9 @@ export interface InviteMembersOverlayProps {
   copyCode: () => Promise<void>;
   group: Group | null;
   inviteBlockedForAnonymousLeader: boolean;
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
   promptAnonymousLeaderRegistration: () => void;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   shareCode: () => Promise<void>;
   styles: MapStyles;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;

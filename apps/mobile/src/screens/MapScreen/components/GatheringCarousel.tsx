@@ -86,7 +86,7 @@ export interface GatheringCarouselProps {
   sessionEligibleMembers: MemberLocation[];
   setArrivalDestination: React.Dispatch<React.SetStateAction<Destination | null>>;
   setCarouselHeight: React.Dispatch<React.SetStateAction<number>>;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   setTourTargetRef: (id: TourTargetId, node: View | null) => void;
   setTravelMode: (mode: TravelMode) => void;
   sharedTargetId: string | null;

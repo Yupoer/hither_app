@@ -363,8 +363,10 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(request).toMatchObject({ requester_id: PEER, status: 'pending', items: [expect.objectContaining({ title: 'Suggested KML', day: null })] });
       const leader = await map(world, LEADER, 'leader');
       await expand(world, leader);
-      await run(leader, 'map.tab', { index: 1 });
+      await run(leader, 'map.tab', { index: 0 });
       await world.advance(2500);
+      await world.waitFor(leader, (value: MapObservation) => has(value, `member-inbox-open-${PEER}`), 'member row has the pending request');
+      await run(leader, 'map.member.inbox', { userId: PEER });
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-approve-${request.id}`), 'actual leader inbox');
       await run(leader, 'map.suggestion.approve', { requestId: request.id });
       await world.waitFor(leader, () => request.status === 'approved', 'request approval accepted by transport');
@@ -379,7 +381,7 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-reject-${rejected}`), 'next coalesced inbox request');
       expect((await leader.observe()).external.alertDetails).toEqual([{
-        title: '新的集合點請求', message: '有隊員送出集合點，請前往集合點頁審批。', buttons: [],
+        title: '新的集合點請求', message: '有隊員送出集合點，請前往成員頁審核。', buttons: [],
       }]);
       await leader.input({ kind: 'alert', index: 0 });
       expect((await leader.observe()).external.alertDetails).toEqual([]);
@@ -389,6 +391,43 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-reject-${rejected}`), 'rejected request leaves inbox');
       expect(world.backend.tables.gather_point_requests.find((row: { id: string }) => row.id === rejected).status).toBe('rejected');
       expect(world.backend.itinerary.some((row: { title: string }) => row.title === 'Rejected suggestion')).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-GATHER-07 offline member Start request stays pending until the leader approves it in Members', async () => {
+    const world = new World();
+    try {
+      world.backend.tables.notification_preferences.push({ user_id: LEADER, follower_requests: false });
+      const follower = await map(world, PEER, 'start-follower');
+      const leader = await map(world, LEADER, 'start-leader');
+      await expand(world, leader);
+      await run(leader, 'map.tab', { index: 1 });
+      expect(has(await leader.observe(), 'sheet-pane-badge-members')).toBe(false);
+
+      follower.online = false;
+      await run(follower, 'map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(follower, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'send_command'), 'offline request saved');
+      expect(world.backend.tables.commands).toHaveLength(0);
+      follower.online = true;
+      await world.advance(30000);
+      await world.waitFor(leader, (value: MapObservation) => has(value, 'sheet-pane-badge-members'), 'leader badge appears from Gathering');
+      const request = world.backend.tables.commands[0];
+      expect(request).toMatchObject({ sender_id: PEER, target_user_id: LEADER, destination_id: DESTINATION, request_status: 'pending' });
+      expect(world.backend.sessions.size).toBe(0);
+
+      await run(leader, 'map.tab', { index: 0 });
+      await run(leader, 'map.member.inbox', { userId: PEER });
+      await world.waitFor(leader, (value: MapObservation) => has(value, `start-request-approve-${request.id}`), 'actual leader request sheet');
+      expect(has(await leader.observe(), 'sheet-pane-badge-members')).toBe(true);
+      await run(leader, 'map.start-request.approve', { requestId: request.id });
+      await world.waitFor(leader, (value: MapObservation) => !has(value, 'sheet-pane-badge-members'), 'approval clears pending badge');
+      expect(request.request_status).toBe('approved');
+      expect(world.backend.sessions.get(request.id)).toMatchObject({ started_by: LEADER, destination_id: DESTINATION, status: 'active' });
+      await world.advance(2500);
+      if (!has(await follower.observe(), `gather-nav-${DESTINATION}`)) {
+        await run(follower, 'map.card.toggle', { destinationId: DESTINATION });
+      }
+      await world.waitFor(follower, (value: MapObservation) => field(value, `gather-nav-${DESTINATION}`)?.label === '前往中', 'member sees accepted navigation');
     } finally { await world.close(); }
   });
 
@@ -482,8 +521,8 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
     try {
       const device = await map(world);
       await expand(world, device);
-      await run(device, 'map.tab', { index: 1 });
-      await run(device, 'map.ops.open');
+      await run(device, 'map.tab', { index: 0 });
+      await run(device, 'map.coordination.open');
       await run(device, 'map.coordination.create.open');
       expect(await run(device, 'map.coordination.create.submit')).toMatchObject({ invoked: false });
       await run(device, 'map.coordination.subject', { value: '  Choose lunch  ' });
@@ -615,19 +654,6 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
         expect(arrived.presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
         expect(world.backend.itinerary[0].closed_at).toBeNull();
       }
-    } finally { await world.close(); }
-  });
-
-  it('MAP-GATHER-07 actual follower request-start sends a command without creating a leader session', async () => {
-    const world = new World();
-    try {
-      const device = await map(world, PEER);
-      await run(device, 'map.journey.command', { destinationId: DESTINATION });
-      await world.settle();
-      expect(world.backend.notificationOutbox).toEqual([expect.objectContaining({ sender_id: PEER, target_user_id: LEADER,
-        payload: expect.objectContaining({ type: 'request_start', groupId: GROUP_ID }) })]);
-      expect(world.backend.sessions.size).toBe(0);
-      expect(world.backend.itinerary[0].closed_at).toBeNull();
     } finally { await world.close(); }
   });
 

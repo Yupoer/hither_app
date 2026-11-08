@@ -8,6 +8,7 @@ import { useMountEffect } from '../../../hooks/useMountEffect';
 import { type TranslationKey } from '../../../i18n';
 import { useForegroundClock } from '../../../state/foregroundUi';
 import { isLocationSampleFresh, locationFreshness } from '../../../utils/locationFreshness';
+import { MemberInboxBadge } from './MemberInboxBadge';
 
 /**
  * One flock member row. Owns a 30s tick for freshness / "moving" status so the
@@ -39,6 +40,8 @@ export const FlockRow = React.memo(function FlockRow({
   onSelfMerge,
   onSelfSplit,
   onKick,
+  inboxCount,
+  onOpenInbox,
 }: {
   userId: string;
   name: string;
@@ -66,6 +69,8 @@ export const FlockRow = React.memo(function FlockRow({
   onSelfMerge: () => void | Promise<unknown>;
   onSelfSplit: () => void | Promise<unknown>;
   onKick?: () => void;
+  inboxCount: number;
+  onOpenInbox: () => void;
 }) {
   const { now: nowMs, lifecycle: clockLifecycle } = useForegroundClock(30_000);
   const reduceMotion = useReducedMotion();
@@ -100,13 +105,9 @@ export const FlockRow = React.memo(function FlockRow({
         ? t('locationUpdate.hours', { hours: freshness.value })
         : t(`locationUpdate.${freshness.unit}`);
 
-  return (
-    <View style={[styles.flockRow, last && styles.flockRowLast]}>
-      {clockLifecycle}
-      {!isMe && sharingEnabled !== false && !reduceMotion && locationUpdate.highlight && (
-        <FlockLocationTint key={locationUpdate.revision} accent={accent} />
-      )}
-      <View style={styles.flockRowMain}>
+  const rowContent = (
+    <>
+      <View>
         <View
           style={[
             styles.flockAvatar,
@@ -120,22 +121,47 @@ export const FlockRow = React.memo(function FlockRow({
             {displayMemberAvatar(avatar, userId).emoji}
           </HitherText>
         </View>
-        <View style={styles.grow}>
-          <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>
-          <Text style={styles.flockStatus} numberOfLines={2}>
-            <Text style={styles.flockMetaRole}>{role}</Text>
-            {!isMe && distOrStatus ? (
-              <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
-            ) : null}
-            {freshnessText ? (
-              <Text style={styles.flockMetaFresh}>{` · ${freshnessText}${syncFailed ? ` · ${t('map.locationSyncFailed')}` : ''}`}</Text>
-            ) : null}
-            {!isMe && solo ? (
-              <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
-            ) : null}
-          </Text>
-        </View>
+        {inboxCount > 0 ? (
+          <MemberInboxBadge count={inboxCount} style={{ top: -4, right: 0 }} testID={`member-inbox-badge-${userId}`} />
+        ) : null}
       </View>
+      <View style={styles.grow}>
+        <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>
+        <Text style={styles.flockStatus} numberOfLines={2}>
+          <Text style={styles.flockMetaRole}>{role}</Text>
+          {!isMe && distOrStatus ? (
+            <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
+          ) : null}
+          {freshnessText ? (
+            <Text style={styles.flockMetaFresh}>{` · ${freshnessText}${syncFailed ? ` · ${t('map.locationSyncFailed')}` : ''}`}</Text>
+          ) : null}
+          {!isMe && solo ? (
+            <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
+          ) : null}
+        </Text>
+      </View>
+    </>
+  );
+
+  return (
+    <View style={[styles.flockRow, last && styles.flockRowLast]}>
+      {clockLifecycle}
+      {!isMe && sharingEnabled !== false && !reduceMotion && locationUpdate.highlight && (
+        <FlockLocationTint key={locationUpdate.revision} accent={accent} />
+      )}
+      {inboxCount > 0 ? (
+        <Pressable
+          style={({ pressed }) => [styles.flockRowMain, pressed && styles.rowActionPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={t('memberInbox.open', { name, count: inboxCount })}
+          onPress={onOpenInbox}
+          testID={`member-inbox-open-${userId}`}
+        >
+          {rowContent}
+        </Pressable>
+      ) : (
+        <View style={styles.flockRowMain}>{rowContent}</View>
+      )}
       {isMe && (
         <View style={styles.selfControls}>
           {subgroupId ? (

@@ -771,7 +771,7 @@
         },
         {
           "file": "src/__tests__/headlessMapScenario.test.ts",
-          "pattern": "actual follower request-start",
+          "pattern": "offline member Start request stays pending",
           "platforms": [
             "ios",
             "android"

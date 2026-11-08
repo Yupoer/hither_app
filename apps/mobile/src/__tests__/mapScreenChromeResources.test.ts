@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { MapAccessLossResource, MapGatherRequestPagerResource, MapRouteOpenResource } from '../screens/MapScreen/MapScreenChromeResources';
+import { MapAccessLossResource, MapRouteOpenResource } from '../screens/MapScreen/MapScreenChromeResources';
 
 const mockAlert = jest.fn();
 jest.mock('react-native', () => ({ Alert: { alert: (...args: unknown[]) => mockAlert(...args) } }));
@@ -58,36 +58,5 @@ describe('MapScreen chrome resource ownership', () => {
     expect(session.current).toBe('started');
     await act(async () => { finishes[1](); });
     expect(session.current).toBe('done');
-  });
-
-  it('keeps FIFO removal selection and native pager ownership across equal-value new id arrays', () => {
-    const scrollTo = jest.fn();
-    const lastIds = { current: ['a', 'b', 'c'] };
-    const removed = { current: null as string | null };
-    const pager = { current: { scrollTo } };
-    let selected = '';
-    function Owner({ ids }: { ids: string[] }) {
-      const [id, setId] = useState<string | null>('b');
-      selected = id ?? '';
-      return React.createElement(MapGatherRequestPagerResource, {
-        sortedGatherRequestIds: ids, selectedGatherRequestId: id, setSelectedGatherRequestId: setId,
-        lastGatherRequestIdsRef: lastIds, pendingRemovedGatherRequestIdRef: removed,
-        gatherRequestPageW: 300, gatherRequestPagerRef: pager,
-      });
-    }
-    act(() => { tree = create(React.createElement(Owner, { ids: lastIds.current })); });
-    expect(selected).toBe('b');
-    removed.current = 'b';
-    const nextIds = ['a', 'c'];
-    act(() => tree?.update(React.createElement(Owner, { ids: nextIds })));
-    expect(selected).toBe('c');
-    expect(lastIds.current).toBe(nextIds);
-    expect(removed.current).toBeNull();
-    expect(scrollTo).toHaveBeenLastCalledWith({ x: 300, animated: true });
-    const before = scrollTo.mock.calls.length;
-    act(() => tree?.update(React.createElement(Owner, { ids: ['a', 'c'] })));
-    expect(scrollTo).toHaveBeenCalledTimes(before + 1);
-    expect(pager.current.scrollTo).toBe(scrollTo);
-    expect(selected).toBe('c');
   });
 });

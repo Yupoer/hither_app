@@ -15,7 +15,7 @@ const toolsPane = readFileSync(join(__dirname, '../screens/MapScreen/components/
 const membersPane = readFileSync(join(__dirname, '../screens/MapScreen/components/MembersPane.tsx'), 'utf8');
 const routePaneSource = readFileSync(join(__dirname, '../screens/MapScreen/components/RoutePane.tsx'), 'utf8');
 const historySheet = readFileSync(join(__dirname, '../screens/MapScreen/components/HistorySheet.tsx'), 'utf8');
-const opsCenterSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/OpsCenterSheet.tsx'), 'utf8');
+const memberInboxSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/MemberInboxSheet.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
 const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const routeEditorSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
@@ -133,7 +133,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('const expanded = canEdit');
     expect(mapScreen).toContain('styles.routeScopeContent');
     expect(mapStyles).toContain('paddingHorizontal: 10');
-    expect(opsCenterSheet).toContain('paddingBottom: 10');
+    expect(memberInboxSheet).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('routeOverlayBody');
     expect(mapScreen).toContain('useMapScopeControls(myScopeId)');
   });

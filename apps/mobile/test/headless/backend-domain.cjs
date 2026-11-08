@@ -31,7 +31,7 @@ const schemas = {
   performance_events: { fields: 'id user_id session_id occurred_at event_type operation payload', owner: 'user_id', modes: ['upsert'], conflict: 'id' },
   visited_waypoints: { fields: 'id user_id group_id destination_id navigation_session_id arrival_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
   core_entity_versions: { fields: 'group_id entity_type entity_id entity_version state', modes: ['select'] },
-  commands: { fields: 'id group_id sender_id type message latitude longitude expires_at created_at', modes: ['select'] },
+  commands: { fields: 'id group_id sender_id type message latitude longitude expires_at created_at destination_id target_user_id request_status', modes: ['select'] },
   group_alerts: { fields: 'id group_id kind sender_id member_id member_name distance_m created_at', modes: ['select'] },
 };
 const ok = data => ({ data: structuredClone(data), error: null });
@@ -127,6 +127,11 @@ function executeTable(b, operation) {
   if (name === 'public_profiles' && mode === 'select') rows = rows.filter(p => userId && (p.id === userId || b.memberships.some(m => m.user_id === p.id && member(b, m.group_id, userId))));
   if (name === 'subgroup_invites') rows = rows.filter(r => r.invitee_id === userId || r.inviter_id === userId);
   if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
+  if (name === 'commands') rows = rows.filter(r => !r.core_delivery || r.sender_id === userId
+    || require('./backend-workflows.cjs').scopeAllowed(b, r.group_id, null, userId));
+  if (name === 'commands') rows = rows.filter(r => r.type !== 'request_start' || r.sender_id === userId
+    || (r.target_user_id == null || r.target_user_id === userId)
+      && require('./backend-workflows.cjs').scopeAllowed(b, r.group_id, b.itinerary.find(d => d.id === r.destination_id)?.subgroup_id, userId));
   if (name === 'navigation_member_states') rows = rows.filter(r => member(b, b.sessions.get(r.navigation_session_id)?.group_id, userId));
   if (name === 'visited_waypoints') rows = rows.filter(r => r.user_id === userId || member(b, r.group_id, userId));
   if (['groups', 'memberships', 'itinerary_items', 'subgroups', 'daily_accommodations', 'member_locations', 'coordination_requests', 'itinerary_operations', 'destination_arrivals', 'gather_point_requests', 'navigation_sessions', 'navigation_session_history', 'core_entity_versions', 'commands', 'group_alerts'].includes(name)) {

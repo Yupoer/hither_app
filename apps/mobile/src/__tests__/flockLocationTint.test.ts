@@ -4,7 +4,7 @@ import { FlockRow } from '../screens/MapScreen/components/FlockRow';
 
 let mockReduceMotion = false;
 jest.mock('react-native', () => ({
-  View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: { absoluteFill: {} },
+  View: 'View', Text: 'Text', Pressable: 'Pressable', StyleSheet: { absoluteFill: {}, create: (styles: object) => styles },
 }));
 jest.mock('react-native-reanimated', () => ({
   __esModule: true,
@@ -28,7 +28,7 @@ it('shows the tint only for a newer peer fix, with no flash on mount or under Re
     userId: 'peer', name: 'Peer', color: '#FFFFFF', isLeader: false, solo: false,
     dist: '', arrived: false, lastUpdated, serverTimeOffsetMs: 0, syncFailed: false,
     isMe: false, last: true, styles: {}, t: key => key, accent: '#F5B142',
-    onSelfMerge: () => {}, onSelfSplit: () => {},
+    onSelfMerge: () => {}, onSelfSplit: () => {}, inboxCount: 0, onOpenInbox: () => {},
   });
   let root!: ReactTestRenderer;
   await act(async () => { root = create(draw('2026-11-08T02:58:00Z')); });

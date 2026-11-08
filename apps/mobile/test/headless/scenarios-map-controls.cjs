@@ -17,7 +17,7 @@ module.exports = [
   scenario('MAP-LOC-06', 'actual sharing reenable refuses', 'Denied permission keeps consent disabled. A later permitted confirmation persists sharing and restarts the real tracking path.'),
   scenario('MAP-LOC-07', 'actual Map hands active navigation', 'Actual Map Start and AppState handoff select the supported iOS native owner or Android Expo task. Real background callbacks upload with the active session. Disabling sharing stops both owners without ending the team session.'),
   scenario('MAP-SHELL-01,MAP-SHELL-02,MAP-SHELL-03,MAP-SHELL-04,MAP-SHELL-05', 'actual pane guards carousel', 'Invalid and current indices preserve pane ownership. Carousel drives actual camera framing. Card activity resets the ten-second collapse deadline. Pending place cancel removes its controls without writing.'),
-  scenario('MAP-OPS-01', 'actual exception actions persist', 'Actual help exception acknowledge, resolve and reopen persist local handling through process restart without changing peer state or team journey.'),
+  scenario('MAP-OPS-01', 'actual member notice is read-only', 'Actual help notice shows a Members badge from Gathering, clears on opening the sender sheet and stays read through restart.'),
   scenario('MAP-SETTINGS-02', 'actual reset cancellation preserves tours', 'Cancel keeps completed tours. Confirm clears account tour flags and durably requests onboarding replay while staying on Map. The development archive button is absent.'),
   scenario('MAP-TOUR-01', 'actual route tour previous next', 'Real native measurement permits Next and Previous. Completing all route steps persists account completion and suppresses the tour after process restart.'),
 ];
