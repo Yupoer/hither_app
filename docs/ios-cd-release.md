@@ -43,7 +43,7 @@ flowchart TD
   master --> dispatch[Manual dispatch on master with source SHA and mode]
   dispatch --> trust[Exact checkout and master ancestry guard]
   trust --> inspect[inspect-release: read-only EAS metadata on Linux]
-  trust --> preflight[preflight: Xcode and dependency checks]
+  trust --> preflight[preflight: Xcode, dependencies and Swift compile probe]
   trust --> admission[Exact-source successful master-push CI for release modes]
   admission --> ota[ota: current master, backend attestation, binary compatibility]
   admission --> launch[validate-release, build-only, submit: full Release simulator gate]
@@ -140,7 +140,7 @@ process. It does not explain a missing OS PID.
 | Mode | Work performed |
 | --- | --- |
 | `inspect-release` | Linux read-only EAS build/channel/update inventory. |
-| `preflight` | Xcode and dependency checks without signing. |
+| `preflight` | Xcode and dependency checks plus a Release compile of the patched Expo Swift actor for the iOS Simulator. |
 | `validate-release` | Full Release simulator build and two verified cold starts. |
 | `ota` | Guarded iOS publication and exact remote readback. |
 | `build-only` | Full simulator gate, signed local EAS build and exact IPA verification. |

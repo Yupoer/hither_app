@@ -624,7 +624,8 @@ def lldb_capture(debugger, pid, executable, output, symbol_executable=None):
         stage = 'target_create'
         _write_progress(output, stage, 'target_create')
         _write_private_debugger_event(output, 'target_create_begin')
-        target = debugger.CreateTarget(str(symbol_executable or executable))
+        # The dynamic loader discovers the process's images after attachment.
+        target = debugger.CreateTarget(str(symbol_executable or executable), '', '', False, lldb.SBError())
         _write_progress(output, stage, 'target_ready')
         valid_target = isinstance(target, lldb.SBTarget) and target.IsValid()
         _write_private_debugger_event(output, 'target_create_end', valid=valid_target)

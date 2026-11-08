@@ -5,8 +5,10 @@ No uninstall or simulator erase: this also exercises upgrades over existing data
 Screenshots still require review; simulator success does not certify a device IPA.
 """
 import argparse
+from collections import deque
 import ctypes
 from datetime import datetime
+import io
 import json
 import math
 import os
@@ -17,6 +19,7 @@ import select
 import subprocess
 import sys
 import time
+from uuid import uuid4
 
 
 class CommandFailure(RuntimeError):
@@ -117,7 +120,8 @@ def crash_report_summary(report, pid, executable, bundle):
     return summary
 
 
-def find_crash_report(pid, executable, bundle, simulator, started):
+def find_crash_report(pid, executable, bundle, simulator, started, *, evidence_path=None):
+    max_bytes = 8_000_000
     home = Path.home()
     directories = (home / 'Library/Logs/DiagnosticReports',
                    home / 'Library/Developer/CoreSimulator/Devices' / simulator
@@ -125,15 +129,25 @@ def find_crash_report(pid, executable, bundle, simulator, started):
     for directory in directories:
         for path in directory.glob(executable + '*.ips'):
             try:
-                if path.stat().st_mtime < started - 1 or path.stat().st_size > 8_000_000:
+                stat = path.stat()
+                if stat.st_mtime < started - 1 or stat.st_size > max_bytes:
                     continue
-                with path.open(encoding='utf-8') as stream:
-                    metadata = json.loads(stream.readline())
-                    if metadata.get('bug_type') != '309':
-                        continue
-                    report = json.load(stream)
+                with path.open('rb') as stream:
+                    contents = stream.read(max_bytes + 1)
+                if len(contents) > max_bytes:
+                    continue
+                stream = io.StringIO(contents.decode('utf-8'), newline=None)
+                metadata = json.loads(stream.readline())
+                if metadata.get('bug_type') != '309':
+                    continue
+                report = json.load(stream)
                 summary = crash_report_summary(report, pid, executable, bundle)
                 if summary:
+                    if evidence_path is not None:
+                        try:
+                            evidence_path.write_bytes(contents)
+                        except OSError:
+                            pass
                     return summary
             except (OSError, ValueError, UnicodeError, AttributeError):
                 continue
@@ -184,7 +198,7 @@ def targets_app_termination(message, bundle, target_pid):
             and int(target.group(2)) == target_pid)
 
 
-def probe_system_termination(simulator, bundle, started, ended, target_pid):
+def probe_system_termination(simulator, bundle, started, ended, target_pid, *, evidence_path=None):
     if (not isinstance(bundle, str) or not re.fullmatch(r'[A-Za-z0-9.-]+', bundle)
             or not all(type(value) in (int, float) and math.isfinite(value)
                        for value in (started, ended))
@@ -206,6 +220,7 @@ def probe_system_termination(simulator, bundle, started, ended, target_pid):
                                     + r'(?![A-Za-z0-9_.-])', re.IGNORECASE)
         contextual = set()
         correlated = set()
+        matched_events = deque(maxlen=128)
         for line in result.stdout.splitlines():
             if not line.strip():
                 continue
@@ -227,8 +242,20 @@ def probe_system_termination(simulator, bundle, started, ended, target_pid):
             contextual.update(signals)
             # processID is the logger PID. Require the App's bundle and PID in
             # a known termination-subject position within the same message.
-            if targets_app_termination(message, bundle, target_pid):
+            targets_original_pid = targets_app_termination(message, bundle, target_pid)
+            if targets_original_pid:
                 correlated.update(signals)
+            if evidence_path is not None:
+                matched_events.append({'timestamp': observed.isoformat(),
+                                       'eventMessage': message[:2048],
+                                       'eventMessageTruncated': len(message) > 2048,
+                                       'targetsOriginalPid': targets_original_pid})
+        if matched_events:
+            try:
+                evidence_path.write_text(''.join(json.dumps(event) + '\n' for event in matched_events),
+                                         encoding='utf-8')
+            except OSError:
+                pass
         return {'systemLogProbe': 'available',
                 'systemTerminationSignals': sorted(contextual),
                 'pidCorrelatedSystemSignals': sorted(correlated),
@@ -512,7 +539,12 @@ def main():
         if attempt is not None:
             evidence['attempt'] = attempt
         evidence['appProcessState'] = 'unavailable'
+        evidence_prefix = None
         if pid is not None:
+            evidence_prefix = f'original-launch-{pid}-{uuid4().hex}'
+            evidence['failedLaunch'] = {'pid': pid, 'launchRequestedAtUnixSeconds': started,
+                                        'failureObservedAtUnixSeconds': failed_at,
+                                        'evidenceFilePrefix': evidence_prefix}
             try:
                 os.kill(pid, 0)
                 evidence['processAlive'] = True
@@ -539,7 +571,8 @@ def main():
             try:
                 for _ in range(10):
                     report = find_crash_report(pid, info['CFBundleExecutable'], bundle,
-                                               options.simulator, started)
+                                               options.simulator, started,
+                                               evidence_path=options.output / f'{evidence_prefix}.ips')
                     if report:
                         evidence.update(report)
                         break
@@ -549,8 +582,11 @@ def main():
             except Exception:
                 evidence['crashReportProbe'] = 'unavailable'
         try:
+            events_path = (options.output / f'{evidence_prefix}-system-events.jsonl'
+                           if evidence_prefix is not None else None)
             evidence.update(probe_system_termination(
-                options.simulator, bundle, started, failed_at, pid))
+                options.simulator, bundle, started, failed_at, pid,
+                evidence_path=events_path))
         except Exception:
             evidence['systemLogProbe'] = 'unavailable'
         raise
