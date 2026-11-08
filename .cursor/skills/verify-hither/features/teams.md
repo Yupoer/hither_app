@@ -21,10 +21,10 @@ A traveler enters through onboarding or Login, chooses a role, creates or joins 
 
 Preconditions:
 
-- Doctor passes. Each App actor starts with `userId: null` and `mode: 'app'`.
-- The recorded trip creates its group through the UI. Other suites use `LEADER`, `PEER`, `GROUP_ID`, and `TEST42` from the fixture backend.
+- Doctor passes. The recorded trip starts each actor with `userId: null` and `mode: 'app'`, then creates its group through the UI.
+- Focused suites can seed the required identity and group with `LEADER`, `PEER`, `GROUP_ID`, and `TEST42` from the fixture backend.
 
-- **Guest and group proof.** Run the skill's recorded trip command. Its `onboarding-skip`, `login-guest`, `guest-confirm-button`, `role-create`, `role-join`, `team.name`, `team.group-name`, `team.code`, `team.create`, and `team.join` operations must reach `Map`. Read `membership.confirmed` and `trio.roster` in `observations.jsonl`. Each actor must see the same group and three distinct members in the real durable snapshot. Confirm the rows in `backend-evidence.json`.
+- **Guest and group proof.** Run the skill's recorded trip command. Its `onboarding-skip`, `login-guest`, `guest-confirm-button`, `role-create`, `role-join`, `team.name`, `team.group-name`, `team.code`, `team.create`, and `team.join` operations must reach `Map`. Read `membership.confirmed` and `trio.roster` in `observations.jsonl`. Compare the three actor IDs from `membership.confirmed` to each actor's durable roster at `trio.roster`. Check the successful `create_group` and `join_group` receipts in `backend-evidence.json`. Its final membership rows come after member B leaves, so only the leader and member A remain in the created group.
 - **Return proof.** The trip uses `role-my-teams`, `team-card-<created-group-id>`, and `team-enter`. Use the ID captured from that run, rather than a guessed fixture ID. Day-two observations must preserve the traveler display identities and group membership after restart.
 - **Background and cold launch.** The real-navigator case in `headlessAuthScenario.test.ts` enters a saved team through My teams, sends inactive/background/active events, and requires the same Map and membership. Its process restart returns to RoleSelect. `otaUpdates.test.ts` separately checks that a late startup download and foreground resume cannot automatically reload that active screen; explicit manual update remains available.
 - **Auth entry points.** Run `./test/headless/run.ps1 -ResourceReport "${verifySuiteOutput}.resources.json" --testNamePattern="headless authentication operations on" --json --outputFile="$verifySuiteOutput"` after allocating a fresh suite path as described in the map index. Existing cases drive `auth.email.edit`, `auth.password.edit`, `auth.email.submit`, signup, guest cancellation, legal links, recovery, and configured OAuth callbacks. Require actual route and session outcomes plus the corresponding SDK contract receipts.
@@ -34,6 +34,6 @@ Preconditions:
 ## Gotchas
 
 - OAuth, email delivery, and guest auth use explicit external contracts. They do not prove a real identity provider or inbox.
-- A fixture account injection is setup for a screen test. It cannot replace the Login flow in an App proof.
+- A seeded identity can prove later App or screen behavior. To prove sign-in, drive Login.
 - A profile overlay mounted directly can prove its callback and provider effect. Use the actual Map avatar path before claiming the parent screen integration.
 - Reusing a prior output directory fails before launch. Use the current run's source record and retain its failure.

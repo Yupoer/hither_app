@@ -6,8 +6,8 @@ This map describes user paths and observable proof for the headless React and Ja
 | --- | --- | --- | --- |
 | `teams` | [Accounts and teams](teams.md) | Guest confirmation, create, join, reenter, leave. | Email, signup, recovery, OAuth, account upgrade, profile. |
 | `itinerary` | [Destinations and itinerary](itinerary.md) | Dropped pins, two days, hotel, move to day, close history. | Search, manual coordinates, favorites, KML, member suggestions, subgroup, drag, date, bulk changes. |
-| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Mixed queued sync, passive background callbacks, explicit scheduled Start, manual End and completion, consent, native adapter branch. |
-| `members` | [Members and notifications](members.md) | Trio roster, coordinates, solo and rejoin, departure notices, muted category. | Backend/peer refresh, navigation-only separation, invitations, split and merge, kick, profile, preference controls, route tour. |
+| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start, pause, and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Offline Start and End, mixed queued sync, passive background callbacks, explicit scheduled Start, manual force completion, consent, native adapter branch. |
+| `members` | [Members and notifications](members.md) | Trio roster, coordinates, solo and rejoin, add-place notices suppressed while solo, departure notices. | Backend/peer refresh, navigation-only separation, invitations, split and merge, kick, profile, individual category preferences, route tour. |
 | `store` | [Store and Premium](store.md) | None. | Map store, rewarded ad, redemption, Premium plans, purchase, restore, promo. |
 
 ## Baseline preconditions
@@ -45,10 +45,8 @@ Save the selected command, its stdout, stderr, and exit code alongside that JSON
 
 ## Proof and skip reporting
 
-For the location sync maintenance pass, source and live scope is `journey`, `members` and the affected authoritative-empty `itinerary` recovery. Use their selected commands. A partial Jest report must not be passed to the complete denominator reporter.
+For a request limited to location sync, use the selected cases in [journey](journey.md), [members](members.md), and the affected [itinerary recovery](itinerary.md). Use the full skill's maintenance recipe for a pass over all five maps. A partial Jest report cannot establish the complete denominator.
 
-The 2026-11-03 pass records `changed` for these scoped features. The initial eight unique Map cases passed on product `9cfcd9b`; recovery corrections were reviewed at product `988a85be743da4f92de20e35ef1e951da9891b0b`. Source inventory and registry audits passed separately. Local audit indexes `headless-retry-result.md`, `hook-ci-alignment-result.md` and `ci-map-alignment.md` record original and affected-only rerun evidence, retained failures and verified cleanup. The other feature maps were not maintained in this pass.
-
-Report each entry point as passed, failed, or unexecuted. Record a missing fixture precondition as a failed journey with the reason in the feature's `Gotchas`. Do not weaken the journey or change its entry point to pass it. Keep failure artifacts after cleanup.
+Report each entry point as passed, failed, or unexecuted. If a fixture precondition is missing, record the failed path and the reason in the run notes. Add reusable preconditions to the feature's Gotchas. Do not weaken the journey or change its entry point to pass it. Keep failure artifacts after cleanup.
 
 The [operation inventory](../../../../apps/mobile/test/headless/operation-inventory.json) and [functional scenario denominator](../../../../apps/mobile/test/headless/functional-scenarios.json) support this user-facing map. Neither substitutes for the map or actual execution. Source fingerprints require source review when behavior changes; do not regenerate them to erase a mismatch.
