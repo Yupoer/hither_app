@@ -13,6 +13,8 @@ module.exports = [
     'Cancellation has no exchange or identity. iOS missing token has no exchange and exchange network failure shows stage feedback. Actual native iOS or hosted Android sign in commits profile/session and RoleSelect.'],
   ['A07', 'cancels Apple, rejects a missing token and opens the app on the first successful exchange',
     'Cancel and missing identity token create no session. One successful exchange opens the App while profile work is pending. Native fixture validates the hashed nonce and auth receives the raw nonce. The full name persists in metadata and profile when the hold releases.'],
+  ['A07,A22', 'does not write a signed-out Apple account name to the next account',
+    'The user signs out and signs in to a different account while the first Apple profile read is held. Releasing it does not change the next account or write its metadata.'],
   ['A16,A17,A18', 'validates callback boundaries, consumes one recovery code and submits the recovered password',
     'Wrong protocol/origin/path/state, duplicate parameters, token/hash/error fields and expiry are rejected. Recovery consumes once and rejects replay. Recovery form blocks invalid passwords, retains draft on failed update, persists successful password and clears success at 1200 milliseconds.'],
   ['A16', 'handles deep-link callbacks once and consumes a rejected exchange before another delivery',

@@ -264,6 +264,37 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
+  it('does not write a signed-out Apple account name to the next account', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'apple-account-switch', userId: null, platform, mode: 'app' });
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'onboarding-skip'), 'initial onboarding');
+      await device.perform('onboarding.skip');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'Login', 'signed out App');
+      world.backend.configureAuth({ idTokens: [{ provider: 'apple', token: 'apple-leader', userId: LEADER }] });
+      await device.input({ kind: 'auth.configureNative', value: { apple: { result: { identityToken: 'apple-leader', fullName: { givenName: 'Apple', familyName: 'Traveler' } } } } });
+      world.hold('profiles', { matches: (operation: any) => operation.userId === LEADER });
+      await device.perform('auth.apple');
+      await world.waitFor(device, (value: any) => value.presentation.session.user?.id === LEADER
+        && value.presentation.route.route === 'RoleSelect', 'Apple session with profile pending');
+      expect(world.held.some((item: any) => item.operation.name === 'profiles')).toBe(true);
+      await device.perform('session.signout');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'Login'
+        && value.presentation.session.user === null, 'explicit signout');
+      await credentials(device, 'peer@headless.test');
+      await device.perform('auth.email.submit');
+      await world.waitFor(device, (value: any) => value.presentation.session.user?.id === PEER
+        && value.presentation.route.route === 'RoleSelect', 'next account');
+      await world.release('profiles');
+      await world.advance(0);
+      expect(calls(world, 'updateUser')).toEqual([]);
+      expect(world.backend.authUsers.get(PEER).user_metadata.full_name).toBeUndefined();
+      const current = await device.observe();
+      expect(current.presentation.session.user?.id).toBe(PEER);
+      expect(current.presentation.route.route).toBe('RoleSelect');
+    } finally { await world.close(); }
+  });
+
   it('validates callback boundaries, consumes one recovery code and submits the recovered password', async () => {
     const world = new World();
     try {

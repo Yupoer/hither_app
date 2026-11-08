@@ -335,14 +335,21 @@ export function useAuthFlow({
         || 'Apple User';
 
       if (appleName) {
-        const { error: metadataError } = await supabase.auth.updateUser({
-          data: {
-            full_name: appleName,
-            given_name: credential.fullName?.givenName,
-            family_name: credential.fullName?.familyName,
-          },
-        });
-        if (metadataError) throw toAuthFlowError(metadataError, 'Unable to save your profile.');
+        const savedMetadata = await changeAuthSession(async () => {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) throw toAuthFlowError(sessionError, 'Unable to save your profile.');
+          if (session?.user.id !== authUser.id) return false;
+          const { error: metadataError } = await supabase.auth.updateUser({
+            data: {
+              full_name: appleName,
+              given_name: credential.fullName?.givenName,
+              family_name: credential.fullName?.familyName,
+            },
+          });
+          if (metadataError) throw toAuthFlowError(metadataError, 'Unable to save your profile.');
+          return true;
+        }, false);
+        if (!savedMetadata) return null;
       }
       const { error: profileError } = await supabase
         .from('profiles')

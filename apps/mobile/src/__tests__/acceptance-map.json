@@ -2555,7 +2555,7 @@
       "child": "auth",
       "acceptance": "Real authentication controls validate inputs, preserve durable identity and isolate platform sign-in and recovery flows.",
       "testFile": "headlessAuthScenario.test.ts",
-      "testNamePattern": "validates credentials locally|opens the app on the first successful exchange|validates callback boundaries|boots the real navigator|leaves Map for a real kick"
+      "testNamePattern": "validates credentials locally|opens the app on the first successful exchange|does not write a signed-out Apple account|validates callback boundaries|boots the real navigator|leaves Map for a real kick"
     },
     {
       "parent": 320,
