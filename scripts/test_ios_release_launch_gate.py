@@ -193,23 +193,36 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                                           "appExitCode": 0, "appExitObservedDuring": "launch_observation"}
             argv = ["verify-ios-release-launch.py", "--app", str(app), "--simulator", "test-simulator",
                     "--build", "77", "--output", str(output)]
-            with patch.object(VERIFY, "run", side_effect=command), patch("sys.argv", argv), \
-                    patch.object(VERIFY, "ProcessExitObserver", return_value=observer), \
-                    patch.object(VERIFY.os, "kill"), patch.object(VERIFY.time, "sleep"), \
-                    patch.object(VERIFY, "probe_app_process_state", return_value="replacement_pid"), \
-                    patch.object(VERIFY, "find_crash_report", return_value=None), \
-                    patch.object(VERIFY, "probe_simulator_state", return_value="booted"), \
-                    patch.object(VERIFY, "probe_system_termination", return_value={}), \
-                    self.assertRaises(ProcessLookupError):
-                VERIFY.main()
-            result = json.loads((output / "launch-result.json").read_text())
-            self.assertIs(result["passed"], False)
-            self.assertEqual(result["launches"], [])
-            self.assertEqual(result["failureStage"], "startup_breadcrumb")
-            self.assertEqual(result["appExitCode"], 0)
-            self.assertEqual(GATE.safe_launch_diagnostic(result)["appExitObservedDuring"], "launch_observation")
-            self.assertEqual(len(launches), 1)
-            observer.close.assert_called_once()
+            started, failed_at = 1000, 1002
+            message = {"timestamp": "1970-01-01T00:16:41+00:00", "eventMessage": "app.hither.mobile startup"}
+            evidence_paths = []
+            for system_log in (json.dumps(message), ""):
+                timestamps = iter((started, failed_at))
+                clock = SimpleNamespace(time=lambda: next(timestamps, failed_at), sleep=Mock())
+                with patch.object(VERIFY, "run", side_effect=command), patch("sys.argv", argv), \
+                        patch.object(VERIFY, "ProcessExitObserver", return_value=observer), \
+                        patch.object(VERIFY.os, "kill"), patch.object(VERIFY, "time", clock), \
+                        patch.object(VERIFY, "probe_app_process_state", return_value="replacement_pid"), \
+                        patch.object(VERIFY, "find_crash_report", return_value=None), \
+                        patch.object(VERIFY, "probe_simulator_state", return_value="booted"), \
+                        patch.object(VERIFY.subprocess, "run", return_value=SimpleNamespace(
+                            returncode=0, stdout=system_log)), self.assertRaises(ProcessLookupError):
+                    VERIFY.main()
+                result = json.loads((output / "launch-result.json").read_text())
+                self.assertIs(result["passed"], False)
+                self.assertEqual(result["launches"], [])
+                self.assertEqual(result["failureStage"], "startup_breadcrumb")
+                self.assertEqual(result["appExitCode"], 0)
+                original = result["failedLaunch"]
+                self.assertEqual(original["pid"], 123)
+                self.assertEqual(original["launchRequestedAtUnixSeconds"], started)
+                self.assertEqual(original["failureObservedAtUnixSeconds"], failed_at)
+                evidence_paths.append(output / (original["evidenceFilePrefix"] + "-system-events.jsonl"))
+                self.assertEqual(GATE.safe_launch_diagnostic(result)["appExitObservedDuring"], "launch_observation")
+            self.assertEqual(json.loads(evidence_paths[0].read_text())["eventMessage"], message["eventMessage"])
+            self.assertFalse(evidence_paths[1].exists())
+            self.assertEqual(len(launches), 2)
+            self.assertEqual(observer.close.call_count, 2)
 
     @unittest.skipUnless(sys.platform == "darwin", "requires Darwin kqueue")
     def test_real_host_exit_observer_reads_exact_exit_and_signal(self):
@@ -625,6 +638,34 @@ class ReleaseLaunchGateTests(unittest.TestCase):
                         expected["crashReportFound"] = False
                 self.assertEqual(GATE.safe_launch_diagnostic(json.loads(result)), expected)
 
+    def test_private_system_events_bound_bundle_and_time_matches(self):
+        def record(message, at=1002):
+            return json.dumps({"timestamp": datetime.fromtimestamp(at, timezone.utc).isoformat(),
+                               "eventMessage": message})
+
+        message = "[application<app.hither.mobile>:123] Received termination request: watchdog private data"
+        contextual = "[application<app.hither.mobile>:456] Received termination request: jetsam"
+        rows = [record(f"app.hither.mobile match {index}") for index in range(130)]
+        rows.extend([record(message), record(contextual + "x" * 2048),
+                     record("app.hither.mobile.extra"), record("app.hither.mobile before launch", at=999)])
+        with tempfile.TemporaryDirectory() as directory, patch.object(VERIFY.subprocess, "run",
+                return_value=SimpleNamespace(returncode=0, stdout="\n".join(rows))):
+            evidence_path = Path(directory) / "launch-system-events.jsonl"
+            summary = VERIFY.probe_system_termination(
+                "simulator", "app.hither.mobile", 1000.1, 1005.9, 123, evidence_path=evidence_path)
+            self.assertEqual(GATE.safe_launch_diagnostic(summary), {
+                "systemLogProbe": "available", "systemTerminationSignals": ["jetsam", "watchdog"],
+                "pidCorrelatedSystemSignals": ["watchdog"], "systemLogWindowSeconds": 7})
+            events = [json.loads(line) for line in evidence_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(len(events), 128)
+            self.assertEqual(events[0]["eventMessage"], "app.hither.mobile match 4")
+            self.assertEqual(events[-2], {
+                "timestamp": "1970-01-01T00:16:42+00:00", "eventMessage": message,
+                "eventMessageTruncated": False, "targetsOriginalPid": True})
+            self.assertEqual(events[-1]["eventMessage"], (contextual + "x" * 2048)[:2048])
+            self.assertTrue(events[-1]["eventMessageTruncated"])
+            self.assertFalse(events[-1]["targetsOriginalPid"])
+
     def test_only_matching_recent_apple_crash_report_contributes_safe_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -644,11 +685,19 @@ class ReleaseLaunchGateTests(unittest.TestCase):
             path = reports / "Hither-test.ips"
             path.write_text(json.dumps({"bug_type": "309"}) + "\n" + json.dumps(report),
                             encoding="utf-8")
+            original = root / "original-launch-crash.ips"
             with patch.object(VERIFY.Path, "home", return_value=root):
-                summary = VERIFY.find_crash_report(123, "Hither", "app.hither.mobile",
-                                                   "test-simulator", path.stat().st_mtime)
                 self.assertIsNone(VERIFY.find_crash_report(124, "Hither", "app.hither.mobile",
-                                                        "test-simulator", path.stat().st_mtime))
+                                                        "test-simulator", path.stat().st_mtime,
+                                                        evidence_path=original))
+                self.assertFalse(original.exists())
+                summary = VERIFY.find_crash_report(123, "Hither", "app.hither.mobile",
+                                                   "test-simulator", path.stat().st_mtime,
+                                                   evidence_path=original)
+                self.assertEqual(original.read_bytes(), path.read_bytes())
+                self.assertEqual(VERIFY.find_crash_report(123, "Hither", "app.hither.mobile",
+                    "test-simulator", path.stat().st_mtime, evidence_path=root / "missing" / "original.ips"),
+                    summary)
             self.assertEqual(GATE.safe_launch_diagnostic(summary), {
                 "crashReportFound": True, "exceptionType": "EXC_CRASH",
                 "exceptionSignal": "SIGKILL", "terminationNamespace": "CODESIGNING",
