@@ -1,5 +1,4 @@
 import {
-  availableActionsFor,
   buildOrganizerExceptions,
   buildRootCauseKey,
   buildSessionKey,
@@ -11,8 +10,8 @@ import {
   parseTimeMs,
   resolveEffectiveHandling,
   sortOrganizerExceptions,
-  transitionExceptionHandling,
   type BuildOrganizerExceptionsInput,
+  type ExceptionHandlingMap,
   type ExceptionMemberSnapshot,
 } from '../utils/organizerExceptions';
 
@@ -110,7 +109,6 @@ describe('collectExceptionCandidates + buildOrganizerExceptions', () => {
     expect(help.lastSeenAt).toBe(LATER);
     expect(help.severity).toBeGreaterThan(0);
     expect(help.status).toBe('open');
-    expect(help.availableActions).toEqual(['acknowledge', 'resolve']);
   });
 
   it('supports offline, sharing_disabled, and force_quit_suspected', () => {
@@ -234,7 +232,7 @@ describe('collectExceptionCandidates + buildOrganizerExceptions', () => {
     expect(items).toEqual([]);
   });
 
-  it('leader can acknowledge and resolve without changing other state shapes', () => {
+  it('reads acknowledged and resolved items from prior handling state', () => {
     const open = buildOrganizerExceptions(
       baseInput({
         helpSignals: [{ userId: 'a', seenAt: NOW }],
@@ -242,7 +240,7 @@ describe('collectExceptionCandidates + buildOrganizerExceptions', () => {
     );
     expect(open[0].status).toBe('open');
 
-    let handling = transitionExceptionHandling({}, open[0].rootCauseKey, 'acknowledge', NOW);
+    const handling: ExceptionHandlingMap = { [open[0].rootCauseKey]: { status: 'acknowledged', updatedAt: NOW } };
     const acked = buildOrganizerExceptions(
       baseInput({
         helpSignals: [{ userId: 'a', seenAt: NOW }],
@@ -250,13 +248,11 @@ describe('collectExceptionCandidates + buildOrganizerExceptions', () => {
       }),
     );
     expect(acked[0].status).toBe('acknowledged');
-    expect(acked[0].availableActions).toEqual(['resolve', 'reopen']);
-
-    handling = transitionExceptionHandling(handling, open[0].rootCauseKey, 'resolve', LATER);
+    const resolved: ExceptionHandlingMap = { [open[0].rootCauseKey]: { status: 'resolved', updatedAt: LATER } };
     const resolvedHidden = buildOrganizerExceptions(
       baseInput({
         helpSignals: [{ userId: 'a', seenAt: NOW }],
-        handling,
+        handling: resolved,
       }),
     );
     // Default workload list excludes resolved.
@@ -265,38 +261,12 @@ describe('collectExceptionCandidates + buildOrganizerExceptions', () => {
     const resolvedShown = buildOrganizerExceptions(
       baseInput({
         helpSignals: [{ userId: 'a', seenAt: NOW }],
-        handling,
+        handling: resolved,
         includeResolved: true,
       }),
     );
     expect(resolvedShown[0].status).toBe('resolved');
 
-    // transitionExceptionHandling only returns a map — no team phase mutation.
-    expect(handling[open[0].rootCauseKey]).toEqual({
-      status: 'resolved',
-      updatedAt: LATER,
-    });
-  });
-
-  it('resolving does not fabricate arrival or alter other members', () => {
-    const membersBefore = baseInput().members;
-    const handling = transitionExceptionHandling(
-      {},
-      buildRootCauseKey('nav:sess-1', 'a', 'needs_help'),
-      'resolve',
-      NOW,
-    );
-    const items = buildOrganizerExceptions(
-      baseInput({
-        helpSignals: [{ userId: 'a', seenAt: NOW }],
-        handling,
-        includeResolved: true,
-      }),
-    );
-    expect(items[0].status).toBe('resolved');
-    // Input members snapshot is unchanged by build/transition (pure).
-    expect(baseInput().members).toEqual(membersBefore);
-    expect(availableActionsFor('resolved')).toEqual(['reopen']);
   });
 
   it('uses navigation responses for late and needs_help when provided', () => {
@@ -429,8 +399,11 @@ describe('collectExceptionCandidates + buildOrganizerExceptions', () => {
       ),
     ).toBe('open');
     expect(
-      resolveEffectiveHandling({ status: 'acknowledged', updatedAt: EARLIER }, LATER),
+      resolveEffectiveHandling({ status: 'acknowledged', updatedAt: NOW }, NOW),
     ).toBe('acknowledged');
+    expect(
+      resolveEffectiveHandling({ status: 'acknowledged', updatedAt: EARLIER }, LATER),
+    ).toBe('open');
   });
 });
 

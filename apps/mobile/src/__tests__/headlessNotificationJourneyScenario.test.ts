@@ -105,11 +105,12 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
     } finally { await world.close(); }
   });
 
-  it('request-start card targets the leader in outbox and the simulated push is handled once', async () => {
+  it('request-start persists for the organizer and handles the fallback push once', async () => {
     const world = new World();
     addThirdFollower(world);
     try {
       const leader = await observer(world, platform, 'leader-notifications', LEADER, 'leader');
+      leader.realtime = false;
       const other = await observer(world, platform, 'other-notifications', OTHER, 'follower');
       const member = await map(world, platform, 'member-map', PEER);
       await member.perform('map.journey.command', { destinationId: DESTINATION });
@@ -117,8 +118,11 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       const [request] = world.backend.notificationOutbox;
       expect(request).toMatchObject({ group_id: GROUP_ID, sender_id: PEER, target_user_id: LEADER,
         category: 'follower_requests', payload: { type: 'request_start', groupId: GROUP_ID, targetUserId: LEADER } });
+      expect(world.backend.tables.commands).toEqual([expect.objectContaining({
+        id: request.operation_id, sender_id: PEER, target_user_id: LEADER,
+        destination_id: DESTINATION, request_status: 'pending',
+      })]);
       expect(world.backend.sessions.size).toBe(0);
-      expect(world.realtimeTrace.filter((entry: { event: { table: string } }) => entry.event.table === 'commands')).toEqual([]);
       expect((await other.observe()).native.scheduled).toEqual([]);
       const content = { title: 'Peer', body: request.payload.message, data: { category: request.category,
         groupId: request.group_id, senderId: request.sender_id,

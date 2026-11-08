@@ -1,9 +1,4 @@
-/**
- * Leader gather-point request inbox view model (#173).
- * FIFO by creation time, then ID.
- */
-
-export type GatherRequestSortable = {
+type GatherRequestSortable = {
   id: string;
   createdAt: string;
 };

@@ -42,8 +42,6 @@ begin
      where group_id = p_group_id;
   end if;
 
-  -- This is the single expiry-aware recipient set shared with the durable
-  -- ledger, the Edge fan-out, and the initiator's response accounting.
   select coalesce(array_agg(m.user_id order by m.user_id), '{}'::uuid[])
     into v_recipient_ids
     from public.memberships m

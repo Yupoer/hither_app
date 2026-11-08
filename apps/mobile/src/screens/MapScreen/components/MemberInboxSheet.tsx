@@ -40,7 +40,6 @@ export function MemberInboxSheet({
                 <Text style={styles.listRowTitle}>{t(`exception.type.${item.type}`)}</Text>
                 <Text style={styles.overlayHint}>
                   {item.gatheringPointTitle ? `${t('exception.gathering', { title: item.gatheringPointTitle })} · ` : ''}
-                  {t(`exception.status.${item.status}`)}{' · '}
                   {t('exception.lastSeen', {
                     time: new Date(item.lastSeenAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                   })}

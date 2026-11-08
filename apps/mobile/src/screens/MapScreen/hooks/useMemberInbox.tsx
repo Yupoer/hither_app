@@ -12,18 +12,21 @@ type InboxSnapshot = {
   requests: PendingStartRequest[];
   seen: Readonly<Record<string, true>>;
 };
+type InboxReadOwner = { key: string; revision: number };
 
 let channelSequence = 0;
 
 function InboxSubscription({
-  groupId, userId, reload, loadSeen,
+  groupId, userId, attach, reload, loadSeen,
 }: {
   groupId: string;
   userId: string;
+  attach: () => () => void;
   reload: () => Promise<void>;
   loadSeen: () => Promise<void>;
 }) {
   useMountEffect(() => {
+    const detach = attach();
     void loadSeen();
     void reload();
     const channel = supabase.channel(`member-inbox:${groupId}:${++channelSequence}`)
@@ -33,26 +36,33 @@ function InboxSubscription({
       .subscribe(status => {
         if (status === 'SUBSCRIBED') void reload();
       });
-    return () => { void supabase.removeChannel(channel); };
+    return () => {
+      detach();
+      void supabase.removeChannel(channel);
+    };
   });
   return useForegroundReconcile(true, reload);
 }
 
 export function useMemberInbox(groupId: string | null, userId: string | undefined) {
   const key = groupId && userId ? `member-inbox-seen:${groupId}:${userId}` : '';
-  const identity = useRef(key);
-  identity.current = key;
-  const fetchVersion = useRef(0);
+  const readOwner = useRef<InboxReadOwner | null>(null);
   const [snapshot, setSnapshot] = useState<InboxSnapshot>({ key, requests: [], seen: {} });
   if (snapshot.key !== key) setSnapshot({ key, requests: [], seen: {} });
 
+  const attach = useCallback(() => {
+    readOwner.current = { key, revision: 0 };
+    return () => { readOwner.current = null; };
+  }, [key]);
+
   const reload = useCallback(async () => {
-    if (!groupId || !userId) return;
-    const version = ++fetchVersion.current;
+    const owner = readOwner.current;
+    if (!groupId || !userId || owner?.key !== key) return;
+    const revision = ++owner.revision;
     try {
       const requests = await fetchPendingStartRequests(groupId, userId);
-      if (identity.current === key && version === fetchVersion.current) {
-        setSnapshot(prev => ({ ...prev, requests }));
+      if (readOwner.current === owner && owner.revision === revision) {
+        setSnapshot(prev => prev.key === key ? { ...prev, requests } : prev);
       }
     } catch (error) {
       logError('member_inbox_load_failed', error);
@@ -60,11 +70,13 @@ export function useMemberInbox(groupId: string | null, userId: string | undefine
   }, [groupId, userId, key]);
 
   const loadSeen = useCallback(async () => {
+    const owner = readOwner.current;
+    if (owner?.key !== key) return;
     try {
       const raw = await AsyncStorage.getItem(key);
-      if (raw && identity.current === key) {
+      if (raw && readOwner.current === owner) {
         const seen: Record<string, true> = JSON.parse(raw);
-        setSnapshot(prev => ({ ...prev, seen: { ...seen, ...prev.seen } }));
+        setSnapshot(prev => prev.key === key ? { ...prev, seen: { ...seen, ...prev.seen } } : prev);
       }
     } catch (error) {
       logError('member_inbox_read_state_load_failed', error);
@@ -74,15 +86,14 @@ export function useMemberInbox(groupId: string | null, userId: string | undefine
   const markSeen = useCallback((ids: readonly string[]) => {
     if (!key || ids.length === 0) return;
     const seen = Object.fromEntries(ids.map(id => [id, true] as const));
-    setSnapshot(prev => ({ ...prev, seen: { ...prev.seen, ...seen } }));
+    setSnapshot(prev => prev.key === key ? { ...prev, seen: { ...prev.seen, ...seen } } : prev);
     void AsyncStorage.mergeItem(key, JSON.stringify(seen))
       .catch(error => { logError('member_inbox_read_state_save_failed', error); });
   }, [key]);
 
   const removeRequest = useCallback((id: string) => {
-    if (identity.current !== key) return;
-    ++fetchVersion.current;
-    setSnapshot(prev => ({ ...prev, requests: prev.requests.filter(request => request.id !== id) }));
+    if (readOwner.current?.key !== key) return;
+    setSnapshot(prev => prev.key === key ? { ...prev, requests: prev.requests.filter(request => request.id !== id) } : prev);
     void reload();
   }, [key, reload]);
 
@@ -92,7 +103,7 @@ export function useMemberInbox(groupId: string | null, userId: string | undefine
     markSeen,
     removeRequest,
     lifecycle: groupId && userId
-      ? <InboxSubscription key={key} groupId={groupId} userId={userId} reload={reload} loadSeen={loadSeen} />
+      ? <InboxSubscription key={key} groupId={groupId} userId={userId} attach={attach} reload={reload} loadSeen={loadSeen} />
       : null,
   };
 }

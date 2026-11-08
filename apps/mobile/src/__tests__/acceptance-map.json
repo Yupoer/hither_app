@@ -2947,7 +2947,7 @@
       "child": "request-start-routing",
       "acceptance": "The follower card queues request-start for the leader without starting a session, and an injected foreground push is presented only once.",
       "testFile": "headlessNotificationJourneyScenario.test.ts",
-      "testNamePattern": "request-start card targets"
+      "testNamePattern": "request-start persists for the organizer"
     },
     {
       "parent": 342,

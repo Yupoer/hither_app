@@ -70,7 +70,7 @@ const mockuseVisitHistory = { lifecycle: mockLifecycle('history'), historyGroups
 jest.mock('../screens/MapScreen/hooks/useVisitHistory', () => ({ useVisitHistory: () => mockuseVisitHistory }));
 const mockuseStragglerReporting = { lifecycle: mockLifecycle('straggler'), stragglers: mockEmpty };
 jest.mock('../screens/MapScreen/hooks/useStragglerReporting', () => ({ useStragglerReporting: () => mockuseStragglerReporting }));
-const mockuseCoordinationRequests = { lifecycle: mockLifecycle('coordination'), requests: mockEmpty, openCount: 0 };
+const mockuseCoordinationRequests = { lifecycle: mockLifecycle('coordination'), requests: mockEmpty };
 jest.mock('../screens/MapScreen/hooks/useCoordinationRequests', () => ({ useCoordinationRequests: () => mockuseCoordinationRequests }));
 const mockuseGatheringCompletion = { lifecycle: mockLifecycle('completion'), promptCompleteAfterArrival: jest.fn() };
 jest.mock('../screens/MapScreen/hooks/useGatheringCompletion', () => ({ useGatheringCompletion: () => mockuseGatheringCompletion }));
@@ -162,7 +162,7 @@ jest.mock('../state/PreferencesContext', () => ({ usePreferences: () => mockPref
   useTheme: () => ({ colors: { accent: '#123456' } }), ARRIVAL_RADIUS_MIN_M: 30, ARRIVAL_RADIUS_MAX_M: 300 }));
 jest.mock('../state/useGroupState', () => ({ useGroupState: () => mockGroup }));
 jest.mock('../state/useNavigationSession', () => ({ useNavigationSession: () => mockNavigationSession }));
-jest.mock('../state/useOrganizerExceptions', () => ({ useOrganizerExceptions: () => ({ lifecycle: mockLifecycle('organizer'), exceptions: mockEmpty, openCount: 0, pendingKeys: new Set() }) }));
+jest.mock('../state/useOrganizerExceptions', () => ({ useOrganizerExceptions: () => ({ lifecycle: mockLifecycle('organizer'), exceptions: mockEmpty }) }));
 jest.mock('../screens/MapScreen/hooks/useMemberInbox', () => ({ useMemberInbox: () => ({
   lifecycle: mockLifecycle('member-inbox'), requests: mockEmpty, seen: {}, markSeen: jest.fn(), removeRequest: jest.fn(),
 }) }));

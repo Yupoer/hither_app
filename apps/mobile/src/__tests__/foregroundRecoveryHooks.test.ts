@@ -59,10 +59,6 @@ test('organizer recovery retains older unhandled help, follows navigation, resum
   mockHelp.mockResolvedValue({ data: Array.from({ length: 50 }, () => ({ sender_id: 'B', created_at: '2026-09-30T00:08:00Z' })), error: null });
   await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
   expect(api.exceptions.some(item => item.memberId === 'A')).toBe(true);
-  const key = api.exceptions[0].rootCauseKey;
-  await act(async () => { expect(await api.markHandled(key, 'acknowledge')).toBe(true); });
-  expect(api.pendingKeys.size).toBe(0);
-  expect(api.handling[key].status).toBe('acknowledged');
   await appState('background'); const reads = mockHelp.mock.calls.length;
   await act(async () => { await jest.advanceTimersByTimeAsync(30_000); });
   expect(mockHelp).toHaveBeenCalledTimes(reads);
@@ -77,7 +73,8 @@ test('organizer recovery retains older unhandled help, follows navigation, resum
   expect(mockUnsubscribe).toHaveBeenCalled();
   options = { ...options, groupId: null, enabled: false };
   await act(async () => { root.update(React.createElement(Harness)); });
-  await act(async () => { expect(await api.markHandled('unknown', 'resolve')).toBe(false); root.unmount(); });
+  expect(api.exceptions).toEqual([]);
+  await act(async () => { root.unmount(); });
 });
 
 test('invite recovery keeps cached rows on failure, deduplicates notices and rejects a late old-account read', async () => {

@@ -1263,7 +1263,7 @@
         },
         {
           "file": "src/__tests__/headlessNotificationJourneyScenario.test.ts",
-          "pattern": "request-start card targets",
+          "pattern": "request-start persists for the organizer",
           "platforms": [
             "ios",
             "android"

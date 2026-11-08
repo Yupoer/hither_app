@@ -156,7 +156,6 @@ describe('useCoordinationRequests', () => {
     expect(api?.requests).toHaveLength(1);
     expect(api?.requests[0]?.responseCount).toBe(1);
     expect(api?.requests[0]?.myOptionId).toBe('opt_b');
-    expect(api?.openCount).toBe(1);
   });
 
   it('subscribes to realtime tables and cleans up on unmount', async () => {

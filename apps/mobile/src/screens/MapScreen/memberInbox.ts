@@ -38,7 +38,8 @@ export function projectMemberInbox({
   function add(actorId: string, entry: MemberInboxEntry, pending: boolean) {
     if (!memberIds.has(actorId)) return;
     const noticeId = inboxNoticeId(entry);
-    const unread = pending || (noticeId !== null && !seen[noticeId]) ? 1 : 0;
+    const previouslyHandled = entry.kind === 'notice' && entry.item.status !== 'open';
+    const unread = pending || (noticeId !== null && !seen[noticeId] && !previouslyHandled) ? 1 : 0;
     const actor = byMember.get(actorId) ?? { entries: [], count: 0 };
     actor.entries.push(entry);
     actor.count += unread;

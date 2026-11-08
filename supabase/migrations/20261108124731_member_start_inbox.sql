@@ -292,9 +292,6 @@ begin
           set delivery_status = 'attempted', attempted_at = now()
           where id = v_row.id and delivery_status = 'queued';
         exception when others then
-          -- There is no queue worker in this migration.  Record that a
-          -- delivery attempt happened instead of leaving a permanently
-          -- indistinguishable queued row; a later worker may retry attempted.
           update public.core_notification_outbox
           set delivery_status = 'attempted', attempted_at = now()
           where id = v_row.id and delivery_status = 'queued';
