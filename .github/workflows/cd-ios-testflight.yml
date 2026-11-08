@@ -274,6 +274,9 @@ jobs:
           bash ../../scripts/install-mobile-dependencies.sh
           bun run verify:runtime
           bunx --package eas-cli@21.0.2 eas --version
+          if [[ "$RELEASE_MODE" == preflight ]]; then
+            python3 scripts/build-jsi-executor-probe.py "$RUNNER_TEMP/hither-ios-preflight-probe" --release
+          fi
           python3 ../../scripts/write-ios-cd-outcome.py --journal "$RUNNER_TEMP/hither-ios-cd-journal.jsonl" --phase setup --status passed
 
       - name: Verify production release prerequisites
