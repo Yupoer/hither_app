@@ -121,12 +121,14 @@ exports.run = async function run(jest) {
       multiRemove: async keys => { for (const key of keys) delete values[key]; write(); },
       getAllKeys: async () => Object.keys(values),
       setItem: async (key, value) => { values[key] = value; write(); },
+      mergeItem: async (key, value) => { values[key] = JSON.stringify({ ...JSON.parse(values[key] ?? '{}'), ...JSON.parse(value) }); write(); },
       removeItem: async key => { delete values[key]; write(); },
     };
   };
   const storage = store('async');
   const secure = store('secure');
   const appListeners = new Set();
+  let latestGps;
   const watches = new Map();
   const retiredWatches = new Set();
   const channels = new Set();
@@ -194,11 +196,17 @@ exports.run = async function run(jest) {
     Accuracy: { Lowest: 1, Low: 2, Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
     requestForegroundPermissionsAsync: async () => ({ ...permission }),
     getForegroundPermissionsAsync: readForegroundPermission,
+    hasServicesEnabledAsync: async () => spec.capabilities?.locationServices !== false,
     getBackgroundPermissionsAsync: async () => ({ ...permission }),
     requestBackgroundPermissionsAsync: async () => ({ ...permission }),
     hasStartedLocationUpdatesAsync: async name => backgroundTasks.has(name),
     startLocationUpdatesAsync: async (name, options) => { assert.equal(typeof name, 'string'); backgroundTasks.set(name, options); },
     stopLocationUpdatesAsync: async name => { backgroundTasks.delete(name); },
+    getCurrentPositionAsync: async options => {
+      assert.equal(options.mayShowUserSettingsDialog, false, 'A background fix must not prompt for settings');
+      assert(latestGps, 'A one-shot fix needs an injected GPS sample');
+      return latestGps;
+    },
     watchPositionAsync: async (options, callback, errorHandler) => {
       assert(options && typeof callback === 'function');
       assert(errorHandler === undefined || typeof errorHandler === 'function');
@@ -328,10 +336,8 @@ exports.run = async function run(jest) {
       groupId: app.groupId, actorId: app.userId, state: app.group.state,
       isLeader: app.group.state?.members.some(m => m.userId === app.userId && m.role === 'leader') ?? false,
       destinations, selectedDestination: destinations[0], fromCoords: app.location?.deviceCoords ?? undefined,
-      acquireStartFix: async () => {
-        const coordinates = await app.location.refreshDeviceLocation();
-        return coordinates ? app.location.latestLocationSampleRef.current : null;
-      },
+      getStartLocation: () => require('../../src/native/location').getNavigationStartLocation(
+        () => app.sharingEnabled ? app.location.latestLocationSampleRef.current : null),
       arrivalRadiusM: 50,
       refresh: app.group.refresh, t, mapRef, carouselRef, setSelectedIndex,
       navigationSession: app.navigation?.session, terminalSession: app.navigation.terminalSession,
@@ -429,6 +435,7 @@ exports.run = async function run(jest) {
           assert(Number.isFinite(input.longitude) && Math.abs(input.longitude) <= 180);
           const sample = { coords: { latitude: input.latitude, longitude: input.longitude, accuracy: input.accuracy ?? 5 },
             timestamp: input.timestamp ?? Date.now() };
+          if (input.kind === 'gps') latestGps = sample;
           for (const callback of [...(input.kind === 'gps' ? watches.keys() : retiredWatches)]) callback(sample);
         } else if (input.kind === 'locationError') {
           assert.equal(typeof input.message, 'string');

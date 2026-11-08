@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { ok, fail, keys, member, iso } = require('./backend-domain.cjs');
-const { scopeAllowed } = require('./backend-workflows.cjs');
+const { scopeAllowed, startSession } = require('./backend-workflows.cjs');
 
 function resolve(b, request, userId, optionId, source) {
   if (request.status !== 'open') return ok(request);
@@ -46,6 +46,20 @@ function deadline(b, request, userId) {
 
 function execute(b, { kind, name, args: a = {}, userId, requestId }) {
   if (kind !== 'rpc') return undefined;
+  if (name === 'resolve_gathering_start') {
+    keys(a, 'p_request_id p_approve');
+    const row = b.tables.commands.find(r => r.id === a.p_request_id && r.target_user_id === userId);
+    const destination = b.itinerary.find(d => d.id === row?.destination_id);
+    if (!row || !destination || !scopeAllowed(b, row.group_id, destination.subgroup_id, userId)) return fail('request_not_available');
+    if (row.request_status !== 'pending') return ok(null);
+    if (a.p_approve && ![...b.sessions.values()].some(s => s.group_id === row.group_id && s.destination_id === row.destination_id && s.status === 'active')) {
+      const result = startSession(b, row.group_id, row.destination_id, row.id, userId, true);
+      if (result.error) return result;
+    }
+    row.request_status = a.p_approve ? 'approved' : 'rejected';
+    b.publish('commands', row);
+    return ok(null);
+  }
   if (name === 'submit_gather_point_request') {
     keys(a, 'p_group_id p_subgroup_id p_items');
     const m = member(b, a.p_group_id, userId);

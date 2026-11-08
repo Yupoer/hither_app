@@ -2,6 +2,7 @@ jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operat
 jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(), consumeAuthCallback: jest.fn(), cancelAuthCallback: jest.fn() }));
 const mockSignInAsync = jest.fn();
 const mockSignInWithIdToken = jest.fn();
+const mockGetSession = jest.fn();
 const mockUpdateUser = jest.fn();
 const mockProfileUpsert = jest.fn();
 const mockMaybeSingle = jest.fn();
@@ -27,6 +28,7 @@ jest.mock('../api/supabase', () => ({
   supabase: {
     auth: {
       signInWithIdToken: mockSignInWithIdToken,
+      getSession: mockGetSession,
       updateUser: mockUpdateUser,
     },
     from: () => ({
@@ -56,6 +58,7 @@ describe('signInWithApple', () => {
     mockMaybeSingle.mockResolvedValue({ data: null });
     mockProfileUpsert.mockResolvedValue({ error: null });
     mockUpdateUser.mockResolvedValue({ error: null });
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null });
   });
 
   it('exchanges the identity token and saves the first-login name', async () => {

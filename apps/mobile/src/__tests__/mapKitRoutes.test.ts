@@ -410,6 +410,48 @@ describe('destination changes while directions are pending', () => {
     mockGetDirections.mockReset();
   });
 
+  it('recovers failed directions from the same origin on the normal route cadence', async () => {
+    mockGetDirections.mockResolvedValueOnce(null).mockResolvedValueOnce(routeTo(gathering));
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(0);
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ self }: { self: typeof me }) {
+      routes = useMapKitRoutes({ selfCoordinates: self, members: [], gathering, travelMode: 'walk' });
+      return routes.lifecycle;
+    }
+    let tree!: ReturnType<typeof create>;
+    try {
+      await act(async () => { tree = create(React.createElement(Harness, { self: me })); });
+      expect(routes!.selfRoute).toBeNull();
+      clock.mockReturnValue(299_999);
+      await act(async () => { tree.update(React.createElement(Harness, { self: { ...me } })); });
+      expect(mockGetDirections).toHaveBeenCalledTimes(1);
+      clock.mockReturnValue(300_000);
+      await act(async () => { tree.update(React.createElement(Harness, { self: { ...me } })); });
+      expect(routes!.selfRoute?.points).toEqual([me, gathering.coordinates]);
+      expect(mockGetDirections).toHaveBeenCalledTimes(2);
+    } finally {
+      if (tree) await act(async () => { tree.unmount(); });
+      clock.mockRestore();
+    }
+  });
+
+  it('keeps existing directions through a loss of GPS until the target changes', async () => {
+    mockGetDirections.mockResolvedValueOnce(routeTo(gathering));
+    let routes: ReturnType<typeof useMapKitRoutes>;
+    function Harness({ self, target }: { self?: typeof me; target: typeof gathering | null }) {
+      routes = useMapKitRoutes({ selfCoordinates: self, members: [], gathering: target, travelMode: 'walk' });
+      return routes.lifecycle;
+    }
+    let tree!: ReturnType<typeof create>;
+    await act(async () => { tree = create(React.createElement(Harness, { self: me, target: gathering })); });
+    await act(async () => { tree.update(React.createElement(Harness, { target: gathering })); });
+    expect(routes!.selfRoute?.points).toEqual([me, gathering.coordinates]);
+    await act(async () => { tree.update(React.createElement(Harness, { target: nextStop })); });
+    expect(routes!.selfRoute).toBeNull();
+    expect(mockGetDirections).toHaveBeenCalledTimes(1);
+    await act(async () => { tree.unmount(); });
+  });
+
   it('hides the previous destination route in every render until the replacement arrives', async () => {
     const replacement = deferredRoute();
     mockGetDirections.mockResolvedValueOnce(routeTo(gathering)).mockReturnValueOnce(replacement.promise);

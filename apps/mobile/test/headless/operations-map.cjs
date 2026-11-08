@@ -170,8 +170,10 @@ operation('map.live-activity.toggle', ['MAP-TOOLS-01'], screen, 'handleToolsLive
   'Actual entitlement gate persists allowed preference or opens subscription and keeps the toggle false.',
   (app, { enabled }) => app.host.call({ kind: 'toggle', testId: 'tools-live-activity-toggle', value: enabled }));
 
-button('map.ops.open', ['MAP-COORD-01', 'MAP-COORD-08', 'MAP-OPS-01'], 'ops open onPress', 'map-open-ops',
-  'Actual operations panel displays real coordination and organizer exception hooks.');
+button('map.coordination.open', ['MAP-COORD-01', 'MAP-COORD-08'], 'openCoordination', 'members-open-coordination',
+  'Actual Members control opens organizer coordination management.', panel('MembersPane'));
+identifiedButton('map.member.inbox', ['MAP-OPS-01', 'MAP-COORD-01', 'MAP-GATHER-01'], 'onOpenInbox', 'member-inbox-open-', 'userId',
+  'Actual badged member row opens the inbox for that actor.', panel('FlockRow'));
 button('map.coordination.create.open', ['MAP-COORD-02'], 'openCreate', 'coordination-open-create',
   'Actual create form begins without stale selection.', panel('CoordinationRequestsPanel'));
 button('map.coordination.create.cancel', ['MAP-COORD-02'], 'closeCreate', 'coordination-create-back',
@@ -195,15 +197,13 @@ button('map.coordination.cancel', ['MAP-COORD-05'], 'handleCancel', 'coordinatio
   'Actual successful cancel clears selection while failure retains the request.', panel('CoordinationRequestsPanel'));
 button('map.coordination.back', ['MAP-COORD-08'], 'detail back onPress', 'coordination-detail-back',
   'Actual detail selection clears and returns to current list.', panel('CoordinationRequestsPanel'));
-for (const action of ['acknowledge', 'resolve', 'reopen']) {
-  operation(`map.exception.${action}`, ['MAP-OPS-01'], screen, `markExceptionHandled(${action})`, '{ rootCauseKey: string }',
-    'Actual scoped exception action uses root-cause busy guard and real service projection.',
-    (app, { rootCauseKey }) => press(app, `map-exception-${action}-${rootCauseKey}`));
-  operations[`map.exception.${action}`].sources = source(screen, 'markExceptionHandled');
-}
 for (const action of ['approve', 'reject']) {
-  identifiedButton(`map.suggestion.${action}`, ['MAP-GATHER-01', 'MAP-GATHER-02'], 'handleGatherPointRequest', `gather-request-${action}-`, 'requestId',
-    'Actual FIFO inbox optimistically removes the card, persists decision and restores exact selection/order on error.');
+  operation(`map.suggestion.${action}`, ['MAP-GATHER-01', 'MAP-GATHER-02'], panel('MemberInboxSheet'), 'onResolve', '{ requestId: string }',
+    'Actual member inbox persists the decision and restores the request on failure.',
+    (app, { requestId }) => press(app, `gather-request-${action}-${requestId}`));
+  operation(`map.start-request.${action}`, ['MAP-GATHER-07'], panel('MemberInboxSheet'), 'onResolve', '{ requestId: string }',
+    'Actual member inbox resolves the request and approval starts the requested stop.',
+    (app, { requestId }) => press(app, `start-request-${action}-${requestId}`));
 }
 button('map.history.open', ['MAP-HISTORY-01'], 'loadHistory', 'map-history',
   'Real history load combines actual visited rows, session arrivals, closed stops and pending durable rows.');
@@ -341,7 +341,7 @@ const controlOwners = {
   AddPlaceConfirmCard: ['map.place.rename', 'map.place.cancel', 'map.place.pool', 'map.place.first-stop', 'map.place.favorite', 'map.place.center'],
   RouteEditorSheet: ['map.route.interaction-mode', 'map.route.delete-selected'],
   GatheringCarousel: ['map.card.toggle', 'map.journey.command', 'map.external-navigation', 'map.travel-mode', 'map.meet.open', 'map.carousel.begin', 'map.carousel.end'],
-  RoutePane: ['map.arrival.manage', 'map.ops.open', 'map.suggestion.approve', 'map.suggestion.reject', 'map.history.open'],
+  RoutePane: ['map.arrival.manage', 'map.history.open'],
   RefreshLocationsButton: ['map.location.refresh'],
   MembersPane: ['map.sharing.toggle', 'map.subgroup.invite.accept', 'map.subgroup.invite.decline', 'map.group.invite', 'map.presence.select'],
   ToolsPane: ['map.passive.enter', 'map.live-activity.toggle'],
@@ -349,7 +349,6 @@ const controlOwners = {
   InviteMembersOverlay: ['map.group.copy-code', 'map.group.share-code'],
   HistorySheet: ['map.history.delete'],
   MeetTimeSheet: ['map.meet.shortcut', 'map.meet.threshold', 'map.meet.save', 'map.meet.clear'],
-  OpsCenterSheet: ['map.exception.acknowledge', 'map.exception.resolve', 'map.exception.reopen'],
 };
 for (const [owner, names] of Object.entries(controlOwners)) for (const name of names) {
   const definition = operations[name];

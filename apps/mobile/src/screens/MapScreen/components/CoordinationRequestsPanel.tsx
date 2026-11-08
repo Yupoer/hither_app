@@ -27,6 +27,8 @@ const DEFAULT_DEADLINE_MINUTES = 30;
 export interface CoordinationRequestsPanelProps {
   accent: string;
   isLeader: boolean;
+  showCreateAction?: boolean;
+  header?: React.ReactNode;
   /** MapScreen shared styles (listGroup, listRow, chip, …). */
   styles: Record<string, unknown>;
   coordination: UseCoordinationRequestsResult;
@@ -75,6 +77,8 @@ function statusKey(status: CoordinationRequestView['status']): TranslationKey {
 export const CoordinationRequestsPanel = React.memo(function CoordinationRequestsPanel({
   accent,
   isLeader,
+  showCreateAction = true,
+  header,
   styles: parentStyles,
   coordination,
 }: CoordinationRequestsPanelProps) {
@@ -447,7 +451,8 @@ export const CoordinationRequestsPanel = React.memo(function CoordinationRequest
       }
       testID="coordination-list"
     >
-      {isLeader ? (
+      {header}
+      {isLeader && showCreateAction ? (
         <Pressable
           style={[
             local.primaryBtn,

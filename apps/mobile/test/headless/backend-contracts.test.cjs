@@ -169,7 +169,7 @@ assert.equal(core('send_command', { type: 'depart', message: null, latitude: nul
 const command = core('send_command', { type: 'need_help', message: 'Help', latitude: null, longitude: null, expiresAt: new Date(b.now + 300000).toISOString() }, PEER).data;
 assert.equal(command.effects.targetCount, 1);
 assert.equal(b.notificationOutbox.at(-1).target_user_id, LEADER);
-assert.equal(b.tables.commands.length, 0);
+assert.equal(b.tables.commands.filter(row => row.type === 'need_help' && row.core_delivery).length, 1);
 const expiredCommand = core('send_command', { type: 'need_help', message: null, latitude: null, longitude: null, expiresAt: new Date(b.now - 1).toISOString() }, PEER).data;
 assert.equal(expiredCommand.effects.expired, true);
 assert.equal(expiredCommand.effects.targetCount, 0);

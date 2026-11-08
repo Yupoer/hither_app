@@ -16,11 +16,7 @@ describe.each(['ios', 'android'])('actual development Map archive on %s', platfo
       screen: { name: 'Map', params: { groupId: GROUP_ID } } });
     await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'actual archive Map');
     await device.perform('map.card.toggle', { destinationId: DESTINATION });
-    const previousWatches = (await device.observe()).external.watches;
     await device.perform('map.journey.command', { destinationId: DESTINATION });
-    await world.waitFor(device, (value: Observation) => value.external.watches > previousWatches, 'fresh Start location request');
-    await world.advance(1000);
-    await device.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
     await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'active route before archive');
     await device.perform('map.settings.open');
     await device.input({ kind: 'animation', finished: true });

@@ -14,8 +14,8 @@ export interface HistorySheetProps {
   handleDeleteHistory: (item: VisitedWaypoint) => void;
   historyGroups: HistoryDayGroup[];
   isLeader: boolean;
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   styles: MapStyles;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
   user: User | null;

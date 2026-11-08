@@ -5,7 +5,7 @@
  * Does not gate navigation start.
  */
 import { useForegroundReconcile } from '../../../state/useForegroundReconcile';
-import { createElement, Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import { createElement, Fragment, useCallback, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import {
   cancelCoordinationRequest,
@@ -40,7 +40,6 @@ export interface UseCoordinationRequestsOptions {
 export interface UseCoordinationRequestsResult {
   lifecycle: import('react').ReactElement;
   requests: CoordinationRequestView[];
-  openCount: number;
   loading: boolean;
   refreshing: boolean;
   busyRequestId: string | null;
@@ -151,11 +150,6 @@ export function useCoordinationRequests(
     await load('refresh');
   }, [load]);
 
-  const openCount = useMemo(
-    () => requests.filter((request) => request.status === 'open').length,
-    [requests],
-  );
-
   const coordinationRequestsChannelLifecycle = createElement(CoordinationRequestsChannel, { setRequests, active, groupId, setLoading, setError, lastLoadAtRef, load, channelSeqRef, scheduleReload, reloadTimerRef });
 
   // No fixed read/write cadence. Deadline settlement is server-owned; client
@@ -236,7 +230,6 @@ export function useCoordinationRequests(
   return {
     lifecycle: createElement(Fragment, { key: 'coordination-requests-runtime' }, foregroundLifecycle, coordinationRequestsChannelLifecycle),
     requests,
-    openCount,
     loading,
     refreshing,
     busyRequestId,

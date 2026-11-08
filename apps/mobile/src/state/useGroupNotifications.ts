@@ -131,6 +131,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
       pushCategory?: string;
       status?: string | null;
       titleKey?: string | null;
+      recipientId?: string | null;
     }) => {
       try {
         const { data: me, error: soloErr } = await supabase
@@ -151,7 +152,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
         const isLeaderOnlyEvent = opts.eventKind === 'member_arrival';
         const isOwnArrival = opts.eventKind === 'own_arrival';
         // Solo/subgroup mute only when we successfully read memberships.
-        if (!isOwnArrival && !soloErr && meRow?.solo) return;
+        if (!opts.recipientId && !isOwnArrival && !soloErr && meRow?.solo) return;
         const isParticipationEvent = opts.eventKind === 'participation' || opts.eventKind === 'leave_group';
         if (!soloErr && !isCommand && !isLeaderOnlyEvent && !isOwnArrival && !isParticipationEvent && meRow?.subgroup_id != null) return;
 
@@ -214,7 +215,7 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
         });
 
         // If matrix says this user is not a recipient, skip.
-        if (!policy.recipientIds.includes(myUserId)) return;
+        if (opts.recipientId ? opts.recipientId !== myUserId : !policy.recipientIds.includes(myUserId)) return;
 
         const prefs = await getNotificationPreferences();
         if (!isCurrent() || !prefs[opts.category]) return;
@@ -256,9 +257,11 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
             sender_id: string;
             type: CommandType;
             message: string | null;
+            target_user_id?: string | null;
           };
           if (row.sender_id === myUserId) return; // never notify the sender
-          if (row.type === 'request_start' && !isLeaderRef.current) return;
+          if (row.target_user_id ? row.target_user_id !== myUserId
+            : row.type === 'request_start' && !isLeaderRef.current) return;
           void (async () => {
             const [{ data: senderMem }, { data: senderProfile }] = await Promise.all([
               row.type === 'custom'
@@ -286,13 +289,16 @@ function GroupNotificationSubscription({ groupId, myUserId, tRef, isLeaderRef, i
             await fire({
               category: classified.prefCategory,
               title,
-              body: row.message?.trim() || label,
+              body: row.target_user_id && row.type === 'request_start' && row.message
+                ? tRef.current('gathering.requestStartMessage', { title: row.message })
+                : row.message?.trim() || label,
               eventKind: classified.policyEvent,
               senderId: row.sender_id,
               // Prefer command row id (also sent as entity_id on push); fallback type:sender.
               entityId: row.id ?? undefined,
               commandType: row.type,
               pushCategory: classified.pushCategory,
+              recipientId: row.target_user_id,
             });
           })();
         },

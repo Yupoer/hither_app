@@ -24,7 +24,7 @@ import { Alert, Linking } from 'react-native';
 import { useJourneyNavigation } from '../screens/MapScreen/hooks/useJourneyNavigation';
 import * as sync from '../state/coreDataSync';
 import type { Coordinates, Destination, GroupState } from '../types';
-import type { LocationSample } from '../native/location';
+import type { LocationSample, NavigationStartLocation } from '../native/location';
 import { distanceMeters } from '../utils/geo';
 import type { NavigationSession } from '../types/navigation';
 import type { ActiveGatheringState } from '../types/coreData';
@@ -50,7 +50,7 @@ const pauseConfirm = jest.fn();
 const localSessionChanges: Array<string | null> = [];
 const onLocalSessionIdChange = (sessionId: string | null) => localSessionChanges.push(sessionId);
 function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSession = null, groupState, hasPendingTeamOperation = true,
-  camera, origin, selectIndex, suspend, acquireStartFix = testStartFix, arrivalRadiusM = 50 }: {
+  camera, origin, selectIndex, suspend, acquireStartFix = testStartFix, getStartLocation = async () => ({ kind: 'available', fix: await acquireStartFix() }), arrivalRadiusM = 50 }: {
   groupId?: string;
   actorId?: string;
   terminalSession?: NavigationSession | null;
@@ -59,7 +59,8 @@ function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSes
   hasPendingTeamOperation?: boolean;
   camera?: { fitRoute: jest.Mock; centerOn: jest.Mock };
   origin?: Coordinates;
-  acquireStartFix?: Parameters<typeof useJourneyNavigation>[0]['acquireStartFix'];
+  acquireStartFix?: () => Promise<LocationSample | null>;
+  getStartLocation?: Parameters<typeof useJourneyNavigation>[0]['getStartLocation'];
   arrivalRadiusM?: number;
   selectIndex?: jest.Mock;
   suspend?: boolean;
@@ -67,7 +68,7 @@ function Harness({ groupId = 'g', actorId, navigationSession = null, terminalSes
   const currentState = groupState ?? (groupId === 'g' ? state : { ...state, group: { ...state.group, id: groupId } });
   const currentApi = useJourneyNavigation({ state: currentState, groupId, actorId, terminalSession, isLeader: true, destinations: currentState.destinations,
     selectedDestination: first, fromCoords: origin, refresh: jest.fn(),
-    acquireStartFix, arrivalRadiusM,
+    getStartLocation, arrivalRadiusM,
     t: (key, params) => params ? `${key}:${params.currentName}:${params.newName}` : key,
     mapRef: { current: camera as any ?? null }, carouselRef: { current: null }, setSelectedIndex: selectIndex ?? jest.fn(),
     navigationSession, startSession, hasPendingTeamOperation,
@@ -236,76 +237,21 @@ it('refuses Start below the configured arrival radius but allows the exact bound
   expect(acquireStartFix).toHaveBeenCalledTimes(2);
 });
 
-it('does not use an old route origin when fresh location is missing or unreliable', async () => {
+it('fits the route from a recent, accurate cached fix', async () => {
   const camera = { fitRoute: jest.fn(), centerOn: jest.fn() };
-  const staleOrigin = { latitude: 24, longitude: 120 };
-  const missing = jest.fn(async () => null);
-  await act(async () => { root.update(React.createElement(Harness, { camera, origin: staleOrigin, acquireStartFix: missing })); });
-  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
-  expect(Alert.alert).toHaveBeenCalledWith('nav.startUnavailableTitle', 'nav.startLocationUnavailable', expect.any(Array));
-  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
-  expect(camera.fitRoute).not.toHaveBeenCalled();
-  const inaccurate = jest.fn(async () => ({ coordinates: staleOrigin, timestamp: Date.now(), accuracy: 500 }));
-  await act(async () => { root.update(React.createElement(Harness, { camera, origin: staleOrigin, acquireStartFix: inaccurate })); });
-  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
-  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
-  expect(camera.fitRoute).not.toHaveBeenCalled();
-});
-
-it('rejects a cached fix sampled before Start even when it is still recent', async () => {
-  const acquireStartFix = jest.fn(async () => ({
-    coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now() - 10_000, accuracy: 5,
-  }));
-  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix })); });
-  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
-  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
-  expect(Alert.alert).toHaveBeenCalledWith('nav.startUnavailableTitle', 'nav.startLocationUnavailable', expect.any(Array));
-  jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1) as any);
-  acquireStartFix.mockImplementation(async () => ({
-    coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5,
-  }));
-  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
-  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(1);
-});
-
-it('passes the same post-tap freshness and accuracy checks to acquisition and uses its accepted fix', async () => {
-  const checks: boolean[] = [];
-  const acquireStartFix: Parameters<typeof useJourneyNavigation>[0]['acquireStartFix'] = async acceptsSample => {
-    const fix = { coordinates: { latitude: 24, longitude: 120 }, timestamp: Date.now(), accuracy: 5 };
-    checks.push(acceptsSample({ ...fix, timestamp: Date.now() - 10_000 }));
-    checks.push(acceptsSample({ ...fix, accuracy: 500 }));
-    checks.push(acceptsSample({ ...fix, accuracy: null }));
-    checks.push(acceptsSample({ ...fix, timestamp: Date.now() + 10_000 }));
-    checks.push(acceptsSample({ ...fix, coordinates: { latitude: 91, longitude: 120 } }));
-    checks.push(acceptsSample(fix));
-    return fix;
-  };
+  const coordinates = { latitude: 24, longitude: 120 };
+  const acquireStartFix = async () => ({ coordinates, timestamp: Date.now() - 10_000, accuracy: 5 });
   jest.mocked(sync.enqueueLeaderGatheringStart).mockResolvedValue(saved('a', 1));
-  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix })); });
+  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix, camera })); });
   await act(async () => { await getJourneyApi().startNavigation(first, 0); });
-  expect(checks).toEqual([false, false, false, false, false, true]);
-  expect(sync.enqueueLeaderGatheringStart).toHaveBeenCalledTimes(1);
-});
-
-it.each(['missing', 'failed'])('offers confirm and app Settings after a %s navigation fix', async kind => {
-  const acquireStartFix = async () => {
-    if (kind === 'failed') throw new Error('location_unavailable');
-    return null;
-  };
-  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix })); });
-  await act(async () => { await getJourneyApi().startNavigation(first, 0); });
-  const buttons = jest.mocked(Alert.alert).mock.calls.at(-1)?.[2];
-  expect(buttons?.map(button => button.text)).toEqual(['common.ok', 'location.openSettings']);
-  buttons?.[0].onPress?.();
-  expect(Linking.openSettings).not.toHaveBeenCalled();
-  buttons?.[1].onPress?.();
-  expect(Linking.openSettings).toHaveBeenCalledTimes(1);
-  expect(sync.enqueueLeaderGatheringStart).not.toHaveBeenCalled();
+  expect(camera.fitRoute).toHaveBeenCalledWith([coordinates, first.coordinates]);
+  expect(Alert.alert).not.toHaveBeenCalled();
 });
 
 it('shows a recoverable error when the app Settings URL cannot open', async () => {
   jest.mocked(Linking.openSettings).mockRejectedValueOnce(new Error('settings_unavailable'));
-  await act(async () => { root.update(React.createElement(Harness, { acquireStartFix: async () => null })); });
+  const getStartLocation = async (): Promise<NavigationStartLocation> => ({ kind: 'permissionDenied' });
+  await act(async () => { root.update(React.createElement(Harness, { getStartLocation })); });
   await act(async () => { await getJourneyApi().startNavigation(first, 0); });
   await act(async () => { jest.mocked(Alert.alert).mock.calls.at(-1)?.[2]?.[1].onPress?.(); });
   expect(Alert.alert).toHaveBeenLastCalledWith('nav.startUnavailableTitle', 'interaction.error');

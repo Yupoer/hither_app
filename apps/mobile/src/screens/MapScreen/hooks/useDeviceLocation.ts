@@ -241,15 +241,8 @@ export function useDeviceLocation({
    * @param options.requireUpload When true (Force Refresh), upload failures
    *   propagate so callers can report upload failure independently of reads.
    *   Background/foreground auto paths keep soft-fail upload.
-   * @param options.waitForUpload When false, return the accepted fix while its
-   *   upload continues. Journey Start uses this so network latency cannot
-   *   turn a fresh GPS fix stale before the durable command is queued.
    */
-  const refreshDeviceLocationSample = useCallback(async (options?: {
-    requireUpload?: boolean;
-    waitForUpload?: boolean;
-    acceptsSample?: (sample: LocationSample) => boolean;
-  }): Promise<LocationSample | null> => {
+  const refreshDeviceLocation = useCallback(async (options?: { requireUpload?: boolean }): Promise<Coordinates | null> => {
     const sampleAtRequest = lastSampleAtRef.current;
     energyObservability.increment('location_callback');
     const requestedGroup = groupIdRef.current;
@@ -258,9 +251,8 @@ export function useDeviceLocation({
     const access = await captureLocationAccess(requestedGroup);
     if (!access) return null;
     const acquiredFix = await location.getCurrentLocation(
-      options?.acceptsSample ? true : highAccuracyRef.current,
-      options?.acceptsSample ? 'foreground' : powerModeRef.current,
-      options?.acceptsSample,
+      highAccuracyRef.current,
+      powerModeRef.current,
     );
     if (!acquiredFix || await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || !sharingEnabledRef.current || requestedGroup !== groupIdRef.current || !groupIdRef.current || !hasMembershipRef.current || !isForegroundLocationState(AppState.currentState)) return null;
     const now = Date.now();
@@ -274,15 +266,11 @@ export function useDeviceLocation({
           && acquiredFix.coordinates.latitude === latest.coordinates.latitude
           && acquiredFix.coordinates.longitude === latest.coordinates.longitude
           && acquiredFix.accuracy === latest.accuracy));
-    const acceptedForRequest = options?.acceptsSample != null
-      && isUsableLocationSample(acquiredFix) && options.acceptsSample(acquiredFix);
-    if (!accepted && !observedDuringRequest && !acceptedForRequest) {
+    if (!accepted && !observedDuringRequest) {
       if (options?.requireUpload) throw new Error('no_new_location_sample');
       return null;
     }
-    const fix = latest && observedDuringRequest
-      && (!options?.acceptsSample || options.acceptsSample(latest)) ? latest : acquiredFix;
-    if (options?.acceptsSample && !options.acceptsSample(fix)) return null;
+    const fix = observedDuringRequest ? latest : acquiredFix;
     if (accepted) {
       energyObservability.increment('location_accepted');
       energyObservability.event('location_acquisition');
@@ -306,21 +294,13 @@ export function useDeviceLocation({
           throw error;
         }
       }
-      else if (options?.waitForUpload === false) void upload.catch(() => undefined);
       else await upload.catch(() => undefined);
     }
     if (await getLocalAuthActorId() !== requestedActor || !isLocationAccessCurrent(access) || requestedGroup !== groupIdRef.current
       || !sharingEnabledRef.current || !hasMembershipRef.current
       || !isForegroundLocationState(AppState.currentState)) return null;
-    return fix;
+    return fix.coordinates;
   }, [acceptIncomingSample, applySampleToUi, enqueueUpload]);
-
-  const refreshDeviceLocation = useCallback(async (options?: {
-    requireUpload?: boolean;
-    waitForUpload?: boolean;
-  }): Promise<Coordinates | null> => (
-    await refreshDeviceLocationSample(options)
-  )?.coordinates ?? null, [refreshDeviceLocationSample]);
 
   const [sampleOwner] = useState<DeviceLocationSampleOwner>(() => ({
     uiGateRef, uploadGateRef, lastSampleAtRef, latestSampleRef, motionRef,
@@ -344,7 +324,6 @@ export function useDeviceLocation({
     appState,
     refreshDeviceLocation,
     consumeForegroundSample,
-    refreshDeviceLocationSample,
     /** Raw latest fix for imperative coordinator wiring; does not trigger renders. */
     latestLocationSampleRef: latestSampleRef,
   };
@@ -458,13 +437,14 @@ function DeviceLocationProfile({ owner, resources, input }: {
     if (!resources.appStateSubscription) {
       resources.appStateSubscription = AppState.addEventListener('change', owner.setAppState);
     }
-    // Profile reset deliberately preserves the displayed React sample.
+    if (scopeChanged) {
+      owner.lastSampleAtRef.current = 0;
+      owner.latestSampleRef.current = null;
+    }
     if (!old || !Object.is(old.highAccuracy, highAccuracy) || !Object.is(old.teamNavigationActive, teamNavigationActive)
       || !Object.is(old.powerMode, powerMode) || !Object.is(old.groupId, groupId)) {
       owner.uiGateRef.current = { lastCoords: null, lastAtMs: 0 };
       owner.uploadGateRef.current = { lastCoords: null, lastAtMs: 0 };
-      owner.lastSampleAtRef.current = 0;
-      owner.latestSampleRef.current = null;
       owner.motionRef.current = createMotionState(Date.now());
     }
     if (targetChanged) owner.uiGateRef.current = { lastCoords: null, lastAtMs: 0 };

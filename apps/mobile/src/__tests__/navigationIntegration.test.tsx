@@ -83,7 +83,7 @@ describe('Navigation Session UI integration', () => {
         destinations: [localDestination, sharedDestination],
         selectedDestination: localDestination,
         fromCoords: undefined,
-        acquireStartFix: testStartFix, arrivalRadiusM: 50,
+        getStartLocation: async () => ({ kind: 'available', fix: await testStartFix() }), arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: null },
@@ -109,7 +109,7 @@ describe('Navigation Session UI integration', () => {
     expect(navigation?.navTargetId).toBe(sharedDestination.id);
   });
 
-  it('follows a promoted session once and resumes its local route after an explicit Start', () => {
+  it('follows a promoted session once and resumes its local route after an explicit Start', async () => {
     const centerOn = jest.fn();
     let navigation: ReturnType<typeof useJourneyNavigation> | undefined;
 
@@ -124,7 +124,7 @@ describe('Navigation Session UI integration', () => {
         destinations,
         selectedDestination: localDestination,
         fromCoords: undefined,
-        acquireStartFix: testStartFix, arrivalRadiusM: 50,
+        getStartLocation: async () => ({ kind: 'available', fix: await testStartFix() }), arrivalRadiusM: 50,
         refresh: jest.fn(),
         t: (key) => key,
         mapRef: { current: { centerOn } as never },
@@ -159,7 +159,7 @@ describe('Navigation Session UI integration', () => {
     });
     expect(navigation?.navTargetId).toBeNull();
     expect(navigation?.localTargetId).toBe(localDestination.id);
-    act(() => { void navigation?.startNavigation(localDestination, 0); });
+    await act(async () => { await navigation?.startNavigation(localDestination, 0); });
     expect(navigation?.navTargetId).toBe(localDestination.id);
   });
 

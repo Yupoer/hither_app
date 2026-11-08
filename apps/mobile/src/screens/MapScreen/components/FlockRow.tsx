@@ -1,11 +1,14 @@
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { HitherText } from '../../../components/HitherText';
 import { displayMemberAvatar } from '../../../constants/avatars';
-import { glass } from '../../../glass';
+import { accentMix, glass } from '../../../glass';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { type TranslationKey } from '../../../i18n';
 import { useForegroundClock } from '../../../state/foregroundUi';
 import { isLocationSampleFresh, locationFreshness } from '../../../utils/locationFreshness';
+import { MemberInboxBadge } from './MemberInboxBadge';
 
 /**
  * One flock member row. Owns a 30s tick for freshness / "moving" status so the
@@ -37,6 +40,8 @@ export const FlockRow = React.memo(function FlockRow({
   onSelfMerge,
   onSelfSplit,
   onKick,
+  inboxCount,
+  onOpenInbox,
 }: {
   userId: string;
   name: string;
@@ -64,8 +69,19 @@ export const FlockRow = React.memo(function FlockRow({
   onSelfMerge: () => void | Promise<unknown>;
   onSelfSplit: () => void | Promise<unknown>;
   onKick?: () => void;
+  inboxCount: number;
+  onOpenInbox: () => void;
 }) {
   const { now: nowMs, lifecycle: clockLifecycle } = useForegroundClock(30_000);
+  const reduceMotion = useReducedMotion();
+  const revision = lastUpdated ? Date.parse(lastUpdated) : null;
+  const [locationUpdate, setLocationUpdate] = useState({ revision, highlight: false });
+  if (!Object.is(revision, locationUpdate.revision)) {
+    setLocationUpdate({
+      revision,
+      highlight: revision != null && (locationUpdate.revision == null || revision > locationUpdate.revision),
+    });
+  }
 
   const movingRecently = isLocationSampleFresh(lastUpdated, {
     locationTrackingMode, locationSource, locationNavigationSessionId,
@@ -89,10 +105,9 @@ export const FlockRow = React.memo(function FlockRow({
         ? t('locationUpdate.hours', { hours: freshness.value })
         : t(`locationUpdate.${freshness.unit}`);
 
-  return (
-    <View style={[styles.flockRow, last && styles.flockRowLast]}>
-      {clockLifecycle}
-      <View style={styles.flockRowMain}>
+  const rowContent = (
+    <>
+      <View>
         <View
           style={[
             styles.flockAvatar,
@@ -106,22 +121,47 @@ export const FlockRow = React.memo(function FlockRow({
             {displayMemberAvatar(avatar, userId).emoji}
           </HitherText>
         </View>
-        <View style={styles.grow}>
-          <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>
-          <Text style={styles.flockStatus} numberOfLines={2}>
-            <Text style={styles.flockMetaRole}>{role}</Text>
-            {!isMe && distOrStatus ? (
-              <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
-            ) : null}
-            {freshnessText ? (
-              <Text style={styles.flockMetaFresh}>{` · ${freshnessText}${syncFailed ? ` · ${t('map.locationSyncFailed')}` : ''}`}</Text>
-            ) : null}
-            {!isMe && solo ? (
-              <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
-            ) : null}
-          </Text>
-        </View>
+        {inboxCount > 0 ? (
+          <MemberInboxBadge count={inboxCount} style={{ top: -4, right: 0 }} testID={`member-inbox-badge-${userId}`} />
+        ) : null}
       </View>
+      <View style={styles.grow}>
+        <Text style={styles.flockName}>{isMe ? t('flock.you') : name}</Text>
+        <Text style={styles.flockStatus} numberOfLines={2}>
+          <Text style={styles.flockMetaRole}>{role}</Text>
+          {!isMe && distOrStatus ? (
+            <Text style={styles.flockMetaDist}>{` · ${distOrStatus}`}</Text>
+          ) : null}
+          {freshnessText ? (
+            <Text style={styles.flockMetaFresh}>{` · ${freshnessText}${syncFailed ? ` · ${t('map.locationSyncFailed')}` : ''}`}</Text>
+          ) : null}
+          {!isMe && solo ? (
+            <Text style={styles.flockMetaWarn}>{` · ${t('solo.badge')}`}</Text>
+          ) : null}
+        </Text>
+      </View>
+    </>
+  );
+
+  return (
+    <View style={[styles.flockRow, last && styles.flockRowLast]}>
+      {clockLifecycle}
+      {!isMe && sharingEnabled !== false && !reduceMotion && locationUpdate.highlight && (
+        <FlockLocationTint key={locationUpdate.revision} accent={accent} />
+      )}
+      {inboxCount > 0 ? (
+        <Pressable
+          style={({ pressed }) => [styles.flockRowMain, pressed && styles.rowActionPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={t('memberInbox.open', { name, count: inboxCount })}
+          onPress={onOpenInbox}
+          testID={`member-inbox-open-${userId}`}
+        >
+          {rowContent}
+        </Pressable>
+      ) : (
+        <View style={styles.flockRowMain}>{rowContent}</View>
+      )}
       {isMe && (
         <View style={styles.selfControls}>
           {subgroupId ? (
@@ -170,3 +210,19 @@ export const FlockRow = React.memo(function FlockRow({
     </View>
   );
 });
+
+function FlockLocationTint({ accent }: { accent: string }) {
+  const opacity = useSharedValue(1);
+  const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  useMountEffect(() => {
+    opacity.set(withDelay(1_000, withTiming(0, { duration: 280 })));
+    return () => cancelAnimation(opacity);
+  });
+  return (
+    <Animated.View
+      testID="map-member-location-tint"
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { backgroundColor: accentMix(accent, 14) }, fade]}
+    />
+  );
+}

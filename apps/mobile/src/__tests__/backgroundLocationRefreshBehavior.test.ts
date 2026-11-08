@@ -30,7 +30,7 @@ const mockAsyncStorage = {
   }),
 };
 const mockAppState = { currentState: 'active' as string };
-const mockLocation = { getCurrentLocation: jest.fn() };
+const mockLocation = { getCurrentLocation: jest.fn(), getBackgroundRefreshLocation: jest.fn() };
 let mockTaskCallback: ((payload: unknown) => Promise<void>) | undefined;
 const mockTaskManager = {
   isTaskDefined: jest.fn(() => false),
@@ -79,7 +79,7 @@ function taskHandler(): (payload: unknown) => Promise<void> {
 }
 
 const fix = {
-  timestamp: 123,
+  timestamp: Date.parse('2026-08-13T00:00:02Z'),
   accuracy: 8,
   coordinates: { latitude: 25, longitude: 121 },
 };
@@ -93,6 +93,7 @@ describe('durable location refresh recovery', () => {
     mockAppState.currentState = 'active';
     jest.clearAllMocks();
     mockLocation.getCurrentLocation.mockResolvedValue(fix);
+    mockLocation.getBackgroundRefreshLocation.mockResolvedValue(fix);
     mockListPending.mockResolvedValue([]);
     mockAck.mockResolvedValue(true);
     mockIngest.mockImplementation(async (events: Array<{ id: string }>) => ({
@@ -203,15 +204,24 @@ describe('durable location refresh recovery', () => {
 
   it('finishes a timed-out locked-screen refresh on the next real sample without acquiring a second fix', async () => {
     mockAppState.currentState = 'background';
-    mockLocation.getCurrentLocation.mockResolvedValueOnce(null);
+    mockLocation.getBackgroundRefreshLocation.mockResolvedValueOnce(null);
     mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
     await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
     expect(mockStore.has('@hither/pending-location-refresh')).toBe(true);
     await recoverPendingLocationRefreshFromSample('group-1', { ...fix, timestamp: Date.now() + 1 });
-    expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
+    expect(mockLocation.getBackgroundRefreshLocation).toHaveBeenCalledTimes(1);
     expect(mockAck).toHaveBeenCalledWith('group-1', '2026-08-13T00:00:00Z');
     expect(mockIngest).toHaveBeenCalledWith([expect.objectContaining({ source: 'refresh_request' })]);
     expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
+  });
+
+  it('leaves a refresh pending when the OS supplies a cached fix older than the request', async () => {
+    mockAppState.currentState = 'background';
+    mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:05Z' }]);
+    await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
+    expect(mockIngest).not.toHaveBeenCalled();
+    expect(mockAck).not.toHaveBeenCalled();
+    expect(mockStore.has('@hither/pending-location-refresh')).toBe(true);
   });
 
   it('handles headless matching rows, compatibility pushes, and legacy markers', async () => {
@@ -231,7 +241,7 @@ describe('durable location refresh recovery', () => {
       error: null,
     });
     expect(mockIngest).toHaveBeenCalledTimes(1);
-    expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
+    expect(mockLocation.getBackgroundRefreshLocation).toHaveBeenCalledTimes(1);
     setLocationSharingConsent(false);
     await handler({ data: { data: { category: 'navigation_session', groupId: 'group-1' } }, error: null });
     expect(require('../state/backgroundJourney').reconcileBackgroundNavigation).not.toHaveBeenCalled();
@@ -246,7 +256,7 @@ describe('durable location refresh recovery', () => {
 
     await handler(payload);
 
-    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+    expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
     expect(mockListPending).not.toHaveBeenCalled();
     expect(mockIngest).not.toHaveBeenCalled();
     expect(mockAck).not.toHaveBeenCalled();
@@ -258,7 +268,7 @@ describe('durable location refresh recovery', () => {
     setLocationAccessContext(null, false);
     await handler(payload);
 
-    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+    expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
     expect(mockIngest).not.toHaveBeenCalled();
     expect(mockPurgeOutbox).toHaveBeenCalledTimes(1);
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
@@ -276,7 +286,7 @@ describe('durable location refresh recovery', () => {
       await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-a' } }, error: null });
       expect(queued).toEqual([original]);
       expect(mockPurgeOutbox).not.toHaveBeenCalled();
-      expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+      expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
       expect(mockListPending).not.toHaveBeenCalled();
       expect(mockIngest).not.toHaveBeenCalled();
       expect(mockAck).not.toHaveBeenCalled();
@@ -288,7 +298,7 @@ describe('durable location refresh recovery', () => {
     mockAsyncStorage.getItem.mockRejectedValueOnce(new Error('preference storage temporarily unavailable'));
     await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
     expect(mockPurgeOutbox).not.toHaveBeenCalled();
-    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+    expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
     expect(mockListPending).not.toHaveBeenCalled();
     expect(mockIngest).not.toHaveBeenCalled();
     expect(mockAck).not.toHaveBeenCalled();

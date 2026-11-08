@@ -1130,7 +1130,7 @@
     {
       "id": "MAP-NAV-01",
       "area": "Independent slice D: journey navigation / device / routes / progress",
-      "source": "H/useJourneyNavigation:804 `startNavigation` <- M:7845 dispatch"
+      "source": "GatheringCarousel Start → useJourneyNavigation.startNavigation → native/location.getNavigationStartLocation"
     },
     {
       "id": "MAP-NAV-02",
@@ -1305,7 +1305,7 @@
     {
       "id": "MAP-OPS-01",
       "area": "Map component and adjacent behavior closure list",
-      "source": "M:8598/8617/8632 exception actions -> `useOrganizerExceptions.markHandled`"
+      "source": "MapScreen.openMemberInbox and MemberInboxSheet read-only organizer notices"
     },
     {
       "id": "MAP-SHELL-01",

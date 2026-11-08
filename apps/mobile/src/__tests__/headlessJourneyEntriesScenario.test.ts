@@ -8,7 +8,7 @@ type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type MapObservation = {
   pid: number;
   actorId: string;
-  presentation: { hosts: { testId?: string; label?: string; disabled?: boolean }[] };
+  presentation: { mapRoutePoints: unknown[] | null; receipts: { host: string; method?: string; action?: string }[]; hosts: { testId?: string; label?: string; text?: string; disabled?: boolean }[] };
   external: { watches: number; alertDetails: unknown[] };
   durable: { snapshot: CoreGroupSnapshot; operations: CoreOperation[] };
 };
@@ -25,6 +25,73 @@ const control = (value: MapObservation, id: string) => value.presentation.hosts.
 describe.each(['ios', 'android'])('actual Map offline journey parent on %s', platform => {
   jest.setTimeout(120000);
 
+  it.each(['missing', 'inaccurate'])('MAP-NAV-01 starts offline with %s GPS and follows on the peer only after receipt', async signal => {
+    const world = new World();
+    try {
+      const leader: Device = await world.device({ id: 'leader', userId: LEADER, platform,
+        screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      const peer: Device = await world.device({ id: 'peer', userId: PEER, platform,
+        screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      for (const device of [leader, peer]) {
+        await world.waitFor(device, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
+        await device.perform('map.card.toggle', { destinationId: DESTINATION });
+      }
+      leader.online = false;
+      if (signal === 'inaccurate') await leader.gps(25.03, 121.53, { accuracy: 500, timestamp: world.now });
+      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.advance(1000);
+      const started: MapObservation = await leader.observe();
+      expect(control(started, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(started.external.alertDetails).toEqual([]);
+      expect(control(started, `gather-route-status-${DESTINATION}`)?.text).toBe('等待定位');
+      expect(started.presentation.mapRoutePoints).toBeNull();
+      expect(started.durable.operations).toEqual([expect.objectContaining({ operationType: 'start_gathering' })]);
+      expect(world.backend.sessions.size).toBe(0);
+      expect(control(await peer.observe(), `gather-nav-${DESTINATION}`)?.label).not.toBe('前往中');
+
+      leader.online = true;
+      await world.advance(120000);
+      await world.waitFor(leader, (value: MapObservation) => value.durable.operations.length === 0, 'offline Start acknowledged');
+      const followed: MapObservation = await world.waitFor(peer, (value: MapObservation) =>
+        value.durable.snapshot.activeGathering.activeDestinationId === DESTINATION
+        && value.durable.snapshot.activeGathering.journeyPhase === 'en_route', 'peer follows acknowledged Start');
+      if (!control(followed, `gather-nav-${DESTINATION}`)) {
+        await peer.perform('map.card.toggle', { destinationId: DESTINATION });
+      }
+      expect(control(await peer.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('前往中');
+      expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({
+        id: started.durable.operations[0].id, status: 'active', started_by: LEADER,
+      })]);
+    } finally { await world.close(); }
+  });
+
+  it.each(['permission', 'services'])('MAP-NAV-01 gives distinct Settings guidance when %s blocks location', async blocker => {
+    const world = new World();
+    try {
+      const device: Device = await world.device({ id: 'leader', userId: LEADER, platform,
+        capabilities: { locationServices: blocker !== 'services' }, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      await world.waitFor(device, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
+      await device.perform('map.card.toggle', { destinationId: DESTINATION });
+      if (blocker === 'permission') await device.input({ kind: 'permission', status: 'denied' });
+      await device.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.settle();
+      const blocked: MapObservation = await device.observe();
+      expect(blocked.external.alertDetails).toEqual([expect.objectContaining({
+        message: blocker === 'permission' ? '目前無法取得定位權限，請至設定開啟。' : '請在裝置設定中開啟定位服務。',
+        buttons: blocker === 'services' && platform === 'ios' ? ['好'] : ['好', '前往設定'],
+      })]);
+      if (blocker === 'permission' || platform === 'android') {
+        await device.input({ kind: 'alert', index: 1 });
+        const opened: MapObservation = await device.observe();
+        expect(opened.presentation.receipts).toContainEqual(blocker === 'permission'
+          ? { host: 'Linking', method: 'openSettings' }
+          : { host: 'Linking', method: 'sendIntent', action: 'android.settings.LOCATION_SOURCE_SETTINGS' });
+      }
+      expect(blocked.durable.operations).toEqual([]);
+      expect(world.backend.sessions.size).toBe(0);
+    } finally { await world.close(); }
+  });
+
   it('MAP-NAV-02 MAP-NAV-05 replays offline card Start then End with their original identities after abrupt offline restart', async () => {
     const world = new World();
     try {
@@ -40,11 +107,7 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
       const originalPid = (await leader.observe()).pid;
       const peerSyncedAt = (await peer.observe()).durable.snapshot.syncedAt;
       leader.online = false;
-      const previousWatches = (await leader.observe()).external.watches;
       await leader.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(leader, (value: MapObservation) => value.external.watches > previousWatches, 'card Start requests a fresh GPS fix offline');
-      await world.advance(1000);
-      await leader.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
       const started: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
         value.durable.operations.length === 1 && control(value, `gather-nav-${DESTINATION}`)?.label === '結束導航', 'offline Map Start is durable and actionable');
       expect(started.durable.snapshot.activeGathering).toMatchObject({ journeyPhase: 'en_route', activeDestinationId: DESTINATION });

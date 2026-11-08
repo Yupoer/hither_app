@@ -45,7 +45,13 @@ function execute(b, { kind, name, args: a = {}, userId }) {
     const recent = b.locationRefreshes.findLast(r => r.group_id === a.p_group_id && b.now - Date.parse(r.requested_at) < 60000);
     if (recent) return ok({ accepted: false, retry_after_seconds: Math.ceil((60000 - b.now + Date.parse(recent.requested_at)) / 1000), requested_at: recent.requested_at });
     const recipients = b.memberships.filter(m => m.group_id === a.p_group_id && m.user_id !== userId && member(b, m.group_id, m.user_id)
-      && m.status !== 'offline' && b.tables.member_privacy_settings.find(p => p.user_id === m.user_id)?.sharing_enabled !== false).map(m => m.user_id).sort();
+      && m.status !== 'offline' && b.tables.member_privacy_settings.find(p => p.user_id === m.user_id)?.sharing_enabled !== false)
+      .filter(m => {
+        const fix = b.locations.get(m.group_id + ':' + m.user_id);
+        if (fix?.latitude == null || fix.longitude == null) return true;
+        const capturedAt = Date.parse(fix.captured_at ?? fix.updated_at);
+        return !(capturedAt > b.now - 180_000 && capturedAt <= b.now + 120_000);
+      }).map(m => m.user_id).sort();
     const row = { group_id: a.p_group_id, requested_by: userId, requested_at: iso(b), recipient_ids: recipients, acknowledgements: [] };
     b.locationRefreshes.push(row);
     recipients.forEach(id => b.locationRefreshPending.set(`${a.p_group_id}:${id}`, { group_id: a.p_group_id, user_id: id, requested_by: userId, requested_at: row.requested_at }));

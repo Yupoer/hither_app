@@ -15,9 +15,9 @@ export interface ArrivalTimeSheetProps {
   handleArrival: (destination: Destination, targetUserId: string, arrived: boolean) => void;
   isLeader: boolean;
   members: MemberLocation[];
-  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null;
+  overlay: "route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null;
   setArrivalDestination: React.Dispatch<React.SetStateAction<Destination | null>>;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   styles: MapStyles;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
 }

@@ -3,7 +3,9 @@ import { requireOptionalNativeModule } from 'expo-modules-core';
 import * as Location from 'expo-location';
 import { AppState } from 'react-native';
 import type { BackgroundLocationAdapter } from '../state/backgroundJourneyController';
-import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessEnabled, subscribeLocationAccessChanges } from '../state/locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessEnabled, subscribeLocationAccessChanges, type LocationAccess } from '../state/locationPrivacy';
+import { isForegroundLocationState } from '../utils/locationPolicy';
+import { requestWithDeadline } from '../utils/requestDeadline';
 
 type NativeFix = Location.LocationObject & { stationary?: boolean };
 const native = requireOptionalNativeModule<{
@@ -15,6 +17,7 @@ const native = requireOptionalNativeModule<{
   addListener(name: 'onBackgroundLocation', listener: (sample: NativeFix) => void): { remove(): void };
   addListener(name: 'onBackgroundLocationError', listener: (error: { code: string }) => void): { remove(): void };
 }>('HitherLocation');
+const BACKGROUND_REFRESH_TIMEOUT_MS = 15_000;
 const supported = native?.supportsBackgroundLiveUpdates?.() === true;
 export const nativeBackgroundAvailable = supported;
 
@@ -115,7 +118,29 @@ export const backgroundLocationAdapter: BackgroundLocationAdapter = {
 
 /** A refresh waits for the existing owner; it never starts a second GPS stream. */
 export async function nextBackgroundLocation(signal: AbortSignal): Promise<NativeFix | null> {
-  if (!supported || !await native!.hasBackgroundLocation() || signal.aborted) return null;
+  if (!supported || !await native!.hasBackgroundLocation()) return null;
+  return waitForNativeBackgroundFix(signal);
+}
+
+export async function captureBackgroundRefreshFix(access: LocationAccess): Promise<NativeFix | null> {
+  const [foreground, nativeRunning] = await Promise.all([
+    Location.getForegroundPermissionsAsync(),
+    supported && native!.hasBackgroundLocation(),
+  ]);
+  if (foreground.status !== 'granted' || isForegroundLocationState(AppState.currentState)
+    || !isLocationAccessCurrent(access)) return null;
+  if (nativeRunning) return waitForNativeBackgroundFix(access.signal);
+
+  const background = await Location.getBackgroundPermissionsAsync();
+  if (background.status !== 'granted' || isForegroundLocationState(AppState.currentState)
+    || !isLocationAccessCurrent(access)) return null;
+  return requestWithDeadline(() => Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: false,
+  }), BACKGROUND_REFRESH_TIMEOUT_MS, access.signal);
+}
+
+function waitForNativeBackgroundFix(signal: AbortSignal): Promise<NativeFix | null> {
+  if (signal.aborted) return Promise.resolve(null);
   return new Promise(resolve => {
     let subscription: { remove(): void } | undefined;
     const finish = (sample: NativeFix | null) => {
@@ -125,7 +150,7 @@ export async function nextBackgroundLocation(signal: AbortSignal): Promise<Nativ
       resolve(signal.aborted ? null : sample);
     };
     const abort = () => finish(null);
-    const timeout = setTimeout(abort, 15_000);
+    const timeout = setTimeout(abort, BACKGROUND_REFRESH_TIMEOUT_MS);
     signal.addEventListener('abort', abort, {once:true});
     subscription = native!.addListener('onBackgroundLocation', finish);
     if (signal.aborted) abort();

@@ -205,8 +205,8 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
       const pending = await listMyPendingLocationRefreshes().catch(() => []);
       const matching = pending.filter(row => row.groupId === payload.groupId);
       if (!matching.length || !isLocationAccessCurrent(access)) return;
-      const fix = await location.getCurrentLocation(false).catch(() => null);
-      if (!fix) {
+      const fix = await location.getBackgroundRefreshLocation(access).catch(() => null);
+      if (!fix || !matching.some(row => fix.timestamp >= Date.parse(row.requestedAt))) {
         await rememberPendingRefresh(payload.groupId).catch(() => undefined);
         return;
       }

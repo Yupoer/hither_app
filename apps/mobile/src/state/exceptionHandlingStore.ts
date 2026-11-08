@@ -2,20 +2,13 @@
  * Local handling state for organizer exceptions (open / acknowledged / resolved).
  * Survives refresh via AsyncStorage; does not mutate team phase or member rows.
  *
- * Writes are serialized per groupId so concurrent markHandled calls cannot
- * drop updates (read-modify-write races).
- *
  * Storage is already scoped by groupId. We intentionally do NOT wipe handling
  * when the session key flips nav:→dest: for the same gathering stop — that
  * would erase ack/resolve while the leader is still working the episode.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type {
-  ExceptionAction,
-  ExceptionHandlingMap,
-} from '../utils/organizerExceptions';
-import { transitionExceptionHandling } from '../utils/organizerExceptions';
+import type { ExceptionHandlingMap } from '../utils/organizerExceptions';
 
 export function exceptionHandlingStorageKey(groupId: string): string {
   return `hither.exceptionHandling.${groupId}`;
@@ -92,7 +85,7 @@ export async function loadExceptionHandling(
   return promise;
 }
 
-export async function saveExceptionHandling(
+async function saveExceptionHandling(
   groupId: string,
   map: ExceptionHandlingMap,
 ): Promise<void> {
@@ -101,27 +94,6 @@ export async function saveExceptionHandling(
     exceptionHandlingStorageKey(groupId),
     JSON.stringify(map),
   );
-}
-
-/**
- * Apply one handling action. Serialized per group so parallel ack/resolve
- * cannot overwrite each other.
- */
-export async function applyExceptionHandlingAction(
-  groupId: string,
-  rootCauseKey: string,
-  action: ExceptionAction,
-  nowIso: string = new Date().toISOString(),
-): Promise<ExceptionHandlingMap> {
-  return enqueueWrite(groupId, async () => {
-    // Prefer in-memory cache after hydrate; load only when cold.
-    const current = cache.has(groupId)
-      ? cache.get(groupId)!
-      : await loadExceptionHandling(groupId);
-    const next = transitionExceptionHandling(current, rootCauseKey, action, nowIso);
-    await saveExceptionHandling(groupId, next);
-    return next;
-  });
 }
 
 /** Drop resolved handling older than this (keeps storage bounded). */
@@ -188,11 +160,4 @@ export async function pruneExceptionHandlingForSession(
     }
     return next;
   });
-}
-
-/** Test helper — clears module cache between Jest cases. */
-export function __resetExceptionHandlingStoreForTests(): void {
-  cache.clear();
-  hydratePromises.clear();
-  writeChains.clear();
 }

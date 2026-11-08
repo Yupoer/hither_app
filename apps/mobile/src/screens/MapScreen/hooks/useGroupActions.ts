@@ -17,7 +17,7 @@ export interface UseGroupActionsInput {
   members: MemberLocation[];
   navigation: NativeStackNavigationProp<RootStackParamList, "Map", undefined>;
   role: MemberRole | null;
-  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "ops" | null>>;
+  setOverlay: React.Dispatch<React.SetStateAction<"route" | "settings" | "profile" | "feedback" | "history" | "account" | "custom" | "invite" | "commands" | "arrivalManage" | "arrival" | "coordination" | null>>;
   t: (key: TranslationKey, params?: Record<string, string | number>) => string;
 }
 

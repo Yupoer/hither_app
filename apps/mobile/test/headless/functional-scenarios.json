@@ -734,6 +734,22 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "starts offline with",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "gives distinct Settings guidance",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -755,7 +771,7 @@
         },
         {
           "file": "src/__tests__/headlessMapScenario.test.ts",
-          "pattern": "actual follower request-start",
+          "pattern": "offline member Start request stays pending",
           "platforms": [
             "ios",
             "android"
@@ -1247,7 +1263,7 @@
         },
         {
           "file": "src/__tests__/headlessNotificationJourneyScenario.test.ts",
-          "pattern": "request-start card targets",
+          "pattern": "request-start persists for the organizer",
           "platforms": [
             "ios",
             "android"
@@ -1767,10 +1783,11 @@
     },
     {
       "id": "LOC-05",
-      "title": "Members backend refresh survives missing self GPS and requires exact connected peer ACK",
+      "title": "Members refresh reuses recent fixes and applies exact uploads from a background wake",
       "critical": true,
       "sources": [
         "src/screens/MapScreen.tsx",
+        "src/native/backgroundLocation.ts",
         "src/state/backgroundLocationRefresh.ts"
       ],
       "cases": [

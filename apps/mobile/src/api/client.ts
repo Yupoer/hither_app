@@ -208,6 +208,9 @@ export {
   mapNotificationPreferences,
   savePushToken,
   sendCommand,
+  requestGatheringStart,
+  fetchPendingStartRequests,
+  resolveGatheringStart,
   getNotificationPreferences,
   setNotificationPreferences,
 } from './services/NotificationService';

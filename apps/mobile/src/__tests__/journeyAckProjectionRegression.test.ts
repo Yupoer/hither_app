@@ -58,7 +58,7 @@ function Harness({ state = groupState(), pending = true, session = null }: {
   const [, setLocalSessionId] = React.useState<string | null>(null);
   const next = useJourneyNavigation({ state, groupId: 'g', actorId: 'actor-a', isLeader: true,
     destinations: state.destinations, selectedDestination: destination, fromCoords: undefined,
-    acquireStartFix: testStartFix, arrivalRadiusM: 50,
+    getStartLocation: async () => ({ kind: 'available', fix: await testStartFix() }), arrivalRadiusM: 50,
     refresh: noop, t: key => key, mapRef, carouselRef, setSelectedIndex: noop,
     navigationSession: session, hasPendingTeamOperation: pending, onLocalSessionIdChange: setLocalSessionId });
   return React.createElement(JourneyProbe, { api: next });

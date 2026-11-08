@@ -3,6 +3,7 @@ const mockLocationApi = {
   Accuracy: { High: 4, Low: 2, Balanced: 3 },
   requestForegroundPermissionsAsync: jest.fn(),
   getForegroundPermissionsAsync: jest.fn(),
+  hasServicesEnabledAsync: jest.fn(),
   getBackgroundPermissionsAsync: jest.fn(),
   watchPositionAsync: jest.fn(),
 };
@@ -52,6 +53,7 @@ jest.mock('../native/debugLocation', () => ({
 import {
   classifyLocationPermissionUx,
   getCurrentLocation,
+  getNavigationStartLocation,
   getPermissionState,
   requestPermission,
   watchLocation,
@@ -79,6 +81,7 @@ describe('native location boundary lifecycle', () => {
       return mockAccessUnsubscribe;
     });
     mockLocationApi.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    mockLocationApi.hasServicesEnabledAsync.mockResolvedValue(true);
     mockLocationApi.getForegroundPermissionsAsync.mockResolvedValue({
       status: 'granted',
       canAskAgain: true,
@@ -111,6 +114,19 @@ describe('native location boundary lifecycle', () => {
     expect(classifyLocationPermissionUx(base, 500)).toBe('approximate_only');
     expect(classifyLocationPermissionUx(base, Number.NaN)).toBe('granted');
     expect(classifyLocationPermissionUx(base, null)).toBe('granted');
+  });
+
+  it('checks navigation permission and services without opening a new GPS watcher', async () => {
+    const fix = { coordinates: nativePosition.coords, accuracy: nativePosition.coords.accuracy, timestamp: nativePosition.timestamp };
+    const getFix = jest.fn(() => fix);
+    mockLocationApi.hasServicesEnabledAsync.mockResolvedValueOnce(false);
+    await expect(getNavigationStartLocation(getFix)).resolves.toEqual({ kind: 'servicesDisabled' });
+    mockLocationApi.getForegroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+    await expect(getNavigationStartLocation(getFix)).resolves.toEqual({ kind: 'permissionDenied' });
+    expect(getFix).not.toHaveBeenCalled();
+    await expect(getNavigationStartLocation(getFix)).resolves.toEqual({ kind: 'available', fix });
+    expect(mockLocationApi.watchPositionAsync).not.toHaveBeenCalled();
+    expect(mockLocationApi.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
 
   it('requests permission and reads background state with a safe fallback', async () => {
@@ -177,54 +193,6 @@ describe('native location boundary lifecycle', () => {
     expect(mockAccessUnsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('waits past cached and coarse callbacks for a new precise navigation fix with permission already granted', async () => {
-    let onPosition!: (position: typeof nativePosition) => void;
-    const remove = jest.fn();
-    mockLocationApi.watchPositionAsync.mockImplementationOnce((options, callback) => {
-      expect(options).toMatchObject({ accuracy: 4, distanceInterval: 0, timeInterval: 1_000 });
-      onPosition = callback;
-      return Promise.resolve({ remove });
-    });
-    const requestedAt = nativePosition.timestamp;
-    const reading = getCurrentLocation(true, 'foreground', sample => sample.timestamp >= requestedAt
-      && sample.accuracy != null && sample.accuracy <= 50);
-    let resolved = false;
-    void reading.then(() => { resolved = true; });
-    await settle();
-    onPosition({ ...nativePosition, timestamp: requestedAt - 1 });
-    onPosition({ ...nativePosition, coords: { ...nativePosition.coords, accuracy: 500 } });
-    await settle();
-    expect(resolved).toBe(false);
-    expect(remove).not.toHaveBeenCalled();
-    onPosition(nativePosition);
-    await expect(reading).resolves.toMatchObject({ timestamp: requestedAt, accuracy: 7 });
-    expect(remove).toHaveBeenCalledTimes(1);
-    expect(mockAppStateRemove).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps one deadline while inaccurate samples continue and removes the temporary subscription', async () => {
-    jest.useFakeTimers();
-    try {
-      let onPosition!: (position: typeof nativePosition) => void;
-      const remove = jest.fn();
-      mockLocationApi.watchPositionAsync.mockImplementationOnce((_options, callback) => {
-        onPosition = callback;
-        return Promise.resolve({ remove });
-      });
-      const reading = getCurrentLocation(true, 'foreground', sample => sample.accuracy === 1);
-      await settle();
-      await jest.advanceTimersByTimeAsync(14_999);
-      onPosition(nativePosition);
-      expect(remove).not.toHaveBeenCalled();
-      await jest.advanceTimersByTimeAsync(1);
-      await expect(reading).resolves.toBeNull();
-      expect(remove).toHaveBeenCalledTimes(1);
-      expect(mockAppStateRemove).toHaveBeenCalledTimes(1);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
   it('cancels an unfinished foreground request on background and ignores a later precise callback', async () => {
     let onPosition!: (position: typeof nativePosition) => void;
     const remove = jest.fn();
@@ -232,7 +200,7 @@ describe('native location boundary lifecycle', () => {
       onPosition = callback;
       return Promise.resolve({ remove });
     });
-    const reading = getCurrentLocation(true, 'foreground', sample => sample.accuracy === 7);
+    const reading = getCurrentLocation(true, 'foreground');
     await settle();
     mockAppState.currentState = 'background';
     mockAppStateListener?.('background');

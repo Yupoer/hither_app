@@ -26,7 +26,6 @@ import {
   lateSignalsFromMeetTime,
   mergePriorObservations,
   parseTimeMs,
-  type ExceptionAction,
   type ExceptionHandlingMap,
   type NavigationResponseSignal,
   type OrganizerExceptionItem,
@@ -34,7 +33,6 @@ import {
   type TimedMemberSignal,
 } from '../utils/organizerExceptions';
 import {
-  applyExceptionHandlingAction,
   getCachedExceptionHandling,
   loadExceptionHandling,
   pruneExceptionHandlingForSession,
@@ -63,15 +61,6 @@ export interface UseOrganizerExceptionsOptions {
 export interface UseOrganizerExceptionsResult {
   lifecycle: ReactElement;
   exceptions: OrganizerExceptionItem[];
-  openCount: number;
-  handling: ExceptionHandlingMap;
-  /** rootCauseKeys currently mutating (disable chips in UI). */
-  pendingKeys: ReadonlySet<string>;
-  markHandled: (
-    rootCauseKey: string,
-    action: ExceptionAction,
-  ) => Promise<boolean>;
-  refreshNavStates: () => Promise<void>;
 }
 
 function toMemberSnapshots(
@@ -131,7 +120,6 @@ function useOrganizerExceptionsOwner(
   const [navStates, setNavStates] = useState<MemberNavigationState[]>([]);
   const [helpSignals, setHelpSignals] = useState<TimedMemberSignal[]>([]);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [pendingKeys, setPendingKeys] = useState<Set<string>>(() => new Set());
   const priorRef = useRef<PriorExceptionObservation[]>([]);
   /** Continuous straggler observation start — not rewritten every 30s tick. */
   const stragglerSeenRef = useRef<Map<string, string>>(new Map());
@@ -201,7 +189,6 @@ function useOrganizerExceptionsOwner(
 
   const exceptions = useMemo(() => {
     if (!enabled || !groupId || !groupState) return [];
-    // includeResolved: true so mis-tapped resolve can reopen; UI styles muted.
     return buildOrganizerExceptions({
       groupId,
       nowIso,
@@ -246,52 +233,9 @@ function useOrganizerExceptionsOwner(
     nowIso,
   ]);
 
-  // Preserve firstSeen outside render (no side effects inside useMemo).
-
-  const openCount = useMemo(
-    () =>
-      exceptions.filter((e) => e.status === 'open' || e.status === 'acknowledged')
-        .length,
-    [exceptions],
-  );
-
-  const markHandled = useCallback(
-    async (rootCauseKey: string, action: ExceptionAction): Promise<boolean> => {
-      if (!groupId) return false;
-      setPendingKeys((prev) => new Set(prev).add(rootCauseKey));
-      try {
-        const next = await applyExceptionHandlingAction(
-          groupId,
-          rootCauseKey,
-          action,
-          new Date().toISOString(),
-        );
-        setHandling(next);
-        return true;
-      } catch {
-        // Soft-fail: list stays on previous handling; no team state mutated.
-        return false;
-      } finally {
-        setPendingKeys((prev) => {
-          const next = new Set(prev);
-          next.delete(rootCauseKey);
-          return next;
-        });
-      }
-    },
-    [groupId],
-  );
-
   return {
     enabled, groupId, navigationSessionId, gatheringPoint, leaderUserId, nowMs, nowIso, stragglers, exceptions, handling, priorRef, stragglerSeenRef, sessionGenRef, refreshNavStates, setHandling, setNavStates, setHelpSignals, setNowTick, setStragglerSeenMap, foregroundLifecycle,
-    snapshot: {
-      exceptions,
-      openCount,
-      handling,
-      pendingKeys,
-      markHandled,
-      refreshNavStates,
-    },
+    snapshot: { exceptions },
   };
 }
 

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { MapAccessLossResource, MapGatherRequestPagerResource, MapRouteOpenResource } from '../screens/MapScreen/MapScreenChromeResources';
+import { MapAccessLossResource, MapRouteOpenResource } from '../screens/MapScreen/MapScreenChromeResources';
 
 const mockAlert = jest.fn();
 jest.mock('react-native', () => ({ Alert: { alert: (...args: unknown[]) => mockAlert(...args) } }));
@@ -11,20 +11,23 @@ describe('MapScreen chrome resource ownership', () => {
   let tree: ReactTestRenderer | undefined;
   afterEach(() => { act(() => tree?.unmount()); tree = undefined; jest.clearAllMocks(); });
 
-  it('deduplicates access-loss handling across new state objects and rearms only after membership returns', () => {
+  it('keeps Map on temporary recovery failure and exits only on confirmed access loss', () => {
     const leaveGroup = jest.fn();
     const reset = jest.fn();
     const props = {
-      user: { id: 'me' }, groupId: 'group', membership: { group: { id: 'group' } }, isLeader: false,
-      members: [{ userId: 'peer' }], groupStateError: 'not_member', loading: false,
-      state: { group: { id: 'group' } }, kickedHandledRef: { current: false }, leaveGroup,
+      user: { id: 'me' }, groupId: 'group', membership: { group: { id: 'group' } },
+      groupStateError: 'not_member', kickedHandledRef: { current: false }, leaveGroup,
       voluntaryLeaveRef: { current: false }, t: (key: string) => key, navigation: { reset },
     };
-    act(() => { tree = create(React.createElement(MapAccessLossResource, props)); });
+    act(() => { tree = create(React.createElement(MapAccessLossResource, { ...props, groupStateError: 'Network request failed' })); });
+    expect(leaveGroup).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(mockAlert).not.toHaveBeenCalled();
+    act(() => tree?.update(React.createElement(MapAccessLossResource, props)));
     expect(leaveGroup).toHaveBeenCalledTimes(1);
-    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, state: { group: { id: 'group' } } })));
+    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, user: { id: 'me' } })));
     expect(leaveGroup).toHaveBeenCalledTimes(1);
-    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, members: [{ userId: 'me' }], groupStateError: null })));
+    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, groupStateError: null })));
     expect(props.kickedHandledRef.current).toBe(false);
     act(() => tree?.update(React.createElement(MapAccessLossResource, props)));
     expect(leaveGroup).toHaveBeenCalledTimes(2);
@@ -55,36 +58,5 @@ describe('MapScreen chrome resource ownership', () => {
     expect(session.current).toBe('started');
     await act(async () => { finishes[1](); });
     expect(session.current).toBe('done');
-  });
-
-  it('keeps FIFO removal selection and native pager ownership across equal-value new id arrays', () => {
-    const scrollTo = jest.fn();
-    const lastIds = { current: ['a', 'b', 'c'] };
-    const removed = { current: null as string | null };
-    const pager = { current: { scrollTo } };
-    let selected = '';
-    function Owner({ ids }: { ids: string[] }) {
-      const [id, setId] = useState<string | null>('b');
-      selected = id ?? '';
-      return React.createElement(MapGatherRequestPagerResource, {
-        sortedGatherRequestIds: ids, selectedGatherRequestId: id, setSelectedGatherRequestId: setId,
-        lastGatherRequestIdsRef: lastIds, pendingRemovedGatherRequestIdRef: removed,
-        gatherRequestPageW: 300, gatherRequestPagerRef: pager,
-      });
-    }
-    act(() => { tree = create(React.createElement(Owner, { ids: lastIds.current })); });
-    expect(selected).toBe('b');
-    removed.current = 'b';
-    const nextIds = ['a', 'c'];
-    act(() => tree?.update(React.createElement(Owner, { ids: nextIds })));
-    expect(selected).toBe('c');
-    expect(lastIds.current).toBe(nextIds);
-    expect(removed.current).toBeNull();
-    expect(scrollTo).toHaveBeenLastCalledWith({ x: 300, animated: true });
-    const before = scrollTo.mock.calls.length;
-    act(() => tree?.update(React.createElement(Owner, { ids: ['a', 'c'] })));
-    expect(scrollTo).toHaveBeenCalledTimes(before + 1);
-    expect(pager.current.scrollTo).toBe(scrollTo);
-    expect(selected).toBe('c');
   });
 });

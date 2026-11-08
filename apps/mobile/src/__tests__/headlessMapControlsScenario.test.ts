@@ -305,8 +305,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await world.advance(1);
       await device.gps(25.033, 121.523, { accuracy: 4 });
       await world.advance(20000);
-      await world.waitFor(device, (value: Observation) => value.external.alerts > 0, 'refresh result');
-      await device.input({ kind: 'alert', index: 0 });
+      await world.waitFor(device, (value: Observation) => has(value, 'map-refresh-locations'), 'refresh completes without a peer response');
       await device.perform('map.location.refresh');
       await world.settle();
       expect(world.backend.locationRefreshes).toHaveLength(1);
@@ -339,11 +338,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     const world = new World();
     try {
       const device = await map(world, LEADER, { nativeLocation: true });
-      const previousWatches = (await device.observe()).external.watches;
       await device.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(device, (value: Observation) => value.external.watches > previousWatches, 'fresh Start location request');
-      await world.advance(1000);
-      await device.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
       await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: any) => session.status === 'active'), 'actual Map navigation start');
       await world.settle();
       await device.input({ kind: 'appState', value: 'background' });
@@ -411,27 +406,31 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     } finally { await world.close(); }
   });
 
-  it('MAP-OPS-01 actual exception actions persist locally through restart without changing peer or journey', async () => {
+  it('MAP-OPS-01 actual member notice is read-only and stays read after restart', async () => {
     const world = new World();
     world.backend.tables.commands.push({ id: 'help-signal', group_id: GROUP_ID, sender_id: PEER, type: 'need_help', message: 'Help', created_at: new Date(world.now).toISOString() });
     try {
       const device = await map(world);
       await pane(world, device, 1);
-      await device.perform('map.ops.open');
-      const open = await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.testId?.startsWith('map-exception-acknowledge-')), 'actual help exception');
-      const key = open.presentation.hosts.find((host: { testId?: string }) => host.testId?.startsWith('map-exception-acknowledge-'))!.testId!.slice('map-exception-acknowledge-'.length);
-      await device.perform('map.exception.acknowledge', { rootCauseKey: key });
-      await device.perform('map.exception.resolve', { rootCauseKey: key });
-      await world.waitFor(device, (value: Observation) => has(value, `map-exception-reopen-${key}`), 'resolved actual exception');
+      await world.waitFor(device, (value: Observation) => has(value, 'sheet-pane-badge-members'), 'Members tab badge visible on Gathering');
+      expect(has(await device.observe(), 'map-open-ops')).toBe(false);
+      await device.perform('map.tab', { index: 0 });
+      await device.perform('map.member.inbox', { userId: PEER });
+      const inbox = await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.testId?.startsWith('member-inbox-notice-')), 'read-only member notice');
+      expect(inbox.presentation.hosts.some((host: { testId?: string }) => host.testId?.startsWith('map-exception-'))).toBe(false);
+      expect(has(inbox, 'sheet-pane-badge-members')).toBe(false);
       await device.restart();
       await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'Map restart');
-      await pane(world, device, 1);
-      await device.perform('map.ops.open');
-      expect(has(await device.observe(), `map-exception-reopen-${key}`)).toBe(true);
-      await device.perform('map.exception.reopen', { rootCauseKey: key });
-      expect(has(await device.observe(), `map-exception-acknowledge-${key}`)).toBe(true);
+      await pane(world, device, 0);
+      await world.settle();
+      expect(has(await device.observe(), `member-inbox-open-${PEER}`)).toBe(false);
+      await world.advance(1000);
+      const follower = await world.device({ id: 'member-help', userId: PEER, platform, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      await world.waitFor(follower, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'member Map');
+      await pane(world, follower, 2);
+      await press(follower, 'quick-command-need_help');
+      await world.waitFor(device, (value: Observation) => has(value, `member-inbox-open-${PEER}`), 'later help arrives unread');
       expect(world.backend.groups.get(GROUP_ID).journey_status).toBe('paused');
-      expect(world.backend.memberships.find((row: any) => row.user_id === PEER).solo).toBe(false);
     } finally { await world.close(); }
   });
 

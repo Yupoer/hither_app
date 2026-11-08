@@ -1,4 +1,4 @@
-import { createElement, useState, type ReactElement } from 'react';
+import { createElement, useState, type Dispatch, type ReactElement, type SetStateAction } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import type { Coordinates } from '../../../types';
 import { distanceMeters } from '../../../utils/geo';
@@ -141,7 +141,7 @@ export function useMapKitRoutes(inputs: MapKitRouteInputs): MapKitRoutesState & 
   });
   const [owner] = useState<MapKitRouteOwner>(() => ({
     cache: new Map(), selfRouteGate: { lastCoords: null, lastAtMs: 0 },
-    routedSelf: undefined, lastEffectKey: '', requestGeneration: 0,
+    routedSelf: undefined, lastEffectKey: '', retryAt: null, requestGeneration: 0,
     selfRouteGeneration: 0, setState,
   }));
   const lifecycle = createElement(MapKitRouteLifecycle, { owner,
@@ -162,9 +162,10 @@ interface MapKitRouteOwner {
   selfRouteGate: LocationGateState;
   routedSelf: Coordinates | undefined;
   lastEffectKey: string;
+  retryAt: number | null;
   requestGeneration: number;
   selfRouteGeneration: number;
-  setState: (state: MapKitRoutesState & { targetKey: string }) => void;
+  setState: Dispatch<SetStateAction<MapKitRoutesState & { targetKey: string }>>;
 }
 
 function MapKitRouteLifecycle({ owner, selfCoordinates, gathering, travelMode, highAccuracy, arrivalRadiusM, targetKey }: {
@@ -244,11 +245,11 @@ function MapKitRouteRequest({ owner, input }: {
       highAccuracy ? 'h' : 'n',
     ].join('#');
 
-    // Identical quantized inputs: do not re-hit MapKit.
-    if (effectKey === owner.lastEffectKey) {
+    if (effectKey === owner.lastEffectKey && (owner.retryAt == null || now < owner.retryAt)) {
       return;
     }
     owner.lastEffectKey = effectKey;
+    owner.retryAt = null;
 
     // Only a meaningful request change invalidates the previous completion.
     // Raw GPS/target object rerenders with the same key keep it eligible.
@@ -260,8 +261,14 @@ function MapKitRouteRequest({ owner, input }: {
       return cachedRouteRequest(owner.cache, key, () => getDirections(from, to, mode));
     };
 
-    // No target → clear polylines (nav stopped / arrived / next stop not set).
+    if (gathering && !routedSelf) {
+      owner.setState(current => current.targetKey === targetKey ? current : {
+        targetKey, selfRoute: null, memberRoutes: {}, selfRouteGeneration: owner.selfRouteGeneration,
+      });
+      return;
+    }
     if (!gathering || !directionsAvailable(travelMode)) {
+      if (gathering) owner.retryAt = now + policy.routeMinIntervalMs;
       owner.selfRouteGeneration += 1;
       owner.setState({
         targetKey,
@@ -283,6 +290,7 @@ function MapKitRouteRequest({ owner, input }: {
       cachedGetRoute,
     ).then((next) => {
       if (requestGeneration !== owner.requestGeneration) return;
+      if (!next.selfRoute) owner.retryAt = Date.now() + policy.routeMinIntervalMs;
       // Fail-closed: empty/failed directions clear the previous polyline so
       // UI falls back to haversine distance + local 估算 ETA (never a stale path).
       // Out-of-order responses are ignored when the request generation changes.

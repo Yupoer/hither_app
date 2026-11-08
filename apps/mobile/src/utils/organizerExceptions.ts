@@ -7,8 +7,7 @@
  *
  * Product rules:
  * - Same member/session/root-cause is one item (dedupe + firstSeen preserve).
- * - Resolved stays hidden unless includeResolved, OR auto-reopens when the
- *   source produces fresher evidence than handling.updatedAt (recurrence).
+ * - A handled notice becomes unread when its source provides newer evidence.
  * - After arrival, suppress location/sharing/offline noise; keep needs_help
  *   and force_quit_suspected (still actionable).
  * - Straggler freshness is “last continuous observation start” when the
@@ -29,7 +28,6 @@ export type OrganizerExceptionType =
 
 export type ExceptionHandlingStatus = 'open' | 'acknowledged' | 'resolved';
 
-export type ExceptionAction = 'acknowledge' | 'resolve' | 'reopen';
 
 /** Higher number = more urgent. */
 export const EXCEPTION_SEVERITY: Record<OrganizerExceptionType, number> = {
@@ -116,7 +114,6 @@ export interface OrganizerExceptionItem {
   lastSeenAt: string;
   severity: number;
   status: ExceptionHandlingStatus;
-  availableActions: ExceptionAction[];
   detail?: Record<string, unknown>;
 }
 
@@ -198,22 +195,6 @@ export function buildRootCauseKey(
   type: OrganizerExceptionType,
 ): string {
   return `${sessionKey}|${memberId}|${type}`;
-}
-
-export function availableActionsFor(
-  status: ExceptionHandlingStatus,
-): ExceptionAction[] {
-  switch (status) {
-    case 'open':
-      return ['acknowledge', 'resolve'];
-    case 'acknowledged':
-      return ['resolve', 'reopen'];
-    case 'resolved':
-      // Reopen only surfaces when includeResolved keeps the row visible.
-      return ['reopen'];
-    default:
-      return ['acknowledge', 'resolve'];
-  }
 }
 
 /** Map navigation technical status → exception type (or null if not exceptional). */
@@ -477,43 +458,20 @@ export function applyHandlingStatus(
 /**
  * Effective handling for an active candidate:
  * - missing → open
- * - resolved + fresher source evidence than handling.updatedAt → open (recurrence)
+ * - fresher source evidence than handling.updatedAt → open (recurrence)
  * - otherwise stored status
  */
 export function resolveEffectiveHandling(
   entry: ExceptionHandlingEntry | undefined,
   lastSeenAt: string,
 ): ExceptionHandlingStatus {
-  if (!entry) return 'open';
-  if (entry.status !== 'resolved') return entry.status;
+  if (!entry || entry.status === 'open') return 'open';
   const seenMs = parseTimeMs(lastSeenAt);
   const handledMs = parseTimeMs(entry.updatedAt);
   if (seenMs != null && handledMs != null && seenMs > handledMs) {
     return 'open';
   }
-  return 'resolved';
-}
-
-/**
- * Pure merge for marking acknowledge / resolve / reopen.
- * Does not touch group journey, arrivals, or navigation member rows.
- */
-export function transitionExceptionHandling(
-  map: ExceptionHandlingMap,
-  rootCauseKey: string,
-  action: ExceptionAction,
-  nowIso: string,
-): ExceptionHandlingMap {
-  const nextStatus: ExceptionHandlingStatus =
-    action === 'acknowledge'
-      ? 'acknowledged'
-      : action === 'resolve'
-        ? 'resolved'
-        : 'open';
-  return {
-    ...map,
-    [rootCauseKey]: { status: nextStatus, updatedAt: nowIso },
-  };
+  return entry.status;
 }
 
 /**
@@ -584,7 +542,6 @@ export function buildOrganizerExceptions(
       lastSeenAt: c.lastSeenAt,
       severity: EXCEPTION_SEVERITY[c.type],
       status,
-      availableActions: availableActionsFor(status),
       detail: c.detail,
     });
   }

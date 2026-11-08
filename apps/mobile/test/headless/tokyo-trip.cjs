@@ -125,15 +125,14 @@ async function showCard(actor, destinationId) {
 }
 async function start(destinationId, label) {
   await showCard('leader', destinationId);
-  const old = await devices.leader.observe();
   const before = {};
   for (const [name, device] of Object.entries(devices)) before[name] = notifications(await device.observe()).length;
-  await act('leader', 'map.journey.command', { destinationId });
-  await world.waitFor(devices.leader, o => o.external.watches > old.external.watches, 'fresh Start GPS watcher');
-  await advance(1000, 'Fresh fix after Start watcher');
+  await world.waitFor(devices.leader, o => o.external.watches > 0, 'foreground GPS watcher');
+  await advance(1000, 'Fresh fix before Start');
   const input = { latitude: 35.7000, longitude: 139.7700, accuracy: 5, timestamp: world.now };
   await devices.leader.gps(input.latitude, input.longitude, input);
   await capture('leader', 'gps.start-fix', input);
+  await act('leader', 'map.journey.command', { destinationId });
   await advance(5000, 'Shared journey polling');
   await capture('leader', 'journey.start.reactions', { destinationId, label }, null, o => {
     check(`${label} leader sees active target`, field(o.leader, `gather-nav-${destinationId}`)?.label === '結束導航', field(o.leader, `gather-nav-${destinationId}`));
@@ -235,11 +234,13 @@ async function main() {
     });
     await add('memberA', { title: 'Day 1 Member suggested Sumida riverside', latitude: 35.7110, longitude: 139.8020 }, false);
     await expand('leader');
-    await act('leader', 'map.tab', { index: 1 });
+    await act('leader', 'map.tab', { index: 0 });
     await advance(2500, 'Leader suggestion inbox');
     const request = world.backend.tables.gather_point_requests.find(row => row.group_id === groupId && row.status === 'pending');
     assert.ok(request, 'member suggestion exists');
+    await act('leader', 'map.member.inbox', { userId: request.requester_id });
     await act('leader', 'map.suggestion.approve', { requestId: request.id });
+    await done('leader');
     await advance(2800, 'Approved suggestion recipient projections');
     await capture('leader', 'suggestion.approval.reactions', { requestId: request.id }, null, o => {
       for (const actor of Object.keys(devices)) check(`${actor} sees approved member suggestion`, destinations(o[actor]).some(row => row.title.includes('Sumida riverside')), destinations(o[actor]));

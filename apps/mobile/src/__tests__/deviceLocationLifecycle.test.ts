@@ -115,7 +115,7 @@ it('scales the watchdog to acquisition silence and never retimestamps a cached s
   await act(async () => { tree!.update(React.createElement(Probe, { passive: false, nativeMap: true })); });
   await act(async () => { jest.advanceTimersByTime(60_000); });
   expect(mockRead).toHaveBeenCalledTimes(bootstrapReads + 1);
-  expect(mockRead).toHaveBeenLastCalledWith(false, 'journey', undefined);
+  expect(mockRead).toHaveBeenLastCalledWith(false, 'journey');
   expect(probe.feed.deviceCoordsAcceptedAtMs).toBe(acceptedAt);
   expect(mockWatch).toHaveBeenCalledTimes(2);
 });
@@ -172,38 +172,6 @@ it('waits for the watcher event ACK when a pending refresh receives the same fre
   expect(incoming).toHaveBeenCalledTimes(1);
   await act(async () => { finishUpload({ acceptedIds: ['location-sample'] }); });
   await expect(refresh).resolves.toEqual(fix.coordinates);
-});
-
-it('returns a fresh Start fix before a delayed location upload completes', async () => {
-  const probe = createLocationProbe();
-  await act(async () => { tree = create(React.createElement(probe.Probe)); });
-  const fix = sample(26);
-  mockRead.mockResolvedValueOnce(fix);
-  const previousUploads = jest.mocked(flushLocationOutbox).mock.calls.length;
-  let finishUpload!: (result: { acceptedIds: string[] }) => void;
-  jest.mocked(flushLocationOutbox).mockImplementationOnce(() =>
-    new Promise(resolve => { finishUpload = resolve as typeof finishUpload; }));
-  let result: { latitude: number; longitude: number } | null | undefined;
-  await act(async () => {
-    result = await probe.feed.refreshDeviceLocation({ waitForUpload: false });
-  });
-  expect(result).toEqual(fix.coordinates);
-  expect(flushLocationOutbox).toHaveBeenCalledTimes(previousUploads + 1);
-  expect(probe.feed.latestLocationSampleRef.current).toEqual(fix);
-  await act(async () => { finishUpload({ acceptedIds: ['location-sample'] }); });
-});
-
-it('keeps a fresh Start fix available when its location upload fails offline', async () => {
-  const probe = createLocationProbe();
-  await act(async () => { tree = create(React.createElement(probe.Probe)); });
-  const fix = sample(26);
-  mockRead.mockResolvedValueOnce(fix);
-  jest.mocked(flushLocationOutbox).mockRejectedValueOnce(new Error('offline'));
-  await act(async () => {
-    await expect(probe.feed.refreshDeviceLocation({ waitForUpload: false }))
-      .resolves.toEqual(fix.coordinates);
-  });
-  expect(probe.feed.latestLocationSampleRef.current).toEqual(fix);
 });
 
 it('keeps required-upload failure when the shared watcher event is not acknowledged', async () => {
@@ -339,45 +307,6 @@ it('returns the newer watcher fix instead of an earlier one-shot fix without rol
   expect(probe.feed.deviceCoords).toEqual(newer.coordinates);
   expect(incoming).toHaveBeenCalledTimes(2);
   expect(enqueueLocationOutbox).toHaveBeenLastCalledWith(expect.objectContaining({ coordinates: { ...newer.coordinates, accuracy: 5 }, capturedAt: newer.timestamp }));
-});
-
-it('uses temporary high accuracy for Start and returns its qualified sample when a newer watcher sample is coarse', async () => {
-  const probe = createLocationProbe();
-  await act(async () => { tree = create(React.createElement(probe.Probe, { passive: true })); });
-  let finishFix!: (fix: LocationSample) => void;
-  mockRead.mockImplementationOnce(() => new Promise(resolve => { finishFix = resolve; }));
-  const acceptsSample = (fix: LocationSample) => fix.accuracy != null && fix.accuracy <= 50;
-  const refresh = probe.feed.refreshDeviceLocationSample({ waitForUpload: false, acceptsSample });
-  await act(async () => {});
-  const precise = sample(26);
-  const coarse = { ...sample(27), timestamp: Date.now() + 1, accuracy: 500 };
-  await act(async () => { mockWatch.mock.calls[0][0](coarse); });
-  await act(async () => { finishFix(precise); });
-  await expect(refresh).resolves.toEqual(precise);
-  expect(mockRead).toHaveBeenLastCalledWith(true, 'foreground', acceptsSample);
-  expect(mockWatch).toHaveBeenCalledTimes(1);
-  expect(mockWatch).toHaveBeenLastCalledWith(expect.any(Function), false, 'allDay');
-  expect(enqueueLocationOutbox).toHaveBeenLastCalledWith(expect.objectContaining({
-    coordinates: { ...precise.coordinates, accuracy: 5 }, capturedAt: precise.timestamp,
-  }));
-});
-
-it('starts with a qualifying fresh fix even when a coarse future-dated sample predates the request', async () => {
-  const probe = createLocationProbe();
-  await act(async () => { tree = create(React.createElement(probe.Probe, { passive: true })); });
-  const coarse = { ...sample(27), timestamp: Date.now() + 30_000, accuracy: 500 };
-  await act(async () => { probe.feed.consumeForegroundSample(coarse); });
-  expect(probe.feed.latestLocationSampleRef.current).toEqual(coarse);
-  const precise = sample(26);
-  const requestedAt = Date.now();
-  mockRead.mockResolvedValueOnce(precise);
-  const acceptsSample = (fix: LocationSample) => fix.timestamp >= requestedAt
-    && fix.timestamp <= Date.now() + 2_000 && fix.accuracy != null && fix.accuracy <= 50;
-  let result: LocationSample | null = null;
-  await act(async () => { result = await probe.feed.refreshDeviceLocationSample({ waitForUpload: false, acceptsSample }); });
-  expect(result).toEqual(precise);
-  expect(probe.feed.deviceCoords).toEqual(precise.coordinates);
-  expect(mockWatch).toHaveBeenCalledTimes(1);
 });
 
 it('recovers manual GPS after failed watcher setup and failed automatic reads', async () => {

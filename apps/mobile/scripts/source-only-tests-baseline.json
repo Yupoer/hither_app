@@ -16,7 +16,6 @@
     "buttonInventoryContract.test.ts",
     "coordinationDeadlineScheduler.test.ts",
     "coordinationRequestContract.test.ts",
-    "coordinationRequestUiContract.test.ts",
     "destinationDatePickerContract.test.ts",
     "deviceHeading.test.ts",
     "diagnosticsUiContract.test.ts",

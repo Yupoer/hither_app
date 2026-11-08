@@ -7,10 +7,12 @@ import { StyleSheet, View } from 'react-native';
 import { SegmentedControl } from '@expo/ui/community/segmented-control';
 import type { SheetPaneKey } from '../../../store/types';
 import { selectionTick } from '../../../utils/haptics';
+import { MemberInboxBadge } from './MemberInboxBadge';
 
 export interface SheetPaneTabOption {
   key: SheetPaneKey;
   label: string;
+  badge?: { count: number; accessibilityLabel: string };
 }
 
 interface SheetPaneTabsProps {
@@ -53,7 +55,16 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
             ref={(node) => onTabNode?.(option.key, node)}
             style={styles.measurementCell}
             accessible={false}
-          />
+          >
+            {option.badge && (
+              <MemberInboxBadge
+                count={option.badge.count}
+                accessibilityLabel={option.badge.accessibilityLabel}
+                style={styles.tabBadge}
+                testID={`sheet-pane-badge-${option.key}`}
+              />
+            )}
+          </View>
         ))}
       </View>
     </View>
@@ -73,4 +84,5 @@ const styles = StyleSheet.create({
   measurementCell: {
     flex: 1,
   },
+  tabBadge: { top: 14, right: 5 },
 });

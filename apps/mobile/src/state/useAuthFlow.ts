@@ -335,14 +335,21 @@ export function useAuthFlow({
         || 'Apple User';
 
       if (appleName) {
-        const { error: metadataError } = await supabase.auth.updateUser({
-          data: {
-            full_name: appleName,
-            given_name: credential.fullName?.givenName,
-            family_name: credential.fullName?.familyName,
-          },
-        });
-        if (metadataError) throw toAuthFlowError(metadataError, 'Unable to save your profile.');
+        const savedMetadata = await changeAuthSession(async () => {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError) throw toAuthFlowError(sessionError, 'Unable to save your profile.');
+          if (session?.user.id !== authUser.id) return false;
+          const { error: metadataError } = await supabase.auth.updateUser({
+            data: {
+              full_name: appleName,
+              given_name: credential.fullName?.givenName,
+              family_name: credential.fullName?.familyName,
+            },
+          });
+          if (metadataError) throw toAuthFlowError(metadataError, 'Unable to save your profile.');
+          return true;
+        }, false);
+        if (!savedMetadata) return null;
       }
       const { error: profileError } = await supabase
         .from('profiles')
@@ -354,17 +361,16 @@ export function useAuthFlow({
         name,
         email: authUser.email ?? credential.email ?? '',
         avatar: displayMemberAvatar(existingRow?.avatar, authUser.id).emoji,
+        provider: authUser.app_metadata?.provider ?? 'apple',
         preferences: normalizeAccountPreferences(existingRow?.preferences),
       };
-      resumeInstallationCapabilities();
-      setUser(nextUser);
-      setIsAnonymous(false);
+      setUser(previous => previous?.id === authUser.id ? nextUser : previous);
       return nextUser;
     } catch (error) {
       if ((error as { code?: string }).code === 'ERR_REQUEST_CANCELED') return null;
       throw error;
     }
-  }, [setIsAnonymous, setUser]);
+  }, [setUser]);
 
   const linkWithGoogle = useCallback(async (): Promise<User | null> => {
     if (!user) throw new Error('No active account to link');

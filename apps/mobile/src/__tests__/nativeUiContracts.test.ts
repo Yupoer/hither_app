@@ -21,7 +21,7 @@ const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
 const toolsPane = readFileSync(join(root, 'screens/MapScreen/components/ToolsPane.tsx'), 'utf8');
 const membersPane = readFileSync(join(root, 'screens/MapScreen/components/MembersPane.tsx'), 'utf8');
-const opsCenterSheet = readFileSync(join(root, 'screens/MapScreen/components/OpsCenterSheet.tsx'), 'utf8');
+const memberInboxSheet = readFileSync(join(root, 'screens/MapScreen/components/MemberInboxSheet.tsx'), 'utf8');
 const inviteMembersOverlay = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersOverlay.tsx'), 'utf8');
 const routeEditorSheet = readFileSync(join(root, 'screens/MapScreen/components/RouteEditorSheet.tsx'), 'utf8');
 const addPlaceCard = readFileSync(join(root, 'screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
@@ -210,7 +210,7 @@ describe('iOS native UI contracts', () => {
     expect(mapStyles).toContain('width: 60');
     expect(mapStyles).toContain('height: 60');
     expect(mapStyles).toContain('paddingTop: 10');
-    expect(opsCenterSheet).toContain('paddingBottom: 10');
+    expect(memberInboxSheet).toContain('paddingBottom: 10');
     expect(mapScreen).not.toContain('height={96}');
     expect(mapStyles).toContain('marginTop: 6');
   });
