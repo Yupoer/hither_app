@@ -277,7 +277,8 @@ export default function LoginScreen({ navigation }: Props) {
         try {
           const result = await action();
           if (!token.isCurrent() || !result) return;
-          goToApp();
+          if (actionId === 'login.google') goToApp();
+          else successTap();
         } catch (error) {
           if (token.isCurrent()) {
             applyAuthError(error);

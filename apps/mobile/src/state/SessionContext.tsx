@@ -286,7 +286,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       deferredHydrations.clear();
     };
 
-    const deferHydration = (authUser: Parameters<typeof hydrate>[0]) => {
+    const deferHydration = (authUser: AuthUser) => {
       const epoch = ++authEpoch;
       const timer = setTimeout(() => {
         deferredHydrations.delete(timer);
@@ -304,28 +304,15 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       deferredHydrations.add(timer);
     };
 
-    async function hydrate(authUser: {
+    type AuthUser = {
       id: string;
       is_anonymous?: boolean;
       email?: string;
       app_metadata?: { provider?: string };
       user_metadata?: Record<string, unknown>;
-    } | undefined, epoch = authEpoch) {
-      if (!active || epoch !== authEpoch) return;
-      if (!authUser) {
-        const previousId = premiumUserIdRef.current;
-        premiumUserIdRef.current = null;
-        if (previousId) void clearPremiumProjectionCache(previousId);
-        if (active) {
-          setUser(null);
-          setIsAnonymous(false);
-          setIsPasswordRecovery(false);
-          setPasswordRecoverySuccess(false);
-          setTripEntitlement(null);
-          setPremiumProjection(EMPTY_PREMIUM_PROJECTION);
-        }
-        return;
-      }
+    };
+
+    const publishIdentity = (authUser: AuthUser) => {
       adoptActor(authUser.id);
       // Restore local identity before profile/network enrichment. This is a UI
       // identity only; every server operation still passes the authenticated gate.
@@ -337,6 +324,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       });
       setIsAnonymous(!!authUser.is_anonymous);
       finishInitialization();
+    };
+
+    async function hydrate(authUser: AuthUser, epoch: number) {
+      if (!active || epoch !== authEpoch) return;
       // select('*') so the optional avatar/pro columns are tolerated either way.
       const { data, error: profileError } = await supabase
         .from('profiles')
@@ -407,9 +398,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         const resumeRefresh = terminal;
         terminal = false;
         resumeInstallationCapabilities();
-        // Auth-js invokes this callback while holding an internal lock. Defer
-        // all Supabase/profile reads until the callback has returned.
-        adoptActor(session.user.id);
+        // Auth-js awaits subscribers. Keep profile I/O outside the auth callback.
+        publishIdentity(session.user);
         if (event === 'PASSWORD_RECOVERY' && active) {
           setIsPasswordRecovery(true);
           setPasswordRecoverySuccess(false);
@@ -461,12 +451,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           const local = await recovery.getLocalSession();
           if (!active || terminal || epoch !== authEpoch) return;
           if (!local?.user?.id) { finishInitialization(); return; }
-          // hydrate seeds identity synchronously, then enriches independently.
-          void hydrate(local.user as Parameters<typeof hydrate>[0], epoch).catch(() => undefined);
+          const authUser = local.user as AuthUser;
+          publishIdentity(authUser);
+          void hydrate(authUser, epoch).catch(() => undefined);
           const refreshed = await recovery.getSession({ forceRefresh: true });
           if (!active || terminal || epoch !== authEpoch) return;
           retryAttempt = 0;
-          if (refreshed.user?.id) deferHydration(refreshed.user as Parameters<typeof hydrate>[0]);
+          if (refreshed.user?.id) deferHydration(refreshed.user as AuthUser);
         } catch (error) {
           if (!active || terminal || isTerminalRefreshError(error)) return;
           // Offline/Auth outage/profile/storage problems do not revoke identity.

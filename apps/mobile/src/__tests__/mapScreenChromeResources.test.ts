@@ -11,20 +11,23 @@ describe('MapScreen chrome resource ownership', () => {
   let tree: ReactTestRenderer | undefined;
   afterEach(() => { act(() => tree?.unmount()); tree = undefined; jest.clearAllMocks(); });
 
-  it('deduplicates access-loss handling across new state objects and rearms only after membership returns', () => {
+  it('keeps Map on temporary recovery failure and exits only on confirmed access loss', () => {
     const leaveGroup = jest.fn();
     const reset = jest.fn();
     const props = {
-      user: { id: 'me' }, groupId: 'group', membership: { group: { id: 'group' } }, isLeader: false,
-      members: [{ userId: 'peer' }], groupStateError: 'not_member', loading: false,
-      state: { group: { id: 'group' } }, kickedHandledRef: { current: false }, leaveGroup,
+      user: { id: 'me' }, groupId: 'group', membership: { group: { id: 'group' } },
+      groupStateError: 'not_member', kickedHandledRef: { current: false }, leaveGroup,
       voluntaryLeaveRef: { current: false }, t: (key: string) => key, navigation: { reset },
     };
-    act(() => { tree = create(React.createElement(MapAccessLossResource, props)); });
+    act(() => { tree = create(React.createElement(MapAccessLossResource, { ...props, groupStateError: 'Network request failed' })); });
+    expect(leaveGroup).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(mockAlert).not.toHaveBeenCalled();
+    act(() => tree?.update(React.createElement(MapAccessLossResource, props)));
     expect(leaveGroup).toHaveBeenCalledTimes(1);
-    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, state: { group: { id: 'group' } } })));
+    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, user: { id: 'me' } })));
     expect(leaveGroup).toHaveBeenCalledTimes(1);
-    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, members: [{ userId: 'me' }], groupStateError: null })));
+    act(() => tree?.update(React.createElement(MapAccessLossResource, { ...props, groupStateError: null })));
     expect(props.kickedHandledRef.current).toBe(false);
     act(() => tree?.update(React.createElement(MapAccessLossResource, props)));
     expect(leaveGroup).toHaveBeenCalledTimes(2);

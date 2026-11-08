@@ -470,8 +470,7 @@ function useGroupStateOwner(
         if (!isCurrentRequest()) return false;
         setLoadError(classifyOperationError(cause));
         const message = cause instanceof Error ? cause.message : String(cause ?? '');
-        const notMember = /not_member/i.test(message);
-        if (notMember) {
+        if (message === 'not_member') {
           // Membership revoked (e.g. kick) — do not paint stale local cards.
           if (isCurrentRequest()) {
             stateRef.current = null;

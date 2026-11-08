@@ -173,8 +173,8 @@ export const en: Record<keyof ZhDict, string> = {
   'group.kickMsg': 'Remove {name} from the team? The invite code will rotate.',
   'group.kickConfirm': 'Remove',
   'group.kickFailed': 'Could not remove member. Try again.',
-  'group.kickedTitle': 'You were removed',
-  'group.kickedMsg': 'The leader removed you from this team. Join or create another team.',
+  'group.kickedTitle': 'Team no longer available',
+  'group.kickedMsg': 'You no longer have access to this team. Join or create another team.',
   'group.copied': 'Code copied',
 
   'settings.nickname': 'Nickname',

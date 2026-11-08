@@ -174,8 +174,8 @@ export const zh = {
   'group.kickMsg': '確定要將 {name} 移出隊伍？邀請碼會一併更新。',
   'group.kickConfirm': '移出',
   'group.kickFailed': '移出失敗，請再試一次',
-  'group.kickedTitle': '你已被移出隊伍',
-  'group.kickedMsg': '隊長已將你移出此隊伍，請重新加入或建立新隊伍。',
+  'group.kickedTitle': '無法再進入此隊伍',
+  'group.kickedMsg': '你已無法存取此隊伍。請加入或建立其他隊伍。',
   'group.copied': '已複製代碼',
 
   'settings.nickname': '暱稱',

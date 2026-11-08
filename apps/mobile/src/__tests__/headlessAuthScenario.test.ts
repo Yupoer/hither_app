@@ -222,10 +222,13 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
-  it('cancels Apple, rejects a missing token and preserves the Apple full name on success', async () => {
+  it('cancels Apple, rejects a missing token and opens the app on the first successful exchange', async () => {
     const world = new World();
     try {
-      const device = await login(world);
+      const device = await world.device({ id: 'app-apple', userId: null, platform, mode: 'app' });
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'onboarding-skip'), 'initial onboarding');
+      await device.perform('onboarding.skip');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'Login', 'signed out App');
       await device.perform('auth.apple');
       await world.settle();
       expect((await device.observe()).presentation.session.user).toBeNull();
@@ -236,8 +239,25 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       expect((await device.observe()).presentation.session.user).toBeNull();
       world.backend.configureAuth({ idTokens: [{ provider: 'apple', token: 'apple-leader', userId: LEADER }] });
       await device.input({ kind: 'auth.configureNative', value: { apple: { result: { identityToken: 'apple-leader', fullName: { givenName: 'Apple', familyName: 'Traveler' } } } } });
+      world.hold('signInWithIdToken');
+      world.hold('profiles');
       await device.perform('auth.apple');
-      await world.waitFor(device, (value: any) => value.presentation.session.user?.name === 'Apple Traveler' && value.presentation.route.route === 'RoleSelect', 'Apple full-name sign in');
+      await device.input({ kind: 'appState', value: 'inactive' });
+      await world.release('signInWithIdToken');
+      await device.input({ kind: 'appState', value: 'active' });
+      const signedIn = await device.observe();
+      expect(signedIn.actorId).toBe(LEADER);
+      expect(signedIn.presentation.session.user?.id).toBe(LEADER);
+      expect(signedIn.presentation.route.route).toBe('RoleSelect');
+      expect(calls(world, 'signInWithIdToken')).toHaveLength(1);
+      await device.perform('home.teams');
+      await device.perform('teams.expand', { groupId: GROUP_ID });
+      await device.perform('teams.enter');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'Map', 'Map while the Apple profile is pending');
+      await world.release('profiles');
+      await world.advance(0);
+      const enriched = await world.waitFor(device, (value: any) => value.presentation.session.user?.name === 'Apple Traveler', 'Apple full name after profile bootstrap');
+      expect(enriched.presentation.route.route).toBe('Map');
       expect(world.backend.profiles.get(LEADER).nickname).toBe('Apple Traveler');
       expect(world.backend.authUsers.get(LEADER).user_metadata.full_name).toBe('Apple Traveler');
       expect(calls(world, 'signInWithIdToken')[0].args[0]).toMatchObject({ provider: 'apple', token: 'apple-leader', nonce: expect.stringMatching(/^[a-f0-9-]{36}$/) });
@@ -507,10 +527,19 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       await device.perform('teams.enter');
       await world.waitFor(device, (value: any) => value.presentation.route.route === 'Map'
         && value.presentation.session.membership?.group.id === GROUP_ID, 'selected team Map');
+      const before = await device.observe();
+      world.backend.configureAuth({ errors: { refreshSession: { status: 503, code: 'NETWORK_ERROR', message: 'Network request failed' } } });
+      world.hold('refreshSession');
       for (const value of ['inactive', 'background', 'active']) await device.input({ kind: 'appState', value });
+      await world.advance(0);
+      expect(world.held.some((item: any) => item.operation.name === 'refreshSession')).toBe(true);
+      expect((await device.observe()).presentation.route.routes).toEqual(before.presentation.route.routes);
+      await world.release('refreshSession');
       const resumed = await device.observe();
+      expect(resumed.pid).toBe(before.pid);
       expect(resumed.presentation.route.route).toBe('Map');
       expect(resumed.presentation.session.membership?.group.id).toBe(GROUP_ID);
+      world.backend.configureAuth({ errors: {} });
       await device.restart();
       await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect'
         && value.presentation.session.user?.id === LEADER, 'cold restart returns to home');
@@ -518,6 +547,45 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       const signedOut = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Login' && value.presentation.session.user === null, 'protected navigator remounted after signout');
       expect(signedOut.presentation.route.routes.map((route: any) => route.name)).toEqual(['Login']);
       expect(signedOut.presentation.hosts.some((host: any) => host.testId === 'role-my-teams')).toBe(false);
+    } finally { await world.close(); }
+  });
+
+  it('leaves Map for a real kick or deleted team when foreground recovery missed realtime', async () => {
+    const world = new World();
+    async function openMap(userId: string) {
+      const device = await world.device({ id: userId, userId, platform, mode: 'app' });
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'onboarding-skip'), 'initial onboarding');
+      await device.perform('onboarding.skip');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect', 'team picker');
+      await device.perform('home.teams');
+      await device.perform('teams.expand', { groupId: GROUP_ID });
+      await device.perform('teams.enter');
+      await world.waitFor(device, (value: any) => value.presentation.route.route === 'Map'
+        && value.presentation.session.membership?.group.id === GROUP_ID, 'selected team Map');
+      device.realtime = false;
+      await device.input({ kind: 'appState', value: 'background' });
+      return device;
+    }
+    async function expectAccessLoss(device: any, userId: string) {
+      await device.input({ kind: 'appState', value: 'active' });
+      await world.advance(0);
+      const home = await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect'
+        && value.presentation.session.membership === null, 'team access revoked');
+      expect(home.presentation.session.user.id).toBe(userId);
+      expect(calls(world, 'sync_group').some((call: any) => call.userId === userId
+        && call.result?.error?.message === 'not_member')).toBe(true);
+    }
+    try {
+      const peer = await openMap(PEER);
+      const leader = await openMap(LEADER);
+      expect(world.backend.execute('team-admin', {
+        kind: 'rpc', name: 'kick_group_member', userId: LEADER,
+        args: { p_group_id: GROUP_ID, p_user_id: PEER }, steps: [],
+      }).error).toBeNull();
+      await expectAccessLoss(peer, PEER);
+      world.backend.groups.delete(GROUP_ID);
+      world.backend.memberships = world.backend.memberships.filter((row: any) => row.group_id !== GROUP_ID);
+      await expectAccessLoss(leader, LEADER);
     } finally { await world.close(); }
   });
 

@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import { useMountEffect } from '../../hooks/useMountEffect';
-import type { MemberLocation } from '../../types';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/RootNavigator';
 import type { useSession } from '../../state/SessionContext';
@@ -14,11 +13,7 @@ type MapAccessLossInput = {
   user: Pick<NonNullable<ReturnType<typeof useSession>['user']>, 'id'> | null;
   groupId: string | null;
   membership: { group: { id: string } } | null;
-  isLeader: boolean;
-  members: readonly Pick<MemberLocation, 'userId'>[];
   groupStateError: ReturnType<typeof useGroupState>['error'];
-  loading: boolean;
-  state: { group: { id: string } } | null;
   kickedHandledRef: React.RefObject<boolean>;
   leaveGroup: ReturnType<typeof useSession>['leaveGroup'];
   voluntaryLeaveRef: React.RefObject<boolean>;
@@ -30,12 +25,8 @@ export function MapAccessLossResource(input: MapAccessLossInput) {
   const [previous, setPrevious] = useState({ input, generation: 0 });
   if (!Object.is(previous.input.user?.id, input.user?.id)
     || !Object.is(previous.input.groupId, input.groupId)
-    || !Object.is(previous.input.members, input.members)
-    || !Object.is(previous.input.state, input.state)
-    || !Object.is(previous.input.loading, input.loading)
     || !Object.is(previous.input.groupStateError, input.groupStateError)
     || !Object.is(previous.input.membership?.group.id, input.membership?.group.id)
-    || !Object.is(previous.input.isLeader, input.isLeader)
     || !Object.is(previous.input.leaveGroup, input.leaveGroup)
     || !Object.is(previous.input.navigation, input.navigation)
     || !Object.is(previous.input.t, input.t)) {
@@ -45,19 +36,12 @@ export function MapAccessLossResource(input: MapAccessLossInput) {
 }
 
 function MapAccessLossJob({ input }: { input: MapAccessLossInput }) {
-  const { user, groupId, membership, isLeader, members, groupStateError, loading, state, kickedHandledRef, leaveGroup, voluntaryLeaveRef, t, navigation } = input;
+  const { user, groupId, membership, groupStateError, kickedHandledRef, leaveGroup, voluntaryLeaveRef, t, navigation } = input;
   useMountEffect(() => {
     if (!user?.id || !groupId || isDemoGroup(groupId)) return;
     if (membership?.group.id !== groupId) return;
-    if (isLeader) return;
-    const stillMember = members.some((m) => m.userId === user.id);
-    const accessLost = groupStateError === 'not_member'
-      || (!loading && !!state && state.group?.id === groupId && !stillMember && members.length > 0);
-    if (!accessLost) {
-      if (stillMember) kickedHandledRef.current = false;
-      return;
-    }
-    if (kickedHandledRef.current) return;
+    if (groupStateError === null) kickedHandledRef.current = false;
+    if (groupStateError !== 'not_member' || kickedHandledRef.current) return;
     kickedHandledRef.current = true;
     leaveGroup();
     if (!voluntaryLeaveRef.current) Alert.alert(t('group.kickedTitle'), t('group.kickedMsg'));

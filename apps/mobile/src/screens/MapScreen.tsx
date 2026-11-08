@@ -481,7 +481,6 @@ export default function MapScreen({ route, navigation }: Props) {
     />
   );
 
-  // Kicked follower: recovery RPC raises not_member → clear session + RoleSelect.
   const kickedHandledRef = useRef(false);
   const voluntaryLeaveRef = useRef(false);
   const accessLossLifecycle = (
@@ -489,11 +488,7 @@ export default function MapScreen({ route, navigation }: Props) {
       user={user}
       groupId={groupId}
       membership={membership}
-      isLeader={isLeader}
-      members={members}
       groupStateError={groupStateError}
-      loading={loading}
-      state={state}
       kickedHandledRef={kickedHandledRef}
       leaveGroup={leaveGroup}
       voluntaryLeaveRef={voluntaryLeaveRef}
