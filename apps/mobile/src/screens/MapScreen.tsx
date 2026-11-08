@@ -1376,7 +1376,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const { selfRoute, memberRoutes, selfRouteGeneration, lifecycle: mapKitRouteLifecycle } = useMapKitRoutes({
     selfCoordinates: navigationRouteOrigin,
     members: [], // Member routes are already disabled by this hook; no peer-coordinate cloning.
-    gathering: mapRoutesEnabled ? activePoint : null,
+    gathering: mapRoutesEnabled && sharingEnabled ? activePoint : null,
     travelMode,
     highAccuracy: mapRoutesEnabled ? highAccuracy : false,
     arrivalRadiusM: localArrivalRadiusM,

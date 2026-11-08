@@ -179,6 +179,13 @@
     },
     {
       "parent": 298,
+      "child": "gather-card-followup",
+      "acceptance": "An existing route survives a loss of GPS for the same stop. Failed directions can retry from the same origin at the normal route cadence.",
+      "testFile": "mapKitRoutes.test.ts",
+      "testNamePattern": "recovers failed directions from the same origin|keeps existing directions through a loss of GPS"
+    },
+    {
+      "parent": 298,
       "child": 298,
       "acceptance": "Start and same-day promotion commit atomically, persist across restart, replay in order, and roll back together on rejection.",
       "testFile": "coreSQLiteStorage.test.ts",

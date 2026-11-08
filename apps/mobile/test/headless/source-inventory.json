@@ -5775,7 +5775,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "d9237829973922d603ccb73a121429b2b5b26b6b876238e657eab486b961ee89"
+    "hash": "9457c21bd0f8f52482ab6fb16064daa550bb51f2b9ed59600d723401d5caa4e9"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -8235,7 +8235,7 @@
     "file": "src/screens/MapScreen/hooks/useMapKitRoutes.ts",
     "kind": "export",
     "name": "useMapKitRoutes",
-    "hash": "9a0c3b88b4663ca59c7dc9faed1e27160dc451dbe12a7dcffca439ef7fc1662c"
+    "hash": "741f77729c02550516c024746850efe91797880656bed9442d2baac3c1dbedce"
   },
   {
     "file": "src/screens/MapScreen/hooks/useMapKitRoutes.ts",
@@ -8247,7 +8247,7 @@
     "file": "src/screens/MapScreen/hooks/useMapKitRoutes.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "6288a721a90f49181313b0b03c07a95451e669b5a9df6e360e5d58508ed44049"
+    "hash": "848518015ec104865d107dcb7037d4996f0067be5cd43d59992d8bbca17653bb"
   },
   {
     "file": "src/screens/MapScreen/hooks/useMapScopeControls.ts",
