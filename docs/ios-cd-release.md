@@ -1,14 +1,59 @@
 # iOS CD release routes
 
-Dispatch [.github/workflows/cd-ios-testflight.yml](../.github/workflows/cd-ios-testflight.yml)
-on `master` with the reviewed 40-character `source_sha`. The workflow verifies
-exact checkout and master ancestry before executing selected-checkout helpers.
-All six modes are manual. A Git push alone does not publish.
+Use the Mac by default for a new iOS binary. For an explicitly requested
+GitHub Actions build or validation, dispatch
+[CD iOS TestFlight](../.github/workflows/cd-ios-testflight.yml) on `master`
+with the reviewed 40-character `source_sha` and select the requested mode.
+All six modes are manual. The default, `inspect-release`, only reads EAS metadata.
 
 `inspect-release` and `ota` use `ubuntu-latest`. The four native modes use
 `xcode-27` and verify Xcode 27.0 before native work. OTA skips Xcode and CocoaPods
 setup while retaining source, CI, backend, compatibility, intent and readback
 guards.
+
+## Build on the Mac by default
+
+1. Pin the reviewed `master` SHA and verify that its `master` push CI passed.
+   Work in an isolated checkout of that SHA on the Mac. From another host use
+   the existing `mac-codex` SSH connection. Check the installed Xcode, iOS SDK,
+   Node 22 and the CocoaPods version in `ios/Podfile.lock`. Load the Mac's
+   existing release credentials. If the Mac route is blocked, report the
+   missing prerequisite and wait for an explicit cloud request. Check for
+   in-progress production builds or uploads first; GitHub's concurrency group
+   does not cover the Mac.
+2. From `apps/mobile`, run `CI=1 npm ci` and `npm run verify:runtime`.
+   Use the pinned EAS CLI and the `production` profile. Set `release_dir` to a
+   new private absolute directory outside the checkout and keep the archive
+   alongside the IPA:
+
+   ```sh
+   GYM_ARCHIVE_PATH="$release_dir/Hither.xcarchive" \
+     npx --yes eas-cli@21.0.2 build --platform ios --profile production \
+       --local --non-interactive --output "$release_dir/Hither.ipa"
+   ```
+
+3. Verify the IPA's integrity, signature, App and widget IDs and versions,
+   embedded runtime, and production channel. Record the source SHA, IPA SHA-256
+   and App/Widget executable UUIDs. Keep the matching archive and dSYMs for
+   [crash investigation](crash-investigation.md#retain-signed-build-symbols).
+   A local `build-only` request ends here.
+4. Before a new binary is uploaded, verify any required production backend
+   deployment and [full Release startup](ios-release-startup-validation.md).
+   Reuse valid cold-start evidence for the same source, production configuration
+   and relevant iOS runtime. If only the matching Release simulator `.app`
+   exists, run the launch verifier on it and review both screenshots. If there
+   is no matching simulator app or evidence, build and verify it on the Mac.
+   Keep local Derived Data for incremental simulator builds.
+5. Check for an existing submission of that version and build. Submit the
+   verified IPA by exact path:
+
+   ```sh
+   npx --yes eas-cli@21.0.2 submit --platform ios --profile production \
+     --path "$release_dir/Hither.ipa" --non-interactive --wait
+   ```
+
+   Check Apple processing and device acceptance separately. If upload status is
+   unclear, look up that submission before retrying with the same IPA.
 
 ## Install CI and CD dependencies
 
@@ -145,6 +190,12 @@ process. It does not explain a missing OS PID.
 | `ota` | Guarded iOS publication and exact remote readback. |
 | `build-only` | Full simulator gate, signed local EAS build and exact IPA verification. |
 | `submit` | Same native gates and upload of that exact private IPA path. |
+
+The simulator build and signed IPA target different platforms. Use
+`validate-release` for startup diagnostics. For a requested cloud build and
+upload, run `submit` once rather than running `validate-release` or `build-only`
+first. If a signed IPA with matching launch evidence already exists, recover
+and verify it, then submit that exact file without running another build.
 
 EAS Build history supplies candidates. An IPA built locally on the GitHub Xcode
 runner may not appear there. A finished EAS build does not prove Apple

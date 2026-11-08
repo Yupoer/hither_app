@@ -13,6 +13,10 @@ import textwrap
 
 workflow = Path(__file__).resolve().parents[1] / ".github/workflows/cd-ios-testflight.yml"
 source = workflow.read_text(encoding="utf-8")
+triggers = re.search(r"^on:\n((?: +[^\n]+\n)+)", source, re.MULTILINE)[1]
+assert re.findall(r"^  ([\w-]+):", triggers, re.MULTILINE) == ["workflow_dispatch"]
+assert re.search(r"^      mode:\n(?:        [^\n]+\n)*?        default: (\S+)$",
+                 triggers, re.MULTILINE)[1] == "inspect-release"
 steps = {}
 for block in re.split(r"(?=^      - (?:name:|uses:))", source, flags=re.MULTILINE):
     name = re.search(r"^      - name: (.+)$", block, flags=re.MULTILINE)
