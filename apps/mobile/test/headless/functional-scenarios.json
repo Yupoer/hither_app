@@ -1783,10 +1783,11 @@
     },
     {
       "id": "LOC-05",
-      "title": "Members backend refresh survives missing self GPS and requires exact connected peer ACK",
+      "title": "Members refresh reuses recent fixes and applies exact uploads from a background wake",
       "critical": true,
       "sources": [
         "src/screens/MapScreen.tsx",
+        "src/native/backgroundLocation.ts",
         "src/state/backgroundLocationRefresh.ts"
       ],
       "cases": [

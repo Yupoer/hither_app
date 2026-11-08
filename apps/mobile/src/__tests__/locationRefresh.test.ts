@@ -13,11 +13,10 @@ describe('remote location refresh wiring', () => {
   );
   const entry = readFileSync(join(__dirname, '../../index.ts'), 'utf8');
 
-  it('uses the server refresh request instead of uploading the sender location', () => {
+  it('uses the versioned server refresh request', () => {
     expect(mapScreen).toContain('requestGroupLocationRefresh');
     expect(mapScreen).toContain('setRefreshCooldownUntil(result.cooldownUntil)');
     expect(mapScreen).toContain('getAcknowledgedRecipientIds: requestedAt => getGroupLocationRefreshAcknowledgements(groupId, requestedAt)');
-    expect(mapScreen).toContain('result.acknowledgementsAvailable');
     expect(mapScreen).not.toContain('refreshLocations(refreshDeviceLocation, refresh)');
   });
 

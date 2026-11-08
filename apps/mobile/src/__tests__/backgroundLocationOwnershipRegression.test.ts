@@ -6,6 +6,8 @@ const mockHasExpo = jest.fn(async () => false);
 const mockStartExpo = jest.fn(async (_name: string, _options: object) => undefined);
 const mockStopExpo = jest.fn(async () => undefined);
 const mockBackgroundPermission = jest.fn(async () => ({ status: 'granted' }));
+const mockForegroundPermission = jest.fn(async () => ({ status: 'granted' }));
+const mockOneShot = jest.fn<Promise<import('expo-location').LocationObject>, [import('expo-location').LocationOptions]>();
 const mockAppState = { currentState: 'active' };
 const mockRemoveListener = jest.fn();
 let mockBackgroundListener: ((sample: import('expo-location').LocationObject) => void) | undefined;
@@ -27,6 +29,9 @@ jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => ({
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(), requestBackgroundPermissionsAsync: jest.fn(),
   getBackgroundPermissionsAsync: () => mockBackgroundPermission(),
+  getForegroundPermissionsAsync: () => mockForegroundPermission(),
+  getCurrentPositionAsync: (options: import('expo-location').LocationOptions) => mockOneShot(options),
+  Accuracy: { Balanced: 3 },
   hasStartedLocationUpdatesAsync: () => mockHasExpo(),
   startLocationUpdatesAsync: (name: string, options: object) => mockStartExpo(name, options),
   stopLocationUpdatesAsync: () => mockStopExpo(),
@@ -38,7 +43,8 @@ jest.mock('../state/locationPrivacy', () => ({
   isLocationAccessPending: () => false,
   subscribeLocationAccessChanges: (listener: () => void) => { mockAccessChanged = listener; return () => undefined; },
 }));
-import { backgroundLocationAdapter, nextBackgroundLocation, observeNativeBackgroundLocation, prepareNativeBackgroundLocation } from '../native/backgroundLocation';
+import { backgroundLocationAdapter, captureBackgroundRefreshFix, nextBackgroundLocation, observeNativeBackgroundLocation, prepareNativeBackgroundLocation } from '../native/backgroundLocation';
+import { getBackgroundRefreshLocation } from '../native/location';
 import { backgroundPresenceConfig, backgroundLocationOptions, hasActiveBackgroundJourney, resolveBackgroundTrackingMode, type BackgroundJourneyConfig } from '../state/backgroundJourneyController';
 const task = 'hither-background-journey-location';
 beforeEach(async () => {
@@ -46,6 +52,8 @@ beforeEach(async () => {
   mockPrepare.mockReset().mockResolvedValue(true); mockStartNative.mockReset().mockResolvedValue(true);
   await prepareNativeBackgroundLocation(false);
   jest.clearAllMocks(); mockBackgroundPermission.mockResolvedValue({ status: 'granted' });
+  mockForegroundPermission.mockResolvedValue({ status: 'granted' });
+  mockOneShot.mockReset();
   mockHasExpo.mockResolvedValue(false); mockHasNative.mockResolvedValue(false);
   mockBackgroundListener = undefined;
 });
@@ -176,8 +184,9 @@ it('returns no native refresh for a passive Expo owner instead of acquiring a ne
 });
 
 it('refreshes from an existing native owner and releases its listener without starting another GPS stream', async () => {
+  mockAppState.currentState = 'background';
   mockHasNative.mockResolvedValue(true);
-  const refresh = nextBackgroundLocation(new AbortController().signal);
+  const refresh = captureBackgroundRefreshFix(mockAccess);
   await settle();
   const sample = { timestamp: 1000, coords: { latitude: 25, longitude: 121, altitude: null,
     accuracy: 10, altitudeAccuracy: null, heading: null, speed: null } };
@@ -187,6 +196,7 @@ it('refreshes from an existing native owner and releases its listener without st
   expect(mockRemoveListener).toHaveBeenCalledTimes(1);
   expect(mockStartNative).not.toHaveBeenCalled();
   expect(mockStartExpo).not.toHaveBeenCalled();
+  expect(mockOneShot).not.toHaveBeenCalled();
 });
 
 it('aborts a pending existing-owner refresh and removes the temporary listener', async () => {
@@ -237,4 +247,38 @@ it.each([
   expect(backgroundLocationOptions(presence.powerMode!, presence.highAccuracy ?? false,
     resolveBackgroundTrackingMode(presence))).toMatchObject({ accuracy: 3, activityType: 1,
     showsBackgroundLocationIndicator: false, distanceInterval: 300 });
+});
+
+it('captures one passive refresh fix only with existing background authorization', async () => {
+  mockAppState.currentState = 'background';
+  mockHasExpo.mockResolvedValue(true);
+  mockBackgroundPermission.mockResolvedValueOnce({ status: 'denied' });
+  await expect(captureBackgroundRefreshFix(mockAccess)).resolves.toBeNull();
+  expect(mockOneShot).not.toHaveBeenCalled();
+
+  const sample = {
+    timestamp: Date.now(),
+    coords: { latitude: 25, longitude: 121, accuracy: 5, altitude: null, altitudeAccuracy: null, heading: null, speed: null },
+  };
+  mockOneShot.mockResolvedValueOnce(sample);
+  await expect(getBackgroundRefreshLocation(mockAccess)).resolves.toEqual({
+    timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 }, accuracy: 5,
+  });
+  expect(mockOneShot).toHaveBeenCalledTimes(1);
+  expect(mockOneShot).toHaveBeenCalledWith({ accuracy: 3, mayShowUserSettingsDialog: false });
+  expect(mockStartExpo).not.toHaveBeenCalled();
+  expect(mockStopExpo).not.toHaveBeenCalled();
+});
+
+it('releases a passive refresh task after the one-shot deadline', async () => {
+  jest.useFakeTimers();
+  try {
+    mockAppState.currentState = 'background';
+    mockOneShot.mockImplementationOnce(() => new Promise(() => {}));
+    const timedOut = expect(captureBackgroundRefreshFix(mockAccess)).rejects.toThrow('request_timeout');
+    await jest.advanceTimersByTimeAsync(15_000);
+    await timedOut;
+  } finally {
+    jest.useRealTimers();
+  }
 });

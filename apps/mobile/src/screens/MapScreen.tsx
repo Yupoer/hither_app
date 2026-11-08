@@ -2389,19 +2389,10 @@ export default function MapScreen({ route, navigation }: Props) {
         cooling: refreshCooldownUntil > Date.now() || isDemoGroup(groupId),
       });
       if (result.cooldownUntil != null) setRefreshCooldownUntil(result.cooldownUntil);
-      Alert.alert(t('map.refreshLocationsResultTitle'), [
-        t(result.pulled ? 'map.refreshReadSuccess' : 'map.refreshReadFailed'),
-        t(result.selfUploaded ? 'map.refreshSelfSuccess' : 'map.refreshSelfFailed'),
-        result.request?.accepted
-          ? result.acknowledgementsAvailable
-            ? t('map.refreshLocationsResultPartial', { responded: result.respondedUserIds.length, expected: result.expectedUserIds.length })
-            : t('map.refreshReceiptsUnavailable')
-          : t(result.requestUnavailable ? 'map.refreshPeersRequestFailed' : 'map.refreshPeersCooling'),
-      ].join('\n'));
     } finally {
       setRefreshingLocations(false);
     }
-  }, [groupId, refreshingLocations, refresh, applyRecoverySnapshot, refreshDeviceLocation, refreshCooldownUntil, serverTimeOffsetMs, t]);
+  }, [groupId, refreshingLocations, refresh, applyRecoverySnapshot, refreshDeviceLocation, refreshCooldownUntil, serverTimeOffsetMs]);
 
   const fitAllMembers = useCallback(() => {
     void runUiAction(
@@ -3237,11 +3228,11 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // One flock row, shared by the main list and the subgroup cards.
   // Display: name + "角色 · 距離/狀態 · 最後更新". Solo is NOT on the card.
-  const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean, index?: number) => {
+  const renderFlockRow = useCallback((f: (typeof flock)[number], last: boolean) => {
     const isMe = f.userId === user?.id;
     return (
       <FlockRow
-        key={`flock-${f.userId}-${index ?? 0}`}
+        key={f.userId}
         userId={f.userId}
         name={f.name}
         avatar={f.avatar}

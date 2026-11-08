@@ -1,9 +1,9 @@
 import { reportLocationSourceHealth } from './locationSourceHealth';
-import { nextBackgroundLocation } from './backgroundLocation';
+import { captureBackgroundRefreshFix, nextBackgroundLocation } from './backgroundLocation';
 /** Device positioning boundary; consent is checked before and after asynchronous work. */
 import * as Location from 'expo-location';
 import { AppState } from 'react-native';
-import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges } from '../state/locationPrivacy';
+import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, type LocationAccess } from '../state/locationPrivacy';
 import type { Coordinates } from '../types';
 import { isForegroundLocationState, locationPolicy, type LocationPowerMode } from '../utils/locationPolicy';
 import {
@@ -142,6 +142,11 @@ function expoLocationOptions(
     distanceInterval: policy.distanceInterval,
     timeInterval: policy.timeInterval,
   };
+}
+
+export async function getBackgroundRefreshLocation(access: LocationAccess): Promise<LocationSample | null> {
+  const fix = await captureBackgroundRefreshFix(access);
+  return fix && isLocationAccessCurrent(access) ? toSample(fix) : null;
 }
 
 export async function getCurrentLocation(

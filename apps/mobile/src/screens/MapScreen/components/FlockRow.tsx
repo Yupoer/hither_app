@@ -1,8 +1,10 @@
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { HitherText } from '../../../components/HitherText';
 import { displayMemberAvatar } from '../../../constants/avatars';
-import { glass } from '../../../glass';
+import { accentMix, glass } from '../../../glass';
+import { useMountEffect } from '../../../hooks/useMountEffect';
 import { type TranslationKey } from '../../../i18n';
 import { useForegroundClock } from '../../../state/foregroundUi';
 import { isLocationSampleFresh, locationFreshness } from '../../../utils/locationFreshness';
@@ -66,6 +68,15 @@ export const FlockRow = React.memo(function FlockRow({
   onKick?: () => void;
 }) {
   const { now: nowMs, lifecycle: clockLifecycle } = useForegroundClock(30_000);
+  const reduceMotion = useReducedMotion();
+  const revision = lastUpdated ? Date.parse(lastUpdated) : null;
+  const [locationUpdate, setLocationUpdate] = useState({ revision, highlight: false });
+  if (!Object.is(revision, locationUpdate.revision)) {
+    setLocationUpdate({
+      revision,
+      highlight: revision != null && (locationUpdate.revision == null || revision > locationUpdate.revision),
+    });
+  }
 
   const movingRecently = isLocationSampleFresh(lastUpdated, {
     locationTrackingMode, locationSource, locationNavigationSessionId,
@@ -92,6 +103,9 @@ export const FlockRow = React.memo(function FlockRow({
   return (
     <View style={[styles.flockRow, last && styles.flockRowLast]}>
       {clockLifecycle}
+      {!isMe && sharingEnabled !== false && !reduceMotion && locationUpdate.highlight && (
+        <FlockLocationTint key={locationUpdate.revision} accent={accent} />
+      )}
       <View style={styles.flockRowMain}>
         <View
           style={[
@@ -170,3 +184,19 @@ export const FlockRow = React.memo(function FlockRow({
     </View>
   );
 });
+
+function FlockLocationTint({ accent }: { accent: string }) {
+  const opacity = useSharedValue(1);
+  const fade = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  useMountEffect(() => {
+    opacity.set(withDelay(1_000, withTiming(0, { duration: 280 })));
+    return () => cancelAnimation(opacity);
+  });
+  return (
+    <Animated.View
+      testID="map-member-location-tint"
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { backgroundColor: accentMix(accent, 14) }, fade]}
+    />
+  );
+}

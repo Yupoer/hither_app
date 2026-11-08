@@ -28,7 +28,7 @@ const peerFix = event('peer-fix', PEER);
 const accepted = sync(PEER, [], [peerFix], { acknowledgements: [{ requestedAt: request.requested_at, eventId: peerFix.id }] });
 assert.deepEqual(accepted.data.refreshAcknowledgements, [{ requestedAt: request.requested_at, eventId: peerFix.id, accepted: true }]);
 assert.deepEqual(sync(LEADER, [], [], { requestedAt: request.requested_at }).data.acknowledgedIds, [PEER]);
-b.now += 61000;
+b.now += 180000;
 const newRequest = sync(LEADER, [], [], { requestPeers: true }).data.refreshRequest;
 const replay = sync(PEER, [], [peerFix], { acknowledgements: [{ requestedAt: newRequest.requested_at, eventId: peerFix.id }] });
 assert.equal(replay.data.refreshAcknowledgements[0].accepted, false, 'Old accepted GPS does not satisfy a later request');

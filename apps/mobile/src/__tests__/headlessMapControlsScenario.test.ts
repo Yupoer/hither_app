@@ -305,8 +305,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await world.advance(1);
       await device.gps(25.033, 121.523, { accuracy: 4 });
       await world.advance(20000);
-      await world.waitFor(device, (value: Observation) => value.external.alerts > 0, 'refresh result');
-      await device.input({ kind: 'alert', index: 0 });
+      await world.waitFor(device, (value: Observation) => has(value, 'map-refresh-locations'), 'refresh completes without a peer response');
       await device.perform('map.location.refresh');
       await world.settle();
       expect(world.backend.locationRefreshes).toHaveLength(1);

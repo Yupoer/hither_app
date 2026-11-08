@@ -7,6 +7,7 @@ type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = {
   presentation: { hosts: { testId?: string; checked?: boolean; text?: string }[];
     mapRoutePoints: { latitude: number; longitude: number }[] | null;
+    flockRows: { userId: string; lastUpdated?: string; text: string }[];
     mapMembers: NonNullable<CoreGroupSnapshot['members']> | null; preferences: { sharingEnabled: boolean } };
   durable: { snapshot: CoreGroupSnapshot; operations: CoreOperation[]; locations: { id: string; actor_id: string }[] };
   external: { watches: number; alerts: number; alertDetails: { message: string }[];
@@ -127,40 +128,51 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
     } finally { await world.close(); }
   });
 
-  it('MAP-LOC-03 actual members refresh reads without self GPS and handles the peer command without a push hint', async () => {
+  it('MAP-LOC-03 actual members refresh reads without self GPS and only wakes a stale peer', async () => {
     const world = new World();
     try {
       const leader = await map(world, 'refresh-leader', LEADER);
       const peer = await map(world, 'refresh-peer', PEER);
-      await world.advance(300000);
+      expect(world.backend.locations.get(GROUP_ID + ':' + PEER)?.latitude).toBe(25.01);
+      await world.advance(500);
       await leader.input({ kind: 'permission', status: 'denied' });
       await expand(world, leader);
-      const before = world.backend.trace.length;
+      const before: Observation = await leader.observe();
+      const getPeerRow = (value: Observation) => value.presentation.flockRows.find(row => row.userId === PEER);
+      expect(getPeerRow(before)?.text).toMatch(/剛剛更新|Updated just now/);
+
       await leader.perform('map.location.refresh');
-      await world.waitFor(leader, () => world.backend.locationRefreshes.length === 1, 'peer refresh ledger without self GPS');
-      const request = world.backend.locationRefreshes[0];
+      await world.waitFor(leader, (value: Observation) => has(value, 'map-refresh-locations'), 'fresh refresh completes');
+      expect(world.backend.locationRefreshes[0].recipient_ids).toEqual([]);
+      expect(world.backend.locationRefreshPending.size).toBe(0);
+      expect(getPeerRow(await leader.observe())?.lastUpdated).toBe(getPeerRow(before)?.lastUpdated);
+
+      await world.advance(180000);
+      expect(getPeerRow(await leader.observe())?.text).toMatch(/3 分鐘|3 minutes/);
+      leader.realtime = false;
+      peer.realtime = false;
+      await peer.input({ kind: 'appState', value: 'background' });
+      await world.waitFor(peer, (value: Observation) => value.external.watches === 0 && value.external.backgroundTasks.length > 0, 'peer passive background owner');
+      await leader.perform('map.location.refresh');
+      await world.waitFor(leader, () => world.backend.locationRefreshes.length === 2, 'stale peer refresh ledger without self GPS');
+      const request = world.backend.locationRefreshes[1];
       expect(request.recipient_ids).toEqual([PEER]);
-      expect(request.acknowledgements).toEqual([]);
-      expect(world.backend.trace.slice(before).some((call: SyncCall) => call.deviceId === 'refresh-leader' && call.name === 'sync_group')).toBe(true);
-      const watches = (await peer.observe()).external.watches;
-      await world.advance(1);
-      await peer.gps(25.033, 121.533, { accuracy: 5 });
-      await world.waitFor(peer, (value: Observation) => value.external.watches > watches, 'ordinary exchange command starts peer refresh without a push');
-      expect(request.acknowledgements).toEqual([]);
       await world.advance(1);
       await peer.gps(25.034, 121.534, { accuracy: 5 });
-      await world.waitFor(peer, () => request.acknowledgements.includes(PEER), 'peer accepted sample and exact request ACK');
+      expect(request.acknowledgements).toEqual([]);
+      await peer.input({ kind: 'task', name: 'hither-background-location-refresh',
+        value: { data: { data: { category: 'location_refresh', groupId: GROUP_ID } }, error: null } });
+      await world.waitFor(peer, () => request.acknowledgements.includes(PEER), 'silent push task captures and ACKs one new fix');
+      expect(world.backend.locations.get(GROUP_ID + ':' + PEER)).toMatchObject({ source: 'refresh_request', latitude: 25.034 });
       await world.advance(2000);
-      const result: Observation = await world.waitFor(leader, (value: Observation) => value.external.alertDetails.some(alert =>
-        /已讀取伺服器|Server data refreshed/.test(alert.message)), 'members refresh result');
-      expect(result.external.alertDetails.some(alert => /1\s*\/\s*1|1 of 1/.test(alert.message))).toBe(true);
-      expect(result.external.alertDetails.some(alert => /已讀取伺服器|Server data refreshed/.test(alert.message))).toBe(true);
-      expect(result.external.alertDetails.some(alert => /尚未確認上傳|not confirmed/.test(alert.message))).toBe(true);
+      const result: Observation = await world.waitFor(leader, (value: Observation) => has(value, 'map-refresh-locations')
+        && getPeerRow(value)?.lastUpdated !== getPeerRow(before)?.lastUpdated, 'requester row receives peer sample');
+      expect(getPeerRow(result)?.text).toMatch(/剛剛更新|Updated just now/);
+      expect(result.external.alerts).toBe(before.external.alerts);
       expect(result.durable.snapshot.members?.find(member => member.userId === PEER)?.coordinates?.latitude).toBe(25.034);
-      await leader.input({ kind: 'alert', index: 0 });
       await leader.perform('map.location.refresh');
       await world.settle();
-      expect(world.backend.locationRefreshes).toHaveLength(1);
+      expect(world.backend.locationRefreshes).toHaveLength(2);
     } finally { await world.close(); }
   });
 

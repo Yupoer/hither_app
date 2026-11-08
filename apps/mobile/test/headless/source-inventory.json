@@ -4167,13 +4167,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "dc7d006387c18d07a414cf92715ad94028a090e37b9ef46b83af1f48724fa9e8"
+    "hash": "1bfbced6e2db54a8220eec1392f68a1efc160b6d8b01e806134f2975c293ba51"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "ff259ea299a90bc12631afe43c1a6015e66d75a00b9b968495af5f98abdf199a"
+    "hash": "78c0ba4371be6e07cbcc1a0c7b05a062568ab93cd85ea37288b47acbb12b5ec7"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -4209,7 +4209,13 @@
     "file": "src/native/backgroundLocation.ts",
     "kind": "export",
     "name": "nextBackgroundLocation",
-    "hash": "f30f5ec8c96363f3a8f5c1f264a8dcfc17f90fefb51b1070deb78ae94c83cf82"
+    "hash": "0d40b86bd5d74b3baa55d6241d4538347675db5fbf79c6b92391d30f1880f886"
+  },
+  {
+    "file": "src/native/backgroundLocation.ts",
+    "kind": "export",
+    "name": "captureBackgroundRefreshFix",
+    "hash": "49a94493b7ca204d33bb625dff99460a8f0ffa6e06886c686c0dd51e9c404ad9"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -4516,6 +4522,12 @@
     "kind": "export",
     "name": "getPermissionState",
     "hash": "13ca3e7ab5fad46ba03c05fdd6f99a28be64b4b7fa296530567649ce19861e49"
+  },
+  {
+    "file": "src/native/location.ts",
+    "kind": "export",
+    "name": "getBackgroundRefreshLocation",
+    "hash": "381309129427bc75b31886a72c4033fd7fe431733ddd662ed1cdc07bda4d9e36"
   },
   {
     "file": "src/native/location.ts",
@@ -5577,7 +5589,7 @@
     "file": "src/screens/LoginScreen.tsx",
     "kind": "export",
     "name": "LoginScreen",
-    "hash": "b022c8a847aea7d843f5e315ce51afe533ab740a2e115f6147635f95a3d20478"
+    "hash": "ef977113c992c58c03186a146acdd5e965c4bb84e1eaef2c1d97022e5cd98412"
   },
   {
     "file": "src/screens/LoginScreen.tsx",
@@ -5589,7 +5601,7 @@
     "file": "src/screens/LoginScreen.tsx",
     "kind": "lifecycle",
     "name": "runUiAction",
-    "hash": "abb28063c6512716dca6de83442cf1942c5b28ac7fceeb64e24ee15517490e91"
+    "hash": "25911da0ed6a669946a9e87111e15bf835dc15834f332450c6ac8b89afa4ea7c"
   },
   {
     "file": "src/screens/LoginScreen.tsx",
@@ -5775,7 +5787,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "9457c21bd0f8f52482ab6fb16064daa550bb51f2b9ed59600d723401d5caa4e9"
+    "hash": "a9bda451de2c02e816afe321c9fcbc69df6b9da1500a51dc91f6574bfd40abc9"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6411,13 +6423,13 @@
     "file": "src/screens/MapScreen/MapScreenChromeResources.tsx",
     "kind": "export",
     "name": "MapAccessLossResource",
-    "hash": "dc351249deef0e92728aa84c266103d7af75403a18022169290e345ad205a6f6"
+    "hash": "7d91244a5c66bc2dfbde480d85002f6bf3de7d143b201cce7efac598891acb05"
   },
   {
     "file": "src/screens/MapScreen/MapScreenChromeResources.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "a5c8d832d59b6dff3996026b4ed25a1206e716a605f1f5d608c234ea96322e2c"
+    "hash": "b1640816bad4f3e7a87f3df2f2d778ab0a7dde1195ea39ebc8fd636e4db42c72"
   },
   {
     "file": "src/screens/MapScreen/MapScreenChromeResources.tsx",
@@ -6846,6 +6858,12 @@
     "hash": "dc138a47aff968e48e475c0ea3d1a370bb83e096f92dfcf9454ea37137194dd4"
   },
   {
+    "file": "src/screens/MapScreen/components/FlockRow.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "75c0f1c86e27bab0f247270ff681300772ddfa3bff5db4970a5dbd71c7faa5e4"
+  },
+  {
     "file": "src/screens/MapScreen/components/GatheringCardPressable.tsx",
     "kind": "export",
     "name": "GatheringCardPressable",
@@ -7090,6 +7108,12 @@
     "kind": "callback",
     "name": "onPress",
     "hash": "f4d270a5f4b89d5a6a686950bc0a99e8a37962fb3ae74e98fcab5748e0a90bac"
+  },
+  {
+    "file": "src/screens/MapScreen/components/MemberInboxBadge.tsx",
+    "kind": "export",
+    "name": "MemberInboxBadge",
+    "hash": "f528426db57280276620c968191d12c8dcabb3dbcceed3d86c97ed4930efe788"
   },
   {
     "file": "src/screens/MapScreen/components/MembersPane.tsx",
@@ -7798,6 +7822,12 @@
     "kind": "callback",
     "name": "onDismissComplete",
     "hash": "6f88dc50723c03d85602c5b1804de3f8d0091773179369267d9095a0ac1c76b9"
+  },
+  {
+    "file": "src/screens/MapScreen/components/SheetPaneTabs.ios.tsx",
+    "kind": "export-alias",
+    "name": "{ SheetPaneTabOption }",
+    "hash": "57bbb57abcaa056f445faa412c81597c4182eeb468455bb6c021d80710840909"
   },
   {
     "file": "src/screens/MapScreen/components/SheetPaneTabs.ios.tsx",
@@ -8721,13 +8751,13 @@
     "file": "src/state/SessionContext.tsx",
     "kind": "export",
     "name": "SessionProvider",
-    "hash": "6528b94f436bd04e7916a8814dd12cd9734b5095303f7b3c282deea5d8c511b1"
+    "hash": "2c143f5d0cb74556e6af0fda5665b743826c159655d894cb3013dee86cf99bb1"
   },
   {
     "file": "src/state/SessionContext.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "bf6b1395834cc4b50027d2d8168eb332e221ac5d275213d5add1b63fec35e167"
+    "hash": "b0f2c8e411fe2bd0081d2563770c78e50df01ad5b75cae45de3f8596dca3ce2f"
   },
   {
     "file": "src/state/SessionContext.tsx",
@@ -8961,7 +8991,7 @@
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "lifecycle",
     "name": "TaskManager.defineTask",
-    "hash": "c62ad1229c6ba6ad6a029e8ed2fbe2af30ce1f389470e096d5d33f85aa2a10e6"
+    "hash": "eae9233af33ee47676cc1aa14d87896c5865c7595c388e5f5e261b16c36e3930"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -9999,7 +10029,7 @@
     "file": "src/state/useAuthFlow.ts",
     "kind": "export",
     "name": "useAuthFlow",
-    "hash": "9f9e0651d60722dcef847c1dc58a6794a00382bfeb4c96b09c3a564a49885200"
+    "hash": "546bbf2450cb801497b4ee5eb7b3adfb6280df9cff0a1c74e647f2160b949e8e"
   },
   {
     "file": "src/state/useForegroundReconcile.ts",
