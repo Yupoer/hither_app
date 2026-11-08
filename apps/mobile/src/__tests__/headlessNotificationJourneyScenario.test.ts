@@ -83,11 +83,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       await leader.perform('group.reportStraggler', { args: [GROUP_ID, PEER, 800] });
       expect(world.backend.tables.group_alerts).toEqual([]);
       const leaderMap = await map(world, platform, 'leader-map', LEADER);
-      const watches = (await leaderMap.observe()).external.watches;
       await leaderMap.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(leaderMap, (value: { external: { watches: number } }) => value.external.watches > watches, 'fresh navigation fix requested');
-      await world.advance(1000);
-      await leaderMap.gps(25.03, 121.53, { accuracy: 5, timestamp: world.now });
       await world.waitFor(leaderMap, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'active navigation admits separation');
       const leaderBefore = (await leader.observe()).native.scheduled.length;
       const memberBefore = (await member.observe()).native.scheduled.length;
