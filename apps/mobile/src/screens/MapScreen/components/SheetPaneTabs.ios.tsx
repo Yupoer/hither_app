@@ -3,11 +3,10 @@ import { StyleSheet, View, type ViewProps } from 'react-native';
 import { requireNativeView } from 'expo';
 import type { SheetPaneKey } from '../../../store/types';
 import { selectionTick } from '../../../utils/haptics';
+import { MemberInboxBadge } from './MemberInboxBadge';
+import type { SheetPaneTabOption } from './SheetPaneTabs';
 
-export interface SheetPaneTabOption {
-  key: SheetPaneKey;
-  label: string;
-}
+export type { SheetPaneTabOption } from './SheetPaneTabs';
 
 type NativeSelectionEvent = {
   nativeEvent?: {
@@ -36,7 +35,7 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
   onChange,
   onTabNode,
 }: SheetPaneTabsProps) {
-  const labels = useMemo(() => options.map((option) => option.label), [options]);
+  const labels = useMemo(() => options.map((option) => option.badge?.accessibilityLabel ?? option.label), [options]);
   const selectedIndex = Math.max(0, options.findIndex((option) => option.key === selectedSection));
   const handleSelectionChange = useCallback((event: NativeSelectionEvent) => {
     const index = event.nativeEvent?.index;
@@ -65,7 +64,15 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
             ref={(node) => onTabNode?.(option.key, node)}
             style={styles.measurementCell}
             accessible={false}
-          />
+          >
+            {option.badge && (
+              <MemberInboxBadge
+                count={option.badge.count}
+                style={styles.tabBadge}
+                testID={`sheet-pane-badge-${option.key}`}
+              />
+            )}
+          </View>
         ))}
       </View>
     </View>
@@ -89,4 +96,5 @@ const styles = StyleSheet.create({
   measurementCell: {
     flex: 1,
   },
+  tabBadge: { top: 3, right: 9 },
 });
