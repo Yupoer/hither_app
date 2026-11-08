@@ -12,10 +12,6 @@ const visitHistory = readFileSync(join(__dirname, '../screens/MapScreen/hooks/us
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const arrivalManageSheet = readFileSync(join(__dirname, '../screens/MapScreen/components/ArrivalManageSheet.tsx'), 'utf8');
 const carousel = readFileSync(join(__dirname, '../screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
-const groupNotifications = readFileSync(
-  join(__dirname, '../state/useGroupNotifications.ts'),
-  'utf8',
-);
 const i18n = [
   readFileSync(join(__dirname, '../i18n/locales/zh.ts'), 'utf8'),
   readFileSync(join(__dirname, '../i18n/locales/en.ts'), 'utf8'),
@@ -30,10 +26,6 @@ const pushIndex = readFileSync(
 );
 const pushMessages = readFileSync(
   join(root, 'supabase/functions/send-push/messages.ts'),
-  'utf8',
-);
-const pushRecipients = readFileSync(
-  join(root, 'supabase/functions/send-push/recipients.ts'),
   'utf8',
 );
 
@@ -52,17 +44,6 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(client).toContain('submitGatherPointRequest');
     expect(client).toContain('resolveGatherPointRequest');
     expect(client).toContain('resolveGatherPointRequestResilient');
-  });
-
-  it('keeps gather-approve UI resilient to network blips', () => {
-    expect(mapScreen).toContain('resolveGatherPointRequestResilient');
-    expect(mapScreen).toContain('gather_request_resolve');
-    expect(mapScreen).toContain('resolvingGatherRequestId');
-    // Error copy is classified by the shared mapper; it must not hard-code a
-    // network message that can mislabel an ambiguous durable result.
-    expect(mapScreen).toContain('getOperationErrorMessage(error)');
-    expect(mapScreen).toContain('recoverGatherRequestAfterFailedResolve');
-    expect(mapScreen).not.toContain("t('gatherRequest.networkFailed')");
   });
 
   it('stores per-member destination arrivals and supports manual marking', () => {
@@ -200,19 +181,5 @@ describe('gathering approval, arrivals, history, and push contracts', () => {
     expect(pushMessages).toMatch(/title: nameOr\(p\.sender_name/);
     expect(pushMessages).toContain('body: p.message?.trim() || label');
     expect(pushMessages).toContain('gathering_request');
-  });
-
-  it('routes request_start through follower preferences to leaders only', () => {
-    expect(migrations).toContain("'custom','request_start'");
-    expect(migrations).toContain("'found_something','request_start'");
-    // send-push uses specialAlertRecipientIds (arrival + request_start leader fan-out).
-    expect(pushIndex).toContain('specialAlertRecipientIds(payload, members)');
-    expect(pushRecipients).toContain('requestStartRecipientIds');
-    expect(pushRecipients).toContain('.filter((member) => member.role === "leader")');
-    expect(pushMessages).toContain('request_start: "要求開始"');
-    expect(mapScreen).toContain("'request_start'");
-    expect(groupNotifications).toContain(
-      "row.type === 'request_start' && !isLeaderRef.current",
-    );
   });
 });

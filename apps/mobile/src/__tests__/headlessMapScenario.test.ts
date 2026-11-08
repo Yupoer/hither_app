@@ -368,7 +368,12 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.waitFor(leader, (value: MapObservation) => has(value, `member-inbox-open-${PEER}`), 'member row has the pending request');
       await run(leader, 'map.member.inbox', { userId: PEER });
       await world.waitFor(leader, (value: MapObservation) => has(value, `gather-request-approve-${request.id}`), 'actual leader inbox');
+      leader.online = false;
       await run(leader, 'map.suggestion.approve', { requestId: request.id });
+      await world.waitFor(leader, (value: MapObservation) => value.durable.operations.some(row => row.operationType === 'resolve_gather_point_request'), 'offline approval saved');
+      expect(request.status).toBe('pending');
+      leader.online = true;
+      await world.advance(30000);
       await world.waitFor(leader, () => request.status === 'approved', 'request approval accepted by transport');
       await world.advance(2500);
       await world.waitFor(leader, (value: MapObservation) => !has(value, `gather-request-approve-${request.id}`), 'approved request leaves inbox');
