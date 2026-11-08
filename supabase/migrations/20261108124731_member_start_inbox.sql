@@ -87,10 +87,21 @@ create policy "core_operations: select own or group operation" on public.core_op
       and not (operation_type = 'send_command' and payload @> '{"type":"request_start"}' and payload ? 'destinationId'))
   );
 
+drop policy "core notification outbox: own or group read" on public.core_notification_outbox;
+create policy "core notification outbox: authorized reader" on public.core_notification_outbox
+  for select to authenticated using (
+    case when payload @> '{"type":"request_start"}' and payload ? 'destinationId'
+      then exists (
+        select 1 from public.commands c where c.id = core_notification_outbox.operation_id
+      )
+      else target_user_id = (select auth.uid()) or extensions.is_member(group_id)
+    end
+  );
+
 create function hither_private.persist_gathering_start(
   p_operation_id uuid, p_group_id uuid, p_actor uuid, p_destination_id uuid
 )
-returns void
+returns public.commands
 language plpgsql
 security definer
 set search_path = ''
@@ -99,6 +110,7 @@ declare
   v_member public.memberships%rowtype;
   v_item public.itinerary_items%rowtype;
   v_recipient uuid;
+  v_request public.commands%rowtype;
 begin
   select * into v_member from public.memberships
     where group_id = p_group_id and user_id = p_actor;
@@ -129,46 +141,179 @@ begin
     raise exception 'destination has no available organizer' using errcode = '55000';
   end if;
 
-  insert into public.commands (id, group_id, sender_id, type, message, destination_id, target_user_id, request_status)
-  values (p_operation_id, p_group_id, p_actor, 'request_start', v_item.title, v_item.id, v_recipient, 'pending');
+  insert into public.commands (id, group_id, sender_id, type, message, destination_id, target_user_id, request_status, core_delivery)
+  values (p_operation_id, p_group_id, p_actor, 'request_start', v_item.title, v_item.id, v_recipient, 'pending', true)
+  returning * into v_request;
+  return v_request;
 end;
 $$;
 
 revoke all on function hither_private.persist_gathering_start(uuid, uuid, uuid, uuid) from public, anon, authenticated;
 
-do $migration$
+create or replace function public.core_v3_enqueue_notification(
+  p_operation_id uuid,
+  p_group_id uuid,
+  p_sender_id uuid,
+  p_scope_subgroup_id uuid,
+  p_payload jsonb,
+  p_received_at timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
 declare
-  definition text;
-  anchor text := '  v_category := case when v_sender_role';
-  delivery_anchor text := '  for v_target in';
+  v_sender_role text;
+  v_category text;
+  v_target_role text;
+  v_target record;
+  v_targets integer := 0;
+  v_ids jsonb := '[]'::jsonb;
+  v_expires timestamptz;
+  v_pref boolean;
+  v_row public.core_notification_outbox%rowtype;
+  v_request public.commands%rowtype;
+  v_notification_payload jsonb := p_payload;
 begin
-  definition := pg_get_functiondef(
-    'public.core_v3_enqueue_notification(uuid,uuid,uuid,uuid,jsonb,timestamptz)'::regprocedure
+  select m.role into v_sender_role
+  from public.memberships m
+  where m.group_id = p_group_id and m.user_id = p_sender_id;
+  if not found then
+    raise exception 'sender is not a group member' using errcode = '42501';
+  end if;
+  if p_payload->>'type' in (
+       'gather', 'find_gathering', 'depart', 'rest', 'be_careful',
+       'go_left', 'go_right', 'stop', 'hurry_up'
+     ) and v_sender_role <> 'leader' then
+    raise exception 'leader command requires leader membership' using errcode = '42501';
+  end if;
+
+  if p_payload->>'type' = 'request_start' and p_payload ? 'destinationId' then
+    v_request := hither_private.persist_gathering_start(
+      p_operation_id, p_group_id, p_sender_id, (p_payload->>'destinationId')::uuid
+    );
+    v_notification_payload := p_payload || jsonb_build_object('message', v_request.message);
+  end if;
+
+  v_category := case when v_request.id is not null then 'follower_requests'
+                     when v_sender_role = 'leader' then 'leader_commands'
+                     else 'follower_requests' end;
+  v_target_role := case when p_payload->>'type' = 'request_start'
+                        then 'leader' else 'member' end;
+  v_expires := least(
+    coalesce(p_received_at, now()) + interval '5 minutes',
+    coalesce(nullif(p_payload->>'expiresAt', '')::timestamptz,
+             coalesce(p_received_at, now()) + interval '5 minutes')
   );
-  if strpos(definition, anchor) = 0 then
-    raise exception 'core command notification anchor missing';
+  -- A client may shorten a TTL but may never extend the server five-minute
+  -- delivery window.  Already expired commands are accepted durable no-ops:
+  -- keep the receipt, but do not create a notification or call APNs.
+  if v_expires <= coalesce(p_received_at, now()) then
+    return jsonb_build_object(
+      'category', v_category,
+      'targetRole', v_target_role,
+      'targetCount', 0,
+      'notificationIds', '[]'::jsonb,
+      'expiresAt', v_expires,
+      'expired', true
+    );
   end if;
-  if strpos(definition, delivery_anchor) = 0 then
-    raise exception 'core command delivery anchor missing';
-  end if;
-  definition := replace(definition, delivery_anchor, $help$
+
   if p_payload->>'type' = 'need_help' then
     insert into public.commands (id, group_id, sender_id, type, created_at, core_delivery)
     values (p_operation_id, p_group_id, p_sender_id, 'need_help', p_received_at, true);
   end if;
 
-$help$ || delivery_anchor);
-  execute replace(definition, anchor, $branch$
-  if p_payload->>'type' = 'request_start' and p_payload ? 'destinationId' then
-    perform hither_private.persist_gathering_start(
-      p_operation_id, p_group_id, p_sender_id, (p_payload->>'destinationId')::uuid
-    );
-    return jsonb_build_object('requestId', p_operation_id, 'expiresAt', 'infinity'::timestamptz);
-  end if;
-
-$branch$ || anchor);
+  for v_target in
+    select m.user_id, m.role, m.subgroup_id
+    from public.memberships m
+    where m.group_id = p_group_id
+      and m.user_id <> p_sender_id
+      and (
+        (v_request.id is not null and m.user_id = v_request.target_user_id)
+        or (
+          v_request.id is null
+          and (p_scope_subgroup_id is null or m.subgroup_id = p_scope_subgroup_id or m.role = 'leader')
+          and (
+            (p_payload->>'type' = 'request_start' and m.role = 'leader')
+            or ((p_payload->>'type') is distinct from 'request_start' and not coalesce(m.solo, false))
+          )
+        )
+      )
+  loop
+    select case v_category
+      when 'leader_commands' then coalesce(np.leader_commands, true)
+      when 'follower_requests' then coalesce(np.follower_requests, true)
+      else coalesce(np.journey, true)
+    end into v_pref
+    from public.notification_preferences np
+    where np.user_id = v_target.user_id;
+    if coalesce(v_pref, true) then
+      insert into public.core_notification_outbox(
+        operation_id, group_id, sender_id, target_user_id,
+        category, target_role, payload, created_at, expires_at
+      ) values (
+        p_operation_id, p_group_id, p_sender_id, v_target.user_id,
+        v_category, case when v_target.role = 'leader' then 'leader' else 'member' end,
+        coalesce(v_notification_payload, '{}'::jsonb) || jsonb_build_object(
+          'category', v_category,
+          'groupId', p_group_id::text,
+          'senderId', p_sender_id::text,
+          'targetUserId', v_target.user_id::text,
+          'expiresAt', v_expires
+        ),
+        coalesce(p_received_at, now()), v_expires
+      )
+      on conflict (operation_id, target_user_id) do nothing
+      returning * into v_row;
+      if found then
+        v_targets := v_targets + 1;
+        v_ids := v_ids || jsonb_build_array(v_row.id::text);
+        begin
+          -- send-push consumes a flat PushPayload.  Keep the complete command
+          -- under payload as well, but mirror its routing fields at top level
+          -- for older edge-function versions and include the server TTL.
+          perform extensions.notify_push(jsonb_build_object(
+            'type', v_row.payload->>'type',
+            'message', v_row.payload->>'message',
+            'latitude', v_row.payload->'latitude',
+            'longitude', v_row.payload->'longitude',
+            'expires_at', v_row.expires_at,
+            'entity_id', v_row.operation_id,
+            'operation_id', v_row.operation_id,
+            'category', v_row.category,
+            'group_id', v_row.group_id,
+            'sender_id', v_row.sender_id,
+            'target_user_id', v_row.target_user_id,
+            'payload', v_row.payload
+          ));
+          update public.core_notification_outbox
+          set delivery_status = 'attempted', attempted_at = now()
+          where id = v_row.id and delivery_status = 'queued';
+        exception when others then
+          -- There is no queue worker in this migration.  Record that a
+          -- delivery attempt happened instead of leaving a permanently
+          -- indistinguishable queued row; a later worker may retry attempted.
+          update public.core_notification_outbox
+          set delivery_status = 'attempted', attempted_at = now()
+          where id = v_row.id and delivery_status = 'queued';
+        end;
+      end if;
+    end if;
+  end loop;
+  return jsonb_build_object(
+    'category', v_category,
+    'targetRole', v_target_role,
+    'targetCount', v_targets,
+    'notificationIds', v_ids,
+    'expiresAt', v_expires
+  );
 end;
-$migration$;
+$$;
+revoke all on function public.core_v3_enqueue_notification(
+  uuid, uuid, uuid, uuid, jsonb, timestamptz
+) from public, anon, authenticated;
 
 create function public.resolve_gathering_start(p_request_id uuid, p_approve boolean)
 returns void

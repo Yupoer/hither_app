@@ -127,7 +127,7 @@ function executeTable(b, operation) {
   if (name === 'public_profiles' && mode === 'select') rows = rows.filter(p => userId && (p.id === userId || b.memberships.some(m => m.user_id === p.id && member(b, m.group_id, userId))));
   if (name === 'subgroup_invites') rows = rows.filter(r => r.invitee_id === userId || r.inviter_id === userId);
   if (name === 'coordination_responses') rows = rows.filter(r => member(b, b.tables.coordination_requests.find(q => q.id === r.request_id)?.group_id, userId));
-  if (name === 'commands') rows = rows.filter(r => !r.core_delivery || r.sender_id === userId
+  if (name === 'commands') rows = rows.filter(r => r.type !== 'need_help' || !r.core_delivery || r.sender_id === userId
     || require('./backend-workflows.cjs').scopeAllowed(b, r.group_id, null, userId));
   if (name === 'commands') rows = rows.filter(r => r.type !== 'request_start' || r.sender_id === userId
     || (r.target_user_id == null || r.target_user_id === userId)

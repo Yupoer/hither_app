@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(17);
+select plan(20);
 
 insert into auth.users (id, email) values
   ('10000000-0000-4000-8000-000000000001', 'start-leader@example.test'),
@@ -35,11 +35,18 @@ select is(public.apply_core_operation_v3(
   'send_command', '{"type":"request_start","destinationId":"30000000-0000-4000-8000-000000000001"}',
   1, '{}'::uuid[], now() - interval '1 hour')->>'status', 'accepted',
   'an offline start request persists when it finally reaches the server');
+select is((select count(*) from public.core_notification_outbox where operation_id = current_setting('test.start_inbox.approved')::uuid),
+  0::bigint, 'disabled push preferences do not enqueue a notification');
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
+update public.notification_preferences set follower_requests = true where user_id = auth.uid();
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
 select is(public.apply_core_operation_v3(
   current_setting('test.start_inbox.rejected')::uuid, '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000002', 'itinerary', current_setting('test.start_inbox.rejected'), 0,
   'send_command', '{"type":"request_start","destinationId":"30000000-0000-4000-8000-000000000002"}',
   2, '{}'::uuid[], now())->>'status', 'accepted', 'a second destination request persists');
+select is((select target_user_id from public.core_notification_outbox where operation_id = current_setting('test.start_inbox.rejected')::uuid),
+  '10000000-0000-4000-8000-000000000001'::uuid, 'enabled push uses the existing outbox for the chosen recipient');
 select is(public.apply_core_operation_v3(
   '50000000-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000002', 'itinerary', '50000000-0000-4000-8000-000000000003', 0,
@@ -56,6 +63,8 @@ select is((select count(*) from public.commands where request_status is not null
   'other group members cannot read the targeted payload');
 select is((select count(*) from public.core_operations where operation_type = 'send_command'), 0::bigint,
   'other group members cannot read targeted payloads through core receipts');
+select is((select count(*) from public.core_notification_outbox where payload->>'type' = 'request_start'), 0::bigint,
+  'other group members cannot read targeted payloads through push delivery receipts');
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000002', true);
 select is(public.apply_core_operation_v3(

@@ -191,11 +191,24 @@ function apply(b, { args: a, userId, navigationOrigin = 'manual' }) {
       .sort((a, c) => Number(c.user_id === captain) - Number(a.user_id === captain) || a.user_id.localeCompare(c.user_id))[0];
     if (!target) return conflict('validation');
     const row = { id: a.p_operation_id, group_id: group.id, sender_id: userId, target_user_id: target.user_id,
-      type: p.type, message: destination.title, destination_id: destination.id, request_status: 'pending', created_at: iso(b) };
+      type: p.type, message: destination.title, destination_id: destination.id, request_status: 'pending', core_delivery: true, created_at: iso(b) };
     b.tables.commands.push(row);
     b.publish('commands', row, 'INSERT');
-    effects = { requestId: row.id, expiresAt: 'infinity' };
-    entity = { operationId: a.p_operation_id, accepted: true, expired: false };
+    const expiresAt = new Date(Math.min(b.now + 300000, Date.parse(p.expiresAt) || b.now + 300000)).toISOString();
+    const category = 'follower_requests';
+    const allowed = Date.parse(expiresAt) > b.now
+      && b.tables.notification_preferences.find(pref => pref.user_id === target.user_id)?.[category] !== false;
+    const ids = [];
+    if (allowed) {
+      const id = randomUUID();
+      b.notificationOutbox.push({ id, operation_id: row.id, group_id: group.id, sender_id: userId,
+        target_user_id: target.user_id, category, target_role: target.role === 'leader' ? 'leader' : 'member',
+        payload: { ...p, message: row.message, category, groupId: group.id, senderId: userId, targetUserId: target.user_id, expiresAt },
+        created_at: iso(b), expires_at: expiresAt });
+      ids.push(id);
+    }
+    effects = { category, targetRole: 'leader', targetCount: ids.length, notificationIds: ids, expiresAt };
+    entity = { operationId: a.p_operation_id, accepted: true, expired: Date.parse(expiresAt) <= b.now };
   } else if (type === 'send_command') {
     const leaderCommands = ['gather', 'find_gathering', 'depart', 'rest', 'be_careful', 'go_left', 'go_right', 'stop', 'hurry_up'];
     assert([...leaderCommands, 'need_restroom', 'need_break', 'need_help', 'found_something', 'request_start', 'custom'].includes(p.type), 'Command type contract');
