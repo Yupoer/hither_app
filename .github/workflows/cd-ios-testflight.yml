@@ -8,9 +8,9 @@ on:
         required: true
         type: string
       mode:
-        description: Inspect release state, verified OTA, quick preflight, full Release validation, signed build, or TestFlight upload
+        description: Inspect release metadata, publish OTA, or select a cloud native mode
         required: true
-        default: preflight
+        default: inspect-release
         type: choice
         options:
           - inspect-release

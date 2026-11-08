@@ -45,6 +45,17 @@ CI 使用 `simctl spawn --standalone` 執行 Foundation/Swift actor probe，不�
 及 production 更新設定。不得使用 Debug、Metro 或替換成單一功能 harness
 來代替此項驗證。
 
+預設在 Mac 上驗證。相同來源 SHA、production 環境及設定、目標 iOS runtime
+已有通過紀錄且兩張截圖已確認時，沿用該紀錄。只有既有 `.app` 時，
+先確認它來自這組輸入，再直接執行下方檢查器。檢查器本身不編譯。
+
+需要重新編譯時，用 `Hither` scheme、`Release` configuration 及 iOS Simulator
+目標，依 `Podfile.lock` 執行 `pod install --deployment`。以 EAS production
+環境建置，套用 `eas.json` 的 production profile env，並在專用工作樹的
+`Expo.plist` 嵌入 production 更新 channel。建置完成後還原工作樹中的 plist。
+這組輸入與 [Actions 驗證程式](../scripts/run-ios-release-launch.py) 相同；
+本機使用既有 Xcode 及目標 runtime，記錄實際版本。
+
 在 `apps/mobile`：
 
 ```sh
@@ -65,7 +76,7 @@ npm run verify:ios-release-launch -- \
 模擬器結果仍不能代替實機 TestFlight binary 驗收。原生 JSI 修正需要新 IPA，
 純 OTA 不會更新 framework。
 
-Actions 在簽署建置前保存兩張冷啟動截圖，僅將它們打包並以既有公開憑證
+明確要求雲端建置或驗證時，Actions 保存兩張冷啟動截圖，僅將它們打包並以既有公開憑證
 進行 CMS AES-256 加密。下載 `hither-ios-release-screenshots-RUN_ID-RUN_ATTEMPT`
 artifact，依 [符號檔解密方式](crash-investigation.md#retain-signed-build-symbols)
 使用本機私鑰解開 `hither-release-screenshots.encrypted.der`。核對兩張 PNG 與
