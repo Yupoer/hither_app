@@ -770,7 +770,7 @@ class CaptureTests(unittest.TestCase):
             output.mkdir()
             with mock.patch.object(DEBUGGER, '_same_executable', return_value=True) as identity:
                 DEBUGGER.lldb_capture(debugger, 123, installed, output, symbol_executable=compiled)
-            debugger.CreateTarget.assert_called_once_with(str(compiled))
+            debugger.CreateTarget.assert_called_once_with(str(compiled), '', '', False, mock.ANY)
             self.assertTrue(all(call.args == (123, installed) for call in identity.call_args_list))
             process.Continue.assert_called_once_with()
 
