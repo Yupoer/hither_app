@@ -17,6 +17,8 @@ import {
 } from '../utils/locationPolicy';
 import type { Coordinates } from '../types';
 
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+
 const origin: Coordinates = { latitude: 25.04, longitude: 121.5 };
 
 /** ~move meters east of origin (rough; enough for gate tests). */
@@ -46,10 +48,10 @@ describe('locationPolicy', () => {
       distanceInterval: distance, uploadMinIntervalMs: interval, uploadMinDistanceM: distance,
       uploadHeartbeatMs: moving, uploadHeartbeatStationaryMs: stationary });
   });
-  it('uses ordinary High and Other activity for both journey precision modes', () => {
+  it('uses ordinary High and Other activity with no background pill for both journey precision modes', () => {
     for (const mode of ['teamNavigation', 'navigationMax'] as const) {
       expect(backgroundLocationOptions('journey', mode === 'navigationMax', mode)).toMatchObject({
-        accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: true,
+        accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: false,
         pausesUpdatesAutomatically: false, deferredUpdatesDistance: 0, deferredUpdatesInterval: 0 });
     }
   });

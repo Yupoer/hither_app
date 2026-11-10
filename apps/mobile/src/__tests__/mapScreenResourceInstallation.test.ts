@@ -191,7 +191,6 @@ jest.mock('../state/arrivalSync', () => ({ projectArrivals: () => mockEmpty, pro
   personalArrivalEvent: () => undefined, enqueueArrival: mockAsync, syncArrival: mockAsync }));
 jest.mock('../state/energyObservability', () => ({ energyObservability: { mountWorkload: () => mockWorkload(), setTrackingMode: jest.fn() } }));
 jest.mock('../state/backgroundJourney', () => ({ stopBackgroundJourney: (...args: Parameters<typeof mockStops>) => mockStops(...args) }));
-jest.mock('../native/backgroundLocation', () => ({ prepareNativeBackgroundLocation: async () => undefined }));
 jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationPermission: async () => false,
   recoverPendingLocationRefreshes: mockAsync, rememberPendingLocationPermission: mockAsync }));
 jest.mock('../state/locationSharingSync', () => ({ hydrateLocationSharing: mockAsync, rememberLocationSharing: mockAsync, syncLocationSharing: mockAsync }));

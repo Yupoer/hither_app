@@ -100,5 +100,5 @@ module.exports = [
   scenario('headlessLocationSyncScenario', 'MAP-LOC-03', 'actual members refresh reads without self GPS',
     'Members refresh reuses a recent peer fix, wakes the same peer once stale, and shows the exact acknowledged upload and its age without a result modal. A retry respects cooldown.'),
   scenario('headlessLocationSyncScenario', 'MAP-LOC-07,MAP-MEET-01', 'passive background callback uploads at 600 seconds',
-    'A paused background sharing callback uploads into the peer without straggler reports. The captain saves meet time through actual controls. Explicit cron starts one shared scheduled session and supported Live Activity; active owner has a faster cadence.'),
+    'A paused background sharing callback uploads into the peer without straggler reports. The captain saves meet time through actual controls. Explicit cron starts one shared scheduled session and supported Live Activity; the ordinary background task takes the faster journey profile.'),
 ];

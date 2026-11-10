@@ -1,10 +1,13 @@
+import type { CoreGroupSnapshot } from '../types/coreData';
+
 const { World } = require('../../test/headless/world.cjs');
 const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
 const { creditReward } = require('../../test/headless/backend-store.cjs');
 
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = { presentation: { hosts: { testId?: string; text?: string; value?: unknown; checked?: boolean; disabled?: boolean }[];
-  preferences: Record<string, unknown>; session: any; route: { route: string }; receipts: any[] }; native: any; external: { alerts: number; watches: number; backgroundTasks: { name: string; options: unknown }[] }; durable: any };
+  preferences: Record<string, unknown>; session: any; route: { route: string }; receipts: any[];
+  mapMembers: CoreGroupSnapshot['members'] | null }; native: any; external: { alerts: number; watches: number; backgroundTasks: { name: string; options: unknown }[] }; durable: any };
 const field = (value: Observation, id: string) => value.presentation.hosts.find(host => host.testId === id);
 const has = (value: Observation, id: string) => Boolean(field(value, id));
 const press = (device: Device, testId: string) => device.host.call({ kind: 'press', testId });
@@ -12,7 +15,7 @@ const press = (device: Device, testId: string) => device.host.call({ kind: 'pres
 describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
   jest.setTimeout(120000);
   async function map(world: InstanceType<typeof World>, userId = LEADER, capabilities = {}) {
-    const device = await world.device({ id: 'map-controls', userId, platform, capabilities, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+    const device = await world.device({ id: `map-controls-${userId}`, userId, platform, capabilities, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
     await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'actual Map destination');
     await device.perform('map.card.toggle', { destinationId: DESTINATION });
     return device;
@@ -334,28 +337,69 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     } finally { await world.close(); }
   });
 
-  it('MAP-LOC-07 actual Map hands active navigation to the platform background owner and consent stops it', async () => {
+  it('MAP-LOC-07 actual Map hands active navigation to ordinary background tracking and the foreground peer sees due fixes', async () => {
     const world = new World();
     try {
       const device = await map(world, LEADER, { nativeLocation: true });
+      const peer = await map(world, PEER);
+      const visibleLeader = (value: Observation) => value.presentation.mapMembers?.find(member => member.userId === LEADER);
       await device.perform('map.journey.command', { destinationId: DESTINATION });
-      await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: any) => session.status === 'active'), 'actual Map navigation start');
-      await world.settle();
+      const activeSession = () => [...world.backend.sessions.values()].find((session: { status: string; id: string }) => session.status === 'active');
+      await world.waitFor(device, () => Boolean(activeSession()), 'actual Map navigation start');
       await device.input({ kind: 'appState', value: 'background' });
-      const running = await world.waitFor(device, (value: Observation) => platform === 'ios' ? value.native.location.running : value.external.backgroundTasks.length === 1, 'Map background owner');
+      const running: Observation = await world.waitFor(device, (value: Observation) => value.external.watches === 0
+        && value.external.backgroundTasks.length === 1, 'ordinary background owner');
+      const task = running.external.backgroundTasks[0];
+      expect(task.options).toMatchObject({
+        accuracy: 4, activityType: 1, timeInterval: 60_000,
+        distanceInterval: platform === 'ios' ? 10 : 100, showsBackgroundLocationIndicator: false,
+      });
+      expect(running.native.location).toMatchObject({ running: false, prepared: false });
+      const sendFix = async (latitude: number) => {
+        const sample = { timestamp: world.now, coords: { latitude, longitude: 121.511, accuracy: 5 } };
+        await device.input({ kind: 'task', name: task.name, value: { data: { locations: [sample] }, error: null } });
+        await world.settle();
+        return sample;
+      };
+      const serverLocation = () => world.backend.locations.get(`${GROUP_ID}:${LEADER}`);
+
       await world.advance(1000);
-      const sample = { timestamp: world.now, coords: { latitude: 25.021, longitude: 121.511, accuracy: 5 }, stationary: false };
-      if (platform === 'ios') await device.input({ kind: 'nativeLocation', sample });
-      else await device.input({ kind: 'task', name: running.external.backgroundTasks[0].name, value: { data: { locations: [sample] }, error: null } });
-      await world.waitFor(device, () => world.backend.locations.get(`${GROUP_ID}:${LEADER}`)?.latitude === sample.coords.latitude, 'actual background owner upload');
-      const session = [...world.backend.sessions.values()].find((row: any) => row.status === 'active');
-      expect(world.backend.locations.get(`${GROUP_ID}:${LEADER}`)).toMatchObject({ source: 'background_task', navigation_session_id: session.id });
+      const first = await sendFix(25.021);
+      const firstAt = new Date(first.timestamp).toISOString();
+      expect(serverLocation()).toMatchObject({ latitude: first.coords.latitude, captured_at: firstAt, source: 'background_task',
+        navigation_session_id: activeSession()?.id });
+      await world.advance(250);
+      await world.waitFor(peer, (value: Observation) => visibleLeader(value)?.capturedAt === firstAt, 'first background pin');
+
+      await world.advance(59_749);
+      await sendFix(25.023);
+      expect(serverLocation()?.captured_at).toBe(firstAt);
+      expect(visibleLeader(await peer.observe())?.coordinates).toEqual({ latitude: 25.021, longitude: 121.511 });
+
+      await world.advance(1);
+      const due = await sendFix(25.024);
+      const dueAt = new Date(due.timestamp).toISOString();
+      expect(serverLocation()).toMatchObject({ latitude: due.coords.latitude, longitude: due.coords.longitude,
+        captured_at: dueAt, source: 'background_task', navigation_session_id: activeSession()?.id });
+      const event = [...world.backend.locationEvents.values()].find((event: { actorId: string; capturedAt: number; source: string }) =>
+        event.actorId === LEADER && event.capturedAt === due.timestamp && event.source === 'background_task');
+      expect(world.backend.locationReceipts.get(event?.id)).toMatchObject({ groupId: GROUP_ID, capturedAt: due.timestamp });
+      await world.advance(250);
+      const updated: Observation = await world.waitFor(peer, (value: Observation) => visibleLeader(value)?.capturedAt === dueAt, 'due background pin without refresh');
+      expect(visibleLeader(updated)).toMatchObject({ coordinates: { latitude: 25.024, longitude: 121.511 }, locationSource: 'background_task' });
+
+      const sessionId = activeSession()?.id;
       await device.input({ kind: 'appState', value: 'active' });
       await expand(world, device);
       await device.perform('map.sharing.toggle');
       await device.input({ kind: 'alert', index: 1 });
-      await world.waitFor(device, (value: Observation) => value.presentation.preferences.sharingEnabled === false && !value.native.location.running && !value.native.location.prepared && value.external.backgroundTasks.length === 0, 'Map consent stops owner');
-      expect(session.status).toBe('active');
+      await world.waitFor(device, (value: Observation) => value.presentation.preferences.sharingEnabled === false, 'Map consent revoked');
+      await device.input({ kind: 'appState', value: 'background' });
+      await world.settle();
+      const stopped: Observation = await device.observe();
+      expect(stopped.external.backgroundTasks).toEqual([]);
+      expect(stopped.native.location).toMatchObject({ running: false, prepared: false });
+      expect(activeSession()?.id).toBe(sessionId);
     } finally { await world.close(); }
   });
 

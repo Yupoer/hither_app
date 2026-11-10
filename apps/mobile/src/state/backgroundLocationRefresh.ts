@@ -2,14 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { location } from '../native';
+import { backgroundLocationAdapter } from '../native/backgroundLocation';
 import {
   listMyPendingLocationRefreshes,
   type PendingLocationRefresh,
 } from '../api/services/LocationService';
 import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessPending, type LocationAccess } from './locationPrivacy';
-import { reconcileBackgroundNavigation } from './backgroundJourney';
+import { loadBackgroundJourney, reconcileBackgroundNavigation } from './backgroundJourney';
+import { BACKGROUND_JOURNEY_TASK } from './backgroundJourneyController';
 import { diagnostics } from './diagnostics';
 import { syncGroup, getAcceptedLocationReceipt } from './groupSync';
 import { requireUserId } from '../api/services/_helpers';
@@ -205,6 +207,12 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
       const pending = await listMyPendingLocationRefreshes().catch(() => []);
       const matching = pending.filter(row => row.groupId === payload.groupId);
       if (!matching.length || !isLocationAccessCurrent(access)) return;
+      const journey = Platform.OS === 'ios' ? await loadBackgroundJourney() : null;
+      if (journey?.groupId === payload.groupId && journey.powerMode === 'journey'
+        && await backgroundLocationAdapter.hasStartedLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK)) {
+        await rememberPendingRefresh(payload.groupId);
+        return;
+      }
       const fix = await location.getBackgroundRefreshLocation(access).catch(() => null);
       if (!fix || !matching.some(row => fix.timestamp >= Date.parse(row.requestedAt))) {
         await rememberPendingRefresh(payload.groupId).catch(() => undefined);

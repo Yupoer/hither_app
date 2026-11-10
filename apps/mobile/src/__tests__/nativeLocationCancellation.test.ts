@@ -1,4 +1,3 @@
-jest.mock('../native/backgroundLocation',()=>({nextBackgroundLocation:jest.fn(async()=>null)}));
 const mockWatch = jest.fn();
 const mockPermission = jest.fn(async () => ({status:'granted'}));
 jest.mock('expo-location',()=>({Accuracy:{High:4,Low:2,Balanced:3},

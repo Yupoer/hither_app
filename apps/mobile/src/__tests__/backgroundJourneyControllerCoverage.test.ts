@@ -7,7 +7,9 @@ import {
   type BackgroundJourneyConfig,
 } from '../state/backgroundJourneyController';
 
-const base: BackgroundJourneyConfig = {
+jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+
+const base = {
   groupId: 'group-1',
   navigationSessionId: 'session-1',
   destinationId: 'destination-1',
@@ -19,7 +21,7 @@ const base: BackgroundJourneyConfig = {
   sequence: 1,
   travelMode: 'walk',
   sharingEnabled: true,
-};
+} satisfies BackgroundJourneyConfig;
 
 function harness(started = false) {
   const location = {
@@ -130,7 +132,8 @@ describe('background journey controller state transitions', () => {
 
 it.each([
   { teamNavigationActive: false }, { teamNavigationActive: undefined }, { target: undefined },
-  { navigationSessionId: null }, { destinationId: '' },
+  { navigationSessionId: null }, { destinationId: '' }, { destinationId: 'other-stop' },
+  { target: { ...base.target, closedAt: '2026-10-08T09:00:00Z' } },
 ])('uses passive GPS for missing actual journey intent or target: %j', async invalid => {
   const { controller, location } = harness();
   await controller.start({ ...base, powerMode: 'journey', highAccuracy: true, ...invalid });
@@ -138,19 +141,6 @@ it.each([
     accuracy: 3, timeInterval: 600_000, activityType: 1, showsBackgroundLocationIndicator: false,
   }));
 });
-
-it('migrates an old native passive owner even when its persisted power profile is unchanged', async () => {
-  const { controller, location } = harness(true);
-  const passive = backgroundPresenceConfig(base);
-  await controller.start(passive);
-  Object.assign(location, { hasMatchingLocationOwnerAsync: jest.fn(async () => false) });
-  await controller.start(passive);
-  expect(location.stopLocationUpdatesAsync).toHaveBeenCalled();
-  expect(location.startLocationUpdatesAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-    accuracy: 3, activityType: 1, showsBackgroundLocationIndicator: false,
-  }));
-});
-
 
 it('restores a same-owner passive mode if background navigation acquisition fails', async () => {
   const { controller, location } = harness(true);

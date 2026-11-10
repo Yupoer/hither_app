@@ -1195,7 +1195,7 @@
     {
       "id": "MAP-LOC-07",
       "area": "Independent slice D: journey navigation / device / routes / progress",
-      "source": "M:2880-3100 background-owner effect + :3559 recovery"
+      "source": "MapBackgroundLocationResource permission and AppState handoff -> backgroundJourney task -> useGroupState member location updates"
     },
     {
       "id": "MAP-ROUTES-01",

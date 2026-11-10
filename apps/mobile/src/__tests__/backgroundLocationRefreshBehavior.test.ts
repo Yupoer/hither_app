@@ -18,7 +18,15 @@ jest.mock('../state/groupSync', () => ({
   return { refreshAcknowledgements };
  },
 }));
-jest.mock('../state/backgroundJourney', () => ({ reconcileBackgroundNavigation: jest.fn(async () => {}) }));
+const mockLoadBackgroundJourney = jest.fn();
+const mockHasBackgroundTask = jest.fn();
+jest.mock('../state/backgroundJourney', () => ({
+  loadBackgroundJourney: () => mockLoadBackgroundJourney(),
+  reconcileBackgroundNavigation: jest.fn(async () => {}),
+}));
+jest.mock('../native/backgroundLocation', () => ({
+  backgroundLocationAdapter: { hasStartedLocationUpdatesAsync: () => mockHasBackgroundTask() },
+}));
 const mockStore = new Map<string, string>();
 const mockAsyncStorage = {
   getItem: jest.fn(async (key: string) => mockStore.get(key) ?? null),
@@ -50,7 +58,7 @@ const mockDiagnostics = {
 const mockPurgeOutbox = jest.fn(async () => undefined);
 
 jest.mock('@react-native-async-storage/async-storage', () => mockAsyncStorage);
-jest.mock('react-native', () => ({ AppState: mockAppState }));
+jest.mock('react-native', () => ({ AppState: mockAppState, Platform: { OS: 'ios' } }));
 jest.mock('expo-task-manager', () => mockTaskManager);
 jest.mock('expo-notifications', () => mockNotifications);
 jest.mock('expo-crypto', () => mockCrypto);
@@ -92,6 +100,8 @@ describe('durable location refresh recovery', () => {
     setLocationAccessContext('group-1', true, true);
     mockAppState.currentState = 'active';
     jest.clearAllMocks();
+    mockLoadBackgroundJourney.mockResolvedValue(null);
+    mockHasBackgroundTask.mockResolvedValue(false);
     mockLocation.getCurrentLocation.mockResolvedValue(fix);
     mockLocation.getBackgroundRefreshLocation.mockResolvedValue(fix);
     mockListPending.mockResolvedValue([]);
@@ -212,6 +222,23 @@ describe('durable location refresh recovery', () => {
     expect(mockLocation.getBackgroundRefreshLocation).toHaveBeenCalledTimes(1);
     expect(mockAck).toHaveBeenCalledWith('group-1', '2026-08-13T00:00:00Z');
     expect(mockIngest).toHaveBeenCalledWith([expect.objectContaining({ source: 'refresh_request' })]);
+    expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
+  });
+
+  it('answers a peer refresh from the next fix of the existing iOS journey task', async () => {
+    mockAppState.currentState = 'background';
+    mockLoadBackgroundJourney.mockResolvedValueOnce({ groupId: 'group-1', powerMode: 'journey' });
+    mockHasBackgroundTask.mockResolvedValueOnce(true);
+    const requestedAt = '2026-08-13T00:00:00Z';
+    mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt }]);
+    await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
+    expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
+    expect(mockAck).not.toHaveBeenCalled();
+
+    const next = { ...fix, timestamp: Date.now() + 1 };
+    await recoverPendingLocationRefreshFromSample('group-1', next);
+    expect(mockIngest).toHaveBeenCalledWith([expect.objectContaining({ source: 'refresh_request', capturedAt: next.timestamp })]);
+    expect(mockAck).toHaveBeenCalledWith('group-1', requestedAt);
     expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
   });
 

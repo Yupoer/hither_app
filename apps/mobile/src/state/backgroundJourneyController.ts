@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import type { Destination, Coordinates } from '../types';
 import type { TravelMode } from '../utils/geo';
 import {
@@ -119,7 +120,6 @@ export interface BackgroundLocationAdapter {
   requestForegroundPermissionsAsync(): Promise<PermissionResult>;
   requestBackgroundPermissionsAsync(): Promise<PermissionResult>;
   hasStartedLocationUpdatesAsync(taskName: string): Promise<boolean>;
-  hasMatchingLocationOwnerAsync?(taskName: string, options: object): Promise<boolean>;
   startLocationUpdatesAsync(taskName: string, options: object): Promise<void>;
   stopLocationUpdatesAsync(taskName: string): Promise<void>;
 }
@@ -171,7 +171,8 @@ export function backgroundLocationOptions(
   return {
     accuracy: accuracyCode,
     activityType: 1,
-    distanceInterval: policy.distanceInterval,
+    // iOS applies a native distance filter before JS can evaluate a heartbeat.
+    distanceInterval: Platform.OS === 'ios' && powerProfile === 'journey' ? 10 : policy.distanceInterval,
     timeInterval: policy.timeInterval,
     deferredUpdatesDistance: deferredDistance,
     deferredUpdatesInterval: deferredInterval,
@@ -179,7 +180,7 @@ export function backgroundLocationOptions(
     // pause it indefinitely after a stationary interval. Distance, accuracy and
     // deferred delivery retain the passive budget without disabling updates.
     pausesUpdatesAutomatically: false,
-    showsBackgroundLocationIndicator: powerProfile === 'journey',
+    showsBackgroundLocationIndicator: false,
     foregroundService: {
       notificationTitle:
         powerProfile === 'allDay'
@@ -313,12 +314,9 @@ export function createBackgroundJourneyController(
           JSON.stringify(persistedConfig),
         );
         const desiredOptions = backgroundLocationOptions(config.powerMode ?? 'allDay', Boolean(config.highAccuracy), nextMode);
-        const ownerMatches = !location.hasMatchingLocationOwnerAsync
-          || await location.hasMatchingLocationOwnerAsync(BACKGROUND_JOURNEY_TASK, desiredOptions);
         const profileChanged =
-          alreadyStarted && (!ownerMatches || (
-          previous != null &&
-          powerProfileKey(previous) !== powerProfileKey(config)));
+          alreadyStarted && previous != null &&
+          powerProfileKey(previous) !== powerProfileKey(config);
 
         if (alreadyStarted && profileChanged) {
           await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
