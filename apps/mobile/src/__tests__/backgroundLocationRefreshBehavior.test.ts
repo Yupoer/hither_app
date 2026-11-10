@@ -4,13 +4,13 @@ const mockSyncRequest = jest.fn();
 jest.mock('../api/services/_helpers', () => ({ requireUserId: async () => 'actor-a' }));
 jest.mock('../state/groupSync', () => ({
  getAcceptedLocationReceipt: (...args: unknown[]) => mockOriginalReceipt(...args),
- syncGroup: async ({ groupId, refresh }: any) => {
-  mockSyncRequest({ groupId, refresh });
+ syncGroup: async ({ groupId, refresh, includeSnapshot }: Parameters<typeof import('../state/groupSync').syncGroup>[0]) => {
+  mockSyncRequest({ groupId, refresh, includeSnapshot });
   const events = mockQueuedGps.splice(0);
   const result = events.length ? await mockIngest(events) : { acceptedIds: [], rejected: [] };
   const access = await require('../state/locationPrivacy').captureLocationAccess(groupId);
   const refreshAcknowledgements = [];
-  for (const ack of refresh.acknowledgements) {
+  for (const ack of refresh?.acknowledgements ?? []) {
    const accepted = access && (result.acceptedIds.includes(ack.eventId) || mockOriginalReceipt())
     ? await mockAck(groupId, ack.requestedAt) : false;
    refreshAcknowledgements.push({ ...ack, accepted: accepted === true });
@@ -147,6 +147,19 @@ describe('durable location refresh recovery', () => {
     expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps GPS idle when the refresh lookup fails in foreground or behind the lock screen', async () => {
+    mockListPending.mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline'));
+    await recoverPendingLocationRefreshes();
+    expect(mockListPending).toHaveBeenNthCalledWith(1);
+    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+
+    mockAppState.currentState = 'background';
+    await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
+    expect(mockListPending).toHaveBeenNthCalledWith(2, false);
+    expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
+    expect(mockSyncRequest).not.toHaveBeenCalled();
+  });
+
   it('keeps the durable row when the foreground fix or upload fails', async () => {
     mockListPending.mockResolvedValue([
       { groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' },
@@ -204,7 +217,7 @@ describe('durable location refresh recovery', () => {
 
   it('finishes a timed-out locked-screen refresh on the next real sample without acquiring a second fix', async () => {
     mockAppState.currentState = 'background';
-    mockLocation.getBackgroundRefreshLocation.mockResolvedValueOnce(null);
+    mockLocation.getBackgroundRefreshLocation.mockRejectedValueOnce(new Error('location request timed out'));
     mockListPending.mockResolvedValue([{ groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' }]);
     await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
     expect(mockStore.has('@hither/pending-location-refresh')).toBe(true);
@@ -212,6 +225,8 @@ describe('durable location refresh recovery', () => {
     expect(mockLocation.getBackgroundRefreshLocation).toHaveBeenCalledTimes(1);
     expect(mockAck).toHaveBeenCalledWith('group-1', '2026-08-13T00:00:00Z');
     expect(mockIngest).toHaveBeenCalledWith([expect.objectContaining({ source: 'refresh_request' })]);
+    expect(mockListPending).toHaveBeenNthCalledWith(1, false);
+    expect(mockListPending).toHaveBeenNthCalledWith(2, false);
     expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
   });
 
@@ -337,7 +352,8 @@ it('uses returned pending rows without a push marker or list read and reuses the
   expect(mockIngest).not.toHaveBeenCalled();
   expect(mockQueuedGps).toEqual([]);
   expect(mockAck).toHaveBeenCalledWith('group-1', requestedAt);
-  expect(mockSyncRequest).toHaveBeenCalledWith({ groupId: 'group-1', refresh: { acknowledgements: [{ requestedAt, eventId: 'original-event' }] } });
+  expect(mockSyncRequest).toHaveBeenCalledWith({ groupId: 'group-1', includeSnapshot: false,
+    refresh: { acknowledgements: [{ requestedAt, eventId: 'original-event' }] } });
   expect(mockListPending).not.toHaveBeenCalled();
   expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
 });

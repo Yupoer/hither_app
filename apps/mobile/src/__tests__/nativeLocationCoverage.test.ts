@@ -26,6 +26,7 @@ const mockSubscribeAccess = jest.fn();
 const mockAccessUnsubscribe = jest.fn();
 let mockAccessListener: (() => void) | undefined;
 const mockNextBackgroundLocation = jest.fn();
+const mockCaptureBackgroundRefreshFix = jest.fn();
 const mockDebugActive = jest.fn();
 const mockDebugSample = jest.fn();
 const mockSubscribeDebug = jest.fn();
@@ -35,6 +36,7 @@ jest.mock('expo-location', () => mockLocationApi);
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 jest.mock('../native/backgroundLocation', () => ({
   nextBackgroundLocation: (...args: unknown[]) => mockNextBackgroundLocation(...args),
+  captureBackgroundRefreshFix: (...args: unknown[]) => mockCaptureBackgroundRefreshFix(...args),
 }));
 jest.mock('../state/locationPrivacy', () => ({
   captureLocationAccess: (...args: unknown[]) => mockCaptureAccess(...args),
@@ -52,6 +54,7 @@ jest.mock('../native/debugLocation', () => ({
 
 import {
   classifyLocationPermissionUx,
+  getBackgroundRefreshLocation,
   getCurrentLocation,
   getNavigationStartLocation,
   getPermissionState,
@@ -335,6 +338,45 @@ describe('native location boundary lifecycle', () => {
     onPosition(nativePosition);
     expect(locationSourceHealth()).toEqual({ kind: 'receiving', lastCapturedAt: nativePosition.timestamp });
     stop();
+  });
+
+  it('reports a silent first fix as interrupted and recovers on the same foreground watch', async () => {
+    jest.useFakeTimers();
+    let onPosition!: (position: unknown) => void;
+    const remove = jest.fn();
+    mockLocationApi.watchPositionAsync.mockImplementationOnce((_options, callback) => {
+      onPosition = callback;
+      return Promise.resolve({ remove });
+    });
+    try {
+      const onSample = jest.fn();
+      const stop = await watchLocation(onSample);
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(locationSourceHealth()).toEqual({ kind: 'interrupted', message: 'location_unavailable' });
+      expect(onSample).not.toHaveBeenCalled();
+
+      onPosition(nativePosition);
+      expect(locationSourceHealth()).toEqual({ kind: 'receiving', lastCapturedAt: nativePosition.timestamp });
+      expect(onSample).toHaveBeenCalledTimes(1);
+      expect(mockLocationApi.watchPositionAsync).toHaveBeenCalledTimes(1);
+      stop();
+      expect(remove).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('drops the peer refresh result when access changes during the background fix', async () => {
+    mockAppState.currentState = 'background';
+    mockCaptureBackgroundRefreshFix.mockResolvedValueOnce(nativePosition);
+    await expect(getBackgroundRefreshLocation(mockAccess)).resolves.toMatchObject({ timestamp: nativePosition.timestamp });
+
+    mockCaptureBackgroundRefreshFix.mockImplementationOnce(async () => {
+      mockIsAccessCurrent.mockReturnValue(false);
+      return nativePosition;
+    });
+    await expect(getBackgroundRefreshLocation(mockAccess)).resolves.toBeNull();
+    expect(mockLocationApi.watchPositionAsync).not.toHaveBeenCalled();
   });
 
 });

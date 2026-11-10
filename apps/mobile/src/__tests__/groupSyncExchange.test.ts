@@ -41,15 +41,29 @@ it('sends heterogeneous core operations and GPS in one request and retains omitt
   expect(result.locationResult.acceptedIds).toEqual(['gps']);
   expect(result.locationReceipts[0].receivedAt).toBe('2026-11-02T00:00:00.123456Z');
 });
-it('uses the same location receipt without interpreting the legacy server snapshot or sending another RPC', async () => {
+it('preserves background receipts, rejections, and refresh versions without interpreting the legacy snapshot', async () => {
   const receipt = { id: 'gps', groupId: 'group', capturedAt: 1_000, receivedAt: '2026-11-02T00:00:00.123456Z' };
-  mockRpc.mockResolvedValue(reply({ locationResult: { acceptedIds: ['gps'], rejected: [] },
-    locationReceipts: [receipt] }));
-  const result = await exchangeGroup({ groupId: 'group', actorId: 'actor', operations: [], events: [event],
-    refresh: {}, includeSnapshot: false });
-  expect(result).toMatchObject({ kind: 'receipts', locationReceipts: [receipt] });
+  const staleEvent = { ...event, id: 'stale', capturedAt: 500 };
+  const rejection = { id: staleEvent.id, reason: 'stale_sample' };
+  const acknowledgement = { requestedAt: '2026-11-02T00:00:01.123456Z', eventId: receipt.id };
+  const pendingAt = '2026-11-02T00:00:02.123456Z';
+  mockRpc.mockResolvedValue(reply({
+    locationResult: { acceptedIds: ['gps'], rejected: [rejection] },
+    locationReceipts: [receipt],
+    pendingRefreshes: [{ group_id: 'group', requested_by: 'leader', requested_at: pendingAt }],
+    refreshAcknowledgements: [{ ...acknowledgement, accepted: false }],
+  }));
+  const refresh = { acknowledgements: [acknowledgement] };
+  const result = await exchangeGroup({ groupId: 'group', actorId: 'actor', operations: [], events: [event, staleEvent],
+    refresh, includeSnapshot: false });
+  expect(result).toMatchObject({
+    kind: 'receipts', locationReceipts: [receipt],
+    locationResult: { acceptedIds: ['gps'], rejected: [rejection] },
+    pendingRefreshes: [{ groupId: 'group', requestedBy: 'leader', requestedAt: pendingAt }],
+    refreshAcknowledgements: [{ ...acknowledgement, accepted: false }],
+  });
   expect(mockRpc).toHaveBeenCalledTimes(1);
-  expect(mockRpc).toHaveBeenCalledWith('sync_group', expect.objectContaining({ p_refresh: { includeSnapshot: false } }));
+  expect(mockRpc).toHaveBeenCalledWith('sync_group', expect.objectContaining({ p_refresh: { ...refresh, includeSnapshot: false } }));
   expect(mockMapRecovery).not.toHaveBeenCalled();
 });
 it('shrinks an oversized suffix without pretending its GPS was submitted or ACKed', async () => {
