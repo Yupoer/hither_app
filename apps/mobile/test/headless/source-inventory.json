@@ -1767,7 +1767,7 @@
     "file": "src/components/BottomSheet.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "02ff7866d9c39e1dd2bbb58820dd83286dcd3f7f8f6b1bcf5cf8af8d61d07b7c"
+    "hash": "b0af5a607ff6b757fb6608edf11a1182064e51b2f5019e8d5141da3cdec7861f"
   },
   {
     "file": "src/components/BottomSheet.tsx",
@@ -3336,6 +3336,12 @@
     "hash": "b819c03f7c0e339f34886bf079eef55ff69c724f515343d154cb0f4a84234ac2"
   },
   {
+    "file": "src/components/mapSheetChrome.ts",
+    "kind": "export",
+    "name": "MAP_SHEET_PANE_TABS_HEIGHT",
+    "hash": "68e02b58727ed73ace7d24a7f49559a83c1c049a73ac367912a39140e6633bcd"
+  },
+  {
     "file": "src/components/sheetMath.ts",
     "kind": "export",
     "name": "nearestDetent",
@@ -4521,7 +4527,7 @@
     "file": "src/native/location.ts",
     "kind": "export",
     "name": "getNavigationStartLocation",
-    "hash": "1080c3fe50fb5ff69a39ae21336a0132957deca549152d512582cc6418e72853"
+    "hash": "dcf55dacdf73690893a8e66a81d0ca4256cc368843790fcddafbd9c26a311d08"
   },
   {
     "file": "src/native/location.ts",
@@ -5805,13 +5811,19 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "128588304a549bd99917f8f15b1dd10807e0f726e12ccf0970e86c4597d1567d"
+    "hash": "a1c1e57762d30c133215dd7ca3a9d584f72c7095b6e089ed4ec79b10ecf4db76"
   },
   {
     "file": "src/screens/MapScreen.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
     "hash": "5cacaaf47a2bc0cf03a0ed621de0f877e6931b974647b858493e16335c54bd67"
+  },
+  {
+    "file": "src/screens/MapScreen.tsx",
+    "kind": "lifecycle",
+    "name": "useFocusEffect",
+    "hash": "2dbbf5c4ae35d93e52847b41024277083fcbca6f1919d63ddc64fd692adefb20"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -8151,7 +8163,7 @@
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
     "kind": "export",
     "name": "useJourneyNavigation",
-    "hash": "0d1a19d62afbb5a7db69ddc6a1d2d35ce9297bedcad604a1dcaa72935ac906ae"
+    "hash": "574eedf4cb7ee67f09e0ae49dfab311aac6b5dead902098c7011707ddbc4f4ff"
   },
   {
     "file": "src/screens/MapScreen/hooks/useJourneyNavigation.ts",
@@ -9321,7 +9333,7 @@
     "file": "src/state/coreOperationOutbox.ts",
     "kind": "export",
     "name": "createCoreOperationOutbox",
-    "hash": "886f2e60cac7275cfe9ca60a76fffc0fe3b969621361260ec28f22ab1aa640c4"
+    "hash": "817ca1874a71d77f98f818132bae448acec22a8252670f12319ff07fcbd7a97b"
   },
   {
     "file": "src/state/coreOperationOutbox.ts",

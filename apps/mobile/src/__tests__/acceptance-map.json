@@ -2308,9 +2308,9 @@
     {
       "parent": 311,
       "child": 311,
-      "acceptance": "BottomSheet arbitrates cancellation before close/resume and detent snap, preserves native scroll/gesture identity, and fences stale close completions across reopen, unmount and StrictMode.",
+      "acceptance": "BottomSheet preserves the gesture's release spring when its detent is accepted, arbitrates close/resume and detent snaps, and fences stale completions across reopen, unmount and StrictMode.",
       "testFile": "foregroundSheetLifecycle.test.ts",
-      "testNamePattern": "keeps native scroll|orders same-commit|replays bottom-sheet|retains a committed bottom-sheet|cancels mid-dismiss|failed gesture"
+      "testNamePattern": "keeps the release spring|keeps native scroll|orders same-commit|replays bottom-sheet|retains a committed bottom-sheet|cancels mid-dismiss|failed gesture"
     },
     {
       "parent": 311,
@@ -2875,7 +2875,7 @@
     {
       "parent": 325,
       "child": 325,
-      "acceptance": "Actual Map card Start and End preserve their original durable FIFO identities through an abrupt offline restart, then replay to paused peer state without completing the stop.",
+      "acceptance": "Map Start and End update locally during a held sync and preserve their durable FIFO identities through offline restart. A revoked leader's rejected Start restores the local journey.",
       "testFile": "headlessJourneyEntriesScenario.test.ts",
       "testNamePattern": "actual Map offline journey parent on"
     },
@@ -3099,7 +3099,7 @@
     {
       "parent": 375,
       "child": 375,
-      "acceptance": "The actual Map host mounts content during a held drag, unmounts at idle peek, and requests the native iOS user-location indicator.",
+      "acceptance": "The actual Map host reveals the pane during a held drag once the tab selector fits, hides it again when collapsing, and requests the native iOS user-location indicator.",
       "testFile": "headlessPresentation.test.ts",
       "testNamePattern": "mounts the map sheet body during a held drag"
     },

@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
 import { requireNativeView } from 'expo';
+import { MAP_SHEET_PANE_TABS_HEIGHT } from '../../../components/mapSheetChrome';
 import type { SheetPaneKey } from '../../../store/types';
 import { selectionTick } from '../../../utils/haptics';
 import { MemberInboxBadge } from './MemberInboxBadge';
@@ -82,12 +83,12 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
 const styles = StyleSheet.create({
   track: {
     width: '100%',
-    minHeight: 54,
+    minHeight: MAP_SHEET_PANE_TABS_HEIGHT.ios,
     justifyContent: 'center',
   },
   nativeSelector: {
     width: '100%',
-    height: 54,
+    height: MAP_SHEET_PANE_TABS_HEIGHT.ios,
   },
   measurementLayer: {
     ...StyleSheet.absoluteFill,

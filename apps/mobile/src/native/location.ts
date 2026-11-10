@@ -29,8 +29,12 @@ export type NavigationStartLocation =
 export async function getNavigationStartLocation(
   getLatestFix: () => LocationSample | null,
 ): Promise<NavigationStartLocation> {
-  if (!await Location.hasServicesEnabledAsync()) return { kind: 'servicesDisabled' };
-  if ((await Location.getForegroundPermissionsAsync()).status !== 'granted') return { kind: 'permissionDenied' };
+  const [servicesEnabled, permission] = await Promise.all([
+    Location.hasServicesEnabledAsync(),
+    Location.getForegroundPermissionsAsync(),
+  ]);
+  if (!servicesEnabled) return { kind: 'servicesDisabled' };
+  if (permission.status !== 'granted') return { kind: 'permissionDenied' };
   return { kind: 'available', fix: getLatestFix() };
 }
 

@@ -77,9 +77,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { useVisibleUi, isForegroundUi } from '../state/foregroundUi';
+import { useVisibleUi, isForegroundUi, subscribeForegroundUi } from '../state/foregroundUi';
 import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
+import { MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
 import {
   cameraAfterSuccessfulAdd,
   cameraOnLongPress,
@@ -130,7 +131,7 @@ import {
   ARRIVAL_RADIUS_MAX_M,
 } from '../state/PreferencesContext';
 import { displayMemberAvatar } from '../constants/avatars';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import type { CoreOperation } from '../types/coreData';
 import { getCoreOperationOutbox } from '../state/coreDataSync';
 import { effectiveArrivalForOperation, enqueueAutomaticArrival, enqueueArrival, syncArrival, projectArrivals, projectPersonalArrivals, personalArrivalEvent } from '../state/arrivalSync';
@@ -213,7 +214,7 @@ import {
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
 import { diagnostics } from '../state/diagnostics';
-import { getNavigationStartLocation, requestPermission as requestLocationPermission, type LocationSample } from '../native/location';
+import { getNavigationStartLocation, requestPermission as requestLocationPermission, type LocationSample, type NavigationStartLocation } from '../native/location';
 import {
   recoverPendingLocationRefreshes,
 } from '../state/backgroundLocationRefresh';
@@ -725,12 +726,14 @@ export default function MapScreen({ route, navigation }: Props) {
   const heightSV = useSharedValue(detents[0]);
   const [detent, setDetent] = useState(0);
   const [sheetExposed, setSheetExposed] = useState(false);
+  const paneTabsHeight = Platform.OS === 'ios' ? MAP_SHEET_PANE_TABS_HEIGHT.ios : MAP_SHEET_PANE_TABS_HEIGHT.android;
+  const bodyRevealHeight = detents[0] + paneTabsHeight + 2 * StyleSheet.hairlineWidth;
   useAnimatedReaction(
-    () => heightSV.value > detents[0],
+    () => heightSV.value >= bodyRevealHeight,
     (exposed, previous) => {
       if (exposed !== previous) runOnJS(setSheetExposed)(exposed);
     },
-    [detents],
+    [bodyRevealHeight],
   );
   /** Mid/Full sheet body: 成員 · 路線 · 工具 · 商店. */
   const [selectedSection, setSelectedSection] = useState<SheetPaneKey>('members');
@@ -1119,7 +1122,31 @@ export default function MapScreen({ route, navigation }: Props) {
   const navigationOriginRef = useRef<Coordinates | undefined>(undefined);
   const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
   const navigationStartSampleRef = useRef<LocationSample | null>(null);
-  const getStartLocation = useCallback(() => getNavigationStartLocation(() => navigationStartSampleRef.current), []);
+  const navigationStartAuthorized = useRef(false);
+  useFocusEffect(useCallback(() => {
+    let probe: Promise<NavigationStartLocation> | null = null;
+    const refreshAvailability = () => {
+      navigationStartAuthorized.current = false;
+      const next = isForegroundUi() ? getNavigationStartLocation(() => null) : null;
+      probe = next;
+      void next?.then(result => {
+        if (probe === next) navigationStartAuthorized.current = result.kind === 'available';
+      }, () => undefined);
+    };
+    const unsubscribe = subscribeForegroundUi(refreshAvailability);
+    refreshAvailability();
+    return () => {
+      unsubscribe();
+      probe = null;
+      navigationStartAuthorized.current = false;
+    };
+  }, []));
+  const getStartLocation = useCallback((): NavigationStartLocation | Promise<NavigationStartLocation> => {
+    if (navigationStartAuthorized.current && isForegroundUi()) {
+      return { kind: 'available', fix: navigationStartSampleRef.current };
+    }
+    return getNavigationStartLocation(() => navigationStartSampleRef.current);
+  }, []);
   const {
     lifecycle: journeyNavigationLifecycle,
     navigationStoppedLocally,

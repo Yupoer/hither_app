@@ -705,7 +705,7 @@
     },
     {
       "id": "NAV-01",
-      "title": "Actual Start and End preserve terminal intent through held ACK and restart",
+      "title": "Actual Start and End run locally, retry through restart, and restore the journey after role rejection",
       "critical": true,
       "sources": [
         "src/screens/MapScreen/hooks/useJourneyNavigation.ts"
@@ -746,6 +746,22 @@
         {
           "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
           "pattern": "gives distinct Settings guidance",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "starts and ends locally while the first team sync is held",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessJourneyEntriesScenario.test.ts",
+          "pattern": "restores the local journey when the server rejects a revoked leader",
           "platforms": [
             "ios",
             "android"

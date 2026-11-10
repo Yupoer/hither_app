@@ -1130,7 +1130,7 @@
     {
       "id": "MAP-NAV-01",
       "area": "Independent slice D: journey navigation / device / routes / progress",
-      "source": "GatheringCarousel Start → useJourneyNavigation.startNavigation → native/location.getNavigationStartLocation"
+      "source": "Map focus preflights native/location.getNavigationStartLocation; GatheringCarousel Start uses that grant via useJourneyNavigation.startNavigation"
     },
     {
       "id": "MAP-NAV-02",

@@ -43,10 +43,14 @@ describe.each(['ios', 'android'])('real App native host foundation on %s', platf
         kind: 'gesture', testId: 'map-bottom-sheet', phase, value: { translationY, velocityY: 0 },
       });
       await gesture('onBegin');
+      await gesture('onUpdate', -24);
+      expect(await observeSheet()).toEqual({ ...peek, height: peek.height + 24 });
       await gesture('onUpdate', -100);
       expect(await observeSheet()).toEqual({ height: peek.height + 100, settledIndex: 0, bodyMounted: true });
       await gesture('onUpdate', -200);
       expect(await observeSheet()).toEqual({ height: peek.height + 200, settledIndex: 0, bodyMounted: true });
+      await gesture('onUpdate', -24);
+      expect(await observeSheet()).toEqual({ ...peek, height: peek.height + 24 });
       await gesture('onUpdate', 0);
       expect(await observeSheet()).toEqual(peek);
       await gesture('onEnd');

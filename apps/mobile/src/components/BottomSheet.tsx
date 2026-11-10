@@ -64,6 +64,7 @@ interface SheetMotionInput {
 interface SheetMotionOwner {
   input: SheetMotionInput | null;
   replay: boolean;
+  gestureTarget: { index: number; detentsKey: string } | null;
 }
 
 function SheetMotionCommit({ input, owner, detents, dismissDistance, gestureClosePending, dismissEpoch, dismiss, dismissComplete }: {
@@ -77,17 +78,19 @@ function SheetMotionCommit({ input, owner, detents, dismissDistance, gestureClos
   dismissComplete: () => void;
 }) {
   useMountEffect(() => {
-    const previous = owner.current.input;
-    const replay = owner.current.replay;
+    const { input: previous, replay, gestureTarget } = owner.current;
     const { foreground, height, dismissY, dismissTranslateY, dismissRequested, index } = input;
     const policyChanged = replay || !previous || !Object.is(previous.foreground, foreground)
       || !Object.is(previous.height, height) || !Object.is(previous.dismissY, dismissY);
     const closeChanged = policyChanged || !previous
       || !Object.is(previous.dismissTranslateY, dismissTranslateY)
       || !Object.is(previous.dismissRequested, dismissRequested);
-    const snapChanged = replay || !previous || !Object.is(previous.foreground, foreground)
-      || !Object.is(previous.detentsKey, input.detentsKey) || !Object.is(previous.index, index);
-    owner.current = { input, replay: false };
+    const detentsChanged = !previous || previous.detentsKey !== input.detentsKey;
+    const snapChanged = replay || !previous || previous.foreground !== foreground
+      || detentsChanged || previous.index !== index;
+    const acceptedGesture = !policyChanged && !detentsChanged
+      && gestureTarget?.index === index && gestureTarget.detentsKey === input.detentsKey;
+    owner.current = { input, replay: false, gestureTarget: null };
 
     // Cancellation, resumed close and remeasure share one writer in that order.
     if (policyChanged) {
@@ -131,7 +134,7 @@ function SheetMotionCommit({ input, owner, detents, dismissDistance, gestureClos
         } else startTranslateDismiss(false);
       }
     }
-    if (snapChanged && foreground && !gestureClosePending.value) {
+    if (snapChanged && !acceptedGesture && foreground && !gestureClosePending.value) {
       const nextIndex = Math.max(0, Math.min(index, detents.length - 1));
       height.value = withSpring(detents[nextIndex], { ...SPRING, velocity: 0 });
     }
@@ -276,7 +279,7 @@ export default React.memo(function BottomSheet({
   const gestureClosePending = useSharedValue(false);
   const dismissEpoch = useSharedValue(0);
   const dismissDistanceSV = useDerivedValue(() => dismissDistance ?? 1000, [dismissDistance]);
-  const motionOwner = useRef<SheetMotionOwner>({ input: null, replay: true });
+  const motionOwner = useRef<SheetMotionOwner>({ input: null, replay: true, gestureTarget: null });
   useMountEffect(() => () => {
     const current = motionOwner.current.input;
     motionOwner.current.replay = true;
@@ -292,15 +295,14 @@ export default React.memo(function BottomSheet({
     (endH: number, velocityY: number) => {
       const d = detentsRef.current;
       const target = settleTarget({ vy: velocityY / 1000 }, endH, d);
+      const owner = motionOwner.current;
+      owner.gestureTarget = owner.input?.index === target ? null : { index: target, detentsKey: d.join(',') };
       height.value = withSpring(d[target], { ...SPRING, velocity: -velocityY });
       onIndexChangeRef.current(target);
     },
     [height],
   );
 
-  // Snap when detent *values* change (rotation / header re-measure).
-  // Gesture-driven index changes settle via `settle` (not listed as a dep).
-  // Use zero restart velocity so a mid-flight remeasure doesn't "kick back".
   const detentsKey = detents.join(',');
   const [motionInput, setMotionInput] = useState({ foreground, height, dismissY, dismissTranslateY,
     dismissRequested, detentsKey, index, generation: 0 });
@@ -567,6 +569,7 @@ export default React.memo(function BottomSheet({
         )}
         <AnimatedScrollView
           ref={scrollRef}
+          style={styles.viewport}
           // Only enabled once truly resting at the last detent. The Pan
           // worklet already refuses to enter MODE_SCROLL below full (see the
           // decision table above), so this was previously dead protection —
@@ -647,6 +650,7 @@ const styles = StyleSheet.create({
     // Apple-like separator gray (not transparent → material white halo).
     borderColor: glass.hairlineSoft,
   },
+  viewport: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
   headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
   // Tighter top so peek chrome sits closer to the sheet edge.
   grabZone: { paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
