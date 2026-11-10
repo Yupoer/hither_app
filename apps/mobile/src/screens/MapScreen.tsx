@@ -1119,9 +1119,13 @@ export default function MapScreen({ route, navigation }: Props) {
   // --- Journey navigation + Live Activity ----------------------------------
   // Device location depends on navigation's power policy and is declared below.
   // Commands read this bridge at tap time, after the current render has settled.
-  const navigationOriginRef = useRef<Coordinates | undefined>(undefined);
-  const getNavigationOrigin = useCallback(() => navigationOriginRef.current, []);
   const navigationStartSampleRef = useRef<LocationSample | null>(null);
+  const getNavigationOrigin = useCallback(() => {
+    const fix = navigationStartSampleRef.current;
+    return fix && canEvaluateSynchronizedArrival({
+      sampledAt: fix.timestamp, now: Date.now(), accuracyM: fix.accuracy, radiusM: localArrivalRadiusM,
+    }) ? fix.coordinates : undefined;
+  }, [localArrivalRadiusM]);
   const navigationStartAuthorized = useRef(false);
   useFocusEffect(useCallback(() => {
     let probe: Promise<NavigationStartLocation> | null = null;
@@ -1221,7 +1225,7 @@ export default function MapScreen({ route, navigation }: Props) {
   });
   const {
     deviceCoords,
-    sourceHealth,
+    sourceHealthKind,
     deviceAccuracyM,
     deviceCoordsAcceptedAtMs,
     appState,
@@ -1237,15 +1241,16 @@ export default function MapScreen({ route, navigation }: Props) {
     navigationTargetKey: routeFixKey,
     sharingEnabled: preferencesReady && sharingEnabled,
     hasMembership: members.some(m => m.userId === user?.id),
-    onIncomingSample: () => incomingArrivalHandlerRef.current(),
+    onIncomingSample: sample => {
+      navigationStartSampleRef.current = sample;
+      incomingArrivalHandlerRef.current();
+    },
   });
   const latestNavigationSample = preferencesReady && sharingEnabled ? latestLocationSampleRef.current : null;
   navigationStartSampleRef.current = latestNavigationSample;
-  const navigationRouteOrigin = latestNavigationSample && canEvaluateSynchronizedArrival({
-    sampledAt: latestNavigationSample.timestamp, now: Date.now(),
-    accuracyM: latestNavigationSample.accuracy, radiusM: localArrivalRadiusM,
-  }) ? latestNavigationSample.coordinates : undefined;
-  navigationOriginRef.current = navigationRouteOrigin;
+  const navigationRouteOrigin = getNavigationOrigin();
+  const progressSampledAt = latestNavigationSample
+    ? Math.min(Date.now(), latestNavigationSample.timestamp) : deviceCoordsAcceptedAtMs;
   const navigationStartFrameLifecycle = (
     <MapNavigationStartFrameResource
       deviceCoords={navigationRouteOrigin ?? null}
@@ -1760,10 +1765,7 @@ export default function MapScreen({ route, navigation }: Props) {
     mapFocused,
     sharingEnabled,
     appState,
-    deviceCoordsAcceptedAtMs,
     commitPersonalArrival,
-    deviceAccuracyM,
-    deviceCoords,
     journeyActive,
     pendingLeaderTargetId,
     loadGatheringWorkflow,
@@ -2142,6 +2144,7 @@ export default function MapScreen({ route, navigation }: Props) {
       journeyActive={journeyActive}
       navTarget={navTarget}
       deviceCoordsAcceptedAtMs={deviceCoordsAcceptedAtMs}
+      latestLocationSampleRef={latestLocationSampleRef}
       setProgressClockMs={setProgressClockMs}
       PERSONAL_PROGRESS_STALE_MS={PERSONAL_PROGRESS_STALE_MS}
     />
@@ -2157,7 +2160,7 @@ export default function MapScreen({ route, navigation }: Props) {
       ? `${groupId}:${navTarget.id}:${navigationSessionState.session?.id ?? state?.group.journeyStartedAt ?? ''}`
       : null,
     deviceCoords,
-    sampledAtMs: deviceCoordsAcceptedAtMs ?? undefined,
+    sampledAtMs: progressSampledAt ?? undefined,
     targetCoords: navTarget?.coordinates,
     initialDistanceM,
     startCoords: journeyStartCoords,
@@ -2183,8 +2186,8 @@ export default function MapScreen({ route, navigation }: Props) {
     arrivalRadiusM: localArrivalRadiusM,
     // Age from single stale-threshold clock while journey is active.
     sampleAgeMs:
-      deviceCoordsAcceptedAtMs != null
-        ? Math.max(0, progressClockMs - deviceCoordsAcceptedAtMs)
+      progressSampledAt != null
+        ? Math.max(0, progressClockMs - progressSampledAt)
         : null,
     staleAfterMs: PERSONAL_PROGRESS_STALE_MS,
     fallbackDistanceM: liveDistance,
@@ -3198,7 +3201,7 @@ export default function MapScreen({ route, navigation }: Props) {
     travelMode,
     navTarget,
     activeDestinationArrivals,
-    deviceCoordsAcceptedAtMs,
+    deviceCoordsAcceptedAtMs: progressSampledAt,
     myScopeId,
     sharingEnabled,
     handleSharingEnabledChange,
@@ -4173,9 +4176,9 @@ export default function MapScreen({ route, navigation }: Props) {
   return <>{screenLifecycle}{(
     <>
     <View style={styles.flex}>
-      {sharingEnabled && (sourceHealth.kind === 'interrupted' || sourceHealth.kind === 'permissionDenied') && (
+      {sharingEnabled && (sourceHealthKind === 'interrupted' || sourceHealthKind === 'permissionDenied') && (
         <View accessibilityRole="alert" style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#6b3a20' }}>
-          <Text style={{ color: '#fff' }}>{t(sourceHealth.kind === 'permissionDenied' ? 'map.locationPermissionDenied' : 'map.locationInterrupted')}</Text>
+          <Text style={{ color: '#fff' }}>{t(sourceHealthKind === 'permissionDenied' ? 'map.locationPermissionDenied' : 'map.locationInterrupted')}</Text>
         </View>
       )}
       {/* Passive mode unmounts the map to free GPU/native tiles; switch-back remounts. */}

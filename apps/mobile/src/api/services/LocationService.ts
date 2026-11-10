@@ -128,11 +128,11 @@ export async function requestGroupLocationRefresh(
   return result;
 }
 
-export async function listMyPendingLocationRefreshes(): Promise<PendingLocationRefresh[]> {
+export async function listMyPendingLocationRefreshes(includeSnapshot?: false): Promise<PendingLocationRefresh[]> {
   const access = await captureLocationAccess();
   if (!access) return [];
   const { syncGroup } = await import('../../state/groupSync');
-  return (await syncGroup({ groupId: access.groupId })).pendingRefreshes;
+  return (await syncGroup({ groupId: access.groupId, includeSnapshot })).pendingRefreshes;
 }
 
 export async function ackMyLocationRefresh(groupId: string, requestedAt: string, eventId?: string): Promise<boolean> {

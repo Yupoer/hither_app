@@ -21,6 +21,7 @@ import {
 import {
   createMotionState,
   locationPolicy,
+  locationStaleAfterMs,
   isForegroundLocationState,
   syncTimingScale,
   reduceMotionState,
@@ -78,10 +79,10 @@ export function useDeviceLocation({
   powerMode = highAccuracy || teamNavigationActive ? 'journey' : 'foreground',
   onIncomingSample,
 }: UseDeviceLocationParams) {
-  const sourceHealth = useSyncExternalStore(subscribeLocationSourceHealth, locationSourceHealth);
+  const sourceHealthKind = useSyncExternalStore(subscribeLocationSourceHealth, () => locationSourceHealth().kind);
   const [deviceCoords, setDeviceCoords] = useState<Coordinates | null>(null);
   const [deviceAccuracyM, setDeviceAccuracyM] = useState<number | null>(null);
-  /** Original capture time of the latest accepted sample, including stationary fixes. */
+  /** Capture time used when the display changes position or regains freshness. */
   const [deviceCoordsAcceptedAtMs, setDeviceCoordsAcceptedAtMs] = useState<number | null>(null);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const foregroundLocationAvailable = isForegroundLocationState(appState);
@@ -123,9 +124,17 @@ export function useDeviceLocation({
     if (!groupIdRef.current || !sharingEnabledRef.current || !hasMembershipRef.current
       || !isForegroundLocationState(AppState.currentState) || !isUsableLocationSample(sample)
       || sample.timestamp <= lastSampleAtRef.current || sample.timestamp > now + 120_000) return false;
+    const previousTimestamp = lastSampleAtRef.current;
     lastSampleAtRef.current = sample.timestamp;
     latestSampleRef.current = sample;
     latestUploadRef.current = null;
+    const staleAfter = locationStaleAfterMs(highAccuracyRef.current, powerModeRef.current);
+    const refreshDisplayAge = previousTimestamp
+      ? now - previousTimestamp >= staleAfter
+      : uiGateRef.current.lastCoords !== null;
+    if (refreshDisplayAge && now - sample.timestamp < staleAfter) {
+      setDeviceCoordsAcceptedAtMs(Math.min(now, sample.timestamp));
+    }
     try {
       onIncomingSampleRef.current?.(sample, Math.min(now, sample.timestamp));
     } catch {
@@ -142,10 +151,10 @@ export function useDeviceLocation({
     const coords = sample.coordinates;
     if (!groupIdRef.current || !sharingEnabledRef.current || !hasMembershipRef.current
       || !isForegroundLocationState(AppState.currentState) || !isUsableLocationSample(sample)) return false;
-    setDeviceCoordsAcceptedAtMs(Math.min(now, sample.timestamp));
     if (!options.immediate && !shouldAcceptUiSample(coords, now, uiGateRef.current, policyNow())) {
       return false;
     }
+    setDeviceCoordsAcceptedAtMs(Math.min(now, sample.timestamp));
     setDeviceCoords(coords);
     deviceCoordsRef.current = coords;
     setDeviceAccuracyM(
@@ -314,11 +323,11 @@ export function useDeviceLocation({
 
   return {
     lifecycle,
-    sourceHealth,
+    sourceHealthKind,
     deviceCoords,
     /** Horizontal accuracy of the last accepted device fix, metres. */
     deviceAccuracyM,
-    /** When the last UI-accepted sample was applied (ms since epoch). */
+    /** Capture time of the last displayed position or freshness change. */
     deviceCoordsAcceptedAtMs,
     /** Exposed so MapScreen can own a single GPS path (FG watch vs BG task). */
     appState,
@@ -450,7 +459,7 @@ function DeviceLocationProfile({ owner, resources, input }: {
     if (targetChanged) owner.uiGateRef.current = { lastCoords: null, lastAtMs: 0 };
     const foregroundAllowed = Boolean(groupId && isForegroundLocationState(appState) && sharingEnabled && hasMembershipResolved);
     const watchAllowed = shouldWatchLocation(groupId ?? null, appState, sharingEnabled, hasMembershipResolved);
-    if (bootstrapChanged && foregroundAllowed
+    if (bootstrapChanged && foregroundAllowed && !(watchChanged && watchAllowed)
       && !owner.forceSyncInFlightRef.current) {
       owner.forceSyncInFlightRef.current = true;
       void refreshDeviceLocation().catch(() => null).finally(() => { owner.forceSyncInFlightRef.current = false; });

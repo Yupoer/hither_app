@@ -9,6 +9,10 @@ import type { CoreOperation } from '../types/coreData';
 
 type ExchangeReply = Awaited<ReturnType<typeof exchangeGroup>>;
 export type GroupSyncResult = ExchangeReply & { core: CoreOutboxFlushResult; location: LocationFlushResult };
+type GroupSyncInput = {
+  groupId: string; refresh?: GroupRefreshExchange; maxCoreEntries?: number; maxLocationEntries?: number;
+  includeSnapshot?: boolean;
+};
 const flights = new Map<string, Promise<GroupSyncResult>>();
 const serial = new Map<string, Promise<unknown>>();
 const listeners = new Set<(actorId: string, recovery: GroupRecoverySnapshot, pendingRefreshes: ExchangeReply['pendingRefreshes']) => void>();
@@ -23,10 +27,13 @@ export function getAcceptedLocationReceipt(actorId: string, groupId: string, cap
   return receipt?.capturedAt === capturedAt ? receipt : undefined;
 }
 
-export async function syncGroup(input: { groupId: string; refresh?: GroupRefreshExchange; maxCoreEntries?: number; maxLocationEntries?: number }): Promise<GroupSyncResult> {
+export function syncGroup(input: GroupSyncInput & { includeSnapshot?: true }): Promise<Extract<GroupSyncResult, { kind: 'recovery' }>>;
+export function syncGroup(input: GroupSyncInput): Promise<GroupSyncResult>;
+export async function syncGroup(input: GroupSyncInput): Promise<GroupSyncResult> {
   const actorId = await requireUserId();
   const lane = JSON.stringify([actorId, input.groupId]);
-  const key = JSON.stringify([lane, input.refresh ?? {}, input.maxCoreEntries ?? 20, input.maxLocationEntries ?? 50]);
+  const includeSnapshot = input.includeSnapshot !== false;
+  const key = JSON.stringify([lane, input.refresh ?? {}, input.maxCoreEntries ?? 20, input.maxLocationEntries ?? 50, includeSnapshot]);
   const existing = flights.get(key);
   if (existing) return existing;
   const run = async () => {
@@ -42,7 +49,7 @@ export async function syncGroup(input: { groupId: string; refresh?: GroupRefresh
         const permittedEvents = access ? events : [];
         try {
           reply = await exchangeGroup({ groupId: input.groupId, actorId, operations, events: permittedEvents,
-            refresh: input.refresh ?? {}, signal: access?.signal });
+            refresh: input.refresh ?? {}, includeSnapshot, signal: access?.signal });
         } catch (error) {
           exchangeError = error;
           throw error;
@@ -62,7 +69,9 @@ export async function syncGroup(input: { groupId: string; refresh?: GroupRefresh
       const key = JSON.stringify([actorId, input.groupId]);
       if (receipt.capturedAt >= (receipts.get(key)?.capturedAt ?? -Infinity)) receipts.set(key, receipt);
     }
-    for (const listener of listeners) listener(actorId, reply.recovery, reply.pendingRefreshes);
+    if (reply.kind === 'recovery') {
+      for (const listener of listeners) listener(actorId, reply.recovery, reply.pendingRefreshes);
+    }
     return { ...reply, core, location };
   };
   const previous = serial.get(lane) ?? Promise.resolve();

@@ -6,11 +6,12 @@
   "excludedRetryScheduling": "Replay fixes the external AppState boundary to background and invokes a second sync explicitly after advancing its controlled clock. scheduleLocationOutboxRetry, timer firing, foreground retry cadence and delivery liveness are outside this bound; internal queue selection/settlement algorithms remain real.",
   "excludedOwners": {
     "apps/mobile/src/api/services/GroupSyncService.ts": "exchangeGroup serializes the captured p_actor_id. Mocked by this replay; verify in owning adapter tests.",
-    "supabase/migrations/20261102152359_group_sync_exchange.sql": "sync_group compares p_actor_id with auth.uid() before core, GPS or refresh effects. Not executed by this replay or proved by this model; verify actual SQL mismatch cases."
+    "supabase/migrations/20261102152359_group_sync_exchange.sql": "sync_group compares p_actor_id with auth.uid() before core, GPS or refresh effects. Not executed by this replay or proved by this model; verify actual SQL mismatch cases.",
+    "supabase/migrations/20261110153359_optional_snapshot_group_sync_receipts.sql": "Maintains the captured actor check and skips only the snapshot for opt-in receipt replies; see the database regression for the actual SQL behavior."
   },
   "sources": {
     "apps/mobile/src/state/groupSync.ts": {
-      "sha256": "2f6ba2afab462e6caf40caf7c7cda3c82c075710d2870e10e04d2278e109ace0",
+      "sha256": "48963866c25030071f1b815ce2bfba33d4f80bf82e59f7dca7a0179b56e687b8",
       "functions": [
         "syncGroup",
         "subscribeGroupSyncSnapshots"
@@ -22,10 +23,10 @@
         "Publish",
         "Finish"
       ],
-      "contract": "One actor/group mixed exchange; final actor check gates synchronous publication of the recovery snapshot and its pendingRefreshes to the same listeners. Original mixed-transport failures propagate through both missing-reply seams after durable retry bookkeeping. Replay requires exact successful first/retry publication counts, expected first-call success or lost_reply/account_changed domain error, command forwarding and actor fencing. It does not cover command execution or GPS freshness."
+      "contract": "One actor/group mixed exchange; final actor check gates synchronous publication of the full recovery snapshot and its pendingRefreshes to the same listeners. Original mixed-transport failures propagate through both missing-reply seams after durable retry bookkeeping. Replay requires exact successful first/retry publication counts, expected first-call success or lost_reply/account_changed domain error, command forwarding and actor fencing. Receipt-only mode shares the lane and settlement but does not publish a snapshot; it is covered by the owning transport and headless tests, outside this publication replay. This does not cover command execution or GPS freshness."
     },
     "apps/mobile/src/state/locationOutbox.ts": {
-      "sha256": "1bc9aeb82c8b8b882c7846eeffaafc37b222f2ac0bcc96ae39d6a43e471a9ff6",
+      "sha256": "b2571f80003dc81b0ea80aae298c2e086477bed680ee9ada09993291fce7be64",
       "functions": [
         "createLocationOutbox.runFlush",
         "createLocationOutbox.exchange",

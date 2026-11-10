@@ -158,11 +158,14 @@ describe('headless harness contract', () => {
     try {
       const a = await world.device({ id: 'a', userId: LEADER });
       await a.perform('group.observe', { groupId: GROUP_ID });
-      await world.waitFor(a, (value: any) => value.external.watches >= 2, 'startup location owners');
+      await world.waitFor(a, (value: any) => value.external.watches === 1, 'continuous location owner');
+      const refresh = a.perform('location.refresh').catch((error: Error) => error);
+      await world.waitFor(a, (value: any) => value.external.watches === 2, 'explicit one-shot and continuous owner');
       await a.input({ kind: 'permissionRead', action: 'holdNext' });
       await a.gps(25.03, 121.53);
       await world.waitFor(a, (value: any) => value.external.heldPermissionReads === 1, 'held native permission result');
       await world.close();
+      await refresh;
       expect(a.disposal.heldPermissionReads).toBe(0);
       expect(a.disposal.watches).toBe(0);
       expect(a.disposal.pending).toBe(0);
@@ -175,7 +178,7 @@ describe('headless harness contract', () => {
     try {
       const a = await world.device({ id: 'a', userId: LEADER });
       await a.perform('group.observe', { groupId: GROUP_ID });
-      await world.waitFor(a, (value: any) => value.external.watches >= 2, 'native one-shot and continuous owners');
+      await world.waitFor(a, (value: any) => value.external.watches === 1, 'continuous location owner');
       const held = a.command({ kind: 'probe', name: 'holdActTurn' }).catch((error: Error) => error);
       expect((await a.observe()).external.heldActTurn).toBe(true);
       const transitions = Promise.all([

@@ -1,8 +1,9 @@
 const mockRpc = jest.fn();
 const mockActor = jest.fn(async () => 'actor');
+const mockMapRecovery = jest.fn((value: unknown) => value);
 jest.mock('../api/supabase', () => ({ supabase: { rpc: (...args: unknown[]) => mockRpc(...args) } }));
 jest.mock('../api/services/_helpers', () => ({ requireUserId: () => mockActor(), orThrow: (error: unknown) => { if (error) throw error; } }));
-jest.mock('../api/services/GroupService', () => ({ mapGroupRecoverySnapshot: (value: unknown) => value }));
+jest.mock('../api/services/GroupService', () => ({ mapGroupRecoverySnapshot: (value: unknown) => mockMapRecovery(value) }));
 import { exchangeGroup } from '../api/services/GroupSyncService';
 import type { CoreOperation } from '../types/coreData';
 import type { LocationBatchEvent } from '../api/services/LocationService';
@@ -18,7 +19,7 @@ function reply(overrides: Record<string, unknown> = {}) {
     locationReceipts: [], pendingRefreshes: [], refreshAcknowledgements: [], refreshRequest: null,
     acknowledgedIds: [], snapshot: {}, ...overrides }, error: null };
 }
-beforeEach(() => { mockRpc.mockReset(); mockActor.mockResolvedValue('actor'); });
+beforeEach(() => { mockRpc.mockReset(); mockMapRecovery.mockClear(); mockActor.mockResolvedValue('actor'); });
 it('retains a collected draft owner when authentication returns to a different batch actor', async () => {
   const foreign = { ...operation('a', 1), actorId: 'actor-b' };
   await expect(exchangeGroup({ groupId: 'group', actorId: 'actor', operations: [foreign], events: [], refresh: {} }))
@@ -39,6 +40,17 @@ it('sends heterogeneous core operations and GPS in one request and retains omitt
   expect(result.coreResults.has('b')).toBe(false);
   expect(result.locationResult.acceptedIds).toEqual(['gps']);
   expect(result.locationReceipts[0].receivedAt).toBe('2026-11-02T00:00:00.123456Z');
+});
+it('uses the same location receipt without interpreting the legacy server snapshot or sending another RPC', async () => {
+  const receipt = { id: 'gps', groupId: 'group', capturedAt: 1_000, receivedAt: '2026-11-02T00:00:00.123456Z' };
+  mockRpc.mockResolvedValue(reply({ locationResult: { acceptedIds: ['gps'], rejected: [] },
+    locationReceipts: [receipt] }));
+  const result = await exchangeGroup({ groupId: 'group', actorId: 'actor', operations: [], events: [event],
+    refresh: {}, includeSnapshot: false });
+  expect(result).toMatchObject({ kind: 'receipts', locationReceipts: [receipt] });
+  expect(mockRpc).toHaveBeenCalledTimes(1);
+  expect(mockRpc).toHaveBeenCalledWith('sync_group', expect.objectContaining({ p_refresh: { includeSnapshot: false } }));
+  expect(mockMapRecovery).not.toHaveBeenCalled();
 });
 it('shrinks an oversized suffix without pretending its GPS was submitted or ACKed', async () => {
   mockRpc.mockResolvedValue(reply());
