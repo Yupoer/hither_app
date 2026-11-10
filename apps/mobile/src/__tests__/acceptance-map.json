@@ -1995,7 +1995,7 @@
       "child": 287,
       "acceptance": "A locked background journey replaces stale targets without another GPS owner.",
       "testFile": "backgroundJourneyCoverage.test.ts",
-      "testNamePattern": "recovers a changed locked-screen target|passes a real presence fix"
+      "testNamePattern": "recovers a changed locked-screen target|passes an early journey fix"
     },
     {
       "parent": 287,

@@ -690,14 +690,19 @@ describe('background journey lifecycle and callback gate', () => {
       expect.objectContaining({ accuracy: 4, timeInterval: 15_000 }));
   });
 
-  it('passes a real presence fix to a pending refresh without starting another GPS owner', async () => {
-    await startBackgroundJourney({ ...baseConfig, navigationSessionId: null, powerMode: 'allDay' });
+  it('passes an early journey fix to a pending refresh without starting another GPS owner', async () => {
+    await expect(startBackgroundJourney(baseConfig)).resolves.toBe('started');
+    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.01)] } });
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
+
     store.set('@hither/pending-location-refresh', JSON.stringify({ groupId: baseConfig.groupId, requestedAt: Date.now() - 1 }));
-    const sample = location();
+    jest.advanceTimersByTime(5_000);
+    const sample = location(Date.now(), 25.012);
     await handleBackgroundLocations({ data: { locations: [sample] } });
     expect(mockRecoverRefreshSample).toHaveBeenCalledWith(baseConfig.groupId, expect.objectContaining({
-      timestamp: sample.timestamp, coordinates: { latitude: 25, longitude: 121 },
-    }), undefined);
+      timestamp: sample.timestamp, coordinates: { latitude: 25.012, longitude: 121 },
+    }));
+    expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledTimes(1);
   });
 
