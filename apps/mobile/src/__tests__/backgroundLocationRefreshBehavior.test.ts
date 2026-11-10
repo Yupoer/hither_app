@@ -117,6 +117,7 @@ describe('durable location refresh recovery', () => {
       { groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' },
       { groupId: 'group-2', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:01Z' },
     ]);
+    mockDiagnostics.flush.mockRejectedValueOnce(new Error('telemetry offline'));
     await recoverPendingLocationRefreshes();
 
     expect(mockLocation.getCurrentLocation).toHaveBeenCalledTimes(1);
@@ -129,6 +130,7 @@ describe('durable location refresh recovery', () => {
       event: 'refresh_request_completed',
       count: 1,
     }));
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'refresh_request_timeout' }));
   });
 
   it('does not obtain a fix while sharing is disabled or when no pending rows exist', async () => {
@@ -174,7 +176,7 @@ describe('durable location refresh recovery', () => {
     mockListPending.mockResolvedValue([
       { groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' },
     ]);
-    mockLocation.getCurrentLocation.mockResolvedValueOnce(null);
+    mockLocation.getCurrentLocation.mockRejectedValueOnce(new Error('location provider unavailable'));
     await recoverPendingLocationRefreshes();
     expect(mockAck).not.toHaveBeenCalled();
     expect(mockDiagnostics.write).toHaveBeenCalledWith(expect.objectContaining({
@@ -190,6 +192,17 @@ describe('durable location refresh recovery', () => {
       event: 'refresh_request_timeout',
       errorCode: 'foreground_upload_failed',
     }));
+  });
+
+  it('does not acquire GPS when pending refresh commands cannot be read', async () => {
+    mockListPending.mockRejectedValue(new Error('offline'));
+    await recoverPendingLocationRefreshes();
+    expect(mockLocation.getCurrentLocation).not.toHaveBeenCalled();
+
+    mockAppState.currentState = 'background';
+    await taskHandler()({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
+    expect(mockLocation.getBackgroundRefreshLocation).not.toHaveBeenCalled();
+    expect(mockAck).not.toHaveBeenCalled();
   });
 
   it('never emits completed for a rejected upload or an unconfirmed ACK', async () => {
@@ -272,10 +285,13 @@ describe('durable location refresh recovery', () => {
     mockListPending.mockResolvedValue([
       { groupId: 'group-1', requestedBy: 'leader', requestedAt: '2026-08-13T00:00:00Z' },
     ]);
+    mockDiagnostics.flush.mockRejectedValueOnce(new Error('telemetry offline'));
     await handler({ data: { data: { category: 'location_refresh', groupId: 'group-1' } }, error: null });
     expect(mockIngest.mock.calls[0][0]).toHaveLength(1);
     expect(mockAck).toHaveBeenCalledWith('group-1', '2026-08-13T00:00:00Z');
     expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith('@hither/pending-location-refresh');
+    expect(mockStore.has('@hither/pending-location-refresh')).toBe(false);
+    expect(mockDiagnostics.write).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'refresh_request_timeout' }));
 
     mockListPending.mockResolvedValue([]);
     await handler({
