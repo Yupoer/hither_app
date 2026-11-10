@@ -1381,16 +1381,18 @@ export function createCoreOperationOutbox(
       }
       const serverGathering = operation.entityType === 'active_gathering'
         && isUsableActiveGatheringState(conflict.serverState) ? conflict.serverState : null;
-      if (isItineraryMutation(operation) || (operation.entityType === 'active_gathering' && !serverGathering)) {
+      const rollbackGathering = operation.entityType === 'active_gathering' && !serverGathering;
+      if (isItineraryMutation(operation) || rollbackGathering) {
         const currentSnapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
         if (currentSnapshot) {
           let snapshot = currentSnapshot;
           const rejected = conflictRows.filter(row => invalidated.has(row.id) && row.actorId === operation.actorId)
             .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
           for (const row of rejected) {
+            if (row.entityType === 'active_gathering'
+              && (!rollbackGathering || snapshot.ownerActorId !== row.actorId)) continue;
             const undo = row.payload._localRollback as Pick<ItineraryRollback, 'beforeActiveGathering' | 'afterActiveGathering' | 'beforeGroup'> | undefined;
             if (!undo?.beforeActiveGathering || !undo.afterActiveGathering
-              || (row.entityType === 'active_gathering' && snapshot.ownerActorId !== row.actorId)
               || stableJson(snapshot.activeGathering) !== stableJson(undo.afterActiveGathering)) continue;
             snapshot = { ...snapshot, activeGathering: undo.beforeActiveGathering };
             if (undo.beforeGroup) {

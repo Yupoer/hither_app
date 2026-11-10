@@ -146,7 +146,10 @@ jest.mock('react-native-reanimated', () => {
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'icon' }));
 jest.mock('expo-clipboard', () => ({}));
-jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
+jest.mock('@react-navigation/native', () => ({
+  useFocusEffect: (callback: React.EffectCallback) => jest.requireActual<typeof React>('react').useEffect(callback, [callback]),
+  useIsFocused: () => true,
+}));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null), setItem: mockAsync }));
 jest.mock('../components/BottomSheet', () => ({ __esModule: true, default: 'bottom-sheet', sheetBottomOffset: () => 0 }));
 jest.mock('../components/GroupMap', () => {
@@ -171,7 +174,9 @@ jest.mock('../state/useForegroundReconcile', () => ({ useForegroundReconcile: ()
 jest.mock('../screens/MapScreen/hooks/useDeviceLocation', () => ({ useDeviceLocation: () => mockDevice }));
 jest.mock('../screens/MapScreen/styles', () => ({ makeStyles: () => ({}) }));
 jest.mock('../state/runtimePowerState', () => ({ subscribeRuntimePowerState: () => () => undefined, getRuntimePowerState: () => mockPower }));
-jest.mock('../state/foregroundUi', () => ({ useVisibleUi: () => true, isForegroundUi: () => true }));
+jest.mock('../state/foregroundUi', () => ({
+  useVisibleUi: () => true, isForegroundUi: () => true, subscribeForegroundUi: () => () => undefined,
+}));
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ bucket: 'normal', scale: 1, textScale: 1, boldText: false, s: (n: number) => n }) }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: mockT, language: 'en' }) }));
 jest.mock('../featureTour', () => ({ useGroupFeatureTour: () => ({ ...mockTour, lifecycle: mockLifecycle('group-tour') }), useRouteReorderTour: () => ({ ...mockTour, lifecycle: mockLifecycle('route-tour') }),
@@ -194,7 +199,10 @@ jest.mock('../state/locationOutbox', () => ({ purgeLocationOutbox: mockAsync }))
 jest.mock('../state/locationPrivacy', () => ({ captureLocationAccess: mockAsync }));
 jest.mock('../state/journeyNotifications', () => ({ notifyJourneyOperator: mockAsync, notifyJourneyApproach: mockAsync }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: { write: mockAsync } }));
-jest.mock('../native/location', () => ({ requestPermission: mockAsync }));
+jest.mock('../native/location', () => ({
+  requestPermission: mockAsync,
+  getNavigationStartLocation: async () => ({ kind: 'available', fix: null }),
+}));
 jest.mock('../native', () => ({ location: { getPermissionState: async () => ({ backgroundStatus: 'granted' }) },
   notifications: { addForegroundListener: (listener: unknown) => { mockNotificationListeners.add(listener); return () => mockNotificationListeners.delete(listener); } } }));
 jest.mock('../api/client', () => ({}));
