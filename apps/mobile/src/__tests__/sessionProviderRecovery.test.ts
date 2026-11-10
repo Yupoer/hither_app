@@ -98,7 +98,7 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     mockRefresh.mockResolvedValueOnce({ data: { session: null }, error: { status: 400, code: 'refresh_token_not_found' } });
     await act(async () => { mockAppListener('background'); mockAppListener('active'); jest.runOnlyPendingTimers(); await drain(); });
     expect(readSnapshot().user).toBeNull(); expect(readSnapshot().membership).toBeNull();
-    expect(mockStop).toHaveBeenCalledWith(true); expect(mockClearActivities).toHaveBeenCalledWith({ localOnly: true });
+    expect(mockStop).toHaveBeenCalledTimes(1); expect(mockClearActivities).toHaveBeenCalledWith({ localOnly: true });
     // The provider never invokes anonymous-account deletion or core outbox purge.
     expect(mockPurge).not.toHaveBeenCalled();
   });
@@ -130,7 +130,7 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     expect(readSnapshot().user?.id).toBe('account-b'); expect(readSnapshot().membership).toBeNull();
     expect(readSnapshot().tripEntitlement).toBeNull(); expect(readSnapshot().isPro).toBe(false);
     expect(readSnapshot().isPasswordRecovery).toBe(false); expect(readSnapshot().passwordRecoverySuccess).toBe(false);
-    expect(mockStop).toHaveBeenCalledWith(true); expect(mockClearActivities).toHaveBeenCalledWith({ localOnly: true });
+    expect(mockStop).toHaveBeenCalledTimes(1); expect(mockClearActivities).toHaveBeenCalledWith({ localOnly: true });
     expect(mockPurge).toHaveBeenCalledTimes(1);
   });
   it('preserves same-actor membership and premium through a temporary profile failure', async () => {

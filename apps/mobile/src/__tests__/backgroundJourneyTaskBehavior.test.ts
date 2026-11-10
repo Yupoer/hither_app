@@ -1,6 +1,6 @@
 jest.mock('../state/journeyNotifications', () => ({ notifyJourneyApproach: jest.fn(async () => undefined) }));
 const mockAppState = { currentState: 'background' };
-jest.mock('react-native', () => ({ AppState: mockAppState }));
+jest.mock('react-native', () => ({ AppState: mockAppState, Platform: { OS: 'ios' } }));
 jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
 jest.mock('../api/services/LiveActivityService', () => ({ updateLiveActivityProgress: jest.fn(async () => undefined) }));
 const mockStore = new Map<string, string>();

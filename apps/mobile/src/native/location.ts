@@ -1,5 +1,5 @@
 import { reportLocationSourceHealth } from './locationSourceHealth';
-import { captureBackgroundRefreshFix, nextBackgroundLocation } from './backgroundLocation';
+import { captureBackgroundRefreshFix } from './backgroundLocation';
 /** Device positioning boundary; consent is checked before and after asynchronous work. */
 import * as Location from 'expo-location';
 import { AppState } from 'react-native';
@@ -160,7 +160,7 @@ export async function getCurrentLocation(
   powerMode: LocationPowerMode = 'foreground',
 ): Promise<LocationSample | null> {
   const access = await captureLocationAccess();
-  if (!access) return null;
+  if (!access || !isForegroundLocationState(AppState.currentState)) return null;
   if (isDebugRouteActive()) {
     const debugSample = getDebugLocationSample();
     if (debugSample) return debugSample;
@@ -172,10 +172,7 @@ export async function getCurrentLocation(
     if (!granted) reportLocationSourceHealth({ kind: 'permissionDenied' });
     return null;
   }
-  if (!isForegroundLocationState(AppState.currentState)) {
-    const fix = await nextBackgroundLocation(access.signal);
-    return fix && isLocationAccessCurrent(access) ? toSample(fix) : null;
-  }
+  if (!isForegroundLocationState(AppState.currentState)) return null;
   return new Promise<LocationSample | null>((resolve) => {
     let sub: Location.LocationSubscription | undefined;
     let settled = false;

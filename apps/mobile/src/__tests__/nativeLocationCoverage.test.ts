@@ -25,7 +25,6 @@ const mockIsAccessCurrent = jest.fn();
 const mockSubscribeAccess = jest.fn();
 const mockAccessUnsubscribe = jest.fn();
 let mockAccessListener: (() => void) | undefined;
-const mockNextBackgroundLocation = jest.fn();
 const mockCaptureBackgroundRefreshFix = jest.fn();
 const mockDebugActive = jest.fn();
 const mockDebugSample = jest.fn();
@@ -35,7 +34,6 @@ let mockDebugListener: ((sample: unknown) => void) | undefined;
 jest.mock('expo-location', () => mockLocationApi);
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 jest.mock('../native/backgroundLocation', () => ({
-  nextBackgroundLocation: (...args: unknown[]) => mockNextBackgroundLocation(...args),
   captureBackgroundRefreshFix: (...args: unknown[]) => mockCaptureBackgroundRefreshFix(...args),
 }));
 jest.mock('../state/locationPrivacy', () => ({
@@ -97,7 +95,6 @@ describe('native location boundary lifecycle', () => {
       (_options: unknown, _onSample: (position: unknown) => void) =>
         Promise.resolve({ remove: jest.fn() }),
     );
-    mockNextBackgroundLocation.mockResolvedValue(null);
     mockDebugActive.mockReturnValue(false);
     mockDebugSample.mockReturnValue(null);
     mockSubscribeDebug.mockImplementation(() => jest.fn());
@@ -225,7 +222,6 @@ describe('native location boundary lifecycle', () => {
     onPosition(nativePosition);
     await expect(reading).resolves.toMatchObject({ timestamp: nativePosition.timestamp });
     expect(mockLocationApi.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
-    expect(mockNextBackgroundLocation).not.toHaveBeenCalled();
   });
 
   it('keeps a foreground stream through inactive and rejects it in actual background', async () => {
@@ -267,19 +263,11 @@ describe('native location boundary lifecycle', () => {
     jest.useRealTimers();
   });
 
-  it('uses the existing background owner in background and rejects stale access', async () => {
+  it('returns no foreground fix and never opens a foreground watch while backgrounded', async () => {
     mockAppState.currentState = 'background';
-    mockNextBackgroundLocation.mockResolvedValueOnce(nativePosition);
-    await expect(getCurrentLocation(false, 'allDay')).resolves.toEqual({
-      coordinates: { latitude: 25.0478, longitude: 121.517 },
-      accuracy: 7,
-      timestamp: 123_456,
-    });
+    await expect(getCurrentLocation(false, 'allDay')).resolves.toBeNull();
     expect(mockLocationApi.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
-
-    mockNextBackgroundLocation.mockResolvedValueOnce(nativePosition);
-    mockIsAccessCurrent.mockReturnValueOnce(true).mockReturnValueOnce(false);
-    await expect(getCurrentLocation()).resolves.toBeNull();
+    expect(mockLocationApi.watchPositionAsync).not.toHaveBeenCalled();
   });
 
   it('streams native and debug fixes, then removes every listener', async () => {
