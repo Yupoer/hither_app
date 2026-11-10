@@ -205,8 +205,21 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       expect(world.backend.locationReceipts.get(acceptedEventId)).toMatchObject({
         groupId: GROUP_ID, capturedAt: sample.timestamp, receivedAt: new Date(sample.timestamp).toISOString(),
       });
+      const upload = world.backend.trace.filter((entry: {
+        name: string; args?: { p_location_events?: { id: string }[] };
+      }) => entry.name === 'sync_group'
+        && entry.args?.p_location_events?.some(event => event.id === acceptedEventId));
+      expect(upload).toHaveLength(1);
+      expect(upload[0]).toMatchObject({
+        args: { p_refresh: { includeSnapshot: false } }, result: { data: { snapshot: null } },
+      });
       expect(world.backend.tables.group_alerts.filter((row: { kind: string }) => row.kind === 'straggler')).toEqual([]);
+      const lockedTraceLength = world.backend.trace.length;
       await leader.input({ kind: 'appState', value: 'active' });
+      await world.waitFor(leader, () => world.backend.trace.slice(lockedTraceLength).some((entry: {
+        name: string; userId: string; result?: { data?: { snapshot?: unknown } };
+      }) => entry.name === 'sync_group' && entry.userId === LEADER && Boolean(entry.result?.data?.snapshot)),
+      'foreground requests a full snapshot after the receipt-only exchange');
       await leader.perform('map.card.toggle', { destinationId: DESTINATION });
       await leader.perform('map.meet.open', { destinationId: DESTINATION });
       await leader.perform('map.meet.shortcut', { minutes: 10 });

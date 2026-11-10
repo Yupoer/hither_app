@@ -292,20 +292,23 @@ describe('MapScreen named resources', () => {
     expect(mockLeaseRelease).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels the old stale deadline on target/sample changes and unmount', () => {
+  it('checks raw stationary fixes before marking the map stale and cancels deadlines on unmount', () => {
     jest.useFakeTimers();
     jest.setSystemTime(1_000);
     const publish = jest.fn();
     const target = { id: 'target' };
-    const props = { journeyActive: true, navTarget: target, deviceCoordsAcceptedAtMs: 1_000, setProgressClockMs: publish, PERSONAL_PROGRESS_STALE_MS: 30_000 };
-    // This seam needs only the domain target identity, matching the original trigger.
+    const latestLocationSampleRef = { current: { coordinates: { latitude: 25, longitude: 121 }, timestamp: 1_000, accuracy: 5 } };
+    const props = { journeyActive: true, navTarget: target, deviceCoordsAcceptedAtMs: 1_000, latestLocationSampleRef, setProgressClockMs: publish, PERSONAL_PROGRESS_STALE_MS: 30_000 };
     act(() => { tree = create(React.createElement(MapProgressDeadlineResource, props)); });
     expect(publish).toHaveBeenCalledWith(1_000);
     act(() => { jest.advanceTimersByTime(5_000); });
-    act(() => tree?.update(React.createElement(MapProgressDeadlineResource, { ...props, deviceCoordsAcceptedAtMs: 6_000 })));
+    latestLocationSampleRef.current = { ...latestLocationSampleRef.current, timestamp: 6_000 };
     expect(jest.getTimerCount()).toBe(1);
     act(() => { jest.advanceTimersByTime(25_050); });
+    expect(publish).toHaveBeenCalledTimes(1);
+    act(() => { jest.advanceTimersByTime(5_000); });
     expect(publish).toHaveBeenCalledTimes(2);
+    expect(publish).toHaveBeenLastCalledWith(36_050);
     act(() => tree?.unmount());
     tree = undefined;
     expect(jest.getTimerCount()).toBe(0);

@@ -36,25 +36,27 @@ begin
  sample:=jsonb_build_object('id',e,'actorId',u,'groupId',g,'navigationSessionId',null,
   'capturedAt',extract(epoch from captured)*1000,'coords',jsonb_build_object('latitude',25,'longitude',121,'accuracy',5),
   'trackingMode','foreground','source','foreground','sequence',1);
- result:=public.sync_group(g,auth.uid(),ops,jsonb_build_array(sample));
+ result:=public.sync_group(g,auth.uid(),ops,jsonb_build_array(sample),'{"includeSnapshot":false}');
  assert result#>>'{coreResults,0,status}'='accepted',result::text;
  assert result#>>'{coreResults,1,status}'='accepted',result::text;
  assert result#>>'{coreResults,2,status}'='accepted',result::text;
- assert result#>>'{snapshot,itinerary,0,title}'='Edited','postwrite itinerary visibility';
- assert result#>>'{snapshot,group,journey_status}'='going','postwrite navigation visibility';
- assert jsonb_array_length(result#>'{snapshot,locations}')=1,result::text;
- assert result#>'{snapshot,daily_accommodations}'='[]','accommodations included';
+ assert result->'snapshot'='null','lean exchange included recovery data';
  assert result#>'{locationResult,acceptedIds}'=jsonb_build_array(e),'GPS ACK';
+ assert result#>>'{locationReceipts,0,id}'=e::text,'GPS receipt';
  replay:=public.sync_group(g,auth.uid(),ops,jsonb_build_array(sample));
  assert replay#>>'{coreResults,0,status}'='duplicate',replay::text;
  assert replay#>>'{coreResults,1,status}'='duplicate',replay::text;
  assert replay#>>'{coreResults,2,status}'='duplicate',replay::text;
- assert replay#>'{snapshot,locations}'=result#>'{snapshot,locations}','receipt time immutable on replay';
+ assert replay->'locationReceipts'=result->'locationReceipts','receipt time immutable on replay';
+ assert replay#>>'{snapshot,itinerary,0,title}'='Edited','postwrite itinerary visibility';
+ assert replay#>>'{snapshot,group,journey_status}'='going','postwrite navigation visibility';
+ assert jsonb_array_length(replay#>'{snapshot,locations}')=1,replay::text;
+ assert replay#>'{snapshot,daily_accommodations}'='[]','accommodations included by default';
  assert (select count(*)=3 from public.core_operations where group_id=g),'one identity per core op';
- assert (select count(*) from jsonb_object_keys(result#>'{snapshot,profiles,0}'))=4,'public profile projection';
+ assert (select count(*) from jsonb_object_keys(replay#>'{snapshot,profiles,0}'))=4,'public profile projection';
 end;
 $assertions$;
-$test$,'mixed ordered core/GPS exchange observes writes and replays original identities');
+$test$,'lean mixed exchange persists ordered core/GPS writes visible on default full replay');
 
 reset role;
 insert into public.location_refresh_pending(group_id,user_id,requested_by,requested_at)
@@ -67,15 +69,16 @@ declare g uuid:='a1000000-0000-4000-8000-000000000100'; u uuid:='a1000000-0000-4
  event_id uuid; request_token text; result jsonb; original_time text; blocked jsonb; suffix uuid:=gen_random_uuid();
 begin
  select id,ingested_at::text into event_id,original_time from public.location_upload_events where group_id=g;
- request_token:=public.sync_group(g,auth.uid())#>>'{pendingRefreshes,0,requested_at}';
- result:=public.sync_group(g,auth.uid(),'[]','[]',jsonb_build_object('acknowledgements',jsonb_build_array(
+ request_token:=public.sync_group(g,auth.uid(),'[]','[]','{"includeSnapshot":false}')#>>'{pendingRefreshes,0,requested_at}';
+ result:=public.sync_group(g,auth.uid(),'[]','[]',jsonb_build_object('includeSnapshot',false,'acknowledgements',jsonb_build_array(
   jsonb_build_object('requestedAt',request_token,'eventId',event_id))));
  assert (result#>>'{refreshAcknowledgements,0,accepted}')::boolean,'qualifying original receipt rejected';
  assert jsonb_array_length(result->'pendingRefreshes')=0,'exact request still pending';
  assert (select ingested_at::text=original_time from public.location_upload_events where id=event_id),'ACK relabelled receipt time';
- result:=public.sync_group(g,auth.uid(),'[]','[]',jsonb_build_object('acknowledgements',jsonb_build_array(
-  jsonb_build_object('requestedAt',request_token,'eventId',event_id))));
+ result:=public.sync_group(g,auth.uid(),'[]','[]',jsonb_build_object('includeSnapshot',false,'requestedAt',request_token,
+  'acknowledgements',jsonb_build_array(jsonb_build_object('requestedAt',request_token,'eventId',event_id))));
  assert (result#>>'{refreshAcknowledgements,0,accepted}')::boolean,'lost ACK replay rejected';
+ assert result->'acknowledgedIds'=jsonb_build_array(u),'exact request ACK missing from peer status';
  blocked:=jsonb_build_array(
   jsonb_build_object('operation_id',gen_random_uuid(),'entity_type','itinerary','entity_id',g,'entity_version',0,
    'operation_type','edit_destination','sequence',4,'created_at',now(),'payload',jsonb_build_object(
@@ -102,14 +105,14 @@ declare g uuid:='a1000000-0000-4000-8000-000000000100'; event_id uuid; token tex
 begin
  select id into event_id from public.location_upload_events where group_id=g;
  token:=public.sync_group(g,auth.uid())#>>'{pendingRefreshes,0,requested_at}';
- result:=public.sync_group(g,auth.uid(),'[]','[]',jsonb_build_object('acknowledgements',jsonb_build_array(
+ result:=public.sync_group(g,auth.uid(),'[]','[]',jsonb_build_object('includeSnapshot',false,'acknowledgements',jsonb_build_array(
   jsonb_build_object('requestedAt',token,'eventId',event_id))));
  assert not (result#>>'{refreshAcknowledgements,0,accepted}')::boolean,'old sample ACKed newer request';
  assert jsonb_array_length(result->'pendingRefreshes')=1,'old receipt cleared later request';
  sample:=jsonb_build_object('id',gen_random_uuid(),'actorId','a1000000-0000-4000-8000-000000000001','groupId',g,
   'capturedAt',extract(epoch from now()-interval '1 hour')*1000,'navigationSessionId',null,
   'coords',jsonb_build_object('latitude',24,'longitude',121,'accuracy',5),'sequence',0,'source','foreground','trackingMode','foreground');
- result:=public.sync_group(g,auth.uid(),'[]',jsonb_build_array(sample));
+ result:=public.sync_group(g,auth.uid(),'[]',jsonb_build_array(sample),'{"includeSnapshot":false}');
  assert result#>'{locationResult,acceptedIds}'='[]','rejected stale sample was ACKed';
  assert result#>>'{locationResult,rejected,0,reason}'='stale_sample',result::text;
  assert result->'locationReceipts'='[]','rejected event acquired an accepted receipt';
@@ -119,7 +122,10 @@ begin
  sample:=sample||jsonb_build_object('actorId','a1000000-0000-4000-8000-000000000001','groupId',gen_random_uuid());
  begin perform public.sync_group(g,auth.uid(),'[]',jsonb_build_array(sample)); exception when insufficient_privilege then caught:=true; end;
  assert caught,'cross group event accepted'; caught:=false;
- begin perform public.sync_group(gen_random_uuid(),auth.uid()); exception when insufficient_privilege then caught:=true; end;
+ begin
+  perform public.sync_group(gen_random_uuid(),auth.uid(),'[]','[]','{"includeSnapshot":false}');
+ exception when insufficient_privilege then caught:=true;
+ end;
  assert caught,'nonmember read accepted';
 end;
 $security$;

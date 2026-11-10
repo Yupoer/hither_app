@@ -238,9 +238,16 @@ describe('background journey lifecycle and callback gate', () => {
     expect(mockComplete).not.toHaveBeenCalled();
     expect(mockNotifyApproach).not.toHaveBeenCalled();
     expect(mockLiveActivity.updateAllGroupActivities).not.toHaveBeenCalled();
+    expect(mockFlushLocation).toHaveBeenCalledWith(undefined, false);
     jest.advanceTimersByTime(60_000);
-    await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.0001)] } });
+    const refreshFix = location(Date.now(), 25.0001);
+    store.set('@hither/pending-location-refresh', JSON.stringify({ groupId: baseConfig.groupId, requestedAt: refreshFix.timestamp - 1 }));
+    await handleBackgroundLocations({ data: { locations: [refreshFix] } });
     expect(mockEnqueueLocation).toHaveBeenCalledTimes(1);
+    expect(mockFlushLocation).toHaveBeenCalledTimes(1);
+    expect(mockRecoverRefreshSample).toHaveBeenCalledWith(baseConfig.groupId, expect.objectContaining({
+      timestamp: refreshFix.timestamp, coordinates: { latitude: 25.0001, longitude: 121 },
+    }));
     jest.advanceTimersByTime(540_000);
     await handleBackgroundLocations({ data: { locations: [location(Date.now(), 25.0002)] } });
     expect(mockEnqueueLocation).toHaveBeenCalledTimes(2);

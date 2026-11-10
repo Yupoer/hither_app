@@ -62,6 +62,7 @@ async function uploadAndAckPendingRefreshes(
   fix: Awaited<ReturnType<typeof location.getCurrentLocation>>,
   pending: PendingLocationRefresh[],
   access: LocationAccess,
+  includeSnapshot?: false,
 ): Promise<void> {
   if (!fix || pending.length === 0 || !isLocationAccessCurrent(access)) return;
   const actorId = await requireUserId();
@@ -74,7 +75,7 @@ async function uploadAndAckPendingRefreshes(
       coords: { ...fix.coordinates, accuracy: Math.max(0, fix.accuracy ?? 0) },
       trackingMode: 'passiveBackground', source: 'refresh_request', sequence: fix.timestamp,
     });
-    const result = await syncGroup({ groupId: row.groupId,
+    const result = await syncGroup({ groupId: row.groupId, includeSnapshot,
       refresh: { acknowledgements: [{ requestedAt: row.requestedAt, eventId }] } });
     if (!isLocationAccessCurrent(access)) throw new Error('location_access_changed');
     if (!result.refreshAcknowledgements.some(ack => ack.eventId === eventId
@@ -102,13 +103,13 @@ export async function recoverPendingLocationRefreshFromSample(
   if (suppliedPending === undefined && !matchingMarker) return;
   const access = await captureLocationAccess(groupId);
   if (!access) return;
-  const pending = (suppliedPending ?? await listMyPendingLocationRefreshes()).filter(row => row.groupId === groupId);
+  const pending = (suppliedPending ?? await listMyPendingLocationRefreshes(false)).filter(row => row.groupId === groupId);
   if (!isLocationAccessCurrent(access)) return;
   if (pending.length > 0 && !raw) {
     raw = await rememberPendingRefresh(groupId);
     matchingMarker = true;
   }
-  await uploadAndAckPendingRefreshes(fix, pending, access);
+  await uploadAndAckPendingRefreshes(fix, pending, access, false);
   if (!isLocationAccessCurrent(access)) return;
   // Preserve a newer marker written while this request was being uploaded.
   if (matchingMarker && await AsyncStorage.getItem(PENDING_LOCATION_REFRESH_KEY) === raw) {
@@ -202,7 +203,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
         await reconcileBackgroundNavigation(payload.groupId);
         return;
       }
-      const pending = await listMyPendingLocationRefreshes().catch(() => []);
+      const pending = await listMyPendingLocationRefreshes(false).catch(() => []);
       const matching = pending.filter(row => row.groupId === payload.groupId);
       if (!matching.length || !isLocationAccessCurrent(access)) return;
       const fix = await location.getBackgroundRefreshLocation(access).catch(() => null);
@@ -213,7 +214,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
 
       try {
         if (!isLocationAccessCurrent(access)) return;
-        await uploadAndAckPendingRefreshes(fix, matching, access);
+        await uploadAndAckPendingRefreshes(fix, matching, access, false);
         await diagnostics.write({
           event: 'location_outbox_enqueued',
           source: 'refresh_request',

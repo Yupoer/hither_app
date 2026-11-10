@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import type { CoreOperation } from '../../types/coreData';
 import type { Destination } from '../../types';
+import type { LocationSample } from '../../native/location';
 import type { GroupMapHandle } from '../../components/GroupMap';
 import type { TravelMode } from '../../utils/geo';
 import type { useSession } from '../../state/SessionContext';
@@ -391,6 +392,7 @@ type MapProgressDeadlineInput = {
   journeyActive: boolean;
   navTarget: Pick<Destination, 'id'> | null | undefined;
   deviceCoordsAcceptedAtMs: number | null;
+  latestLocationSampleRef: React.RefObject<LocationSample | null>;
   setProgressClockMs: React.Dispatch<React.SetStateAction<number>>;
   PERSONAL_PROGRESS_STALE_MS: number;
 };
@@ -399,6 +401,7 @@ export function MapProgressDeadlineResource(input: MapProgressDeadlineInput) {
   const [previous, setPrevious] = useState({ input, generation: 0 });
   if (!Object.is(previous.input.journeyActive, input.journeyActive)
     || !Object.is(previous.input.navTarget?.id, input.navTarget?.id)
+    || previous.input.PERSONAL_PROGRESS_STALE_MS !== input.PERSONAL_PROGRESS_STALE_MS
     || !Object.is(previous.input.deviceCoordsAcceptedAtMs, input.deviceCoordsAcceptedAtMs)) {
     setPrevious({ input, generation: previous.generation + 1 });
   }
@@ -406,20 +409,21 @@ export function MapProgressDeadlineResource(input: MapProgressDeadlineInput) {
 }
 
 function MapProgressDeadlineJob({ input }: { input: MapProgressDeadlineInput }) {
-  const { journeyActive, navTarget, deviceCoordsAcceptedAtMs, setProgressClockMs, PERSONAL_PROGRESS_STALE_MS } = input;
+  const { journeyActive, navTarget, deviceCoordsAcceptedAtMs, latestLocationSampleRef, setProgressClockMs, PERSONAL_PROGRESS_STALE_MS } = input;
   useMountEffect(() => {
     if (!journeyActive || !navTarget || deviceCoordsAcceptedAtMs == null) {
       return;
     }
-    const now = Date.now();
-    setProgressClockMs(now);
-    const age = Math.max(0, now - deviceCoordsAcceptedAtMs);
-    if (age >= PERSONAL_PROGRESS_STALE_MS) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      setProgressClockMs(Date.now());
-    }, PERSONAL_PROGRESS_STALE_MS - age + 50);
+    let timer: ReturnType<typeof setTimeout>;
+    const checkDeadline = () => {
+      const now = Date.now();
+      const capturedAt = latestLocationSampleRef.current?.timestamp ?? deviceCoordsAcceptedAtMs;
+      const age = Math.max(0, now - capturedAt);
+      if (age >= PERSONAL_PROGRESS_STALE_MS) setProgressClockMs(now);
+      else timer = setTimeout(checkDeadline, PERSONAL_PROGRESS_STALE_MS - age + 50);
+    };
+    setProgressClockMs(Date.now());
+    checkDeadline();
     return () => clearTimeout(timer);
   });
   return null;

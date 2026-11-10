@@ -103,17 +103,40 @@ it('releases a late watch Promise and fences its callback after group/source rep
   expect(mockRemove).toHaveBeenCalledTimes(1);
 });
 
+it('refreshes a retained stationary position after backgrounding without an extra acquisition', async () => {
+  const probe = createLocationProbe();
+  await act(async () => { tree = create(React.createElement(probe.Probe)); });
+  await act(async () => { mockWatch.mock.calls[0][0](sample()); });
+  const displayed = probe.feed.deviceCoords;
+  await act(async () => {
+    mockState.currentState = 'background';
+    mockListeners.forEach(listener => listener('background'));
+  });
+  jest.setSystemTime(250_000);
+  await act(async () => {
+    mockState.currentState = 'active';
+    mockListeners.forEach(listener => listener('active'));
+  });
+  await act(async () => { mockWatch.mock.calls[1][0](sample()); });
+  expect(probe.feed.deviceCoords).toBe(displayed);
+  expect(probe.feed.deviceCoordsAcceptedAtMs).toBe(250_000);
+  expect(mockRead).not.toHaveBeenCalled();
+});
+
 it('scales the watchdog to acquisition silence and never retimestamps a cached sample', async () => {
   const probe = createLocationProbe();
   const { Probe } = probe;
   await act(async () => { tree = create(React.createElement(Probe, { passive: true, nativeMap: true })); });
   const bootstrapReads = mockRead.mock.calls.length;
+  expect(bootstrapReads).toBe(0);
   await act(async () => { jest.advanceTimersByTime(120_000); });
   expect(mockRead).toHaveBeenCalledTimes(bootstrapReads);
   await act(async () => { probe.feed.consumeForegroundSample(sample()); });
   const acceptedAt = probe.feed.deviceCoordsAcceptedAtMs;
   await act(async () => { tree!.update(React.createElement(Probe, { passive: false, nativeMap: true })); });
-  await act(async () => { jest.advanceTimersByTime(60_000); });
+  await act(async () => { jest.advanceTimersByTime(359_999); });
+  expect(mockRead).toHaveBeenCalledTimes(bootstrapReads);
+  await act(async () => { jest.advanceTimersByTime(1); });
   expect(mockRead).toHaveBeenCalledTimes(bootstrapReads + 1);
   expect(mockRead).toHaveBeenLastCalledWith(false, 'journey');
   expect(probe.feed.deviceCoordsAcceptedAtMs).toBe(acceptedAt);
@@ -309,11 +332,10 @@ it('returns the newer watcher fix instead of an earlier one-shot fix without rol
   expect(enqueueLocationOutbox).toHaveBeenLastCalledWith(expect.objectContaining({ coordinates: { ...newer.coordinates, accuracy: 5 }, capturedAt: newer.timestamp }));
 });
 
-it('recovers manual GPS after failed watcher setup and failed automatic reads', async () => {
+it('recovers GPS through the watchdog after failed watcher setup and an earlier failed probe', async () => {
   const probe = createLocationProbe();
   const { Probe } = probe;
   mockWatch.mockRejectedValueOnce(new Error('native_watch_failed'));
-  mockRead.mockRejectedValueOnce(new Error('bootstrap_fix_failed'));
   mockRead.mockRejectedValueOnce(new Error('watchdog_fix_failed'));
   jest.mocked(flushLocationOutbox).mockRejectedValueOnce(new Error('initial_flush_failed'));
   await act(async () => { tree = create(React.createElement(Probe)); });

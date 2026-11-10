@@ -19,7 +19,7 @@ function execute(b, { args: a, userId }) {
   assert(Array.isArray(a.p_location_events) && a.p_location_events.length <= 50, 'Location envelope contract');
   assert(a.p_refresh && typeof a.p_refresh === 'object' && !Array.isArray(a.p_refresh), 'Refresh envelope contract');
   assert(Buffer.byteLength(JSON.stringify(a)) <= 262144, 'Group sync envelope byte limit');
-  for (const key of Object.keys(a.p_refresh)) assert(['requestPeers', 'requestedAt', 'acknowledgements'].includes(key), `Unknown refresh field ${key}`);
+  for (const key of Object.keys(a.p_refresh)) assert(['requestPeers', 'requestedAt', 'acknowledgements', 'includeSnapshot'].includes(key), `Unknown refresh field ${key}`);
   const acknowledgements = a.p_refresh.acknowledgements ?? [];
   assert(Array.isArray(acknowledgements) && acknowledgements.length <= 50, 'Refresh acknowledgement limit');
   for (const event of a.p_location_events) {
@@ -65,7 +65,8 @@ function execute(b, { args: a, userId }) {
   const locationReceipts = [...receiptIds].filter(id => b.locationEvents.get(id)?.actorId === userId
     && b.locationEvents.get(id)?.groupId === a.p_group_id).map(id => b.locationReceipts.get(id));
   return ok({ coreResults, locationResult, locationReceipts,
-    snapshot: { ...b.snapshot(a.p_group_id), daily_accommodations: b.tables.daily_accommodations.filter(row => row.group_id === a.p_group_id) },
+    snapshot: a.p_refresh.includeSnapshot === false ? null
+      : { ...b.snapshot(a.p_group_id), daily_accommodations: b.tables.daily_accommodations.filter(row => row.group_id === a.p_group_id) },
     refreshRequest, pendingRefreshes, acknowledgedIds, refreshAcknowledgements });
 }
 

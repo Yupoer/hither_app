@@ -26,6 +26,7 @@ jest.mock('../api/services/_helpers', () => ({
 
 const {
   ackMyLocationRefresh,
+  getGroupLocationRefreshAcknowledgements,
   ingestLocationBatch,
   listMyPendingLocationRefreshes,
   requestGroupLocationRefresh,
@@ -139,14 +140,21 @@ describe('LocationService durable refresh seams', () => {
   });
 
   it('delegates refresh reads and original event ACKs through the shared exchange', async () => {
-    mockGroupSync.mockResolvedValueOnce({ refreshRequest: { accepted: true, retryAfterSeconds: 2, recipientIds: [] } })
-      .mockResolvedValueOnce({ pendingRefreshes: [{ groupId: 'group-1', requestedBy: 'leader-1', requestedAt: '2026-08-13T00:00:00Z' }] })
-      .mockResolvedValueOnce({ refreshAcknowledgements: [{ requestedAt: '2026-08-13T00:00:00Z', eventId: 'accepted-event', accepted: true }] });
-    await expect(requestGroupLocationRefresh('group-1')).resolves.toEqual({ accepted: true, retryAfterSeconds: 2, recipientIds: [] });
-    await expect(listMyPendingLocationRefreshes()).resolves.toEqual([{ groupId: 'group-1', requestedBy: 'leader-1', requestedAt: '2026-08-13T00:00:00Z' }]);
-    await expect(ackMyLocationRefresh('group-1','2026-08-13T00:00:00Z','accepted-event')).resolves.toBe(true);
+    const requestedAt = '2026-08-13T00:00:00.123456Z';
+    const refreshRequest = { accepted: true, retryAfterSeconds: 2, recipientIds: ['peer'], requestedAt };
+    const pendingRefreshes = [{ groupId: 'group-1', requestedBy: 'leader-1', requestedAt }];
+    const ack = { requestedAt, eventId: 'accepted-event' };
+    mockGroupSync.mockResolvedValueOnce({ refreshRequest })
+      .mockResolvedValueOnce({ pendingRefreshes })
+      .mockResolvedValueOnce({ refreshAcknowledgements: [{ ...ack, accepted: true }] })
+      .mockResolvedValueOnce({ acknowledgedIds: ['peer'] });
+    await expect(requestGroupLocationRefresh('group-1')).resolves.toEqual(refreshRequest);
+    await expect(listMyPendingLocationRefreshes(false)).resolves.toEqual(pendingRefreshes);
+    await expect(ackMyLocationRefresh('group-1', requestedAt, ack.eventId)).resolves.toBe(true);
+    await expect(getGroupLocationRefreshAcknowledgements('group-1', requestedAt)).resolves.toEqual(['peer']);
     expect(mockGroupSync).toHaveBeenNthCalledWith(1, { groupId: 'group-1', refresh: { requestPeers: true } });
-    expect(mockGroupSync).toHaveBeenNthCalledWith(2, { groupId: 'group-1' });
-    expect(mockGroupSync).toHaveBeenNthCalledWith(3, { groupId: 'group-1', refresh: { acknowledgements: [{ requestedAt: '2026-08-13T00:00:00Z', eventId: 'accepted-event' }] } });
+    expect(mockGroupSync).toHaveBeenNthCalledWith(2, { groupId: 'group-1', includeSnapshot: false });
+    expect(mockGroupSync).toHaveBeenNthCalledWith(3, { groupId: 'group-1', refresh: { acknowledgements: [ack] } });
+    expect(mockGroupSync).toHaveBeenNthCalledWith(4, { groupId: 'group-1', refresh: { requestedAt } });
   });
 });

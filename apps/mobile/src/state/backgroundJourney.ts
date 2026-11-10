@@ -580,7 +580,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         uploadGate = { lastCoords: coords, lastAtMs: now };
         void (async () => {
         const upload = await timeBackgroundStage(stages, 'outbox_flush', () =>
-          flushLocationOutbox(),
+          flushLocationOutbox(undefined, config.powerMode === 'allDay' ? false : undefined),
         );
         if (controller.isCurrent(config) && isLocationAccessCurrent(access)
           && (upload.pendingRefreshes !== undefined || await AsyncStorage.getItem('@hither/pending-location-refresh'))) {

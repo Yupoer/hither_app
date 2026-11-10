@@ -1089,7 +1089,7 @@
     "file": "src/api/services/GroupSyncService.ts",
     "kind": "export",
     "name": "exchangeGroup",
-    "hash": "f8d1cfd251baf572004ab9d1bed86d7830f877b99734a9340d2f6a4bad931e56"
+    "hash": "6c108568dc09e409a7d33f0fc6a3cd59889153caf17cc7eece1516be9649a637"
   },
   {
     "file": "src/api/services/LiveActivityService.ts",
@@ -1155,7 +1155,7 @@
     "file": "src/api/services/LocationService.ts",
     "kind": "export",
     "name": "listMyPendingLocationRefreshes",
-    "hash": "fcab15da204140c0f9cd6d315f2090cbdca39dba029a6710ac7939a6b31b7de6"
+    "hash": "b315d49a29c8d09c7e0c220a46dd16a11cdd639eaeaefc0a1f6e2bdf268c6bdb"
   },
   {
     "file": "src/api/services/LocationService.ts",
@@ -4557,7 +4557,7 @@
     "file": "src/native/location.ts",
     "kind": "export",
     "name": "getCurrentLocation",
-    "hash": "e638a128f6dd22d567354833a7c9c8428d2654a6edcefb4785d7726561b55d4c"
+    "hash": "835987f2f6836c8a4bfb6400862f7b5a564932020502db85b7e64a14ac4166ff"
   },
   {
     "file": "src/native/location.ts",
@@ -4569,7 +4569,7 @@
     "file": "src/native/location.ts",
     "kind": "export",
     "name": "watchLocation",
-    "hash": "290e03dc418547677201360a4d82b2896e768ad8b935f1f143b524ce0070ef11"
+    "hash": "b0f7f15b7ff5b63f69c530cb6684046b780dcd6d14aab9be69754bbd3c14cfba"
   },
   {
     "file": "src/native/locationSourceHealth.ts",
@@ -5811,7 +5811,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "a1c1e57762d30c133215dd7ca3a9d584f72c7095b6e089ed4ec79b10ecf4db76"
+    "hash": "588cbeb7afa17292b8044a4b10c0dea37a0a6f1fb7afd79d9a03dfd59d7d42d4"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6645,13 +6645,13 @@
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
     "kind": "export",
     "name": "MapProgressDeadlineResource",
-    "hash": "2e1759411b78724ae0d9b526264e7652ead341fa75e41ed594d8146ec7a39bb6"
+    "hash": "c3acd819170a4aeea17dbaafa071abea7364485e0f732b615592645d3373124d"
   },
   {
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "a5d13dd4355f8736e2efc45208893b3c9f15d9e004dc27073685c904f44ea469"
+    "hash": "c93a83fa36e49af4590ede05f9026ff08bed5ef05bf57dbf20c84b9350f970d9"
   },
   {
     "file": "src/screens/MapScreen/MapScreenResources.tsx",
@@ -8037,7 +8037,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "export",
     "name": "useDeviceLocation",
-    "hash": "a2b1c88a2fece80536f4341e93042216f414303bb7dacf72f68066e9d713b9b0"
+    "hash": "9914832791414feab1b0cc3f3c3f979cb08d9a1ef19108c8b9e827980e44adb1"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -8049,7 +8049,7 @@
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "f76c6226253e64c7a5e43e70a3e4f7c117ca14bb759bcb608f9f946ab89e61ef"
+    "hash": "879dcca6a32e55e8547430fe4fa585aaf54f37cd5dde427eee47639ba41a91af"
   },
   {
     "file": "src/screens/MapScreen/hooks/useDeviceLocation.ts",
@@ -9009,7 +9009,7 @@
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "export",
     "name": "recoverPendingLocationRefreshFromSample",
-    "hash": "3e5aa23d00cfe84a11b89df159b1cc15a4db8fe9ae4ec0d83446de73125e2434"
+    "hash": "0dc437274c29cb6e144c279a3ba0d7482c9ef99513bd489609e3bd0aee36e28a"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -9027,7 +9027,7 @@
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "lifecycle",
     "name": "TaskManager.defineTask",
-    "hash": "eae9233af33ee47676cc1aa14d87896c5865c7595c388e5f5e261b16c36e3930"
+    "hash": "4c2a019f55ca5ed5496582b9728f37ae547f6394e50c76398aa7d5a95be5c3b4"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -9639,7 +9639,19 @@
     "file": "src/state/groupSync.ts",
     "kind": "export",
     "name": "syncGroup",
-    "hash": "3f8bc27fbf02e281ff480b2567b0b99a2ad7468876a8b700645c58fa25b913c9"
+    "hash": "9eff61212b288ad41e66689a10853a27a66acba8c98839e471d45d2a2541f7b6"
+  },
+  {
+    "file": "src/state/groupSync.ts",
+    "kind": "export",
+    "name": "syncGroup",
+    "hash": "848d99b7e69d326c4a7bc1ca6bac69619513e801da6f40c003d7360e421409d8"
+  },
+  {
+    "file": "src/state/groupSync.ts",
+    "kind": "export",
+    "name": "syncGroup",
+    "hash": "0ed791dee79ca99748458754f5f1cddabdc06ba542b1d7ba5f1750fec49a9da4"
   },
   {
     "file": "src/state/groupSync.ts",
@@ -9723,7 +9735,7 @@
     "file": "src/state/locationOutbox.ts",
     "kind": "export",
     "name": "flushLocationOutbox",
-    "hash": "b6cc0d8abd2ae864deb00437c4c6f32f57544b264f1053549ac0f91cda2db29e"
+    "hash": "f8766fed16e3adaa5d39c2b6e71d29934892c4347edfbb90384a01bfb45c41be"
   },
   {
     "file": "src/state/locationOutbox.ts",

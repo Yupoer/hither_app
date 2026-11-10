@@ -153,6 +153,8 @@ export async function getBackgroundRefreshLocation(access: LocationAccess): Prom
   return fix && isLocationAccessCurrent(access) ? toSample(fix) : null;
 }
 
+const FOREGROUND_FIRST_FIX_MS = 15_000;
+
 export async function getCurrentLocation(
   highAccuracy = false,
   powerMode: LocationPowerMode = 'foreground',
@@ -194,7 +196,7 @@ export async function getCurrentLocation(
         resolve(permission.status === 'granted' && current ? sample : null);
       }).catch(() => resolve(null));
     };
-    const timeout = setTimeout(() => finish(null), 15_000);
+    const timeout = setTimeout(() => finish(null), FOREGROUND_FIRST_FIX_MS);
     unsubscribe = subscribeLocationAccessChanges(() => finish(null));
     appStateSubscription = AppState.addEventListener('change', state => {
       if (!isForegroundLocationState(state)) finish(null);
@@ -227,10 +229,16 @@ export async function watchLocation(
     if (!granted) reportLocationSourceHealth({ kind: 'permissionDenied' });
     return () => {};
   }
+  const firstFix = setTimeout(() => {
+    if (isLocationAccessCurrent(access) && isForegroundLocationState(AppState.currentState)) {
+      reportLocationSourceHealth({ kind: 'interrupted', message: 'location_unavailable' });
+    }
+  }, FOREGROUND_FIRST_FIX_MS);
   let unsubscribeDebug = () => {};
   try {
     const accept = (sample: LocationSample) => {
       if (isLocationAccessCurrent(access) && isForegroundLocationState(AppState.currentState)) {
+        clearTimeout(firstFix);
         reportLocationSourceHealth({ kind: 'receiving', lastCapturedAt: sample.timestamp });
         onSample(sample);
       }
@@ -241,9 +249,13 @@ export async function watchLocation(
       (position) => {
         if (!isDebugRouteActive()) accept(toSample(position));
       },
-      message => { if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message }); },
+      message => {
+        clearTimeout(firstFix);
+        if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message });
+      },
     );
     const stop = () => {
+      clearTimeout(firstFix);
       unsubscribeDebug();
       sub.remove();
     };
@@ -251,6 +263,7 @@ export async function watchLocation(
     const unsubscribeAccess = subscribeLocationAccessChanges(stop);
     return () => { unsubscribeAccess(); stop(); };
   } catch (error) {
+    clearTimeout(firstFix);
     unsubscribeDebug();
     if (isLocationAccessCurrent(access)) reportLocationSourceHealth({ kind: 'interrupted', message: error instanceof Error ? error.message : String(error) });
     return () => {};

@@ -11,27 +11,40 @@ jest.mock('../state/locationOutbox', () => ({ enqueueLocationOutbox: jest.fn(asy
 import { useDeviceLocation } from '../screens/MapScreen/hooks/useDeviceLocation';
 import { enqueueLocationOutbox, flushLocationOutbox } from '../state/locationOutbox';
 import { location } from '../native';
+import { reportLocationSourceHealth } from '../native/locationSourceHealth';
+import { locationStaleAfterMs } from '../utils/locationPolicy';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, and keeps sharing while the map is blurred', async () => {
   jest.useFakeTimers();
+  jest.setSystemTime(1_000);
   let feed!: ReturnType<typeof useDeviceLocation>;
+  let renders = 0;
   const incoming = jest.fn();
   function Probe({ focused }: { focused: boolean }) {
+    renders += 1;
     feed = useDeviceLocation({ groupId: 'g', highAccuracy: false, powerMode: 'journey',
       hasMembership: true, onIncomingSample: incoming });
     return feed.lifecycle;
   }
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(Probe, { focused: true })); });
-  expect(location.getCurrentLocation).toHaveBeenCalledWith(false, 'journey');
+  expect(location.getCurrentLocation).not.toHaveBeenCalled();
   expect(location.watchLocation).toHaveBeenCalledTimes(1);
   const sample = (latitude: number, timestamp: number) => ({ coordinates: { latitude, longitude: 121 }, accuracy: 5, timestamp });
-  await act(async () => { feed.consumeForegroundSample(sample(25, 1000)); });
+  await act(async () => {
+    reportLocationSourceHealth({ kind: 'receiving', lastCapturedAt: 1000 });
+    feed.consumeForegroundSample(sample(25, 1000));
+  });
   // Normal journey/foreground projection is capped at 1 Hz and still filters
   // sub-jitter movement; the raw fix is accepted without a React update.
-  await act(async () => { feed.consumeForegroundSample(sample(25.000001, 1001)); });
+  const rendersAfterFirstFix = renders;
+  await act(async () => {
+    reportLocationSourceHealth({ kind: 'receiving', lastCapturedAt: 1001 });
+    feed.consumeForegroundSample(sample(25.000001, 1001));
+  });
+  expect(renders).toBe(rendersAfterFirstFix);
   expect(feed.deviceCoords?.latitude).toBe(25);
   expect(incoming).toHaveBeenCalledTimes(2);
   expect(incoming.mock.calls[1][0].coordinates.latitude).toBe(25.000001);
@@ -46,6 +59,10 @@ it('throttles normal UI projection, preserves fresh uploads, rejects old fixes, 
   expect(feed.deviceCoords?.latitude).toBe(25.0002);
   await act(async () => { renderer.update(React.createElement(Probe, { focused: true })); });
   expect(feed.deviceCoords?.latitude).toBe(25.0002);
+  await act(async () => { jest.advanceTimersByTime(locationStaleAfterMs(false, 'journey') + 2); });
+  const resumedAt = Date.now();
+  await act(async () => { feed.consumeForegroundSample(sample(25.0002, resumedAt)); });
+  expect(feed.deviceCoordsAcceptedAtMs).toBe(resumedAt);
   expect(location.watchLocation).toHaveBeenCalledTimes(1);
   await act(async () => renderer.unmount());
   jest.useRealTimers();

@@ -74,7 +74,7 @@ exports.run = async function run(repo) {
         return { coreResults: new Map(returnedCore.map(operation => [operation.id,
           { status: 'accepted', operationId: operation.id, entityVersion: 1 }])),
           locationResult: { acceptedIds: input.events.filter(event => gpsIds.includes(event.id) && returnedGpsMask & (1 << gpsIds.indexOf(event.id))).map(event => event.id), rejected: [] },
-          recovery: { group: { id: group } }, locationReceipts: [], pendingRefreshes, refreshAcknowledgements: [], refreshRequest: null, acknowledgedIds: [] };
+          kind: 'recovery', recovery: { group: { id: group } }, locationReceipts: [], pendingRefreshes, refreshAcknowledgements: [], refreshRequest: null, acknowledgedIds: [] };
       } }],
     ]);
     const externals = {

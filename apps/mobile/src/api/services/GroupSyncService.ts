@@ -28,7 +28,7 @@ function strings(value: unknown): string[] {
 
 export async function exchangeGroup(input: {
   groupId: string; actorId: string; operations: CoreOperation[]; events: LocationBatchEvent[];
-  refresh: GroupRefreshExchange; signal?: AbortSignal;
+  refresh: GroupRefreshExchange; includeSnapshot?: boolean; signal?: AbortSignal;
 }) {
   if (await requireUserId() !== input.actorId
     || input.operations.some(operation => operation.actorId && operation.actorId !== input.actorId)) {
@@ -42,7 +42,8 @@ export async function exchangeGroup(input: {
   }));
   const events = input.events.slice(0, 50);
   const args = { p_group_id: input.groupId, p_actor_id: input.actorId, p_core_operations: core,
-    p_location_events: events, p_refresh: input.refresh };
+    p_location_events: events, p_refresh: input.includeSnapshot === false
+      ? { ...input.refresh, includeSnapshot: false } : input.refresh };
   while (new TextEncoder().encode(JSON.stringify(args, null, 1)).length > 262144) {
     if (events.length) events.pop();
     else if (core.length > 1) core.pop();
@@ -107,7 +108,10 @@ export async function exchangeGroup(input: {
     refreshRequest = { accepted: row.accepted, retryAfterSeconds: Math.max(0, Math.ceil(row.retry_after_seconds)),
       recipientIds: strings(row.recipient_ids ?? []), requestedAt: row.requested_at ?? undefined };
   }
-  return { coreResults, locationResult, recovery: mapGroupRecoverySnapshot(payload.snapshot),
+  const receipts = { coreResults, locationResult,
     locationReceipts, pendingRefreshes, refreshAcknowledgements, refreshRequest,
     acknowledgedIds: strings(payload.acknowledgedIds) };
+  return input.includeSnapshot === false
+    ? { ...receipts, kind: 'receipts' as const }
+    : { ...receipts, kind: 'recovery' as const, recovery: mapGroupRecoverySnapshot(payload.snapshot) };
 }

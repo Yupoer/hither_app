@@ -492,6 +492,7 @@ export async function enqueueLocationOutbox(
 
 export async function flushLocationOutbox(
   maxEntries = MAX_BATCH,
+  includeSnapshot?: false,
 ): Promise<LocationFlushResult> {
   await outbox.pruneExpired();
   const access = await captureLocationAccess();
@@ -502,7 +503,7 @@ export async function flushLocationOutbox(
   const result: LocationFlushResult = access
     ? isDemoGroup(access.groupId)
       ? await outbox.flush(maxEntries)
-      : await (await import('./groupSync')).syncGroup({ groupId: access.groupId, maxLocationEntries: maxEntries })
+      : await (await import('./groupSync')).syncGroup({ groupId: access.groupId, maxLocationEntries: maxEntries, includeSnapshot })
         .then(result => ({ ...result.location, pendingRefreshes: result.pendingRefreshes }))
     : { sent: 0, discarded: 0, remaining: await outbox.count(), retryScheduled: 0 };
   scheduleLocationOutboxRetry(result);
