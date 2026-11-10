@@ -3,3 +3,4 @@ export const MAP_SHEET_ACTION_HIT_SIZE = 48;
 export const MAP_SHEET_ACTION_ICON_SIZE = 24;
 export const MAP_SHEET_EDGE_INSET = 16;
 export const MAP_SHEET_CORNER_RADIUS = 44;
+export const MAP_SHEET_PANE_TABS_HEIGHT = { ios: 54, android: 84 } as const;

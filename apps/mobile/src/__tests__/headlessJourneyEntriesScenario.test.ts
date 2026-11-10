@@ -72,7 +72,12 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
         capabilities: { locationServices: blocker !== 'services' }, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
       await world.waitFor(device, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
       await device.perform('map.card.toggle', { destinationId: DESTINATION });
-      if (blocker === 'permission') await device.input({ kind: 'permission', status: 'denied' });
+      if (blocker === 'permission') {
+        await device.input({ kind: 'appState', value: 'background' });
+        await device.input({ kind: 'permission', status: 'denied' });
+        await device.input({ kind: 'appState', value: 'active' });
+        await world.settle();
+      }
       await device.perform('map.journey.command', { destinationId: DESTINATION });
       await world.settle();
       const blocked: MapObservation = await device.observe();
@@ -88,6 +93,82 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
           : { host: 'Linking', method: 'sendIntent', action: 'android.settings.LOCATION_SOURCE_SETTINGS' });
       }
       expect(blocked.durable.operations).toEqual([]);
+      expect(world.backend.sessions.size).toBe(0);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-NAV-01 starts and ends locally while the first team sync is held', async () => {
+    const world = new World();
+    try {
+      const leader: Device = await world.device({ id: 'leader', userId: LEADER, platform,
+        screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      await world.waitFor(leader, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
+      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      await world.settle();
+      world.hold('sync_group', {
+        deviceId: 'leader',
+        matches: ({ args }: CoreCall) => args.p_core_operations.some(row => row.operation_type === 'start_gathering'),
+      });
+      await leader.input({ kind: 'permissionRead', action: 'holdNext' });
+      await leader.host.call({ kind: 'press', testId: `gather-nav-${DESTINATION}` });
+      await world.advance(1000);
+      const started: MapObservation = await leader.observe();
+      expect(control(started, `gather-nav-${DESTINATION}`)).toMatchObject({ label: '結束導航', disabled: false });
+      expect(started.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
+      expect(started.durable.operations).toEqual([expect.objectContaining({ operationType: 'start_gathering' })]);
+      expect(world.held).toHaveLength(1);
+      expect(world.backend.sessions.size).toBe(0);
+
+      await leader.host.call({ kind: 'press', testId: `gather-nav-${DESTINATION}` });
+      const ended: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
+        value.durable.operations.length === 2, 'End is saved while Start is still waiting for transport');
+      expect(control(ended, `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      const [start, end] = ended.durable.operations;
+      expect(end).toMatchObject({ operationType: 'end_gathering', dependencyIds: [start.id] });
+      expect(world.backend.sessions.size).toBe(0);
+      await world.release('sync_group');
+      await world.advance(1000);
+      await world.waitFor(leader, (value: MapObservation) => value.durable.operations.length === 0, 'both commands acknowledged');
+      expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({ id: start.id, status: 'cancelled' })]);
+    } finally { await world.close(); }
+  });
+
+  it('MAP-NAV-01 restores the local journey when the server rejects a revoked leader', async () => {
+    const world = new World();
+    try {
+      const leader: Device = await world.device({ id: 'leader', userId: LEADER, platform,
+        screen: { name: 'Map', params: { groupId: GROUP_ID } } });
+      await world.waitFor(leader, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
+      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      world.hold('sync_group', {
+        deviceId: 'leader',
+        matches: ({ args }: CoreCall) => args.p_core_operations.some(row => row.operation_type === 'start_gathering'),
+      });
+      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.advance(1000);
+      const started: MapObservation = await leader.observe();
+      expect(control(started, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(started.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
+      expect(world.held).toHaveLength(1);
+
+      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await world.waitFor(leader, (value: MapObservation) =>
+        control(value, `gather-nav-${DESTINATION}`)?.label === '開始', 'local End');
+      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      const restarted: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
+        value.durable.operations.length === 3, 'local restart while the first Start is held');
+      expect(restarted.durable.operations.map(row => row.operationType)).toEqual(['start_gathering', 'end_gathering', 'start_gathering']);
+      expect(restarted.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
+
+      const membership = world.backend.memberships.find((row: { user_id: string }) => row.user_id === LEADER);
+      membership.role = 'member';
+      await world.release('sync_group');
+      const rejected: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
+        value.durable.operations.some(row => row.conflictResult?.code === 'unauthorized'), 'server refusal recorded');
+      expect(rejected.durable.operations.map(row => row.status)).toEqual(['conflict', 'conflict', 'conflict']);
+      expect(rejected.durable.snapshot.activeGathering.journeyPhase).toBe('staying');
+      await world.waitFor(leader, (value: MapObservation) =>
+        control(value, `gather-nav-${DESTINATION}`)?.label === '向隊長發送要求開始', 'revoked leader sees the member action');
       expect(world.backend.sessions.size).toBe(0);
     } finally { await world.close(); }
   });

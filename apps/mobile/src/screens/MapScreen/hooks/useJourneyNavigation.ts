@@ -57,7 +57,7 @@ interface UseJourneyNavigationParams {
   fromCoords: Coordinates | undefined;
   /** Read the latest device fix when location ownership is declared later. */
   getFromCoords?: () => Coordinates | undefined;
-  getStartLocation: () => Promise<NavigationStartLocation>;
+  getStartLocation: () => NavigationStartLocation | Promise<NavigationStartLocation>;
   arrivalRadiusM: number;
   refresh: () => void;
   t: (key: string, params?: Record<string, any>) => string;
@@ -574,7 +574,8 @@ export function useJourneyNavigation({
       && currentLeaderRef.current === isLeader;
     startAttemptRef.current = { id: attemptId, destinationId: dest.id, groupId, actorId };
     try {
-      const location = await getStartLocation();
+      const readiness = getStartLocation();
+      const location = 'kind' in readiness ? readiness : await readiness;
       if (!isCurrent()) return;
       if (location.kind !== 'available') {
         const permissionDenied = location.kind === 'permissionDenied';

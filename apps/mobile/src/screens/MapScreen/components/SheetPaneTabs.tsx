@@ -5,6 +5,7 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SegmentedControl } from '@expo/ui/community/segmented-control';
+import { MAP_SHEET_PANE_TABS_HEIGHT } from '../../../components/mapSheetChrome';
 import type { SheetPaneKey } from '../../../store/types';
 import { selectionTick } from '../../../utils/haptics';
 import { MemberInboxBadge } from './MemberInboxBadge';
@@ -74,7 +75,7 @@ export const SheetPaneTabs = React.memo(function SheetPaneTabs({
 const styles = StyleSheet.create({
   track: {
     width: '100%',
-    minHeight: 84,
+    minHeight: MAP_SHEET_PANE_TABS_HEIGHT.android,
     justifyContent: 'center',
   },
   measurementLayer: {

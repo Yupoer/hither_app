@@ -457,6 +457,32 @@ it('reconciles a failed gesture to the latest controlled index after foreground 
   await act(async () => { root.unmount(); });
 });
 
+it('keeps the release spring running when the parent accepts the gesture detent', async () => {
+  const height = mockValue(300), changed = jest.fn();
+  const sheet = (index: number, detents = [300, 600]) => React.createElement(BottomSheetElement, {
+    height, detents, index, bottomInset: 0, onIndexChange: changed,
+  }, React.createElement('draft'));
+  let root: any;
+  await act(async () => { root = create(sheet(0)); });
+  const gesture = mockGestures.at(-1);
+  await act(async () => {
+    gesture.onBegin();
+    gesture.onUpdate({ translationY: -100 });
+    gesture.onEnd({ translationY: -100, velocityY: -500 }, true);
+  });
+  const release = mockSprings.at(-1);
+  expect(release.target).toBe(600);
+  expect(changed).toHaveBeenCalledWith(1);
+  await act(async () => { root.update(sheet(1)); });
+  expect(release.cancelled).toBe(false);
+
+  await act(async () => { root.update(sheet(1, [320, 660])); });
+  expect(height.value).toBe(660);
+  await act(async () => { root.update(sheet(0, [320, 660])); });
+  expect(height.value).toBe(320);
+  await act(async () => { root.unmount(); });
+});
+
 it('keeps native scroll and gesture owners on equal detents and remeasures without restarting controlled close', async () => {
   const height = mockValue(300), dismissY = mockValue(0), completed = jest.fn(), latestComplete = jest.fn();
   const props = { height, dismissTranslateY: dismissY, dismissRequested: true, dismissDistance: 800,

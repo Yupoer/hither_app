@@ -40,7 +40,7 @@
       "contract": "Actor/group selection, consent/access and post-upload actor fencing; accepted IDs settle together while omitted/lost results retain unexpired rows. Scoped count/nextDue use the same actor/group. Reviewed pre-auth TTL pruning and the queue-owned retry scheduling call do not change this settlement mapping. TTL pruning, retry timer execution, permanent rejects, denied consent, background refresh consumption and demo uploads remain outside this bounded target."
     },
     "apps/mobile/src/state/coreOperationOutbox.ts": {
-      "sha256": "c50ccf611d230109b6b88d8682fd0cfb7064453c0eed03db730aa9063f976c67",
+      "sha256": "d5af6c040dfd3f354ddcd78d4ad8c21a5a78f295970f3b566af8337e4efe4069",
       "functions": [
         "createCoreOperationOutbox.flush",
         "createCoreOperationOutbox.handleSubmitResult"
@@ -50,7 +50,7 @@
         "SettleCore",
         "SwitchAccount"
       ],
-      "contract": "Ordered same-owner core prefix; missing result stops before mutation; each accepted result settles independently after actor guard."
+      "contract": "Ordered same-owner core prefix; missing result stops before mutation; each accepted result settles independently after actor guard. Terminal gathering rejection and undo of the matching local projection are covered by headlessJourneyEntriesScenario.test.ts, outside the bounded ACK replay."
     }
   },
   "sourceHashEncoding": "UTF-8 with CRLF normalized to LF"

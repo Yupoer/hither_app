@@ -1379,23 +1379,32 @@ export function createCoreOperationOutbox(
           await coreDb.writeSnapshot(exec, { ...snapshot, members: projected.members, updatedAt: current });
         }
       }
-      if (isItineraryMutation(operation)) {
+      const serverGathering = operation.entityType === 'active_gathering'
+        && isUsableActiveGatheringState(conflict.serverState) ? conflict.serverState : null;
+      const rollbackGathering = operation.entityType === 'active_gathering' && !serverGathering;
+      if (isItineraryMutation(operation) || rollbackGathering) {
         const currentSnapshot = await coreDb.readSnapshotInTransaction(exec, operation.groupId);
         if (currentSnapshot) {
           let snapshot = currentSnapshot;
           const rejected = conflictRows.filter(row => invalidated.has(row.id) && row.actorId === operation.actorId)
             .sort((a, b) => (b.sequence ?? 0) - (a.sequence ?? 0));
           for (const row of rejected) {
-            const undo = row.payload._localRollback as ItineraryRollback | undefined;
-            if (!undo?.beforeActiveGathering || !undo.afterActiveGathering || !undo.beforeGroup
-              || JSON.stringify(snapshot.activeGathering) !== JSON.stringify(undo.afterActiveGathering)) continue;
-            snapshot = { ...snapshot, activeGathering: undo.beforeActiveGathering,
-              group: { ...snapshot.group, journeyStatus: undo.beforeGroup.journeyStatus,
+            if (row.entityType === 'active_gathering'
+              && (!rollbackGathering || snapshot.ownerActorId !== row.actorId)) continue;
+            const undo = row.payload._localRollback as Pick<ItineraryRollback, 'beforeActiveGathering' | 'afterActiveGathering' | 'beforeGroup'> | undefined;
+            if (!undo?.beforeActiveGathering || !undo.afterActiveGathering
+              || stableJson(snapshot.activeGathering) !== stableJson(undo.afterActiveGathering)) continue;
+            snapshot = { ...snapshot, activeGathering: undo.beforeActiveGathering };
+            if (undo.beforeGroup) {
+              snapshot.group = { ...snapshot.group, journeyStatus: undo.beforeGroup.journeyStatus,
                 activeDestinationId: undo.beforeGroup.activeDestinationId,
-                journeyStartedAt: undo.beforeGroup.journeyStartedAt } };
+                journeyStartedAt: undo.beforeGroup.journeyStartedAt };
+            }
           }
-          await coreDb.writeSnapshot(exec, snapshot);
-          await coreDb.writeActiveGathering(exec, snapshot.activeGathering, current, { patchSnapshot: 'none' });
+          if (snapshot !== currentSnapshot) {
+            await coreDb.writeSnapshot(exec, snapshot);
+            await coreDb.writeActiveGathering(exec, snapshot.activeGathering, current, { patchSnapshot: 'none' });
+          }
         }
       }
       if ((isItineraryMutation(operation) && !conflict.serverState)
@@ -1422,9 +1431,8 @@ export function createCoreOperationOutbox(
         }
       }
       if (isDurableOperation(operation) && conflict.serverState) {
-        if (operation.entityType === 'active_gathering'
-          && isUsableActiveGatheringState(conflict.serverState)) {
-          await coreDb.writeActiveGathering(exec, conflict.serverState, current, {
+        if (serverGathering) {
+          await coreDb.writeActiveGathering(exec, serverGathering, current, {
             patchSnapshot: 'remote',
           });
         } else if (operation.entityType === 'itinerary'
@@ -1656,6 +1664,13 @@ export function createCoreOperationOutbox(
           ? (await outboxDb.listByGroup(input.groupId)).filter(row => row.actorId === actorId
             && isItineraryMutation(row) && isOpenOperation(row)) : [];
         await writeLocalAndOutbox(async (exec) => {
+          const snapshot = await coreDb.readSnapshotInTransaction(exec, input.groupId);
+          const before = snapshot && (!snapshot.ownerActorId || snapshot.ownerActorId === actorId)
+            ? snapshot.activeGathering : input.baseState;
+          operation.payload._localRollback = {
+            beforeActiveGathering: before,
+            afterActiveGathering: local,
+          } satisfies Pick<ItineraryRollback, 'beforeActiveGathering' | 'afterActiveGathering'>;
           // Outbox optimistic mutation deliberately marks snapshot local_optimistic.
           await coreDb.writeActiveGathering(exec, local, current, {
             patchSnapshot: 'optimistic',
