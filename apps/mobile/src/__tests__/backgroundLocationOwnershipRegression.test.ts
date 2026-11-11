@@ -16,6 +16,7 @@ const mockOneShot = jest.fn<Promise<LocationObject>, [LocationOptions]>();
 const mockAppState = { currentState: 'active' };
 const mockAccess = { generation: 1, groupId: 'g', signal: new AbortController().signal };
 let mockAllowed = true;
+let mockAccessChanged: () => void;
 
 jest.mock('react-native', () => ({ AppState: mockAppState, Platform: { OS: 'ios' } }));
 jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => mockNative }));
@@ -32,11 +33,12 @@ jest.mock('expo-location', () => ({
 jest.mock('../state/locationPrivacy', () => ({
   captureLocationAccess: async () => mockAllowed ? mockAccess : null,
   isLocationAccessCurrent: () => mockAllowed,
-  subscribeLocationAccessChanges: jest.fn(),
+  subscribeLocationAccessChanges: (listener: () => void) => { mockAccessChanged = listener; },
 }));
 
-import { backgroundLocationAdapter, captureBackgroundRefreshFix, prepareNativeJourneyLocation } from '../native/backgroundLocation';
+import { backgroundLocationAdapter, captureBackgroundRefreshFix, observeNativeJourneyLocation, prepareNativeJourneyLocation } from '../native/backgroundLocation';
 import { getBackgroundRefreshLocation } from '../native/location';
+import { locationSourceHealth } from '../native/locationSourceHealth';
 import { BACKGROUND_JOURNEY_TASK, backgroundLocationOptions } from '../state/backgroundJourneyController';
 
 const journeyOptions = backgroundLocationOptions('journey', true, 'navigationMax');
@@ -111,6 +113,38 @@ it('releases a native session if consent changes while iOS is preparing it', asy
   complete(true);
   await expect(preparing).resolves.toBe(false);
   expect(mockNative.prepareBackgroundLocation).toHaveBeenLastCalledWith(false);
+});
+
+it('reports a native interruption and fences late events after consent is revoked', async () => {
+  const onSample = jest.fn();
+  observeNativeJourneyLocation(onSample);
+  const sample = { timestamp: Date.now(), coords: { latitude: 25, longitude: 121, accuracy: 5 } };
+  const emit = (event: string, payload: unknown) =>
+    mockNative.addListener.mock.calls.find(([name]) => name === event)?.[1](payload);
+  await expect(prepareNativeJourneyLocation('g')).resolves.toBe(true);
+  emit('onBackgroundLocation', sample);
+  emit('onBackgroundLocationError', { code: 'location_stream_failed' });
+  expect(onSample).toHaveBeenCalledWith(sample);
+  expect(locationSourceHealth()).toEqual({ kind: 'interrupted', message: 'location_stream_failed' });
+
+  mockNative.prepareBackgroundLocation.mockRejectedValueOnce(new Error('native session unavailable'));
+  mockAllowed = false;
+  mockAccessChanged();
+  emit('onBackgroundLocation', sample);
+  emit('onBackgroundLocationError', { code: 'late_native_error' });
+  await expect(prepareNativeJourneyLocation('g')).resolves.toBe(false);
+  expect(mockNative.prepareBackgroundLocation).toHaveBeenLastCalledWith(false);
+  expect(onSample).toHaveBeenCalledTimes(1);
+  expect(locationSourceHealth()).toEqual({ kind: 'interrupted', message: 'location_stream_failed' });
+});
+
+it('recognizes the prepared native owner only when an Expo task is not also running', async () => {
+  await expect(prepareNativeJourneyLocation('g')).resolves.toBe(true);
+  mockAppState.currentState = 'background';
+  mockNative.hasBackgroundLocation.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+  mockExpoStarted.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync?.(BACKGROUND_JOURNEY_TASK, 'journey')).resolves.toBe(true);
+  await expect(backgroundLocationAdapter.hasMatchingLocationOwnerAsync?.(BACKGROUND_JOURNEY_TASK, 'journey')).resolves.toBe(false);
 });
 
 it('captures one Balanced background refresh fix only with existing background authorization', async () => {
