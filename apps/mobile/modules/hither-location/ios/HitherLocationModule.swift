@@ -6,13 +6,20 @@ import UIKit
 public class HitherLocationModule: Module {
   private var updates: Task<Void, Never>?
   private var backgroundSession: AnyObject?
-  private var foregroundSeen = false
   private var generation = 0
 
   private func stopUpdates() {
     generation += 1
     updates?.cancel()
     updates = nil
+  }
+
+  private func releaseSession() {
+    stopUpdates()
+    if #available(iOS 18.0, *) {
+      (backgroundSession as? CLServiceSession)?.invalidate()
+    }
+    backgroundSession = nil
   }
 
   public func definition() -> ModuleDefinition {
@@ -24,33 +31,26 @@ public class HitherLocationModule: Module {
     }.runOnQueue(.main)
     Events("onBackgroundLocation", "onBackgroundLocationError")
 
-    OnAppBecomesActive { self.foregroundSeen = true }
-    OnDestroy {
-      self.stopUpdates()
-      if #available(iOS 17.0, *) {
-        (self.backgroundSession as? CLBackgroundActivitySession)?.invalidate()
-      }
-      self.backgroundSession = nil
-    }
+    OnDestroy { self.releaseSession() }
 
-    Function("supportsBackgroundLiveUpdates") { () -> Bool in
-      if #available(iOS 17.0, *) { return true }
+    Function("supportsOrdinaryBackgroundLiveUpdates") { () -> Bool in
+      if #available(iOS 18.0, *) { return true }
       return false
     }
 
     AsyncFunction("prepareBackgroundLocation") { (enabled: Bool) -> Bool in
-      guard #available(iOS 17.0, *) else { return false }
       if !enabled {
-        self.stopUpdates()
-        (self.backgroundSession as? CLBackgroundActivitySession)?.invalidate()
-        self.backgroundSession = nil
+        self.releaseSession()
         return false
       }
-      guard UIApplication.shared.applicationState == .active else { return false }
-      self.foregroundSeen = true
-      let status = CLLocationManager().authorizationStatus
-      guard status == .authorizedAlways || status == .authorizedWhenInUse else { return false }
-      if self.backgroundSession == nil { self.backgroundSession = CLBackgroundActivitySession() }
+      guard #available(iOS 18.0, *), UIApplication.shared.applicationState == .active else { return false }
+      guard CLLocationManager().authorizationStatus == .authorizedAlways else {
+        self.releaseSession()
+        return false
+      }
+      if self.backgroundSession == nil {
+        self.backgroundSession = CLServiceSession(authorization: .always)
+      }
       return true
     }.runOnQueue(.main)
 
@@ -58,9 +58,10 @@ public class HitherLocationModule: Module {
     AsyncFunction("stopBackgroundLocation") { self.stopUpdates() }.runOnQueue(.main)
 
     AsyncFunction("startBackgroundLocation") { (options: [String: Any]) -> Bool in
-      guard #available(iOS 17.0, *), self.foregroundSeen, self.backgroundSession != nil else { return false }
-      let status = CLLocationManager().authorizationStatus
-      guard status == .authorizedAlways || status == .authorizedWhenInUse else { return false }
+      guard #available(iOS 18.0, *), self.backgroundSession != nil,
+            UIApplication.shared.applicationState == .background else { return false }
+      let authorization = CLLocationManager()
+      guard authorization.authorizationStatus == .authorizedAlways else { return false }
       self.stopUpdates()
       let epoch = self.generation
       let minTime = max(1, (options["timeInterval"] as? Double ?? 5000) / 1000)
@@ -71,6 +72,10 @@ public class HitherLocationModule: Module {
         do {
           for try await update in CLLocationUpdate.liveUpdates(.default) {
             guard !Task.isCancelled, let self, self.generation == epoch else { return }
+            guard authorization.authorizationStatus == .authorizedAlways else {
+              self.releaseSession()
+              return
+            }
             guard let location = update.location, location.horizontalAccuracy >= 0 else { continue }
             if let previous {
               let elapsed = location.timestamp.timeIntervalSince(previous.timestamp)

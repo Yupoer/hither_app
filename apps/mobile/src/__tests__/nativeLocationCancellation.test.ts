@@ -1,8 +1,8 @@
-jest.mock('../native/backgroundLocation',()=>({nextBackgroundLocation:jest.fn(async()=>null)}));
 const mockWatch = jest.fn();
 const mockPermission = jest.fn(async () => ({status:'granted'}));
 jest.mock('expo-location',()=>({Accuracy:{High:4,Low:2,Balanced:3},
  requestForegroundPermissionsAsync:()=>mockPermission(),getForegroundPermissionsAsync:()=>mockPermission(),watchPositionAsync:(...args:unknown[])=>mockWatch(...args)}));
+jest.mock('expo-modules-core',()=>({requireOptionalNativeModule:()=>null}));
 jest.mock('react-native',()=>({AppState:{currentState:'active',addEventListener:()=>({remove:jest.fn()})}}));
 jest.mock('@react-native-async-storage/async-storage',()=>({getItem:async()=>null}));
 jest.mock('../native/debugLocation',()=>({isDebugRouteActive:()=>false,getDebugLocationSample:()=>null,subscribeDebugLocation:()=>()=>{}}));

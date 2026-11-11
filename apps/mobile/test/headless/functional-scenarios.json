@@ -1092,10 +1092,12 @@
     },
     {
       "id": "LOC-03",
-      "title": "Permission denial, background owner handoff and stop failure obey actual wrapper contracts",
+      "title": "Ordinary background tracking respects permission, owner handoff and upload cadence",
       "critical": true,
       "sources": [
-        "src/state/backgroundJourney.ts"
+        "src/state/backgroundJourney.ts",
+        "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
+        "src/state/useGroupState.ts"
       ],
       "cases": [
         {
@@ -1125,6 +1127,14 @@
         {
           "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
           "pattern": "retains the durable owner after a stop error",
+          "platforms": [
+            "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapControlsScenario.test.ts",
+          "pattern": "actual Map hands active navigation to ordinary background tracking",
           "platforms": [
             "ios",
             "android"

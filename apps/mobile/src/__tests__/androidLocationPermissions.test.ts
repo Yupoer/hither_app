@@ -7,6 +7,8 @@ import {
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+jest.mock('react-native', () => ({ Platform: { OS: 'android' } }));
+
 const config: BackgroundJourneyConfig = {
   groupId: 'group-1',
   navigationSessionId: null,

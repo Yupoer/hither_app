@@ -4,7 +4,7 @@ import { resolveEtaSnapshot } from '../utils/liveActivityEta';
 import { AppState } from 'react-native';
 import type { LocationAccess } from './locationPrivacy';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, isLocationAccessPending, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
-import { backgroundLocationAdapter, observeNativeBackgroundLocation, prepareNativeBackgroundLocation, nativeBackgroundAvailable } from '../native/backgroundLocation';
+import { backgroundLocationAdapter, observeNativeJourneyLocation } from '../native/backgroundLocation';
 import { enqueueAutomaticArrival, effectiveArrivalForOperation, personalArrivalEvent, projectPersonalArrivals, projectArrivals, serverTimestampMs, type EffectiveArrival } from './arrivalSync';
 import { enqueueJourneyCompletion } from './journeyCompletion';
 import { getCoreOperationOutbox, flushCoreOperationOutbox, readLocalJourneyProjection } from './coreDataSync';
@@ -172,7 +172,7 @@ function canContinueBackgroundSharing(config: BackgroundJourneyConfig, access: L
     && AppState.currentState === 'background';
 }
 
-async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }, generation = trackingGeneration): Promise<void> {
+async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }, generation: number, capturedClock: boolean): Promise<void> {
       const callbackStarted = Date.now();
       const stages: BackgroundOpTimingEntry[] = [];
       const callbackId = nextBackgroundCallbackId();
@@ -212,7 +212,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         if (generation !== trackingGeneration || !controller.isCurrent(config)) return;
         if (access === undefined && config.sharingEnabled && config.hasMembership !== false) return;
         if (!access || !config.sharingEnabled || config.hasMembership === false) {
-          await stopBackgroundJourney(false, config);
+          await stopBackgroundJourney(config);
           if (!isLocationAccessPending() || !config.sharingEnabled || config.hasMembership === false) {
             await purgeLocationOutbox();
           }
@@ -523,9 +523,10 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           true,
         );
         motionState = reduceMotionState(motionState, coords, now, policy, accuracyM);
+        const uploadAt = capturedClock ? latest.timestamp : now;
         const shouldUpload = shouldUploadSample(
           coords,
-          now,
+          uploadAt,
           uploadGate,
           policy,
           motionState.cadence,
@@ -577,7 +578,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             sequence,
           }),
         );
-        uploadGate = { lastCoords: coords, lastAtMs: now };
+        uploadGate = { lastCoords: coords, lastAtMs: uploadAt };
         void (async () => {
         const upload = await timeBackgroundStage(stages, 'outbox_flush', () =>
           flushLocationOutbox(undefined, config.powerMode === 'allDay' ? false : undefined),
@@ -643,23 +644,23 @@ function withLocalState<T>(work: () => Promise<T>): Promise<T> {
 
 // Native batches may contain a brief geofence entry followed by an exit.
 // Keep every fix and serialize callbacks so durable arrival writes cannot overlap.
-const pendingBatches: { payload: { data?: BackgroundLocationTaskData; error?: unknown }; generation: number }[] = [];
+const pendingBatches: { payload: { data?: BackgroundLocationTaskData; error?: unknown }; generation: number; capturedClock: boolean }[] = [];
 let processing: Promise<void> | null = null;
-export function handleBackgroundLocations(payload: { data?: BackgroundLocationTaskData; error?: unknown }): Promise<void> {
-  pendingBatches.push({ payload, generation: trackingGeneration });
+export function handleBackgroundLocations(payload: { data?: BackgroundLocationTaskData; error?: unknown }, capturedClock = false): Promise<void> {
+  pendingBatches.push({ payload, generation: trackingGeneration, capturedClock });
   if (!processing) processing = (async () => {
     let failure: unknown;
     while (pendingBatches.length) {
       const next = pendingBatches.shift()!;
       if (next.generation !== trackingGeneration) continue;
       if (next.payload.error || !next.payload.data?.locations.length) {
-        await withLocalState(() => processBackgroundLocations(next.payload, next.generation));
+        await withLocalState(() => processBackgroundLocations(next.payload, next.generation, next.capturedClock));
         continue;
       }
       for (const location of [...next.payload.data.locations].sort((a, b) => a.timestamp - b.timestamp)) {
         if (next.generation !== trackingGeneration) break;
         try {
-          await withLocalState(() => processBackgroundLocations({ data: { locations: [location] } }, next.generation));
+          await withLocalState(() => processBackgroundLocations({ data: { locations: [location] } }, next.generation, next.capturedClock));
         } catch (error) {
           // A failed durable write must not discard the remaining native fixes.
           failure ??= error;
@@ -673,15 +674,8 @@ export function handleBackgroundLocations(payload: { data?: BackgroundLocationTa
 if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
   TaskManager.defineTask<BackgroundLocationTaskData>(BACKGROUND_JOURNEY_TASK, handleBackgroundLocations);
 }
-observeNativeBackgroundLocation(sample => {
-  void (async () => {
-    const config = await controller.load();
-    if (config && !hasActiveBackgroundJourney(config) && AppState.currentState === 'background') {
-      await startBackgroundJourney(backgroundPresenceConfig(config));
-      return;
-    }
-    await handleBackgroundLocations({ data: { locations: [sample] } });
-  })().catch(() => undefined);
+observeNativeJourneyLocation(sample => {
+  void handleBackgroundLocations({ data: { locations: [sample] } }, true).catch(() => undefined);
 });
 subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) {
@@ -701,7 +695,7 @@ export async function startBackgroundJourney(
   if (generation !== trackingGeneration) return 'cancelled';
   if (access === undefined && config.sharingEnabled && config.hasMembership !== false) return 'cancelled';
   if (!access || !config.sharingEnabled || config.hasMembership === false) {
-    await stopBackgroundJourney(true);
+    await stopBackgroundJourney();
     return 'hidden';
   }
   if (hasActiveBackgroundJourney(config)) {
@@ -740,31 +734,29 @@ export async function startBackgroundJourney(
   return controller.start(effectiveConfig);
 }
 
-export async function prepareBackgroundJourneyPermissions(allowPrompt = true, journeyActive = false): Promise<'ready' | 'permission_denied'> {
+export async function prepareBackgroundJourneyPermissions(allowPrompt = true): Promise<'ready' | 'permission_denied'> {
   const access = await captureLocationAccess();
   if (!access || AppState.currentState !== 'active') return 'permission_denied';
-  // Permission preparation never creates a navigation activity session.
-  // Passive iOS background presence requires Always authorization; when-in-use
-  // continuous delivery would force the same blue indicator as a journey.
+  // iOS requires Always authorization for ordinary background sharing without
+  // the activity indicator that extends When In Use authorization.
   const foreground = await Location.getForegroundPermissionsAsync();
   const background = await Location.getBackgroundPermissionsAsync();
-  let ready = foreground.status === 'granted' && ((journeyActive && nativeBackgroundAvailable) || background.status === 'granted');
+  let ready = foreground.status === 'granted' && background.status === 'granted';
   if (!ready && allowPrompt) {
     if (!isLocationAccessCurrent(access) || AppState.currentState !== 'active') return 'permission_denied';
     const allowed = foreground.status === 'granted' || (await Location.requestForegroundPermissionsAsync()).status === 'granted';
     if (!isLocationAccessCurrent(access) || AppState.currentState !== 'active') return 'permission_denied';
-    ready = allowed && ((journeyActive && nativeBackgroundAvailable) || background.status === 'granted' || (await Location.requestBackgroundPermissionsAsync()).status === 'granted');
+    ready = allowed && (background.status === 'granted' || (await Location.requestBackgroundPermissionsAsync()).status === 'granted');
   }
   return ready && isLocationAccessCurrent(access) ? 'ready' : 'permission_denied';
 }
 
-export async function stopBackgroundJourney(releaseSession = false, expected?: BackgroundJourneyConfig): Promise<void> {
+export async function stopBackgroundJourney(expected?: BackgroundJourneyConfig): Promise<void> {
   if (expected && !controller.isCurrent(expected)) return;
-  const generation = ++trackingGeneration;
+  ++trackingGeneration;
   uploadGate = { lastCoords: null, lastAtMs: 0 };
   motionState = createMotionState();
   await controller.stop(expected);
-  if (releaseSession && generation === trackingGeneration) await prepareNativeBackgroundLocation(false);
 }
 
 export function loadBackgroundJourney(): Promise<BackgroundJourneyConfig | null> {
@@ -789,7 +781,7 @@ export function reconcileBackgroundNavigation(groupId: string, fromLocationTask 
     if (!next.hasMembership || next.actorId !== config.actorId || !next.sharingEnabled) {
       setLocationSharingConsent(false);
       if (!next.sharingEnabled) await AsyncStorage.setItem(LOCATION_SHARING_KEY, 'false');
-      await stopBackgroundJourney(false, config);
+      await stopBackgroundJourney(config);
       await purgeLocationOutbox();
       return;
     }

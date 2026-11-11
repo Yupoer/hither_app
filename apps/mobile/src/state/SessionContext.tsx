@@ -244,7 +244,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setLocationAccessContext(null, false);
       // Sensitive location queues follow their existing privacy policy. Account
       // drafts and the durable core operation outbox are deliberately retained.
-      void stopBackgroundJourney(true).catch(() => undefined);
+      void stopBackgroundJourney().catch(() => undefined);
       void clearLiveActivities({ localOnly: true }).catch(() => undefined);
       const previousId = identityActorIdRef.current ?? premiumUserIdRef.current;
       identityActorIdRef.current = null;
@@ -276,7 +276,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setPasswordRecoverySuccess(false);
       setLocationAccessContext(null, false);
       void purgeLocationOutbox().catch(() => undefined);
-      void stopBackgroundJourney(true).catch(() => undefined);
+      void stopBackgroundJourney().catch(() => undefined);
       void clearLiveActivities({ localOnly: true }).catch(() => undefined);
       void clearPremiumProjectionCache(previousId);
     };

@@ -1341,7 +1341,7 @@ export default function MapScreen({ route, navigation }: Props) {
     setSharingEnabled(enabled);
     const pendingWrite = rememberLocationSharing(user.id, enabled).then(() => null, error => error);
     if (!enabled) {
-      await stopBackgroundJourney(true).catch(() => undefined);
+      await stopBackgroundJourney().catch(() => undefined);
       await purgeLocationOutbox().catch(() => undefined);
       if (navigationSessionState.session) {
         await navigationSessionState.ack('sharing_disabled', {
@@ -1910,13 +1910,6 @@ export default function MapScreen({ route, navigation }: Props) {
   const backgroundSharingScope = preferencesReady && sharingEnabled && groupId && user?.id
     && members.some(member => member.userId === user.id) ? `${user.id}:${groupId}` : null;
   backgroundJourneyWantedRef.current = backgroundSharingScope;
-  const backgroundPermissionProfileKey = `${groupId}:${effectiveNavigationActive ? 'journey' : 'presence'}`;
-  const backgroundPermissionProfileRef = useRef(backgroundPermissionProfileKey);
-  backgroundPermissionProfileRef.current = backgroundPermissionProfileKey;
-
-  // Creating CLBackgroundActivitySession alone displays the iOS blue indicator.
-  // Retain it only for a live journey to a target; passive sharing never owns it.
-
   /**
    * Single foreground/background GPS owner:
    * - App active → foreground watch (useDeviceLocation); background task STOPPED.
@@ -1934,12 +1927,10 @@ export default function MapScreen({ route, navigation }: Props) {
       backgroundPermissionDeniedRef={backgroundPermissionDeniedRef}
       sharingEnabled={sharingEnabled}
       backgroundPermissionsPreparedFor={backgroundPermissionsPreparedFor}
-      backgroundPermissionProfileKey={backgroundPermissionProfileKey}
       backgroundPermissionPrepareInFlightRef={backgroundPermissionPrepareInFlightRef}
       effectiveNavigationActive={effectiveNavigationActive}
       language={language}
       backgroundJourneyWantedRef={backgroundJourneyWantedRef}
-      backgroundPermissionProfileRef={backgroundPermissionProfileRef}
       navTarget={navTarget}
       myScopeId={myScopeId}
       deviceCoords={deviceCoords}

@@ -12,8 +12,7 @@ type Observation = {
   durable: { snapshot: CoreGroupSnapshot; operations: CoreOperation[]; locations: { id: string; actor_id: string }[] };
   external: { watches: number; alerts: number; alertDetails: { message: string }[];
     backgroundTasks: { name: string; options: { timeInterval: number; distanceInterval: number; accuracy: number } }[] };
-  native: { location: { running: boolean }; activities: { navigationSessionId: string }[];
-    receipts: { method: string; value?: { timeInterval?: number; activityType?: number } }[] };
+  native: { location: { running: boolean; prepared: boolean }; activities: { navigationSessionId: string }[] };
 };
 type SyncCall = { name: string; deviceId: string; args: { p_core_operations: { operation_id: string }[];
   p_location_events: { id: string; actorId: string }[]; p_refresh: { requestPeers?: boolean; requestedAt?: string } } };
@@ -243,14 +242,18 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       expect(world.backend.sessions.size).toBe(1);
       expect(world.backend.scheduledPushes.some((push: { category: string; entity_id: string; sender_id: string }) =>
         push.category === 'navigation_session' && push.entity_id === session.id && push.sender_id === LEADER)).toBe(true);
+      if (platform === 'ios') {
+        await world.waitFor(leader, (value: Observation) => value.native.location.prepared, 'scheduled iOS location session prepared in foreground');
+      }
       await leader.input({ kind: 'appState', value: 'background' });
-      const active: Observation = await world.waitFor(leader, (value: Observation) => platform === 'ios'
-        ? value.native.location.running : value.external.backgroundTasks.some(task => task.options.timeInterval < 600000), 'active background owner cadence');
-      if (platform === 'ios') expect(active.native.receipts.some(receipt => receipt.method === 'nativeLocation.start'
-        && receipt.value?.timeInterval !== undefined && receipt.value.timeInterval < 600000 && receipt.value.activityType === 1)).toBe(true);
+      const active: Observation = await world.waitFor(leader, (value: Observation) =>
+        platform === 'ios' ? value.native.location.running
+          : value.external.backgroundTasks.length === 1 && value.external.backgroundTasks[0].options.timeInterval < 600_000,
+      'scheduled journey background owner');
+      if (platform === 'ios') expect(active.external.backgroundTasks).toEqual([]);
       else {
-        expect(active.external.backgroundTasks[0].options.timeInterval).toBeLessThan(600000);
-        expect(active.external.backgroundTasks[0].options.accuracy).toBe(4);
+        expect(active.external.backgroundTasks[0].options).toMatchObject({ timeInterval: 60_000, accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: false });
+        expect(active.native.location).toMatchObject({ running: false, prepared: false });
       }
     } finally { await world.close(); }
   });

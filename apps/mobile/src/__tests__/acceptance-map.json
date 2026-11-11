@@ -1995,7 +1995,7 @@
       "child": 287,
       "acceptance": "A locked background journey replaces stale targets without another GPS owner.",
       "testFile": "backgroundJourneyCoverage.test.ts",
-      "testNamePattern": "recovers a changed locked-screen target|passes a real presence fix"
+      "testNamePattern": "recovers a changed locked-screen target|passes an early journey fix"
     },
     {
       "parent": 287,
@@ -2469,9 +2469,9 @@
     {
       "parent": 311,
       "child": 311,
-      "acceptance": "Map background GPS handoff accepts the committed journey baseline and native intent first, preserves original object/callback reevaluation and permission flight ownership, and adds no per-input GPS stop.",
+      "acceptance": "Map background GPS handoff accepts the committed journey baseline, preserves object/callback reevaluation and permission flight ownership, and reuses prepared sharing permission after starting a journey.",
       "testFile": "mapBackgroundLocationResource.test.ts",
-      "testNamePattern": "publishes the latest locked baseline|retains object and callback|keeps permission flight ownership|preserves native intent dependency boundaries"
+      "testNamePattern": "publishes the latest locked baseline|retains object and callback|keeps permission flight ownership|starts a journey then backgrounds with the prepared sharing permission"
     },
     {
       "parent": 311,
@@ -2588,9 +2588,9 @@
     {
       "parent": 320,
       "child": "native-location",
-      "acceptance": "Real background location wrappers respect platform support, permission, privacy, ownership and external failures.",
+      "acceptance": "The ordinary background location task switches profiles without a navigation activity, requires permission and preserves ownership across SDK failures.",
       "testFile": "headlessNativeLocationScenario.test.ts",
-      "testNamePattern": "transfers one real controller owner|rolls back persisted ownership|releases a real access-signal refresh"
+      "testNamePattern": "transfers one real controller owner|preserves background permission denial|rolls back persisted ownership|retains the durable owner after a stop error"
     },
     {
       "parent": 320,
@@ -2987,9 +2987,9 @@
     {
       "parent": 366,
       "child": 366,
-      "acceptance": "A peer can consume pending refresh commands returned by group sync without a push marker and acknowledge the original accepted fix.",
+      "acceptance": "A peer can acknowledge an accepted fix for a pending refresh. An active iOS journey can use the next fix from its background task without opening another location source.",
       "testFile": "backgroundLocationRefreshBehavior.test.ts",
-      "testNamePattern": "uses returned pending rows without a push marker or list read"
+      "testNamePattern": "uses returned pending rows without a push marker or list read|answers a peer refresh from the next fix"
     },
     {
       "parent": 366,

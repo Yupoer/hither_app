@@ -218,7 +218,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   let locationRunning = false;
   const locationSupported = platform === 'ios' && profile.nativeLocationLiveUpdates !== false;
   const locationModule = boundary('HitherLocation', {
-    supportsBackgroundLiveUpdates: platform === 'ios' ? () => locationSupported : undefined,
+    supportsOrdinaryBackgroundLiveUpdates: platform === 'ios' ? () => locationSupported : undefined,
     isDeviceLocked: platform === 'ios' ? async () => location.locked : undefined,
     getCurrentLocation: platform === 'android' ? async () => null : undefined,
     prepareBackgroundLocation: platform === 'ios' ? async enabled => {
@@ -234,7 +234,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
     startBackgroundLocation: platform === 'ios' ? async options => {
       assert(options && typeof options === 'object' && !Array.isArray(options));
       assert.equal(options.activityType, 1);
-      assert.equal(options.showsBackgroundLocationIndicator, true);
+      assert.equal(options.showsBackgroundLocationIndicator, false);
       effect('nativeLocation.start', options); fail(location, 'startError');
       locationRunning = Boolean(locationSupported && locationPrepared && location.permission === 'granted' && location.startResult);
       return locationRunning;

@@ -5,14 +5,10 @@ const migration = readFileSync(
   join(__dirname, '../../../../supabase/migrations/20260813100000_location_refresh_pending.sql'),
   'utf8',
 );
-const controller = readFileSync(
-  join(__dirname, '../state/backgroundJourneyController.ts'),
-  'utf8',
-);
 const mapScreen = readFileSync(
   join(__dirname, '../screens/MapScreen.tsx'),
   'utf8',
-) + readFileSync(join(__dirname, '../screens/MapScreen/MapBackgroundLocationResource.tsx'), 'utf8');
+);
 const pushIndex = readFileSync(
   join(__dirname, '../../../../supabase/functions/send-push/index.ts'),
   'utf8',
@@ -43,26 +39,5 @@ describe('durable location refresh contract (#191)', () => {
     expect(pushRecipients).toContain('payload.recipient_ids');
     expect(readFileSync(join(__dirname, '../utils/refreshTeamLocations.ts'), 'utf8')).toContain('result.recipientIds');
     expect(mapScreen).not.toContain('expectedLocationRefreshRecipientIds');
-  });
-
-  it('prepares permissions while active and never prompts from a flagged background transition', () => {
-    expect(controller).toContain('permissionsPrepared?: boolean');
-    expect(controller).toContain('config.permissionsPrepared === false && config.appState != null');
-    expect(mapScreen).toContain('prepareBackgroundJourneyPermissions');
-    expect(mapScreen).toContain("const backgroundPermissionProfileKey = `${groupId}:${effectiveNavigationActive ? 'journey' : 'presence'}`;");
-    expect(mapScreen).toContain('permissionsPrepared: backgroundPermissionsPreparedFor === backgroundPermissionProfileKey');
-    expect(mapScreen).toContain('prepareBackgroundJourneyPermissions(false, effectiveNavigationActive)');
-    expect(mapScreen).toContain('prepareBackgroundJourneyPermissions(true, effectiveNavigationActive)');
-    const preparation = mapScreen.slice(mapScreen.indexOf('const backgroundPermissionProfileKey'),
-      mapScreen.indexOf('void startBackgroundJourney({'));
-    const completionAt = preparation.indexOf('.then((result) =>');
-    const failureAt = preparation.indexOf('.catch(() =>', completionAt);
-    const completion = preparation.slice(completionAt, failureAt);
-    expect(completion).toContain('backgroundJourneyWantedRef.current !== backgroundSharingScope');
-    expect(completion).toContain('backgroundPermissionProfileRef.current !== backgroundPermissionProfileKey');
-    const failure = preparation.slice(failureAt, preparation.indexOf('.finally(() =>', failureAt));
-    expect(failure).toContain('backgroundJourneyWantedRef.current === backgroundSharingScope');
-    expect(failure).toContain('backgroundPermissionProfileRef.current === backgroundPermissionProfileKey');
-    expect(controller).toContain('pausesUpdatesAutomatically: false');
   });
 });
