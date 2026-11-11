@@ -242,12 +242,19 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       expect(world.backend.sessions.size).toBe(1);
       expect(world.backend.scheduledPushes.some((push: { category: string; entity_id: string; sender_id: string }) =>
         push.category === 'navigation_session' && push.entity_id === session.id && push.sender_id === LEADER)).toBe(true);
+      if (platform === 'ios') {
+        await world.waitFor(leader, (value: Observation) => value.native.location.prepared, 'scheduled iOS location session prepared in foreground');
+      }
       await leader.input({ kind: 'appState', value: 'background' });
       const active: Observation = await world.waitFor(leader, (value: Observation) =>
-        value.external.backgroundTasks.length === 1 && value.external.backgroundTasks[0].options.timeInterval < 600_000,
-      'scheduled journey background task');
-      expect(active.external.backgroundTasks[0].options).toMatchObject({ timeInterval: 60_000, accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: false });
-      expect(active.native.location).toMatchObject({ running: false, prepared: false });
+        platform === 'ios' ? value.native.location.running
+          : value.external.backgroundTasks.length === 1 && value.external.backgroundTasks[0].options.timeInterval < 600_000,
+      'scheduled journey background owner');
+      if (platform === 'ios') expect(active.external.backgroundTasks).toEqual([]);
+      else {
+        expect(active.external.backgroundTasks[0].options).toMatchObject({ timeInterval: 60_000, accuracy: 4, activityType: 1, showsBackgroundLocationIndicator: false });
+        expect(active.native.location).toMatchObject({ running: false, prepared: false });
+      }
     } finally { await world.close(); }
   });
 });

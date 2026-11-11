@@ -346,18 +346,26 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await device.perform('map.journey.command', { destinationId: DESTINATION });
       const activeSession = () => [...world.backend.sessions.values()].find((session: { status: string; id: string }) => session.status === 'active');
       await world.waitFor(device, () => Boolean(activeSession()), 'actual Map navigation start');
+      if (platform === 'ios') {
+        await world.waitFor(device, (value: Observation) => value.native.location.prepared, 'ordinary iOS location session prepared in foreground');
+      }
       await device.input({ kind: 'appState', value: 'background' });
       const running: Observation = await world.waitFor(device, (value: Observation) => value.external.watches === 0
-        && value.external.backgroundTasks.length === 1, 'ordinary background owner');
+        && (platform === 'ios' ? value.native.location.running : value.external.backgroundTasks.length === 1), 'ordinary background owner');
       const task = running.external.backgroundTasks[0];
-      expect(task.options).toMatchObject({
+      if (platform === 'ios') expect(running.external.backgroundTasks).toEqual([]);
+      else expect(running.native.location).toMatchObject({ running: false, prepared: false });
+      const options = platform === 'ios'
+        ? running.native.receipts.find((receipt: { method: string }) => receipt.method === 'nativeLocation.start')?.value
+        : task.options;
+      expect(options).toMatchObject({
         accuracy: 4, activityType: 1, timeInterval: 60_000,
         distanceInterval: platform === 'ios' ? 10 : 100, showsBackgroundLocationIndicator: false,
       });
-      expect(running.native.location).toMatchObject({ running: false, prepared: false });
       const sendFix = async (latitude: number) => {
         const sample = { timestamp: world.now, coords: { latitude, longitude: 121.511, accuracy: 5 } };
-        await device.input({ kind: 'task', name: task.name, value: { data: { locations: [sample] }, error: null } });
+        await device.input(platform === 'ios' ? { kind: 'nativeLocation', sample }
+          : { kind: 'task', name: task.name, value: { data: { locations: [sample] }, error: null } });
         await world.settle();
         return sample;
       };

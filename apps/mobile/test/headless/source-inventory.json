@@ -6369,7 +6369,7 @@
     "file": "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
     "kind": "export",
     "name": "MapBackgroundLocationResource",
-    "hash": "cdb1163c5ca708932346f0f6d9ff7ce9cd090db480d48fd6a9c831b0913b0bb7"
+    "hash": "b3122b8f30bea4909766ba961032af7deeb490224f368879f432a8d4336cf6ad"
   },
   {
     "file": "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
@@ -6381,7 +6381,7 @@
     "file": "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "811cef82714b01ba4a7e645082e376d639c59e7dcbb624f8aa8aa8ad9f79ad66"
+    "hash": "a74e1e80528d5a7bf3905bec55cc90e01a9f97a772958b84c07fb3b9aac1a3f3"
   },
   {
     "file": "src/screens/MapScreen/MapForegroundArrivalResource.tsx",
