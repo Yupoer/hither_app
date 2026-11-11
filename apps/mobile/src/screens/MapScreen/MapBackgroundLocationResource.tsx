@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Alert, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMountEffect } from '../../hooks/useMountEffect';
@@ -62,6 +62,17 @@ export function MapBackgroundLocationResource(input: MapBackgroundLocationInput 
   baselineInput: MapJourneyBaselineInput; publishBaseline: PublishMapJourneyBaseline;
 }) {
   const nativeIntent = useRef<{ key: string | null; appState: AppStateStatus } | null>(null);
+  const applyNativeIntent = useCallback((key: string | null, appState: AppStateStatus, groupId: string | null) => {
+    const previousIntent = nativeIntent.current;
+    nativeIntent.current = { key, appState };
+    if (!key && previousIntent?.key) {
+      void prepareNativeJourneyLocation(null).catch(() => undefined);
+    } else if (key && appState === 'active'
+      && (previousIntent?.key !== key || previousIntent.appState !== 'active')) {
+      // Core Location needs an Always service session before the scene backgrounds.
+      void prepareNativeJourneyLocation(groupId).catch(() => undefined);
+    }
+  }, []);
   const [previous, setPrevious] = useState({ input, generation: 0 });
   if (!(Object.is(previous.input.appState, input.appState)
     && Object.is(previous.input.mapFocused, input.mapFocused)
@@ -106,29 +117,21 @@ export function MapBackgroundLocationResource(input: MapBackgroundLocationInput 
   useMountEffect(() => () => {
     if (nativeIntent.current?.key) void prepareNativeJourneyLocation(null).catch(() => undefined);
   });
-  return <MapBackgroundLocationJob key={previous.generation} input={input} nativeIntent={nativeIntent} />;
+  return <MapBackgroundLocationJob key={previous.generation} input={input} applyNativeIntent={applyNativeIntent} />;
 }
-function MapBackgroundLocationJob({ input, nativeIntent }: {
+function MapBackgroundLocationJob({ input, applyNativeIntent }: {
   input: MapBackgroundLocationInput & { baselineInput: MapJourneyBaselineInput; publishBaseline: PublishMapJourneyBaseline };
-  nativeIntent: React.RefObject<{ key: string | null; appState: AppStateStatus } | null>;
+  applyNativeIntent: (key: string | null, appState: AppStateStatus, groupId: string | null) => void;
 }) {
   const { backgroundSharingScope, groupId, backgroundStartedKeyRef, backgroundPermissionAttemptedRef, setBackgroundPermissionsPreparedFor, appState, backgroundPermissionDeniedRef, sharingEnabled, backgroundPermissionsPreparedFor, backgroundPermissionPrepareInFlightRef, effectiveNavigationActive, language, backgroundJourneyWantedRef, navTarget, myScopeId, deviceCoords, resolveCurrentNavigationSessionId, pendingLeaderTargetId, highAccuracy, travelMode, localArrivalRadiusM, canEditItinerary, members, sessionEligibleMembers, initialJourneyRef, user, activeDestinationArrivals, state, lastValidPresentation, lastRouteDistanceM, colors, membership, journeyStartCoords, progressDepartedStart, progressMaxSticky, backgroundEtaRef, selfRoute } = input;
   useMountEffect(() => {
     input.publishBaseline(input.baselineInput);
 
     const backgroundNavigationSessionId = navTarget ? resolveCurrentNavigationSessionId(navTarget) : null;
-    const previousIntent = nativeIntent.current;
     const nativeKey = backgroundSharingScope && sharingEnabled && effectiveNavigationActive
       && backgroundPermissionsPreparedFor === backgroundSharingScope && navTarget && !navTarget.closedAt && backgroundNavigationSessionId
       ? JSON.stringify([backgroundSharingScope, navTarget.id, backgroundNavigationSessionId]) : null;
-    nativeIntent.current = { key: nativeKey, appState };
-    if (!nativeKey && previousIntent?.key) {
-      void prepareNativeJourneyLocation(null).catch(() => undefined);
-    } else if (nativeKey && appState === 'active'
-      && (previousIntent?.key !== nativeKey || previousIntent.appState !== 'active')) {
-      // Core Location needs an Always service session before the scene backgrounds.
-      void prepareNativeJourneyLocation(groupId).catch(() => undefined);
-    }
+    applyNativeIntent(nativeKey, appState, groupId);
 
     if (!backgroundSharingScope || !groupId) {
       backgroundStartedKeyRef.current = null;
