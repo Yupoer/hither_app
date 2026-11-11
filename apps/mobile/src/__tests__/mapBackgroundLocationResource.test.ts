@@ -9,6 +9,7 @@ const mockEvents: string[] = [];
 const mockPrepare = jest.fn<Promise<'ready' | 'permission_denied'>, [boolean]>(async () => 'ready');
 const mockStart = jest.fn(async (input: Parameters<typeof startBackgroundJourney>[0]) => { mockEvents.push(`start:${input.initialDistanceM}`); return 'started' as const; });
 const mockStop = jest.fn(async () => { mockEvents.push('stop'); });
+const mockPrepareNative = jest.fn(async (_groupId: string | null) => true);
 jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) }));
 jest.mock('../state/backgroundJourney', () => ({
@@ -17,6 +18,9 @@ jest.mock('../state/backgroundJourney', () => ({
   stopBackgroundJourney: (...args: Parameters<typeof mockStop>) => mockStop(...args),
 }));
 jest.mock('../state/backgroundLocationRefresh', () => ({ rememberPendingLocationPermission: jest.fn() }));
+jest.mock('../native/backgroundLocation', () => ({
+  prepareNativeJourneyLocation: (groupId: string | null) => mockPrepareNative(groupId),
+}));
 jest.mock('../state/locationOutbox', () => ({ purgeLocationOutbox: jest.fn() }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -109,13 +113,20 @@ describe('Map background GPS handoff resource', () => {
       }));
     });
     act(() => tree?.update(React.createElement(Owner, { baseline, background })));
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
+    expect(mockPrepareNative).toHaveBeenCalledWith('group');
     await act(async () => tree?.update(React.createElement(Owner, {
       baseline, background: { ...background, appState: 'background' },
     })));
     expect(mockPrepare).not.toHaveBeenCalled();
     expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockPrepareNative).toHaveBeenCalledTimes(1);
     expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({
       powerMode: 'journey', navigationSessionId: 'session', permissionsPrepared: true,
     }));
+    await act(async () => tree?.update(React.createElement(Owner, {
+      baseline, background: { ...background, appState: 'background', effectiveNavigationActive: false },
+    })));
+    expect(mockPrepareNative).toHaveBeenLastCalledWith(null);
   });
 });

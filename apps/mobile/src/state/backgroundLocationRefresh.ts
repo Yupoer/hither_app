@@ -2,16 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import { location } from '../native';
-import { backgroundLocationAdapter } from '../native/backgroundLocation';
 import {
   listMyPendingLocationRefreshes,
   type PendingLocationRefresh,
 } from '../api/services/LocationService';
 import { captureLocationAccess, isLocationAccessCurrent, isLocationAccessPending, type LocationAccess } from './locationPrivacy';
-import { loadBackgroundJourney, reconcileBackgroundNavigation } from './backgroundJourney';
-import { BACKGROUND_JOURNEY_TASK } from './backgroundJourneyController';
+import { reconcileBackgroundNavigation } from './backgroundJourney';
 import { diagnostics } from './diagnostics';
 import { syncGroup, getAcceptedLocationReceipt } from './groupSync';
 import { requireUserId } from '../api/services/_helpers';
@@ -51,8 +49,8 @@ function parsePayload(data: unknown): LocationRefreshPayload | null {
     : null;
 }
 
-async function rememberPendingRefresh(groupId: string): Promise<string> {
-  const raw = JSON.stringify({ groupId, requestedAt: Date.now() });
+async function rememberPendingRefresh(groupId: string, requestedAt: string): Promise<string> {
+  const raw = JSON.stringify({ groupId, requestedAt: Date.parse(requestedAt) });
   await AsyncStorage.setItem(
     PENDING_LOCATION_REFRESH_KEY,
     raw,
@@ -108,7 +106,7 @@ export async function recoverPendingLocationRefreshFromSample(
   const pending = (suppliedPending ?? await listMyPendingLocationRefreshes(false)).filter(row => row.groupId === groupId);
   if (!isLocationAccessCurrent(access)) return;
   if (pending.length > 0 && !raw) {
-    raw = await rememberPendingRefresh(groupId);
+    raw = await rememberPendingRefresh(groupId, pending[0].requestedAt);
     matchingMarker = true;
   }
   await uploadAndAckPendingRefreshes(fix, pending, access, false);
@@ -208,15 +206,10 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
       const pending = await listMyPendingLocationRefreshes(false).catch(() => []);
       const matching = pending.filter(row => row.groupId === payload.groupId);
       if (!matching.length || !isLocationAccessCurrent(access)) return;
-      const journey = Platform.OS === 'ios' ? await loadBackgroundJourney() : null;
-      if (journey?.groupId === payload.groupId && journey.powerMode === 'journey'
-        && await backgroundLocationAdapter.hasStartedLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK)) {
-        await rememberPendingRefresh(payload.groupId);
-        return;
-      }
+      const { requestedAt } = matching[0];
       const fix = await location.getBackgroundRefreshLocation(access).catch(() => null);
       if (!fix || !matching.some(row => fix.timestamp >= Date.parse(row.requestedAt))) {
-        await rememberPendingRefresh(payload.groupId).catch(() => undefined);
+        await rememberPendingRefresh(payload.groupId, requestedAt).catch(() => undefined);
         return;
       }
 
@@ -242,7 +235,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_REFRESH_TASK)) {
           source: 'refresh_request',
           errorCode: 'refresh_failed',
         });
-        await rememberPendingRefresh(payload.groupId).catch(() => undefined);
+        await rememberPendingRefresh(payload.groupId, requestedAt).catch(() => undefined);
       }
     },
   );

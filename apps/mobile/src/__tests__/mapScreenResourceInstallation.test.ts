@@ -196,6 +196,7 @@ jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationP
 jest.mock('../state/locationSharingSync', () => ({ hydrateLocationSharing: mockAsync, rememberLocationSharing: mockAsync, syncLocationSharing: mockAsync }));
 jest.mock('../state/locationOutbox', () => ({ purgeLocationOutbox: mockAsync }));
 jest.mock('../state/locationPrivacy', () => ({ captureLocationAccess: mockAsync }));
+jest.mock('../native/backgroundLocation', () => ({ prepareNativeJourneyLocation: mockAsync }));
 jest.mock('../state/journeyNotifications', () => ({ notifyJourneyOperator: mockAsync, notifyJourneyApproach: mockAsync }));
 jest.mock('../state/diagnostics', () => ({ diagnostics: { write: mockAsync } }));
 jest.mock('../native/location', () => ({

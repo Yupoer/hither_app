@@ -4202,8 +4202,32 @@
   {
     "file": "src/native/backgroundLocation.ts",
     "kind": "export",
+    "name": "prepareNativeJourneyLocation",
+    "hash": "aea587e7266f1dd8eaf351ee7a78d0fc6f0e7fd6bac2475024c8a45a88d7518d"
+  },
+  {
+    "file": "src/native/backgroundLocation.ts",
+    "kind": "export",
+    "name": "observeNativeJourneyLocation",
+    "hash": "6400c742e48b406f155fda0638f68992e7696b84434f67e02c5e7a7dbea8a7f0"
+  },
+  {
+    "file": "src/native/backgroundLocation.ts",
+    "kind": "lifecycle",
+    "name": "native?.addListener",
+    "hash": "a5ef0a05c131b1b09f688f20e58ee1c8f1ef428fe17832e387d8f240f60c7dbb"
+  },
+  {
+    "file": "src/native/backgroundLocation.ts",
+    "kind": "lifecycle",
+    "name": "native?.addListener",
+    "hash": "f9ce1181e01209b585801ce34dfd67559481c3c5aa652a5362dbc150ee5971f8"
+  },
+  {
+    "file": "src/native/backgroundLocation.ts",
+    "kind": "export",
     "name": "backgroundLocationAdapter",
-    "hash": "5e29bec5af31a54b787b12744fad7837064e19ca32c69a7d3fc8108999afb8fa"
+    "hash": "25a7eaa33d4a102300e72f7e4c6ed553ccb32b5e70b718330c5e90d6670d0bef"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -6345,13 +6369,19 @@
     "file": "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
     "kind": "export",
     "name": "MapBackgroundLocationResource",
-    "hash": "1042dc86ca48897a43432412b595af08eba06223e63b718f56898a24938d6e41"
+    "hash": "cdb1163c5ca708932346f0f6d9ff7ce9cd090db480d48fd6a9c831b0913b0bb7"
   },
   {
     "file": "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "9def6225bbd08f00af66e8bfbe785d507dec5a5a3856a510e4b5f172b94b8c47"
+    "hash": "605ed205f8fb81cc5cffe018e5de5ed1df3b25a84007dd372290b387fd1cd9b9"
+  },
+  {
+    "file": "src/screens/MapScreen/MapBackgroundLocationResource.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "811cef82714b01ba4a7e645082e376d639c59e7dcbb624f8aa8aa8ad9f79ad66"
   },
   {
     "file": "src/screens/MapScreen/MapForegroundArrivalResource.tsx",
@@ -8889,7 +8919,7 @@
     "file": "src/state/backgroundJourney.ts",
     "kind": "export",
     "name": "handleBackgroundLocations",
-    "hash": "ace2b4fca47df4cbd364801179f99236fa5bf58d5a7a93affe90aef38bca1cba"
+    "hash": "2eb83513886386e487a15f7d5b148ed8786dd47e572bc3205de2c5f9bfad4e37"
   },
   {
     "file": "src/state/backgroundJourney.ts",
@@ -8955,13 +8985,13 @@
     "file": "src/state/backgroundJourneyController.ts",
     "kind": "export",
     "name": "createBackgroundJourneyController",
-    "hash": "46da3c6c46ffac4412e6400ccebb326ab119cb412e037105a5d177676aa59d1c"
+    "hash": "0cd496dce1e55d4f7be5d705476af02cbfbee42c02019f7662f8506cb2e794b0"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "export",
     "name": "recoverPendingLocationRefreshFromSample",
-    "hash": "0dc437274c29cb6e144c279a3ba0d7482c9ef99513bd489609e3bd0aee36e28a"
+    "hash": "2dac8752530e39f1d2ab737aa78d03c35c6a1c9141c863f5ceb28d83a92c9ad7"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",
@@ -8979,7 +9009,7 @@
     "file": "src/state/backgroundLocationRefresh.ts",
     "kind": "lifecycle",
     "name": "TaskManager.defineTask",
-    "hash": "ca88077d5a64a4d3c1511c15bee52855a517d68aa1fd2261eb2385d7c7fa9ed8"
+    "hash": "1f941f752f4d0c100352417283f440e3e6dbd57e13b9c1ba5bcdfc622c03a945"
   },
   {
     "file": "src/state/backgroundLocationRefresh.ts",

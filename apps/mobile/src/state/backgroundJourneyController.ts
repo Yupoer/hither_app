@@ -120,9 +120,12 @@ export interface BackgroundLocationAdapter {
   requestForegroundPermissionsAsync(): Promise<PermissionResult>;
   requestBackgroundPermissionsAsync(): Promise<PermissionResult>;
   hasStartedLocationUpdatesAsync(taskName: string): Promise<boolean>;
-  startLocationUpdatesAsync(taskName: string, options: object): Promise<void>;
+  hasMatchingLocationOwnerAsync?(taskName: string, profile: BackgroundLocationProfile): Promise<boolean>;
+  startLocationUpdatesAsync(taskName: string, options: object, profile: BackgroundLocationProfile): Promise<void>;
   stopLocationUpdatesAsync(taskName: string): Promise<void>;
 }
+
+export type BackgroundLocationProfile = NonNullable<BackgroundJourneyConfig['powerMode']>;
 
 export interface BackgroundStorageAdapter {
   getItem(key: string): Promise<string | null>;
@@ -313,10 +316,12 @@ export function createBackgroundJourneyController(
           BACKGROUND_JOURNEY_KEY,
           JSON.stringify(persistedConfig),
         );
-        const desiredOptions = backgroundLocationOptions(config.powerMode ?? 'allDay', Boolean(config.highAccuracy), nextMode);
-        const profileChanged =
-          alreadyStarted && previous != null &&
-          powerProfileKey(previous) !== powerProfileKey(config);
+        const profile = hasActiveBackgroundJourney(config) ? 'journey' : 'allDay';
+        const desiredOptions = backgroundLocationOptions(profile, Boolean(config.highAccuracy), nextMode);
+        const profileChanged = alreadyStarted && (
+          (previous != null && powerProfileKey(previous) !== powerProfileKey(config))
+          || await location.hasMatchingLocationOwnerAsync?.(BACKGROUND_JOURNEY_TASK, profile) === false
+        );
 
         if (alreadyStarted && profileChanged) {
           await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK);
@@ -324,7 +329,7 @@ export function createBackgroundJourneyController(
         if (requestedEpoch !== epoch) return 'cancelled';
         if (!alreadyStarted || profileChanged) {
           try {
-            await location.startLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK, desiredOptions);
+            await location.startLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK, desiredOptions, profile);
           } catch (error) {
             if (requestedEpoch === epoch) {
               const sameOwner = previous && previous.actorId === config.actorId && previous.groupId === config.groupId
@@ -333,9 +338,10 @@ export function createBackgroundJourneyController(
                 const restored = { ...previous, trackingEpoch: requestedEpoch };
                 await storage.setItem(BACKGROUND_JOURNEY_KEY, JSON.stringify(restored));
                 if (profileChanged && requestedEpoch === epoch) {
+                  const restoredProfile = hasActiveBackgroundJourney(restored) ? 'journey' : 'allDay';
                   await location.startLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK, backgroundLocationOptions(
-                    restored.powerMode ?? 'allDay', Boolean(restored.highAccuracy), resolveBackgroundTrackingMode(restored),
-                  )).catch(() => undefined);
+                    restoredProfile, Boolean(restored.highAccuracy), resolveBackgroundTrackingMode(restored),
+                  ), restoredProfile).catch(() => undefined);
                 }
               } else {
                 await location.stopLocationUpdatesAsync(BACKGROUND_JOURNEY_TASK).catch(() => undefined);

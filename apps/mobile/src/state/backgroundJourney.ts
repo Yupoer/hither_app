@@ -4,7 +4,7 @@ import { resolveEtaSnapshot } from '../utils/liveActivityEta';
 import { AppState } from 'react-native';
 import type { LocationAccess } from './locationPrivacy';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, isLocationAccessPending, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
-import { backgroundLocationAdapter } from '../native/backgroundLocation';
+import { backgroundLocationAdapter, observeNativeJourneyLocation } from '../native/backgroundLocation';
 import { enqueueAutomaticArrival, effectiveArrivalForOperation, personalArrivalEvent, projectPersonalArrivals, projectArrivals, serverTimestampMs, type EffectiveArrival } from './arrivalSync';
 import { enqueueJourneyCompletion } from './journeyCompletion';
 import { getCoreOperationOutbox, flushCoreOperationOutbox, readLocalJourneyProjection } from './coreDataSync';
@@ -172,7 +172,7 @@ function canContinueBackgroundSharing(config: BackgroundJourneyConfig, access: L
     && AppState.currentState === 'background';
 }
 
-async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }, generation = trackingGeneration): Promise<void> {
+async function processBackgroundLocations({ data, error }: { data?: BackgroundLocationTaskData; error?: unknown }, generation: number, capturedClock: boolean): Promise<void> {
       const callbackStarted = Date.now();
       const stages: BackgroundOpTimingEntry[] = [];
       const callbackId = nextBackgroundCallbackId();
@@ -523,9 +523,10 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           true,
         );
         motionState = reduceMotionState(motionState, coords, now, policy, accuracyM);
+        const uploadAt = capturedClock ? latest.timestamp : now;
         const shouldUpload = shouldUploadSample(
           coords,
-          now,
+          uploadAt,
           uploadGate,
           policy,
           motionState.cadence,
@@ -577,7 +578,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             sequence,
           }),
         );
-        uploadGate = { lastCoords: coords, lastAtMs: now };
+        uploadGate = { lastCoords: coords, lastAtMs: uploadAt };
         void (async () => {
         const upload = await timeBackgroundStage(stages, 'outbox_flush', () =>
           flushLocationOutbox(undefined, config.powerMode === 'allDay' ? false : undefined),
@@ -643,23 +644,23 @@ function withLocalState<T>(work: () => Promise<T>): Promise<T> {
 
 // Native batches may contain a brief geofence entry followed by an exit.
 // Keep every fix and serialize callbacks so durable arrival writes cannot overlap.
-const pendingBatches: { payload: { data?: BackgroundLocationTaskData; error?: unknown }; generation: number }[] = [];
+const pendingBatches: { payload: { data?: BackgroundLocationTaskData; error?: unknown }; generation: number; capturedClock: boolean }[] = [];
 let processing: Promise<void> | null = null;
-export function handleBackgroundLocations(payload: { data?: BackgroundLocationTaskData; error?: unknown }): Promise<void> {
-  pendingBatches.push({ payload, generation: trackingGeneration });
+export function handleBackgroundLocations(payload: { data?: BackgroundLocationTaskData; error?: unknown }, capturedClock = false): Promise<void> {
+  pendingBatches.push({ payload, generation: trackingGeneration, capturedClock });
   if (!processing) processing = (async () => {
     let failure: unknown;
     while (pendingBatches.length) {
       const next = pendingBatches.shift()!;
       if (next.generation !== trackingGeneration) continue;
       if (next.payload.error || !next.payload.data?.locations.length) {
-        await withLocalState(() => processBackgroundLocations(next.payload, next.generation));
+        await withLocalState(() => processBackgroundLocations(next.payload, next.generation, next.capturedClock));
         continue;
       }
       for (const location of [...next.payload.data.locations].sort((a, b) => a.timestamp - b.timestamp)) {
         if (next.generation !== trackingGeneration) break;
         try {
-          await withLocalState(() => processBackgroundLocations({ data: { locations: [location] } }, next.generation));
+          await withLocalState(() => processBackgroundLocations({ data: { locations: [location] } }, next.generation, next.capturedClock));
         } catch (error) {
           // A failed durable write must not discard the remaining native fixes.
           failure ??= error;
@@ -673,6 +674,9 @@ export function handleBackgroundLocations(payload: { data?: BackgroundLocationTa
 if (!TaskManager.isTaskDefined(BACKGROUND_JOURNEY_TASK)) {
   TaskManager.defineTask<BackgroundLocationTaskData>(BACKGROUND_JOURNEY_TASK, handleBackgroundLocations);
 }
+observeNativeJourneyLocation(sample => {
+  void handleBackgroundLocations({ data: { locations: [sample] } }, true).catch(() => undefined);
+});
 subscribeLocationAccessChanges(() => {
   if (!isLocationAccessEnabled()) {
     pendingBatches.length = 0;

@@ -9,6 +9,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
   let tasks: Map<string, object>;
   let sdk: { foreground: string; background: string; startError: string | null; stopError: string | null };
   let calls: string[];
+  let appState: { currentState: string };
   const failures: string[] = [];
   const strict = createStrict((message: string) => { failures.push(message); throw new Error(message); });
   let owner: ReturnType<typeof import('../state/backgroundJourneyController')['createBackgroundJourneyController']>;
@@ -25,7 +26,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
   beforeEach(() => {
     jest.resetModules();
     failures.length = 0;
-    const state = { currentState: 'active' };
+    appState = { currentState: 'active' };
     values = new Map([['pref.sharingEnabled', 'true']]);
     tasks = new Map();
     calls = [];
@@ -37,7 +38,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
       removeItem: async (key: string) => { values.delete(key); },
     });
     jest.doMock('@react-native-async-storage/async-storage', () => ({ __esModule: true, default: storage, ...storage }));
-    jest.doMock('react-native', () => strict('react-native', { AppState: state, Platform: { OS: platform } }));
+    jest.doMock('react-native', () => strict('react-native', { AppState: appState, Platform: { OS: platform } }));
     jest.doMock('expo-modules-core', () => strict('expo-modules-core', {
       requireOptionalNativeModule: (name: string) => {
         if (!Object.hasOwn(native.nativeModules, name)) throw new Error(`Unknown optional native module ${name}`);
@@ -64,7 +65,7 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     taskName = controller.BACKGROUND_JOURNEY_TASK;
     configKey = controller.BACKGROUND_JOURNEY_KEY;
     owner = controller.createBackgroundJourneyController(backgroundLocationAdapter, storage);
-    state.currentState = 'background';
+    appState.currentState = 'background';
   });
 
   afterEach(async () => {
@@ -79,10 +80,21 @@ describe.each(['ios', 'android'])('real background location wrapper and owner on
     const passive = config({ powerMode: 'allDay' });
     await expect(owner.start(passive)).resolves.toBe('started');
     expect(tasks.get(taskName)).toMatchObject({ accuracy: 3, timeInterval: 600_000, showsBackgroundLocationIndicator: false });
+    if (platform === 'ios') {
+      appState.currentState = 'active';
+      const { prepareNativeJourneyLocation } = require('../native/backgroundLocation');
+      await expect(prepareNativeJourneyLocation('native-location-group')).resolves.toBe(true);
+      expect(native.observe().location).toMatchObject({ running: false, prepared: true });
+      appState.currentState = 'background';
+    }
     await expect(owner.start(config())).resolves.toBe('started');
     expect(await owner.load()).toMatchObject({ navigationSessionId: 'journey', destinationId: 'target', powerMode: 'journey' });
-    expect(tasks.size).toBe(1);
-    expect(tasks.get(taskName)).toMatchObject({ accuracy: 4, timeInterval: 60_000, activityType: 1, showsBackgroundLocationIndicator: false });
+    if (platform === 'ios') {
+      expect(tasks.size).toBe(0);
+      expect(native.observe().location).toMatchObject({ running: true, prepared: true });
+    } else {
+      expect(tasks.get(taskName)).toMatchObject({ accuracy: 4, timeInterval: 60_000, activityType: 1, showsBackgroundLocationIndicator: false });
+    }
     await expect(owner.start(passive)).resolves.toBe('started');
     expect(tasks.get(taskName)).toMatchObject({ accuracy: 3, timeInterval: 600_000, showsBackgroundLocationIndicator: false });
     expect(native.observe().location).toMatchObject({ running: false, prepared: false });

@@ -139,7 +139,7 @@ it.each([
   await controller.start({ ...base, powerMode: 'journey', highAccuracy: true, ...invalid });
   expect(location.startLocationUpdatesAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
     accuracy: 3, timeInterval: 600_000, activityType: 1, showsBackgroundLocationIndicator: false,
-  }));
+  }), 'allDay');
 });
 
 it('restores a same-owner passive mode if background navigation acquisition fails', async () => {
@@ -150,7 +150,7 @@ it('restores a same-owner passive mode if background navigation acquisition fail
   expect(await controller.load()).toMatchObject({ actorId: 'actor', powerMode: 'allDay' });
   expect(location.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
     accuracy: 3, activityType: 1, showsBackgroundLocationIndicator: false,
-  }));
+  }), 'allDay');
 });
 
 it('does not restore a previous account owner after acquisition fails for the next account', async () => {

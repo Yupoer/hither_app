@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Alert, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMountEffect } from '../../hooks/useMountEffect';
+import { prepareNativeJourneyLocation } from '../../native/backgroundLocation';
 import { prepareBackgroundJourneyPermissions, startBackgroundJourney, stopBackgroundJourney } from '../../state/backgroundJourney';
 import { rememberPendingLocationPermission } from '../../state/backgroundLocationRefresh';
 import { purgeLocationOutbox } from '../../state/locationOutbox';
@@ -60,6 +61,7 @@ export type MapBackgroundLocationInput = {
 export function MapBackgroundLocationResource(input: MapBackgroundLocationInput & {
   baselineInput: MapJourneyBaselineInput; publishBaseline: PublishMapJourneyBaseline;
 }) {
+  const nativeIntent = useRef<{ key: string | null; appState: AppStateStatus } | null>(null);
   const [previous, setPrevious] = useState({ input, generation: 0 });
   if (!(Object.is(previous.input.appState, input.appState)
     && Object.is(previous.input.mapFocused, input.mapFocused)
@@ -101,14 +103,32 @@ export function MapBackgroundLocationResource(input: MapBackgroundLocationInput 
     && Object.is(previous.input.lastRouteDistanceM, input.lastRouteDistanceM))) {
     setPrevious({ input, generation: previous.generation + 1 });
   }
-  return <MapBackgroundLocationJob key={previous.generation} input={input} />;
+  useMountEffect(() => () => {
+    if (nativeIntent.current?.key) void prepareNativeJourneyLocation(null).catch(() => undefined);
+  });
+  return <MapBackgroundLocationJob key={previous.generation} input={input} nativeIntent={nativeIntent} />;
 }
-function MapBackgroundLocationJob({ input }: {
+function MapBackgroundLocationJob({ input, nativeIntent }: {
   input: MapBackgroundLocationInput & { baselineInput: MapJourneyBaselineInput; publishBaseline: PublishMapJourneyBaseline };
+  nativeIntent: React.RefObject<{ key: string | null; appState: AppStateStatus } | null>;
 }) {
   const { backgroundSharingScope, groupId, backgroundStartedKeyRef, backgroundPermissionAttemptedRef, setBackgroundPermissionsPreparedFor, appState, backgroundPermissionDeniedRef, sharingEnabled, backgroundPermissionsPreparedFor, backgroundPermissionPrepareInFlightRef, effectiveNavigationActive, language, backgroundJourneyWantedRef, navTarget, myScopeId, deviceCoords, resolveCurrentNavigationSessionId, pendingLeaderTargetId, highAccuracy, travelMode, localArrivalRadiusM, canEditItinerary, members, sessionEligibleMembers, initialJourneyRef, user, activeDestinationArrivals, state, lastValidPresentation, lastRouteDistanceM, colors, membership, journeyStartCoords, progressDepartedStart, progressMaxSticky, backgroundEtaRef, selfRoute } = input;
   useMountEffect(() => {
     input.publishBaseline(input.baselineInput);
+
+    const backgroundNavigationSessionId = navTarget ? resolveCurrentNavigationSessionId(navTarget) : null;
+    const previousIntent = nativeIntent.current;
+    const nativeKey = backgroundSharingScope && sharingEnabled && effectiveNavigationActive
+      && backgroundPermissionsPreparedFor === backgroundSharingScope && navTarget && !navTarget.closedAt && backgroundNavigationSessionId
+      ? JSON.stringify([backgroundSharingScope, navTarget.id, backgroundNavigationSessionId]) : null;
+    nativeIntent.current = { key: nativeKey, appState };
+    if (!nativeKey && previousIntent?.key) {
+      void prepareNativeJourneyLocation(null).catch(() => undefined);
+    } else if (nativeKey && appState === 'active'
+      && (previousIntent?.key !== nativeKey || previousIntent.appState !== 'active')) {
+      // Core Location needs an Always service session before the scene backgrounds.
+      void prepareNativeJourneyLocation(groupId).catch(() => undefined);
+    }
 
     if (!backgroundSharingScope || !groupId) {
       backgroundStartedKeyRef.current = null;
@@ -188,9 +208,6 @@ function MapBackgroundLocationJob({ input }: {
       navTarget?.coordinates ??
       deviceCoords ??
       { latitude: 0, longitude: 0 };
-    const backgroundNavigationSessionId = navTarget
-      ? resolveCurrentNavigationSessionId(navTarget)
-      : null;
     if (pendingLeaderTargetId === navTarget?.id && !backgroundNavigationSessionId) return;
     const sessionKey = backgroundNavigationSessionId ?? 'none';
     const key = JSON.stringify([backgroundSharingScope, backgroundScopeSubgroupId, powerMode,

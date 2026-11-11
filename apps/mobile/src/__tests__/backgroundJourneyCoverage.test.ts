@@ -88,6 +88,7 @@ jest.mock('expo-task-manager', () => ({
 }));
 jest.mock('../native/backgroundLocation', () => ({
   backgroundLocationAdapter: mockLocationAdapter,
+  observeNativeJourneyLocation: jest.fn(),
 }));
 jest.mock('../state/locationPrivacy', () => ({
   LOCATION_SHARING_KEY: 'pref.sharingEnabled',
@@ -221,7 +222,7 @@ describe('background journey lifecycle and callback gate', () => {
     await expect(startBackgroundJourney({ ...baseConfig, navigationSessionId: null,
       powerMode: 'allDay', appState: 'background' })).resolves.toBe('started');
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalledWith(
-      expect.any(String), expect.objectContaining({ accuracy: 3, timeInterval: 600_000, pausesUpdatesAutomatically: false }));
+      expect.any(String), expect.objectContaining({ accuracy: 3, timeInterval: 600_000, pausesUpdatesAutomatically: false }), 'allDay');
     const now = Date.now();
     await handleBackgroundLocations({ data: { locations: [location(now)] } });
     expect(mockEnqueueLocation).toHaveBeenCalledWith(expect.objectContaining({
@@ -688,13 +689,13 @@ describe('background journey lifecycle and callback gate', () => {
       navigationSessionId: null });
     expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'allDay' });
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
-      expect.objectContaining({ accuracy: 3, timeInterval: 600_000 }));
+      expect.objectContaining({ accuracy: 3, timeInterval: 600_000 }), 'allDay');
     mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
       sharingEnabled: true, session: { id: 'session-2', destination: { arrivalRadiusMeters: 50 } }, target: baseConfig.target });
     await reconcileBackgroundNavigation(baseConfig.groupId);
     expect(await loadBackgroundJourney()).toMatchObject({ highAccuracy: true, powerMode: 'journey' });
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenLastCalledWith(expect.any(String),
-      expect.objectContaining({ accuracy: 4, timeInterval: 15_000 }));
+      expect.objectContaining({ accuracy: 4, timeInterval: 15_000 }), 'journey');
   });
 
   it('passes an early journey fix to a pending refresh without starting another GPS owner', async () => {
