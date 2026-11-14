@@ -1,10 +1,16 @@
-import { DEFAULT_MAP_CENTER, cameraCenterForTarget, initialRegionFor } from '../components/mapCameraMath';
+import { DEFAULT_MAP_CENTER, cameraCenterForTarget, initialRegionFor, latOffsetForVisibleBand } from '../components/mapCameraMath';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const groupMap = readFileSync(join(__dirname, '../components/GroupMap.tsx'), 'utf8');
 
 describe('GroupMap initial region', () => {
+  it('keeps a target in the visible band as top and bottom chrome change', () => {
+    expect(latOffsetForVisibleBand(0.01, 120, 360, 800)).toBeCloseTo(0.0015);
+    expect(latOffsetForVisibleBand(0.01, 360, 120, 800)).toBeCloseTo(-0.0015);
+    expect(latOffsetForVisibleBand(0.01, 120, 120, 800)).toBe(0);
+    expect(latOffsetForVisibleBand(0.01, 120, 360, 0)).toBe(0);
+  });
   it('positions a target using the native projected point rather than an assumed map span', () => {
     const camera = { latitude: 25, longitude: 121 };
     const target = { latitude: 24.98, longitude: 121.03 };
