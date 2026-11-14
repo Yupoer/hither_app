@@ -2,9 +2,19 @@ const scenario = (file, inventory, pattern, assertions) => ({ file: `src/__tests
   inventory: inventory.split(','), pattern, platforms: ['ios', 'android'], assertions });
 const service = (ids, pattern, assertions) => scenario('headlessMapServiceScenario', ids, pattern, assertions);
 const component = (ids, pattern, assertions) => scenario('headlessMapComponentsScenario', ids, pattern, assertions);
-const screen = (ids, pattern, assertions) => scenario('headlessMapScenario', ids, pattern, assertions);
+const screen = (ids, pattern, assertions) => ({ ...scenario('headlessMapScenario', ids, pattern, assertions), platforms: ['android'] });
+
+const d6 = (ids, pattern, assertions) => ({ ...scenario('headlessD6MapScenario', ids, pattern, assertions), platforms: ['ios'] });
+const d6Itinerary = (ids, pattern, assertions) => ({ ...scenario('headlessD6ItineraryScenario', ids, pattern, assertions), platforms: ['ios'] });
 
 module.exports = [
+  d6('MAP-DEST-02,MAP-DEST-03,MAP-DEST-04', 'adds a renamed map pin on the chosen date after the selected stop', 'D6 pin staging writes nothing until confirmation. The normalized title, chosen date and neighboring stops persist, and the new itinerary row opens its detail.'),
+  d6('MAP-NAV-01,MAP-NAV-03', 'starts from the floating control and ends navigation', 'The real iOS Start uses a fresh fix. The iOS long press cancels navigation and leaves the itinerary stop open.'),
+  d6('MAP-MEET-01,MAP-MEET-02', 'saves and clears the meeting time', 'D6 stop sheet saves selected datetime and reminder, then clears both from the server stop.'),
+  d6Itinerary('MAP-ROUTE-03,MAP-ROUTE-10', 'saves the reverse-picked trip range', 'D6 date selection moves trimmed open stops to the pool, preserves closed history, and keeps the new range and day color on restart.'),
+  d6Itinerary('MAP-ROUTE-08,MAP-ROUTE-12', 'deletes selected stops from the iOS island', 'Actual island batch action deletes the selected stops and leaves no confirmation alert.'),
+  d6Itinerary('MAP-DEST-05,MAP-GATHER-01,MAP-GATHER-02', 'lets a leader approve a member suggestion', 'D6 member add submits a suggestion without editing the itinerary. The leader approves into the pool and schedules the approved stop.'),
+
   service('MAP-DEST-04,MAP-DEST-07,MAP-STAY-04,MAP-ROUTE-02,MAP-ROUTE-09', 'ordinary first-stop accommodation import marker reorder completion and delete',
     'Real services persist pool/provider identity, first-stop order, accommodation day, marker fields, durable meet-time save and clear, completion session, import pool placement and delete; empty batch and reorder do no I/O.'),
   service('MAP-STAY-04,MAP-STAY-05,MAP-STAY-06', 'real daily writes retain ID',
@@ -29,8 +39,8 @@ module.exports = [
     'Canceled picker does no filesystem work; malformed KMZ enters real error stage; retry clears error and no import callback fires.'),
   screen('Q05,Q06', 'runs real coordinate validation',
     'Blank and out-of-range form produces no submit; valid fields normalize; reopened coordinates reinitialize; cancel does not submit.'),
-  scenario('headlessCoordinateParentScenario', 'MAP-DEST-06,Q05,Q06', 'Map leader saves one trimmed coordinate pool stop durably before ACK',
-    'Actual Map search opens its coordinate form, persists one normalized pool stop before held ACK, closes after local persistence, and retains one server row after restart.'),
+  scenario('headlessCoordinateParentScenario', 'MAP-DEST-06,Q05,Q06', 'Map leader saves one trimmed coordinate stop durably before ACK',
+    'Android Map search saves a normalized coordinate stop to the pool. The iOS D6 add flow stages coordinates until final confirmation and saves to the chosen day. Both persist before held ACK and retain one server row after restart.'),
   screen('MAP-DEST-02,MAP-DEST-03,MAP-DEST-04,MAP-DEST-13,MAP-SHELL-04', 'cancel writes nothing and real confirmation',
     'Actual native map long press stages title; cancel writes nothing; confirmation trims title, commits local pool row before held transport ACK, closes card, then ACK drains the outbox. Single-row swipe delete cancellation preserves the row; reopening and confirming deletes it.'),
   screen('MAP-DEST-05', 'a follower confirm persists a suggestion',

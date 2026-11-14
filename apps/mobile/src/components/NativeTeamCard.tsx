@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 
 export type NativeTeamCardMember = { emoji?: string; placeholder?: boolean };
@@ -75,15 +78,15 @@ const styles = StyleSheet.create({
   groupAvatar: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   groupEmoji: { fontSize: 26 },
   copy: { flex: 1, minWidth: 0 },
-  name: { color: '#fff', fontSize: 16.5, fontWeight: '700', marginBottom: 5 },
+  name: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', marginBottom: 5 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  subtitle: { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
-  code: { color: '#ff9500', backgroundColor: 'rgba(255,149,0,0.2)', borderRadius: 7, width: 85, textAlign: 'center', paddingVertical: 2, fontSize: 14.5, fontWeight: '800' },
+  subtitle: { color: 'rgba(255,255,255,0.65)', fontSize: APP_TEXT_SIZE.caption },
+  code: { color: '#ff9500', backgroundColor: 'rgba(255,149,0,0.2)', borderRadius: 7, width: 85, textAlign: 'center', paddingVertical: 2, fontSize: APP_TEXT_SIZE.caption, fontWeight: '800' },
   trailing: { flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8 },
   stack: { flexDirection: 'row', alignItems: 'center' },
   member: { width: 32, height: 32, marginLeft: -10, borderRadius: 16, borderWidth: 2, borderColor: '#132034', backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   memberEmoji: { fontSize: 16 },
   extra: { marginLeft: -10, backgroundColor: 'rgba(255,255,255,0.18)' },
-  extraText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  extraText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   pressed: { opacity: 0.82 },
 });

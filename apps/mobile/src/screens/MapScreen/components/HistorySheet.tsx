@@ -5,7 +5,9 @@ import { type VisitedWaypoint } from '../../../types';
 import { type HistoryDayGroup } from '../../../utils/history';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, Text, View, Pressable } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 import type { User } from '../../../types';
 

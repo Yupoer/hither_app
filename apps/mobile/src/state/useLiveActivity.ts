@@ -64,12 +64,14 @@ export async function clearLiveActivities(opts?: {
 
 export interface LiveActivityRuntimeProps {
   active: boolean | undefined;
+  allArrived?: boolean;
+  onAvailabilityChange?: (state: 'active' | 'unavailable' | 'inactive') => void;
   state: GroupActivityState;
   session?: LiveActivitySessionContext;
   liveActivitiesEnabled?: boolean;
 }
 
-export function LiveActivityRuntime({ active, state, session, liveActivitiesEnabled = true }: LiveActivityRuntimeProps) {
+export function LiveActivityRuntime({ active, allArrived = false, state, session, liveActivitiesEnabled = true, onAvailabilityChange }: LiveActivityRuntimeProps) {
   const { user } = useSession();
   const foreground = useForegroundUi();
   const lastPersistAtRef = useRef(0);
@@ -77,6 +79,8 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
   const displayQueueRef = useRef(Promise.resolve());
   const lastPersistedAccentRef = useRef<string | undefined>(undefined);
   const lastPersistedTravelModeRef = useRef<string | undefined>(undefined);
+  const availabilityRef = useRef(onAvailabilityChange);
+  availabilityRef.current = onAvailabilityChange;
   const stateRef = useRef(state);
   const sessionRef = useRef(session);
   const pushToStartTokenRef = useRef<string | null>(null);
@@ -99,6 +103,8 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
     reconcilerRef.current = new LiveActivityLifecycleReconciler({
       endGroupActivity: (activityId) => liveActivity.endGroupActivity(activityId),
       endAllGroupActivities: () => liveActivity.endAllGroupActivities(),
+      completeGroupActivity: (navigationSessionId, destinationId) =>
+        liveActivity.completeGroupActivity(navigationSessionId, destinationId),
       startGroupActivity: (intent) => liveActivity.startGroupActivity({ ...stateRef.current,
         destinationId: intent.destinationId, navigationSessionId: intent.navigationSessionId }),
       listGroupActivities: () => liveActivity.listGroupActivities(),
@@ -159,10 +165,13 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
 
   const arrivalSignature = state.memberArrived?.map((arrived) => (arrived ? '1' : '0')).join('');
   const emojiSignature = state.memberEmojis?.join(',') ?? '';
-  const destinationEmojiSig = state.destinationEmoji ?? '';
+  const destinationAppearance = JSON.stringify([
+    state.destinationEmoji, state.dayColorHex, state.meetTimeMs, state.selfFace, state.memberColors,
+  ]);
 
   return createElement(LiveActivityResources, {
     reconcilerRef,
+    availabilityRef,
     activeRef,
     sessionRef,
     persistSession,
@@ -176,12 +185,13 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
     userId: user?.id,
     liveActivitiesEnabled,
     active,
+    allArrived,
     currentScopedState,
     foreground,
     lastDisplayRef,
     arrivalSignature,
     emojiSignature,
-    destinationEmojiSig,
+    destinationAppearance,
     displayQueueRef,
     navigationSessionId: session?.navigationSessionId,
     stateAccentHex: state.accentHex,
@@ -206,6 +216,7 @@ export function LiveActivityRuntime({ active, state, session, liveActivitiesEnab
 }
 
 interface LiveActivityResourceInput {
+  availabilityRef: RefObject<LiveActivityRuntimeProps['onAvailabilityChange']>;
   reconcilerRef: RefObject<LiveActivityLifecycleReconciler | null>;
   activeRef: RefObject<boolean | undefined>;
   sessionRef: RefObject<LiveActivitySessionContext | undefined>;
@@ -220,12 +231,13 @@ interface LiveActivityResourceInput {
   userId: string | undefined;
   liveActivitiesEnabled: boolean;
   active: boolean | undefined;
+  allArrived: boolean;
   currentScopedState: () => GroupActivityState;
   foreground: boolean;
   lastDisplayRef: RefObject<{ at: number; semantic: string; payload: string; }>;
   arrivalSignature: string | undefined;
   emojiSignature: string;
-  destinationEmojiSig: string;
+  destinationAppearance: string;
   displayQueueRef: RefObject<Promise<void>>;
   navigationSessionId: string | undefined;
   stateAccentHex: GroupActivityState['accentHex'];
@@ -408,17 +420,28 @@ function LiveActivityTokenPolicy({
 
 // Keep intent generations in the stable reconciler across input-job replacements.
 function LiveActivityJourneyIntent({
-  reconcilerRef, active, session, sessionRef, currentScopedState, persistSession,
+  reconcilerRef, active, allArrived, session, sessionRef, currentScopedState, persistSession, availabilityRef,
 }: LiveActivityResourceInput) {
   useMountEffect(() => {
     const reconciler = reconcilerRef.current;
     if (!reconciler) return;
+    let mounted = true;
 
-    if (active && session?.destinationId) {
+    if (allArrived && Platform.OS === 'ios' && session?.navigationSessionId) {
+      void reconciler.request({
+        kind: 'stop',
+        clearSessions: true,
+        completedScope: { navigationSessionId: session.navigationSessionId, destinationId: session.destinationId },
+      }).catch(() => undefined);
+    } else if (active && session?.destinationId) {
       void reconciler
         .request({ kind: 'start', destinationId: session.destinationId, navigationSessionId: session.navigationSessionId })
         .then(() => {
           const handle = reconciler.currentHandle;
+          if (mounted && sessionRef.current?.destinationId === session.destinationId
+            && sessionRef.current?.navigationSessionId === session.navigationSessionId) {
+            availabilityRef.current?.(handle && reconciler.ownsScope(session.destinationId, session.navigationSessionId) ? 'active' : 'unavailable');
+          }
           if (handle && sessionRef.current && reconciler.ownsScope(sessionRef.current.destinationId, sessionRef.current.navigationSessionId)) {
             void liveActivity.updateGroupActivity(handle, currentScopedState()).catch(() => undefined);
             void persistSession(handle, { force: true }).catch(() => undefined);
@@ -426,6 +449,7 @@ function LiveActivityJourneyIntent({
         })
         .catch(() => undefined);
     } else if (active === false) {
+      availabilityRef.current?.('inactive');
       // Journey off — clear native + DB sessions.
       // Do NOT tear down while active but session is still hydrating (GPS baseline).
       void reconciler
@@ -434,6 +458,7 @@ function LiveActivityJourneyIntent({
     } else if (active && !session) {
       // Active journey but session not ready yet — leave existing activity alone.
     } // Unknown/hydrating state must not end a native activity.
+    return () => { mounted = false; };
   });
   return null;
 }
@@ -450,7 +475,7 @@ function LiveActivityResumeDisplay({
 }
 
 function LiveActivityDisplayDelivery({
-  reconcilerRef, active, session, foreground, state, arrivalSignature, emojiSignature, destinationEmojiSig,
+  reconcilerRef, active, session, foreground, state, arrivalSignature, emojiSignature, destinationAppearance,
   currentScopedState, lastDisplayRef, displayQueueRef, sessionRef, persistSession,
 }: LiveActivityResourceInput) {
   useMountEffect(() => {
@@ -459,7 +484,7 @@ function LiveActivityDisplayDelivery({
       || !foreground || AppState.currentState !== 'active') return;
     const semantic = JSON.stringify([session?.navigationSessionId, session?.destinationId, state.status, state.personalArrived, state.personalArrivalAtMs, state.personalArrivalSequence, state.personalArrivalCorrectionAtMs, state.gatheredCount,
       state.memberCount, state.gatheringTitle, state.groupName, state.accentHex, state.travelMode,
-      arrivalSignature, emojiSignature, destinationEmojiSig, state.language]);
+      arrivalSignature, emojiSignature, destinationAppearance, state.language]);
     const payload = JSON.stringify(currentScopedState());
     const last = lastDisplayRef.current;
     if (last.payload === payload) return;
@@ -489,16 +514,16 @@ function LiveActivityDisplayDelivery({
 
 function LiveActivityResources(input: LiveActivityResourceInput) {
   const {
-    navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground, stateStatus,
+    navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, allArrived, destinationId, foreground, stateStatus,
     statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, statePersonalArrivalCorrectionAtMs, stateLanguage, stateSampledAtMs,
     stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount, stateMemberCount,
-    stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationEmojiSig,
+    stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationAppearance,
   } = input;
   const [previous, setPrevious] = useState({
-    navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground, stateStatus,
+    navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, allArrived, destinationId, foreground, stateStatus,
     statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, statePersonalArrivalCorrectionAtMs, stateLanguage, stateSampledAtMs,
     stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount, stateMemberCount,
-    stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationEmojiSig,
+    stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature, destinationAppearance,
     LiveActivitySessionObservationGeneration: 0, LiveActivityAccentGeneration: 0, LiveActivityTokenPolicyGeneration: 0,
     LiveActivityJourneyIntentGeneration: 0, LiveActivityResumeDisplayGeneration: 0,
     LiveActivityDisplayDeliveryGeneration: 0,
@@ -513,6 +538,7 @@ function LiveActivityResources(input: LiveActivityResourceInput) {
     || !Object.is(previous.userId, userId);
   const LiveActivityJourneyIntentChanged =
     !Object.is(previous.active, active)
+    || !Object.is(previous.allArrived, allArrived)
     || !Object.is(previous.destinationId, destinationId)
     || !Object.is(previous.navigationSessionId, navigationSessionId);
   const LiveActivityResumeDisplayChanged =
@@ -541,7 +567,7 @@ function LiveActivityResources(input: LiveActivityResourceInput) {
     || !Object.is(previous.stateTravelMode, stateTravelMode)
     || !Object.is(previous.arrivalSignature, arrivalSignature)
     || !Object.is(previous.emojiSignature, emojiSignature)
-    || !Object.is(previous.destinationEmojiSig, destinationEmojiSig);
+    || !Object.is(previous.destinationAppearance, destinationAppearance);
   if (LiveActivitySessionObservationChanged
     || LiveActivityAccentChanged
     || LiveActivityTokenPolicyChanged
@@ -549,11 +575,11 @@ function LiveActivityResources(input: LiveActivityResourceInput) {
     || LiveActivityResumeDisplayChanged
     || LiveActivityDisplayDeliveryChanged) {
     setPrevious({
-      navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, destinationId, foreground,
+      navigationSessionId, userId, stateAccentHex, liveActivitiesEnabled, active, allArrived, destinationId, foreground,
       stateStatus, statePersonalArrived, statePersonalArrivalAtMs, statePersonalArrivalSequence, statePersonalArrivalCorrectionAtMs, stateLanguage,
       stateSampledAtMs, stateEtaTargetAtMs, stateDistanceMeters, stateEtaSeconds, stateProgress, stateGatheredCount,
       stateMemberCount, stateGatheringTitle, stateGroupName, stateTravelMode, arrivalSignature, emojiSignature,
-      destinationEmojiSig,
+      destinationAppearance,
       LiveActivitySessionObservationGeneration: previous.LiveActivitySessionObservationGeneration + (LiveActivitySessionObservationChanged ? 1 : 0),
       LiveActivityAccentGeneration: previous.LiveActivityAccentGeneration + (LiveActivityAccentChanged ? 1 : 0),
       LiveActivityTokenPolicyGeneration: previous.LiveActivityTokenPolicyGeneration + (LiveActivityTokenPolicyChanged ? 1 : 0),

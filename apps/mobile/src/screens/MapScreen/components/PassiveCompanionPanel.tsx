@@ -1,12 +1,7 @@
 import WaveLoading from '../../../components/WaveLoading';
 import React, { useCallback, useMemo } from 'react';
-import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accentMix, glass } from '../../../glass';

@@ -24,7 +24,7 @@ import { glass } from '../glass';
 import SwiftUIGlassSurface from './SwiftUIGlassSurface';
 import { settleTarget } from './sheetMath';
 import { SHEET_ACTIVE_OFFSET_Y, SHEET_FAIL_OFFSET_X } from '../store/sheetPane';
-import { MAP_SHEET_CORNER_RADIUS } from './mapSheetChrome';
+import { MAP_SHEET_CORNER_RADIUS, MAP_SHEET_GRABBER_HEIGHT, MAP_SHEET_COMPACT_GRABBER_HEIGHT, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
 
 // Height tolerance for "the spring actually reached the full detent".
 const EPS = 1;
@@ -50,6 +50,11 @@ const AnimatedScrollView = Animated.createAnimatedComponent(GHScrollView);
 const MODE_NONE = 0;
 const MODE_SHEET = 1; // finger resizes the sheet (content pinned)
 const MODE_SCROLL = 2; // finger scrolls the content (sheet frozen)
+
+function ResetSheetScroll({ reset }: { reset: () => void }) {
+  useMountEffect(reset);
+  return null;
+}
 
 interface SheetMotionInput {
   foreground: boolean;
@@ -178,9 +183,14 @@ export default React.memo(function BottomSheet({
   dismissOnDownFromIndex,
   edgeToEdgeAtLast = true,
   contentTopPadding = 0,
+  fillContent = false,
+  pinContentBelowHeader = false,
+  scrollResetKey,
+  onContentHeight,
   compactGrabberSpacing = false,
   hideHeaderOnScroll = false,
   useSwiftUIGlassSurface = false,
+  background,
   children,
   testID,
 }: {
@@ -211,12 +221,17 @@ export default React.memo(function BottomSheet({
   edgeToEdgeAtLast?: boolean;
   /** Extra space between the pinned header and scroll content. */
   contentTopPadding?: number;
+  fillContent?: boolean;
+  pinContentBelowHeader?: boolean;
+  scrollResetKey?: string;
+  onContentHeight?: (height: number) => void;
   /** Tighten only the map sheet's grabber spacing without changing other sheets. */
   compactGrabberSpacing?: boolean;
   /** Hide the pinned header controls once full-detent content leaves the top. */
   hideHeaderOnScroll?: boolean;
   /** Use the native SwiftUI Liquid Glass surface for this sheet only. */
   useSwiftUIGlassSurface?: boolean;
+  background?: React.ReactNode;
   children: React.ReactNode;
   testID?: string;
 }) {
@@ -248,6 +263,7 @@ export default React.memo(function BottomSheet({
   const foregroundSV = useDerivedValue(() => foreground, [foreground]);
   const bottomInsetSV = useDerivedValue(() => bottomInset, [bottomInset]);
   const dismissIndexSV = useDerivedValue(() => dismissOnDownFromIndex ?? -1, [dismissOnDownFromIndex]);
+  const dismissRequestedSV = useDerivedValue(() => dismissRequested, [dismissRequested]);
   const edgeToEdgeAtLastSV = useDerivedValue(() => edgeToEdgeAtLast ? 1 : 0, [edgeToEdgeAtLast]);
 
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
@@ -327,7 +343,7 @@ export default React.memo(function BottomSheet({
         .simultaneousWithExternalGesture(scrollRef as unknown as React.RefObject<React.ComponentType>)
         .onBegin(() => {
           'worklet';
-          if (gestureClosePending.value) return;
+          if (gestureClosePending.value || dismissRequestedSV.value === false) return;
           dismissEpoch.value += 1;
           cancelAnimation(height);
           if (dismissTranslateY != null) {
@@ -339,7 +355,7 @@ export default React.memo(function BottomSheet({
         })
         .onUpdate((e) => {
           'worklet';
-          if (gestureClosePending.value) return;
+          if (gestureClosePending.value || dismissRequestedSV.value === false) return;
           const d = detentsSV.value;
           const last = d.length - 1;
           if (gMode.value === MODE_NONE) {
@@ -389,7 +405,7 @@ export default React.memo(function BottomSheet({
         })
         .onEnd((e, success) => {
           'worklet';
-          if (gestureClosePending.value) return;
+          if (gestureClosePending.value || dismissRequestedSV.value === false) return;
           if (!success) {
             // OS interruption is not a released dismissal gesture.
             cancelAnimation(height);
@@ -448,7 +464,7 @@ export default React.memo(function BottomSheet({
           // onBegin also runs for taps and horizontal gestures. Those cancel
           // the in-flight spring but never reach onEnd when recognition fails.
           // Restore the latest controlled detent, not an intermediate height.
-          if (success || gestureClosePending.value) return;
+          if (success || gestureClosePending.value || dismissRequestedSV.value === false) return;
           const d = detentsSV.value;
           const target = d[Math.max(0, Math.min(indexSV.value, d.length - 1))];
           cancelAnimation(height);
@@ -463,6 +479,7 @@ export default React.memo(function BottomSheet({
     [
       foreground,
       foregroundSV,
+      dismissRequestedSV,
       indexSV,
       height,
       settle,
@@ -547,7 +564,7 @@ export default React.memo(function BottomSheet({
       dismiss={dismiss} dismissComplete={dismissComplete} />
     <GestureDetector gesture={pan}>
       <Animated.View testID={testID} style={[styles.sheet, sheetStyle]}>
-        {useSwiftUIGlassSurface ? (
+        {background ?? (useSwiftUIGlassSurface ? (
           <Animated.View
             pointerEvents="none"
             style={[StyleSheet.absoluteFill, nativeSurfaceStyle]}
@@ -566,10 +583,10 @@ export default React.memo(function BottomSheet({
             tintColor={Platform.OS === 'android' ? glass.sheetOpaque : undefined}
             style={StyleSheet.absoluteFill}
           />
-        )}
+        ))}
         <AnimatedScrollView
           ref={scrollRef}
-          style={styles.viewport}
+          style={[styles.viewport, pinContentBelowHeader && { top: headerH }]}
           // Only enabled once truly resting at the last detent. The Pan
           // worklet already refuses to enter MODE_SCROLL below full (see the
           // decision table above), so this was previously dead protection —
@@ -581,17 +598,23 @@ export default React.memo(function BottomSheet({
           // at full, so content genuinely can't move mid-transition.
           scrollEnabled={index === detents.length - 1}
           onScroll={scrollHandler}
+          onContentSizeChange={onContentHeight ? (_width, height) => onContentHeight(height) : undefined}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingHorizontal: 16,
+            flexGrow: fillContent ? 1 : undefined,
+            paddingHorizontal: pinContentBelowHeader ? SHEET_CORNER_ACTION_INSET : 16,
             paddingBottom: 40,
-            paddingTop: headerH + contentTopPadding,
+            paddingTop: (pinContentBelowHeader ? 0 : headerH) + contentTopPadding,
           }}
         >
           {children}
         </AnimatedScrollView>
+        {scrollResetKey != null ? <ResetSheetScroll key={scrollResetKey} reset={() => {
+          scrollOffset.value = 0;
+          scrollRef.current?.scrollTo({ y: 0, animated: false });
+        }} /> : null}
         {/* Header stays transparent so the sheet uses one native material
             surface instead of stacking a second blur over the map. */}
         <View
@@ -653,8 +676,8 @@ const styles = StyleSheet.create({
   viewport: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
   headerBlock: { position: 'absolute', top: 0, left: 0, right: 0 },
   // Tighter top so peek chrome sits closer to the sheet edge.
-  grabZone: { paddingTop: 6, paddingBottom: 4, alignItems: 'center' },
-  grabZoneCompact: { paddingTop: 3, paddingBottom: 2, alignItems: 'center' },
+  grabZone: { height: MAP_SHEET_GRABBER_HEIGHT, alignItems: 'center', justifyContent: 'center' },
+  grabZoneCompact: { height: MAP_SHEET_COMPACT_GRABBER_HEIGHT, alignItems: 'center', justifyContent: 'center' },
   grabber: {
     width: 36,
     height: 4,

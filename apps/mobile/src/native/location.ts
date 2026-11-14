@@ -2,6 +2,7 @@ import { reportLocationSourceHealth } from './locationSourceHealth';
 import { captureBackgroundRefreshFix } from './backgroundLocation';
 /** Device positioning boundary; consent is checked before and after asynchronous work. */
 import * as Location from 'expo-location';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { AppState } from 'react-native';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, type LocationAccess } from '../state/locationPrivacy';
 import type { Coordinates } from '../types';
@@ -12,6 +13,20 @@ import {
   subscribeDebugLocation,
 } from './debugLocation';
 
+type MotionTravelMode = 'walk' | 'drive' | 'bicycle';
+
+const motionBridge = requireOptionalNativeModule<{
+  supportsMotionActivityReporting?: () => boolean;
+  addListener(name: 'onMotionActivity', listener: (event: { mode?: unknown }) => void): { remove(): void };
+}>('HitherLocation');
+
+export function observeMotionTravelMode(onChange: (mode: MotionTravelMode | null) => void): () => void {
+  if (!motionBridge?.supportsMotionActivityReporting?.()) return () => undefined;
+  const subscription = motionBridge.addListener('onMotionActivity', ({ mode }) => {
+    onChange(mode === 'walk' || mode === 'drive' || mode === 'bicycle' ? mode : null);
+  });
+  return () => subscription.remove();
+}
 
 /** A single positioning sample. */
 export interface LocationSample {

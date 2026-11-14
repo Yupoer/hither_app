@@ -1,34 +1,37 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { Destination, Group } from '../types';
+import { useItineraryMutations, type UseItineraryMutationsInput } from '../screens/MapScreen/hooks/useItineraryMutations';
+import { useRouteDraft } from '../screens/MapScreen/hooks/useRouteDraft';
+import { resetUiActionStateForTests } from '../utils/uiAction';
+import * as itineraryApi from '../api/client';
 
 const mockCalls: string[] = [];
-const record = (name: string) => jest.fn(async (...args: unknown[]) => {
-  mockCalls.push(`${name}:${JSON.stringify(args.slice(1))}`);
-  return name === 'addDestination' ? `real-${mockCalls.length}` : undefined;
-});
-const mockApi = {
-  addDestination: record('addDestination'),
-  clearDailyAccommodation: record('clearDailyAccommodation'),
-  deleteDestination: record('deleteDestination'),
-  reorderDestinations: record('reorderDestinations'),
-  setDailyAccommodation: record('setDailyAccommodation'),
-  updateDestinationEmojiColor: record('updateDestinationEmojiColor'),
-  updateGroupTripDetails: record('updateGroupTripDetails'),
-};
+const mockApi = jest.mocked(itineraryApi);
 const mockAlert = jest.fn();
 
 jest.mock('react-native', () => ({ Alert: { alert: (...args: unknown[]) => mockAlert(...args) } }));
-jest.mock('../api/client', () => mockApi);
+jest.mock('../api/client', () => {
+  const recordCall = (name: string) => jest.fn(async (...args: unknown[]) => {
+    mockCalls.push(`${name}:${JSON.stringify(args.slice(1))}`);
+    return name === 'addDestination' ? `real-${mockCalls.length}` : undefined;
+  });
+  return {
+    addDestination: recordCall('addDestination'),
+    clearDailyAccommodation: recordCall('clearDailyAccommodation'),
+    deleteDestination: recordCall('deleteDestination'),
+    reorderDestinations: recordCall('reorderDestinations'),
+    setDailyAccommodation: recordCall('setDailyAccommodation'),
+    updateDestinationEmojiColor: recordCall('updateDestinationEmojiColor'),
+    updateGroupTripDetails: recordCall('updateGroupTripDetails'),
+  };
+});
+jest.mock('../api/services/DestinationService', () => ({ makeDestinationRegular: jest.fn() }));
 jest.mock('../api/services/DailyAccommodationService', () => ({
   resolveDailyAccommodationSourceId: (id: string | undefined) => id,
 }));
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn(), logError: jest.fn() }));
 jest.mock('../utils/confirm', () => ({ confirmAction: (_opts: unknown, onConfirm: () => void) => onConfirm() }));
-
-import { useItineraryMutations, type UseItineraryMutationsInput } from '../screens/MapScreen/hooks/useItineraryMutations';
-import { useRouteDraft } from '../screens/MapScreen/hooks/useRouteDraft';
-import { resetUiActionStateForTests } from '../utils/uiAction';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -150,5 +153,44 @@ describe('useItineraryMutations', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(mockCalls).toEqual(['deleteDestination:["a","session-1"]', 'deleteDestination:["b","session-1"]']);
     expect(stopRemovedDestination.mock.calls).toEqual([['a', 'session-1'], ['b', 'session-1']]);
+  });
+
+  it('moves trimmed open stops to the pool before saving the range, keeping closed history', async () => {
+    const archived = stop('history', 6, { day: 2, closedAt: '2026-11-02T03:00:00Z' });
+    const later = stop('later', 5, { day: 2 });
+    await render({ canEditD6Trip: true, allTripDestinations: [...server, later, archived] });
+    await act(async () => { expect(await api?.updateD6TripDetails(1, '2026-11-01')).toBe(true); });
+    expect(mockApi.reorderDestinations).toHaveBeenCalledWith('g1', [
+      { id: 'later', day: null, position: 0 },
+      { id: 'a', day: 1, position: 1 },
+      { id: 'b', day: 1, position: 2 },
+      { id: 'c', day: 1, position: 5 },
+    ]);
+    expect(mockCalls.map((call) => call.split(':')[0])).toEqual(['reorderDestinations', 'updateGroupTripDetails']);
+  });
+
+  it('keeps the range unchanged while navigation is active on a day that would be trimmed', async () => {
+    await render({ canEditD6Trip: true, navTargetId: 'later', allTripDestinations: [stop('later', 1, { day: 2 })] });
+    await act(async () => { expect(await api?.updateD6TripDetails(1, '2026-11-01')).toBe(false); });
+    expect(mockCalls).toEqual([]);
+    expect(showOperationFailure).toHaveBeenCalledWith('map.setFailedTitle', 'trip.endBeforePool');
+  });
+
+  it('puts the current standalone stay in the pool before setting its replacement', async () => {
+    const oldStay = { id: 'old', groupId: 'g1', stayDate: '2026-11-01', title: 'Old stay', coordinates: { latitude: 25, longitude: 121 } };
+    const newStay = { title: 'New stay', coordinates: { latitude: 26, longitude: 122 } };
+    await render({ canEditD6Trip: true, serverDailyAccommodations: [oldStay] });
+    await act(async () => { expect(await api?.assignD6Accommodation(1, newStay)).toBe(true); });
+    expect(mockApi.addDestination).toHaveBeenCalledWith('g1', expect.objectContaining({ title: 'Old stay', day: null }));
+    expect(mockApi.setDailyAccommodation).toHaveBeenCalledWith('g1', '2026-11-01', { ...newStay, day: 1 });
+    expect(mockCalls.map((call) => call.split(':')[0])).toEqual(['addDestination', 'setDailyAccommodation']);
+  });
+
+  it('deletes from the D6 itinerary without running the confirmation action', async () => {
+    await render();
+    await act(async () => { expect(await api?.deleteD6Destinations(['a'])).toBe(true); });
+    expect(mockCalls).toEqual(['deleteDestination:["a","session-1"]']);
+    expect(stopRemovedDestination).toHaveBeenCalledWith('a', 'session-1');
+    expect(mockAlert).not.toHaveBeenCalled();
   });
 });

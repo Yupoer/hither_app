@@ -1,3 +1,4 @@
+import { d6TravelOrigin } from './MapScreen/d6TravelMode';
 import { MapBackgroundLocationResource } from './MapScreen/MapBackgroundLocationResource';
 import {
   MapJourneyBaselineResource,
@@ -9,7 +10,7 @@ import {
 import { MapAddPlaceTourResource } from './MapScreen/MapAddPlaceTourResource';
 import { MapArrivalCardsResource } from './MapScreen/MapArrivalCardsResource';
 import { MapForegroundArrivalResource } from './MapScreen/MapForegroundArrivalResource';
-import { MapAccessLossResource, MapRouteOpenResource } from './MapScreen/MapScreenChromeResources';
+import { MapAccessLossResource, MapRouteOpenResource, HomeRadiusPreferences, HomeTransientNotice, HomeChromeLinks } from './MapScreen/MapScreenChromeResources';
 import {
   MapArrivalOutboxResource,
   MapForegroundNavigationResource,
@@ -48,21 +49,23 @@ import React, {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { ActivityIndicator,
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
   AccessibilityInfo,
   Alert,
   AppState,
   LayoutAnimation,
   Linking,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   UIManager,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
+import Pressable from '../components/MotionPressable';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -75,12 +78,21 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
+import { D6_ACCENT, D6HomeChrome, D6Surface, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
+import { D6RoutePane, type D6RouteSelection } from './MapScreen/components/D6RoutePane';
+import { D6AddPlace, D6StopCard, defaultD6Departure, type D6StopEditor, type StopPlacement } from './MapScreen/components/D6StopCards';
+import { D6MembersPane, D6TeamHeader } from './MapScreen/components/D6MembersPane';
+import { QuickCommandGrid } from './MapScreen/components/QuickCommandGrid';
+import { D6_MEMBER_STATUS_COLORS, getD6MemberStatus, getD6SubgroupPresentation } from './MapScreen/d6TeamPresentation';
+import { useD6TravelMode } from './MapScreen/hooks/useD6TravelMode';
+import type { SettingsPage } from './MapScreen/components/SettingsOverlay';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useVisibleUi, isForegroundUi, subscribeForegroundUi } from '../state/foregroundUi';
+import { useNearMeeting } from '../state/useNearMeeting';
 import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
-import { MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
+import { MAP_FLOATING_EDGE_INSET, MAP_ISLAND_ACTION_HEIGHT, MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_HEIGHT, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
 import {
   cameraAfterSuccessfulAdd,
   cameraOnLongPress,
@@ -165,6 +177,7 @@ import { AddPlaceConfirmCard } from './MapScreen/components/AddPlaceConfirmCard'
 import { ToolsPane } from './MapScreen/components/ToolsPane';
 import { RoutePane } from './MapScreen/components/RoutePane';
 import { MembersPane } from './MapScreen/components/MembersPane';
+import { persistedReorderUpdates } from './MapScreen/itineraryReorder';
 import { useItineraryMutations } from './MapScreen/hooks/useItineraryMutations';
 import { useStoreEntitlements } from './MapScreen/hooks/useStoreEntitlements';
 import { useAccountActions } from './MapScreen/hooks/useAccountActions';
@@ -238,7 +251,7 @@ import { canEvaluateSynchronizedArrival, synchronizedArrivalTargetKey } from '..
 import { getOperationErrorMessage } from '../utils/operationError';
 
 import { notifications, type MapRegion, type PlaceResult } from '../native';
-import { addDestination, addDestinationsBatch, deleteDestination, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, requestGatheringStart, resolveGatheringStart, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
+import { addDestination, addDestinationsBatch, reorderDestinations, deleteDestination, setDestinationMeetTime, updateDestinationEmojiColor, deleteVisitedWaypoint, recordVisitedWaypoint, kickGroupMember, requestGroupLocationRefresh, getGroupLocationRefreshAcknowledgements, resolveGatherPointRequestResilient, requestGatheringStart, resolveGatheringStart, correctDestinationArrival, setDestinationArrivalAt, listFavoritePlaces, saveFavoritePlace, unsaveFavoriteByExactMatch, unsaveFavoritePlace, findFavoriteByExactMatch, type FavoritePlace, submitGatherPointRequest, updateGroupAvatar, getKmlImportQuota } from '../api/client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isDemoGroup } from '../api/demo';
 import { confirmAction } from '../utils/confirm';
@@ -311,6 +324,8 @@ export default function MapScreen({ route, navigation }: Props) {
     gatherCardTitleMarquee,
     gatherCardMarqueeSpeed,
     arrivalRadiusM,
+    dayColors,
+    setDayColor,
     passiveCompanionMode,
     setMeetRedMin,
     setHighAccuracy,
@@ -319,10 +334,30 @@ export default function MapScreen({ route, navigation }: Props) {
     setArrivalRadiusM,
     setPassiveCompanionMode,
   } = usePreferences();
-  const localArrivalRadiusM = Math.max(
-    ARRIVAL_RADIUS_MIN_M,
-    Math.min(ARRIVAL_RADIUS_MAX_M, arrivalRadiusM),
-  );
+  const d6Enabled = Platform.OS === 'ios';
+  const d6DisplayFont = useD6Numbers(d6Enabled);
+  const [homePaneChoice, setHomePane] = useState<D6Pane | null | undefined>();
+  const homePane = homePaneChoice === undefined
+    ? route.params?.showTeamInvite ? 'team' : d6Enabled && preferencesReady && gatherCardDefaultExpanded ? 'itinerary' : null
+    : homePaneChoice;
+  const [homeDay, setHomeDay] = useState<number | null>(null);
+  const [homeSelection, setHomeSelection] = useState<D6RouteSelection | null>(null);
+  const [homeSplit, setHomeSplit] = useState<string[] | null>(null);
+  const [homeSplitBusy, setHomeSplitBusy] = useState(false);
+  const [homeAdd, setHomeAdd] = useState<{ day: number; stay: boolean; placement: StopPlacement } | null>(null);
+  const [homeDetail, setHomeDetail] = useState<Destination | null>(null);
+  const [homeStopEditor, setHomeStopEditor] = useState<D6StopEditor>(null);
+  const [homeRadiusDraft, setHomeRadiusDraft] = useState<{ key: string; values: Readonly<Record<string, number>> } | null>(null);
+  const [homeRadiusPreview, setHomeRadiusPreview] = useState<number>();
+  const [liveActivityAvailability, setLiveActivityAvailability] = useState<{
+    scope: string; state: 'active' | 'unavailable' | 'inactive';
+  } | null>(null);
+  const [homeStopBusy, setHomeStopBusy] = useState(false);
+  const [homeFlashId, setHomeFlashId] = useState<string | null>(null);
+  const [homePoolFlashKey, setHomePoolFlashKey] = useState(0);
+  const [homeAsked, setHomeAsked] = useState<string | null>(null);
+  const [homeCommand, setHomeCommand] = useState<string | null>(null);
+  const [homeSettingsPage, setHomeSettingsPage] = useState<SettingsPage>('root');
   const { lifecycle: gatherCardExpansionLifecycle,
     isCardExpanded,
     toggleCard,
@@ -333,7 +368,7 @@ export default function MapScreen({ route, navigation }: Props) {
     resumeAutoCollapse,
   } = useGatherCardExpansion(gatherCardDefaultExpanded);
   const { colors } = useTheme();
-  const accent = colors.accent;
+  const accent = d6Enabled ? D6_ACCENT : colors.accent;
   const { t, language } = useTranslation();
   const tourTargetRefs = useRef<Partial<Record<TourTargetId, View | null>>>({});
   const setTourTargetRef = useCallback((id: TourTargetId, node: View | null) => {
@@ -698,6 +733,12 @@ export default function MapScreen({ route, navigation }: Props) {
   );
 
   /** Paint durable writes now; remote reconciliation never gates a saved action. */
+  const homeTripDays = Math.max(1, routeTripDays ?? 1);
+  const homeDeparture = defaultD6Departure(routeDepartureDate);
+  const homeSelectedDay = Math.max(1, Math.min(homeTripDays, homeDay ?? resolveAddDay(routeDepartureDate, routeTripDays)));
+  const canEditHomeTrip = isLeader && !myScopeId;
+  const homeColor = (day: number | null) => d6DayColor(day, dayColors);
+
   const syncFromDatabase = useCallback(async () => {
     await reconcileRouteOnOpen(refreshLocalSnapshot, refresh);
   }, [refreshLocalSnapshot, refresh]);
@@ -1103,8 +1144,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const { lifecycle: carouselSelectionLifecycle,
     selectedIndex,
     setSelectedIndex,
-    travelMode,
-    setTravelMode,
+    travelMode: carouselTravelMode,
+    setTravelMode: setCarouselTravelMode,
     selectedDestination,
     handleScrollBeginDrag,
     handleMomentumEnd,
@@ -1120,12 +1161,41 @@ export default function MapScreen({ route, navigation }: Props) {
   // Device location depends on navigation's power policy and is declared below.
   // Commands read this bridge at tap time, after the current render has settled.
   const navigationStartSampleRef = useRef<LocationSample | null>(null);
+  const homePreviewStop = selectedDestination && !selectedDestination.closedAt
+    ? selectedDestination : nextOrderedDestination(openDestinations) ?? null;
+  const radiusStopId = navigationSessionState.session?.status === 'active'
+    ? navigationSessionState.session.destinationId : homePreviewStop?.id;
+  const radiusKey = user?.id && groupId ? `hither.home.arrivalRadius:${user.id}:${groupId}` : null;
+  const homeRadii = homeRadiusDraft?.key === radiusKey ? homeRadiusDraft.values : EMPTY_HOME_RADII;
+  const localArrivalRadiusM = d6Enabled
+    ? (radiusStopId ? homeRadii[radiusStopId] ?? 50 : 50)
+    : Math.max(ARRIVAL_RADIUS_MIN_M, Math.min(ARRIVAL_RADIUS_MAX_M, arrivalRadiusM));
   const getNavigationOrigin = useCallback(() => {
     const fix = navigationStartSampleRef.current;
     return fix && canEvaluateSynchronizedArrival({
       sampledAt: fix.timestamp, now: Date.now(), accuracyM: fix.accuracy, radiusM: localArrivalRadiusM,
     }) ? fix.coordinates : undefined;
   }, [localArrivalRadiusM]);
+  const homeTravel = useD6TravelMode({
+    enabled: d6Enabled,
+    foreground: mapFocused,
+    fallbackMode: carouselTravelMode,
+    setFallbackMode: setCarouselTravelMode,
+    canSetOverride: canEditItinerary,
+    journeyKey: groupId ? `${groupId}:${myScopeId ?? 'team'}` : undefined,
+    activeJourneyId: navigationSessionState.session?.status === 'active'
+      ? navigationSessionState.session.id : navigationSessionState.loading ? undefined : null,
+    target: destinations.find(stop => stop.id === navigationSessionState.session?.destinationId) ?? homePreviewStop,
+    serverTimeOffsetMs,
+    memberCount: members.filter(member => !member.solo && (member.subgroupId ?? null) === (myScopeId ?? null)).length,
+    selfUserId: user?.id,
+    sharingEnabled: preferencesReady && sharingEnabled,
+    origin: d6Enabled ? d6TravelOrigin(navigationStartSampleRef.current, Date.now()) : undefined,
+    showModeEtas: homeStopEditor === 'transport',
+  });
+  const { travelMode, setTravelMode } = homeTravel;
+  const homeMeetAt = homePreviewStop?.meetAt;
+  const { nearMeeting: homeNearMeeting, lifecycle: homeMeetingClock } = useNearMeeting(homeMeetAt, d6Enabled && mapFocused);
   const navigationStartAuthorized = useRef(false);
   useFocusEffect(useCallback(() => {
     let probe: Promise<NavigationStartLocation> | null = null;
@@ -1219,8 +1289,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const routeFixKey = effectiveNavigationActive && !localNavigationArrived
     ? [navTarget?.id, navTarget?.coordinates.latitude, navTarget?.coordinates.longitude].join('|') : '';
   const foregroundLocation = foregroundLocationConfiguration({
-    navigationActive: effectiveNavigationActive,
-    highAccuracy, sharingEnabled: preferencesReady && sharingEnabled,
+    navigationActive: effectiveNavigationActive || (d6Enabled && homeNearMeeting),
+    highAccuracy: d6Enabled || highAccuracy, sharingEnabled: preferencesReady && sharingEnabled,
     hasMembership: members.some(member => member.userId === user?.id), appState: AppState.currentState,
   });
   const {
@@ -1396,13 +1466,13 @@ export default function MapScreen({ route, navigation }: Props) {
 
   // Prefer local prefs (available before inPassiveMode is derived below) so
   // passive mode can skip MapKit work without a temporal dead zone.
-  const mapRoutesEnabled = effectiveNavigationActive && !localNavigationArrived && !(preferencesReady && passiveCompanionMode);
+  const mapRoutesEnabled = effectiveNavigationActive && !localNavigationArrived && (d6Enabled || !(preferencesReady && passiveCompanionMode));
   const { selfRoute, memberRoutes, selfRouteGeneration, lifecycle: mapKitRouteLifecycle } = useMapKitRoutes({
     selfCoordinates: navigationRouteOrigin,
     members: [], // Member routes are already disabled by this hook; no peer-coordinate cloning.
     gathering: mapRoutesEnabled && sharingEnabled ? activePoint : null,
     travelMode,
-    highAccuracy: mapRoutesEnabled ? highAccuracy : false,
+    highAccuracy: mapRoutesEnabled && (d6Enabled || highAccuracy),
     arrivalRadiusM: localArrivalRadiusM,
   });
 
@@ -1982,6 +2052,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const lastFittedRouteRef = useRef<string | null>(null);
   const routeCameraLifecycle = (
     <MapRouteCameraResource
+      allowAutoFit={!d6Enabled || !homeDetail}
       activePoint={activePoint}
       travelMode={travelMode}
       lastFittedRouteRef={lastFittedRouteRef}
@@ -2257,9 +2328,9 @@ export default function MapScreen({ route, navigation }: Props) {
   ]);
 
   // OTA-07: wait for prefs hydrate so returning passive users do not flash full chrome.
-  const inPassiveMode = preferencesReady && passiveCompanionMode;
+  const inPassiveMode = !d6Enabled && preferencesReady && passiveCompanionMode;
   // Dense MapScreen chrome only after prefs ready and not in passive presentation.
-  const showDenseChrome = preferencesReady && !passiveCompanionMode;
+  const showDenseChrome = preferencesReady && (d6Enabled || !passiveCompanionMode);
 
   // OTA-07: same team phase + user progress as full UI; presentation only.
   // journeyGoing follows team projection, not personal ETA/progress.
@@ -2318,11 +2389,30 @@ export default function MapScreen({ route, navigation }: Props) {
   const liveActivityBaselineM = initialDistanceM ?? liveDistance ?? numericDistance;
   // Preference (liveActivityEnabled) ≠ entitlement (store + Premium session).
   const liveActivityAllowed = liveActivityEnabled && (liveActivityEffective || isPro);
+  const liveActivityScope = JSON.stringify([groupId, navTargetId, currentArrivalNavigationSessionId]);
+  const liveActivityStartState = liveActivityAvailability?.scope === liveActivityScope ? liveActivityAvailability.state : 'inactive';
+  const homeEligible = sessionEligibleMembers.filter(member => !member.solo
+    && (member.subgroupId ?? null) === (navTarget?.subgroupId ?? myScopeId ?? null));
+  const homeEligibleIds = new Set(homeEligible.map(member => member.userId));
+  const homeArrived = new Set(activeDestinationArrivals.filter(arrival =>
+    arrival.destinationId === navTarget?.id && homeEligibleIds.has(arrival.userId)).map(arrival => arrival.userId)).size;
+  const homeAllArrived = Boolean(navTarget && homeEligible.length > 0 && homeArrived >= homeEligible.length);
+  const homeStop = effectiveNavigationActive || homeAllArrived ? navTarget ?? homePreviewStop : homePreviewStop;
+  const homePhase: D6Journey = !homeStop ? 'empty' : homeAllArrived ? 'arrived' : effectiveNavigationActive ? 'going' : 'ready';
+  const liveActivityMembers = d6Enabled ? homeEligible : liveMembers;
+  const homeSelf = displayMemberAvatar(user?.avatar, user?.id ?? '', user?.avatarColor);
+  const homeMeetTimeMs = navTarget?.meetAt ? Date.parse(navTarget.meetAt) : NaN;
   const liveActivityLifecycle = React.createElement(LiveActivityRuntime, {
+    onAvailabilityChange: state => setLiveActivityAvailability({ scope: liveActivityScope, state }),
     active: navigationStoppedLocally ? false : !preferencesReady ? undefined : !liveActivityAllowed ? false
       : effectiveNavigationActive ? true
       : navigationSessionState.loading || navigationSessionState.error || loading || groupStateError ? undefined : false,
+    allArrived: d6Enabled && preferencesReady && liveActivityAllowed && !navigationStoppedLocally && homeAllArrived,
     state: {
+    meetTimeMs: Number.isFinite(homeMeetTimeMs) ? homeMeetTimeMs : null,
+    dayColorHex: navTarget ? homeColor(navTarget.day) : undefined,
+    selfFace: { emoji: homeSelf.emoji, colorHex: homeSelf.color, arrived: localNavigationArrived },
+    memberColors: liveActivityMembers.map(member => displayMemberAvatar(member.avatar, member.userId, member.avatarColor).color ?? ''),
     groupName: membership?.group.name ?? '',
     destinationId: navTarget?.id,
     personalArrived: localNavigationArrived,
@@ -2339,22 +2429,24 @@ export default function MapScreen({ route, navigation }: Props) {
     etaSeconds: progressSurfaces.liveActivityPayload.etaSeconds ?? undefined,
     gatheringCoordinates: navTarget?.coordinates,
     progress: progressSurfaces.liveActivityPayload.progress ?? undefined,
-    gatheredCount: liveGathered,
-    memberCount: liveMembers.length,
+    gatheredCount: d6Enabled && navTarget ? homeArrived : liveGathered,
+    memberCount: liveActivityMembers.length,
     accentHex: accent,
     travelMode,
-    memberEmojis: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.avatar ?? ''),
-    memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
+    memberEmojis: liveActivityMembers.map(member => displayMemberAvatar(member.avatar, member.userId, member.avatarColor).emoji),
+    memberArrived: d6Enabled
+      ? liveActivityMembers.map(member => activeDestinationArrivals.some(arrival => arrival.destinationId === navTarget?.id && arrival.userId === member.userId))
+      : liveMemberArrived,
     // Ticket 07: destination emoji when set (native may no-op without a glyph slot).
     // Flag color is day-scoped in map/list chrome; LA keeps theme accent.
     destinationEmoji: navTarget?.emoji ?? undefined,
     language,
   },
-    session: groupId && navTarget && liveActivityBaselineM != null ? {
+    session: groupId && navTarget && (d6Enabled || liveActivityBaselineM != null) ? {
     groupId,
     navigationSessionId: currentArrivalNavigationSessionId ?? undefined,
     destinationId: navTarget.id,
-    initialDistanceM: Math.max(1, liveActivityBaselineM),
+    initialDistanceM: liveActivityBaselineM == null ? 0 : Math.max(1, liveActivityBaselineM),
     travelMode,
   } : undefined,
     liveActivitiesEnabled: liveActivityAllowed,
@@ -2472,7 +2564,7 @@ export default function MapScreen({ route, navigation }: Props) {
   const notifyLeaderPlace = useCallback(
     async (
       items: GatherPointRequestItem[],
-      source: 'search' | 'kml',
+      source: 'search' | 'kml' | 'longpress',
       scopeId: string | undefined = myScopeId,
     ): Promise<boolean> => {
       if (!groupId) return false;
@@ -2488,6 +2580,7 @@ export default function MapScreen({ route, navigation }: Props) {
             logEvent('destination_suggest', { source, label });
             const queued = (await getCoreOperationOutbox().listByGroup(groupId)).find(op =>
               op.operationType === 'submit_gather_point_request' && op.entityId === requestId);
+            if (d6Enabled) return true;
             if (queued && queued.status !== 'acked') {
               showAppNotice({ id: `suggestion-saved:${requestId}`, title: t('gatherRequest.savedTitle'), message: t('coreData.requestSaved') });
             } else {
@@ -2514,7 +2607,7 @@ export default function MapScreen({ route, navigation }: Props) {
       );
       return result === true;
     },
-    [groupId, myScopeId, t],
+    [groupId, myScopeId, t, d6Enabled],
   );
 
   const tripDayForAdd = useCallback(
@@ -2687,6 +2780,11 @@ export default function MapScreen({ route, navigation }: Props) {
     // sheet and the next open both render the same server projection.
     await syncFromDatabase();
     await refreshKmlQuota();
+    if (d6Enabled) {
+      setHomeAdd(null);
+      setHomePane('itinerary');
+      setHomePoolFlashKey(key => key + 1);
+    }
   }, [
     groupId,
     canEditItinerary,
@@ -2698,6 +2796,7 @@ export default function MapScreen({ route, navigation }: Props) {
     syncFromDatabase,
     refreshKmlQuota,
     tripDayForAdd,
+    d6Enabled,
   ]);
 
   const handleLongPressCoordinate = useCallback(
@@ -2871,7 +2970,8 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   }, [handleGatherPointRequest, refresh, removeStartRequest, resolvingGatherRequestId, t]);
 
-  const { lifecycle: gatheringCompletionLifecycle, promptCompleteAfterArrival } = useGatheringCompletion({
+  const { lifecycle: gatheringCompletionLifecycle, promptCompleteAfterArrival, runCompleteGatheringStop } = useGatheringCompletion({
+    manualCompletion: d6Enabled,
     groupId,
     user,
     canEditItinerary,
@@ -2921,7 +3021,7 @@ export default function MapScreen({ route, navigation }: Props) {
     }
     const COMPLETE_PROMPT_DELAY_MS = 1_600 + 1_000;
     const feedbackContext = arrivalContext;
-    if (opts?.promptComplete) {
+    if (!d6Enabled && opts?.promptComplete) {
       // includeSelf only on this post-write path (arrival RPC already succeeded).
       armCelebrateClearTimer(celebrateClearTimersRef.current, `completion:${destination.id}`,
         alreadyShown ? 0 : COMPLETE_PROMPT_DELAY_MS, () => {
@@ -2942,6 +3042,10 @@ export default function MapScreen({ route, navigation }: Props) {
     setRequestingStartDestId(destination.id);
     void requestGatheringStart(groupId, destination.id)
       .then(() => {
+        if (d6Enabled) {
+          setHomeAsked(destination.id);
+          return;
+        }
         Alert.alert(
           t('gathering.requestStartSentTitle'),
           t('gathering.requestStartSentBody'),
@@ -2951,7 +3055,7 @@ export default function MapScreen({ route, navigation }: Props) {
         showOperationFailure(t('map.setFailedTitle'), t('command.sendFailed'));
       })
       .finally(() => setRequestingStartDestId(null));
-  }, [groupId, requestingStartDestId, t]);
+  }, [groupId, requestingStartDestId, t, d6Enabled, showOperationFailure]);
 
   const handleArrival = useCallback((destination: Destination, targetUserId: string, arrived: boolean) => {
     // Correction is intentionally narrower than the active-session self
@@ -3080,6 +3184,7 @@ export default function MapScreen({ route, navigation }: Props) {
     handleInvite,
     doSelfSplit,
     doSelfMerge,
+    createSubgroup,
   } = useSubgroupActions({
     groupId,
     userName: user?.name,
@@ -3121,7 +3226,6 @@ export default function MapScreen({ route, navigation }: Props) {
     void runUiAction(
       'map.open_feedback',
       async (token) => {
-        lightTap();
         if (!token.isCurrent()) return;
         setOverlay('feedback');
       },
@@ -3129,6 +3233,11 @@ export default function MapScreen({ route, navigation }: Props) {
     );
   }, []);
   const {
+    assignD6Accommodation,
+    deleteD6Destinations,
+    mutateD6Accommodation,
+    unsetD6Accommodation,
+    updateD6TripDetails,
     flushRouteDraft,
     handleDelete,
     handleDeleteMany,
@@ -3137,6 +3246,8 @@ export default function MapScreen({ route, navigation }: Props) {
     handleUpdateTripDetails,
     openKmlImportForScope,
   } = useItineraryMutations({
+    canEditD6Trip: canEditHomeTrip,
+    allTripDestinations: state?.destinations,
     allScopedDestinations,
     canEditItinerary,
     destinations,
@@ -3462,11 +3573,23 @@ export default function MapScreen({ route, navigation }: Props) {
     setPaywallPendingAfterSettings(true);
     setSettingsOpen(false);
   }, []);
+  const pendingTeamRouteAfterSettings = useRef<'create' | 'join' | null>(null);
+  const openTeamRouteAfterSettings = (action: 'create' | 'join') => {
+    pendingTeamRouteAfterSettings.current = action;
+    setSettingsOpen(false);
+  };
   const handleSettingsDismissComplete = useCallback(() => {
+    const teamAction = pendingTeamRouteAfterSettings.current;
+    if (teamAction) {
+      pendingTeamRouteAfterSettings.current = null;
+      if (teamAction === 'create') navigation.push('Auth', { role: 'leader' });
+      else navigation.push('MyTeams');
+      return;
+    }
     if (!paywallPendingAfterSettings) return;
     setPaywallPendingAfterSettings(false);
     openPaywall();
-  }, [openPaywall, paywallPendingAfterSettings]);
+  }, [navigation, openPaywall, paywallPendingAfterSettings]);
 
   const selectSheetPane = useCallback((key: SheetPaneKey) => {
     if (key === selectedSection) return;
@@ -3630,7 +3753,7 @@ export default function MapScreen({ route, navigation }: Props) {
     groupId,
     destinationCount: destinations.length,
     passiveMode: inPassiveMode,
-    denseChrome: showDenseChrome,
+    denseChrome: showDenseChrome && !d6Enabled,
     isLeader: !!isLeader,
     accountPreferences: user?.preferences ?? null,
     accountId: user?.id ?? null,
@@ -4021,7 +4144,231 @@ export default function MapScreen({ route, navigation }: Props) {
     membersPaneBody, routePaneBody, toolsPaneBody, storePaneBody,
   ]);
 
+  const zh = language === 'zh';
+  const homeError = localActionError?.message;
+  const homeScopeChanges = useRef({ groupId, scope: myScopeId, userId: user?.id });
+  homeScopeChanges.current = { groupId, scope: myScopeId, userId: user?.id };
+  const homeStatusColor = D6_MEMBER_STATUS_COLORS[getD6MemberStatus(myStatusKind, sharingEnabled)];
+  const homeSubgroupColors = useMemo(() => new Map(
+    getD6SubgroupPresentation(subgroups).map(({ subgroup, color }) => [subgroup.id, color]),
+  ), [subgroups]);
+
+  const closeHomeDetail = () => {
+    setHomeDetail(null);
+    setHomeStopEditor(null);
+    setHomeRadiusPreview(undefined);
+  };
+  const focusHomePane = useCallback((pane: D6Pane | null) => {
+    setHomePane(pane);
+    setHomeSelection(null);
+    setHomeSplit(null);
+    setHomeDetail(null);
+    setHomeStopEditor(null);
+    setHomeRadiusPreview(undefined);
+    setLocalActionError(null);
+    if (pane === 'itinerary') void syncFromDatabase().catch(() => undefined);
+    if (pane === 'team') void refreshAllLocations().catch(() => undefined);
+  }, [syncFromDatabase, refreshAllLocations]);
+  const d6FocusRef = useRef(focusHomePane);
+  d6FocusRef.current = focusHomePane;
+  const showTeamInvite = Boolean(route.params?.showTeamInvite && preferencesReady && state);
+  const clearTeamInvite = useCallback(() => navigation.setParams({ showTeamInvite: undefined }), [navigation]);
+
+  const openHomeSettings = (page: SettingsPage) => {
+    setHomeSettingsPage(page);
+    setSettingsOpen(true);
+  };
+  const openHomeAdd = (day: number = homeSelectedDay, kind: 'stop' | 'accommodation' = 'stop') => {
+    focusHomePane(null);
+    dismissConfirmCard();
+    setHomeAdd({ day, stay: kind === 'accommodation' && canEditHomeTrip, placement: { kind: 'last' } });
+  };
+  const closeHomeAdd = () => {
+    setHomeAdd(null);
+    dismissConfirmCard();
+    setLocalActionError(null);
+  };
+  const stageHomeDrop = (coords: Coordinates) => {
+    if (!homeAdd) openHomeAdd();
+    handleLongPressCoordinate(coords);
+  };
+  const stageHomePlace = (place: PlaceResult) => {
+    pendingPlaceSourceRef.current = 'search';
+    setPendingPlace(place);
+    setPendingPlaceTitle(place.name);
+    setLocalActionError(null);
+    cameraOnSearchPick(mapRef.current, place.coordinates, obliqueLocate);
+  };
+  const stageHomeCenter = () => {
+    const center = mapCameraState.current.camera?.center
+      ?? mapCameraState.current.region ?? homeStop?.coordinates ?? deviceCoords ?? mapInitialCenter;
+    if (center) stageHomeDrop({ latitude: center.latitude, longitude: center.longitude });
+  };
+  const homeDayStops = homeAdd ? allScopedDestinations.filter(destination =>
+    destination.day === homeAdd.day && !destination.closedAt && destination.kind !== 'accommodation'
+  ).sort((left, right) => left.order - right.order) : [];
+  const homeQuotaBlocked = canEditItinerary && Boolean(homeAdd && !homeAdd.stay) && shouldBlockNewDestination({
+    isPro, openCount: countOpenDestinations(allScopedDestinations), extraCredits: extraPointCredits,
+  });
+  const homeMutationBusy = useRef(false);
+  const commitHomePlace = async () => {
+    if (!homeAdd || !pendingPlace || !groupId || !pendingPlaceTitle.trim() || homeMutationBusy.current) return;
+    if (homeQuotaBlocked) { openHomeSettings('store'); return; }
+    const context = homeScopeChanges.current;
+    const isCurrent = () => mapMountedRef.current && context.groupId === homeScopeChanges.current.groupId
+      && context.scope === homeScopeChanges.current.scope && context.userId === homeScopeChanges.current.userId;
+    const place = pendingPlace;
+    const title = pendingPlaceTitle.trim();
+    const input = { title, coordinates: place.coordinates, address: place.address };
+    homeMutationBusy.current = true;
+    setConfirmPlaceBusy(true);
+    setLocalActionError(null);
+    try {
+      let id: string | undefined;
+      if (!canEditItinerary) {
+        if (!await notifyLeaderPlace([{ ...input, day: homeAdd.day }], pendingPlaceSourceRef.current ?? 'search')) return;
+      } else if (homeAdd.stay && canEditHomeTrip) {
+        if (!await assignD6Accommodation(homeAdd.day, input)) return;
+      } else {
+        const placement = homeAdd.placement;
+        id = await addDestination(groupId, {
+          ...input,
+          day: homeAdd.day,
+          providerPlaceId: place.providerPlaceId,
+          ...(placement.kind === 'first' ? { placement: 'firstStop' } : {}),
+        }, myScopeId);
+        if (id && placement.kind === 'after' && isCurrent()) {
+          const open = openDestinationsForReorder(allScopedDestinations);
+          const at = open.findIndex(stop => stop.id === placement.stopId && stop.day === homeAdd.day);
+          if (at >= 0) {
+            const ordered = [...open];
+            ordered.splice(at + 1, 0, { ...input, id, order: open.length, day: homeAdd.day });
+            const updates = persistedReorderUpdates(ordered, ordered.map((stop, position) => ({
+              id: stop.id, position, day: stop.day,
+            })), routeDepartureDate);
+            try {
+              await reorderDestinations(groupId, updates);
+            } catch (reason) {
+              if (isCurrent()) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(reason));
+            }
+          }
+        }
+        void syncFromDatabase().catch(() => undefined);
+      }
+      if (isCurrent()) {
+        closeHomeAdd();
+        setHomeDay(homeAdd.day);
+        const stayDate = homeAdd.stay ? dateForTripDay(homeDeparture, homeAdd.day) : null;
+        setHomeFlashId(stayDate ? 'stay-date:' + localDayKey(stayDate) : id ?? null);
+        setHomePane('itinerary');
+      }
+    } catch (error) {
+      if (isCurrent()) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+    } finally {
+      homeMutationBusy.current = false;
+      if (mapMountedRef.current) setConfirmPlaceBusy(false);
+    }
+  };
+  const onHomeStop = (stop: Destination) => {
+    setHomePane(null);
+    setHomeSelection(null);
+    setHomeDetail(stop);
+    mapRef.current?.centerOn(stop.coordinates, { screenY: 0.18 });
+    setHomeStopEditor(null);
+    setHomeRadiusPreview(undefined);
+    setLocalActionError(null);
+    setHomeSplit(null);
+  };
+  const homeDetailLive = homeDetail ? allScopedDestinations.find(destination => destination.id === homeDetail.id) ?? homeDetail : null;
+  const homeDaily = homeDetailLive ? dailyAccommodations.find(stay =>
+    stay.id === homeDetailLive.id || stay.sourceDestinationId === homeDetailLive.id) : undefined;
+  const onHomeStopRadius = (meters?: number) => {
+    if (!homeDetailLive || !canEditItinerary || !radiusKey) return;
+    const next = { ...homeRadii };
+    if (meters == null) delete next[homeDetailLive.id];
+    else next[homeDetailLive.id] = meters;
+    setHomeRadiusDraft({ key: radiusKey, values: next });
+    setHomeRadiusPreview(undefined);
+    void AsyncStorage.setItem(radiusKey, JSON.stringify(next)).catch(error =>
+      showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error)));
+  };
+  const changeHomeStop = async (change: () => Promise<boolean | void>, close?: 'editor' | 'card') => {
+    if (homeMutationBusy.current) return false;
+    homeMutationBusy.current = true;
+    setHomeStopBusy(true);
+    setLocalActionError(null);
+    try {
+      if ((await change()) === false) return false;
+      if (mapMountedRef.current && close === 'editor') setHomeStopEditor(null);
+      if (mapMountedRef.current && close === 'card') closeHomeDetail();
+      return true;
+    } catch (error) {
+      if (mapMountedRef.current) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error));
+      return false;
+    } finally {
+      homeMutationBusy.current = false;
+      if (mapMountedRef.current) setHomeStopBusy(false);
+    }
+  };
+  const homeSuggestions = gatherPointRequests.filter(request => (request.subgroupId ?? null) === (myScopeId ?? null) && request.status === 'pending').map(request => {
+    const member = members.find(m => m.userId === request.requesterId);
+    const avatar = displayMemberAvatar(member?.avatar, request.requesterId, member?.avatarColor);
+    return { id: request.id, title: request.items[0]?.title ?? t('map.placesCount', { count: request.items.length }),
+      avatar: avatar.emoji, avatarColor: avatar.color };
+  });
+  const goHomeJourney = () => {
+    setLocalActionError(null);
+    if (!homeStop) { openHomeAdd(); return; }
+    if (homePhase === 'arrived') {
+      if (canEditItinerary) void runCompleteGatheringStop(homeStop, false);
+      return;
+    }
+    if (!canEditItinerary) { requestLeaderStart(homeStop); return; }
+    void startNavigation(homeStop, Math.max(0, destinations.indexOf(homeStop)));
+  };
+  const d6HomeDistance = homeStop && deviceCoords && sharingEnabled ? distanceMeters(deviceCoords, homeStop.coordinates) : null;
+  const d6HomeEta = homeTravel.etaSeconds ?? (d6HomeDistance != null ? etaSecondsFor(d6HomeDistance, travelMode) : null);
+  const d6MapStops = useMemo(() => {
+    if (!d6Enabled || !homeStop) return d6Enabled ? EMPTY_DESTINATIONS : mapDestinations;
+    const ordered = openDestinationsForReorder(allScopedDestinations).filter(stop => stop.day != null && stop.id !== homeStop.id);
+    return [homeStop, ...ordered.filter(stop => (stop.day ?? 0) > (homeStop.day ?? 0)
+      || (stop.day === homeStop.day && stop.order > homeStop.order)).slice(0, 3)];
+  }, [d6Enabled, homeStop, allScopedDestinations, mapDestinations]);
+  const homeFooter = homeSelection && homePane === 'itinerary' ? (
+    <View style={d6MapStyles.footer}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} testID="d6-route-selection-cancel" style={d6MapStyles.footerButton} onPress={homeSelection.onCancel}><Text style={d6ChromeStyles.text}>{t('common.cancel')}</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={zh ? '待排' : 'Unscheduled'} testID="d6-route-selection-pool" style={d6MapStyles.footerButton} disabled={!homeSelection.canAct} onPress={homeSelection.onPool}>
+        <Text style={d6ChromeStyles.text}>{zh ? '待排' : 'Unscheduled'} {homeSelection.count || ''}</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('common.delete')} testID="d6-route-selection-delete" style={[d6MapStyles.footerButton, d6MapStyles.delete]} disabled={!homeSelection.canAct} onPress={homeSelection.onDelete}>
+        <Text style={d6ChromeStyles.text}>{t('common.delete')} {homeSelection.count || ''}</Text>
+      </Pressable>
+    </View>
+  ) : homeSplit && homePane === 'team' ? (
+    <View style={d6MapStyles.footer}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} testID="d6-team-split-cancel" style={d6MapStyles.footerButton} disabled={homeSplitBusy} onPress={() => setHomeSplit(null)}><Text style={d6ChromeStyles.text}>{t('common.cancel')}</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('d6.team.createSubgroupCount', { count: homeSplit.length })} testID="d6-team-split-create" style={[d6MapStyles.footerButton, d6ChromeStyles.primary]} disabled={homeSplitBusy || !user?.id || !homeSplit.includes(user.id)}
+        onPress={() => {
+          setHomeSplitBusy(true);
+          void createSubgroup(homeSplit, user?.id).then(success => { if (success) setHomeSplit(null); })
+            .catch(error => showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(error)))
+            .finally(() => setHomeSplitBusy(false));
+        }}>
+        <Text style={d6ChromeStyles.text}>{t('d6.team.createSubgroupCount', { count: homeSplit.length })}</Text>
+      </Pressable>
+    </View>
+  ) : undefined;
+
   const mapScreenLifecycle = (<>
+    {d6Enabled ? <>
+      {homeMeetingClock}
+      {homeAsked ? <HomeTransientNotice key={homeAsked} ms={4000} clear={() => setHomeAsked(null)} /> : null}
+      {homeCommand ? <HomeTransientNotice key={homeCommand} ms={3200} clear={() => setHomeCommand(null)} /> : null}
+      {radiusKey ? <HomeRadiusPreferences key={radiusKey} storageKey={radiusKey}
+        onLoad={values => setHomeRadiusDraft(current => current?.key === radiusKey ? current : { key: radiusKey, values })} /> : null}
+      {showTeamInvite ? <HomeChromeLinks kind="invitation" focus={d6FocusRef} onConsume={clearTeamInvite} /> : null}
+      {mapFocused ? <HomeChromeLinks kind="activity" focus={d6FocusRef} /> : null}
+    </> : null}
     <React.Fragment key="map-owner-journeyBaseline">{journeyBaselineLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-journeyDeparted">{journeyDepartedLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-journeySticky">{journeyStickyLifecycle}</React.Fragment>
@@ -4073,6 +4420,10 @@ export default function MapScreen({ route, navigation }: Props) {
     <React.Fragment key="group-data-runtime">{groupDataLifecycle}</React.Fragment>
     <React.Fragment key="navigation-runtime">{navigationSessionState.lifecycle}</React.Fragment>
     <React.Fragment key="journey-runtime">{journeyNavigationLifecycle}</React.Fragment>
+    <React.Fragment key="home-travel-mode">{homeTravel.lifecycle}</React.Fragment>
+    {d6Enabled && sharingEnabled && sourceHealthKind === 'permissionDenied' ? <MapLocationPermissionNotice key={groupId} t={t} /> : null}
+    {d6Enabled && effectiveNavigationActive && liveActivityAllowed && liveActivityStartState === 'unavailable'
+      ? <MapLiveActivityNotice key={`${groupId}:${navTargetId}`} t={t} /> : null}
     <React.Fragment key="device-location-runtime">{deviceLocationLifecycle}</React.Fragment>
     <React.Fragment key="mapkit-routes-runtime">{mapKitRouteLifecycle}</React.Fragment>
     <React.Fragment key="map-owner-runtime">{mapScreenLifecycle}</React.Fragment>
@@ -4180,9 +4531,9 @@ export default function MapScreen({ route, navigation }: Props) {
           cameraState={mapCameraState}
           members={members}
           showsUserLocation={Platform.OS === 'ios'}
-          gathering={activePoint}
-          destinations={mapDestinations}
-          dailyAccommodations={mapDailyAccommodations}
+          gathering={d6Enabled ? homeStop ?? undefined : activePoint}
+          destinations={d6MapStops}
+          dailyAccommodations={d6Enabled ? undefined : mapDailyAccommodations}
           stayCalloutLabel={t('stay.defaultTitle')}
           pendingPlace={pendingPlace}
           currentUserId={user?.id}
@@ -4201,11 +4552,24 @@ export default function MapScreen({ route, navigation }: Props) {
           routeColor={accent}
           // Settled detent only (not heightSV) so we don't re-render the map
           // mid-drag; top tracks measured carousel card height.
-          topOverlap={topPad}
-          bottomOverlap={bottomPad}
+          topOverlap={d6Enabled ? Math.max(56, insets.top - 3) + (carouselHeight || 88) : topPad}
+          bottomOverlap={d6Enabled ? Math.max(24, insets.bottom - 8) + MAP_ISLAND_HEIGHT : bottomPad}
           chromeStage={chromeStage}
           chromeBottomOffset={chromeBottomOffset}
-          onLongPressCoordinate={handleLongPressCoordinate}
+          onLongPressCoordinate={d6Enabled ? stageHomeDrop : handleLongPressCoordinate}
+          homePresentation={d6Enabled ? {
+            currentStopId: homeStop?.id,
+            dayColor: homeColor,
+            subgroupColors: homeSubgroupColors,
+            onStopPress: onHomeStop,
+            onBlankPress: () => { if (!homeAdd && (homePane || homeDetail)) focusHomePane(null); },
+            arrivalArea: homeDetailLive && (homeStopEditor === 'radius' || homeDetailLive.id === homeStop?.id) ? {
+              coordinates: homeDetailLive.coordinates,
+              radius: homeRadiusPreview ?? homeRadii[homeDetailLive.id] ?? 50,
+              color: homeColor(homeDetailLive.day),
+            } : undefined,
+            command: homeCommand && deviceCoords && sharingEnabled ? { coordinates: deviceCoords, text: homeCommand } : undefined,
+          } : undefined}
           onRequestGoHome={goHomeCreateOrJoin}
         />
       ) : (
@@ -4224,7 +4588,7 @@ export default function MapScreen({ route, navigation }: Props) {
         />
       ) : null}
 
-      {uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
+      {!d6Enabled && uiVisible && showDenseChrome && !confirmCardReady && !atFull && (
       <Animated.View
         style={[styles.teamCapsuleWrap, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'box-none'}
@@ -4253,7 +4617,7 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
       )}
 
-      {uiVisible && showDenseChrome && !confirmCardReady && recenterVisible && (
+      {!d6Enabled && uiVisible && showDenseChrome && !confirmCardReady && recenterVisible && (
       <Animated.View
         style={[styles.recenter, recenterStyle]}
         pointerEvents={atFull ? 'none' : 'auto'}
@@ -4268,7 +4632,238 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
       )}
 
-      <AddPlaceConfirmCard
+      {d6Enabled && showDenseChrome && !homeAdd ? <D6HomeChrome
+            zh={zh}
+            pane={homePane}
+            onPaneChange={focusHomePane}
+            stop={homeStop ?? null}
+            phase={homePhase}
+            canLead={canEditItinerary}
+            travelMode={travelMode}
+            distance={effectiveNavigationActive ? personalDistanceM ?? d6HomeDistance : d6HomeDistance}
+            eta={effectiveNavigationActive ? personalEtaSeconds ?? d6HomeEta : d6HomeEta}
+            arrived={homeArrived}
+            total={homeEligible.length}
+            asked={Boolean(homeStop && homeAsked === homeStop.id)}
+            busy={journeyBusy || homeStopBusy || Boolean(requestingStartDestId)}
+            progress={personalProgressRatio}
+            reduceMotion={tourReduceMotion}
+            lowPowerMode={powerState.lowPowerMode}
+            thermalState={powerState.thermalState}
+            displayFont={d6DisplayFont}
+            marqueeEnabled={gatherCardTitleMarquee}
+            marqueeSpeed={gatherCardMarqueeSpeed}
+            selfEmoji={homeSelf.emoji}
+            selfColor={homeSelf.color ?? '#F3C443'}
+            statusColor={homeStatusColor}
+            hideIsland={Boolean(homeDetail)}
+            hideHeader={Boolean(homeDetail)}
+            onAdd={() => openHomeAdd()}
+            onAction={goHomeJourney}
+            onStop={() => homeStop ? requestTeamEnd(homeStop, Math.max(0, destinations.indexOf(homeStop))) : Promise.resolve(false)}
+            onProfile={() => openHomeSettings('root')}
+            onCommands={() => setOverlay('commands')}
+            onFit={fitAllMembers}
+            onLocate={locateMe}
+            onTopHeight={setCarouselHeight}
+            error={homeDetail || overlay ? null : homeError}
+            footer={homeFooter}
+            itinerary={<D6RoutePane
+              accent={accent}
+              displayFont={d6DisplayFont}
+              destinations={allScopedDestinations}
+              dailyAccommodations={myScopeId ? [] : dailyAccommodations}
+              departureDate={homeDeparture}
+              tripDays={homeTripDays}
+              selectedDay={homeSelectedDay}
+              onSelectDay={setHomeDay}
+              activeDestinationId={homeStop?.id}
+              canEdit={canEditItinerary}
+              canEditDates={canEditHomeTrip}
+              dayColors={dayColors}
+              onDayColor={setDayColor}
+              suggestions={canEditItinerary ? homeSuggestions : []}
+              onSuggestion={(id, approve) => void handleGatherPointRequest(id, approve)}
+              onOpenStop={onHomeStop}
+              onAdd={openHomeAdd}
+              onCompleteEarly={canEditItinerary && homePhase === 'going' && homeStop
+                ? () => promptCompleteAfterArrival(homeStop) : undefined}
+              onManageArrivals={canEditItinerary && destinations.length > 0 ? () => setOverlay('arrivalManage') : undefined}
+              onImport={() => openKmlImportForScope(myScopeId)}
+              onReorder={handleReorder}
+              onDelete={deleteD6Destinations}
+              onTripDetails={updateD6TripDetails}
+              onAccommodation={mutateD6Accommodation}
+              onSelectionChange={setHomeSelection}
+              flashId={homeFlashId}
+              poolFlashKey={homePoolFlashKey}
+              error={homeDetail ? null : homeError}
+              legacyContent={historyGroups.length || myScopeId ? <View style={d6MapStyles.secondary}>
+                <Pressable accessibilityRole="button" style={d6ChromeStyles.softButton} onPress={() => setOverlay('history')}>
+                  <Text style={d6ChromeStyles.text}>{zh ? '歷史行程' : 'Journey history'}</Text>
+                </Pressable>
+                {myScopeId ? <Pressable accessibilityRole="button" style={d6ChromeStyles.softButton} onPress={() => setOverlay('route')}>
+                  <Text style={d6ChromeStyles.text}>{zh ? '主隊行程' : 'Main-team itinerary'}</Text>
+                </Pressable> : null}
+              </View> : null}
+            />}
+            teamHeader={<D6TeamHeader group={group} onOpenTeamSettings={() => openHomeSettings('team')} onInviteTeam={() => setOverlay('invite')} />}
+            team={<D6MembersPane
+                showHeader={false}
+                selfSampleAtMs={deviceCoordsAcceptedAtMs}
+                locationWarning={!sharingEnabled ? t('map.locationSharingStopped') : sourceHealthKind === 'permissionDenied'
+                  ? t('map.locationNotStarted') : sourceHealthKind === 'interrupted' ? t('map.locationInterrupted')
+                    : !deviceCoords ? t('locationUpdate.missing') : null}
+                onLocationRecovery={() => { if (!sharingEnabled) void handleSharingEnabledChange(true); else if (sourceHealthKind === 'permissionDenied') void Linking.openSettings(); else void refreshDeviceLocation(); }}
+                accent={accent}
+                onAccent="#fff"
+                group={group}
+                isNewTeam={members.length === 1 && isLeader}
+                displayFont={d6DisplayFont}
+                flock={flock}
+                myUserId={user?.id}
+                myStatusKind={myStatusKind}
+                sharingEnabled={sharingEnabled}
+                statusMenuItems={statusMenuItems}
+                applyPresenceMacroKind={applyPresenceMacroKind}
+                onEnableSharing={() => handleSharingEnabledChange(true)}
+                onTemporarilyLeave={doSelfSplit}
+                mySubgroupId={mySubgroupId}
+                subgroups={subgroups}
+                pendingInvites={pendingInvites}
+                sentInvites={sentInvites}
+                coordination={coordination}
+                onOpenTeamSettings={() => openHomeSettings('team')}
+                onInviteTeam={() => setOverlay('invite')}
+                onAcceptInvite={handleAcceptInvite}
+                onDeclineInvite={handleDeclineInvite}
+                onInviteToSubgroup={() => setInviteSheetOpen(true)}
+                onLeaveSubgroup={doSelfMerge}
+                onStartSplit={() => setHomeSplit(user?.id ? [user.id] : [])}
+                selectedMemberIds={homeSplit}
+                onToggleMember={id => setHomeSplit(current => current ? current.includes(id) ? current.filter(value => value !== id) : [...current, id] : [id])}
+                onLocateMember={id => {
+                  const member = members.find(item => item.userId === id);
+                  if (!member?.coordinates || member.sharingEnabled === false) return;
+                  focusHomePane(null);
+                  mapRef.current?.centerOn(member.coordinates);
+                }}
+                onKickMember={isLeader ? confirmKickMember : undefined}
+                memberInbox={memberInbox.byMember}
+                onOpenMemberInbox={openMemberInbox}
+              />}
+          /> : null}
+      {d6Enabled && uiVisible && showDenseChrome ? (
+        <>
+          {homeAdd && !settingsOpen ? <D6AddPlace
+            zh={zh}
+            session={homeAdd}
+            place={pendingPlace}
+            title={pendingPlaceTitle}
+            favoritePlaces={favoritePlaces}
+            biasRegion={biasRegion}
+            departureDate={homeDeparture}
+            tripDays={homeTripDays}
+            color={homeColor(homeAdd.day)}
+            stops={homeDayStops}
+            canEdit={canEditItinerary}
+            canSetStay={canEditHomeTrip}
+            quota={homeQuotaBlocked}
+            favorite={pendingIsFavorite}
+            favoriteBusy={favoriteBusy}
+            busy={confirmPlaceBusy}
+            keyboardHeight={confirmKeyboardHeight}
+            error={homeError}
+            onClose={closeHomeAdd}
+            onCenter={stageHomeCenter}
+            onPick={stageHomePlace}
+            onTitle={setPendingPlaceTitle}
+            onDay={day => setHomeAdd(current => current && (current.day === day ? current : { ...current, day, placement: { kind: 'last' } }))}
+            onPlacement={placement => setHomeAdd(current => current && ({ ...current, placement }))}
+            onStay={stay => setHomeAdd(current => current && ({ ...current, stay }))}
+            onFavorite={() => void togglePendingFavorite()}
+            onImport={() => openKmlImportForScope(myScopeId)}
+            onCommit={() => void commitHomePlace()}
+          /> : null}
+          {homeDetailLive && !homeAdd ? <D6StopCard
+            key={homeDetailLive.id}
+            stop={homeDetailLive}
+            zh={zh}
+            color={homeColor(homeDetailLive.day)}
+            departureDate={homeDeparture}
+            current={homeStop?.id === homeDetailLive.id}
+            canEdit={canEditItinerary}
+            canSetStay={canEditHomeTrip && homeDetailLive.day != null && !homeDetailLive.closedAt}
+            stays={Boolean(homeDaily || homeDetailLive.kind === 'accommodation')}
+            busy={homeStopBusy}
+            displayFont={d6DisplayFont}
+            edit={homeStopEditor}
+            onEdit={edit => { setHomeStopEditor(edit); setHomeRadiusPreview(undefined); }}
+            radius={homeRadiusPreview ?? homeRadii[homeDetailLive.id] ?? 50}
+            radiusOverride={homeRadii[homeDetailLive.id]}
+            onRadiusPreview={setHomeRadiusPreview}
+            onRadius={onHomeStopRadius}
+            travelMode={homeTravel.selectedMode}
+            modeEtas={homeTravel.etaByMode}
+            onMode={mode => { setTravelMode(mode); setHomeStopEditor(null); }}
+            error={homeError}
+            onTime={(value, reminder) => changeHomeStop(async () => {
+              if (!groupId || !canEditItinerary) return false;
+              await setDestinationMeetTime(homeDetailLive.id, value?.toISOString() ?? null, value ? reminder : null, groupId);
+              await syncFromDatabase();
+            }, 'editor')}
+            onIcon={emoji => changeHomeStop(async () => {
+              if (!groupId || !canEditItinerary) return false;
+              await updateDestinationEmojiColor(groupId, homeDetailLive.id, { emoji });
+              await syncFromDatabase();
+            }, 'editor')}
+            onStay={next => void changeHomeStop(async () => {
+              if (!next) {
+                const regular = await unsetD6Accommodation(homeDetailLive, homeDaily);
+                if (!regular) return false;
+                if (mapMountedRef.current) setHomeDetail(detail => detail?.id === homeDetailLive.id ? regular : detail);
+                return true;
+              }
+              if (homeDetailLive.day == null) return false;
+              const saved = await assignD6Accommodation(homeDetailLive.day, { title: homeDetailLive.title, address: homeDetailLive.address,
+                coordinates: homeDetailLive.coordinates, sourceDestinationId: homeDetailLive.id });
+              if (saved && mapMountedRef.current) setHomeStopEditor(null);
+              return saved;
+            })}
+            onClose={closeHomeDetail}
+            onMaps={() => {
+              const { latitude, longitude } = homeDetailLive.coordinates;
+              const mode = travelMode === 'transit' ? 'r' : travelMode === 'drive' ? 'd' : 'w';
+              void Linking.openURL(`https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=${mode}`).catch(() => openExternalNavigation(homeDetailLive));
+            }}
+            onDelete={() => void changeHomeStop(async () => {
+              const deleted = homeDaily
+                ? await mutateD6Accommodation(homeDaily, 'delete')
+                : await deleteD6Destinations([homeDetailLive.id]);
+              if (deleted && mapMountedRef.current) {
+                setHomeDay(homeDetailLive.day ?? homeSelectedDay);
+                setHomePane('itinerary');
+              }
+              return deleted;
+            }, 'card')}
+            onHistory={homeDetailLive.closedAt ? () => {
+              setArrivalDestination(homeDetailLive);
+              setOverlay('arrival');
+              closeHomeDetail();
+            } : undefined}
+          /> : null}
+          {overlay === 'commands' && groupId ? <KeyboardAvoidingView pointerEvents="box-none" behavior="padding" style={d6MapStyles.commandsOverlay}>
+            <Pressable accessibilityLabel={t('common.cancel')} style={StyleSheet.absoluteFill} onPress={() => setOverlay(null)} />
+            <View style={[d6MapStyles.commandsCard, { marginBottom: Math.max(24, insets.bottom - 8), maxHeight: windowHeight - insets.top - 60 }]}>
+              <D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />
+              <QuickCommandGrid groupId={groupId} isLeader={isLeader} accent={accent} onAccent="#fff"
+                requestStartDestinationId={homeStop?.id} onCommandSent={setHomeCommand} onClose={() => setOverlay(null)} />
+            </View>
+          </KeyboardAvoidingView> : null}
+        </>
+      ) : null}
+
+      {!d6Enabled ? <AddPlaceConfirmCard
         accent={accent}
         addPlaceTourStep={addPlaceTourStep}
         confirmCardReady={confirmCardReady}
@@ -4293,11 +4888,11 @@ export default function MapScreen({ route, navigation }: Props) {
         t={t}
         togglePendingFavorite={togglePendingFavorite}
         user={user}
-      />
+      /> : null}
 
       <GroupFeatureTourOverlay
         visible={
-          addPlaceTourStep != null
+          !d6Enabled && addPlaceTourStep != null
           && pendingPlace != null
           && ADD_PLACE_TOUR_STEPS[addPlaceTourStep] != null
         }
@@ -4348,7 +4943,7 @@ export default function MapScreen({ route, navigation }: Props) {
 
       {/* Gathering-point carousel — above locate/group capsules; sheet wrapper
           zIndex is higher so the sheet covers cards on overlap. */}
-      <GatheringCarousel
+      {!d6Enabled ? <GatheringCarousel
         accent={accent}
         activeDestinationArrivals={activeDestinationArrivals}
         activePoint={activePoint}
@@ -4418,7 +5013,7 @@ export default function MapScreen({ route, navigation }: Props) {
         uiVisible={uiVisible}
         user={user}
         windowWidth={windowWidth}
-      />
+      /> : null}
 
       {/* Straggler alerts fire as a native OS notification (see the effect
           above) — no in-app banner, so they don't cover the map. */}
@@ -4427,7 +5022,7 @@ export default function MapScreen({ route, navigation }: Props) {
           Wrapper zIndex must beat carousel (58): child BottomSheet zIndex alone
           cannot win against a sibling with higher zIndex.
           OTA-07: also hidden in passive companion presentation. */}
-      <Animated.View
+      {!d6Enabled ? <Animated.View
         style={[
           StyleSheet.absoluteFill,
           styles.sheetLayer,
@@ -4453,7 +5048,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
         {sheetExposed && showDenseChrome && !confirmCardReady && sheetChildren}
       </BottomSheet>
-      </Animated.View>
+      </Animated.View> : null}
 
       <RouteEditorSheet
         accent={accent}
@@ -4502,17 +5097,47 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       <SettingsOverlay
+        {...(d6Enabled ? {
+          initialPage: homeSettingsPage,
+          liveActivitySettings: { enabled: liveActivityEnabled, unlocked: liveActivityUnlocked, unavailable: liveActivityStartState === 'unavailable', onChange: handleToolsLiveActivityChange },
+          memberCount: members.length,
+          profileStatusColor: homeStatusColor,
+          refresh: () => { void refresh(); },
+          inviteBlockedForAnonymousLeader,
+          onShareGroup: () => setOverlay('invite'),
+          onCreateCoordination: coordination.createRequest,
+          onCoordinationCreated: () => { setSettingsOpen(false); focusHomePane('team'); },
+          onConfirmEnd: () => confirmLeave('end'),
+          onSwitchTeam: info => {
+            setMembership({ group: info.group, role: info.role });
+            navigation.replace('Map', { groupId: info.group.id });
+          },
+          onCreateTeam: () => openTeamRouteAfterSettings('create'),
+          onJoinTeam: () => openTeamRouteAfterSettings('join'),
+          renderStore: presentation => <StorePane
+            presentation={presentation}
+            groupId={groupId}
+            groupName={group?.name ?? null}
+            isAnonymous={!!isAnonymous}
+            personalPremiumActive={premiumProjection.personalPremiumActive}
+            accent={accent}
+            t={t}
+            onRequireRegistration={() => setHomeSettingsPage('account')}
+            onEntitlementChanged={() => { void refreshStoreEntitlements(); }}
+            onOpenSubscribe={() => openPaywall(undefined, { showRestore: false })}
+          />,
+        } satisfies Partial<React.ComponentProps<typeof SettingsOverlay>> : {})}
         visible={settingsOpen}
         onClose={closeSettings}
         onArchiveAllForTest={archiveAllForTest}
         onOpenFeedback={openFeedback}
         onConfirmResetPrefs={confirmResetPrefs}
-        onConfirmLeave={confirmLeave}
+        onConfirmLeave={() => confirmLeave(d6Enabled ? 'leave' : 'legacy')}
         onConfirmSignOut={confirmSignOut}
         onOpenPaywall={openPaywallCb}
         onDismissComplete={handleSettingsDismissComplete}
         onAccountDeleted={() => {
-          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
         }}
         group={group}
         isLeader={isLeader}
@@ -4561,7 +5186,7 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       <OverlaySheet
-        visible={overlay === 'commands'}
+        visible={!d6Enabled && overlay === 'commands'}
         onClose={() => setOverlay(null)}
         title={t('map.cmdTitle')}
         accent={accent}
@@ -4590,7 +5215,7 @@ export default function MapScreen({ route, navigation }: Props) {
         onClose={() => setOverlay(null)}
         accent={accent}
         onAccountDeleted={() => {
-          navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
         }}
       />
       </View>
@@ -4669,7 +5294,7 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       <DestinationSearch
-        visible={searchVisible}
+        visible={!d6Enabled && searchVisible}
         onClose={closeSearch}
         onOpenCoordinates={openCoordinateDestination}
         biasRegion={biasRegion}
@@ -4756,7 +5381,7 @@ export default function MapScreen({ route, navigation }: Props) {
       />
 
       <GroupFeatureTourOverlay
-        visible={tourActive}
+        visible={!d6Enabled && tourActive}
         title={
           tourStep && !tourStep.final
             ? t(tourStep.titleKey as TranslationKey)
@@ -4788,4 +5413,29 @@ export default function MapScreen({ route, navigation }: Props) {
     </View>
     </>
   )}</>;
+}
+
+const EMPTY_HOME_RADII: Readonly<Record<string, number>> = {};
+
+const d6MapStyles = StyleSheet.create({
+  footer: { flexDirection: 'row', gap: 10, marginTop: 'auto', marginBottom: MAP_ISLAND_BOTTOM_INSET },
+  footerButton: { ...d6ChromeStyles.softButton, flex: 1, minHeight: MAP_ISLAND_ACTION_HEIGHT },
+  delete: { backgroundColor: '#E5484D' },
+  commandsOverlay: { ...StyleSheet.absoluteFill, zIndex: 91, justifyContent: 'flex-end' },
+  commandsCard: { ...d6ChromeStyles.bottomCard, position: 'relative', left: undefined, right: undefined, marginHorizontal: MAP_FLOATING_EDGE_INSET },
+  secondary: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ffffff28', paddingTop: 4 },
+});
+
+function MapLocationPermissionNotice({ t }: { t: ReturnType<typeof useTranslation>['t'] }) {
+  useMountEffect(() => { Alert.alert(t('location.permissionTitle'), t('map.locationNotStarted'), [
+    { text: t('common.cancel'), style: 'cancel' }, { text: t('location.openSettings'), onPress: () => { void Linking.openSettings(); } },
+  ]); });
+  return null;
+}
+
+function MapLiveActivityNotice({ t }: { t: ReturnType<typeof useTranslation>['t'] }) {
+  useMountEffect(() => { Alert.alert(t('settings.liveActivity'), t('settings.liveActivityUnavailable'), [
+    { text: t('common.cancel'), style: 'cancel' }, { text: t('location.openSettings'), onPress: () => { void Linking.openSettings(); } },
+  ]); });
+  return null;
 }

@@ -1,4 +1,4 @@
-import { createElement, Fragment, useCallback, useMemo, useState } from 'react';
+import { createElement, Fragment, useCallback, useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -135,25 +135,58 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
     }
   }, [t, groupId, refreshInvites, refreshSentInvites]);
 
-  // Any member can split themselves into their own new (collab, no-leader)
-  // subgroup, or merge themselves back up a level — no leader say-so needed.
-  // Returns false if the user cancelled the leave warning or the RPC failed.
-  const doSelfSplit = useCallback(async (): Promise<boolean> => {
-    if (!groupId) return false;
-    if (!(await confirmLeaveMainGroup())) return false;
-    mediumTap();
-    logEvent('team_create', { groupId });
+  const splittingRef = useRef(false);
+  const splitAndInvite = useCallback(async (
+    name: string,
+    invitees: readonly MemberLocation[],
+  ): Promise<boolean> => {
+    if (!groupId || splittingRef.current) return false;
+    splittingRef.current = true;
     try {
-      await selfSplit(groupId, t('subgroup.selfSplitName', { name: userName ?? t('group.travelerFallback') }));
+      if (!(await confirmLeaveMainGroup())) return false;
+      mediumTap();
+      logEvent('team_create', { groupId });
+      const subgroup = await selfSplit(groupId, name);
       logEvent('team_create_ok', { groupId });
-      refresh();
+      if (invitees.length > 0) {
+        const results = await Promise.allSettled(
+          invitees.map(member => inviteToSubgroup(subgroup.id, member.userId)),
+        );
+        const failures = invitees.filter((_, index) => results[index]?.status === 'rejected');
+        if (failures.length > 0) {
+          Alert.alert(t('subgroup.failed'), t('d6.team.inviteFailed', {
+            names: failures.map(member => member.name).join(t('d6.team.nameSeparator')),
+          }));
+        }
+        if (isDemoGroup(groupId)) refreshInvites();
+        else void refreshSentInvites(subgroup.id);
+      }
+      void refresh('membership_change').catch(error => {
+        logError('team_create_refresh_failed', error, { groupId });
+      });
       return true;
-    } catch (e) {
-      logError('team_create_failed', e, { groupId });
-      Alert.alert(t('subgroup.failed'), e instanceof Error ? e.message : undefined);
+    } catch (error) {
+      logError('team_create_failed', error, { groupId });
+      Alert.alert(t('subgroup.failed'), error instanceof Error ? error.message : undefined);
       return false;
+    } finally {
+      splittingRef.current = false;
     }
-  }, [groupId, confirmLeaveMainGroup, userName, t, refresh]);
+  }, [groupId, confirmLeaveMainGroup, refreshInvites, refreshSentInvites, refresh, t]);
+
+  const doSelfSplit = useCallback((): Promise<boolean> => splitAndInvite(
+    t('subgroup.selfSplitName', { name: userName ?? t('group.travelerFallback') }),
+    [],
+  ), [splitAndInvite, t, userName]);
+
+  const createSubgroup = useCallback((
+    selectedMemberIds: readonly string[],
+    myUserId: string | undefined,
+  ): Promise<boolean> => {
+    if (!myUserId || mySubgroupId || !selectedMemberIds.includes(myUserId)) return Promise.resolve(false);
+    const invitees = members.filter(member => member.userId !== myUserId && selectedMemberIds.includes(member.userId));
+    return splitAndInvite(t('d6.team.yourSubgroup'), invitees);
+  }, [members, mySubgroupId, splitAndInvite, t]);
 
   const doSelfMerge = useCallback(async (): Promise<boolean> => {
     if (!groupId) return false;
@@ -181,6 +214,7 @@ export function useSubgroupActions(input: UseSubgroupActionsInput) {
     handleDeclineInvite,
     handleInvite,
     doSelfSplit,
+    createSubgroup,
     doSelfMerge,
   };
 }

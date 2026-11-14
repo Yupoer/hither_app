@@ -23,6 +23,7 @@ export interface BackgroundJourneyConfig {
   scopeSubgroupId?: string | null;
   target?: Destination;
   completeSolo?: boolean;
+  requiresLeaderCompletion?: boolean;
   memberIds?: string[];
   /** Full scoped roster, independent of the Live Activity avatar limit. */
   navigationMemberIds?: string[];
@@ -53,6 +54,8 @@ export interface BackgroundJourneyConfig {
   gatheringTitle?: string;
   groupName?: string;
   memberEmojis?: string[];
+  memberColors?: string[];
+  language?: 'en' | 'zh';
   memberArrived?: boolean[];
   startCoords?: Coordinates;
   hasDepartedStart?: boolean;
@@ -101,7 +104,7 @@ export function hasActiveBackgroundJourney(config: BackgroundJourneyConfig): boo
  * Presence resolution ignores precision, so retaining intent does not promote GPS. */
 export function backgroundPresenceConfig(config: BackgroundJourneyConfig): BackgroundJourneyConfig {
   return { ...config, navigationSessionId: null, sessionExpiresAt: undefined, journeyEntityVersion: undefined, journeyPhaseChangedAtMs: undefined, destinationId: 'group-presence',
-    target: undefined, powerMode: 'allDay', teamNavigationActive: false,
+    target: undefined, requiresLeaderCompletion: undefined, powerMode: 'allDay', teamNavigationActive: false,
     arrivalState: undefined, completeSolo: false, initialDistanceM: 0, sequence: 0,
     navigationMemberIds: undefined, arrivedMemberIds: undefined, arrivalCorrections: undefined, leaderId: undefined,
     lastProcessedLocationAt: undefined, personalArrived: undefined, personalArrivalAtMs: undefined,

@@ -37,57 +37,25 @@ jest.mock('react-native-reanimated', () => ({
     return ref.current;
   },
 }));
-jest.mock('../screens/LoginScreen', () => 'LoginScreen');
-jest.mock('../screens/RoleSelectScreen', () => 'RoleSelectScreen');
-jest.mock('../screens/AuthScreen', () => 'AuthScreen');
-jest.mock('../screens/MyTeamsScreen', () => 'MyTeamsScreen');
-jest.mock('../screens/MapScreen', () => 'MapScreen');
-jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: { background: '#000000' } }) }));
-jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: { id: 'account-a' } }) }));
 import { updateRuntimePowerState } from '../state/runtimePowerState';
 import MetalforgeBackground from '../components/MetalforgeBackground';
 const { act, create } = require('react-test-renderer');
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
-it('keeps one moving navigator backdrop through home, create, join and teams, and hides it on Map', async () => {
+it('keeps one moving backdrop instance while active and removes its canvas when inactive', async () => {
   mockFrames.length = 0; mockUniforms.length = 0;
   updateRuntimePowerState({ lowPowerMode: false, thermalState: 'nominal' });
-  const host: any = {};
-  require('../../test/headless/app.cjs').installNavigation({ jest, host });
-  const RootNavigator = require('../navigation/RootNavigator').default;
   let root: any;
-  await act(async () => { root = create(React.createElement(RootNavigator)); });
+  await act(async () => { root = create(React.createElement(MetalforgeBackground, { active: true })); });
   try {
-    const background = root.root.findByType(MetalforgeBackground);
-    const canvas = root.root.findByType('Canvas');
     const frame = mockFrames[0];
-    const navigator = root.root.find((node: any) => node.props.initialRouteName === 'RoleSelect');
-    const screens = React.Children.toArray(navigator.props.children).filter(React.isValidElement);
-    for (const screen of screens) {
-      if (React.isValidElement<{ name: string; options?: { contentStyle: { backgroundColor: string } } }>(screen)
-        && ['RoleSelect', 'Auth', 'MyTeams'].includes(screen.props.name)) {
-        expect(screen.props.options?.contentStyle.backgroundColor).toBe('transparent');
-      }
-    }
+    const canvas = root.root.findByType('Canvas');
     expect(mockUniforms[0]().speed).toBe(1.25);
     frame.callback({ timestamp: 1000 });
-    for (const [index, route] of [
-      { name: 'Auth', params: { role: 'leader' } },
-      { name: 'Auth', params: { role: 'follower' } },
-      { name: 'MyTeams', params: undefined },
-    ].entries()) {
-      await act(async () => { host.navigation.navigate(route.name, route.params); });
-      expect(root.root.findByType(MetalforgeBackground)).toBe(background);
-      expect(root.root.findByType('Canvas')).toBe(canvas);
-      expect(frame.isActive).toBe(true);
-      const time = mockUniforms.at(-1)().time;
-      frame.callback({ timestamp: 1100 + index * 100 });
-      expect(mockUniforms.at(-1)().time).toBeGreaterThan(time);
-    }
-    await act(async () => { host.navigation.goBack(); });
+    await act(async () => { root.update(React.createElement(MetalforgeBackground, { active: true })); });
     expect(root.root.findByType('Canvas')).toBe(canvas);
-    await act(async () => { host.navigation.navigate('Map', { groupId: 'team-a' }); });
-    expect(root.root.findByType(MetalforgeBackground)).toBe(background);
+    expect(frame.isActive).toBe(true);
+    await act(async () => { root.update(React.createElement(MetalforgeBackground, { active: false })); });
     expect(root.root.findAllByType('Canvas')).toHaveLength(0);
     expect(frame.isActive).toBe(false);
     expect(mockFrames).toHaveLength(1);

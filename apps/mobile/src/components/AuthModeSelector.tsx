@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 
 export type AuthMode = 'signin' | 'signup';
@@ -75,6 +78,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   active: { backgroundColor: 'rgba(255,255,255,0.16)' },
-  text: { fontSize: 15.5, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
+  text: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: 'rgba(235,235,245,0.6)' },
   activeText: { color: '#fff' },
 });

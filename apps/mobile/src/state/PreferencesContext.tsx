@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readSystemLanguage, subscribeSystemLanguage } from './systemLanguage';
 import type { TravelMode } from '../utils/geo';
 import {
   DEFAULT_THEME,
@@ -109,6 +110,7 @@ interface PreferencesValue {
   themeName: ThemeName;
   /** App text size multiplier (0.8–1.2). Default 1.0 = design sizes. */
   textScale: TextScalePref;
+  followSystemTextSize: boolean;
   /** Opt-in location tracking with finer fixes and a faster cadence. */
   highAccuracy: boolean;
   /** Master switch for uploading and retaining this device's location. */
@@ -145,8 +147,10 @@ interface PreferencesValue {
   /** True once the persisted preferences have been loaded from storage. */
   ready: boolean;
   setLanguage: (language: Language) => void;
+  followSystemLanguage: () => Promise<void>;
   setThemeName: (theme: ThemeName) => void;
   setTextScale: (scale: TextScalePref) => void;
+  setFollowSystemTextSize: () => void;
   setHighAccuracy: (on: boolean) => void;
   setSharingEnabled: (on: boolean) => void;
   setObliqueLocate: (on: boolean) => void;
@@ -159,6 +163,7 @@ interface PreferencesValue {
   setArrivalRadiusM: (meters: number) => void;
   setPassiveCompanionMode: (on: boolean) => void;
   setDiagnosticUploadEnabled: (enabled: boolean) => Promise<void>;
+  resetDisplayPreferences: () => Promise<void>;
 }
 
 const PreferencesContext = createContext<PreferencesValue | undefined>(undefined);
@@ -187,9 +192,14 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [travelMode, setTravelModeState] = useState<TravelMode>('walk');
   // A choice made while the storage read is pending owns the mode.
   const travelModeChosenRef = useRef(false);
-  const [language, setLanguageState] = useState<Language>(DEFAULT_LANGUAGE);
+  const [languageOverride, setLanguageOverride] = useState<Language | null>(null);
+  const languageChosen = useRef(false);
+  const [systemLanguage, setSystemLanguage] = useState(readSystemLanguage);
+  const language = languageOverride ?? systemLanguage;
+  useMountEffect(() => subscribeSystemLanguage(setSystemLanguage));
   const [themeName, setThemeNameState] = useState<ThemeName>(DEFAULT_THEME);
   const [textScale, setTextScaleState] = useState<TextScalePref>(DEFAULT_TEXT_SCALE);
+  const [followSystemTextSize, setFollowSystemTextSizeState] = useState(true);
   const [highAccuracy, setHighAccuracyState] = useState(false);
   const [sharingEnabled, setSharingEnabledState] = useState(true);
   useMountEffect(() => subscribeLocationSharingConsent(setSharingEnabledState));
@@ -256,9 +266,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           const mode = storedTravelMode?.[1];
           setTravelModeState(isTravelMode(mode) ? mode : 'walk');
         }
-        if (isLanguage(storedLang[1])) setLanguageState(storedLang[1]);
+        if (!languageChosen.current && isLanguage(storedLang[1])) setLanguageOverride(storedLang[1]);
         if (isThemeName(storedTheme[1])) setThemeNameState(storedTheme[1]);
         const parsedTextScale = parseTextScalePref(storedTextScale[1]);
+        setFollowSystemTextSizeState(parsedTextScale === null);
         if (parsedTextScale != null) setTextScaleState(parsedTextScale);
         if (storedHighAccuracy[1] === 'true') setHighAccuracyState(true);
         const persistedSharing =
@@ -327,8 +338,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const setLanguage = useCallback((next: Language) => {
-    setLanguageState(next);
+    languageChosen.current = true;
+    setLanguageOverride(next);
     void AsyncStorage.setItem(LANGUAGE_KEY, next);
+  }, []);
+
+  const followSystemLanguage = useCallback(async () => {
+    await AsyncStorage.removeItem(LANGUAGE_KEY);
+    languageChosen.current = true;
+    setLanguageOverride(null);
   }, []);
 
   const setThemeName = useCallback((next: ThemeName) => {
@@ -337,8 +355,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, []);
 
   const setTextScale = useCallback((next: TextScalePref) => {
+    setFollowSystemTextSizeState(false);
     setTextScaleState(next);
     void AsyncStorage.setItem(TEXT_SCALE_KEY, String(next));
+  }, []);
+
+  const setFollowSystemTextSize = useCallback(() => {
+    setFollowSystemTextSizeState(true);
+    setTextScaleState(DEFAULT_TEXT_SCALE);
+    void AsyncStorage.removeItem(TEXT_SCALE_KEY);
   }, []);
 
   const setHighAccuracy = useCallback((on: boolean) => {
@@ -417,6 +442,32 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     finally { setDiagnosticUploadEnabledState(isDiagnosticConsentEnabled()); }
   }, []);
 
+  const resetDisplayPreferences = useCallback(async () => {
+    await AsyncStorage.multiRemove([
+      LANGUAGE_KEY, THEME_KEY, TEXT_SCALE_KEY, TRAVEL_MODE_KEY, OBLIQUE_LOCATE_KEY,
+      LIVE_ACTIVITY_KEY, MEET_RED_KEY, DAY_COLORS_KEY, GATHER_CARD_DEFAULT_EXPANDED_KEY,
+      GATHER_CARD_TITLE_MARQUEE_KEY, GATHER_CARD_MARQUEE_SPEED_KEY, ARRIVAL_RADIUS_KEY,
+      PASSIVE_COMPANION_MODE_KEY,
+    ]);
+    languageChosen.current = true;
+    setLanguageOverride(null);
+    setThemeNameState(DEFAULT_THEME);
+    setTextScaleState(DEFAULT_TEXT_SCALE);
+    setFollowSystemTextSizeState(true);
+    travelModeChosenRef.current = true;
+    setTravelModeState('walk');
+    setObliqueLocateState(true);
+    setLiveActivityEnabledState(true);
+    setMeetRedMinState(DEFAULT_MEET_RED_MIN);
+    setDayColorsState({});
+    setGatherCardDefaultExpandedState(false);
+    setGatherCardTitleMarqueeState(true);
+    setGatherCardMarqueeSpeedState(DEFAULT_MARQUEE_SPEED);
+    setArrivalRadiusMState(DEFAULT_ARRIVAL_RADIUS_M);
+    setPassiveCompanionModeState(false);
+    await setDiagnosticUploadEnabled(false);
+  }, [setDiagnosticUploadEnabled]);
+
   const value = useMemo<PreferencesValue>(
     () => ({
       travelMode,
@@ -424,6 +475,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       language,
       themeName,
       textScale,
+      followSystemTextSize,
       highAccuracy,
       sharingEnabled,
       obliqueLocate,
@@ -438,8 +490,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       diagnosticUploadEnabled,
       ready,
       setLanguage,
+      followSystemLanguage,
       setThemeName,
       setTextScale,
+      setFollowSystemTextSize,
       setHighAccuracy,
       setSharingEnabled,
       setObliqueLocate,
@@ -452,6 +506,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setArrivalRadiusM,
       setPassiveCompanionMode,
       setDiagnosticUploadEnabled,
+      resetDisplayPreferences,
     }),
     [
       travelMode,
@@ -459,6 +514,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       language,
       themeName,
       textScale,
+      followSystemTextSize,
       highAccuracy,
       sharingEnabled,
       obliqueLocate,
@@ -473,8 +529,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       diagnosticUploadEnabled,
       ready,
       setLanguage,
+      followSystemLanguage,
       setThemeName,
       setTextScale,
+      setFollowSystemTextSize,
       setHighAccuracy,
       setSharingEnabled,
       setObliqueLocate,
@@ -487,6 +545,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       setArrivalRadiusM,
       setPassiveCompanionMode,
       setDiagnosticUploadEnabled,
+      resetDisplayPreferences,
     ],
   );
 

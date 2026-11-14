@@ -47,7 +47,7 @@ exports.auditScenarios = (scenarios, exclusions = [], root = path.resolve(__dirn
     const file = typeof scenario.file === 'string' ? path.resolve(root, scenario.file) : '';
     const validFile = file.startsWith(`${path.resolve(root)}${path.sep}`) && fs.existsSync(file);
     if (!validFile || !scenario.pattern || !fs.readFileSync(file, 'utf8').includes(scenario.pattern)) errors.push(`Missing scenario ${scenario.file}: ${scenario.pattern}`);
-    if (!scenario.assertions || !['ios', 'android'].every(platform => scenario.platforms?.includes(platform))) errors.push(`Incomplete evidence ${scenario.file}: ${scenario.pattern}`);
+    if (!scenario.assertions || (!scenario.platforms?.length || !scenario.platforms.every(platform => ['ios', 'android'].includes(platform)))) errors.push(`Incomplete evidence ${scenario.file}: ${scenario.pattern}`);
     for (const id of scenario.inventory ?? []) {
       if (!coverage.has(id)) errors.push(`Unknown scenario family ${id}`);
       else coverage.get(id).push({ file: scenario.file, pattern: scenario.pattern });

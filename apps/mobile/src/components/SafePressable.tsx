@@ -1,11 +1,11 @@
 import React, { useCallback, useState } from 'react';
 import {
-  Pressable,
   type PressableProps,
   type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Pressable from './MotionPressable';
 import { runUiAction, type UiActionOptions, type UiActionToken } from '../utils/uiAction';
 import NativeGlassButton, { type NativeGlassButtonProps } from './NativeGlassButton';
 

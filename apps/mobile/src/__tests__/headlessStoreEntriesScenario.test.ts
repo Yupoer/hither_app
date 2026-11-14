@@ -39,14 +39,13 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       groupFeatureTourCompleted: true, addPlaceTourCompleted: true, routeReorderTourCompleted: true,
     };
     const device = await world.device({ id: 'store-entries', userId: LEADER, platform, mode: 'app' });
-    for (const testId of ['onboarding-skip', 'role-my-teams', `team-card-${GROUP_ID}`, 'team-enter']) {
-      await world.waitFor(device, (value: Observation) => has(value, testId), `App navigation ${testId}`);
-      expect(await press(device, testId)).toEqual({ invoked: true });
-    }
-    const mounted = await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'actual App Map');
+    await world.waitFor(device, (value: Observation) => has(value, `team-card-${GROUP_ID}`), 'returning team');
+    await device.perform('teams.enter', { groupId: GROUP_ID });
+    const mounted = await world.waitFor(device, (value: Observation) =>
+      has(value, platform === 'ios' ? 'home-profile' : `gather-card-${DESTINATION}`), 'actual App Map');
     expect(mounted.presentation.route.route).toBe('Map');
     expect(mounted.presentation.session.membership.group.id).toBe(GROUP_ID);
-    await device.perform('map.card.toggle', { destinationId: DESTINATION });
+    if (platform === 'android') await device.perform('map.card.toggle', { destinationId: DESTINATION });
     return device;
   }
 
@@ -59,7 +58,24 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
     await world.settle();
   }
 
+  const iOS = platform === 'ios';
+  const premiumId = iOS ? 'store-premium' : 'paywall-premium-presentation';
+
+  async function openHomeStore(world: InstanceType<typeof World>, device: Device) {
+    expect(await press(device, 'home-profile')).toEqual({ invoked: true });
+    await world.waitFor(device, (value: Observation) => has(value, 'settings-page-store'), 'You shop entry');
+    expect(await press(device, 'settings-page-store')).toEqual({ invoked: true });
+    await world.waitFor(device, (value: Observation) => has(value, `${premiumId}-purchase`), 'inline D6 plans');
+  }
+
   async function storePaywall(world: InstanceType<typeof World>, device: Device) {
+    if (iOS) {
+      await openHomeStore(world, device);
+      const inline = await device.observe();
+      expect(has(inline, `${premiumId}-restore`)).toBe(true);
+      expect(has(inline, `${premiumId}-redeem`)).toBe(true);
+      return;
+    }
     await pane(world, device, 3);
     await world.waitFor(device, (value: Observation) => has(value, 'store-open-subscribe') && !has(value, 'store-loading'), 'parent Store subscribe entry');
     await device.perform('map.store.subscribe');
@@ -69,6 +85,7 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
   }
 
   async function settingsPaywall(world: InstanceType<typeof World>, device: Device) {
+    if (iOS) return openHomeStore(world, device);
     await device.perform('map.settings.open');
     await device.input({ kind: 'animation', finished: true });
     await world.waitFor(device, (value: Observation) => has(value, 'settings-subscribe-banner'), 'actual Settings banner');
@@ -84,10 +101,10 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
   async function purchase(world: InstanceType<typeof World>, device: Device, plan: PremiumPlan): Promise<Observation> {
     const product = catalog[plan];
     await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.text === product.displayPrice), 'localized parent Paywall price');
-    await device.perform(`premium.select.${plan}`);
-    expect(field(await device.observe(), `paywall-premium-presentation-plan-${plan}`)?.selected).toBe(true);
+    expect(await press(device, `${premiumId}-plan-${plan}`)).toEqual({ invoked: true });
+    expect(field(await device.observe(), `${premiumId}-plan-${plan}`)?.selected).toBe(true);
     world.hold('verify-and-apply-purchase');
-    await device.perform('premium.purchase');
+    expect(await press(device, `${premiumId}-purchase`)).toEqual({ invoked: true });
     const requested = await world.waitFor(device, (value: Observation) => value.native.receipts.some(receipt => receipt.method === 'iap.requestPurchase'), 'parent Paywall native CTA');
     expect(requested.native.receipts).toEqual(expect.arrayContaining([expect.objectContaining({
       method: 'iap.requestPurchase',
@@ -103,12 +120,14 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
     await device.input({ kind: 'iapPurchase', purchase: {
       productId: product.id, transactionId: `parent-${plan}-transaction`, purchaseToken: `parent-${plan}-proof`, appAccountToken: LEADER,
     } });
-    const pending = await world.waitFor(device, (value: Observation) => value.pending.length > 0 && has(value, 'purchase-unlock-loading'), 'parent waits for authoritative purchase');
-    expect(has(pending, 'paywall-premium-presentation-purchase')).toBe(true);
+    const pending = await world.waitFor(device, (value: Observation) => value.pending.length > 0 && (iOS ? field(value, `${premiumId}-purchase`)?.disabled === true : has(value, 'purchase-unlock-loading')), 'parent waits for authoritative purchase');
+    expect(has(pending, `${premiumId}-purchase`)).toBe(true);
     expect(pending.native.receipts.some((receipt: Receipt) => receipt.method === 'iap.finishTransaction')).toBe(false);
     expect(world.backend.purchaseLedger.size).toBe(0);
     await world.release('verify-and-apply-purchase');
-    const activated = await world.waitFor(device, (value: Observation) => !has(value, 'paywall-premium-presentation-purchase') && !has(value, 'purchase-unlock-loading'), 'real parent Paywall dismissed after activation');
+    const activated = await world.waitFor(device, (value: Observation) => iOS
+      ? value.presentation.session.premiumProjection.teamPremiumActive === true && field(value, `${premiumId}-purchase`)?.disabled === true
+      : !has(value, `${premiumId}-purchase`) && !has(value, 'purchase-unlock-loading'), 'parent applied verified Premium');
     expect(activated.native.receipts.filter((receipt: Receipt) => receipt.method === 'iap.finishTransaction')).toEqual([
       expect.objectContaining({ value: expect.objectContaining({
         isConsumable: plan === 'trip', purchase: expect.objectContaining({ transactionId: `parent-${plan}-transaction` }),
@@ -118,7 +137,8 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
     return activated;
   }
 
-  async function enableParentLiveActivity(world: InstanceType<typeof World>, device: Device) {
+  async function enableLegacyParentLiveActivity(world: InstanceType<typeof World>, device: Device) {
+    if (iOS) return;
     await pane(world, device, 2);
     await device.perform('map.live-activity.toggle', { enabled: true });
     const enabled = await world.waitFor(device, (value: Observation) => field(value, 'tools-live-activity-toggle')?.checked === true, 'actual parent entitlement benefit');
@@ -131,12 +151,20 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
     world.backend.configureAuth({ accounts: [{ id: LEADER, is_anonymous: true }] });
     try {
       const device = await map(world);
-      await pane(world, device, 3);
-      const anonymous = await world.waitFor(device, (value: Observation) => has(value, 'store-register'), 'anonymous parent Store');
-      expect(anonymous.presentation.session.isAnonymous).toBe(true);
-      expect(has(anonymous, 'store-ad-cta')).toBe(false);
-      await device.perform('map.store.register');
-      await device.input({ kind: 'animation', finished: true });
+      if (iOS) {
+        await openHomeStore(world, device);
+        expect((await device.observe()).presentation.session.isAnonymous).toBe(true);
+        expect(await press(device, 'store-ad-cta')).toEqual({ invoked: true });
+        await world.waitFor(device, (value: Observation) => has(value, 'account-open-email'), 'D6 Claim registration gate');
+        expect(await press(device, 'account-open-email')).toEqual({ invoked: true });
+      } else {
+        await pane(world, device, 3);
+        const anonymous = await world.waitFor(device, (value: Observation) => has(value, 'store-register'), 'anonymous parent Store');
+        expect(anonymous.presentation.session.isAnonymous).toBe(true);
+        expect(has(anonymous, 'store-ad-cta')).toBe(false);
+        await device.perform('map.store.register');
+        await device.input({ kind: 'animation', finished: true });
+      }
       const account = await world.waitFor(device, (value: Observation) => has(value, 'account-email') && has(value, 'account-upgrade'), 'actual parent Account form');
       expect(account.presentation.route.route).toBe('Map');
       expect(account.presentation.session.user.id).toBe(LEADER);
@@ -155,23 +183,27 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       expect(activated.presentation.session.premiumProjection).toMatchObject({ personalPremiumActive: true, teamPremiumActive: true });
       expect(world.backend.teamPremium).toBeUndefined();
       expect(has(activated, 'store-open-subscribe')).toBe(false);
-      await enableParentLiveActivity(world, device);
+      await enableLegacyParentLiveActivity(world, device);
     } finally { await world.close(); }
   });
 
-  it('MAP-TOOLS-01 B01 B03 B04 B05 buys annual from the locked Map Tools control and unlocks the same parent', async () => {
+  it('MAP-TOOLS-01 B01 B03 B04 B05 buys annual from the platform Premium entry and refreshes the parent', async () => {
     const world = new World();
     try {
       const device = await map(world);
       await device.input({ kind: 'iapConfigure', patch: { products: [catalog.annual] } });
-      await pane(world, device, 2);
-      await device.perform('map.live-activity.toggle', { enabled: true });
-      const locked = await world.waitFor(device, (value: Observation) => has(value, 'paywall-premium-presentation-purchase'), 'Tools gate actual Paywall');
-      expect(locked.presentation.preferences.liveActivityEnabled).toBe(false);
-      expect(field(locked, 'tools-live-activity-toggle')?.checked).toBe(false);
+      if (iOS) {
+        await openHomeStore(world, device);
+      } else {
+        await pane(world, device, 2);
+        await device.perform('map.live-activity.toggle', { enabled: true });
+        const locked = await world.waitFor(device, (value: Observation) => has(value, `${premiumId}-purchase`), 'Tools gated Premium paywall');
+        expect(locked.presentation.preferences.liveActivityEnabled).toBe(false);
+        expect(field(locked, 'tools-live-activity-toggle')?.checked).toBe(false);
+      }
       const activated = await purchase(world, device, 'annual');
       expect(activated.presentation.session.premiumProjection.personalPremiumActive).toBe(true);
-      await enableParentLiveActivity(world, device);
+      await enableLegacyParentLiveActivity(world, device);
     } finally { await world.close(); }
   });
 
@@ -189,7 +221,7 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       expect(world.backend.trace).toEqual(expect.arrayContaining([expect.objectContaining({
         name: 'verify-and-apply-purchase', args: expect.objectContaining({ body: expect.objectContaining({ group_id: GROUP_ID, product_id: catalog.trip.id }) }),
       })]));
-      await enableParentLiveActivity(world, device);
+      await enableLegacyParentLiveActivity(world, device);
     } finally { await world.close(); }
   });
 
@@ -199,26 +231,26 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
     try {
       const device = await map(world);
       await settingsPaywall(world, device);
-      await device.perform('premium.promo.open');
+      expect(await press(device, `${premiumId}-redeem`)).toEqual({ invoked: true });
       await device.perform('premium.promo.edit', { value: ' INVALID ' });
       await device.perform('premium.promo.submit');
       const rejected = await world.waitFor(device, (value: Observation) => value.external.alerts > 0 && field(value, 'paywall-redeem-submit')?.disabled === false, 'invalid Settings promo settled');
       expect(field(rejected, 'paywall-redeem-input')?.value).toBe(' INVALID ');
       expect(rejected.presentation.session.premiumProjection.personalPremiumActive).toBe(false);
-      expect(has(rejected, 'paywall-premium-presentation-purchase')).toBe(true);
+      expect(has(rejected, `${premiumId}-purchase`)).toBe(true);
       await device.input({ kind: 'alert', index: 0 });
       await device.perform('premium.promo.edit', { value: ' PARENT ' });
       await device.perform('premium.promo.submit');
       const activated = await world.waitFor(device, (value: Observation) => value.presentation.session.premiumProjection.personalPremiumActive && !has(value, 'paywall-redeem-input'), 'Settings promo activates parent and closes form');
-      expect(has(activated, 'paywall-premium-presentation-purchase')).toBe(true);
+      expect(has(activated, `${premiumId}-purchase`)).toBe(true);
       expect(world.backend.promoCodes.get('PARENT').remaining_uses).toBe(0);
       expect(world.backend.trace).toEqual(expect.arrayContaining([expect.objectContaining({
         name: 'redeem_promo_code', args: { p_code: 'PARENT', p_group_id: GROUP_ID },
       })]));
       expect(activated.native.receipts.some((receipt: Receipt) => receipt.method === 'iap.requestPurchase')).toBe(false);
       await device.input({ kind: 'alert', index: 0 });
-      await device.host.call({ kind: 'press', label: '取消' });
-      await enableParentLiveActivity(world, device);
+      expect(await (iOS ? press(device, 'settings-root-close') : device.host.call({ kind: 'press', label: '取消' }))).toEqual({ invoked: true });
+      await enableLegacyParentLiveActivity(world, device);
     } finally { await world.close(); }
   });
 
@@ -233,15 +265,16 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       await device.input({ kind: 'iapConfigure', patch: { availablePurchases: [{
         productId: catalog.monthly.id, transactionId: 'parent-restore-transaction', purchaseToken: 'parent-restore-proof',
       }] } });
-      await device.perform('premium.restore');
-      const restored = await world.waitFor(device, (value: Observation) => value.presentation.session.premiumProjection.personalPremiumActive && !has(value, 'paywall-premium-presentation-purchase'), 'actual Restore dismisses Paywall');
+      expect(await press(device, `${premiumId}-restore`)).toEqual({ invoked: true });
+      const restored = await world.waitFor(device, (value: Observation) => value.presentation.session.premiumProjection.personalPremiumActive
+        && (iOS ? field(value, `${premiumId}-purchase`)?.disabled === true : !has(value, `${premiumId}-purchase`)), 'verified Restore updates Premium');
       expect(restored.native.receipts.filter((receipt: Receipt) => receipt.method === 'iap.finishTransaction')).toEqual([
         expect.objectContaining({ value: expect.objectContaining({ isConsumable: false,
           purchase: expect.objectContaining({ transactionId: 'parent-restore-transaction' }) }) }),
       ]);
       expect(restored.native.receipts.some((receipt: Receipt) => receipt.method === 'iap.restorePurchases')).toBe(true);
       expect(world.backend.purchaseLedger.size).toBe(1);
-      await enableParentLiveActivity(world, device);
+      await enableLegacyParentLiveActivity(world, device);
     } finally { await world.close(); }
   });
 });

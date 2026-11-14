@@ -1,7 +1,7 @@
 import { reportLocationSourceHealth } from '../native/locationSourceHealth';
 import { notifyJourneyApproach } from './journeyNotifications';
 import { resolveEtaSnapshot } from '../utils/liveActivityEta';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import type { LocationAccess } from './locationPrivacy';
 import { captureLocationAccess, isLocationAccessCurrent, subscribeLocationAccessChanges, isLocationAccessEnabled, isLocationAccessPending, setLocationSharingConsent, LOCATION_SHARING_KEY } from './locationPrivacy';
 import { backgroundLocationAdapter, observeNativeJourneyLocation } from '../native/backgroundLocation';
@@ -413,10 +413,11 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
         );
         if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
         latestSample = { epoch: config.trackingEpoch ?? 0, timestamp: latest.timestamp };
+        const meetTimeMs = config.target?.meetAt ? Date.parse(config.target.meetAt) : null;
         const displaySignature = JSON.stringify([config.navigationSessionId, config.destinationId,
           arrival.status, personalArrivalConfirmed, personalArrivalAtMs, personalArrivalSequence, personalArrivalCorrectionAtMs,
           memberArrived, config.accentHex, config.groupName, config.gatheringTitle,
-          config.travelMode, config.memberEmojis]);
+          config.travelMode, config.memberEmojis, config.memberColors, meetTimeMs, config.language, config.target?.emoji]);
         if (config.powerMode === 'journey' && (displaySignature !== lastLocalProgressSignature || now - lastLocalProgressAt >= 5_000)) {
           lastLocalProgressSignature = displaySignature;
           lastLocalProgressAt = now;
@@ -439,14 +440,18 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
             progress: displayProgress,
             travelMode: config.travelMode,
             memberEmojis: config.memberEmojis,
+            memberColors: config.memberColors,
             memberArrived,
+            meetTimeMs: config.target ? (Number.isFinite(meetTimeMs) ? meetTimeMs : null) : undefined,
+            destinationEmoji: config.target?.emoji ?? undefined,
+            language: config.language,
             gatheredCount: memberArrived?.filter(Boolean).length,
-            memberCount: config.memberEmojis?.length,
+            memberCount: memberArrived?.length ?? config.memberEmojis?.length,
           }),
         );
         }
         if (!controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
-        if (config.actorId && config.navigationSessionId) {
+        if (!config.requiresLeaderCompletion && config.actorId && config.navigationSessionId) {
           const completionConfig = config;
           const completion = await enqueueJourneyCompletion({
             groupId: config.groupId, destinationId: config.destinationId,
@@ -457,7 +462,7 @@ async function processBackgroundLocations({ data, error }: { data?: BackgroundLo
           });
           if (completion && completion.status !== 'conflict'
             && controller.isCurrent(config) && isLocationAccessCurrent(access)) {
-            await liveActivity.endAllGroupActivities();
+            await liveActivity.completeGroupActivity(config.navigationSessionId, config.destinationId);
             if (canContinueBackgroundSharing(config, access)) await startBackgroundJourney(backgroundPresenceConfig(config));
             return;
           }
@@ -865,6 +870,12 @@ export function reconcileBackgroundNavigation(groupId: string, fromLocationTask 
           navigationMemberIds, arrivedMemberIds, leaderId: next.leaderId, memberArrived, arrivalCorrections,
         });
         if (!stored || !controller.isCurrent(config) || !isLocationAccessCurrent(access)) return;
+        if (current.requiresLeaderCompletion) {
+          const complete = navigationMemberIds.length > 0
+            && navigationMemberIds.every(id => arrivedMemberIds.includes(id));
+          if (complete) await liveActivity.completeGroupActivity(session.id, current.destinationId);
+          return;
+        }
         const completion = await enqueueJourneyCompletion({
           groupId, destinationId: current.destinationId, navigationSessionId: session.id,
           actorId: next.actorId, scopeSubgroupId: current.scopeSubgroupId, leaderId: next.leaderId,
@@ -873,7 +884,7 @@ export function reconcileBackgroundNavigation(groupId: string, fromLocationTask 
         });
         if (completion && completion.status !== 'conflict'
           && controller.isCurrent(config) && isLocationAccessCurrent(access)) {
-          await liveActivity.endAllGroupActivities();
+          await liveActivity.completeGroupActivity(session.id, current.destinationId);
           if (canContinueBackgroundSharing(current, access)) await startBackgroundJourney(backgroundPresenceConfig(current));
         }
       });
@@ -886,6 +897,7 @@ export function reconcileBackgroundNavigation(groupId: string, fromLocationTask 
       destinationId: target.id, destination: target.coordinates,
       navigationSessionId: next.session.id, sessionExpiresAt: next.session.expiresAt,
       gatheringTitle: target.title, powerMode: 'journey', teamNavigationActive: true,
+      requiresLeaderCompletion: Platform.OS === 'ios',
       navigationMemberIds: next.navigationMemberIds, arrivedMemberIds: next.arrivedMemberIds, arrivalCorrections: next.arrivalCorrections,
       leaderId: next.leaderId,
       arrivalRadiusMeters: next.session.destination.arrivalRadiusMeters, initialDistanceM,

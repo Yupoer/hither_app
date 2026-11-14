@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { usePreferences } from '../state/PreferencesContext';
@@ -86,7 +89,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.22)',
   },
-  menuLabel: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  menuLabel: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -108,7 +111,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.18)',
   },
   label: {
-    fontSize: 13,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: 'rgba(235,235,245,0.7)',
   },

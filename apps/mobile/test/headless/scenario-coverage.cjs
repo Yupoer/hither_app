@@ -7,7 +7,7 @@ function evaluate(results, families = matrix.families) {
     const cases = family.cases.flatMap(scenario => scenario.platforms.map(platform => {
       const suite = results.testResults.find(result => result.name.replaceAll('\\', '/').endsWith('/' + scenario.file));
       const assertions = (suite?.assertionResults ?? []).filter(result => result.fullName.includes(scenario.pattern)
-        && (platform === 'mixed' || new RegExp('\\b' + platform + '\\b').test(result.fullName)));
+        && (platform === 'mixed' || new RegExp('\\b' + platform + '\\b', 'i').test(result.fullName)));
       const status = suite?.status === 'failed' || suite?.testExecError ? 'failed'
         : suite?.status !== 'passed' || !assertions.length ? 'unexecuted' : assertions.some(result => result.status === 'failed') ? 'failed'
         : assertions.every(result => result.status === 'passed') ? 'passed' : 'unexecuted';

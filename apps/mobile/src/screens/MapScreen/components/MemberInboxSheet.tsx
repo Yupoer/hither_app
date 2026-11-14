@@ -1,5 +1,7 @@
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import { accentMix } from '../../../glass';
 import type { TranslationKey } from '../../../i18n';
 import type { Subgroup } from '../../../types';

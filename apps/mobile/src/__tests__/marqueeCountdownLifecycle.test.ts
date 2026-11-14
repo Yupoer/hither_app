@@ -10,6 +10,7 @@ const mockSubscribeClock = (listener: () => void) => {
 const mockValues: { value: number }[] = [];
 const mockCancel = jest.fn();
 const mockTiming = jest.fn((value: number, _config: unknown) => value);
+const mockRepeat = jest.fn((value: number, ..._args: unknown[]) => value);
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text',
   useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
@@ -28,7 +29,7 @@ jest.mock('react-native-reanimated', () => ({
   __esModule: true, default: { View: 'AnimatedView' },
   cancelAnimation: (value: unknown) => mockCancel(value),
   withTiming: (value: number, config: unknown) => mockTiming(value, config),
-  withRepeat: (value: number) => value, withDelay: (_: number, value: number) => value,
+  withRepeat: (value: number, ...args: unknown[]) => mockRepeat(value, ...args), withDelay: (_: number, value: number) => value,
   withSequence: (...values: number[]) => values[values.length - 1],
   useReducedMotion: () => false, Easing: { linear: 'linear' }, ReduceMotion: { System: 'system' },
   useAnimatedStyle: () => ({}),
@@ -65,13 +66,19 @@ it('preserves marquee measurement on equal fonts, updates speed, and retries a f
   });
   expect(root.root.findAllByType('AnimatedView')).toHaveLength(0);
   await act(async () => { jest.advanceTimersByTime(1); });
-  expect(mockTiming).toHaveBeenCalledWith(-100, expect.objectContaining({ duration: 2500 }));
+  expect(mockTiming).toHaveBeenCalledWith(-232, expect.objectContaining({ duration: 5800 }));
+  const movingTexts = root.root.findAllByType('Text').filter((node: any) => !node.props.onTextLayout);
+  expect(movingTexts.map((node: any) => node.props.children)).toEqual(['Long title', 'Long title']);
+  expect(movingTexts[1].props.accessibilityElementsHidden).toBe(true);
+  expect(mockRepeat).toHaveBeenCalledWith(-232, -1, false);
   const count = mockTiming.mock.calls.length;
+  await act(async () => { host.props.onLayout({ nativeEvent: { layout: { width: 80 } } }); });
+  expect(mockTiming).toHaveBeenCalledTimes(count);
   await act(async () => { root.update(React.createElement(OverflowMarquee, { ...props, style: { fontSize: 16, color: 'red' } })); });
   expect(measure(root)).toBe(text);
   expect(mockTiming).toHaveBeenCalledTimes(count);
   await act(async () => { root.update(React.createElement(OverflowMarquee, { ...props, pixelsPerSecond: 80 })); });
-  expect(mockTiming).toHaveBeenCalledWith(-100, expect.objectContaining({ duration: 1250 }));
+  expect(mockTiming).toHaveBeenCalledWith(-232, expect.objectContaining({ duration: 2900 }));
   expect(viewport(root)).toBe(host);
   await act(async () => { root.update(React.createElement(OverflowMarquee, { ...props, style: { fontSize: 18 }, pixelsPerSecond: 80 })); });
   const newFontText = measure(root);
@@ -83,7 +90,7 @@ it('preserves marquee measurement on equal fonts, updates speed, and retries a f
   await act(async () => { jest.advanceTimersByTime(1000); });
   expect(measure(root)).toBe(retried);
   await act(async () => { retried.props.onLayout({ nativeEvent: { layout: { width: 220 } } }); });
-  expect(mockTiming).toHaveBeenCalledWith(-120, expect.objectContaining({ duration: 1500 }));
+  expect(mockTiming).toHaveBeenCalledWith(-252, expect.objectContaining({ duration: 3150 }));
   expect(mockValues).toHaveLength(1);
   await act(async () => { root.unmount(); });
   expect(jest.getTimerCount()).toBe(0);

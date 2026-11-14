@@ -20,6 +20,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
     let endAllCount = 0;
 
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async (id: string) => {
         ends.push(id);
       }),
@@ -69,6 +70,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
     const ended: string[] = [];
 
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async (id: string) => {
         ended.push(id);
       }),
@@ -101,6 +103,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
   it('self-heals when start fails so a later start can proceed', async () => {
     let attempt = 0;
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => {
@@ -123,6 +126,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
   it('fast off→on converges to a single activity for the latest destination', async () => {
     let n = 0;
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => {
@@ -148,6 +152,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
 
   it('adopts push-token rotation for the active handle (#146 Sol)', async () => {
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => ({
@@ -172,6 +177,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
 
   it('adopts observed existing activity when handle is missing', () => {
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => null),
@@ -194,6 +200,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
   it('adopts an observed PTS handle and ends orphan siblings instead of dual start (#194 A1)', async () => {
     const ended: string[] = [];
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async (id: string) => {
         ended.push(id);
       }),
@@ -219,6 +226,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
 
   it('does not start when not entitled (start returns null, no teaser) (#194 A5)', async () => {
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => null),
@@ -234,6 +242,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
 
   it('starts locally when no PTS handle exists and ends on dispose', async () => {
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => ({
@@ -263,6 +272,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
 
   it('skips start when permission is denied', async () => {
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => ({ activityId: 'x' })),
@@ -280,6 +290,7 @@ describe('LiveActivityLifecycleReconciler (#146)', () => {
 
 describe('Live Activity session and destination ownership', () => {
   const makeApi = (existing: { activityId: string; navigationSessionId?: string; destinationId?: string }[] = []) => ({
+    completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string): Promise<void> => undefined),
     endGroupActivity: jest.fn(async (_id: string) => undefined),
     endAllGroupActivities: jest.fn(async () => undefined),
     startGroupActivity: jest.fn(async (_intent: unknown) => ({ activityId: 'new-current' })),
@@ -287,6 +298,29 @@ describe('Live Activity session and destination ownership', () => {
     deleteSession: jest.fn(async (_id: string) => undefined),
     deleteAllSessions: jest.fn(async () => undefined),
   });
+  it('finishes all-arrived before subsequent teardown and does not clear a newer journey', async () => {
+    const api = makeApi();
+    const completed = deferred<void>();
+    const entered = deferred<void>();
+    api.completeGroupActivity.mockImplementationOnce(() => {
+      entered.resolve();
+      return completed.promise;
+    });
+    const owner = new LiveActivityLifecycleReconciler(api);
+    await owner.request({ kind: 'start', destinationId: 'A', navigationSessionId: 'first' });
+    const finish = owner.request({
+      kind: 'stop', clearSessions: true, completedScope: { destinationId: 'A', navigationSessionId: 'first' },
+    });
+    await entered.promise;
+    expect(api.completeGroupActivity).toHaveBeenCalledWith('first', 'A');
+    expect(api.endGroupActivity).not.toHaveBeenCalled();
+    const next = owner.request({ kind: 'start', destinationId: 'B', navigationSessionId: 'second' });
+    completed.resolve();
+    await Promise.all([finish, next]);
+    expect(owner.currentNavigationSessionId).toBe('second');
+    expect(api.deleteAllSessions).not.toHaveBeenCalled();
+  });
+
   it('replaces the owner for A to B at the same destination without an intermediate stop', async () => {
     const api = makeApi();
     api.startGroupActivity.mockResolvedValueOnce({ activityId: 'session-A' }).mockResolvedValueOnce({ activityId: 'session-B' });

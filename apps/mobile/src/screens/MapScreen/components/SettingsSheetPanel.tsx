@@ -1,13 +1,9 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -19,10 +15,12 @@ import Animated, {
 import BottomSheet from '../../../components/BottomSheet';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
-  MAP_SHEET_EDGE_INSET,
+  MAP_SHEET_COMPACT_GRABBER_HEIGHT,
+  MAP_SHEET_GRABBER_HEIGHT,
+  SHEET_CORNER_ACTION_INSET,
 } from '../../../components/mapSheetChrome';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
-import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
+import { APP_TEXT_SIZE, GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
@@ -74,11 +72,19 @@ export type SettingsSheetPanelProps = {
   children: React.ReactNode;
   zIndex?: number;
   initialStage?: 0 | 1;
+  stageOneRatio?: number;
   stageTwoRatio?: number;
+  darkMaterial?: boolean;
   edgeToEdgeAtLast?: boolean;
   wrapContentInScrollView?: boolean;
   /** Use one full-width Stage 2 detent instead of the normal two-stage sheet. */
   singleStage?: boolean;
+  home?: boolean;
+  fitContent?: boolean;
+  fillContent?: boolean;
+  scrollResetKey?: string;
+  backLabel?: string;
+  background?: React.ReactNode;
 };
 
 /** RN sheet path used by the main settings page for exact full-width geometry. */
@@ -95,23 +101,37 @@ export default function SettingsSheetPanel({
   children,
   zIndex = 90,
   initialStage = 0,
+  stageOneRatio = STAGE_ONE_RATIO,
   stageTwoRatio = STAGE_TWO_RATIO,
   edgeToEdgeAtLast = true,
   wrapContentInScrollView = true,
   singleStage = false,
+  home = false,
+  fitContent = false,
+  fillContent = false,
+  scrollResetKey,
+  backLabel = 'back',
+  background,
 }: SettingsSheetPanelProps) {
   const sheetChildren = React.Children.toArray(children);
   const rootContent = sheetChildren[0] ?? <View />;
   const nestedSheets = sheetChildren.slice(1);
   const { height } = useWindowDimensions();
+  const { top: safeTop } = useSafeAreaInsets();
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const homeLimit = Math.max(0, height - Math.max(50, safeTop - 4));
+  const homeHeight = fitContent && contentHeight > 0 && headerHeight > 0
+    ? Math.min(homeLimit, Math.max(232, Math.ceil(contentHeight + headerHeight)))
+    : homeLimit;
   const detents = useMemo(
-    () => singleStage
+    () => home ? [homeHeight] : singleStage
       ? [Math.round(height * stageTwoRatio)]
       : [
-        Math.round(height * STAGE_ONE_RATIO),
+        Math.round(height * stageOneRatio),
         Math.round(height * stageTwoRatio),
       ],
-    [height, singleStage, stageTwoRatio],
+    [height, home, homeHeight, singleStage, stageOneRatio, stageTwoRatio],
   );
   const initialIndex = singleStage ? 0 : initialStage;
   const sheetHeight = useSharedValue(0);
@@ -146,26 +166,22 @@ export default function SettingsSheetPanel({
   if (!mounted && !visible) return <>{opening}</>;
 
   const header = (
-    <View style={styles.header}>
+    <View style={[styles.header, { paddingTop: SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT) }]}>
       {onBack ? (
-        <Pressable
+        <SheetHeaderAction
+          action="back"
           onPress={onBack}
-          accessibilityRole="button"
-          accessibilityLabel="back"
-          hitSlop={8}
-          style={styles.headerActionSlot}
-        >
-          <Ionicons name="chevron-back" size={22} color="#fff" />
-        </Pressable>
+          accessibilityLabel={backLabel}
+          testID={home ? "settings-child-back" : undefined}
+        />
       ) : <View style={styles.headerActionSlot} />}
       <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]} numberOfLines={titleFontSize != null ? 2 : 1}>{title}</Text>
       <SheetHeaderAction
-        testID={singleStage ? "settings-root-close" : "settings-child-back"}
+        testID={home || singleStage ? "settings-root-close" : "settings-child-back"}
         action={action}
         onPress={action === 'commit' ? () => onCommit?.() : onClose}
         accessibilityLabel={doneLabel}
         disabled={action === 'commit' && !onCommit}
-        style={styles.headerAction}
       />
     </View>
   );
@@ -175,6 +191,7 @@ export default function SettingsSheetPanel({
     {opening}
     <View
       pointerEvents={visible ? 'auto' : 'none'}
+      accessibilityViewIsModal={visible}
       style={[StyleSheet.absoluteFill, { zIndex }]}
     >
       <Animated.View style={[styles.scrim, scrimStyle]} pointerEvents={visible ? 'auto' : 'none'}>
@@ -193,7 +210,14 @@ export default function SettingsSheetPanel({
         dismissDistance={height + 40}
         dismissOnDownFromIndex={0}
         edgeToEdgeAtLast={edgeToEdgeAtLast}
-        contentTopPadding={12}
+        contentTopPadding={home ? 4 : 12}
+        fillContent={fillContent}
+        pinContentBelowHeader={home}
+        scrollResetKey={scrollResetKey}
+        onHeaderHeight={home ? setHeaderHeight : undefined}
+        onContentHeight={home ? setContentHeight : undefined}
+        compactGrabberSpacing={home}
+        background={background}
         header={header}
       >
         {wrapContentInScrollView
@@ -218,8 +242,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: MAP_SHEET_EDGE_INSET,
-    paddingTop: MAP_SHEET_EDGE_INSET,
+    paddingHorizontal: SHEET_CORNER_ACTION_INSET,
     paddingBottom: 0,
   },
   headerActionSlot: {
@@ -228,16 +251,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerAction: {
-    width: MAP_SHEET_ACTION_HIT_SIZE,
-    height: MAP_SHEET_ACTION_HIT_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   title: {
     flex: 1,
     color: '#fff',
-    fontSize: 17,
+    fontSize: APP_TEXT_SIZE.body,
     fontWeight: '700',
     textAlign: 'center',
   },

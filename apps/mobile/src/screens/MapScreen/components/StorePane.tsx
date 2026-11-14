@@ -4,21 +4,23 @@
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
-import { ActivityIndicator,
+import {
+  ActivityIndicator,
   AccessibilityInfo,
   Alert,
   AppState,
+  Animated,
   findNodeHandle,
   Platform,
-  Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { glass } from '../../../glass';
-import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT, GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
 import { useFontLayout } from '../../../a11y/useFontScaleBucket';
 import type { TranslationKey } from '../../../i18n';
 import {
@@ -53,6 +55,9 @@ import {
 } from '../../../state/diagnostics';
 import { nativeBuildNumber } from '../../../native/buildInfo';
 import PremiumBanner from '../../../components/PremiumBanner';
+import PremiumPresentation from '../../../components/PremiumPresentation';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useD6Numbers } from './D6HomeChrome';
 
 
 /** Soft poll while SSV is pending; then idle CTA + slower background late-SSV poll. */
@@ -175,6 +180,7 @@ export interface StorePaneProps {
   onRequireRegistration?: () => void;
   onEntitlementChanged?: () => void;
   onOpenSubscribe?: () => void;
+  presentation?: 'coins' | 'shop' | 'hidden';
 }
 
 function adCtaLabel(
@@ -360,8 +366,13 @@ export const StorePane = React.memo(function StorePane({
   onRequireRegistration,
   onEntitlementChanged,
   onOpenSubscribe,
+  presentation,
 }: StorePaneProps) {
   const { scale, boldText } = useFontLayout();
+  const isHomeStore = presentation !== undefined;
+  const numberFont = useD6Numbers(isHomeStore);
+  const [scaleCoin] = useState(() => new Animated.Value(1));
+  const [redeemed, setRedeemed] = useState<{ groupId: typeof groupId; codes: ReadonlySet<string> }>();
   const styles = useMemo(() => makeStyles(scale, boldText), [scale, boldText]);
   const [snapshot, setSnapshot] = useState<StoreSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -489,6 +500,15 @@ export const StorePane = React.memo(function StorePane({
 
   const onBalanceCredited = useCallback(() => {
     setAdState('credited');
+    if (isHomeStore) {
+      void AccessibilityInfo.isReduceMotionEnabled().then(reduced => {
+        if (reduced) return;
+        Animated.sequence([
+          Animated.timing(scaleCoin, { toValue: 1.35, duration: 180, useNativeDriver: true }),
+          Animated.spring(scaleCoin, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 10 }),
+        ]).start();
+      }).catch(() => undefined);
+    }
     stopPoll();
     stopLatePoll();
     activeSessionRef.current = null;
@@ -499,7 +519,7 @@ export const StorePane = React.memo(function StorePane({
       status: 'credited',
       success: true,
     }).catch(() => undefined);
-  }, []);
+  }, [isHomeStore, scaleCoin]);
 
   const startLateSsvPoll = useCallback((baseline: number) => {
     stopLatePoll();
@@ -558,12 +578,8 @@ export const StorePane = React.memo(function StorePane({
       Alert.alert(t('store.offlineTitle'), t('store.offlineBody'));
       return;
     }
-    const reachable = await refreshConnectivity();
-    if (reachable === false) {
-      Alert.alert(t('store.offlineTitle'), t('store.offlineBody'));
-      return;
-    }
     setAdBusyBoth(true);
+    setAdState('loading');
     let sessionRef: string | null = null;
     verifyingRef.current = false;
     adSeqRef.current = 0;
@@ -617,6 +633,13 @@ export const StorePane = React.memo(function StorePane({
     };
 
     try {
+      const reachable = await refreshConnectivity();
+      if (reachable === false) {
+        Alert.alert(t('store.offlineTitle'), t('store.offlineBody'));
+        setAdState('network_error');
+        setAdBusyBoth(false);
+        return;
+      }
       await pushStep({
         step: 'tap_watch_ad',
         phase: 'preflight',
@@ -991,6 +1014,10 @@ export const StorePane = React.memo(function StorePane({
                   return;
                 }
                 await clearPendingRedeem(uid, product.code, redeemGroupId);
+                setRedeemed(previous => ({
+                  groupId,
+                  codes: new Set([...(previous && previous.groupId === groupId ? previous.codes : []), product.code]),
+                }));
                 void diagnostics.write({
                   event: 'store_redemption_success',
                   source: 'store',
@@ -1036,12 +1063,11 @@ export const StorePane = React.memo(function StorePane({
 
   const balance = snapshot?.balance ?? 0;
   const credits = snapshot?.extraPointCredits ?? 0;
-  const fromCacheOnly = offline && !!snapshot;
 
   // Soft inventory / network outcomes stay tappable (or auto-recover). Never
   // gate on a ref — that froze the CTA grey after no_fill (busy cleared post-await).
   const adDisabled =
-    isAnonymous
+    (!presentation && isAnonymous)
     || offline
     || adBusy
     || fillChecking
@@ -1051,14 +1077,104 @@ export const StorePane = React.memo(function StorePane({
     || adState === 'unsupported'
     || adState === 'session_active';
 
-  return (
+  const runtimes = (
     <>
     <StoreGroupRuntime groupId={groupId} groupIdRef={groupIdRef} refresh={refresh} refreshConnectivity={refreshConnectivity}
       setSnapshot={setSnapshot} setLoading={setLoading} setOffline={setOffline} />
-    <StoreHighlight highlightProductCode={highlightProductCode} onHighlightConsumed={onHighlightConsumed}
+    <StoreHighlight highlightProductCode={presentation === undefined || presentation === 'shop' ? highlightProductCode : null} onHighlightConsumed={onHighlightConsumed}
       setHighlight={setHighlight} highlightCardRef={highlightCardRef} />
     <StoreAdSessionLifetime pollRef={pollRef} latePollRef={latePollRef} controllerRef={controllerRef} />
     <StoreFillInventory adState={adState} isAnonymous={isAnonymous} offline={offline} silentFillProbe={silentFillProbe} setFillChecking={setFillChecking} />
+    </>
+  );
+
+  if (presentation) {
+    const adText = adState === 'loading'
+      ? t('home.storeAdLoading')
+      : adState === 'showing'
+        ? t('home.storeAdPlaying')
+        : adState === 'verifying' || adState === 'session_active'
+          ? t('home.storeAdVerifying')
+          : t('home.storeClaim');
+    const adFeedback = (offline || ['no_fill', 'error', 'network_error', 'consent_required', 'unsupported'].includes(adState)) && (
+      <Text style={homeStoreStyles.hint} accessibilityLiveRegion="polite">
+        {offline ? t('store.offlineBody') : adCtaLabel(adState, t, { fillChecking })}
+      </Text>
+    );
+    return (
+      <>
+        {runtimes}
+        {presentation !== 'hidden' ? (
+          <View testID={presentation === 'shop' ? 'store-pane' : 'settings-coins'}>
+            <View style={homeStoreStyles.wallet}>
+              <LinearGradient colors={['#FFF6D6', '#E8C25A', '#A57A1C']}
+                start={{ x: 0.16, y: 0.05 }} end={{ x: 0.8, y: 1 }} style={homeStoreStyles.coin} />
+              <View style={homeStoreStyles.balanceSlot} testID="store-balance">
+                <Animated.View style={{ transform: [{ scale: scaleCoin }] }}>
+                  <Text style={[homeStoreStyles.balance, numberFont && { fontFamily: numberFont, fontStyle: 'normal', fontWeight: '400' }]}
+                    accessibilityLabel={snapshot ? t('store.balanceA11y', { count: balance }) : t('store.loading')}
+                    maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP}>
+                    {snapshot ? balance : loading ? '…' : '—'}
+                  </Text>
+                </Animated.View>
+              </View>
+              <Pressable style={[homeStoreStyles.claim, adDisabled && homeStoreStyles.disabled]}
+                onPress={() => { void onWatchAd(); }}
+                disabled={adDisabled} accessibilityRole="button" accessibilityState={{ disabled: adDisabled, busy: adBusy }}
+                accessibilityLabel={adText} testID="store-ad-cta">
+                <Text style={homeStoreStyles.buttonText}>{adText}</Text>
+              </Pressable>
+            </View>
+            {adFeedback}
+            {presentation === 'shop' ? (
+              <>
+                <PremiumPresentation homeStore showRestore storeAccent={accent} storeNumberFont={numberFont} testID="store-premium"
+                  onRequireRegistration={onRequireRegistration} onEntitlementActivated={onEntitlementChanged} />
+                <View style={homeStoreStyles.products}>
+                  {loading && allProducts.length === 0 ? (
+                    <View style={homeStoreStyles.product}><ActivityIndicator accessibilityRole="progressbar" color={accent} /></View>
+                  ) : null}
+                  {!loading && allProducts.length === 0 ? (
+                    <Text style={homeStoreStyles.hint}>{t('store.emptyCatalog')}</Text>
+                  ) : null}
+                  {(pinnedProduct ? [pinnedProduct, ...allProducts.filter(product => product.code !== pinnedProduct.code)] : allProducts).map((product, index) => {
+                    const recent = redeemed && redeemed.groupId === groupId && redeemed.codes.has(product.code);
+                    const owned = recent || (product.code === 'personal_live_activity_lifetime' && snapshot?.liveActivityPersonal);
+                    const disabled = owned || balance < product.priceTokens || isAnonymous || offline || !!redeeming || !snapshot?.canRedeem;
+                    return (
+                      <View key={product.code} ref={product.code === highlight ? highlightCardRef : undefined}
+                        style={[homeStoreStyles.product, index > 0 && homeStoreStyles.divider,
+                          product.code === highlight && { backgroundColor: 'rgba(76,111,255,0.14)' }]}>
+                        <Text style={homeStoreStyles.productName}>{product.displayName}</Text>
+                        <Pressable style={[homeStoreStyles.claim, disabled && homeStoreStyles.unavailable, owned && homeStoreStyles.owned]}
+                          testID={`store-redeem-${product.code}`}
+                          disabled={disabled} onPress={() => confirmRedeem(product)} accessibilityRole="button"
+                          accessibilityState={{ disabled, busy: redeeming === product.code }}
+                          accessibilityLabel={owned ? t('home.storeRedeemed') : t('store.confirmPrice', { price: product.priceTokens })}>
+                          {owned ? <Ionicons name="checkmark" size={20} color="#34C759" /> : redeeming === product.code ? (
+                            <ActivityIndicator accessibilityRole="progressbar" color={accent} />
+                          ) : (
+                            <>
+                              <LinearGradient colors={['#FFF6D6', '#E8C25A', '#A57A1C']} style={homeStoreStyles.smallCoin} />
+                              <Text style={[homeStoreStyles.buttonText, disabled && homeStoreStyles.disabledText]}>{product.priceTokens}</Text>
+                            </>
+                          )}
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+          </View>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+    {runtimes}
     <View
       accessibilityRole="summary"
       accessibilityLabel={t('store.title')}
@@ -1330,7 +1446,7 @@ const makeStyles = (scale: number, boldText: boolean) => {
     },
     balanceInline: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
     coinGlyph: { fontSize: 21, lineHeight: 25 },
-    balanceInlineValue: { fontSize: 17, fontWeight: '800', color: '#FFD60A' },
+    balanceInlineValue: { fontSize: APP_TEXT_SIZE.body, fontWeight: '800', color: '#FFD60A' },
     adChip: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1341,7 +1457,7 @@ const makeStyles = (scale: number, boldText: boolean) => {
       paddingHorizontal: 14,
       paddingVertical: 9,
     },
-    adChipText: { color: '#FFD60A', fontSize: 12, fontWeight: '800' },
+    adChipText: { color: '#FFD60A', fontSize: APP_TEXT_SIZE.caption, fontWeight: '800' },
     productGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -1436,7 +1552,7 @@ const makeStyles = (scale: number, boldText: boolean) => {
       borderRadius: 999,
       paddingHorizontal: 8,
       paddingVertical: 4,
-      fontSize: 9.5,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '800',
       color: glass.textSecondary,
     },
@@ -1446,9 +1562,9 @@ const makeStyles = (scale: number, boldText: boolean) => {
       color: '#fff',
     },
     productDesc: {
-      fontSize: 10.5,
+      fontSize: APP_TEXT_SIZE.caption,
       color: 'rgba(235,235,245,0.48)',
-      lineHeight: 14,
+      lineHeight: APP_TEXT_LINE_HEIGHT.caption,
       minHeight: 28,
       marginTop: 4,
       marginBottom: 8,
@@ -1478,9 +1594,29 @@ const makeStyles = (scale: number, boldText: boolean) => {
       backgroundColor: 'rgba(255,255,255,0.1)',
     },
     redeemText: {
-      fontSize: 12,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       color: '#fff',
     },
   });
 };
+
+
+const homeStoreStyles = StyleSheet.create({
+  wallet: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, marginTop: 14, paddingHorizontal: 16, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.07)' },
+  coin: { width: 34, height: 34, borderRadius: 17 },
+  smallCoin: { width: 14, height: 14, borderRadius: 7 },
+  balanceSlot: { flex: 1, alignItems: 'flex-start' },
+  balance: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', color: '#fff', fontVariant: ['tabular-nums'] },
+  claim: { minWidth: 72, minHeight: 44, borderRadius: 24, paddingHorizontal: 10, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', flexDirection: 'row', gap: 6 },
+  disabled: { opacity: 0.6 },
+  unavailable: { backgroundColor: 'rgba(255,255,255,0.12)' },
+  owned: { backgroundColor: 'transparent' },
+  buttonText: { color: '#111', fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
+  disabledText: { color: 'rgba(255,255,255,0.5)' },
+  products: { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 18, paddingHorizontal: 16, marginTop: 5 },
+  product: { flexDirection: 'row', minHeight: 56, paddingVertical: 5, alignItems: 'center', gap: 12 },
+  productName: { flex: 1, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff' },
+  divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.09)' },
+  hint: { paddingVertical: 8, color: 'rgba(255,255,255,0.68)', fontSize: APP_TEXT_SIZE.caption },
+});

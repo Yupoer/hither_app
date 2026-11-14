@@ -21,6 +21,7 @@ const points = {
   hotel: { title: 'Night 1 Ueno Hotel', latitude: 35.7138, longitude: 139.7773 },
   ueno: { title: 'Day 2 Ueno Park', latitude: 35.7156, longitude: 139.7745 },
 };
+const platforms = { leader: 'android', memberA: 'ios', memberB: 'android' };
 let groupId;
 let failure;
 const has = (o, id) => o.presentation.hosts.some(h => h.testId === id);
@@ -97,12 +98,18 @@ async function done(actor, label = '完成') {
   await capture(actor, 'external.animation.completed', { finished: true });
 }
 async function add(actor, point, first = true, muted = []) {
+  if (platforms[actor] === 'ios') {
+    await press(actor, 'home-itinerary-grabber');
+    await press(actor, 'd6-route-add-place');
+  }
   await act(actor, 'map.pin.drop', { latitude: point.latitude, longitude: point.longitude });
   await advance(0, 'Dropped pin address lookup');
+  if (platforms[actor] === 'ios') await press(actor, 'd6-place-rename');
   await act(actor, 'map.place.rename', { value: point.title });
   const before = {};
   for (const [name, device] of Object.entries(devices)) before[name] = notifications(await device.observe()).length;
-  await act(actor, first ? 'map.place.first-stop' : 'map.place.pool');
+  if (platforms[actor] === 'ios') await press(actor, 'confirm-place-add');
+  else await act(actor, first ? 'map.place.first-stop' : 'map.place.pool');
   await advance(300, 'Foreground destination debounce');
   await capture(actor, 'recipient.destination-reaction', { title: point.title }, null, o => {
     if (actor !== 'leader') return;
@@ -139,7 +146,10 @@ async function start(destinationId, label) {
     for (const name of ['memberA', 'memberB']) {
       const received = notifications(o[name]).slice(before[name]);
       const target = destinations(o.leader).find(row => row.id === destinationId).title;
-      check(`${label} ${name} receives new journey notification`, received.some(row => row.data?.category === 'journey' && row.body.includes(`已開始前往「${target}」`) && row.data.senderId === o.leader.actorId), received);
+      const body = o[name].presentation.preferences.language === 'en'
+        ? `${o.leader.presentation.session.user.name} has started heading to ${target}`
+        : `${o.leader.presentation.session.user.name} 已開始前往「${target}」`;
+      check(`${label} ${name} receives new journey notification`, received.some(row => row.data?.category === 'journey' && row.body === body && row.data.senderId === o.leader.actorId), received);
       check(`${label} ${name} sees active shared target`, o[name].durable.snapshot.group.journeyStatus === 'going' && o[name].durable.snapshot.activeGathering.activeDestinationId === destinationId, o[name].durable.snapshot.activeGathering);
     }
   });
@@ -167,36 +177,38 @@ async function arriveAll(destinationId, point) {
 }
 async function enterRestored(actor) {
   await world.settle();
-  if (has(await devices[actor].observe(), 'onboarding-skip')) await press(actor, 'onboarding-skip');
-  await press(actor, 'role-my-teams');
+  if ((await devices[actor].observe()).presentation.route.route === 'Map') return;
   await world.waitFor(devices[actor], o => o.presentation.hosts.some(h =>
     h.testId === `team-card-${groupId}` && h.acceptsInput && !h.disabled), 'joined team card');
   await press(actor, `team-card-${groupId}`);
-  await press(actor, 'team-enter');
 }
 async function main() {
   save('observations.jsonl', '');
   try {
-    for (const [actor, platform, name] of [['leader', 'ios', 'Tokyo Leader'], ['memberA', 'android', 'Tokyo A'], ['memberB', 'ios', 'Tokyo B']]) {
+    for (const [actor, name] of [['leader', 'Tokyo Leader'], ['memberA', 'Tokyo A'], ['memberB', 'Tokyo B']]) {
+      const platform = platforms[actor];
       devices[actor] = await world.device({ id: actor, userId: null, platform, mode: 'app' });
       await capture(actor, 'app.boot', { platform, mode: 'app', userId: null });
-      await press(actor, 'onboarding-skip');
-      await press(actor, 'login-guest');
-      await press(actor, 'guest-confirm-button');
-      await advance(100, 'Guest navigation transition');
-      await press(actor, actor === 'leader' ? 'role-create' : 'role-join');
-      await act(actor, 'team.name', { value: name });
+      await world.waitFor(devices[actor], o => has(o, 'entry-welcome'), 'welcome entry');
       if (actor === 'leader') {
+        await press(actor, 'role-create');
         await act(actor, 'team.group-name', { value: 'Tokyo two days one night' });
         await act(actor, 'team.create');
         await world.waitFor(devices[actor], o => o.presentation.route.route === 'Map', 'created team Map');
         groupId = (await devices[actor].observe()).presentation.session.membership.group.id;
+        await act(actor, 'map.profile.open');
+        await inject(actor, { kind: 'animation', finished: true });
+        await act(actor, 'profile.name', { value: name });
+        await act(actor, 'profile.save');
+        await inject(actor, { kind: 'animation', finished: true });
       } else {
         await act(actor, 'team.code', { value: world.backend.groups.get(groupId).invite_code });
+        await act(actor, 'team.name', { value: name });
         await act(actor, 'team.join');
         await world.waitFor(devices[actor], o => o.presentation.route.route === 'Map', 'joined team Map');
       }
-      await capture(actor, 'membership.confirmed', { groupId }, null, o => check(`${actor} enters actual Map with group`, o[actor].presentation.session.membership.group.id === groupId && has(o[actor], 'map-search'), o[actor].presentation.session.membership));
+      const mapEntry = platform === 'ios' ? 'home-itinerary-grabber' : 'map-search';
+      await capture(actor, 'membership.confirmed', { groupId }, null, o => check(`${actor} enters actual Map with group`, o[actor].presentation.session.membership.group.id === groupId && has(o[actor], mapEntry), o[actor].presentation.session.membership));
     }
     await advance(300, 'Three joined member projections');
     await capture('world', 'trio.roster', {}, null, o => {
@@ -257,7 +269,10 @@ async function main() {
       for (const actor of ['memberA','memberB']) {
         check(`${actor} sees shared pause`, o[actor].durable.snapshot.group.journeyStatus === 'paused', o[actor].durable.snapshot.group);
         const received = notifications(o[actor]).slice(pauseBefore[actor]);
-        check(`${actor} receives pause notification`, received.some(row => row.data?.category === 'journey' && row.body === `Tokyo Leader 已暫停前往「${points.asakusa.title}」`), received);
+        const body = o[actor].presentation.preferences.language === 'en'
+          ? `Tokyo Leader paused heading to ${points.asakusa.title}`
+          : `Tokyo Leader 已暫停前往「${points.asakusa.title}」`;
+        check(`${actor} receives pause notification`, received.some(row => row.data?.category === 'journey' && row.body === body), received);
       }
     });
     await start(asakusa, 'Day one same-leg restart');
@@ -268,6 +283,7 @@ async function main() {
     const soloBefore = {};
     for (const receiver of ['leader','memberA']) soloBefore[receiver] = await devices[receiver].observe();
     await act('memberB', 'map.presence.select', { value: 'solo' });
+    await inject('memberB', { kind: 'alert', index: 1 });
     await advance(300, 'Solo roster projection');
     await capture('memberB', 'solo.roster.reactions', {}, null, o => {
       check('solo retains member identity and sharing', o.memberB.presentation.preferences.sharingEnabled === true && o.memberB.presentation.session.membership.group.id === groupId, o.memberB.presentation.preferences);
@@ -281,6 +297,7 @@ async function main() {
     });
     await add('leader', { title: 'Solo-time Shibuya idea', latitude: 35.6595, longitude: 139.7005 }, false, ['memberB']);
     await act('memberB', 'map.presence.select', { value: 'follow' });
+    await inject('memberB', { kind: 'alert', index: 0 });
     await advance(300, 'Follow roster projection');
     await capture('memberB', 'follow.roster.reactions', {}, null, o => check('leader sees member B follow', member(o.leader, o.memberB.actorId)?.solo === false, member(o.leader, o.memberB.actorId)));
     const identity = (await devices.memberA.observe()).actorId;
@@ -331,7 +348,10 @@ async function main() {
     await capture('memberA', 'external.online', { value: true });
     await advance(5000, 'Reconnect location retry');
     await enterRestored('memberA');
-    await advance(5000, 'Reconnect recipient debounce');
+    for (let elapsed = 5000; elapsed < 40_000 && (await devices.memberA.observe()).durable.locations.length; elapsed += 5000) {
+      await advance(5000, 'Reconnect location watchdog');
+    }
+    await advance(300, 'Reconnect recipient debounce');
     await capture('memberA', 'online.retry.reactions', { online: true }, null, o => {
       check('reconnect drains location queue', o.memberA.durable.locations.length === 0, o.memberA.durable.locations);
       for (const receiver of ['leader','memberB']) {
@@ -411,7 +431,7 @@ async function main() {
       'No simulator/device, GPU/MapKit, native Swift/Kotlin, real SQL/RLS, GPS hardware, external network, or live services.',
       'Route-tour behavior is verified in its dedicated discoverable scenario. This trip records actual host notices/toasts/alerts separately from tour controls.',
       'Solo/leave receiver notices are required behavior. Empty sender queues alone never count as delivery.'];
-    const summary = { output, command: `node test/headless/tokyo-trip.cjs ${output}`, platforms: { leader: 'ios', memberA: 'android', memberB: 'ios' }, overnight: 'powered-off 24h clock gap', checks, passed: checks.filter(c => c.pass).length, failed: checks.filter(c => !c.pass).length,
+    const summary = { output, command: `node test/headless/tokyo-trip.cjs ${output}`, platforms, overnight: 'powered-off 24h clock gap', checks, passed: checks.filter(c => c.pass).length, failed: checks.filter(c => !c.pass).length,
       harnessFailure: failure || null, steps: records.length, finalTime: new Date(world.now).toISOString(), limits };
     save('summary.json', JSON.stringify(summary, null, 2));
     const lines = ['# Tokyo two-day / one-night headless journey', '', `Passed ${summary.passed}; failed ${summary.failed}; steps ${summary.steps}.`,

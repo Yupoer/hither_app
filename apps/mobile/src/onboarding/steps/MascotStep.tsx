@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import React from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
@@ -91,8 +92,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   art: { width: 204, height: 204 },
-  description: { fontSize: 15, fontWeight: '600', marginBottom: 6, textAlign: 'center' },
-  bestLeader: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  description: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', marginBottom: 6, textAlign: 'center' },
+  bestLeader: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
 });
 
 function MascotEntranceMotion({ progress, visuals }: { progress: ReturnType<typeof useSharedValue<number>>; visuals: boolean }) {

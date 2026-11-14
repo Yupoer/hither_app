@@ -3,15 +3,38 @@
 // boundaries remain mocked by the individual suites.
 const { jest } = require('@jest/globals');
 
+function mockSharedValue(value) {
+  const listeners = new Map();
+  const shared = {
+    value,
+    get: () => shared.value,
+    set: next => {
+      shared.value = typeof next === 'function' ? next(shared.value) : next;
+      for (const listener of listeners.values()) listener(shared.value);
+    },
+    addListener: (id, listener) => listeners.set(id, listener),
+    removeListener: id => listeners.delete(id),
+    modify: modifier => { if (modifier) shared.set(modifier); },
+  };
+  return shared;
+}
+
 process.env.EXPO_PUBLIC_SUPABASE_URL ??= 'https://test.supabase.co';
 process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??= 'test-publishable-key';
 
+jest.mock('react-native/Libraries/Settings/Settings.ios', () => ({
+  __esModule: true,
+  default: {
+    get: jest.fn(key => key === 'AppleLanguages' ? ['en'] : undefined),
+    set: jest.fn(), watchKeys: jest.fn(() => 0), clearWatch: jest.fn(),
+  },
+}));
 jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
 jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => ({
   ...require('react-native-reanimated/mock'),
-  makeMutable: value => ({ value }),
-  useSharedValue: value => require('react').useRef({ value }).current,
+  makeMutable: mockSharedValue,
+  useSharedValue: value => require('react').useRef(mockSharedValue(value)).current,
   useReducedMotion: () => true,
   useFrameCallback: () => require('react').useRef({ setActive: jest.fn() }).current,
 }));

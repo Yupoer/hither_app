@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 
 export type NativeTeamsButtonProps = {
   label: string;
@@ -44,7 +47,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.22)',
     alignSelf: 'center',
   },
-  label: { color: '#fff', fontSize: 17.5, fontWeight: '700' },
+  label: { color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   badge: {
     minWidth: 26,
     height: 26,

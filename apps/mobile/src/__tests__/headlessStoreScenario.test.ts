@@ -163,9 +163,13 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       expect((await device.observe()).presentation.receipts.some((receipt: any) => receipt.method === 'onRequireRegistration')).toBe(true);
       expect(world.backend.rewardSessions.size).toBe(0);
       await device.command({ kind: 'mount', screen: { name: 'Premium' } });
-      await device.command({ kind: 'host', input: { kind: 'press', testId: 'premium-presentation-purchase' } });
-      await world.waitFor(device, (value: any) => value.external.alerts > 0, 'anonymous purchase rejected');
-      expect((await device.observe()).native.receipts.some((call: any) => call.method === 'iap.requestPurchase')).toBe(false);
+      expect(await device.command({ kind: 'host', input: { kind: 'press', testId: 'premium-presentation-purchase' } }))
+        .toEqual({ invoked: true });
+      const guarded = await world.waitFor(device,
+        (value: any) => value.presentation.receipts.some((receipt: any) =>
+          receipt.host === 'Premium' && receipt.method === 'onRequireRegistration'),
+        'anonymous purchase opens registration');
+      expect(guarded.native.receipts.some((call: any) => call.method === 'iap.requestPurchase')).toBe(false);
       expect(world.backend.purchaseLedger.size).toBe(0);
     } finally { await world.close(); }
   });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { act, render } from '@testing-library/react-native/pure';
 import MapScreen from '../src/screens/MapScreen';
 import { PreferencesProvider } from '../src/state/PreferencesContext';
 import { SessionProvider } from '../src/state/SessionContext';
@@ -10,7 +10,11 @@ jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate: jest.fn() }),
   useRoute: () => ({ params: {} }),
 }));
-jest.mock('expo-font');
+jest.mock('expo-font', () => ({
+  useFonts: () => [true, null],
+  isLoaded: () => true,
+  loadAsync: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('expo-asset');
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
@@ -42,13 +46,18 @@ describe('MapScreen profiling test', () => {
   it('mounts MapScreen', async () => {
     const route = { params: {}, key: '1', name: 'Map' } as any;
     const navigation = {} as any;
-    const { toJSON } = await render(
+    const screen = render(
       <PreferencesProvider>
         <SessionProvider>
           <MapScreen route={route} navigation={navigation} />
         </SessionProvider>
       </PreferencesProvider>,
     );
-    expect(toJSON()).toBeTruthy();
+    try {
+      await act(async () => { await Promise.resolve(); });
+      expect(screen.toJSON()).toBeTruthy();
+    } finally {
+      await act(async () => { screen.unmount(); });
+    }
   });
 });

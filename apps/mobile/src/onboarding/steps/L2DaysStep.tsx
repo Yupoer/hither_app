@@ -1,5 +1,7 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Pressable from '../../components/MotionPressable';
 import { useTheme } from '../../state/PreferencesContext';
 import { HitherText } from '../../components/HitherText';
 import { useTranslation } from '../../i18n';
@@ -67,7 +69,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // − [ days ] + on one line: number centered, steppers pinned to the sides.
   stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20 },
-  count: { minWidth: 140, fontSize: 56, fontWeight: '800', textAlign: 'center' },
+  count: { minWidth: 140, fontSize: APP_TEXT_SIZE.metric, fontWeight: '800', textAlign: 'center' },
   stepBtn: {
     width: 56,
     minHeight: 56,
@@ -76,5 +78,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepBtnText: { fontSize: 28, fontWeight: '600' },
+  stepBtnText: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '600' },
 });

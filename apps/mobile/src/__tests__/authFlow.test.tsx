@@ -1,5 +1,4 @@
 import React from 'react';
-import { type PressableProps } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import AuthScreen from '../screens/AuthScreen';
 
@@ -9,6 +8,7 @@ const mockSetMembership = jest.fn();
 const mockRefreshProfile = jest.fn();
 const mockCreateGroup = jest.fn();
 const mockJoinGroup = jest.fn();
+const mockUpdateGroupAvatar = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 
@@ -50,7 +50,9 @@ jest.mock('@expo/vector-icons', () => ({
   },
 }));
 
-jest.mock('../api/client', () => ({
+jest.mock('../api/services/GroupService', () => ({
+  getCachedMyJoinedGroups: jest.fn(() => []),
+  updateGroupAvatar: (...args: unknown[]) => mockUpdateGroupAvatar(...args),
   createGroup: (...args: unknown[]) => mockCreateGroup(...args),
   joinGroup: (...args: unknown[]) => mockJoinGroup(...args),
 }));
@@ -62,6 +64,8 @@ jest.mock('../utils/activityLog', () => ({
 
 jest.mock('../utils/haptics', () => ({
   mediumTap: jest.fn(),
+  errorTap: jest.fn(),
+  selectionTick: jest.fn(),
 }));
 
 jest.mock('../anonymousAccess', () => ({
@@ -79,97 +83,41 @@ jest.mock('../utils/uiAction', () => ({
   }),
 }));
 
-jest.mock('../components/SafePressable', () => ({
-  __esModule: true,
-  default: function TestSafePressable({
-    onPressAction,
-    onBusyChange,
-    ...props
-  }: {
-    onPressAction: (token: { isCurrent: () => boolean }) => Promise<void>;
-    onBusyChange?: (busy: boolean) => void;
-  } & PressableProps) {
-    const ReactRuntime = require('react') as typeof React;
-    const { Pressable: NativePressable } = require('react-native') as typeof import('react-native');
-    return ReactRuntime.createElement(NativePressable, {
-      ...props,
-      accessibilityState: {
-        ...(props.accessibilityState as object | undefined),
-        disabled: props.disabled ?? undefined,
-      },
-      onPress: async () => {
-        onBusyChange?.(true);
-        try {
-          await onPressAction({ isCurrent: () => true });
-        } finally {
-          onBusyChange?.(false);
-        }
-      },
-    });
-  },
-}));
-
 describe('AuthScreen form actions', () => {
-  const navigation = {
-    replace: jest.fn(),
-    canGoBack: () => false,
-    goBack: jest.fn(),
-  };
-
+  const navigation = { replace: jest.fn(), reset: jest.fn(), canGoBack: () => false, goBack: jest.fn() };
   beforeEach(() => {
     jest.clearAllMocks();
     mockSignIn.mockResolvedValue({ id: 'anon-1' });
     mockUpdateNickname.mockResolvedValue(undefined);
-    mockSetMembership.mockImplementation(() => undefined);
     mockRefreshProfile.mockResolvedValue(undefined);
-    mockCreateGroup.mockResolvedValue({ id: 'group-1', name: 'Trip' });
-    mockJoinGroup.mockResolvedValue({ id: 'group-1', name: 'Trip' });
+    const group = { id: 'group-1', name: 'Trip' };
+    mockCreateGroup.mockResolvedValue(group);
+    mockJoinGroup.mockResolvedValue(group);
+    mockUpdateGroupAvatar.mockResolvedValue(group);
   });
-
-  it('enables create-and-start after non-whitespace leader fields and trims the payload', async () => {
-    const { getByTestId } = render(
-      <AuthScreen navigation={navigation as never} route={{ params: { role: 'leader' } } as never} />,
-    );
-
-    expect(getByTestId('auth-create-group').props.accessibilityState?.disabled).toBe(true);
-    fireEvent.changeText(getByTestId('auth-name'), ' Alex ');
-    fireEvent.changeText(getByTestId('auth-group-name'), ' Trip ');
-    expect(getByTestId('auth-create-group').props.accessibilityState?.disabled).toBe(false);
-
-    await act(async () => {
-      fireEvent.press(getByTestId('auth-create-group'));
-    });
-
-    expect(mockSignIn).toHaveBeenCalledWith({ name: 'Alex' });
-    expect(mockCreateGroup).toHaveBeenCalledWith('Trip', expect.any(String), expect.any(String));
-    expect(navigation.replace).toHaveBeenCalledWith('Map', { groupId: 'group-1' });
+  it('enables create-and-start after a team name and trims the payload', async () => {
+    const screen = render(<AuthScreen navigation={navigation as never} route={{ params: { role: 'leader' } } as never} />);
+    expect(screen.getByTestId('auth-create-group').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('auth-group-name'), ' Trip ');
+    await act(async () => { fireEvent.press(screen.getByTestId('auth-create-group')); });
+    expect(mockSignIn).toHaveBeenCalledWith({ name: 'entry.guestName' });
+    expect(mockCreateGroup).toHaveBeenCalledWith('Trip');
+    expect(mockUpdateGroupAvatar).toHaveBeenCalledWith('group-1', expect.any(String), expect.any(String));
+    expect(navigation.reset).toHaveBeenCalledWith({ index: 0, routes: [{ name: 'Map', params: { groupId: 'group-1', showTeamInvite: true } }] });
   });
-
-  it('keeps create-and-start disabled for whitespace-only leader fields', () => {
-    const { getByTestId } = render(
-      <AuthScreen navigation={navigation as never} route={{ params: { role: 'leader' } } as never} />,
-    );
-    fireEvent.changeText(getByTestId('auth-name'), '   ');
-    fireEvent.changeText(getByTestId('auth-group-name'), '   ');
-
-    expect(getByTestId('auth-create-group').props.accessibilityState?.disabled).toBe(true);
-    fireEvent.press(getByTestId('auth-create-group'));
+  it('keeps create-and-start disabled for a whitespace-only team name', () => {
+    const screen = render(<AuthScreen navigation={navigation as never} route={{ params: { role: 'leader' } } as never} />);
+    fireEvent.changeText(screen.getByTestId('auth-group-name'), '   ');
+    expect(screen.getByTestId('auth-create-group').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId('auth-create-group'));
     expect(mockSignIn).not.toHaveBeenCalled();
   });
-
-  it('enables join-and-start after a six-character invite code', async () => {
-    const { getByTestId } = render(
-      <AuthScreen navigation={navigation as never} route={{ params: { role: 'follower' } } as never} />,
-    );
-    fireEvent.changeText(getByTestId('auth-name'), 'Alex');
-    fireEvent.changeText(getByTestId('auth-code'), 'abc234');
-    expect(getByTestId('auth-join-group').props.accessibilityState?.disabled).toBe(false);
-
-    await act(async () => {
-      fireEvent.press(getByTestId('auth-join-group'));
-    });
-
+  it('joins the validated invite with the edited nickname', async () => {
+    const screen = render(<AuthScreen navigation={navigation as never} route={{ params: { role: 'follower', code: 'ABC234' } } as never} />);
+    fireEvent.changeText(screen.getByTestId('auth-name'), ' Alex ');
+    await act(async () => { fireEvent.press(screen.getByTestId('auth-join-group')); });
+    expect(mockSignIn).toHaveBeenCalledWith({ name: 'Alex' });
     expect(mockJoinGroup).toHaveBeenCalledWith('ABC234');
-    expect(navigation.replace).toHaveBeenCalledWith('Map', { groupId: 'group-1' });
+    expect(navigation.reset).toHaveBeenCalledWith({ index: 0, routes: [{ name: 'Map', params: { groupId: 'group-1' } }] });
   });
 });

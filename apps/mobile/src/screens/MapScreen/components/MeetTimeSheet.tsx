@@ -8,7 +8,9 @@ import { Segmented } from './Segmented';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React from 'react';
-import { View, Text, Pressable, Platform, Alert } from 'react-native';
+import { View, Platform, Alert } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 
 export interface MeetTimeSheetProps {

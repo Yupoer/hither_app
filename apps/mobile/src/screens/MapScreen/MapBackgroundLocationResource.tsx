@@ -1,7 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, type AppStateStatus } from 'react-native';
+import { Alert, Platform, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMountEffect } from '../../hooks/useMountEffect';
+import { displayMemberAvatar } from '../../constants/avatars';
 import { prepareNativeJourneyLocation } from '../../native/backgroundLocation';
 import { prepareBackgroundJourneyPermissions, startBackgroundJourney, stopBackgroundJourney } from '../../state/backgroundJourney';
 import { rememberPendingLocationPermission } from '../../state/backgroundLocationRefresh';
@@ -212,12 +213,21 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
       deviceCoords ??
       { latitude: 0, longitude: 0 };
     if (pendingLeaderTargetId === navTarget?.id && !backgroundNavigationSessionId) return;
+    const scopedMembers = members.filter(member =>
+      (member.subgroupId ?? null) === (navTarget?.subgroupId ?? null));
+    const eligibleMembers = sessionEligibleMembers.filter(member => !member.solo
+      && (member.subgroupId ?? null) === (navTarget?.subgroupId ?? null));
+    const activityMembers = Platform.OS === 'ios' && eligibleMembers.length > 0
+      ? eligibleMembers : scopedMembers;
+    const activityAvatars = activityMembers.map(member =>
+      displayMemberAvatar(member.avatar, member.userId, member.avatarColor));
     const sessionKey = backgroundNavigationSessionId ?? 'none';
     const key = JSON.stringify([backgroundSharingScope, backgroundScopeSubgroupId, powerMode,
       navTarget?.id ?? 'presence', sessionKey, highAccuracy, travelMode, localArrivalRadiusM,
       navTarget?.coordinates.latitude, navTarget?.coordinates.longitude, canEditItinerary,
       members.map(member => `${member.userId}:${member.subgroupId ?? ''}`).sort(),
-      sessionEligibleMembers.filter(member => !member.solo).map(member => member.userId).sort()]);
+      sessionEligibleMembers.filter(member => !member.solo).map(member => member.userId).sort(),
+      navTarget?.title, navTarget?.meetAt, navTarget?.emoji, colors.accent, language, activityAvatars]);
     if (backgroundPermissionDeniedRef.current === key || backgroundStartedKeyRef.current === key) return;
     backgroundStartedKeyRef.current = key;
 
@@ -230,9 +240,8 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
     void startBackgroundJourney({
       actorId: user?.id,
       scopeSubgroupId: backgroundScopeSubgroupId,
-      memberIds: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.userId),
-      navigationMemberIds: sessionEligibleMembers.filter(m => !m.solo && (m.subgroupId ?? null)
-        === (navTarget?.subgroupId ?? null)).map(m => m.userId),
+      memberIds: activityMembers.map(member => member.userId),
+      navigationMemberIds: eligibleMembers.map(member => member.userId),
       arrivedMemberIds: activeDestinationArrivals.filter(a => a.destinationId === navTarget?.id).map(a => a.userId),
       leaderId: navTarget?.subgroupId
         ? state?.subgroups.find(subgroup => subgroup.id === navTarget.subgroupId)?.leaderId
@@ -240,6 +249,7 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
       target: navTarget ?? undefined,
       // The shared completion helper handles all-member completion separately from arrival.
       completeSolo: false,
+      requiresLeaderCompletion: Platform.OS === 'ios',
       groupId,
       navigationSessionId: backgroundNavigationSessionId,
       destinationId: navTarget?.id ?? 'group-presence',
@@ -259,8 +269,11 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
       hasMembership: members.some(m => m.userId === user?.id),
       gatheringTitle: navTarget?.title ?? membership?.group.name,
       groupName: membership?.group.name ?? '',
-      memberEmojis: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => m.avatar ?? ''),
-      memberArrived: members.filter(m => (m.subgroupId ?? null) === (navTarget?.subgroupId ?? null)).map(m => activeDestinationArrivals.some(a => a.destinationId === navTarget?.id && a.userId === m.userId)),
+      memberEmojis: activityAvatars.map(avatar => avatar.emoji),
+      memberColors: activityAvatars.map(avatar => avatar.color ?? ''),
+      memberArrived: activityMembers.map(member => activeDestinationArrivals.some(arrival =>
+        arrival.destinationId === navTarget?.id && arrival.userId === member.userId)),
+      language: language === 'en' ? 'en' : 'zh',
       startCoords: journeyStartCoords ?? undefined,
       hasDepartedStart: progressDepartedStart,
       previousProgressMax: progressMaxSticky ?? undefined,

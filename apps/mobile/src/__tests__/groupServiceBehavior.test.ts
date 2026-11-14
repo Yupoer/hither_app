@@ -48,6 +48,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase';
 import {
   createGroup,
+  endGroup,
   getCachedMyJoinedGroups,
   getGroupRecoverySnapshot,
   getGroupState,
@@ -70,6 +71,7 @@ import {
   setSolo,
   setStragglerConfig,
   updateGroupAvatar,
+  updateGroupIdentity,
   updateGroupTripDetails,
 } from '../api/services/GroupService';
 
@@ -186,6 +188,28 @@ describe('GroupService pure mappers and group lifecycle', () => {
     await expect(updateGroupAvatar('g-1', 'not-valid', 'bad')).resolves.toMatchObject({ id: 'g-1' });
   });
 
+  it('saves a group rename and the home avatar palette together', async () => {
+    setTables({ groups: { data: row({ name: 'Evening walk', avatar: '🦊', avatar_color: '#E0634A' }), error: null } });
+    await expect(updateGroupIdentity('g-1', {
+      name: ' Evening walk ', avatar: '🦊', avatarColor: '#E0634A',
+    })).resolves.toMatchObject({ name: 'Evening walk', avatar: '🦊', avatarColor: '#E0634A' });
+    expect(mockedSupabase.from).toHaveBeenCalledWith('groups');
+    expect(mockedSupabase.from.mock.results[0].value.update).toHaveBeenCalledWith({
+      name: 'Evening walk', avatar: '🦊', avatar_color: '#E0634A',
+    });
+    expect(mockedSupabase.from.mock.results[0].value.eq).toHaveBeenCalledWith('id', 'g-1');
+  });
+
+  it('ends only the selected group and fails if the server confirms no deletion', async () => {
+    setTables({ groups: { data: { id: 'g-1' }, error: null } });
+    await expect(endGroup('g-1')).resolves.toBeUndefined();
+    expect(mockedSupabase.from).toHaveBeenCalledWith('groups');
+    expect(mockedSupabase.from.mock.results[0].value.delete).toHaveBeenCalledTimes(1);
+    expect(mockedSupabase.from.mock.results[0].value.eq).toHaveBeenCalledWith('id', 'g-1');
+    setTables({ groups: { data: null, error: null } });
+    await expect(endGroup('g-2')).rejects.toThrow('Team end was not confirmed');
+  });
+
   it('joins groups and maps not-found, member-cap, and anonymous errors', async () => {
     mockedSupabase.rpc.mockResolvedValueOnce({ data: row(), error: null });
     await expect(joinGroup('ab12cd')).resolves.toMatchObject({ id: 'g-1' });
@@ -208,12 +232,12 @@ describe('GroupService snapshots and joined-group cache', () => {
       itinerary_items: { data: [{ id: 'd-1', title: 'Next', position: 0, day: 1, address: null, latitude: 25, longitude: 121, closed_at: null }], error: null },
       member_locations: { data: [{ user_id: 'user-1', latitude: 25, longitude: 121, updated_at: 'now' }], error: null },
       public_profiles: { data: [{ id: 'user-1', nickname: 'Ada', avatar: '🦊', avatar_color: '#E8543F' }], error: null },
-      subgroups: { data: [{ id: 'sg', name: 'Team', mode: 'collab', leader_id: 'user-1', parent_subgroup_id: null }], error: null },
+      subgroups: { data: [{ id: 'sg', name: 'Team', mode: 'collab', leader_id: 'user-1', parent_subgroup_id: null, created_at: '2026-11-13T00:00:00Z' }], error: null },
     });
     mockListDailyAccommodations.mockResolvedValue([{ id: 'stay', groupId: 'g-1', stayDate: '2026-10-01', title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } }]);
     await expect(getGroupState('g-1')).resolves.toMatchObject({
       group: { id: 'g-1' }, members: [{ userId: 'user-1', name: 'Ada' }],
-      destinations: [{ id: 'd-1' }], subgroups: [{ id: 'sg' }], dailyAccommodations: [{ id: 'stay' }],
+      destinations: [{ id: 'd-1' }], subgroups: [{ id: 'sg', createdAt: '2026-11-13T00:00:00Z' }], dailyAccommodations: [{ id: 'stay' }],
     });
 
     expect(mockedSupabase.from).toHaveBeenCalledWith('public_profiles');
@@ -256,12 +280,21 @@ describe('GroupService snapshots and joined-group cache', () => {
       profiles: [{ id: 'user-1', nickname: 'Ada' }],
       locations: [],
       itinerary: [],
-      subgroups: [],
+      subgroups: [
+        { id: 'sg-2', name: 'Later subgroup', mode: 'collab', created_at: '2026-09-19T06:05:00Z' },
+        { id: 'sg-1', name: 'Earlier subgroup', mode: 'led', created_at: '2026-09-19T06:00:00Z' },
+      ],
       entity_versions: [null, { entity_type: 'itinerary' }, { entity_type: 'itinerary', entity_id: 'd-1', entity_version: 7 }, { entity_type: 'itinerary', entity_id: 'd-2', entity_version: 'bad' }],
       generated_at: '2026-09-19T00:00:00Z',
     }, error: null });
     await expect(getGroupRecoverySnapshot('g-1')).resolves.toMatchObject({
       revision: '2026-09-19T00:00:00Z', entityVersions: { 'itinerary:d-1': 7 },
+      state: {
+        subgroups: [
+          { id: 'sg-2', createdAt: '2026-09-19T06:05:00Z' },
+          { id: 'sg-1', createdAt: '2026-09-19T06:00:00Z' },
+        ],
+      },
     });
 
     mockedSupabase.rpc.mockResolvedValueOnce({ data: null, error: null });

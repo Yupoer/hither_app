@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from '../i18n';
 import { lightTap } from '../utils/haptics';
@@ -54,8 +57,8 @@ const styles = StyleSheet.create({
     minHeight: 108,
   },
   copy: { flex: 1, gap: 5, justifyContent: 'center' },
-  title: { fontSize: 17, lineHeight: 21, fontWeight: '800', color: '#FFFFFF' },
-  hint: { fontSize: 13, lineHeight: 18, color: 'rgba(255,255,255,0.8)' },
+  title: { fontSize: APP_TEXT_SIZE.body, lineHeight: APP_TEXT_LINE_HEIGHT.body, fontWeight: '800', color: '#FFFFFF' },
+  hint: { fontSize: APP_TEXT_SIZE.caption, lineHeight: APP_TEXT_LINE_HEIGHT.caption, color: 'rgba(255,255,255,0.8)' },
   arrow: {
     width: 34,
     height: 34,
@@ -65,5 +68,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 10,
   },
-  arrowText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  arrowText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '800' },
 });

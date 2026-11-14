@@ -255,61 +255,39 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
     } finally { await world.close(); }
   });
 
-  it('routes home actions, expands teams, confirms one leave and clears the remaining list', async () => {
+  it('routes home actions, swipes to leave and keeps other memberships', async () => {
     const world = new World();
     try {
       const device = await screen(world, 'RoleSelect');
-      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.text === '1'), 'home joined-team badge');
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`), 'returning home team card');
       await device.perform('home.create');
       expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'leader' } });
       await device.host.mount({ name: 'RoleSelect' });
-      await device.perform('home.join');
-      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower' } });
-      await device.perform('team.back');
-      expect((await device.observe()).presentation.route).toMatchObject({ route: 'RoleSelect' });
-      await device.host.mount({ name: 'RoleSelect' });
-      await device.perform('home.teams');
-      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`), 'joined team full profile projection');
-      await device.perform('teams.back');
-      await device.host.mount({ name: 'RoleSelect' });
-      await device.perform('home.teams');
+      await world.settle();
+      await device.perform('team.code', { value: 'TEST42' });
+      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower', code: 'TEST42' } });
+
       device.online = false;
-      await device.host.mount({ name: 'RoleSelect' });
       await device.host.mount({ name: 'MyTeams' });
       await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'group-load-retry'), 'team refresh failure');
       expect((await device.observe()).presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`)).toBe(true);
       device.online = true;
       await device.perform('teams.retry');
       await world.waitFor(device, (value: any) => !value.presentation.hosts.some((host: any) => host.testId === 'group-load-retry'), 'team retry recovery');
-      await device.perform('teams.expand', { groupId: GROUP_ID });
-      expect((await device.observe()).presentation.hosts.some((host: any) => host.testId === 'team-enter')).toBe(true);
-      await device.perform('teams.expand', { groupId: GROUP_ID });
-      expect((await device.observe()).presentation.hosts.some((host: any) => host.testId === 'team-enter')).toBe(false);
-      await device.perform('teams.expand', { groupId: GROUP_ID });
+
+      const swipe = () => device.host.call({ kind: 'nativeEvent', testId: `team-swipe-${GROUP_ID}`, value: { event: 'onSwipeableOpen' } });
+      await swipe();
       await device.perform('teams.leave');
       await device.input({ kind: 'alert', index: 0 });
       expect(world.backend.memberships.some((member: any) => member.user_id === LEADER && member.group_id === GROUP_ID)).toBe(true);
       const second = await device.perform('group.createGroup', { args: ['Second team'] });
       await device.host.mount({ name: 'RoleSelect' });
-      await device.perform('home.teams');
       await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${second.id}`), 'newly created team after cache invalidation');
-      await device.perform('teams.expand', { groupId: GROUP_ID });
+      await swipe();
       await device.perform('teams.leave');
       await device.input({ kind: 'alert', index: 1 });
       await world.waitFor(device, (value: any) => !value.presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`), 'verified team removed from list');
       expect(world.backend.memberships.filter((member: any) => member.user_id === LEADER).map((member: any) => member.group_id)).toEqual([second.id]);
-      await device.perform('teams.clear');
-      await device.input({ kind: 'alert', index: 1 });
-      await world.settle();
-      expect(world.backend.memberships.some((member: any) => member.user_id === LEADER)).toBe(false);
-      await device.host.mount({ name: 'MyTeams' });
-      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'teams-empty-create'), 'empty team actions');
-      await device.perform('teams.create');
-      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'leader' } });
-      await device.host.mount({ name: 'MyTeams' });
-      await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === 'teams-empty-join'), 'empty team join action after remount');
-      await device.perform('teams.join');
-      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower' } });
     } finally { await world.close(); }
   });
 
@@ -321,8 +299,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       const device = await screen(world, 'MyTeams');
       await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.testId === `team-card-${GROUP_ID}`), 'saved team available before profile enrichment');
       expect((await device.observe()).presentation.session.user.name).toBe('');
-      await device.perform('teams.expand', { groupId: GROUP_ID });
-      await device.perform('teams.enter');
+      await device.perform('teams.enter', { groupId: GROUP_ID });
       await world.settle();
       expect((await device.observe()).presentation.route.route).toBe('Map');
       expect(world.backend.profiles.get(LEADER).nickname).toBe('Tokyo Leader');
@@ -466,6 +443,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
     const world = new World();
     try {
       const device = await screen(world, 'RoleSelect');
+      const defaultLanguage = (await device.observe()).presentation.preferences.language;
       const file = path.join(world.directory, device.spec.id, 'async.json');
       const values = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
       Object.assign(values, { 'pref.language': 'bad', 'pref.theme': 'bad', 'pref.textScale': '2', 'pref.travelMode': 'spaceship',
@@ -475,7 +453,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       fs.writeFileSync(file, JSON.stringify(values));
       await device.restart();
       const restored = await world.waitFor(device, (value: any) => value.presentation.preferences.ready, 'invalid preferences resolved to defaults');
-      expect(restored.presentation.preferences).toMatchObject({ language: 'zh', themeName: 'night', textScale: 1, travelMode: 'walk',
+      expect(restored.presentation.preferences).toMatchObject({ language: defaultLanguage, themeName: 'night', textScale: 1, travelMode: 'walk',
         meetRedMin: 5, dayColors: {}, gatherCardMarqueeSpeed: 40, arrivalRadiusM: 50, sharingEnabled: false });
       const migrated = JSON.parse(fs.readFileSync(file, 'utf8'));
       expect(migrated['pref.sharingEnabled']).toBe('false');

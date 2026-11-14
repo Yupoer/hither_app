@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import Pressable from './MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { glass } from '../glass';
 import type { MapRecenterControlProps } from './MapRecenterControl';
@@ -32,7 +33,7 @@ export default function MapRecenterControl({
         accessibilityRole="button"
         accessibilityLabel={locateLabel}
       >
-        <Ionicons name="navigate" size={20} color={glass.textPrimary} />
+        <Ionicons name="navigate" size={20} color={glass.textPrimary} style={styles.locateIcon} />
       </Pressable>
     </View>
   );
@@ -48,5 +49,6 @@ const styles = StyleSheet.create({
     borderColor: glass.hairlineSoft,
   },
   button: { width: 50, height: 47, alignItems: 'center', justifyContent: 'center' },
+  locateIcon: { transform: [{ translateX: -1.5 }, { translateY: 2 }] },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: glass.hairlineStrong },
 });

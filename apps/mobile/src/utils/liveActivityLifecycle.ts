@@ -15,6 +15,7 @@ export type ObservedLiveActivity = {
 export type LiveActivityLifecycleApi = {
   endGroupActivity: (activityId: string) => Promise<void>;
   endAllGroupActivities: () => Promise<void>;
+  completeGroupActivity: (navigationSessionId: string, destinationId: string) => Promise<void>;
   startGroupActivity: (intent: LiveActivityStartIntent) => Promise<{ activityId: string; pushToken?: string } | null>;
   deleteSession: (activityId: string) => Promise<void>;
   deleteAllSessions: () => Promise<void>;
@@ -34,6 +35,7 @@ export type LiveActivityStopIntent = {
   kind: 'stop';
   /** When true, also wipe DB sessions (user disabled / journey fully off). */
   clearSessions: boolean;
+  completedScope?: { navigationSessionId: string; destinationId: string };
 };
 
 export type LiveActivityIntent = LiveActivityStartIntent | LiveActivityStopIntent;
@@ -150,6 +152,12 @@ export class LiveActivityLifecycleReconciler {
     if (!this.isCurrent(generation)) return;
 
     if (intent.kind === 'stop') {
+      if (intent.completedScope) {
+        await settle(this.api.completeGroupActivity(
+          intent.completedScope.navigationSessionId, intent.completedScope.destinationId,
+        ));
+        if (!this.isCurrent(generation)) return;
+      }
       await this.stop(generation, intent.clearSessions);
       return;
     }

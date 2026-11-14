@@ -1,5 +1,4 @@
 import React from 'react';
-import { type PressableProps } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import LoginScreen from '../screens/LoginScreen';
 
@@ -29,45 +28,6 @@ jest.mock('../state/PreferencesContext', () => ({
 jest.mock('../i18n', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-
-jest.mock('../components/AuthField', () => {
-  const ReactRuntime = require('react') as typeof React;
-  const { TextInput } = require('react-native') as typeof import('react-native');
-  return function TestAuthField(props: Record<string, unknown>) {
-    return ReactRuntime.createElement(TextInput, props);
-  };
-});
-
-jest.mock('../components/AuthModeSelector', () => {
-  const ReactRuntime = require('react') as typeof React;
-  const { Pressable, Text, View } = require('react-native') as typeof import('react-native');
-  return function TestAuthModeSelector({
-    mode,
-    onChange,
-    labels,
-    disabled,
-  }: {
-    mode: 'signin' | 'signup';
-    onChange: (next: 'signin' | 'signup') => void;
-    labels: { signin: string; signup: string };
-    disabled?: boolean;
-  }) {
-    return ReactRuntime.createElement(
-      View,
-      null,
-      (['signin', 'signup'] as const).map((next) => ReactRuntime.createElement(
-        Pressable,
-        {
-          key: next,
-          onPress: () => onChange(next),
-          disabled,
-          testID: `login-tab-${next}`,
-        },
-        ReactRuntime.createElement(Text, null, labels[next]),
-      )),
-    );
-  };
-});
 
 jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
@@ -111,196 +71,113 @@ jest.mock('../utils/activityLog', () => ({
 
 jest.mock('../components/LanguagePicker', () => () => null);
 
-jest.mock('../components/SafePressable', () => ({
-  __esModule: true,
-  default: function TestSafePressable({
-    onPressAction,
-    onBusyChange,
-    ...props
-  }: {
-    onPressAction: (token: { isCurrent: () => boolean }) => Promise<void>;
-    onBusyChange?: (busy: boolean) => void;
-  } & PressableProps) {
-    const ReactRuntime = require('react') as typeof React;
-    const { Pressable: NativePressable } = require('react-native') as typeof import('react-native');
-    return ReactRuntime.createElement(NativePressable, {
-        ...props,
-        accessibilityState: {
-          ...(props.accessibilityState as object | undefined),
-          disabled: props.disabled ?? undefined,
-        },
-        onPress: async () => {
-          onBusyChange?.(true);
-          try {
-            await onPressAction({ isCurrent: () => true });
-          } catch {
-            // runUiAction consumes task failures in production.
-          } finally {
-            onBusyChange?.(false);
-          }
-        }}
-    );
-  },
-}));
-
 describe('LoginScreen email flows', () => {
-  const navigation = { replace: jest.fn(), navigate: jest.fn() };
-
+  const navigation = { replace: jest.fn(), navigate: jest.fn(), canGoBack: () => false, goBack: jest.fn() };
+  function openPassword(email = 'test@example.com') {
+    const screen = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+    fireEvent.press(screen.getByTestId('login-use-email'));
+    fireEvent.changeText(screen.getByTestId('login-email'), email);
+    fireEvent.press(screen.getByTestId('login-email-next'));
+    return screen;
+  }
   beforeEach(() => {
     jest.clearAllMocks();
     mockSignInWithEmail.mockResolvedValue(undefined);
-    mockSignUpWithEmail.mockResolvedValue(undefined);
+    mockSignUpWithEmail.mockResolvedValue({ status: 'signed_in' });
     mockResendConfirmation.mockResolvedValue(undefined);
     mockRequestPasswordReset.mockResolvedValue(undefined);
     mockSignInWithGoogle.mockResolvedValue(null);
   });
+  afterEach(() => jest.useRealTimers());
 
   it('enables the login CTA after test credentials and reaches the app', async () => {
-    const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
-    const submit = getByTestId('login-submit');
-
-    expect(submit.props.accessibilityState?.disabled).toBe(true);
-    fireEvent.changeText(getByTestId('login-email'), '  test@example.com  ');
-    fireEvent.changeText(getByTestId('login-password'), 'test-password');
-    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(false);
-
-    await act(async () => {
-      fireEvent.press(getByTestId('login-submit'));
-    });
-
-    expect(mockSignInWithEmail).toHaveBeenCalledWith({
-      email: 'test@example.com',
-      password: 'test-password',
-    });
+    const screen = openPassword('  test@example.com  ');
+    expect(screen.getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('login-password'), 'test-password');
+    await act(async () => { fireEvent.press(screen.getByTestId('login-submit')); });
+    expect(mockSignInWithEmail).toHaveBeenCalledWith({ email: 'test@example.com', password: 'test-password' });
     expect(navigation.replace).toHaveBeenCalledWith('RoleSelect');
   });
 
   it('submits registration without a nickname or checkbox', async () => {
-    const { getByTestId, queryByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
-    fireEvent.press(getByTestId('login-tab-signup'));
-    fireEvent.changeText(getByTestId('login-email'), ' new@example.com ');
-    fireEvent.changeText(getByTestId('login-password'), 'test-password');
-    fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
-
-    expect(queryByTestId('login-nickname')).toBeNull();
-    expect(queryByTestId('login-signup-terms')).toBeNull();
-    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(false);
-
-    await act(async () => {
-      fireEvent.press(getByTestId('login-submit'));
-    });
-
-    expect(mockSignUpWithEmail).toHaveBeenCalledWith({
-      email: 'new@example.com',
-      password: 'test-password',
-    });
+    const screen = openPassword(' new@example.com ');
+    fireEvent.press(screen.getByTestId('login-create-account'));
+    fireEvent.changeText(screen.getByTestId('login-password'), 'short');
+    expect(screen.getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('login-password'), 'test-password');
+    expect(screen.queryByTestId('login-nickname')).toBeNull();
+    expect(screen.queryByTestId('login-signup-terms')).toBeNull();
+    await act(async () => { fireEvent.press(screen.getByTestId('login-submit')); });
+    expect(mockSignUpWithEmail).toHaveBeenCalledWith({ email: 'new@example.com', password: 'test-password' });
     expect(navigation.replace).toHaveBeenCalledWith('RoleSelect');
   });
 
-  it('keeps the page on short input and sign-in failure', async () => {
-    const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
-    fireEvent.changeText(getByTestId('login-email'), 'test@example.com');
-    fireEvent.changeText(getByTestId('login-password'), 'short');
-    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
-    expect(mockSignInWithEmail).not.toHaveBeenCalled();
-
-    fireEvent.changeText(getByTestId('login-password'), 'test-password');
+  it('keeps submit disabled for an empty password and shows sign-in failure', async () => {
+    const screen = openPassword();
+    fireEvent.changeText(screen.getByTestId('login-password'), '');
+    expect(screen.getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('login-password'), 'test-password');
     mockSignInWithEmail.mockRejectedValueOnce(new Error('invalid credentials'));
-    await act(async () => {
-      fireEvent.press(getByTestId('login-submit'));
-    });
-
+    await act(async () => { fireEvent.press(screen.getByTestId('login-submit')); });
     expect(navigation.replace).not.toHaveBeenCalled();
-    expect(getByText('login.credentialsInvalid')).toBeTruthy();
+    expect(screen.getByText('login.credentialsInvalid')).toBeTruthy();
   });
 
   it('keeps the login screen mounted and shows a local error when Google rejects', async () => {
     mockSignInWithGoogle.mockRejectedValueOnce(new Error('network unavailable'));
-    const { getByTestId, getByText } = render(
-      <LoginScreen navigation={navigation as never} route={{} as never} />,
-    );
-
-    await act(async () => {
-      fireEvent.press(getByTestId('login-google'));
-    });
-
-    await waitFor(() => expect(getByText('login.authUnavailable')).toBeTruthy());
-    expect(getByTestId('login-email')).toBeTruthy();
+    const screen = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+    await act(async () => { fireEvent.press(screen.getByTestId('login-google')); });
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(screen.getByTestId('login-use-email')).toBeTruthy();
     expect(navigation.replace).not.toHaveBeenCalled();
   });
 
   it('keeps the email CTA disabled for whitespace-only required values', () => {
-    const { getByTestId } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
-    fireEvent.changeText(getByTestId('login-email'), '   ');
-    fireEvent.changeText(getByTestId('login-password'), '      ');
-
-    expect(getByTestId('login-submit').props.accessibilityState?.disabled).toBe(true);
-    fireEvent.press(getByTestId('login-submit'));
+    const screen = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
+    fireEvent.press(screen.getByTestId('login-use-email'));
+    fireEvent.changeText(screen.getByTestId('login-email'), '   ');
+    expect(screen.getByTestId('login-email-next').props.accessibilityState?.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId('login-email-next'));
+    expect(screen.queryByTestId('login-password')).toBeNull();
     expect(mockSignInWithEmail).not.toHaveBeenCalled();
   });
 
   it('shows verification pending and sends confirmation through the single-flight button', async () => {
-    mockSignUpWithEmail.mockResolvedValueOnce({
-      status: 'verification_required',
-      email: 'pending@example.com',
-    });
-    const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
-    fireEvent.press(getByTestId('login-tab-signup'));
-    fireEvent.changeText(getByTestId('login-email'), 'pending@example.com');
-    fireEvent.changeText(getByTestId('login-password'), 'test-password');
-    fireEvent.changeText(getByTestId('login-confirm-password'), 'test-password');
-
-    await act(async () => {
-      fireEvent.press(getByTestId('login-submit'));
-    });
-
-    expect(getByText('login.verificationPending')).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(getByTestId('login-resend-confirmation'));
-    });
+    mockSignUpWithEmail.mockResolvedValueOnce({ status: 'verification_required', email: 'pending@example.com' });
+    const screen = openPassword('pending@example.com');
+    fireEvent.press(screen.getByTestId('login-create-account'));
+    fireEvent.changeText(screen.getByTestId('login-password'), 'test-password');
+    await act(async () => { fireEvent.press(screen.getByTestId('login-submit')); });
+    expect(screen.getByText('login.verificationPending')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByTestId('login-resend-confirmation')); });
     expect(mockResendConfirmation).toHaveBeenCalledWith('pending@example.com');
   });
 
   it('shows reset guidance and enables resend after the cooldown', async () => {
     jest.useFakeTimers();
-    const { getByTestId, getByText } = render(<LoginScreen navigation={navigation as never} route={{} as never} />);
-    fireEvent.changeText(getByTestId('login-email'), 'reset@example.com');
-    fireEvent.press(getByTestId('login-forgot-password'));
-    expect(getByText(/請輸入你的註冊電子信箱/)).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(getByTestId('login-reset-submit'));
-    });
-
-    expect(getByText('login.resetSent')).toBeTruthy();
-    expect(getByText('login.resetHelp')).toBeTruthy();
-    expect(getByTestId('login-reset-submit').props.accessibilityState?.disabled).toBe(true);
+    const screen = openPassword('reset@example.com');
+    fireEvent.press(screen.getByTestId('login-forgot-password'));
+    expect(screen.getByText('login.resetHint')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByTestId('login-reset-submit')); });
+    expect(screen.getByText('login.resetSent')).toBeTruthy();
+    expect(screen.getByText('login.resetHelp')).toBeTruthy();
+    expect(screen.getByTestId('login-reset-submit').props.accessibilityState?.disabled).toBe(true);
     expect(mockRequestPasswordReset).toHaveBeenCalledWith('reset@example.com');
-
-    act(() => {
-      jest.advanceTimersByTime(60_000);
-    });
-    expect(getByTestId('login-reset-submit').props.accessibilityState?.disabled).toBe(false);
-    await act(async () => {
-      fireEvent.press(getByTestId('login-reset-submit'));
-    });
+    await act(async () => { jest.advanceTimersByTime(60_000); });
+    expect(screen.getByTestId('login-reset-submit').props.accessibilityState?.disabled).toBe(false);
+    await act(async () => { fireEvent.press(screen.getByTestId('login-reset-submit')); });
     expect(mockRequestPasswordReset).toHaveBeenCalledTimes(2);
-    jest.useRealTimers();
   });
 
-  it('keeps reset mode email-only and exposes legal links after returning to sign-up', () => {
-    const { getByTestId, queryByTestId, getByText } = render(
-      <LoginScreen navigation={navigation as never} route={{} as never} />,
-    );
-    fireEvent.press(getByTestId('login-forgot-password'));
-
-    expect(getByTestId('login-reset-back')).toBeTruthy();
-    expect(getByTestId('login-reset-email')).toBeTruthy();
-    expect(getByTestId('login-reset-submit')).toBeTruthy();
-    expect(queryByTestId('login-back-to-sign-in')).toBeNull();
-    expect(queryByTestId('login-reset-google')).toBeNull();
-    fireEvent.press(getByTestId('login-reset-back'));
-    fireEvent.press(getByTestId('login-tab-signup'));
-    expect(getByText('login.privacy')).toBeTruthy();
-    expect(getByText('login.terms')).toBeTruthy();
+  it('keeps reset mode email-only and exposes legal links after returning to provider choices', () => {
+    const screen = openPassword();
+    fireEvent.press(screen.getByTestId('login-forgot-password'));
+    expect(screen.getByTestId('login-reset-email')).toBeTruthy();
+    expect(screen.queryByTestId('login-password')).toBeNull();
+    fireEvent.press(screen.getByTestId('login-reset-back'));
+    fireEvent.press(screen.getByTestId('login-step-back'));
+    fireEvent.press(screen.getByTestId('login-step-back'));
+    expect(screen.getByTestId('login-privacy')).toBeTruthy();
+    expect(screen.getByTestId('login-terms')).toBeTruthy();
   });
 });

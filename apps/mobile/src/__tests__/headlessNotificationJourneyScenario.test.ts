@@ -25,9 +25,18 @@ async function observer(world: InstanceType<typeof World>, platform: string, id:
 
 async function map(world: InstanceType<typeof World>, platform: string, id: string, userId: string) {
   const device = await world.device({ id, userId, platform, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-  await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.testId === `gather-card-${DESTINATION}`), `${id} gathering card`);
-  await device.perform('map.card.toggle', { destinationId: DESTINATION });
+  const cardId = platform === 'ios' ? 'home-itinerary-toggle' : `gather-card-${DESTINATION}`;
+  await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.testId === cardId), `${id} gathering card`);
+  if (platform === 'android') await device.perform('map.card.toggle', { destinationId: DESTINATION });
   return device;
+}
+
+async function pressJourney(device: Awaited<ReturnType<typeof map>>, platform: string) {
+  if (platform === 'ios') {
+    expect(await device.host.call({ kind: 'press', testId: 'home-journey-action' })).toEqual({ invoked: true });
+  } else {
+    await device.perform('map.journey.command', { destinationId: DESTINATION });
+  }
 }
 
 const notices = (value: Observation) => value.presentation.receipts.filter(receipt => {
@@ -48,7 +57,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       const other = await observer(world, platform, 'other-notifications', OTHER, 'follower');
       const memberNotice = await observer(world, platform, 'member-notifications', PEER, 'follower');
       const leaderMap = await map(world, platform, 'leader-map', LEADER);
-      await leaderMap.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressJourney(leaderMap, platform);
       await world.waitFor(leaderMap, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'session committed');
       const memberMap = await map(world, platform, 'member-map', PEER);
       await world.advance(1000);
@@ -83,7 +92,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       await leader.perform('group.reportStraggler', { args: [GROUP_ID, PEER, 800] });
       expect(world.backend.tables.group_alerts).toEqual([]);
       const leaderMap = await map(world, platform, 'leader-map', LEADER);
-      await leaderMap.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressJourney(leaderMap, platform);
       await world.waitFor(leaderMap, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'active navigation admits separation');
       const leaderBefore = (await leader.observe()).native.scheduled.length;
       const memberBefore = (await member.observe()).native.scheduled.length;
@@ -113,7 +122,7 @@ describe.each(['ios', 'android'])('headless multiuser journey notifications on %
       leader.realtime = false;
       const other = await observer(world, platform, 'other-notifications', OTHER, 'follower');
       const member = await map(world, platform, 'member-map', PEER);
-      await member.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressJourney(member, platform);
       await world.waitFor(member, () => world.backend.notificationOutbox.length === 1, 'request-start outbox committed');
       const [request] = world.backend.notificationOutbox;
       expect(request).toMatchObject({ group_id: GROUP_ID, sender_id: PEER, target_user_id: LEADER,

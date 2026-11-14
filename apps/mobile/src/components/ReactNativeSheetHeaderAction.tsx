@@ -1,19 +1,33 @@
 import React from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  type StyleProp,
-  Text,
-  type ViewStyle,
-  View,
-} from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_ACTION_ICON_SIZE,
   MAP_SHEET_ACTION_VISUAL_SIZE,
+  type SheetHeaderActionKind,
 } from './mapSheetChrome';
 
-export type SheetHeaderActionKind = 'close' | 'commit';
+export type { SheetHeaderActionKind } from './mapSheetChrome';
+export type SheetHeaderActionProps = {
+  action: SheetHeaderActionKind;
+  onPress: () => void;
+  accessibilityLabel: string;
+  testID?: string;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+};
+
+const ICONS = {
+  close: ['close', '×'],
+  commit: ['checkmark', '✓'],
+  share: ['share-outline', '↑'],
+  back: ['chevron-back', '‹'],
+  more: ['ellipsis-horizontal', '…'],
+  favorite: ['heart-outline', '♡'],
+  favorited: ['heart', '♥'],
+} satisfies Record<SheetHeaderActionKind, readonly [string, string]>;
 
 type IconProps = { name: string; size: number; color: string };
 let IoniconsComponent: React.ComponentType<IconProps> | null | undefined;
@@ -39,14 +53,7 @@ export default function SheetHeaderAction({
   testID,
   disabled = false,
   style,
-}: {
-  action: SheetHeaderActionKind;
-  onPress: () => void;
-  accessibilityLabel: string;
-  testID?: string;
-  disabled?: boolean;
-  style?: StyleProp<ViewStyle>;
-}) {
+}: SheetHeaderActionProps) {
   const Icon = getIonicons();
   return (
     <Pressable
@@ -63,12 +70,12 @@ export default function SheetHeaderAction({
         accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {Icon ? (
           <Icon
-            name={action === 'commit' ? 'checkmark' : 'close'}
+            name={ICONS[action][0]}
             size={MAP_SHEET_ACTION_ICON_SIZE}
-            color="#fff"
+            color={action === 'favorited' ? '#FF8AA6' : '#fff'}
           />
         ) : (
-          <Text style={styles.fallbackIcon}>{action === 'commit' ? '✓' : '×'}</Text>
+          <Text style={styles.fallbackIcon}>{ICONS[action][1]}</Text>
         )}
       </View>
     </Pressable>
@@ -87,6 +94,8 @@ const styles = StyleSheet.create({
     height: MAP_SHEET_ACTION_VISUAL_SIZE,
     borderRadius: MAP_SHEET_ACTION_VISUAL_SIZE / 2,
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fallbackVisual: { backgroundColor: 'rgba(255,255,255,0.1)' },
   pressed: { opacity: 0.82 },

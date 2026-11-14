@@ -1,5 +1,7 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { logError, logEvent } from '../utils/activityLog';
 import { getLastRoute, getLastScreenName } from '../state/performance';
 import { getActiveLanguage, translate } from '../i18n';
@@ -150,14 +152,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#0E1320',
   },
   title: {
-    fontSize: 20,
+    fontSize: APP_TEXT_SIZE.title,
     fontWeight: '600',
     color: '#F5F7FB',
     marginBottom: 10,
     textAlign: 'center',
   },
   body: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     lineHeight: 22,
     color: '#9AA6BF',
     textAlign: 'center',
@@ -175,7 +177,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   buttonText: {
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: '#1A1206',
   },

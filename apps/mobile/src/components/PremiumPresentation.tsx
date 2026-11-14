@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import { useMountEffect } from '../hooks/useMountEffect';
 /**
  * Shared Premium subscription presentation for Paywall (settings) and Store (inline).
@@ -5,18 +6,18 @@ import { useMountEffect } from '../hooks/useMountEffect';
  * `showRestore` is true for Settings Paywall and false for the Store pane.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator,
+import {
+  ActivityIndicator,
   Alert,
   Linking,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
+import Pressable from './MotionPressable';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getPremiumProjection, redeemPromoCode } from '../api/client';
 import { waitUntilPremiumProjectionActive } from '../utils/waitUntilPremiumProjection';
@@ -110,6 +111,10 @@ export type PremiumPresentationProps = {
   /** Optional testID prefix (default premium-presentation). */
   testID?: string;
   showIntroPager?: boolean;
+  homeStore?: boolean;
+  storeAccent?: string;
+  storeNumberFont?: string;
+  onRequireRegistration?: () => void;
   onUnlockingChange?: (unlocking: boolean) => void;
 };
 
@@ -121,9 +126,13 @@ export default React.memo(function PremiumPresentation({
   onEntitlementActivated,
   testID = 'premium-presentation',
   showIntroPager = false,
+  homeStore = false,
+  storeAccent,
+  storeNumberFont,
+  onRequireRegistration,
   onUnlockingChange,
 }: PremiumPresentationProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { colors } = useTheme();
   const {
     user,
@@ -134,13 +143,14 @@ export default React.memo(function PremiumPresentation({
     refreshEntitlement,
     refreshProfile,
   } = useSession();
-  const accent = colors.accent;
+  const accent = storeAccent ?? colors.accent;
   const privacyUrl = getLegalUrl('privacy');
   const termsUrl = getLegalUrl('terms');
   const { width: pagerWidth } = useWindowDimensions();
   const slideWidth = Math.max(280, pagerWidth - 48);
   const [busy, setBusy] = useState<'purchase' | 'restore' | 'redeem' | null>(null);
   const [redeemOpen, setRedeemOpen] = useState(false);
+  const [restoredInStore, setRestoredInStore] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [selectedPlan, setSelectedPlan] = useState<PremiumPlan>('annual');
   const [products, setProducts] = useState<PremiumStoreProduct[]>([]);
@@ -192,7 +202,8 @@ export default React.memo(function PremiumPresentation({
       return;
     }
     if (isAnonymous) {
-      Alert.alert(t('paywall.title'), t('paywall.upgradeRequired'));
+      if (onRequireRegistration) onRequireRegistration();
+      else Alert.alert(t('paywall.title'), t('paywall.upgradeRequired'));
       return;
     }
     if (!catalogReady) {
@@ -233,7 +244,7 @@ export default React.memo(function PremiumPresentation({
       await refreshProfile();
       await refreshEntitlement(groupId);
       await onEntitlementActivated?.();
-      Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
+      if (!homeStore) Alert.alert(t('paywall.title'), t('paywall.purchaseSuccess'));
       onPurchaseSuccess?.();
     } catch {
       Alert.alert(t('paywall.title'), t('paywall.purchaseFailed'));
@@ -254,6 +265,8 @@ export default React.memo(function PremiumPresentation({
     onPurchaseSuccess,
     onEntitlementActivated,
     onUnlockingChange,
+    homeStore,
+    onRequireRegistration,
     premiumProjection.personalPremiumActive,
     premiumProjection.teamPremiumActive,
   ]);
@@ -264,7 +277,8 @@ export default React.memo(function PremiumPresentation({
       return;
     }
     if (isAnonymous) {
-      Alert.alert(t('paywall.title'), t('paywall.upgradeRequired'));
+      if (onRequireRegistration) onRequireRegistration();
+      else Alert.alert(t('paywall.title'), t('paywall.upgradeRequired'));
       return;
     }
     setBusy('restore');
@@ -285,7 +299,8 @@ export default React.memo(function PremiumPresentation({
         await refreshProfile();
         await refreshEntitlement(groupId);
         await onEntitlementActivated?.();
-        Alert.alert(t('paywall.title'), t('paywall.restoreSuccess'));
+        if (homeStore) setRestoredInStore(true);
+        else Alert.alert(t('paywall.title'), t('paywall.restoreSuccess'));
         onRestoreSuccess?.();
         return;
       }
@@ -302,7 +317,7 @@ export default React.memo(function PremiumPresentation({
     } finally {
       setBusy(null);
     }
-  }, [user, isAnonymous, groupId, t, refreshEntitlement, refreshProfile, getPremiumProjection, onRestoreSuccess, onEntitlementActivated]);
+  }, [user, isAnonymous, groupId, t, refreshEntitlement, refreshProfile, getPremiumProjection, onRestoreSuccess, onEntitlementActivated, homeStore, onRequireRegistration]);
 
   const redeemErrorMessage = useCallback((code: string): string => {
     switch (code) {
@@ -388,6 +403,88 @@ export default React.memo(function PremiumPresentation({
     premiumProjection.personalPremiumActive,
     premiumProjection.teamPremiumActive,
   ]);
+
+  if (homeStore) {
+    const choices: { plan: PremiumPlan; zh: string; en: string }[] = [
+      { plan: 'monthly', zh: '月', en: 'Month' },
+      { plan: 'annual', zh: '年', en: 'Year' },
+      { plan: 'trip', zh: '單趟', en: 'Trip' },
+    ];
+    const locked = busy !== null || hasPremium || catalogLoading || (!selectedProduct && !isAnonymous);
+    return (
+      <View style={homeStyles.body} testID={testID}>
+        <View style={homeStyles.plans} accessibilityRole="radiogroup">
+          {choices.map(({ plan, zh, en }) => {
+            const selected = selectedPlan === plan;
+            const product = productForPlan(products, plan);
+            return (
+              <Pressable key={plan} style={[homeStyles.plan, selected && homeStyles.planSelected]}
+                onPress={() => setSelectedPlan(plan)}
+                accessibilityRole="radio" accessibilityState={{ selected }}
+                testID={`${testID}-plan-${plan}`}>
+                <Text style={homeStyles.planTitle}>{language === 'zh' ? zh : en}</Text>
+                <Text style={[homeStyles.price, storeNumberFont && { fontFamily: storeNumberFont, fontWeight: '400', fontStyle: 'normal' }]} adjustsFontSizeToFit numberOfLines={1}>
+                  {catalogLoading ? '…' : product?.displayPrice ?? '—'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Pressable style={[homeStyles.cta, { backgroundColor: locked ? 'rgba(255,255,255,0.12)' : accent }]}
+          disabled={locked} onPress={handlePurchase} accessibilityRole="button" accessibilityState={{ disabled: locked, busy: busy === 'purchase' }}
+          testID={`${testID}-purchase`}>
+          {busy === 'purchase' ? <ActivityIndicator accessibilityRole="progressbar" color="#fff" /> : (
+            <Text style={homeStyles.ctaText}>{hasPremium
+              ? (language === 'zh' ? '✓ 已訂閱' : '✓ Subscribed')
+              : selectedPlan === 'trip'
+                ? (language === 'zh' ? '購買單趟 Premium' : 'Buy trip pass')
+                : (language === 'zh' ? '訂閱 Premium' : 'Subscribe to Premium')}</Text>
+          )}
+        </Pressable>
+        {showRestore ? (
+          <>
+            <View style={homeStyles.links}>
+              <Pressable style={homeStyles.link} onPress={handleRestore} disabled={busy !== null}
+                accessibilityRole="button" testID={`${testID}-restore`}>
+                <Text style={homeStyles.linkText}>{restoredInStore
+                  ? (language === 'zh' ? '✓ 已恢復' : '✓ Restored') : t('paywall.restore')}</Text>
+              </Pressable>
+              <Pressable style={homeStyles.link} onPress={() => {
+                if (isAnonymous && onRequireRegistration) onRequireRegistration();
+                else setRedeemOpen(previous => !previous);
+              }} disabled={busy !== null}
+                accessibilityRole="button" accessibilityState={{ expanded: redeemOpen }}
+                testID={`${testID}-redeem`}>
+                <Text style={homeStyles.linkText}>{language === 'zh' ? '優惠碼' : 'Promo code'}</Text>
+              </Pressable>
+            </View>
+            {redeemOpen ? (
+              <View style={homeStyles.code}>
+                <TextInput style={homeStyles.input}
+                  placeholder={t('account.redeemPlaceholder')}
+                  placeholderTextColor={glass.textTertiary}
+                  keyboardAppearance="dark"
+                  value={promoCode} onChangeText={setPromoCode}
+                  autoCapitalize="characters" autoCorrect={false}
+                  accessibilityLabel={t('account.redeemPlaceholder')}
+                  testID="paywall-redeem-input" />
+                <Pressable style={homeStyles.link} onPress={() => { void handleRedeem(); }}
+                  disabled={busy !== null || !promoCode.trim()} accessibilityRole="button" testID="paywall-redeem-submit">
+                  <Text style={homeStyles.linkText}>{t('account.redeemCta')}</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </>
+        ) : null}
+        {selectedProduct && hasEligibleIntroductoryOffer(selectedProduct) && !hasPremium ? (
+          <Text style={homeStyles.linkText}>{t('paywall.introOffer', { price: selectedProduct.introductoryPriceIOS ?? '' })}</Text>
+        ) : null}
+        {!catalogLoading && products.length === 0 && !hasPremium ? (
+          <Text style={homeStyles.linkText}>{t('paywall.unavailable')}</Text>
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.body} testID={testID} accessibilityRole="summary">
@@ -617,8 +714,8 @@ export default React.memo(function PremiumPresentation({
 
 const styles = StyleSheet.create({
   body: { paddingHorizontal: 0, paddingBottom: 8, gap: 10 },
-  trigger: { fontSize: 14, color: glass.textSecondary, lineHeight: 20 },
-  statusLine: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
+  trigger: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary, lineHeight: APP_TEXT_LINE_HEIGHT.caption },
+  statusLine: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', marginBottom: 4 },
   introPager: { marginBottom: 8 },
   introSlide: {
     paddingVertical: 18,
@@ -631,8 +728,8 @@ const styles = StyleSheet.create({
     minHeight: 140,
     justifyContent: 'center',
   },
-  introTitle: { color: '#fff', fontSize: 25, fontWeight: '800', marginBottom: 8, lineHeight: 31 },
-  introBody: { color: glass.textSecondary, fontSize: 15, lineHeight: 22 },
+  introTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', marginBottom: 8, lineHeight: APP_TEXT_LINE_HEIGHT.heading },
+  introBody: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption, lineHeight: 22 },
   table: {
     backgroundColor: glass.fill,
     borderRadius: 14,
@@ -650,8 +747,8 @@ const styles = StyleSheet.create({
     borderBottomColor: glass.hairlineStrong,
   },
   rowLast: { borderBottomWidth: 0 },
-  rowFree: { fontSize: 14, color: glass.textSecondary, flexShrink: 1 },
-  rowPro: { fontSize: 14, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+  rowFree: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary, flexShrink: 1 },
+  rowPro: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
   planChoices: { gap: 8 },
   planChoice: {
     flexDirection: 'row',
@@ -676,20 +773,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioDot: { width: 10, height: 10, borderRadius: 5 },
-  planChoiceTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  planChoiceSub: { color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 },
+  planChoiceTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  planChoiceSub: { color: 'rgba(255,255,255,0.55)', fontSize: APP_TEXT_SIZE.caption, marginTop: 2 },
   planChoiceRight: { alignItems: 'flex-end', marginLeft: 8 },
-  planChoicePrice: { fontSize: 16, fontWeight: '700' },
-  planChoiceRenew: { color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 2 },
+  planChoicePrice: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  planChoiceRenew: { color: 'rgba(255,255,255,0.45)', fontSize: APP_TEXT_SIZE.caption, marginTop: 2 },
   saveTag: {
     backgroundColor: '#256bb0',
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  saveTagText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  introOffer: { color: glass.textTertiary, fontSize: 11 },
-  price: { fontSize: 13, color: glass.textTertiary, textAlign: 'center' },
+  saveTagText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '800' },
+  introOffer: { color: glass.textTertiary, fontSize: APP_TEXT_SIZE.caption },
+  price: { fontSize: APP_TEXT_SIZE.caption, color: glass.textTertiary, textAlign: 'center' },
   cta: {
     height: 48,
     borderRadius: 999,
@@ -703,12 +800,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingTop: 4,
   },
-  legalText: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '600' },
-  legalDot: { color: 'rgba(255,255,255,0.35)', fontSize: 12 },
+  legalText: { color: 'rgba(255,255,255,0.55)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
+  legalDot: { color: 'rgba(255,255,255,0.35)', fontSize: APP_TEXT_SIZE.caption },
   ctaDisabled: { opacity: 0.55 },
-  ctaText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  ctaText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', color: '#fff' },
   restore: { alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
-  restoreText: { fontSize: 14, fontWeight: '600' },
+  restoreText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   redeemModalRoot: {
     flex: 1,
     justifyContent: 'center',
@@ -728,7 +825,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
-  redeemTitle: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  redeemTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
   redeemInput: {
     minHeight: 44,
     borderRadius: 12,
@@ -744,4 +841,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+});
+
+
+const homeStyles = StyleSheet.create({
+  body: { marginTop: 14 },
+  plans: { flexDirection: 'row', gap: 8 },
+  plan: { flex: 1, minHeight: 76, paddingVertical: 12, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 2, borderColor: 'transparent' },
+  planSelected: { backgroundColor: 'rgba(255,255,255,0.14)', borderColor: '#fff' },
+  planTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
+  price: { color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', fontStyle: 'italic', textAlign: 'center' },
+  cta: { marginTop: 12, minHeight: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  ctaText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  links: { flexDirection: 'row', gap: 20, justifyContent: 'center', marginTop: 4 },
+  link: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
+  linkText: { color: 'rgba(255,255,255,0.82)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
+  code: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, borderRadius: 16 },
+  input: { flex: 1, minHeight: 48, color: '#fff', fontSize: APP_TEXT_SIZE.caption },
 });

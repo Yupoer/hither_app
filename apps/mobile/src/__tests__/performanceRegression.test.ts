@@ -75,7 +75,7 @@ describe('measured performance regressions', () => {
     expect(nativeMapKit).toContain('UIApplicationDidEnterBackgroundNotification');
     expect(nativeMapKit).toContain('newHeading.trueHeading >= 0');
     expect(locationBoundary).not.toContain('Location.watchHeadingAsync');
-    expect(mapScreen).toContain('dailyAccommodations={mapDailyAccommodations}');
+    expect(mapScreen).toContain('dailyAccommodations={d6Enabled ? undefined : mapDailyAccommodations}');
     expect(mapScreen).not.toContain('dailyAccommodations={(() => {');
     expect(groupMap).toContain('const mergedMarkers = useMemo');
     expect(groupMap).not.toContain('selfHeading?: number | null');

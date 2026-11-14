@@ -24,9 +24,9 @@ const iosMenu = readFileSync(
 );
 
 describe('#220 map / status / settings / paywall contracts', () => {
-  it('fills MapView edge-to-edge without mapPadding letterbox', () => {
+  it('fills the MapView edge-to-edge and makes space for D6 attribution above the floating island', () => {
     expect(groupMap).toContain('style={StyleSheet.absoluteFill}');
-    expect(groupMap).not.toMatch(/mapPadding=\{/);
+    expect(groupMap).toContain('mapPadding={homePresentation ?');
     expect(groupMap).toContain('gatherCardHorizontalInset');
   });
 
@@ -59,7 +59,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(translations.zh['trip.setDaysAndDate']).toBe('天數與日期');
     expect(reorder).toContain('const ROW_HEIGHT = 52;');
     expect(reorder).toContain('REORDER_VISUAL_SCALE = 1');
-    expect(reorder).toContain('fontSize: 14');
+    expect(reorder).toContain('fontSize: APP_TEXT_SIZE.caption');
     expect(reorder).toContain('flexWrap: \'nowrap\'');
   });
 
@@ -119,9 +119,12 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(block).not.toContain('undefined');
   });
 
-  it('opens a full-screen paywall pager from Store and waits for projection before unlock', () => {
+  it('opens a full-screen paywall pager from Store on Android and inline verified purchase on iOS', () => {
     expect(storePane).toContain('onOpenSubscribe');
-    expect(storePane).not.toContain('<PremiumPresentation');
+    expect(storePane).toContain('<PremiumPresentation homeStore');
+    expect(storePane).toContain('<PremiumBanner onPress={() => onOpenSubscribe?.()}');
+    expect(mapScreen).toContain('renderStore: presentation => <StorePane');
+    expect(mapScreen).toContain('presentation={presentation}');
     expect(paywall).toContain('showIntroPager');
     expect(premium).toContain('PAYWALL_INTRO_SLIDES');
     expect(premium).toContain('waitUntilPremiumProjectionActive');

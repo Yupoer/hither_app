@@ -1,5 +1,7 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
+import Pressable from './MotionPressable';
 // StyleSheet.hairlineWidth used in previewBtn
 import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../api/client';
@@ -358,11 +360,11 @@ const makeStyles = (
       padding: spacing.lg,
       gap: s(spacing.md, spacing.sm),
     },
-    hint: { color: colors.textSecondary, fontSize: 13 },
-    customHint: { color: colors.textSecondary, fontSize: 11, opacity: 0.85 },
+    hint: { color: colors.textSecondary, fontSize: APP_TEXT_SIZE.caption },
+    customHint: { color: colors.textSecondary, fontSize: APP_TEXT_SIZE.caption, opacity: 0.85 },
     sectionLabel: {
       color: colors.textSecondary,
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.4,
       textTransform: 'uppercase',
@@ -389,7 +391,7 @@ const makeStyles = (
     },
     label: {
       color: colors.textPrimary,
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       textAlign: 'center',
     },
@@ -431,7 +433,7 @@ const makeStyles = (
     },
     allBtnText: {
       color: '#1a0a00',
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
     },
   });

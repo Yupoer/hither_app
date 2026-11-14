@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../../theme/typeScale';
 import React, { useCallback, useState } from 'react';
 import { Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
 import { HitherText } from '../../components/HitherText';
@@ -132,6 +133,6 @@ const styles = StyleSheet.create({
   },
   icon: { width: 56, height: 56 },
   textCol: { flex: 1, minWidth: 0 },
-  rowTitle: { fontSize: 16.5, fontWeight: '700' },
-  rowBody: { fontSize: 12.5, marginTop: 2, lineHeight: 18 },
+  rowTitle: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  rowBody: { fontSize: APP_TEXT_SIZE.caption, marginTop: 2, lineHeight: APP_TEXT_LINE_HEIGHT.caption },
 });

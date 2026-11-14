@@ -39,8 +39,8 @@ describe('legal site contract', () => {
   });
 
   it('uses the deployed documents from both app surfaces', () => {
-    expect(login).toContain("getLegalUrl('privacy')");
-    expect(login).toContain("getLegalUrl('terms')");
+    expect(login).toContain('<LegalLink document="privacy"');
+    expect(login).toContain('<LegalLink document="terms"');
     expect(premium).toContain("getLegalUrl('privacy')");
     expect(premium).toContain("getLegalUrl('terms')");
     expect(login).not.toContain('apple.com/legal/privacy');

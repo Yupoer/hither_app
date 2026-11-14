@@ -121,6 +121,13 @@ exports.createExternalAuth = ({ strict, request, spec = {} }) => {
       }),
     }));
     jest.doMock('expo-apple-authentication', () => strict('AppleAuthentication', { __esModule: true,
+      AppleAuthenticationButton: props => {
+        assert.equal(props.buttonType, 1);
+        assert.equal(props.buttonStyle, 0);
+        return require('react').createElement(require('react-native').Pressable, props);
+      },
+      AppleAuthenticationButtonType: strict('AppleAuthenticationButtonType', { CONTINUE: 1 }),
+      AppleAuthenticationButtonStyle: strict('AppleAuthenticationButtonStyle', { WHITE: 0 }),
       AppleAuthenticationScope: strict('AppleAuthenticationScope', { FULL_NAME: 0, EMAIL: 1 }),
       isAvailableAsync: async () => native.apple?.available !== false,
       signInAsync: async options => {

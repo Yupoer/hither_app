@@ -1,13 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import { useMountEffect } from '../hooks/useMountEffect';
 import React, { useCallback, useState, useRef, type ComponentProps } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Pressable, StyleSheet, type TextStyle, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   cancelAnimation,
@@ -40,6 +35,7 @@ export interface AmicroButtonProps {
   label?: string;
   /** Defaults to `color` when omitted. */
   labelColor?: string;
+  labelStyle?: StyleProp<TextStyle>;
   /** Keep the label centered in the full button bounds with a fixed left icon. */
   centeredLabel?: boolean;
   durationMs?: number;
@@ -78,6 +74,7 @@ export function AmicroButton({
   activeColor = color,
   label,
   labelColor,
+  labelStyle,
   centeredLabel = false,
   durationMs = PRESS_ANIMATION_MS,
   size = 44,
@@ -204,6 +201,7 @@ export function AmicroButton({
             styles.label,
             centeredLabel && styles.centeredLabel,
             { color: labelColor ?? color },
+            labelStyle,
           ]}
           numberOfLines={2}
         >
@@ -235,7 +233,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   label: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     flexShrink: 1,
     flexGrow: 1,

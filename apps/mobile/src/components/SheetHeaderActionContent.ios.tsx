@@ -2,59 +2,55 @@ import React from 'react';
 import { Button, Image } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel,
+  background,
   buttonBorderShape,
   buttonStyle,
+  contentShape,
   disabled as disabledModifier,
+  font,
+  foregroundColor,
   frame,
   glassEffect,
   labelStyle,
+  offset,
+  shapes,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../native';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_ACTION_ICON_SIZE,
   MAP_SHEET_ACTION_VISUAL_SIZE,
+  SHEET_HEADER_SYMBOLS,
+  type SheetHeaderActionKind,
 } from './mapSheetChrome';
+import type { SheetHeaderActionProps } from './ReactNativeSheetHeaderAction';
 
-export type SheetHeaderActionKind = 'close' | 'commit';
+const SYMBOL_OFFSETS: Partial<Record<SheetHeaderActionKind, { x?: number; y?: number }>> = {
+  share: { y: -2 },
+  commit: { x: -0.33, y: -1 },
+  back: { x: 0.67 },
+};
 
-/** Visual-only native material for an RN-owned action. It exposes no Button. */
-export function SheetHeaderActionVisual({ action }: { action: SheetHeaderActionKind }) {
-  return <Image
-    systemName={action === 'commit' ? 'checkmark' : 'xmark'}
-    modifiers={[
-      frame({ width: MAP_SHEET_ACTION_ICON_SIZE, height: MAP_SHEET_ACTION_ICON_SIZE }),
-      frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
-      glassEffect({ glass: { variant: 'regular', interactive: false }, shape: 'circle' }),
-    ]}
-  />;
-}
-
-/** Native SwiftUI header action shared by RN and native settings sheets. */
 export default function SheetHeaderActionContent({
   action,
   onPress,
   accessibilityLabel: label,
   testID,
   disabled = false,
-}: {
-  action: SheetHeaderActionKind;
-  onPress: () => void;
-  accessibilityLabel: string;
-  testID?: string;
-  disabled?: boolean;
-}) {
+}: Omit<SheetHeaderActionProps, 'style'>) {
+  const glass = liquidGlass.isLiquidGlassAvailable();
+  const symbolOffset = SYMBOL_OFFSETS[action];
   return (
     <Button
-      role={action === 'commit' ? 'default' : 'cancel'}
+      role={action === 'close' ? 'cancel' : 'default'}
       testID={testID}
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
       modifiers={[
-        buttonStyle(liquidGlass.isLiquidGlassAvailable() ? 'plain' : 'bordered'),
+        buttonStyle(glass ? 'plain' : 'bordered'),
         buttonBorderShape('circle'),
         frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
-        ...(liquidGlass.isLiquidGlassAvailable()
-          ? [glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
+        ...(glass
+          ? [background('#ffffff26', shapes.circle()), glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
           : []),
         frame({ width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE }),
         labelStyle('iconOnly'),
@@ -63,11 +59,14 @@ export default function SheetHeaderActionContent({
       ]}
     >
       <Image
-        systemName={action === 'commit' ? 'checkmark' : 'xmark'}
-        modifiers={[frame({
-          width: MAP_SHEET_ACTION_ICON_SIZE,
-          height: MAP_SHEET_ACTION_ICON_SIZE,
-        })]}
+        systemName={SHEET_HEADER_SYMBOLS[action]}
+        modifiers={[
+          font({ size: MAP_SHEET_ACTION_ICON_SIZE, weight: 'semibold' }),
+          foregroundColor(action === 'favorited' ? '#FF8AA6' : '#fff'),
+          ...(symbolOffset ? [offset(symbolOffset)] : []),
+          frame({ maxWidth: Infinity, maxHeight: Infinity }),
+          contentShape(shapes.circle()),
+        ]}
       />
     </Button>
   );

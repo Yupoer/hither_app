@@ -14,10 +14,11 @@
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import type { Coordinates } from '../types';
-import { distanceMeters } from '../utils/geo';
+import { distanceMeters, type TravelMode } from '../utils/geo';
 import { normalizePlaceSearchResults } from '../utils/normalizePlaceSearchResults';
 import { parseCoordinatePair } from '../utils/coordinateDestination';
 import { decodePlusCode, extractPlusCode } from '../utils/plusCode';
+import { requestWithDeadline } from '../utils/requestDeadline';
 import {
   MapsProxyError,
   isMapsServiceCircuitOpen,
@@ -35,7 +36,11 @@ const HitherMaps = requireOptionalNativeModule<{
     to: Coordinates,
     travelMode: TravelMode,
   ): Promise<DirectionsResult>;
+  getTravelETA?(id: string, from: Coordinates, to: Coordinates, travelMode: TravelMode): Promise<unknown>;
+  cancelTravelETA?(id: string): Promise<void>;
 }>('HitherMaps');
+
+let travelETASequence = 0;
 
 /** A search hit the "next gathering point" picker can drop on the map. */
 export interface PlaceResult {
@@ -72,7 +77,6 @@ export interface MapRegion {
 }
 
 export type { TravelMode } from '../utils/geo';
-import type { TravelMode } from '../utils/geo';
 
 /** Where a route geometry / ETA came from — drives UI labels. */
 export type RouteSource = 'native' | 'google' | 'estimate';
@@ -469,6 +473,29 @@ export function directionsAvailable(travelMode: TravelMode): boolean {
   const nativeMode = HitherMaps && travelMode !== 'bicycle'
     && !(Platform.OS === 'ios' && travelMode === 'transit');
   return Boolean(nativeMode) || !isMapsServiceCircuitOpen();
+}
+
+export async function getTravelETA(
+  { from, to, travelMode, signal }: { from: Coordinates; to: Coordinates; travelMode: TravelMode; signal: AbortSignal },
+): Promise<number | null> {
+  if (!HitherMaps?.getTravelETA || !HitherMaps.cancelTravelETA) return null;
+  const calculate = HitherMaps.getTravelETA.bind(HitherMaps);
+  const cancel = HitherMaps.cancelTravelETA.bind(HitherMaps);
+  const id = String(++travelETASequence);
+  try {
+    const seconds = await requestWithDeadline(async requestSignal => {
+      const cancelOnAbort = () => { void cancel(id).catch(() => undefined); };
+      requestSignal.addEventListener('abort', cancelOnAbort, { once: true });
+      try {
+        return await calculate(id, from, to, travelMode);
+      } finally {
+        requestSignal.removeEventListener('abort', cancelOnAbort);
+      }
+    }, 5_000, signal);
+    return typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getDirections(

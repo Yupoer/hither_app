@@ -22,25 +22,23 @@ function session(name, inventory, symbol) {
 
 const login = 'src/screens/LoginScreen.tsx';
 for (const [name, ids, symbol, id, kind] of [
-  ['auth.email.edit', 'A04', 'changeField', 'login-email', 'changeText'],
-  ['auth.password.edit', 'A04', 'changeField', 'login-password', 'changeText'],
-  ['auth.confirm.edit', 'A04', 'changeField', 'login-confirm-password', 'changeText'],
+  ['auth.email.open', 'A03,A04', 'LoginScreen', 'login-use-email'],
+  ['auth.email.edit', 'A04', 'setEmail', 'login-email', 'changeText'],
+  ['auth.email.next', 'A03,A04', 'go', 'login-email-next'],
+  ['auth.password.edit', 'A04', 'setPassword', 'login-password', 'changeText'],
   ['auth.email.submit', 'A01,A02,A04', 'submitEmail', 'login-submit'],
-  ['auth.signin.select', 'A03', 'setAuthMode', 'login-tab-signin'],
-  ['auth.signup.select', 'A03', 'setAuthMode', 'login-tab-signup'],
-  ['auth.password.reveal', 'A05', 'renderPasswordToggle', 'login-password-toggle'],
-  ['auth.confirm.reveal', 'A05', 'renderPasswordToggle', 'login-confirm-password-toggle'],
+  ['auth.signin.select', 'A03', 'go', 'login-back-to-signin'],
+  ['auth.signup.select', 'A03', 'go', 'login-create-account'],
+  ['auth.password.reveal', 'A05', 'setShowPassword', 'login-password-toggle'],
   ['auth.google', 'A06', 'runSocial', 'login-google'],
   ['auth.apple', 'A07', 'runSocial', 'login-apple'],
-  ['auth.reset.open', 'A08', 'openPasswordReset', 'login-forgot-password'],
-  ['auth.reset.edit', 'A09', 'changeField', 'login-reset-email', 'changeText'],
+  ['auth.reset.open', 'A08', 'go', 'login-forgot-password'],
+  ['auth.reset.edit', 'A09', 'setEmail', 'login-reset-email', 'changeText'],
   ['auth.reset.send', 'A09', 'submitReset', 'login-reset-submit'],
   ['auth.confirmation.resend', 'A10', 'resendConfirmation', 'login-resend-confirmation'],
-  ['auth.reset.back', 'A11', 'backToSignIn', 'login-reset-back'],
-  ['auth.pending.back', 'A11', 'backToSignIn', 'login-pending-back'],
-  ['auth.guest.open', 'A12', 'openGuestConfirm', 'login-guest'],
-  ['auth.guest.confirm', 'A13', 'continueAsGuest', 'guest-confirm-button'],
-  ['auth.guest.cancel', 'A14', 'cancelGuest', 'guest-cancel-button'],
+  ['auth.reset.back', 'A11', 'back', 'login-reset-back'],
+  ['auth.pending.back', 'A11', 'back', 'login-step-back'],
+  ['auth.close', 'A13,A14', 'close', 'login-close'],
   ['auth.privacy', 'A15', 'getLegalUrl', 'login-privacy'],
   ['auth.terms', 'A15', 'getLegalUrl', 'login-terms'],
 ]) control(name, ids, login, symbol, id, kind);
@@ -62,26 +60,21 @@ session('profile.nickname', 'P08', 'updateNickname');
 session('profile.refresh', 'P05', 'refreshProfile');
 
 for (const [name, ids, symbol, id, kind] of [
-  ['name', 'A19,G01,G02', 'setName', 'auth-name', 'changeText'],
+  ['name', 'A19,G02', 'setNickname', 'auth-name', 'changeText'],
   ['group-name', 'G01', 'setGroupName', 'auth-group-name', 'changeText'],
-  ['code', 'G02', 'setCode', 'auth-code', 'changeText'],
   ['create', 'G01,A19', 'submitAuth', 'auth-create-group'],
   ['join', 'G02,A19', 'submitAuth', 'auth-join-group'],
 ]) control(`team.${name}`, ids, 'src/screens/AuthScreen.tsx', symbol, id, kind);
-for (const [name, ids, testId] of [['create', 'T01', 'role-create'], ['join', 'T02', 'role-join'],
-  ['teams', 'T03,T04', 'role-my-teams'], ['signout', 'A22', 'role-signout']]) {
-  control(`home.${name}`, ids, 'src/screens/RoleSelectScreen.tsx', name === 'signout' ? 'startSignOut' : 'RoleSelectScreen', testId);
-}
-for (const [name, ids, id, symbol] of [['enter', 'T07,T08', 'team-enter', 'handleEnterGroup'],
-  ['leave', 'T09', 'team-leave', 'handleLeaveGroup'], ['clear', 'T10', 'teams-clear', 'handleClearAllGroups'],
-  ['create', 'T11', 'teams-empty-create', 'MyTeamsScreen'], ['join', 'T12', 'teams-empty-join', 'MyTeamsScreen'],
-  ['back', 'T13', 'teams-back', 'MyTeamsScreen']]) {
-  control(`teams.${name}`, ids, 'src/screens/MyTeamsScreen.tsx', symbol, id);
-}
-register('teams.expand', 'T06', 'src/screens/MyTeamsScreen.tsx', 'setExpandedGroupId', 'screen', '{ groupId }',
+const entry = 'src/screens/entry/EntryCodeInput.tsx';
+const teams = 'src/screens/MyTeamsScreen.tsx';
+control('team.code', 'G02,T02,T12', entry, 'updateCode', 'auth-code', 'changeText');
+control('home.create', 'T01,T11', entry, 'EntryCodeInput', 'role-create');
+control('home.login', 'A12', teams, 'TeamEntryScreen', 'entry-login');
+control('home.signout', 'A22', teams, 'startSignOut', 'role-signout');
+control('teams.leave', 'T09', teams, 'handleLeaveGroup', 'team-leave');
+register('teams.enter', 'T03,T06,T07,T08', teams, 'handleEnterGroup', 'screen', '{ groupId }',
   (app, { groupId }) => app.host.call({ kind: 'press', testId: `team-card-${groupId}` }));
 control('teams.retry', 'T04,T05', 'src/components/GroupLoadError.tsx', 'retry', 'group-load-retry');
-control('team.back', 'T13', 'src/screens/AuthScreen.tsx', 'AuthScreen', 'auth-back');
 
 for (const [name, ids, id, kind] of [['email', 'P01', 'account-email', 'changeText'],
   ['password', 'P01,P02', 'account-password', 'changeText'], ['confirm', 'P02', 'account-confirm-password', 'changeText'],
@@ -202,7 +195,7 @@ exports.scenarios = [
   scenario('D01,D02', 'submits trimmed feedback', 'Invalid and duplicate sends are disabled; exact trimmed feedback reaches transport; auto-close fires once after 1000ms.'),
   scenario('D01,D02', 'retains failed feedback', 'Network failure keeps the form; retry succeeds; manual close and unmount cancel the deferred close.'),
   scenario('G01,G02,G03,G04,G05,G06,G07,G08,G09,G10', 'runs group lifecycle services', 'Create/join, safe avatar projection, actor-scoped lite reads, owner-scoped verified leave, kick-code rotation, journey fields and leader-only straggler transport retain unrelated membership.'),
-  scenario('T01,T02,T03,T04,T05,T06,T09,T10,T11,T12,T13', 'routes home actions', 'Home routes and team badge reflect real reads; failed refresh retains cards; retry recovers; card expansion toggles; confirmed leave/clear and empty-list routes follow actual controls.'),
+  scenario('T01,T02,T03,T04,T05,T06,T09,T11,T12', 'routes home actions', 'Create, paste-to-join, cached team cards, retry, and one team leaving through horizontal swipe retain the other team.'),
   scenario('T07,T08', 'enters a saved team while profile enrichment is pending without overwriting the nickname', 'Saved-team entry reaches Map while profile enrichment is pending. It does not overwrite the existing profile nickname, and the late public identity restores the session name.'),
   scenario('G12,S01,S02,S03,S04,S05', 'sends, enriches, declines and accepts', 'Split maps a real subgroup; invitation reads enrich names; decline preserves membership; accept updates membership; merge restores the parent scope.'),
   scenario('S02,S03,S06', 'debounces real subgroup subscriptions', 'Initial invites do not notify; new IDs notify after 300ms once; duplicate events do not notify; offline foreground refresh retains the list; real hook decisions refresh it.'),

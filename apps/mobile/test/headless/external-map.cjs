@@ -12,6 +12,7 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
   const state = {
     searchResults: [], searchError: null, holdSearch: false,
     route: null, routeError: null, holdRoute: false,
+    etaByMode: {}, holdTravelETA: false,
     proxyStatus: 200, proxyError: null, proxyBodyError: null, proxyRetryAfter: null,
     picker: { canceled: true, assets: null }, pickerError: null,
     readError: null, copyError: null,
@@ -40,6 +41,24 @@ exports.createExternalMap = function createExternalMap({ strict = (_name, value)
     getDirections: (from, to, mode) => {
       assert(from && to && ['walk', 'drive', 'bicycle', 'transit'].includes(mode));
       return result('maps.getDirections', { from, to, mode });
+    },
+    getTravelETA: (id, from, to, mode) => {
+      assert.equal(typeof id, 'string');
+      assert(from && to && ['walk', 'drive', 'bicycle', 'transit'].includes(mode));
+      const key = `maps-eta-${id}`;
+      record('maps.getTravelETA', { id: key, from, to, mode });
+      const response = state.etaByMode[mode] ?? null;
+      if (!state.holdTravelETA) return Promise.resolve(response);
+      return new Promise((resolve, reject) => pending.set(key, { resolve, reject, response }));
+    },
+    cancelTravelETA: async id => {
+      assert.equal(typeof id, 'string');
+      const key = `maps-eta-${id}`;
+      record('maps.cancelTravelETA', { id: key });
+      const request = pending.get(key);
+      if (!request) return;
+      pending.delete(key);
+      request.resolve(null);
     },
   });
   const filesystem = boundary('FileSystem', {

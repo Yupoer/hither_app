@@ -1,13 +1,9 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useRef, useState } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
-import { ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
+import Pressable from './MotionPressable';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
 import { useTheme } from '../state/PreferencesContext';
@@ -39,7 +35,7 @@ export default function FeedbackSheet({
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const accent = colors.accent;
+  const { accent, accentText } = colors;
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<Category>('bug');
   const [status, setStatus] = useState<Status>('form');
@@ -113,11 +109,13 @@ export default function FeedbackSheet({
       visible={visible}
       onClose={handleClose}
       title={t('feedback.title')}
-      initialStage={1}
-      stageTwoRatio={0.9}
+      titleFontSize={25}
+      darkMaterial
+      stageOneRatio={0.64}
+      stageTwoRatio={0.88}
       wrapContentInScrollView={false}
     >
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={styles.body}>
         <Text style={styles.categoryLabel}>{t('feedback.categoryLabel')}</Text>
         <View style={styles.categoryRow}>
           {CATEGORIES.map((c) => {
@@ -134,7 +132,7 @@ export default function FeedbackSheet({
                   selected && { backgroundColor: accentMix(accent, 26), borderColor: accent },
                 ]}
               >
-                <Text style={[styles.categoryChipText, selected && { color: accent }]}>
+                <Text style={[styles.categoryChipText, selected && { color: '#fff' }]}>
                   {t(c.label)}
                 </Text>
               </Pressable>
@@ -170,9 +168,9 @@ export default function FeedbackSheet({
           accessibilityRole="button"
         >
           {status === 'sending' ? (
-            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
+            <ActivityIndicator accessibilityRole="progressbar" color={accentText} />
           ) : (
-            <Text style={styles.ctaText}>{t('feedback.send')}</Text>
+            <Text style={[styles.ctaText, { color: accentText }]}>{t('feedback.send')}</Text>
           )}
         </Pressable>
       </ScrollView>
@@ -181,37 +179,40 @@ export default function FeedbackSheet({
 }
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: 18, paddingBottom: 24, gap: 14 },
-  categoryLabel: { fontSize: 13, fontWeight: '700', color: glass.textSecondary },
+  body: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 26, gap: 14 },
+  categoryLabel: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: glass.textSecondary },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
+    minHeight: 44,
+    justifyContent: 'center',
+    borderRadius: 22,
     backgroundColor: glass.fill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
-  categoryChipText: { fontSize: 14, fontWeight: '600', color: glass.textSecondary },
+  categoryChipText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: glass.textSecondary },
   input: {
-    minHeight: 110,
-    borderRadius: 14,
+    minHeight: 128,
+    borderRadius: 20,
     padding: 14,
     color: '#fff',
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.body,
     backgroundColor: glass.fill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
-  error: { fontSize: 13, color: glass.danger },
-  success: { fontSize: 13, color: glass.ok },
+  error: { fontSize: APP_TEXT_SIZE.caption, color: glass.danger },
+  success: { fontSize: APP_TEXT_SIZE.caption, color: glass.ok },
   cta: {
-    height: 50,
-    borderRadius: 14,
+    minHeight: 56,
+    borderRadius: 28,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ctaDisabled: { opacity: 0.4 },
-  ctaText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  ctaText: { textAlign: 'center', fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: '#fff' },
 });

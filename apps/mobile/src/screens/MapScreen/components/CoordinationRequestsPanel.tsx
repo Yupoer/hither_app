@@ -1,17 +1,12 @@
+import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 /**
  * OTA-09 coordination request UI: list, detail (respond / override / outcome),
  * and minimal leader create form. Pull-to-refresh; navigation stays independent.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { glass, accentMix } from '../../../glass';
 import { useTranslation, type TranslationKey } from '../../../i18n';
@@ -537,7 +532,7 @@ const local = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   backLabel: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
   },
   input: {
@@ -548,7 +543,7 @@ const local = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: glass.fill,
     color: glass.textPrimary,
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
   },
   primaryBtn: {
     flexDirection: 'row',
@@ -562,7 +557,7 @@ const local = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   primaryBtnLabel: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
   },
   center: {
@@ -572,7 +567,7 @@ const local = StyleSheet.create({
   },
   error: {
     color: glass.danger,
-    fontSize: 13,
+    fontSize: APP_TEXT_SIZE.caption,
     marginTop: 8,
   },
 });

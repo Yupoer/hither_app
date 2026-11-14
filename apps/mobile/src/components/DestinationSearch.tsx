@@ -1,14 +1,10 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import { useForegroundUi } from '../state/foregroundUi';
 import React, { useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
-import { ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
+import Pressable from './MotionPressable';
 import { maps, type PlaceResult, type MapRegion } from '../native';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -283,18 +279,18 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderColor: glass.hairlineStrong,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    fontSize: 17,
+    fontSize: APP_TEXT_SIZE.body,
     color: '#fff',
   },
   hint: {
     color: glass.textTertiary,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: APP_TEXT_SIZE.caption,
+    lineHeight: APP_TEXT_LINE_HEIGHT.caption,
   },
   coordinateAction: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingVertical: spacing.sm },
-  coordinateActionText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
+  coordinateActionText: { color: colors.accent, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 24 },
-  statusText: { color: glass.textSecondary, fontSize: 14 },
+  statusText: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption },
   list: { flex: 1 },
   resultRow: {
     flexDirection: 'row',
@@ -314,6 +310,6 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: glass.fill,
   },
   resultText: { flex: 1, gap: 2 },
-  resultName: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  resultAddress: { color: glass.textSecondary, fontSize: 13, lineHeight: 18 },
+  resultName: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
+  resultAddress: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption, lineHeight: APP_TEXT_LINE_HEIGHT.caption },
 });

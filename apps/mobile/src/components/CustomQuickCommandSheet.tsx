@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
+import { Alert, ScrollView, StyleSheet } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
+import Pressable from './MotionPressable';
 import OverlaySheet from './OverlaySheet';
 import { useTranslation } from '../i18n';
 import { useSession } from '../state/SessionContext';
@@ -107,7 +110,7 @@ export default function CustomQuickCommandSheet({
 
 const styles = StyleSheet.create({
   body: { padding: 20, gap: 14 },
-  title: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  title: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   input: {
     minHeight: 48,
     borderWidth: StyleSheet.hairlineWidth,
@@ -117,7 +120,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
   },
   messageInput: { minHeight: 100, textAlignVertical: 'top' },
   saveButton: {
@@ -126,5 +129,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  saveText: { color: '#0c1a12', fontSize: 16, fontWeight: '700' },
+  saveText: { color: '#0c1a12', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
 });

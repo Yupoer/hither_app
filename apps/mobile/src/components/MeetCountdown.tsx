@@ -1,6 +1,7 @@
 import { useMountEffect } from '../hooks/useMountEffect';
 import React, { useState } from 'react';
-import { Text, type StyleProp, type TextStyle } from 'react-native';
+import { type StyleProp, type TextStyle } from 'react-native';
+import { AppText as Text } from './AppText';
 import { useForegroundClock } from '../state/foregroundUi';
 import { formatCompactDurationFromMinutes } from '../utils/geo';
 

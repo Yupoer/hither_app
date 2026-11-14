@@ -4,7 +4,9 @@ import { displayMemberAvatar } from '../../../constants/avatars';
 import { accentMix } from '../../../glass';
 import { type TranslationKey } from '../../../i18n';
 import React from 'react';
-import { ScrollView, Text, View, Pressable } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 
 export interface InviteTeammateSheetProps {

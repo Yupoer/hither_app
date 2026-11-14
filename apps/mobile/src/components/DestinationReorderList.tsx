@@ -6,9 +6,7 @@ import {
   AccessibilityInfo,
   Easing,
   PanResponder,
-  Pressable,
   StyleSheet,
-  Text,
   View,
   Modal,
   Dimensions,
@@ -16,8 +14,10 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { useReducedMotion } from 'react-native-reanimated';
-import { cappedFontScale } from '../theme/typeScale';
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT, cappedFontScale } from '../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import ReanimatedSwipeable, {
@@ -2380,8 +2380,6 @@ const Row = memo(function Row({
             active
             activationDelayMs={1600}
             pixelsPerSecond={gatherCardMarqueeSpeed}
-            startPauseMs={1000}
-            endPauseMs={1500}
             style={styles.rowTitle}
             containerStyle={styles.rowTitleMarquee}
           />
@@ -2470,7 +2468,7 @@ const makeStyles = (colors: Palette) =>
       paddingVertical: 10,
       alignItems: 'center',
     },
-    dashedBtnText: { fontSize: 13, fontWeight: '600' },
+    dashedBtnText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
     headerSetStayBtn: {
       borderWidth: 1,
       borderColor: 'rgba(255,107,53,0.55)',
@@ -2484,7 +2482,7 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
       gap: 4,
     },
-    headerSetStayText: { fontSize: 14, fontWeight: '700' },
+    headerSetStayText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
     dropLine: {
       position: 'absolute',
       top: 0,
@@ -2507,7 +2505,7 @@ const makeStyles = (colors: Palette) =>
       maxWidth: '70%',
     },
     stayBadgeText: { color: '#fff', fontSize: 12, flexShrink: 1 },
-    removeStayText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
+    removeStayText: { color: colors.accent, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
     headerCancelStayBtn: {
       minHeight: 28,
       paddingHorizontal: 10,
@@ -2517,7 +2515,7 @@ const makeStyles = (colors: Palette) =>
       borderColor: 'rgba(255,255,255,0.28)',
       justifyContent: 'center',
     },
-    headerCancelStayText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
+    headerCancelStayText: { color: colors.textSecondary, fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
     /** Stay duplicate warning: muted theme accent over a darkened surface. */
     rowStayDuplicate: {
       backgroundColor: accentOver(colors.accent, shade(colors.surface, -0.20), 28),
@@ -2557,15 +2555,15 @@ const makeStyles = (colors: Palette) =>
     },
     favoriteTitle: { color: colors.textPrimary, fontSize: FAVORITE_TITLE_SIZE, flex: 1, minWidth: 0 },
     favoriteEmpty: { color: colors.textSecondary, fontSize: FAVORITE_TITLE_SIZE, paddingVertical: spacing.md },
-    favTitle: { color: colors.textPrimary, fontSize: 15, flex: 1 },
+    favTitle: { color: colors.textPrimary, fontSize: APP_TEXT_SIZE.caption, flex: 1 },
     hint: {
       color: colors.textSecondary,
-      fontSize: 12,
+      fontSize: APP_TEXT_SIZE.caption,
       marginBottom: spacing.sm,
     },
     empty: {
       color: colors.textSecondary,
-      fontSize: 14,
+      fontSize: APP_TEXT_SIZE.caption,
       paddingVertical: spacing.md,
     },
     list: {
@@ -2621,7 +2619,7 @@ const makeStyles = (colors: Palette) =>
     },
     headerTitle: {
       color: colors.textPrimary,
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
     },
     headerDate: {
@@ -2659,7 +2657,7 @@ const makeStyles = (colors: Palette) =>
     },
     deleteActionText: {
       color: '#FFFFFF',
-      fontSize: 12,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
     },
     dragPreview: {
@@ -2691,7 +2689,7 @@ const makeStyles = (colors: Palette) =>
       justifyContent: 'center',
     },
     rowTitleMarquee: { flex: 0, minWidth: 0, alignSelf: 'stretch' },
-    rowTitle: { color: '#FFFFFF', fontSize: 15, lineHeight: 18, fontWeight: '600' },
+    rowTitle: { color: '#FFFFFF', fontSize: APP_TEXT_SIZE.caption, lineHeight: APP_TEXT_LINE_HEIGHT.caption, fontWeight: '600' },
     rowAddress: { color: colors.textSecondary, fontSize: Math.round(13 * REORDER_VISUAL_SCALE), marginTop: 2 },
     emojiBadge: {
       width: 26,
@@ -2881,7 +2879,7 @@ const makeStyles = (colors: Palette) =>
     setDaysText: {
       color: colors.accent,
       fontWeight: '600',
-      fontSize: 14,
+      fontSize: APP_TEXT_SIZE.caption,
       flexShrink: 1,
     },
     modalOverlay: {
@@ -2903,7 +2901,7 @@ const makeStyles = (colors: Palette) =>
       gap: spacing.md,
     },
     modalTitle: {
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: 'bold',
       color: colors.textPrimary,
       marginBottom: spacing.lg,
@@ -2915,7 +2913,7 @@ const makeStyles = (colors: Palette) =>
       marginBottom: spacing.lg,
     },
         modalLabel: {
-          fontSize: 16,
+          fontSize: APP_TEXT_SIZE.caption,
           color: colors.textPrimary,
         },
         datePickerButton: {
@@ -2929,7 +2927,7 @@ const makeStyles = (colors: Palette) =>
         },
         datePickerText: {
           color: colors.textPrimary,
-          fontSize: 15,
+          fontSize: APP_TEXT_SIZE.caption,
         },
     daysControls: {
       flexDirection: 'row',
@@ -2943,12 +2941,12 @@ const makeStyles = (colors: Palette) =>
       backgroundColor: colors.border,
     },
     daysBtnText: {
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: 'bold',
       color: colors.textPrimary,
     },
     daysValue: {
-      fontSize: 16,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: 'bold',
       color: colors.textPrimary,
       paddingHorizontal: 16,

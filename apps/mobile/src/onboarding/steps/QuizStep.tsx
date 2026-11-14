@@ -1,12 +1,13 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import React, { useState } from 'react';
 import {
   Image,
   Platform,
-  Pressable,
   StyleSheet,
   View,
   type ImageSourcePropType,
 } from 'react-native';
+import Pressable from '../../components/MotionPressable';
 import { HitherText } from '../../components/HitherText';
 import { useTheme } from '../../state/PreferencesContext';
 import { accentMix, accentOver } from '../../glass';
@@ -163,9 +164,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 10,
   },
-  tag: { position: 'absolute', top: 10, left: 12, fontSize: 12, fontWeight: '800' },
+  tag: { position: 'absolute', top: 10, left: 12, fontSize: APP_TEXT_SIZE.caption, fontWeight: '800' },
   icon: { width: 92, height: 92 },
-  label: { fontSize: 16.5, fontWeight: '700', marginTop: 14, textAlign: 'center' },
+  label: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', marginTop: 14, textAlign: 'center' },
 });
 
 export const F1Step = makeQuizStep(

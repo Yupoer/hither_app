@@ -1,5 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import { ActivityIndicator, ScrollView, View, Text, TextInput, Pressable, Alert } from 'react-native';
+import { ActivityIndicator, ScrollView, View, Alert } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import OverlaySheet from '../../../components/OverlaySheet';
 import { HitherText } from '../../../components/HitherText';

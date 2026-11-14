@@ -513,6 +513,31 @@ public final class HitherMetricsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("HitherMetrics")
     Events("powerStateChanged")
+    Constant("supportsNativePane") { true }
+    View(HitherPaneView.self) {
+      Prop("closedHeight") { (view: HitherPaneView, value: Double) in view.closedHeight = CGFloat(value) }
+      Prop("referenceHeight") { (view: HitherPaneView, value: Double) in view.referenceHeight = CGFloat(value) }
+      Prop("grabberHeight") { (view: HitherPaneView, value: Double) in view.grabberHeight = CGFloat(value) }
+      Prop("direction") { (view: HitherPaneView, value: Int) in view.direction = value }
+      Prop("cornerRadius") { (view: HitherPaneView, value: Double) in view.cornerRadius = CGFloat(value) }
+      Prop("contentVisible") { (view: HitherPaneView, value: Bool) in view.contentVisible = value }
+    }
+    View(HitherPaneGradientView.self) {
+      ViewName("PaneGradient")
+      Prop("colors") { (view: HitherPaneGradientView, colors: [UIColor]) in view.setColors(colors) }
+      Prop("cornerRadius") { (view: HitherPaneGradientView, value: Double) in view.layer.cornerRadius = CGFloat(value) }
+      Prop("borderWidth") { (view: HitherPaneGradientView, value: Double) in view.layer.borderWidth = CGFloat(value) }
+      Prop("borderColor") { (view: HitherPaneGradientView, value: UIColor) in view.layer.borderColor = value.cgColor }
+    }
+    View(HitherPaneSurfaceView.self) {
+      ViewName("PaneSurface")
+      Prop("colors") { (view: HitherPaneSurfaceView, colors: [UIColor]) in view.setColors(colors) }
+      Prop("cornerRadius") { (view: HitherPaneSurfaceView, value: Double) in view.cornerRadius = CGFloat(value) }
+      Prop("borderWidth") { (view: HitherPaneSurfaceView, value: Double) in view.gradient.borderWidth = CGFloat(value) }
+      Prop("borderColor") { (view: HitherPaneSurfaceView, value: UIColor) in view.gradient.borderColor = value.cgColor }
+      Prop("solidColor") { (view: HitherPaneSurfaceView, value: UIColor) in view.solidColor = value }
+      Prop("blurIntensity") { (view: HitherPaneSurfaceView, value: Double) in view.blurIntensity = value }
+    }
 
     OnStartObserving {
       // Read before registration: iOS otherwise may not activate thermal notifications.

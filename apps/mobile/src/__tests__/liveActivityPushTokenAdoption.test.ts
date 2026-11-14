@@ -83,6 +83,7 @@ jest.mock('../native', () => ({
     }),
     startPushToStartTokenObservation: jest.fn().mockResolvedValue(undefined),
     endAllGroupActivities: jest.fn().mockResolvedValue(undefined),
+    completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string) => undefined),
     endGroupActivity: jest.fn().mockResolvedValue(undefined),
     startGroupActivity: jest.fn().mockResolvedValue({
       activityId: 'act-start',
@@ -183,6 +184,7 @@ describe('decidePushTokenAdoption (#146 Sol)', () => {
 
   it('reconciler adopt failure prevents pairing foreign id with live token', async () => {
     const api = {
+      completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string) => undefined),
       endGroupActivity: jest.fn(async () => undefined),
       endAllGroupActivities: jest.fn(async () => undefined),
       startGroupActivity: jest.fn(async () => ({

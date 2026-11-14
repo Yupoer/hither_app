@@ -2,31 +2,31 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Host, Switch } from '@expo/ui';
 
-/**
- * Single wrapper for on/off rows. Screens must not import RN Switch or paint
- * platform switch chrome themselves.
- */
+export type SystemToggleProps = {
+  value: boolean;
+  onValueChange: (next: boolean) => void;
+  accessibilityLabel?: string;
+  testID?: string;
+  disabled?: boolean;
+};
+
 export default function SystemToggle({
   value,
   onValueChange,
   accessibilityLabel,
   testID,
-}: {
-  value: boolean;
-  onValueChange: (next: boolean) => void;
-  accessibilityLabel?: string;
-  testID?: string;
-}) {
+  disabled = false,
+}: SystemToggleProps) {
   return (
     <View
       style={styles.wrap}
       accessibilityRole="switch"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ checked: value }}
+      accessibilityState={{ checked: value, disabled }}
       testID={testID}
     >
       <Host matchContents style={styles.host} colorScheme="dark">
-        <Switch value={value} onValueChange={onValueChange} />
+        <Switch value={value} disabled={disabled} onValueChange={onValueChange} />
       </Host>
     </View>
   );

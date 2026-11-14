@@ -15,7 +15,7 @@
     {
       "id": "A03",
       "area": "Authentication and session",
-      "source": "Switch sign in/sign up: `LoginScreen::setAuthMode`"
+      "source": "Email step continues to password or explicit account creation without credential tabs"
     },
     {
       "id": "A04",
@@ -60,17 +60,17 @@
     {
       "id": "A12",
       "area": "Authentication and session",
-      "source": "Open guest warning: `LoginScreen::openGuestConfirm`"
+      "source": "Open full-screen login from the welcome or returning entry"
     },
     {
       "id": "A13",
       "area": "Authentication and session",
-      "source": "Confirm guest: `LoginScreen::continueAsGuest`"
+      "source": "Close full-screen login to entry without creating a guest account"
     },
     {
       "id": "A14",
       "area": "Authentication and session",
-      "source": "Cancel guest warning: `LoginScreen::cancelGuest`"
+      "source": "Dismiss login and retain all existing session state"
     },
     {
       "id": "A15",
@@ -110,7 +110,7 @@
     {
       "id": "A22",
       "area": "Authentication and session",
-      "source": "Sign out from RoleSelect/settings: `RoleSelectScreen::startSignOut` → `SessionContext::signOutWithJourneyCleanup` → `useAuthFlow::signOut`"
+      "source": "Sign out via TeamEntryScreen or Settings → SessionContext signOutWithJourneyCleanup"
     },
     {
       "id": "A23",
@@ -170,22 +170,22 @@
     {
       "id": "T01",
       "area": "Home/team list",
-      "source": "RoleSelect create: `RoleSelectScreen` role-create callback"
+      "source": "TeamEntryScreen opens create form from EntryCodeInput"
     },
     {
       "id": "T02",
       "area": "Home/team list",
-      "source": "RoleSelect join: role-join callback"
+      "source": "A complete normalized invite opens confirmation from EntryCodeInput"
     },
     {
       "id": "T03",
       "area": "Home/team list",
-      "source": "RoleSelect MyTeams: role-my-teams callback"
+      "source": "Joined teams render in returning TeamEntryScreen"
     },
     {
       "id": "T04",
       "area": "Home/team list",
-      "source": "RoleSelect load/retry: `useJoinedGroups(user.id,false)`; focus retry"
+      "source": "TeamEntryScreen focus loads useJoinedGroups; GroupLoadError retries"
     },
     {
       "id": "T05",
@@ -195,7 +195,7 @@
     {
       "id": "T06",
       "area": "Home/team list",
-      "source": "Expand/collapse team card: `MyTeamsScreen` NativeTeamCard onPress"
+      "source": "Pressing a team card enters Map directly"
     },
     {
       "id": "T07",
@@ -213,24 +213,14 @@
       "source": "Leave one team: `MyTeamsScreen::handleLeaveGroup`"
     },
     {
-      "id": "T10",
-      "area": "Home/team list",
-      "source": "Leave all teams: `MyTeamsScreen::handleClearAllGroups`"
-    },
-    {
       "id": "T11",
       "area": "Home/team list",
-      "source": "Empty MyTeams create: teams-empty-create callback"
+      "source": "Create form is reachable from a returning or first-run entry"
     },
     {
       "id": "T12",
       "area": "Home/team list",
-      "source": "Empty MyTeams join: teams-empty-join callback"
-    },
-    {
-      "id": "T13",
-      "area": "Home/team list",
-      "source": "Back actions: MyTeams and `AuthScreen` back button"
+      "source": "Code confirmation is reachable from a returning or first-run entry"
     },
     {
       "id": "G01",

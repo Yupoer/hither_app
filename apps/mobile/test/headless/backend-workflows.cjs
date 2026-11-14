@@ -126,7 +126,7 @@ function execute(b, operation) {
     if (!m) return fail('not_member');
     if (m.subgroup_id != null) return fail('already_in_subgroup', 'P0001');
     if (!args.p_name?.trim()) return fail('invalid_name', '22023');
-    const row = { id: randomUUID(), group_id: args.p_group, name: args.p_name.trim(), mode: 'led', leader_id: userId, parent_subgroup_id: null };
+    const row = { id: randomUUID(), group_id: args.p_group, name: args.p_name.trim(), mode: 'led', leader_id: userId, parent_subgroup_id: null, created_at: iso(b) };
     b.tables.subgroups.push(row); m.subgroup_id = row.id; m.solo = false;
     b.publish('subgroups', row, 'INSERT'); b.publish('memberships', m); return ok(row);
   }

@@ -7,6 +7,17 @@ import Contacts
 //                   resolve([]) only when MapKit genuinely found nothing.
 //   - getDirections: reject() on error / no route.
 public class HitherMapsModule: Module {
+  private struct ETARequest {
+    let directions: MKDirections
+    let promise: Promise
+
+    func cancel() {
+      directions.cancel()
+      promise.resolve(nil)
+    }
+  }
+  private var pendingETAs: [String: ETARequest] = [:]
+
   public func definition() -> ModuleDefinition {
     Name("HitherMaps")
 
@@ -66,6 +77,50 @@ public class HitherMapsModule: Module {
           "expectedTravelTimeSeconds": route.expectedTravelTime,
           "points": points,
         ])
+      }
+    }
+
+    AsyncFunction("getTravelETA") { [self] (id: String, from: [String: Any], to: [String: Any], travelMode: String, promise: Promise) in
+      guard let fromCoord = Self.coordinate(from: from), CLLocationCoordinate2DIsValid(fromCoord),
+            let toCoord = Self.coordinate(from: to), CLLocationCoordinate2DIsValid(toCoord) else {
+        promise.resolve(nil)
+        return
+      }
+      let request = MKDirections.Request()
+      request.source = MKMapItem(placemark: MKPlacemark(coordinate: fromCoord))
+      request.destination = MKMapItem(placemark: MKPlacemark(coordinate: toCoord))
+      switch travelMode {
+      case "walk": request.transportType = .walking
+      case "drive": request.transportType = .automobile
+      case "transit": request.transportType = .transit
+      case "bicycle": request.transportType = .cycling
+      default:
+        promise.resolve(nil)
+        return
+      }
+      let transportType = request.transportType
+      let directions = MKDirections(request: request)
+      self.pendingETAs[id] = ETARequest(directions: directions, promise: promise)
+      directions.calculateETA { [weak self] response, error in
+        guard let pending = self?.pendingETAs.removeValue(forKey: id) else { return }
+        guard error == nil, let response, response.transportType == transportType,
+              response.expectedTravelTime.isFinite, response.expectedTravelTime > 0 else {
+          pending.promise.resolve(nil)
+          return
+        }
+        pending.promise.resolve(response.expectedTravelTime)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("cancelTravelETA") { (id: String) in
+      self.pendingETAs.removeValue(forKey: id)?.cancel()
+    }.runOnQueue(.main)
+
+    OnDestroy {
+      DispatchQueue.main.async {
+        let pending = self.pendingETAs
+        self.pendingETAs.removeAll()
+        for request in pending.values { request.cancel() }
       }
     }
   }

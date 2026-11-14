@@ -1,24 +1,28 @@
+import { makeDestinationRegular } from '../../../api/services/DestinationService';
 import { reorderDestinations, updateGroupTripDetails, deleteDestination, addDestination, clearDailyAccommodation, setDailyAccommodation, updateDestinationEmojiColor } from '../../../api/client';
-import { isDemoGroup } from '../../../api/demo';
+import { demoSetDailyAccommodation, demoSetTripDetails, isDemoGroup } from '../../../api/demo';
 import { resolveDailyAccommodationSourceId } from '../../../api/services/DailyAccommodationService';
 import { type TranslationKey } from '../../../i18n';
-import type { Destination } from '../../../types';
+import type { DailyAccommodation, Destination, Group } from '../../../types';
 import { logEvent, logError } from '../../../utils/activityLog';
 import { confirmAction } from '../../../utils/confirm';
 import { buildOpenReorderPayload } from '../../../utils/openReorderSlots';
 import { getOperationErrorMessage, classifyOperationError } from '../../../utils/operationError';
-import { dateForTripDay, localDayKey, openDestinationsForReorder } from '../../../utils/tripDay';
+import { dateForTripDay, localDayKey, openDestinationsForReorder, parseDateOnlyLocal } from '../../../utils/tripDay';
 import { runUiAction } from '../../../utils/uiAction';
 import { hasDraftWork } from './useRouteDraft';
 import { type ReorderUpdate, applyReorderUpdates, persistedReorderUpdates } from '../itineraryReorder';
+import { d6DayNumber, d6Reorder } from '../d6Itinerary';
+import { alignMeetTimeToTripDay } from '../../../utils/meetTime';
 import React, { useCallback, useRef } from 'react';
 import { Alert } from 'react-native';
 import type { RouteDraft } from './useRouteDraft';
-import type { DailyAccommodation, Group } from '../../../types';
 import type { GroupReloadReason } from '../../../utils/syncAuthority';
 
 export interface UseItineraryMutationsInput {
   allScopedDestinations: Destination[];
+  allTripDestinations?: Destination[];
+  canEditD6Trip?: boolean;
   canEditItinerary: boolean;
   destinations: Destination[];
   group: Group | null;
@@ -47,6 +51,8 @@ export interface UseItineraryMutationsInput {
 
 export function useItineraryMutations({
   allScopedDestinations,
+  allTripDestinations = allScopedDestinations,
+  canEditD6Trip = false,
   canEditItinerary,
   destinations,
   group,
@@ -73,6 +79,8 @@ export function useItineraryMutations({
   workflowContext,
 }: UseItineraryMutationsInput) {
   const routeFlushInFlightRef = useRef(false);
+  const pooledStays = useRef(new Map<string, string>());
+  const convertedStays = useRef(new Map<string, string>());
 
   /**
    * Navigation promote must hit the server immediately (not the route draft).
@@ -356,32 +364,275 @@ export function useItineraryMutations({
     await openKmlImport();
   }, [openKmlImport, setKmlScopeId]);
 
-  const persistRouteDeletions = useCallback(async (ids: string[]) => {
-    if (!groupId || !canEditItinerary) return;
+  const persistRouteDeletions = useCallback(async (ids: string[], inline = false): Promise<boolean> => {
+    if (!groupId || !canEditItinerary) return false;
     const context = workflowContext;
     const isCurrent = () => isWorkflowContextCurrent(context);
     try {
       for (const id of ids) {
-        if (!isCurrent()) return;
-        const original = (routeDraft.latestDestinations() ?? routeEditorServerDestinations).find(d => d.id === id);
+        if (!isCurrent()) return false;
+        const source = inline ? allScopedDestinations : routeDraft.latestDestinations() ?? routeEditorServerDestinations;
+        const original = source.find((destination) => destination.id === id);
+        if (inline && (!original || original.closedAt)) return false;
         const sessionId = original ? resolveCurrentNavigationSessionId(original) : null;
         if (!id.startsWith('draft-')) await deleteDestination(groupId, id, sessionId);
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         if (isDemoGroup(groupId)) await refresh();
         else await refreshLocalSnapshot();
-        if (!isCurrent()) return;
+        if (!isCurrent()) return false;
         stopRemovedDestination(id, sessionId);
         const draft = routeDraft.latestDestinations();
         if (draft) routeDraft.setDestinations(draft.filter(d => d.id !== id));
         routeDraft.forgetDeleted(id);
         setRouteSelectedIds(previous => previous.filter(value => value !== id));
       }
+      return true;
     } catch (cause) {
       // Service returns after a local transaction. Only a real local-save failure reaches here.
-      if (isCurrent()) Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+      if (isCurrent()) {
+        if (inline) showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+        else Alert.alert(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+      }
+      return false;
     }
   }, [canEditItinerary, groupId, resolveCurrentNavigationSessionId, routeEditorServerDestinations, routeDraft, setRouteSelectedIds,
-    refresh, refreshLocalSnapshot, stopRemovedDestination, t, workflowContext, isWorkflowContextCurrent]);
+    refresh, refreshLocalSnapshot, stopRemovedDestination, t, workflowContext, isWorkflowContextCurrent,
+    allScopedDestinations, showOperationFailure]);
+
+  const deleteD6Destinations = useCallback((ids: string[]) => persistRouteDeletions(ids, true), [persistRouteDeletions]);
+
+  const refreshD6Itinerary = useCallback(async () => {
+    if (isDemoGroup(groupId)) await refresh();
+    else {
+      await refreshLocalSnapshot();
+      void refresh().catch(() => undefined);
+    }
+  }, [groupId, refresh, refreshLocalSnapshot]);
+
+  const addD6StayToPool = useCallback(async (stay: DailyAccommodation) => {
+    if (!groupId) return;
+    const previousId = pooledStays.current.get(stay.id);
+    if (previousId) return;
+    const id = await addDestination(groupId, {
+      title: stay.title,
+      address: stay.address,
+      coordinates: stay.coordinates,
+      day: null,
+    });
+    if (!id) throw new Error('missing_pooled_stay');
+    pooledStays.current.set(stay.id, id);
+  }, [groupId]);
+
+  const moveD6StayToPool = useCallback(async (stay: DailyAccommodation) => {
+    if (!groupId) return;
+    const source = allTripDestinations.find((row) => row.id === stay.sourceDestinationId && !row.closedAt);
+    if (!source) {
+      await addD6StayToPool(stay);
+      return;
+    }
+    if (source.id === navTargetId || source.id === group?.activeDestinationId) throw new Error(t('trip.endBeforePool'));
+    const scope = allTripDestinations.filter((row) => row.subgroupId === source.subgroupId);
+    const updates = d6Reorder(scope, { ids: [source.id], day: null });
+    if (updates.length) await reorderDestinations(groupId, persistedReorderUpdates(scope, updates, routeDepartureDate));
+  }, [addD6StayToPool, allTripDestinations, group?.activeDestinationId, groupId, navTargetId, routeDepartureDate, t]);
+
+  const saveD6DailyAccommodation = useCallback(async (stayDate: string, day: number | undefined,
+    stay: Pick<DailyAccommodation, 'title' | 'address' | 'coordinates' | 'sourceDestinationId'> | null) => {
+    if (!groupId) return;
+    if (isDemoGroup(groupId)) demoSetDailyAccommodation(stayDate, stay);
+    else if (stay) await setDailyAccommodation(groupId, stayDate, { ...stay, day });
+    else await clearDailyAccommodation(groupId, stayDate, day);
+  }, [groupId]);
+
+  const assignD6Accommodation = useCallback(async (
+    day: number,
+    input: Pick<DailyAccommodation, 'title' | 'address' | 'coordinates' | 'sourceDestinationId'>,
+  ) => {
+    if (!groupId || !canEditD6Trip || !Number.isInteger(day) || day < 1 || day > (routeTripDays ?? 1)) return false;
+    const departure = routeDepartureDate ?? localDayKey(new Date());
+    const date = dateForTripDay(departure, day);
+    if (!date) return false;
+    const stayDate = localDayKey(date);
+    const existing = serverDailyAccommodations.find((row) => row.stayDate === stayDate);
+    const source = input.sourceDestinationId
+      ? allTripDestinations.find((row) => row.id === input.sourceDestinationId && row.subgroupId == null && !row.closedAt)
+      : undefined;
+    if (input.sourceDestinationId && (!source || source.day !== day)) return false;
+    if (source?.id && source.id === existing?.sourceDestinationId) return true;
+    if (existing?.sourceDestinationId && [navTargetId, group?.activeDestinationId].includes(existing.sourceDestinationId)) {
+      showOperationFailure(t('map.setFailedTitle'), t('trip.endBeforePool'));
+      return false;
+    }
+    const context = workflowContext;
+    const isCurrent = () => isWorkflowContextCurrent(context);
+    try {
+      if (!isCurrent()) return false;
+      if (!routeDepartureDate) {
+        if (isDemoGroup(groupId)) demoSetTripDetails(routeTripDays ?? 1, departure);
+        else await updateGroupTripDetails(groupId, routeTripDays ?? 1, departure);
+      }
+      if (!isCurrent()) return false;
+      if (existing) await moveD6StayToPool(existing);
+      if (!isCurrent()) return false;
+      await saveD6DailyAccommodation(stayDate, day, input);
+      if (existing) pooledStays.current.delete(existing.id);
+      await refreshD6Itinerary();
+      return true;
+    } catch (cause) {
+      if (isCurrent()) {
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+        await refreshD6Itinerary().catch(() => undefined);
+      }
+      return false;
+    }
+  }, [allTripDestinations, canEditD6Trip, group?.activeDestinationId, groupId, isWorkflowContextCurrent, moveD6StayToPool, navTargetId,
+    refreshD6Itinerary, routeDepartureDate, routeTripDays, saveD6DailyAccommodation, serverDailyAccommodations,
+    showOperationFailure, t, workflowContext]);
+
+  const mutateD6Accommodation = useCallback(async (stay: DailyAccommodation, action: 'delete' | 'pool') => {
+    if (!groupId || !canEditD6Trip || stay.groupId !== groupId
+      || !serverDailyAccommodations.some((row) => row.id === stay.id)) return false;
+    const source = allTripDestinations.find((row) => row.id === stay.sourceDestinationId && !row.closedAt);
+    if (action === 'pool' && source?.id === navTargetId) return false;
+    const context = workflowContext;
+    const isCurrent = () => isWorkflowContextCurrent(context);
+    try {
+      if (!isCurrent()) return false;
+      if (action === 'pool') await moveD6StayToPool(stay);
+      else if (source) {
+        const sessionId = resolveCurrentNavigationSessionId(source);
+        await deleteDestination(groupId, source.id, sessionId);
+        if (isCurrent()) stopRemovedDestination(source.id, sessionId);
+      }
+      if (!isCurrent()) return false;
+      const departure = parseDateOnlyLocal(routeDepartureDate);
+      const date = parseDateOnlyLocal(stay.stayDate);
+      const day = departure && date ? d6DayNumber(departure, date) : undefined;
+      await saveD6DailyAccommodation(stay.stayDate, day && day > 0 ? day : undefined, null);
+      pooledStays.current.delete(stay.id);
+      await refreshD6Itinerary();
+      return true;
+    } catch (cause) {
+      if (isCurrent()) {
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+        await refreshD6Itinerary().catch(() => undefined);
+      }
+      return false;
+    }
+  }, [allTripDestinations, canEditD6Trip, groupId, isWorkflowContextCurrent, moveD6StayToPool, navTargetId,
+    refreshD6Itinerary, resolveCurrentNavigationSessionId, routeDepartureDate, saveD6DailyAccommodation, serverDailyAccommodations,
+    showOperationFailure, stopRemovedDestination, t, workflowContext]);
+
+  const unsetD6Accommodation = useCallback(async (
+    stop: Destination,
+    stay: DailyAccommodation | undefined,
+  ): Promise<Destination | false> => {
+    if (!groupId || !canEditD6Trip || stop.day == null || stop.closedAt
+      || (stay && (stay.groupId !== groupId || !serverDailyAccommodations.some(row => row.id === stay.id)))) return false;
+
+    const source = allTripDestinations.find(row => row.id === (stay?.sourceDestinationId ?? stop.id) && !row.closedAt && !row.subgroupId);
+    if (!source && !stay) return false;
+    const isCurrent = () => isWorkflowContextCurrent(workflowContext);
+    if (!isCurrent()) return false;
+    let id = source?.id;
+    if (!id && stay) {
+      id = convertedStays.current.get(stay.id);
+      if (!id) {
+        id = await addDestination(groupId, { title: stay.title, address: stay.address, coordinates: stay.coordinates, day: stop.day });
+        if (!id) return false;
+        convertedStays.current.set(stay.id, id);
+      }
+    }
+    if (!id || !isCurrent()) return false;
+    if (source?.kind === 'accommodation') await makeDestinationRegular(groupId, source.id);
+    if (!isCurrent()) return false;
+    if (stay) {
+      await saveD6DailyAccommodation(stay.stayDate, stop.day, null);
+      convertedStays.current.delete(stay.id);
+    }
+    await refreshD6Itinerary();
+    return isCurrent() && { ...source ?? stop, id, kind: 'stop', stayAnchor: false };
+  }, [allTripDestinations, canEditD6Trip, groupId, isWorkflowContextCurrent, refreshD6Itinerary,
+    saveD6DailyAccommodation, serverDailyAccommodations, workflowContext]);
+
+  const updateD6TripDetails = useCallback(async (days: number, date: string) => {
+    const nextDeparture = parseDateOnlyLocal(date);
+    if (!groupId || !canEditD6Trip || days < 1 || !Number.isInteger(days) || !nextDeparture) return false;
+    const previousDeparture = parseDateOnlyLocal(routeDepartureDate) ?? new Date();
+    const dateChanged = localDayKey(previousDeparture) !== localDayKey(nextDeparture);
+    const open = openDestinationsForReorder(allTripDestinations);
+    const displaced = open.filter((row) => (row.day ?? 0) > days);
+    if (displaced.some((row) => row.id === navTargetId || row.id === group?.activeDestinationId)) {
+      showOperationFailure(t('map.setFailedTitle'), t('trip.endBeforePool'));
+      return false;
+    }
+    const context = workflowContext;
+    const isCurrent = () => isWorkflowContextCurrent(context);
+    try {
+      const stays = serverDailyAccommodations.flatMap((stay) => {
+        const oldDate = parseDateOnlyLocal(stay.stayDate);
+        if (!oldDate) return [];
+        const day = d6DayNumber(previousDeparture, oldDate);
+        if (day < 1 || day > (routeTripDays ?? 1)) return [];
+        const newDate = day <= days ? dateForTripDay(date, day) : null;
+        return [{ stay, day, nextDate: newDate ? localDayKey(newDate) : null }];
+      });
+      for (const { stay, nextDate } of stays) {
+        if (!isCurrent()) return false;
+        if (!nextDate && !open.some((row) => row.id === stay.sourceDestinationId)) await addD6StayToPool(stay);
+      }
+
+      for (const scopeId of new Set(open.map((row) => row.subgroupId))) {
+        if (!isCurrent()) return false;
+        const scope = allTripDestinations.filter((row) => row.subgroupId === scopeId);
+        const updates = d6Reorder(scope, {
+          ids: displaced.filter((row) => row.subgroupId === scopeId).map((row) => row.id),
+          day: null,
+        });
+        const aligned = new Map(open.flatMap((row) => {
+          if (!dateChanged || row.subgroupId !== scopeId || row.day == null || row.day > days || !row.meetAt) return [];
+          return [[row.id, alignMeetTimeToTripDay(new Date(row.meetAt), date, row.day).toISOString()]];
+        }));
+        const byId = new Map(scope.map((row) => [row.id, row]));
+        const persist = updates.length
+          ? persistedReorderUpdates(scope, updates, routeDepartureDate)
+          : [...aligned.keys()].flatMap((id) => {
+              const row = byId.get(id);
+              return row ? [{ id, position: row.order, day: row.day }] : [];
+            });
+        if (persist.length) await reorderDestinations(groupId, persist.map((update) => {
+          const meetAt = aligned.get(update.id);
+          return meetAt ? { ...update, meetAt } : update;
+        }));
+      }
+      if (!isCurrent()) return false;
+      const incomingDates = new Set(stays.flatMap(({ nextDate }) => nextDate ? [nextDate] : []));
+      for (const { stay, day, nextDate } of stays) {
+        if (!isCurrent()) return false;
+        if (nextDate && nextDate !== stay.stayDate) await saveD6DailyAccommodation(nextDate, day, stay);
+      }
+      for (const { stay, day } of stays) {
+        if (!isCurrent()) return false;
+        if (!incomingDates.has(stay.stayDate)) {
+          await saveD6DailyAccommodation(stay.stayDate, day, null);
+          pooledStays.current.delete(stay.id);
+        }
+      }
+      if (!isCurrent()) return false;
+      if (isDemoGroup(groupId)) demoSetTripDetails(days, date);
+      else await updateGroupTripDetails(groupId, days, date);
+      await refreshD6Itinerary();
+      return true;
+    } catch (cause) {
+      if (isCurrent()) {
+        showOperationFailure(t('map.setFailedTitle'), getOperationErrorMessage(cause));
+        await refreshD6Itinerary().catch(() => undefined);
+      }
+      return false;
+    }
+  }, [addD6StayToPool, allTripDestinations, canEditD6Trip, group?.activeDestinationId, groupId, isWorkflowContextCurrent, navTargetId,
+    refreshD6Itinerary, routeDepartureDate, routeTripDays, saveD6DailyAccommodation, serverDailyAccommodations,
+    showOperationFailure, t, workflowContext]);
 
   const handleDelete = useCallback(
     (id: string) => {
@@ -468,12 +719,17 @@ export function useItineraryMutations({
   }, [groupId, routeDraft]);
 
   return {
+    assignD6Accommodation,
+    deleteD6Destinations,
     flushRouteDraft,
     handleDelete,
     handleDeleteMany,
     handleReorder,
     handleUpdateEmojiColor,
     handleUpdateTripDetails,
+    mutateD6Accommodation,
+    unsetD6Accommodation,
     openKmlImportForScope,
+    updateD6TripDetails,
   };
 }

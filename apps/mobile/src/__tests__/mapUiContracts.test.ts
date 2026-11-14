@@ -59,7 +59,8 @@ const preferences = readFileSync(
   join(__dirname, '../state/PreferencesContext.tsx'),
   'utf8',
 );
-const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
+const teamEntry = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
+const codeEntry = readFileSync(join(__dirname, '../screens/entry/EntryCodeInput.tsx'), 'utf8');
 const i18n = [
   readFileSync(join(__dirname, '../i18n/locales/zh.ts'), 'utf8'),
   readFileSync(join(__dirname, '../i18n/locales/en.ts'), 'utf8'),
@@ -125,7 +126,7 @@ describe('map UI placement contracts', () => {
 
   it('keeps reorder actions on one row with readable text', () => {
     expect(reorderList).toContain('flexWrap: \'nowrap\'');
-    expect(reorderList).toContain('fontSize: 14');
+    expect(reorderList).toContain('fontSize: APP_TEXT_SIZE.caption');
     expect((reorderList.match(/numberOfLines=\{1\}/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
@@ -251,9 +252,6 @@ describe('map UI placement contracts', () => {
   });
 
   it('exposes a settings OTA apply CTA only when an update is available', () => {
-    expect(settingsOverlay).toContain('checkForUpdateAsync');
-    // Manual apply shares single-flight lifecycle with auto bootstrap.
-    expect(settingsOverlay).toContain('applyOtaUpdate');
     expect(settingsOverlay).toContain('handleApplyOta');
     expect(settingsOverlay).toContain('showOtaApply');
     expect(settingsOverlay).toContain("t('settings.applyOta')");
@@ -385,7 +383,6 @@ describe('map UI placement contracts', () => {
     expect(overflowMarquee).not.toMatch(/setTextW\(0\);\s*\}, \[text, style\]/);
     // Loop via withRepeat on UI runtime — never restart from completion callback.
     expect(overflowMarquee).toContain('withRepeat');
-    expect(overflowMarquee).toContain('withSequence');
     expect(overflowMarquee).not.toMatch(/if\s*\(\s*finished\s*\)\s*loop/);
     // Single-line track: explicit measured width so Text cannot wrap to mouth.
     expect(overflowMarquee).toContain('width: textW');
@@ -471,7 +468,8 @@ describe('map UI placement contracts', () => {
   it('keeps settings content padded and exits fixed-size sheets by translation', () => {
     expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
     expect(settingsPanel).toContain('dismissRequested={visible}');
-    expect(settingsPanel).toContain('contentTopPadding={12}');
+    expect(settingsPanel).toContain('contentTopPadding={home ? 4 : 12}');
+    expect(settingsPanel).toContain('pinContentBelowHeader={home}');
     expect(settingsPanel).not.toContain('sheetHeight.value = withSpring(0');
     expect(bottomSheet).toContain('contentTopPadding = 0');
     expect(bottomSheet).toContain('transform: [{ translateY: dismissY.value }]');
@@ -482,7 +480,6 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).not.toContain('scale: 0.96');
     expect(mapScreen).not.toContain('pressedCardId');
     expect(mapScreen).not.toContain('withTiming(1.02');
-    // Marquee uses withSequence; card press shell must not scale-bounce.
     expect(cardPressable).toContain('lastPressAtRef');
     expect(cardPressable).toMatch(/now - lastPressAtRef\.current < 300/);
   });
@@ -574,8 +571,7 @@ describe('map UI placement contracts', () => {
     expect(mapStyles).toContain('paddingBottom: 11');
     expect(bottomSheet).toContain('compactGrabberSpacing = false');
     expect(bottomSheet).toContain('grabZoneCompact');
-    expect(bottomSheet).toContain('paddingTop: 3');
-    expect(bottomSheet).toContain('paddingBottom: 2');
+    expect(bottomSheet).toContain('height: MAP_SHEET_COMPACT_GRABBER_HEIGHT');
   });
 
   it('hides the Stage 2 header controls as one group while scrolling', () => {
@@ -637,41 +633,21 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('dailyAccommodations={');
   });
 
-  it('pins a far fixed gap before viewing my teams and does not vertical-center', () => {
-    expect(roleSelect).toContain('styles.myTeamsSpacer');
-    expect(roleSelect).toContain('myTeamsSpacer: { height: 64 }');
-    // Vertical center on `content` reflowed the create/join ↔ my-teams distance
-    // when the CTA mounted after fetch; layout must stay top-down with bottom flex.
-    const contentBlock = roleSelect.match(/content:\s*\{[^}]+\}/);
-    expect(contentBlock?.[0] ?? '').not.toContain("justifyContent: 'center'");
-    expect(roleSelect).toContain('bottomFlex');
-    expect(roleSelect).toContain('<NativeTeamsButton');
-    expect(roleSelect).not.toContain('reserveMyTeamsSlot');
-    expect(roleSelect).toContain('count={joinedGroups.length}');
-    // Instant paint: memory cache + lite fetch (skip profiles on this screen).
-    expect(roleSelect).toContain('useJoinedGroups(user?.id ?? null, false)');
-    const joinedGroupsHook = readFileSync(join(__dirname, '../state/useJoinedGroups.ts'), 'utf8');
-    expect(joinedGroupsHook).toContain('getCachedMyJoinedGroups');
+  it('keeps joined-team refresh lightweight and restores the cached list on entry failure', () => {
+    expect(teamEntry).toContain('useJoinedGroups(actorId, false)');
+    expect(teamEntry).toContain('getCachedMyJoinedGroups(actorId)');
+    expect(teamEntry).toContain('<GroupLoadError');
   });
 
-  it('keeps create/join and the always-visible My Teams button static', () => {
-    expect(roleSelect).not.toContain('SlideInDown');
-    // Create/join action row is a plain View (no entering animation).
-    expect(roleSelect).toContain('<View style={styles.actionRow}>');
-    expect(roleSelect).not.toContain('entering={FadeIn.duration(400)}');
-    expect(roleSelect).toContain("t('role.myTeams'");
-  });
-
-  it('avoids Android elevation black-frame on translucent rounded role tiles', () => {
-    // Opaque Android fills + elevation:0 on rounded action chrome.
-    const roleButton = readFileSync(join(__dirname, '../components/NativeRoleActionButton.tsx'), 'utf8');
-    expect(roleButton).toContain('backgroundColor');
-    expect(roleSelect).toMatch(/actionTile:\s*\{[\s\S]*?elevation:\s*0/);
+  it('renders the same bottom invite and create actions for first launch and returning teams', () => {
+    expect(teamEntry).toContain('<EntryCodeInput');
+    expect(codeEntry).toContain('textContentType="oneTimeCode"');
+    expect(codeEntry).toContain('<NativeGlassButton');
   });
 
   it('marquees overflow collapsed titles and uses role-correct nav labels', () => {
     expect(carousel).toContain('OverflowMarquee');
-    expect(carousel).toContain('endPauseMs={1500}');
+    expect(carousel).toContain('<OverflowMarquee');
     expect(carousel).toContain('enabled={gatherCardTitleMarquee}');
     expect(mapScreen).toContain('resolveNavCommand');
     expect(mapScreen).toContain('deriveCardNavFlags');

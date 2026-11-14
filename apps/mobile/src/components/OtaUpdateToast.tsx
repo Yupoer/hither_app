@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundUi } from '../state/foregroundUi';
 /**
@@ -5,7 +6,8 @@ import { useForegroundUi } from '../state/foregroundUi';
  * Mount once under SafeAreaProvider so insets are correct.
  */
 import React, { useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { glass } from '../glass';
 import { useTranslation } from '../i18n';
@@ -135,7 +137,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: '#F5F7FB',
-    fontSize: 14,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     textAlign: 'center',
     letterSpacing: 0.2,

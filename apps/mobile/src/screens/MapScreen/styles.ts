@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../../theme/typeScale';
 import { Platform, StyleSheet } from 'react-native';
 import { accentMix, glass } from '../../glass';
 import { COUNTDOWN_WIDTH_FACTOR, GATHER_CMD_MIN_HIT_PT } from '../../utils/gatherCommandLayout';
@@ -68,7 +69,7 @@ export const makeStyles = (
       gap: s(12, 8),
       backgroundColor: '#0c1118',
     },
-    loadingText: { color: glass.textSecondary, fontSize: 15 },
+    loadingText: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption },
 
     topRow: {
       position: 'absolute',
@@ -105,7 +106,7 @@ export const makeStyles = (
     groupPillPressed: { opacity: 0.82 },
     groupPillText: {
       color: '#fff',
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       flexShrink: 1,
     },
@@ -118,8 +119,8 @@ export const makeStyles = (
     },
     // flexShrink + numberOfLines(1) so an overlong group name ellipsizes
     // instead of pushing the role chip off-screen.
-    pillName: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, minWidth: 0 },
-    pillCount: { fontFamily: DISPLAY_FONT, fontSize: 14, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
+    pillName: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff', flexShrink: 1, minWidth: 0 },
+    pillCount: { fontFamily: DISPLAY_FONT, fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary, fontVariant: ['tabular-nums'] },
     roleChip: {
       minHeight: s(44, 40),
       paddingHorizontal: s(16, 12),
@@ -133,7 +134,7 @@ export const makeStyles = (
       borderColor: glass.hairlineSoft,
     },
     roleDot: { width: 8, height: 8, borderRadius: 4 },
-    roleWord: { fontSize: 14, fontWeight: '600', color: '#fff' },
+    roleWord: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff' },
 
     // Stack (low → high): capsules (50) < gathering cards (58) < sheet layer (70).
     // Fully-rounded pill (width/2) holding fit-all + locate stacked.
@@ -165,8 +166,7 @@ export const makeStyles = (
     sheetLayer: {
       zIndex: 70,
     },
-    // Settings root is 80. Child OverlaySheets have no wrapper z-index of
-    // their own, so this sibling stacking context must beat settings.
+    // Settings child hosts must present above the settings root.
     settingsChildLayer: {
       zIndex: 90,
     },
@@ -203,7 +203,7 @@ export const makeStyles = (
       minWidth: 0,
     },
     cardKicker: {
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.3,
       flexShrink: 1,
@@ -287,7 +287,7 @@ export const makeStyles = (
     },
     cardDayLine: {
       color: glass.textSecondary,
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       lineHeight: s(16, 15),
       marginTop: 0,
       marginBottom: 0,
@@ -305,7 +305,7 @@ export const makeStyles = (
     },
     arrivalPeopleValue: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontVariant: ['tabular-nums'],
       fontWeight: '700',
       lineHeight: s(18, 16),
@@ -583,7 +583,7 @@ export const makeStyles = (
     },
     meetBtnLabelCompact: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
@@ -594,7 +594,7 @@ export const makeStyles = (
     },
     meetBtnLabelTight: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 12,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
@@ -625,7 +625,7 @@ export const makeStyles = (
     confirmTextCol: { flex: 1, minWidth: 0, gap: 2 },
     confirmTitleInput: {
       color: '#fff',
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: '700',
       margin: 0,
       paddingVertical: 2,
@@ -633,7 +633,7 @@ export const makeStyles = (
       minHeight: 26,
     },
     confirmNameHint: {
-      fontSize: 12,
+      fontSize: APP_TEXT_SIZE.caption,
       color: glass.textTertiary,
       marginLeft: 2,
       marginBottom: 2,
@@ -661,8 +661,8 @@ export const makeStyles = (
     arrivalCmdSquare: {
       borderWidth: StyleSheet.hairlineWidth,
     },
-    confirmMin: { fontFamily: DISPLAY_FONT, fontSize: 36, includeFontPadding: false },
-    confirmDist: { fontSize: 16, color: glass.textSecondary },
+    confirmMin: { fontFamily: DISPLAY_FONT, fontSize: APP_TEXT_SIZE.heading, includeFontPadding: false },
+    confirmDist: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary },
     confirmBtnRow: {
       width: '100%',
       alignSelf: 'stretch',
@@ -678,12 +678,12 @@ export const makeStyles = (
       backgroundColor: glass.fillStrong, paddingHorizontal: 7.2,
       borderWidth: StyleSheet.hairlineWidth, borderColor: glass.hairline,
     },
-    confirmPoolText: { fontSize: 14.4, fontWeight: '700', color: '#fff', textAlign: 'center' },
+    confirmPoolText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', color: '#fff', textAlign: 'center' },
     confirmAdd: {
       width: '90%', height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center',
       paddingHorizontal: 7.2, backgroundColor: Platform.OS === 'ios' ? '#0A84FF' : accent,
     },
-    confirmAddText: { fontSize: 14.4, fontWeight: '700', color: '#fff', textAlign: 'center' },
+    confirmAddText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', color: '#fff', textAlign: 'center' },
     // Meet-time editor sheet: roomy, full-width controls (not the old cramped
     // left-aligned chips).
     meetEditorBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 40, gap: 14 },
@@ -702,10 +702,10 @@ export const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    meetQuickBtnText: { color: glass.textSecondary, fontSize: 14, fontWeight: '600' },
+    meetQuickBtnText: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
     meetSelectedClock: {
       flex: 1,
-      fontSize: 16,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       color: glass.textPrimary,
       fontVariant: ['tabular-nums'],
@@ -731,7 +731,7 @@ export const makeStyles = (
     },
     // Strip sectionLabel margins so title + info icon share one baseline.
     meetSectionHeaderLabel: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.4,
       textTransform: 'uppercase',
@@ -756,7 +756,7 @@ export const makeStyles = (
       paddingVertical: s(12, 10),
       paddingHorizontal: s(12, 10),
     },
-    meetSetText: { fontSize: 17, fontWeight: '700', color: '#fff', textAlign: 'center' },
+    meetSetText: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: '#fff', textAlign: 'center' },
     meetClearBtn: {
       minHeight: s(50, 46),
       borderRadius: s(15, 12),
@@ -768,7 +768,7 @@ export const makeStyles = (
       paddingVertical: s(12, 10),
       paddingHorizontal: s(12, 10),
     },
-    meetClearText: { fontSize: 17, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
+    meetClearText: { fontSize: APP_TEXT_SIZE.body, fontWeight: '600', color: glass.textSecondary, textAlign: 'center' },
     dots: { flexDirection: 'row', gap: 6, alignItems: 'center' },
     dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.35)' },
     dotActive: { width: 18, backgroundColor: accent },
@@ -842,8 +842,8 @@ export const makeStyles = (
     },
     myStatusName: {
       color: glass.textSecondary,
-      fontSize: 14,
-      lineHeight: 16,
+      fontSize: APP_TEXT_SIZE.caption,
+      lineHeight: APP_TEXT_LINE_HEIGHT.caption,
       fontWeight: '600',
       maxWidth: 128,
       textAlign: 'left',
@@ -870,14 +870,14 @@ export const makeStyles = (
       flexShrink: 0,
     },
     statusOptionTitle: {
-      fontSize: 16,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       color: '#fff',
       marginBottom: 4,
     },
     statusOptionHint: {
-      fontSize: 13,
-      lineHeight: 18,
+      fontSize: APP_TEXT_SIZE.caption,
+      lineHeight: APP_TEXT_LINE_HEIGHT.caption,
       color: glass.textTertiary,
       fontWeight: '500',
     },
@@ -934,7 +934,7 @@ export const makeStyles = (
       marginRight: 6,
     },
     peekEmptyHint: {
-      fontSize: 14,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '500',
       color: glass.textTertiary,
     },
@@ -952,24 +952,24 @@ export const makeStyles = (
       borderColor: 'rgba(255,255,255,0.35)',
     },
     peekStackEmoji: { fontSize: 20 },
-    peekStackInitial: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    peekStackInitial: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', color: '#fff' },
     peekStatusList: {
       flex: 1,
       minWidth: 0,
       gap: 1,
     },
     peekStatusLine: {
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '500',
       color: glass.textSecondary,
-      lineHeight: 14,
+      lineHeight: APP_TEXT_LINE_HEIGHT.caption,
     },
     peekStatusName: {
       fontWeight: '700',
       color: '#fff',
     },
     peekStatusMore: {
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       color: glass.textTertiary,
     },
@@ -983,7 +983,7 @@ export const makeStyles = (
     },
     /** Inactive toggle panes: skip layout work during sheet stage morphs. */
     extraCreditsHint: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       color: glass.textSecondary,
       marginBottom: 8,
@@ -1016,7 +1016,7 @@ export const makeStyles = (
     },
     passiveEnterLabel: {
       color: glass.textPrimary,
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: '700',
     },
     sheetHeadingFirst: {
@@ -1032,7 +1032,7 @@ export const makeStyles = (
       borderColor: glass.hairline,
     },
     tripCardKicker: {
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.5,
       color: accent,
@@ -1041,13 +1041,13 @@ export const makeStyles = (
     },
     tripCardTitle: {
       fontFamily: DISPLAY_FONT,
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: '600',
       color: '#fff',
       marginBottom: 4,
     },
     tripCardMeta: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       color: glass.textSecondary,
     },
     // Plain navigation list (Sheet → rows only, no icon tiles).
@@ -1101,13 +1101,13 @@ export const makeStyles = (
     routeScopeTitle: {
       flex: 1,
       color: glass.textPrimary,
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
     },
     routeScopeCount: {
       minWidth: 24,
       color: glass.textSecondary,
-      fontSize: 14,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       textAlign: 'right',
     },
@@ -1129,12 +1129,12 @@ export const makeStyles = (
       gap: 12,
     },
     renameModalTitle: {
-      fontSize: 17,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: '700',
       color: '#fff',
     },
     renameModalInput: {
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: '600',
       color: '#fff',
       borderWidth: StyleSheet.hairlineWidth,
@@ -1159,7 +1159,7 @@ export const makeStyles = (
     },
     renameModalBtnPrimary: {},
     renameModalBtnText: {
-      fontSize: 16,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       color: glass.textSecondary,
     },
@@ -1176,13 +1176,13 @@ export const makeStyles = (
     listRowLast: {},
     listRowTitle: {
       flex: 1,
-      fontSize: 16,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '500',
       color: '#fff',
       minWidth: 0,
     },
     listRowTrailing: {
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '500',
       color: glass.textSecondary,
     },
@@ -1207,7 +1207,7 @@ export const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,255,255,0.15)',
     },
-    searchPlaceholder: { fontSize: 15, color: 'rgba(235,235,245,0.5)', flexShrink: 1 },
+    searchPlaceholder: { fontSize: APP_TEXT_SIZE.caption, color: 'rgba(235,235,245,0.5)', flexShrink: 1 },
     avatar: {
       width: 44,
       height: 44,
@@ -1230,7 +1230,7 @@ export const makeStyles = (
       paddingHorizontal: 14,
       paddingVertical: 12,
       color: '#fff',
-      fontSize: 16,
+      fontSize: APP_TEXT_SIZE.caption,
       backgroundColor: glass.fill,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
@@ -1246,7 +1246,7 @@ export const makeStyles = (
       overflow: 'hidden',
     },
     profilePreviewEmoji: { fontSize: 40 },
-    profilePreviewInitial: { fontSize: 32, fontWeight: '700', color: '#fff' },
+    profilePreviewInitial: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '700', color: '#fff' },
     // 5 columns × 6 rows filling edge-to-edge: 5 × (18% + 1% + 1%) = 100%.
     emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
     emojiCell: {
@@ -1311,22 +1311,22 @@ export const makeStyles = (
     },
     locationSharingButtonPressed: { opacity: 0.82 },
     accuracyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' },
-    accuracyLabel: { color: '#fff', fontSize: 15, fontWeight: '600', lineHeight: 22, flexShrink: 1 },
+    accuracyLabel: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', lineHeight: 22, flexShrink: 1 },
     // Hint is secondary gray — not orange (orange reserved for primary / on).
     accuracyBattery: {
       marginTop: 2,
       color: glass.textTertiary,
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '500',
-      lineHeight: 16,
+      lineHeight: APP_TEXT_LINE_HEIGHT.caption,
       flexShrink: 1,
     },
     accuracySubhint: {
       marginTop: 2,
       color: glass.textTertiary,
-      fontSize: 11,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '500',
-      lineHeight: 16,
+      lineHeight: APP_TEXT_LINE_HEIGHT.caption,
       flexShrink: 1,
     },
     marqueeSpeedBlock: {
@@ -1362,7 +1362,7 @@ export const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    splitHint: { fontSize: 13, color: glass.textSecondary },
+    splitHint: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary },
     // BUG-18: more room between accept/decline and the prompt text above.
     splitActions: { flexDirection: 'row', gap: 12, marginTop: 10, flexWrap: 'wrap' },
     selectDot: {
@@ -1390,10 +1390,10 @@ export const makeStyles = (
       paddingTop: 12,
       paddingBottom: 6,
     },
-    subgroupName: { fontSize: 15, fontWeight: '700', color: '#fff' },
-    subgroupMeta: { fontSize: 12.5, color: glass.textSecondary, marginTop: 1 },
+    subgroupName: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', color: '#fff' },
+    subgroupMeta: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary, marginTop: 1 },
     subgroupPendingHint: {
-      fontSize: 12.5,
+      fontSize: APP_TEXT_SIZE.caption,
       color: glass.textSecondary,
       paddingHorizontal: 14,
       paddingBottom: 10,
@@ -1409,7 +1409,7 @@ export const makeStyles = (
     },
     // Section labels — lighter than nested card chrome.
     sheetHeading: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.4,
       textTransform: 'uppercase',
@@ -1419,12 +1419,12 @@ export const makeStyles = (
       marginLeft: 4,
     },
     memberCapHint: {
-      fontSize: 12,
+      fontSize: APP_TEXT_SIZE.caption,
       color: glass.textTertiary,
       marginTop: 24,
     },
     sectionLabel: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.4,
       textTransform: 'uppercase',
@@ -1434,7 +1434,7 @@ export const makeStyles = (
       marginTop: 22,
     },
     settingsInlineLabel: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       color: glass.textSecondary,
       marginBottom: 8,
@@ -1442,7 +1442,7 @@ export const makeStyles = (
       marginTop: 8,
     },
     profileNickLabel: {
-      fontSize: 13,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '700',
       letterSpacing: 0.3,
       color: glass.textTertiary,
@@ -1451,7 +1451,7 @@ export const makeStyles = (
       marginTop: 10,
     },
     profileSectionLabel: {
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '800',
       letterSpacing: 0.4,
       color: '#fff',
@@ -1460,7 +1460,7 @@ export const makeStyles = (
       marginTop: 12,
     },
     profileColorLabel: {
-      fontSize: 15,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '800',
       letterSpacing: 0.4,
       color: '#fff',
@@ -1470,7 +1470,7 @@ export const makeStyles = (
     },
     historyDayBlock: { marginBottom: 16 },
     historyTime: {
-      fontSize: 14,
+      fontSize: APP_TEXT_SIZE.caption,
       fontWeight: '600',
       color: glass.textSecondary,
       fontVariant: ['tabular-nums'],
@@ -1483,8 +1483,8 @@ export const makeStyles = (
       marginBottom: 18,
     },
     settingSwitchText: { flex: 1, minWidth: 0 },
-    settingSwitchLabel: { fontSize: 15, fontWeight: '600', color: '#fff', flexShrink: 1, lineHeight: 22 },
-    settingSwitchHint: { fontSize: 12, color: glass.textTertiary, marginTop: 2, flexShrink: 1 },
+    settingSwitchLabel: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff', flexShrink: 1, lineHeight: 22 },
+    settingSwitchHint: { fontSize: APP_TEXT_SIZE.caption, color: glass.textTertiary, marginTop: 2, flexShrink: 1 },
     chip: {
       minHeight: s(38, 34),
       paddingHorizontal: s(16, 12),
@@ -1504,7 +1504,7 @@ export const makeStyles = (
       justifyContent: 'center',
       backgroundColor: glass.fill,
     },
-    chipText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+    chipText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff' },
 
     list: {
       borderRadius: 20,
@@ -1547,17 +1547,17 @@ export const makeStyles = (
       justifyContent: 'center',
       borderWidth: 2,
     },
-    flockInitial: { fontSize: 16, fontWeight: '600', color: '#fff' },
-    flockName: { fontSize: 16, color: '#fff', fontWeight: '600' },
-    flockStatus: { fontSize: 13, marginTop: 2 },
+    flockInitial: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff' },
+    flockName: { fontSize: APP_TEXT_SIZE.caption, color: '#fff', fontWeight: '600' },
+    flockStatus: { fontSize: APP_TEXT_SIZE.caption, marginTop: 2 },
     flockMetaRole: { color: glass.textSecondary, fontWeight: '500' },
     flockMetaDist: { color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
     flockMetaFresh: { color: glass.textTertiary, fontWeight: '500' },
     flockMetaWarn: { color: glass.warn, fontWeight: '600' },
-    flockFreshness: { fontSize: 11.5, color: glass.textTertiary, marginTop: 2 },
+    flockFreshness: { fontSize: APP_TEXT_SIZE.caption, color: glass.textTertiary, marginTop: 2 },
     flockMeta: { alignItems: 'flex-end' },
-    flockEta: { fontFamily: DISPLAY_FONT, fontSize: 15, fontWeight: '600', color: 'rgba(255,255,255,0.9)', fontVariant: ['tabular-nums'] },
-    flockDist: { fontSize: 12, color: glass.textTertiary },
+    flockEta: { fontFamily: DISPLAY_FONT, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: 'rgba(255,255,255,0.9)', fontVariant: ['tabular-nums'] },
+    flockDist: { fontSize: APP_TEXT_SIZE.caption, color: glass.textTertiary },
     selfControls: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1579,7 +1579,7 @@ export const makeStyles = (
       paddingVertical: 13,
       borderRadius: 999,
     },
-    selfControlLabel: { fontSize: 13, color: glass.textSecondary },
+    selfControlLabel: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary },
 
     // Legacy aliases (overlays may still reference these).
     rowButton: {
@@ -1598,10 +1598,10 @@ export const makeStyles = (
       alignItems: 'center',
       justifyContent: 'center',
     },
-    rowTitle: { flex: 1, fontSize: 16, fontWeight: '500', color: '#fff', flexShrink: 1 },
-    rowSub: { fontSize: 13, color: glass.textTertiary },
-    rowAction: { fontSize: 14, fontWeight: '500', color: glass.textSecondary },
-    rowActionSecondary: { fontSize: 14, fontWeight: '500', color: glass.textSecondary },
+    rowTitle: { flex: 1, fontSize: APP_TEXT_SIZE.caption, fontWeight: '500', color: '#fff', flexShrink: 1 },
+    rowSub: { fontSize: APP_TEXT_SIZE.caption, color: glass.textTertiary },
+    rowAction: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '500', color: glass.textSecondary },
+    rowActionSecondary: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '500', color: glass.textSecondary },
     rowActionPressed: { opacity: 0.5 },
 
     settingsButton: {
@@ -1614,7 +1614,7 @@ export const makeStyles = (
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: 'rgba(255,255,255,0.08)',
     },
-    settingsText: { flex: 1, fontSize: 16, fontWeight: '500', color: '#fff' },
+    settingsText: { flex: 1, fontSize: APP_TEXT_SIZE.caption, fontWeight: '500', color: '#fff' },
     inviteActions: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1655,7 +1655,7 @@ export const makeStyles = (
       color: '#fff',
     },
     inviteCodeDash: {
-      fontSize: 22,
+      fontSize: APP_TEXT_SIZE.title,
       fontWeight: '600',
       color: glass.textTertiary,
       flexShrink: 0,
@@ -1663,7 +1663,7 @@ export const makeStyles = (
 
     // Overlays
     overlayBody: { paddingHorizontal: 16, paddingBottom: 40 },
-    overlayHint: { fontSize: 12.5, color: glass.textSecondary, marginBottom: 12, marginHorizontal: 4 },
+    overlayHint: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary, marginBottom: 12, marginHorizontal: 4 },
     addStop: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1684,7 +1684,7 @@ export const makeStyles = (
       alignItems: 'center',
       justifyContent: 'center',
     },
-    addStopText: { fontSize: 16, fontWeight: '600' },
+    addStopText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
 
     dangerBtn: {
       height: 52,
@@ -1696,7 +1696,7 @@ export const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: 'rgba(255,107,107,0.3)',
     },
-    dangerText: { fontSize: 16, fontWeight: '600', color: glass.danger },
+    dangerText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: glass.danger },
     accountBtn: {
       height: 48,
       borderRadius: 14,
@@ -1707,7 +1707,7 @@ export const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: accentMix(accent, 40),
     },
-    accountBtnText: { fontSize: 15, fontWeight: '600' },
+    accountBtnText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
     settingsTopGroup: {
       marginBottom: 4,
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -1725,8 +1725,8 @@ export const makeStyles = (
       borderBottomColor: 'rgba(255,255,255,0.08)',
     },
     settingsTopCopy: { flex: 1, gap: 3, minWidth: 0 },
-    settingsTopTitle: { color: '#fff', fontSize: 16, fontWeight: '500' },
-    settingsTopDescription: { color: glass.textTertiary, fontSize: 12.5 },
+    settingsTopTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '500' },
+    settingsTopDescription: { color: glass.textTertiary, fontSize: APP_TEXT_SIZE.caption },
     reportButton: {
       minHeight: 54,
       flexDirection: 'row',
@@ -1739,7 +1739,7 @@ export const makeStyles = (
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairline,
     },
-    reportButtonText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
+    reportButtonText: { flex: 1, color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   } satisfies StyleSheet.NamedStyles<Record<string, unknown>>;
   const scaled = applyAppTextScale(defs, textScale, EMOJI_STYLE_KEYS);
   return StyleSheet.create(

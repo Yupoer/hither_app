@@ -11,9 +11,16 @@ const mockCreateSession = jest.fn(async () => ({ ok: true, sessionRef: 'reward-1
 const mockLoad = jest.fn(async () => 'no_fill');
 const mockDispose = jest.fn();
 jest.mock('react-native', () => ({
+  Animated: {
+    Value: class { },
+    View: 'Animated.View',
+    timing: jest.fn(),
+    spring: jest.fn(),
+    sequence: jest.fn(() => ({ start: jest.fn() })),
+  },
   View: 'View', Text: 'Text', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator', Platform: { OS: 'ios' },
   StyleSheet: { create: (s: unknown) => s }, Alert: { alert: jest.fn() },
-  findNodeHandle: () => 7, AccessibilityInfo: { setAccessibilityFocus: jest.fn() },
+  findNodeHandle: () => 7, AccessibilityInfo: { setAccessibilityFocus: jest.fn(), isReduceMotionEnabled: async () => false },
   AppState: { addEventListener: (_: string, listener: (state: string) => void) => {
     mockAppListeners.add(listener); return { remove: () => mockAppListeners.delete(listener) };
   } },
@@ -23,6 +30,9 @@ jest.mock('expo-application', () => ({ nativeBuildVersion: null, nativeApplicati
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true, default: { getItem: jest.fn(async () => null), setItem: jest.fn(async () => {}), removeItem: jest.fn(async () => {}) },
 }));
+jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
+jest.mock('../components/PremiumPresentation', () => 'PremiumPresentation');
+jest.mock('../screens/MapScreen/components/D6HomeChrome', () => ({ useD6Numbers: () => undefined }));
 jest.mock('../components/PremiumBanner', () => 'PremiumBanner');
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ scale: 1, boldText: false }) }));
 jest.mock('../api/services/StoreService', () => ({
@@ -126,4 +136,19 @@ it('preserves no-fill probe timing, cancels offline work and cleans the active a
   await act(async () => jest.advanceTimersByTime(70_000));
   expect(mockCreateSession).toHaveBeenCalledTimes(created);
   intervals.mockRestore(); clearTimer.mockRestore();
+});
+
+
+it('keeps the verified balance when switching from You to the shop in one session', async () => {
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(StorePane, { ...props, presentation: 'coins' })); });
+  expect(tree.root.findByProps({ testID: 'settings-coins' })).toBeTruthy();
+  expect(JSON.stringify(tree.toJSON())).toContain('store.balanceA11y:10');
+  expect(tree.root.findAllByProps({ testID: 'store-premium' })).toHaveLength(0);
+
+  await act(async () => tree.update(React.createElement(StorePane, { ...props, presentation: 'shop' })));
+  expect(tree.root.findByProps({ testID: 'store-premium' }).props.showRestore).toBe(true);
+  expect(JSON.stringify(tree.toJSON())).toContain('store.balanceA11y:10');
+  expect(mockGetSnapshot).toHaveBeenCalledTimes(1);
+  await act(async () => tree.unmount());
 });

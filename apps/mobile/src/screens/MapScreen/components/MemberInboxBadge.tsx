@@ -1,5 +1,7 @@
+import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import React from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
 
 export function MemberInboxBadge({ count, style, testID, accessibilityLabel }: {
   count: number;
@@ -33,5 +35,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  count: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  count: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', color: '#fff' },
 });

@@ -22,6 +22,10 @@ public class HitherLiveActivityModule: Module {
   private static let staleInterval: TimeInterval = 2 * 60 * 60
   private let observers = HitherLiveActivityObservers()
   private let snapshotUpdates = HitherLiveActivityUpdateQueue()
+  @available(iOS 16.2, *)
+  private typealias ContentState = HitherGroupAttributes.ContentState
+  // Retain newer GPS receipts even when the rendered minute and progress did not change.
+  private var latestSnapshots: [String: (activity: Data, merged: [String: Any])] = [:]
 
   @available(iOS 17.2, *)
   private func observePushToStartTokens() {
@@ -55,15 +59,70 @@ public class HitherLiveActivityModule: Module {
 
   @available(iOS 16.2, *)
   private func update(_ activity: Activity<HitherGroupAttributes>, incoming: [String: Any]) async {
-    guard let data = try? JSONEncoder().encode(activity.content.state),
-          let current = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+    guard activity.activityState == .active || activity.activityState == .stale else { return }
+    let previousState = activity.content.state
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    guard let data = try? encoder.encode(previousState),
+          let displayed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+    let cached = latestSnapshots[activity.id]
+    let current = cached?.activity == data ? cached?.merged ?? displayed : displayed
     guard HitherLiveActivitySnapshot.matchesScope(incoming: incoming, current: current) else { return }
     let merged = HitherLiveActivitySnapshot.merge(incoming: incoming, current: current)
-    let content = ActivityContent(
-      state: HitherGroupAttributes.ContentState(from: merged),
-      staleDate: Date().addingTimeInterval(Self.staleInterval)
-    )
-    await activity.update(content)
+    let nextState = ContentState(from: merged)
+    let now = Date()
+    let groupName = activity.attributes.groupName
+    let previous = previousState.presentation(groupName: groupName, now: now)
+    let next = nextState.presentation(groupName: groupName, now: now)
+    latestSnapshots[activity.id] = (data, merged)
+    if next.phase == .allArrived {
+      await finish(activity, state: nextState, previous: previous.phase)
+      return
+    }
+    guard previous != next
+      || previousState.destinationId != nextState.destinationId
+      || previousState.navigationSessionId != nextState.navigationSessionId
+      || previousState.personalArrived != nextState.personalArrived
+      || previousState.personalArrivalAtMs != nextState.personalArrivalAtMs
+      || previousState.personalArrivalSequence != nextState.personalArrivalSequence
+      || previousState.personalArrivalCorrectionAtMs != nextState.personalArrivalCorrectionAtMs else { return }
+    let content = ActivityContent(state: nextState, staleDate: now.addingTimeInterval(Self.staleInterval))
+    await activity.update(content, alertConfiguration: alert(for: next, from: previous.phase))
+    if let updated = try? encoder.encode(nextState) {
+      latestSnapshots[activity.id] = (updated, merged)
+    }
+  }
+
+  @available(iOS 16.2, *)
+  private func alert(for next: ContentState.Presentation, from previous: ContentState.Phase) -> AlertConfiguration? {
+    guard next.phase != previous else { return nil }
+    let title: LocalizedStringResource
+    switch next.phase {
+    case .enRoute: return nil
+    case .late: title = next.english ? "You may be late" : "可能遲到"
+    case .arrivedWaiting: title = next.english ? "You arrived" : "你已抵達"
+    case .allArrived: title = next.english ? "Everyone arrived" : "全員到齊"
+    }
+    return AlertConfiguration(title: title, body: "\(next.title)", sound: .default)
+  }
+
+  @available(iOS 16.2, *)
+  private func finish(_ activity: Activity<HitherGroupAttributes>, state: ContentState, previous: ContentState.Phase) async {
+    guard activity.activityState == .active || activity.activityState == .stale else { return }
+    let content = ActivityContent(state: state, staleDate: nil)
+    let presentation = state.presentation(groupName: activity.attributes.groupName)
+    if let alert = alert(for: presentation, from: previous) {
+      await activity.update(content, alertConfiguration: alert)
+    }
+    await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(5 * 60)))
+    latestSnapshots.removeValue(forKey: activity.id)
+  }
+
+  @available(iOS 16.2, *)
+  private func dismiss(_ activity: Activity<HitherGroupAttributes>) async {
+    guard activity.activityState != .ended && activity.activityState != .dismissed else { return }
+    await activity.end(nil, dismissalPolicy: .immediate)
+    latestSnapshots.removeValue(forKey: activity.id)
   }
 
   public func definition() -> ModuleDefinition {
@@ -105,7 +164,9 @@ public class HitherLiveActivityModule: Module {
 
     AsyncFunction("listGroupActivities") { () -> [[String: String]] in
       guard #available(iOS 16.2, *) else { return [] }
-      return Activity<HitherGroupAttributes>.activities.map { activity in
+      return Activity<HitherGroupAttributes>.activities.filter {
+        $0.activityState != .ended && $0.activityState != .dismissed
+      }.map { activity in
         var row = ["activityId": activity.id]
         if let sessionId = activity.content.state.navigationSessionId { row["navigationSessionId"] = sessionId }
         if let destinationId = activity.content.state.destinationId { row["destinationId"] = destinationId }
@@ -128,7 +189,9 @@ public class HitherLiveActivityModule: Module {
             ActivityAuthorizationInfo().areActivitiesEnabled else {
         return nil
       }
-      if let existing = Activity<HitherGroupAttributes>.activities.first {
+      if let existing = Activity<HitherGroupAttributes>.activities.first(where: {
+        $0.activityState != .ended && $0.activityState != .dismissed
+      }) {
         let current = [
           "navigationSessionId": existing.content.state.navigationSessionId as Any,
           "destinationId": existing.content.state.destinationId as Any,
@@ -143,7 +206,7 @@ public class HitherLiveActivityModule: Module {
         }
         // A cold-start adoption at another point must create a new owner.
         await self.snapshotUpdates.perform {
-          await existing.end(nil, dismissalPolicy: .immediate)
+          await self.dismiss(existing)
         }
       }
       let attributes = HitherGroupAttributes(
@@ -191,12 +254,27 @@ public class HitherLiveActivityModule: Module {
       }
     }
 
+    AsyncFunction("completeGroupActivity") { (navigationSessionId: String, destinationId: String) in
+      guard #available(iOS 16.2, *) else { return }
+      await self.snapshotUpdates.perform {
+        for activity in Activity<HitherGroupAttributes>.activities {
+          var state = activity.content.state
+          guard state.navigationSessionId == navigationSessionId,
+                state.destinationId == destinationId || state.destinationId == nil else { continue }
+          let previous = state.presentation(groupName: activity.attributes.groupName).phase
+          state.phase = .allArrived
+          state.gatheredCount = state.memberCount
+          await self.finish(activity, state: state, previous: previous)
+        }
+      }
+    }
+
     AsyncFunction("endGroupActivity") { (handle: String) in
       guard #available(iOS 16.2, *) else { return }
       await self.snapshotUpdates.perform {
         for activity in Activity<HitherGroupAttributes>.activities
         where activity.id == handle {
-          await activity.end(nil, dismissalPolicy: .immediate)
+          await self.dismiss(activity)
         }
       }
     }
@@ -208,7 +286,7 @@ public class HitherLiveActivityModule: Module {
       guard #available(iOS 16.2, *) else { return }
       await self.snapshotUpdates.perform {
         for activity in Activity<HitherGroupAttributes>.activities {
-          await activity.end(nil, dismissalPolicy: .immediate)
+          await self.dismiss(activity)
         }
       }
     }

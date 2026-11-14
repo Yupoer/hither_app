@@ -25,9 +25,9 @@ describe('marquee text scaling', () => {
     { allowFontScaling: false, clipHeight: 20 },
   ])('uses the same scaling for measurement, static and moving text when scaling is $allowFontScaling', ({ allowFontScaling, clipHeight }) => {
     const screen = render(<OverflowMarquee text="A long gathering destination title" style={{ fontSize: 16, lineHeight: 20 }} allowFontScaling={allowFontScaling} />);
-    const expectScaling = () => {
+    const expectScaling = (textCount = 2) => {
       const texts = screen.UNSAFE_getAllByType(ReactNative.Text);
-      expect(texts).toHaveLength(2);
+      expect(texts).toHaveLength(textCount);
       for (const text of texts) {
         expect(text.props.allowFontScaling).toBe(allowFontScaling);
         expect(text.props.maxFontSizeMultiplier).toBe(1.25);
@@ -41,6 +41,6 @@ describe('marquee text scaling', () => {
     fireEvent(viewport!, 'layout', { nativeEvent: { layout: { width: 100 } } });
     fireEvent(texts[0], 'textLayout', { nativeEvent: { lines: [{ width: 300 }] } });
     act(() => jest.advanceTimersByTime(1600));
-    expect(expectScaling()[1].props.numberOfLines).toBeUndefined();
+    expect(expectScaling(3)[1].props.numberOfLines).toBeUndefined();
   });
 });

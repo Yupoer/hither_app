@@ -50,6 +50,7 @@ const mockNotifyApproach = jest.fn(async () => undefined);
 const mockUpdateLiveActivity = jest.fn(async () => undefined);
 const mockLiveActivity = {
   updateAllGroupActivities: jest.fn(async () => undefined),
+  completeGroupActivity: jest.fn(async (_sessionId: string, _destinationId: string) => undefined),
   endAllGroupActivities: jest.fn(async () => undefined),
   observeExistingActivities: jest.fn(async () => undefined),
 };
@@ -658,7 +659,7 @@ describe('background journey lifecycle and callback gate', () => {
     expect(mockLocationAdapter.startLocationUpdatesAsync).toHaveBeenCalled();
   });
 
-  async function startCurrent(config = baseConfig) {
+  async function startCurrent(config: Parameters<typeof startBackgroundJourney>[0] = baseConfig) {
     await startBackgroundJourney(config);
     mockNavigationContext.mockResolvedValue({ actorId: config.actorId, hasMembership: true,
       sharingEnabled: true, session: { id: config.navigationSessionId }, target: config.target });
@@ -667,7 +668,7 @@ describe('background journey lifecycle and callback gate', () => {
   }
 
   it('recovers a changed locked-screen target within the journey control budget without losing precision', async () => {
-    await startCurrent({ ...baseConfig, highAccuracy: true } as typeof baseConfig);
+    await startCurrent({ ...baseConfig, highAccuracy: true });
     mockKnownSession.mockResolvedValue({ id: baseConfig.navigationSessionId, status: 'completed' });
     const target = { ...baseConfig.target, id: 'destination-2', coordinates: { latitude: 25.003, longitude: 121 } };
     mockNavigationContext.mockResolvedValue({ actorId: baseConfig.actorId, hasMembership: true,
@@ -830,7 +831,7 @@ describe('background journey lifecycle and callback gate', () => {
   it('a freshly saved terminal personal receipt cannot immediately enqueue team completion', async () => {
     await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'teammate'],
       memberIds: ['actor-1', 'teammate'], memberArrived: [false, true],
-      arrivedMemberIds: ['teammate'] } as typeof baseConfig);
+      arrivedMemberIds: ['teammate'] });
     mockArrival.mockImplementationOnce(async input => savedArrival(input, 'conflict'));
     await handleBackgroundLocations({ data: { locations: [location()] } });
     expect(mockArrival).toHaveBeenCalledTimes(1);
@@ -844,7 +845,7 @@ describe('background journey lifecycle and callback gate', () => {
   it.each(['conflict', 'acked'] as const)('keeps personal receipt %s separate from all-arrived leader completion', async status => {
     await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'teammate'],
       memberIds: ['actor-1', 'teammate'], memberArrived: [true, true],
-      arrivedMemberIds: ['actor-1', 'teammate'] } as typeof baseConfig);
+      arrivedMemberIds: ['actor-1', 'teammate'] });
     mockListByGroup.mockResolvedValue([{
       id: 'receipt', actorId: 'actor-1', operationType: 'record_arrival', status,
       entityId: 'destination-1', sequence: 1, createdAt: 1,
@@ -863,13 +864,13 @@ describe('background journey lifecycle and callback gate', () => {
       }));
     } else {
       expect(mockComplete).toHaveBeenCalledWith(expect.objectContaining({ reason: 'all_arrived' }));
-      expect(mockLiveActivity.endAllGroupActivities).toHaveBeenCalledTimes(1);
+      expect(mockLiveActivity.completeGroupActivity).toHaveBeenCalledWith('session-1', 'destination-1');
     }
   });
 
   it.each([{ navigationMemberIds: ['actor-1'] }, { navigationMemberIds: ['actor-1', 'teammate'] }])('leader durably completes all scoped members including a solo team: %j', async ({ navigationMemberIds }) => {
     await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds,
-      arrivedMemberIds: navigationMemberIds.filter(id => id !== 'actor-1') } as typeof baseConfig);
+      arrivedMemberIds: navigationMemberIds.filter(id => id !== 'actor-1') });
     await handleBackgroundLocations({ data: { locations: [location()] } });
     expect(mockComplete).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'actor-1',
       groupId: 'group-1', destinationId: 'destination-1', sessionId: 'session-1', subgroupId: null,
@@ -877,16 +878,31 @@ describe('background journey lifecycle and callback gate', () => {
     expect(mockArrival.mock.invocationCallOrder[0]).toBeLessThan(mockComplete.mock.invocationCallOrder[0]);
     // Terminal UI and durable completion never wait for a cloud-progress request.
     expect(mockUpdateLiveActivity).not.toHaveBeenCalled();
-    expect(mockLiveActivity.endAllGroupActivities).toHaveBeenCalled();
+    expect(mockLiveActivity.completeGroupActivity).toHaveBeenCalledWith('session-1', 'destination-1');
     expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({ powerMode: 'allDay', navigationSessionId: null }));
   });
 
+  it('keeps an iOS D6 journey active after GPS confirms the last arrival', async () => {
+    await startCurrent({ ...baseConfig, requiresLeaderCompletion: true, leaderId: 'actor-1',
+      navigationMemberIds: ['actor-1', 'teammate'], arrivedMemberIds: ['teammate'],
+      memberIds: ['actor-1', 'teammate'], memberEmojis: ['🦊', '🐼'], memberArrived: [false, true],
+    });
+    await handleBackgroundLocations({ data: { locations: [location()] } });
+    expect(mockLiveActivity.updateAllGroupActivities).toHaveBeenLastCalledWith(expect.objectContaining({
+      gatheredCount: 2, memberCount: 2, personalArrived: true,
+    }));
+    expect(mockComplete).not.toHaveBeenCalled();
+    expect(await loadBackgroundJourney()).toEqual(expect.objectContaining({
+      powerMode: 'journey', navigationSessionId: 'session-1',
+    }));
+  });
+
   it('nonleader arrival and incomplete leader counts keep the journey open', async () => {
-    await startCurrent({ ...baseConfig, leaderId: 'teammate', navigationMemberIds: ['actor-1'] } as typeof baseConfig);
+    await startCurrent({ ...baseConfig, leaderId: 'teammate', navigationMemberIds: ['actor-1'] });
     await handleBackgroundLocations({ data: { locations: [location()] } });
     expect(mockComplete).not.toHaveBeenCalled();
     await stopBackgroundJourney();
-    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'missing'] } as typeof baseConfig);
+    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'missing'] });
     await handleBackgroundLocations({ data: { locations: [location()] } });
     expect(mockComplete).not.toHaveBeenCalled();
     expect(await loadBackgroundJourney()).not.toBeNull();
@@ -910,7 +926,7 @@ describe('background journey lifecycle and callback gate', () => {
   });
 
   it('never applies a queued old arrival/completion to a newer session', async () => {
-    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] } as typeof baseConfig);
+    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] });
     mockArrival.mockImplementationOnce(async input => {
       await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'new-session' });
       return savedArrival(input);
@@ -923,7 +939,7 @@ describe('background journey lifecycle and callback gate', () => {
 
   it('same-session control recovery notices the last teammate arrival and completes without another GPS fix', async () => {
     await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1', 'teammate'],
-      arrivedMemberIds: ['actor-1'] } as typeof baseConfig);
+      arrivedMemberIds: ['actor-1'] });
     mockNavigationContext.mockResolvedValue({ actorId: 'actor-1', hasMembership: true, sharingEnabled: true,
       session: { id: 'session-1' }, target: baseConfig.target, leaderId: 'actor-1',
       navigationMemberIds: ['actor-1', 'teammate'], arrivedMemberIds: ['actor-1', 'teammate'] });
@@ -954,7 +970,7 @@ describe('background journey lifecycle and callback gate', () => {
   });
 
   it('completion that loses its context while saving never ends the replacement journey', async () => {
-    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] } as typeof baseConfig);
+    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] });
     mockComplete.mockImplementationOnce(async input => {
       await startBackgroundJourney({ ...baseConfig, navigationSessionId: 'replacement' });
       expect(input.isCurrent()).toBe(false);
@@ -966,7 +982,7 @@ describe('background journey lifecycle and callback gate', () => {
   });
 
   it('a compacted undo also prevents remote recovery from auto-completing', async () => {
-    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] } as typeof baseConfig);
+    await startCurrent({ ...baseConfig, leaderId: 'actor-1', navigationMemberIds: ['actor-1'] });
     await rememberBackgroundManualUndo({ actorId: 'actor-1', groupId: 'group-1',
       destinationId: 'destination-1', navigationSessionId: 'session-1',
       occurredAt: new Date().toISOString(), suppressed: true });

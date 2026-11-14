@@ -2,7 +2,7 @@
  * DestinationService — itinerary CRUD (add, delete, reorder, meet-time).
  */
 import { supabase } from '../supabase';
-import { demoAddDestination, demoAddDestinationsBatch, demoDeleteDestination, demoReorderDestinations, demoUpdateDestinationEmoji, isDemoGroup } from '../demo';
+import { demoAddDestination, demoAddDestinationsBatch, demoDeleteDestination, demoMakeDestinationRegular, demoReorderDestinations, demoUpdateDestinationEmoji, isDemoGroup } from '../demo';
 import type { Coordinates, Destination } from '../../types';
 import {
   validateDestinationColor,
@@ -324,6 +324,23 @@ export async function reorderDestinations(
     err.code = 'reorder_incomplete';
     throw err;
   }
+}
+
+export async function makeDestinationRegular(groupId: string, destinationId: string): Promise<void> {
+  if (isDemoGroup(groupId)) {
+    demoMakeDestinationRegular(destinationId);
+    return;
+  }
+  const core = loadCoreSyncAdapters();
+  if (core) {
+    await writeDurableCore(core, groupId, () => core.enqueueDestinationEdit({
+      groupId, destinationId, patch: { kind: 'stop', stayAnchor: false },
+    }));
+    return;
+  }
+  const { error } = await supabase.from('itinerary_items').update({ kind: 'stop', stay_anchor: false })
+    .eq('group_id', groupId).eq('id', destinationId).select('id').single();
+  orThrow(error);
 }
 
 /**

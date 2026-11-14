@@ -1,13 +1,14 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import React from 'react';
 import {
-  Pressable,
   StyleSheet,
-  Text,
   type GestureResponderEvent,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 
 export type NativeGlassButtonProps = {
   label?: string;
@@ -150,6 +151,6 @@ const styles = StyleSheet.create({
   circle: { borderRadius: 26 },
   capsule: { minHeight: 52, borderRadius: 26, paddingHorizontal: 14 },
   pressed: { opacity: 0.82 },
-  icon: { color: '#fff', fontSize: 26, lineHeight: 30 },
-  label: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  icon: { color: '#fff', fontSize: APP_TEXT_SIZE.heading, lineHeight: APP_TEXT_LINE_HEIGHT.heading },
+  label: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
 });

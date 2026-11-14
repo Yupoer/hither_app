@@ -3,10 +3,27 @@ exports.installNavigation = ({ jest, host }) => {
   const React = require('react');
   const listeners = new Set();
   const state = { route: null, params: null, routes: [] };
+  const routeWithKey = (name, params) => ({ name, params, key: `${name}-${nextRouteKey++}` });
+  let nextRouteKey = 1;
+  const getState = () => ({ index: state.routes.length - 1, key: 'headless-stack', routes: state.routes });
   const nav = {
     navigate: (name, params) => move(name, params), replace: (name, params) => { state.routes.pop(); move(name, params); },
-    reset: value => { state.routes = value.routes.slice(0, (value.index ?? 0) + 1); const route = state.routes.at(-1); move(route.name, route.params, false); },
+    reset: value => { state.routes = value.routes.slice(0, (value.index ?? 0) + 1).map(route => routeWithKey(route.name, route.params)); const route = state.routes.at(-1); move(route.name, route.params, false); },
     goBack: () => { const previous = state.routes.at(-2); assert(previous, 'No previous route'); state.routes.pop(); move(previous.name, previous.params, false); },
+    getState,
+    dispatch: action => {
+      assert.equal(action.type, 'SET_PARAMS');
+      const route = state.routes.find(candidate => candidate.key === action.source);
+      if (route) route.params = { ...route.params, ...action.payload.params };
+    },
+    setParams: params => {
+      const route = state.routes.at(-1);
+      if (route) {
+        route.params = { ...route.params, ...params };
+        state.params = route.params;
+        render?.({ name: route.name, params: route.params });
+      }
+    },
     canGoBack: () => state.routes.length > 1,
     getParent: () => undefined, setOptions() {}, isFocused: () => true,
     addListener: (event, fn) => { const item = { event, fn }; listeners.add(item); return () => listeners.delete(item); },
@@ -16,11 +33,12 @@ exports.installNavigation = ({ jest, host }) => {
   function move(name, params, push = true) {
     if (state.route) for (const item of listeners) if (item.event === 'blur') item.fn();
     state.route = name; state.params = params;
-    if (push) state.routes.push({ name, params });
+    if (push) state.routes.push(routeWithKey(name, params));
     render?.({ name, params });
     stateChanged?.({ index: state.routes.length - 1, routes: state.routes });
   }
   const native = {
+    CommonActions: { setParams: params => ({ type: 'SET_PARAMS', payload: { params } }) },
     useIsFocused: () => true, useNavigation: () => nav,
     useRoute: () => ({ name: state.route, params: state.params }),
     useFocusEffect: callback => React.useEffect(callback, [callback]),
@@ -35,24 +53,30 @@ exports.installNavigation = ({ jest, host }) => {
   jest.doMock('@react-navigation/native', () => native);
   jest.doMock('@react-navigation/native-stack', () => ({ createNativeStackNavigator: () => ({
     Navigator: ({ children, initialRouteName, layout }) => {
-      const [route, setRoute] = React.useState({ name: initialRouteName, params: undefined });
+      const screens = React.Children.toArray(children).filter(React.isValidElement);
+      const startParams = screens.find(node => node.props.name === initialRouteName)?.props.initialParams;
+      const [route, setRoute] = React.useState({ name: initialRouteName, params: startParams });
       render = setRoute;
-      React.useEffect(() => { state.routes = [{ name: initialRouteName, params: undefined }]; }, []);
+      React.useEffect(() => { state.routes = [routeWithKey(initialRouteName, startParams)]; }, []);
       React.useEffect(() => {
         state.route = route.name; state.params = route.params;
         if (!state.routes.length) state.routes.push(route);
         for (const item of listeners) if (item.event === 'focus') item.fn();
       }, [route]);
-      const screens = React.Children.toArray(children).filter(React.isValidElement);
       const screen = screens.find(node => node.props.name === route.name);
       assert(screen, `Unregistered route ${route.name}`);
-      const content = React.createElement(screen.props.component, { navigation: nav, route });
+      const content = React.createElement(screen.props.component, { navigation: nav, route: { ...route, key: state.routes.at(-1)?.key } });
       const routes = state.routes.length ? state.routes : [route];
       return layout ? layout({ state: { index: routes.length - 1, routes }, navigation: nav, descriptors: {}, children: content }) : content;
     }, Screen: () => { throw new Error('Screen registration rendered outside navigator'); },
   }) }));
   host.navigation = nav;
-  host.route = state;
+  host.route = {
+    get route() { return state.route; }, set route(value) { state.route = value; },
+    get params() { return state.params; }, set params(value) { state.params = value; },
+    get routes() { return state.routes.map(({ name, params }) => ({ name, params })); },
+    set routes(value) { state.routes = value.map(route => routeWithKey(route.name, route.params)); },
+  };
   host.bindScreenRenderer = callback => { render = callback; };
 };
 
@@ -122,7 +146,7 @@ exports.createPresentation = (React, spec, host, app) => {
       onRetry: receipt('retry'),
     };
     return React.createElement(React.Fragment, null, React.createElement(Observe), !session.initializing && React.createElement(Screen, {
-      ...componentProps, ...screen.props, navigation: host.navigation, route: { name: screen.name, params: screen.params },
+      ...componentProps, ...screen.props, navigation: host.navigation, route: { name: screen.name, params: screen.params, key: host.navigation.getState().routes.at(-1)?.key },
     }));
   }
   const AppErrorBoundary = require('../../src/components/AppErrorBoundary').default;

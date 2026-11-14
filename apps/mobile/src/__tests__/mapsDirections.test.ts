@@ -1,10 +1,14 @@
 const mockGetDirections = jest.fn();
 const mockProxyGetDirections = jest.fn();
+const mockGetTravelETA = jest.fn();
+const mockCancelTravelETA = jest.fn(async () => undefined);
 
 jest.mock('expo-modules-core', () => ({
   requireOptionalNativeModule: () => ({
     searchPlaces: jest.fn(),
     getDirections: mockGetDirections,
+    getTravelETA: mockGetTravelETA,
+    cancelTravelETA: mockCancelTravelETA,
   }),
 }));
 
@@ -26,8 +30,8 @@ jest.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }));
 
-import { getDirections } from '../native/maps';
-import { simplifyRoutePointsForDisplay } from '../utils/routeLod';
+const { getDirections, getTravelETA } = jest.requireActual<typeof import('../native/maps')>('../native/maps');
+const { simplifyRoutePointsForDisplay } = jest.requireActual<typeof import('../utils/routeLod')>('../utils/routeLod');
 
 const from = { latitude: 25.033, longitude: 121.5654 };
 const to = { latitude: 25.0478, longitude: 121.517 };
@@ -108,6 +112,38 @@ describe('getDirections', () => {
     mockProxyGetDirections.mockResolvedValue(null);
     await expect(getDirections(from, to, 'drive')).resolves.toBeNull();
     expect(mockProxyGetDirections).toHaveBeenCalled();
+  });
+});
+
+describe('getTravelETA', () => {
+  beforeEach(() => {
+    mockGetTravelETA.mockReset();
+    mockCancelTravelETA.mockClear();
+  });
+
+  it('uses the ETA-only bridge for transit without requesting a polyline', async () => {
+    mockGetDirections.mockClear();
+    mockProxyGetDirections.mockClear();
+    mockGetTravelETA.mockResolvedValue(300);
+    const signal = new AbortController().signal;
+    await expect(getTravelETA({ from, to, travelMode: 'transit', signal })).resolves.toBe(300);
+    expect(mockGetTravelETA).toHaveBeenCalledWith(expect.any(String), from, to, 'transit');
+    expect(mockGetDirections).not.toHaveBeenCalled();
+    expect(mockProxyGetDirections).not.toHaveBeenCalled();
+  });
+
+  it('cancels only the active native ETA request when its owner goes away', async () => {
+    let completeNative: (seconds: number | null) => void = () => undefined;
+    mockGetTravelETA.mockImplementation(() => new Promise(resolve => { completeNative = resolve; }));
+    const controller = new AbortController();
+    const pending = getTravelETA({ from, to, travelMode: 'drive', signal: controller.signal });
+    await Promise.resolve();
+    expect(mockGetTravelETA).toHaveBeenCalledTimes(1);
+    const [[id]] = mockGetTravelETA.mock.calls;
+    controller.abort();
+    await expect(pending).resolves.toBeNull();
+    expect(mockCancelTravelETA).toHaveBeenCalledWith(id);
+    completeNative(300);
   });
 });
 

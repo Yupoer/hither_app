@@ -1,7 +1,9 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from '../components/AppText';
+import Pressable from '../components/MotionPressable';
 import { glass } from '../glass';
-import { GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
+import { APP_TEXT_SIZE, GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
 
 export type TourCardProps = {
   title: string;
@@ -86,8 +88,8 @@ const styles = StyleSheet.create({
   },
   copyScroll: { flexGrow: 0, flexShrink: 1 },
   copy: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 8 },
-  title: { color: glass.textPrimary, fontSize: 18, fontWeight: '700', marginBottom: 8 },
-  body: { color: glass.textSecondary, fontSize: 15, lineHeight: 22 },
+  title: { color: glass.textPrimary, fontSize: APP_TEXT_SIZE.body, fontWeight: '700', marginBottom: 8 },
+  body: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption, lineHeight: 22 },
   ctaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -108,9 +110,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.28)',
   },
-  prevCtaText: { color: glass.textPrimary, fontSize: 20, fontWeight: '600' },
+  prevCtaText: { color: glass.textPrimary, fontSize: APP_TEXT_SIZE.title, fontWeight: '600' },
   cta: { backgroundColor: '#4C8DFF', flex: 1, minWidth: 0, height: 55, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 28 },
   ctaPressed: { opacity: 0.85 },
   ctaDisabled: { opacity: 0.55 },
-  ctaText: { color: '#fff', fontSize: 20, fontWeight: '600' },
+  ctaText: { color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '600' },
 });

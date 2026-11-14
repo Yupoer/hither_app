@@ -7,22 +7,23 @@ import {
   NativeSyntheticEvent,
   PanResponder,
   Platform,
-  Pressable,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_CORNER_RADIUS,
-  MAP_SHEET_EDGE_INSET,
+  SHEET_CORNER_ACTION_INSET,
+  OVERLAY_SHEET_GRABBER_HEIGHT,
 } from './mapSheetChrome';
 import SheetHeaderAction from './SheetHeaderAction';
-import { GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
+import { APP_TEXT_SIZE, GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
 
 // Drag the handle/header down past this many px (or fling it) to dismiss —
 // matches the iOS sheet feel so "Done" is never the only way out.
@@ -260,7 +261,9 @@ export default function OverlaySheet({
   return (
     <>
     {visibilityMotion}
-    <View style={[StyleSheet.absoluteFill, !foreground && { display: 'none' }]} pointerEvents={visible ? 'auto' : 'none'}>
+    <View style={[styles.layer, !foreground && { display: 'none' }]}
+      pointerEvents={visible ? 'auto' : 'none'} accessibilityViewIsModal={visible}
+      accessibilityElementsHidden={!visible} importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}>
       <Animated.View style={[styles.scrim, { opacity: scrimOpacity }]}>
         <Pressable testID="overlay-close" style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
@@ -314,6 +317,7 @@ export default function OverlaySheet({
 }
 
 const styles = StyleSheet.create({
+  layer: { ...StyleSheet.absoluteFill, zIndex: 95 },
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: glass.scrim },
   panel: {
     position: 'absolute',
@@ -335,14 +339,13 @@ const styles = StyleSheet.create({
   },
   topChrome: { position: 'relative' },
   // More breathing room so the title doesn't crowd the sheet's top edge.
-  grabZone: { paddingTop: 14, paddingBottom: 6, alignItems: 'center' },
+  grabZone: { height: OVERLAY_SHEET_GRABBER_HEIGHT, justifyContent: 'center', alignItems: 'center' },
   grabber: { width: 40, height: 5, borderRadius: 3, backgroundColor: glass.grabber },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: MAP_SHEET_EDGE_INSET,
-    paddingTop: 7,
+    paddingHorizontal: SHEET_CORNER_ACTION_INSET,
     paddingBottom: 18,
   },
   headerSide: {
@@ -358,7 +361,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 19,
+    fontSize: APP_TEXT_SIZE.body,
     fontWeight: '700',
     color: '#fff',
     textAlign: 'center',

@@ -9,7 +9,6 @@ describe.each(['ios', 'android'])('real App native host foundation on %s', platf
       const device = await world.device({ id: 'release-trail', userId: LEADER, platform, mode: 'app',
         updatesFixtures: { isEmbeddedLaunch: false, updateId: 'executing-update', runtimeVersion: '0.1.14' } });
       await world.settle();
-      expect(await device.host.call({ kind: 'press', testId: 'onboarding-skip' })).toEqual({ invoked: true });
       await world.waitFor(device, (value: any) => value.presentation.preferences?.ready && value.presentation.session && !value.presentation.session.initializing, 'App preferences and session ready');
       expect(await device.perform('diagnostics.list')).toEqual([]);
       await device.perform('preferences.setDiagnosticUploadEnabled', { args: [true] });
@@ -29,13 +28,17 @@ describe.each(['ios', 'android'])('real App native host foundation on %s', platf
       expect((await device.perform('diagnostics.list')).some((record: any) => record.id === launch.id)).toBe(true);
     } finally { await world.close(); }
   });
-  it('mounts the map sheet body during a held drag and releases it again at peek', async () => {
+  it('mounts platform Map chrome and keeps the Android sheet lazy until it opens', async () => {
     const world = new World();
     try {
       const device = await world.device({ id: 'sheet', userId: LEADER, platform, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
       await world.settle();
       const nativeMap = (await device.observe()).presentation.hosts.find((node: { testId?: string }) => node.testId === 'group-map-native');
       expect(nativeMap.showsUserLocation).toBe(platform === 'ios');
+      if (platform === 'ios') {
+        expect((await device.observe()).presentation.hosts.some((node: { testId?: string }) => node.testId === 'home-journey-action')).toBe(true);
+        return;
+      }
       const observeSheet = async () => (await device.observe()).presentation.mapSheet;
       const peek = await observeSheet();
       expect(peek).toEqual({ height: expect.any(Number), settledIndex: 0, bodyMounted: false });
@@ -61,30 +64,23 @@ describe.each(['ios', 'android'])('real App native host foundation on %s', platf
     const world = new World();
     try {
       const device = await world.device({ id: 'screen', userId: LEADER, platform, screen: { name: 'RoleSelect' } });
-      await device.host.call({ kind: 'press', testId: 'role-my-teams' });
-      await world.settle();
-      expect((await device.observe()).presentation.route.routes.map((route: any) => route.name)).toEqual(['RoleSelect', 'MyTeams']);
       await device.host.mount({ name: 'MyTeams', params: { source: 'direct' } });
-      await world.settle();
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((node: any) => node.testId === `team-card-${GROUP_ID}`), 'team card on directly mounted picker');
       const mounted = await device.observe();
       expect(mounted.presentation.route).toEqual({ route: 'MyTeams', params: { source: 'direct' }, routes: [{ name: 'MyTeams', params: { source: 'direct' } }] });
-      expect(mounted.presentation.hosts.some((node: any) => node.testId === `team-card-${GROUP_ID}`)).toBe(true);
       await device.host.call({ kind: 'press', testId: `team-card-${GROUP_ID}` });
-      await device.host.call({ kind: 'press', testId: 'team-enter' });
       await world.settle();
       const navigated = await device.observe();
       expect(navigated.presentation.route.route).toBe('Map');
       expect(navigated.presentation.route.routes.map((route: any) => route.name)).toEqual(['Map']);
     } finally { await world.close(); }
   });
-  it('cold mounts real providers and navigates through onboarding and MyTeams into the real Map', async () => {
+  it('cold mounts real providers and navigates directly from returning teams into the real Map', async () => {
     const world = new World();
     try {
       const device = await world.device({ id: 'app', userId: LEADER, platform, mode: 'app' });
-      for (const testId of ['onboarding-skip', 'role-my-teams', `team-card-${GROUP_ID}`, 'team-enter']) {
-        await world.settle();
-        expect(await device.host.call({ kind: 'press', testId })).toEqual({ invoked: true });
-      }
+      await world.waitFor(device, (value: any) => value.presentation.hosts.some((node: any) => node.testId === `team-card-${GROUP_ID}`), 'saved team on App launch');
+      expect(await device.host.call({ kind: 'press', testId: `team-card-${GROUP_ID}` })).toEqual({ invoked: true });
       await world.settle();
       const observed = await device.observe();
       expect(observed.presentation.route.route).toBe('Map');

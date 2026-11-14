@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import * as DocumentPicker from 'expo-document-picker';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -54,7 +57,7 @@ export default React.memo(function KmlImportSheet({
 }) {
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const accent = colors.accent;
+  const { accent, accentText } = colors;
   const [step, setStep] = useState<Step>({ kind: 'intro' });
 
   const reset = useCallback(() => {
@@ -161,12 +164,14 @@ export default React.memo(function KmlImportSheet({
     <SettingsChildSheet
       visible={visible}
       onClose={handleClose}
-      title={t('kml.entry')}
-      initialStage={1}
-      stageTwoRatio={0.9}
+      title={t('kml.importTitle')}
+      titleFontSize={25}
+      darkMaterial
+      stageOneRatio={0.50}
+      stageTwoRatio={0.88}
       wrapContentInScrollView={false}
     >
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={styles.body}>
         {step.kind === 'intro' && (
           <>
             <Text style={styles.stepText}>1. {t('kml.step1')}</Text>
@@ -178,7 +183,7 @@ export default React.memo(function KmlImportSheet({
               testID="kml-pick-file"
               accessibilityRole="button"
             >
-              <Text style={styles.ctaText}>{t('kml.pick')}</Text>
+              <Text style={[styles.ctaText, { color: accentText }]}>{t('kml.pick')}</Text>
             </Pressable>
           </>
         )}
@@ -192,7 +197,7 @@ export default React.memo(function KmlImportSheet({
               testID="kml-retry"
               accessibilityRole="button"
             >
-              <Text style={styles.ctaText}>{t('kml.retry')}</Text>
+              <Text style={[styles.ctaText, { color: accentText }]}>{t('kml.retry')}</Text>
             </Pressable>
           </>
         )}
@@ -236,7 +241,7 @@ export default React.memo(function KmlImportSheet({
                   disabled={allowed === 0}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.ctaText}>{t('kml.importN', { n: allowed })}</Text>
+                  <Text style={[styles.ctaText, { color: accentText }]}>{t('kml.importN', { n: allowed })}</Text>
                 </Pressable>
               </>
             );
@@ -264,19 +269,21 @@ export default React.memo(function KmlImportSheet({
 });
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: 18, paddingBottom: 24, gap: 14 },
-  stepText: { fontSize: 15, color: '#fff', lineHeight: 22 },
-  errorText: { fontSize: 14, color: glass.textSecondary, lineHeight: 20 },
-  lockedNote: { fontSize: 13, lineHeight: 18 },
+  body: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 26, gap: 14 },
+  stepText: { fontSize: APP_TEXT_SIZE.body, color: '#fff', lineHeight: 25 },
+  errorText: { fontSize: APP_TEXT_SIZE.caption, color: glass.textSecondary, lineHeight: 23 },
+  lockedNote: { fontSize: APP_TEXT_SIZE.caption, lineHeight: 22 },
   cta: {
-    height: 50,
-    borderRadius: 14,
+    minHeight: 56,
+    borderRadius: 28,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ctaDisabled: { opacity: 0.4 },
-  ctaText: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  ctaText: { textAlign: 'center', fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: '#fff' },
   list: {
     backgroundColor: glass.fill,
     borderRadius: 14,
@@ -291,8 +298,8 @@ const styles = StyleSheet.create({
     borderBottomColor: glass.hairlineStrong,
   },
   rowLocked: { opacity: 0.4 },
-  rowName: { fontSize: 14, fontWeight: '600', color: '#fff' },
-  rowCoords: { fontSize: 12, color: glass.textTertiary, marginTop: 2 },
+  rowName: { fontSize: APP_TEXT_SIZE.body, fontWeight: '600', color: '#fff' },
+  rowCoords: { fontSize: APP_TEXT_SIZE.caption, color: glass.textTertiary, marginTop: 2 },
   progressTrack: {
     height: 6,
     borderRadius: 3,

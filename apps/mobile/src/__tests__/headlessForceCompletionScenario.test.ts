@@ -8,31 +8,71 @@ type Observation = {
 };
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 const has = (value: Observation, id: string) => value.presentation.hosts.some(host => host.testId === id);
+const press = (device: Device, testId: string) => device.host.call({ kind: 'press', testId });
 
 describe.each(['ios', 'android'])('leader force completion on %s', platform => {
   jest.setTimeout(120000);
   async function map(world: InstanceType<typeof World>, userId: string, id: string) {
     const device = await world.device({ id, userId, platform, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-    await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'destination card');
-    await device.perform('map.card.toggle', { destinationId: DESTINATION });
+    const readyId = platform === 'ios' ? 'home-journey-action' : `gather-card-${DESTINATION}`;
+    await world.waitFor(device, (value: Observation) => has(value, readyId), 'destination card');
+    await device.perform('preferences.setLanguage', { args: ['zh'] });
+    if (platform === 'android') await device.perform('map.card.toggle', { destinationId: DESTINATION });
     return device;
   }
-  const complete = (device: Device) => device.perform('map.journey.complete', { destinationId: DESTINATION });
+  const visibleAction = platform === 'ios' ? 'd6-route-complete-early' : `gather-complete-${DESTINATION}`;
+  async function readActions(device: Device) {
+    if (platform === 'ios') {
+      const value = await device.observe();
+      if (!has(value, 'd6-route-options')) await press(device, 'home-itinerary-grabber');
+      const opened = await device.observe();
+      if (!has(opened, 'd6-route-options')) return false;
+      expect(await press(device, 'd6-route-options')).toEqual({ invoked: true });
+    }
+    const available = has(await device.observe(), visibleAction);
+    if (platform === 'ios') {
+      await press(device, 'd6-route-close-options');
+      await press(device, 'home-itinerary-grabber');
+    }
+    return available;
+  }
+  async function complete(device: Device) {
+    if (platform === 'android') {
+      await device.perform('map.journey.complete', { destinationId: DESTINATION });
+    } else {
+      const value = await device.observe();
+      if (!has(value, 'd6-route-options')) await press(device, 'home-itinerary-grabber');
+      expect(await press(device, 'd6-route-options')).toEqual({ invoked: true });
+      expect(await press(device, visibleAction)).toEqual({ invoked: true });
+    }
+  }
   async function start(device: Device) {
-    await device.perform('map.journey.command', { destinationId: DESTINATION });
+    if (platform === 'ios') {
+      for (const event of ['onPressIn', 'onPressOut']) {
+        await device.host.call({ kind: 'nativeEvent', testId: 'home-journey-action', value: { event } });
+      }
+      expect(await press(device, 'home-journey-action')).toEqual({ invoked: true });
+    } else await device.perform('map.journey.command', { destinationId: DESTINATION });
+  }
+  async function stop(device: Device) {
+    if (platform === 'ios') {
+      for (const event of ['onPressIn', 'onLongPress', 'onPressOut']) {
+        await device.host.call({ kind: 'nativeEvent', testId: 'home-journey-action', value: { event } });
+      }
+    } else await device.perform('map.journey.command', { destinationId: DESTINATION });
   }
 
   it('MAP-GATHER-03 manual force completion confirms before closing the original active session without inventing arrivals', async () => {
     const world = new World();
     try {
       const leader = await map(world, LEADER, 'leader');
-      expect(has(await leader.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
+      expect(await readActions(leader)).toBe(false);
       await start(leader);
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'active shared session');
       const sessionId = [...world.backend.sessions.values()][0].id;
       const peer = await map(world, PEER, 'peer');
-      expect(has(await peer.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
-      expect(has(await leader.observe(), `gather-complete-${DESTINATION}`)).toBe(true);
+      expect(await readActions(peer)).toBe(false);
+      expect(await readActions(leader)).toBe(true);
       await complete(leader);
       const prompt = (await leader.observe()).external.alertDetails.at(-1);
       expect(prompt).toMatchObject({ title: '完成集合點', message: '已抵達成員（0/2），是否要完成此集合點？' });
@@ -58,7 +98,7 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
       await world.waitFor(peer, (value: Observation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'peer sees completed destination');
       await leader.restart();
       await world.waitFor(leader, (value: Observation) => !!value.durable.snapshot.destinations.find(row => row.id === DESTINATION)?.closedAt, 'completion survives restart');
-      expect(has(await leader.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
+      expect(has(await leader.observe(), visibleAction)).toBe(false);
       expect([...world.backend.sessions.values()]).toHaveLength(1);
     } finally { await world.close(); }
   });
@@ -71,7 +111,7 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'first active session');
       const originalId = [...world.backend.sessions.values()][0].id;
       await complete(leader);
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await stop(leader);
       await world.waitFor(leader, () => world.backend.sessions.get(originalId).status === 'cancelled', 'End only cancels original session');
       await start(leader);
       await world.waitFor(leader, () => [...world.backend.sessions.values()].some((row: { id: string; status: string }) => row.id !== originalId && row.status === 'active'), 'replacement session');
@@ -101,7 +141,7 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
       expect(started.data.status).toBe('accepted');
       const sessionId = [...world.backend.sessions.values()][0].id;
       const leader = await map(world, PEER, 'subgroup-leader');
-      expect(has(await leader.observe(), `gather-complete-${DESTINATION}`)).toBe(true);
+      expect(await readActions(leader)).toBe(true);
       await complete(leader);
       expect((await leader.observe()).external.alertDetails.at(-1)?.message).toBe('已抵達成員（0/1），是否要完成此集合點？');
       await leader.input({ kind: 'alert', index: 1 });

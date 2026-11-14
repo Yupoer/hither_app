@@ -1,13 +1,11 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Modal, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
+import Pressable from './MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import SheetHeaderAction from './SheetHeaderAction';
+import { MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
 import { liquidGlass } from '../native';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -104,8 +102,11 @@ export default React.memo(function CoordinateDestinationSheet({
             { paddingBottom: insets.bottom + spacing.lg },
           ]}
         >
-          <View style={styles.handle} />
-          <Text style={styles.heading}>{t('coord.title')}</Text>
+          <View style={styles.header}>
+            <Text style={styles.heading}>{t('coord.title')}</Text>
+            <SheetHeaderAction action="close" accessibilityLabel={t('common.cancel')} testID="coordinate-cancel"
+              onPress={onClose} disabled={submitting} />
+          </View>
 
           <Text style={styles.label}>{t('coord.nameLabel')}</Text>
           <TextInput
@@ -156,15 +157,6 @@ export default React.memo(function CoordinateDestinationSheet({
 
           <View style={styles.actions}>
             <Pressable
-              onPress={onClose}
-              testID="coordinate-cancel"
-              style={styles.cancelBtn}
-              disabled={submitting}
-              accessibilityRole="button"
-            >
-              <Text style={styles.cancelText}>{t('common.cancel')}</Text>
-            </Pressable>
-            <Pressable
               onPress={() => void handleSubmit()}
               testID="coordinate-submit"
               style={[styles.submitBtn, submitting && styles.submitDisabled]}
@@ -198,29 +190,24 @@ const makeStyles = (colors: Palette) =>
     },
     sheet: {
       overflow: 'hidden',
-      borderTopLeftRadius: 30,
-      borderTopRightRadius: 30,
+      borderTopLeftRadius: MAP_SHEET_CORNER_RADIUS,
+      borderTopRightRadius: MAP_SHEET_CORNER_RADIUS,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderColor: glass.hairlineSoft,
-      paddingHorizontal: spacing.lg,
-      paddingTop: spacing.md,
+      paddingHorizontal: SHEET_CORNER_ACTION_INSET,
+      paddingTop: SHEET_CORNER_ACTION_INSET,
       gap: spacing.sm,
     },
-    handle: {
-      alignSelf: 'center',
-      width: 40,
-      height: 5,
-      borderRadius: 3,
-      backgroundColor: glass.grabber,
-      marginBottom: spacing.sm,
-    },
+    header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
     heading: {
+      flex: 1,
+      paddingVertical: 12,
       color: '#fff',
-      fontSize: 18,
+      fontSize: APP_TEXT_SIZE.body,
       fontWeight: '700',
       marginBottom: spacing.sm,
     },
-    label: { color: glass.textSecondary, fontSize: 13, fontWeight: '600' },
+    label: { color: glass.textSecondary, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
     input: {
       backgroundColor: glass.fillStrong,
       borderRadius: radius.md,
@@ -228,10 +215,10 @@ const makeStyles = (colors: Palette) =>
       borderColor: glass.hairlineStrong,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md,
-      fontSize: 17,
+      fontSize: APP_TEXT_SIZE.body,
       color: '#fff',
     },
-    error: { color: '#ff8a80', fontSize: 14, marginTop: 4 },
+    error: { color: '#ff8a80', fontSize: APP_TEXT_SIZE.caption, marginTop: 4 },
     actions: {
       flexDirection: 'row',
       justifyContent: 'flex-end',
@@ -239,8 +226,6 @@ const makeStyles = (colors: Palette) =>
       marginTop: spacing.md,
       alignItems: 'center',
     },
-    cancelBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-    cancelText: { color: glass.textSecondary, fontSize: 16, fontWeight: '600' },
     submitBtn: {
       backgroundColor: colors.accent,
       borderRadius: radius.md,
@@ -250,5 +235,5 @@ const makeStyles = (colors: Palette) =>
       alignItems: 'center',
     },
     submitDisabled: { opacity: 0.6 },
-    submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+    submitText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   });

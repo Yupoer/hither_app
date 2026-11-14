@@ -241,7 +241,7 @@ class Device {
     if (['perform', 'input', 'host', 'mount', 'advance', 'close'].includes(command.kind)) {
       this.world.recordInput?.({ deviceId: this.spec.id, platform: this.spec.platform, generation: this.generation, logicalTime: this.world.now, command: structuredClone(command) });
     }
-    return new Promise((resolve, reject) => {
+    const result = new Promise((resolve, reject) => {
       const timer = realTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Device ${this.spec.id} ${command.kind} deadline: ${this.logs}`));
@@ -249,6 +249,8 @@ class Device {
       this.pending.set(id, { resolve, reject, timer });
       this.child.send({ type: 'command', generation: this.generation, id, command });
     });
+    this.pending.get(id).finished = result.then(() => undefined, () => undefined);
+    return result;
   }
   async perform(name, input = {}) {
     if (name === 'group.observe') this.context = input.groupId;
@@ -268,9 +270,11 @@ class Device {
     const child = this.child;
     try {
       if (child.connected) {
+        const pendingCommands = [...this.pending.values()].map(entry => entry.finished);
         const receipt = await this.command({ kind: 'close' });
         this.disposal = receipt;
         assert.equal(receipt.pending, 0, 'Unresolved SDK requests during disposal');
+        await deadline(Promise.all(pendingCommands), 5000, `Pending commands during ${this.spec.id} disposal`);
         child.disconnect();
       }
       const exit = await deadline(this.exited, 5000, `Exit ${this.spec.id}`);

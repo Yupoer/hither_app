@@ -1,5 +1,7 @@
 import React from 'react';
-import { View, Text, Pressable, Platform } from 'react-native';
+import { View, Platform } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from '../../../i18n';
 import { lightTap } from '../../../utils/haptics';

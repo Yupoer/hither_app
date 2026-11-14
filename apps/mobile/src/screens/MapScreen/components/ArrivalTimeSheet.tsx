@@ -4,7 +4,9 @@ import { type TranslationKey } from '../../../i18n';
 import { type Destination, type MemberLocation } from '../../../types';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, View, Text, Pressable } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 import type { DestinationArrival } from '../../../types';
 

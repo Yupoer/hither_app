@@ -63,7 +63,7 @@ describe('Amicro native animation contracts', () => {
     expect(inviteMembersOverlay).toContain("label={t('map.share')}");
     expect(inviteMembersOverlay).toContain("label={t('map.copy')}");
     expect(inviteMembersOverlay).toContain('durationMs={420}');
-    expect(inviteMembersOverlay).toContain('style={styles.inviteActionButton}');
+    expect(inviteMembersOverlay).toContain('styles.inviteActionButton');
     expect(mapStyles).toContain('fontSize: 32');
     expect(carousel).toContain('adjustsFontSizeToFit');
     expect(inviteMembersOverlay).toContain('minimumFontScale={0.7}');

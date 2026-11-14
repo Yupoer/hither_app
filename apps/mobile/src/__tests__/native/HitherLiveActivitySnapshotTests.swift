@@ -51,6 +51,22 @@ struct HitherLiveActivitySnapshotTests {
     precondition(!HitherLiveActivitySnapshot.matchesScope(incoming: snapshot(1000, destination: "point-b"), current: newer))
     precondition(!HitherLiveActivitySnapshot.matchesScope(incoming: snapshot(1000, session: "session-b"), current: newer))
 
+    var d6 = newer
+    d6["dayColorHex"] = "#A35FC9"
+    d6["meetTimeMs"] = 200_000
+    d6["selfFace"] = ["emoji": "🦊", "arrived": false]
+    let legacy = HitherLiveActivitySnapshot.merge(incoming: older, current: d6)
+    precondition(legacy["dayColorHex"] as? String == "#A35FC9")
+    precondition(number(legacy, "meetTimeMs") == 200_000)
+    precondition((legacy["selfFace"] as? [String: Any])?["emoji"] as? String == "🦊")
+    var clearedMeeting = older
+    clearedMeeting["meetTimeMs"] = NSNull()
+    let cleared = HitherLiveActivitySnapshot.merge(incoming: clearedMeeting, current: d6)
+    precondition(cleared["meetTimeMs"] is NSNull, "an explicit meet time removal must beat cached chrome")
+    let differentStop = HitherLiveActivitySnapshot.merge(
+      incoming: snapshot(1000, destination: "point-b"), current: d6)
+    precondition(differentStop["meetTimeMs"] == nil && differentStop["selfFace"] == nil)
+
     var radiusOnly = older
     radiusOnly["progress"] = 1.0
     radiusOnly["etaSeconds"] = 0.0

@@ -19,11 +19,20 @@ import { GatheringCardPressable } from './GatheringCardPressable';
 import { MeetTimeChip } from './MeetTimeChip';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, View, Platform, StyleSheet, Text, Pressable, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import {
+  ScrollView,
+  View,
+  Platform,
+  StyleSheet,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type AppStateStatus,
+} from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
 import type { MapStyles } from '../styles';
 import type { DestinationArrival, User } from '../../../types';
-import type { AppStateStatus } from 'react-native';
 import type { Palette } from '../../../theme';
 import type { FontScaleBucket } from '../../../theme/typeScale';
 import { GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
@@ -405,8 +414,6 @@ export function GatheringCarousel({
                               active={active}
                               activationDelayMs={1600}
                               pixelsPerSecond={gatherCardMarqueeSpeed}
-                              startPauseMs={1000}
-                              endPauseMs={1500}
                               maxFontSizeMultiplier={1}
                               containerStyle={{ flex: 0, marginTop: styles.cardTitleExpanded.marginTop }}
                               style={[styles.cardTitle, styles.cardTitleExpanded, { marginTop: 0 }]}
@@ -564,8 +571,6 @@ export function GatheringCarousel({
                             active={active}
                             activationDelayMs={1600}
                             pixelsPerSecond={gatherCardMarqueeSpeed}
-                            startPauseMs={1000}
-                            endPauseMs={1500}
                             allowFontScaling={false}
                             // Single stable style object (not an inline array) so
                             // MapScreen re-renders do not thrash marquee measure.

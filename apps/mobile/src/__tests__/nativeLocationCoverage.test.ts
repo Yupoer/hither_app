@@ -32,6 +32,7 @@ const mockSubscribeDebug = jest.fn();
 let mockDebugListener: ((sample: unknown) => void) | undefined;
 
 jest.mock('expo-location', () => mockLocationApi);
+jest.mock('expo-modules-core', () => ({ requireOptionalNativeModule: () => null }));
 jest.mock('react-native', () => ({ AppState: mockAppState }));
 jest.mock('../native/backgroundLocation', () => ({
   captureBackgroundRefreshFix: (...args: unknown[]) => mockCaptureBackgroundRefreshFix(...args),

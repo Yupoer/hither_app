@@ -88,7 +88,7 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     expect(sheet).toContain('validateCoordinateDestination');
   });
 
-  it('wires long-press into the search-style confirm card (name only)', () => {
+  it('routes native long-press into map pin staging and keeps manual coordinates available', () => {
     expect(groupMap).toContain('onLongPressCoordinate');
     expect(mapScreen).toContain('handleLongPressCoordinate');
     // Long-press stages pendingPlace (confirm card), not the lat/lng sheet.
@@ -99,9 +99,12 @@ describe('CoordinateDestinationSheet wiring contract', () => {
     // Manual lat/lng entry remains available from search.
     expect(mapScreen).toContain('CoordinateDestinationSheet');
     expect(mapScreen).toContain('handleCoordinateDestination');
-    // iOS + Android share long-press. Always open confirm card first (name editable);
-    // members notify leader only on confirm Add via handlePickDestination.
-    expect(mapScreen).toContain('onLongPressCoordinate={handleLongPressCoordinate}');
+    expect(mapScreen).toContain('onLongPressCoordinate={d6Enabled ? stageHomeDrop : handleLongPressCoordinate}');
+    const d6DropStart = mapScreen.indexOf('const stageHomeDrop');
+    const d6DropEnd = mapScreen.indexOf('const stageHomePlace', d6DropStart);
+    expect(d6DropStart).toBeGreaterThanOrEqual(0);
+    expect(d6DropEnd).toBeGreaterThan(d6DropStart);
+    expect(mapScreen.slice(d6DropStart, d6DropEnd)).toContain('handleLongPressCoordinate(coords)');
     const longPressStart = mapScreen.indexOf('const handleLongPressCoordinate = useCallback');
     const longPressEnd = mapScreen.indexOf('const handleCoordinateDestination', longPressStart);
     expect(longPressStart).toBeGreaterThanOrEqual(0);

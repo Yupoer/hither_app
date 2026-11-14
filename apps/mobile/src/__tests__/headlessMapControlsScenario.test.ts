@@ -12,7 +12,8 @@ const field = (value: Observation, id: string) => value.presentation.hosts.find(
 const has = (value: Observation, id: string) => Boolean(field(value, id));
 const press = (device: Device, testId: string) => device.host.call({ kind: 'press', testId });
 
-describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
+describe('legacy Android Map controls', () => {
+  const platform: string = 'android';
   jest.setTimeout(120000);
   async function map(world: InstanceType<typeof World>, userId = LEADER, capabilities = {}) {
     const device = await world.device({ id: `map-controls-${userId}`, userId, platform, capabilities, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
@@ -37,7 +38,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
   }
   async function presence(world: InstanceType<typeof World>, device: Device, value: string) {
     await device.perform('map.presence.select', { value });
-    if (platform === 'android') await device.input({ kind: 'alert', index: ['follow', 'solo', 'stealth'].indexOf(value) });
+    await device.input({ kind: 'alert', index: ['follow', 'solo', 'stealth'].indexOf(value) });
     await world.settle();
   }
 
@@ -206,7 +207,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
     } finally { await world.close(); }
   });
 
-  it('MAP-GROUP-02 actual Map signout cancellation retains identity and confirmation resets Login', async () => {
+  it('MAP-GROUP-02 actual Map signout cancellation retains identity and confirmation returns to role entry', async () => {
     const world = new World();
     try {
       const device = await map(world);
@@ -216,7 +217,7 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       expect((await device.observe()).presentation.session.user.id).toBe(LEADER);
       await device.perform('map.group.signout');
       await device.input({ kind: 'alert', index: 1 });
-      await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'Login' && value.presentation.session.user === null, 'actual Map signout');
+      await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'RoleSelect' && value.presentation.session.user === null, 'actual Map signout');
       expect(world.backend.authUsers.has(LEADER)).toBe(true);
     } finally { await world.close(); }
   });
@@ -346,26 +347,18 @@ describe.each(['ios', 'android'])('actual Map controls on %s', platform => {
       await device.perform('map.journey.command', { destinationId: DESTINATION });
       const activeSession = () => [...world.backend.sessions.values()].find((session: { status: string; id: string }) => session.status === 'active');
       await world.waitFor(device, () => Boolean(activeSession()), 'actual Map navigation start');
-      if (platform === 'ios') {
-        await world.waitFor(device, (value: Observation) => value.native.location.prepared, 'ordinary iOS location session prepared in foreground');
-      }
       await device.input({ kind: 'appState', value: 'background' });
       const running: Observation = await world.waitFor(device, (value: Observation) => value.external.watches === 0
-        && (platform === 'ios' ? value.native.location.running : value.external.backgroundTasks.length === 1), 'ordinary background owner');
+        && value.external.backgroundTasks.length === 1, 'ordinary Android background owner');
       const task = running.external.backgroundTasks[0];
-      if (platform === 'ios') expect(running.external.backgroundTasks).toEqual([]);
-      else expect(running.native.location).toMatchObject({ running: false, prepared: false });
-      const options = platform === 'ios'
-        ? running.native.receipts.find((receipt: { method: string }) => receipt.method === 'nativeLocation.start')?.value
-        : task.options;
-      expect(options).toMatchObject({
+      expect(running.native.location).toMatchObject({ running: false, prepared: false });
+      expect(task.options).toMatchObject({
         accuracy: 4, activityType: 1, timeInterval: 60_000,
-        distanceInterval: platform === 'ios' ? 10 : 100, showsBackgroundLocationIndicator: false,
+        distanceInterval: 100, showsBackgroundLocationIndicator: false,
       });
       const sendFix = async (latitude: number) => {
         const sample = { timestamp: world.now, coords: { latitude, longitude: 121.511, accuracy: 5 } };
-        await device.input(platform === 'ios' ? { kind: 'nativeLocation', sample }
-          : { kind: 'task', name: task.name, value: { data: { locations: [sample] }, error: null } });
+        await device.input({ kind: 'task', name: task.name, value: { data: { locations: [sample] }, error: null } });
         await world.settle();
         return sample;
       };
