@@ -11,7 +11,6 @@ const accountActions = readFileSync(join(__dirname, '../screens/MapScreen/hooks/
 const itineraryMutations = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useItineraryMutations.ts'), 'utf8');
 const addPlaceCard = readFileSync(join(__dirname, '../screens/MapScreen/components/AddPlaceConfirmCard.tsx'), 'utf8');
 const authScreen = readFileSync(join(__dirname, '../screens/AuthScreen.tsx'), 'utf8');
-const roleSelect = readFileSync(join(__dirname, '../screens/RoleSelectScreen.tsx'), 'utf8');
 const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
 const loginScreen = readFileSync(join(__dirname, '../screens/LoginScreen.tsx'), 'utf8');
 const accountSheet = readFileSync(join(__dirname, '../components/AccountSheet.tsx'), 'utf8');
@@ -37,7 +36,6 @@ const HIGH_RISK_ACTION_IDS = [
   'role_select.sign_out',
   'my_teams.enter_group',
   'my_teams.leave_group',
-  'my_teams.clear_all',
   // Map / sheet (batch 3b)
   'map.destination_add',
   'map.destination_add_coords',
@@ -112,21 +110,19 @@ describe('button inventory / high-risk action contract', () => {
     expect(mapScreen).toContain("if (!ok) throw new Error(t('map.setFailedMsg'))");
   });
 
-  it('wires Auth create/join and RoleSelect sign-out through runUiAction / SafePressable', () => {
+  it('wires team entry, leave and signout through runUiAction', () => {
     expect(authScreen).toContain("'auth.create_group'");
     expect(authScreen).toContain("'auth.join_group'");
-    expect(authScreen).toContain('SafePressable');
+    expect(authScreen).toContain('runUiAction(actionId');
     expect(authScreen).toContain('token.isCurrent()');
-    expect(roleSelect).toContain("'role_select.sign_out'");
-    expect(roleSelect).toContain('token.isCurrent()');
+    expect(myTeams).toContain("'role_select.sign_out'");
     expect(myTeams).toContain("'my_teams.enter_group'");
     expect(myTeams).toContain("'my_teams.leave_group'");
-    expect(myTeams).toContain("'my_teams.clear_all'");
     expect(myTeams).toContain('token.isCurrent()');
   });
 
   it('wires Login, account upgrade/redeem, and feedback submit through runUiAction', () => {
-    expect(loginScreen).toContain('SafePressable');
+    expect(loginScreen).toContain('runUiAction(actionIds[action]');
     expect(loginScreen).toContain("'login.sign_in'");
     expect(loginScreen).toContain("'login.sign_up'");
     expect(loginScreen).toContain("'login.google'");
@@ -163,7 +159,6 @@ describe('button inventory / high-risk action contract', () => {
       groupActions,
       accountActions,
       authScreen,
-      roleSelect,
       myTeams,
       loginScreen,
       accountSheet,
@@ -178,14 +173,7 @@ describe('button inventory / high-risk action contract', () => {
   it('documents pure-UI handlers that stay as minimal setState (no forced runUiAction)', () => {
     // These are intentionally local state setters — inventory only.
     expect(mapScreen).toContain('setOverlay(null)');
-    expect(loginScreen).toContain('onChange={setAuthMode}');
     expect(feedbackSheet).toContain('onPress={() => setCategory(c.key)}');
   });
 
-  it('uses SafePressable in production call sites (not only the component definition)', () => {
-    expect(loginScreen).toMatch(/from ['"]\.\.\/components\/SafePressable['"]/);
-    expect(authScreen).toMatch(/from ['"]\.\.\/components\/SafePressable['"]/);
-    expect(loginScreen).toContain('<SafePressable');
-    expect(authScreen).toContain('<SafePressable');
-  });
 });

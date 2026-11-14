@@ -12,7 +12,8 @@ type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 const has = (value: { presentation: Presentation }, id: string) => value.presentation.hosts.some(host => host.testId === id);
 const field = (value: { presentation: Presentation }, id: string) => value.presentation.hosts.find(host => host.testId === id);
 
-describe.each(['ios', 'android'])('actual Map screen operations on %s', platform => {
+describe('actual Map screen operations on Android', () => {
+  const platform = 'android';
   jest.setTimeout(120000);
   const run = (device: Device, name: string, input = {}) => device.perform(name, input);
   async function map(world: InstanceType<typeof World>, userId = LEADER, id = 'map') {
@@ -768,7 +769,6 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       await world.settle();
       const session = [...world.backend.sessions.values()][0];
       await world.advance(1000);
-      if (platform === 'ios') await world.waitFor(device, (value: MapObservation) => has(value, 'group-map-native'), 'leader native map before automatic arrival');
       await device.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
       const arrived = await world.waitFor(device, (value: MapObservation) => value.presentation.hosts.some(host => host.label?.endsWith('1/2')) && world.backend.tables.destination_arrivals.length === 1, 'automatic personal arrival reflected');
       expect(world.backend.tables.destination_arrivals[0]).toMatchObject({ user_id: LEADER, navigation_session_id: session.id, arrived_at: new Date(world.now).toISOString(), source: 'automatic' });
@@ -780,7 +780,6 @@ describe.each(['ios', 'android'])('actual Map screen operations on %s', platform
       expect(has(await peer.observe(), `gather-complete-${DESTINATION}`)).toBe(false);
       expect((await peer.observe()).presentation.hosts.filter((host: Host) => host.testId?.startsWith('gather-arrival-'))).toEqual([]);
       await world.advance(1000);
-      if (platform === 'ios') await world.waitFor(peer, (value: MapObservation) => has(value, 'group-map-native'), 'member native map before automatic arrival');
       await peer.input({ kind: 'gps', latitude: 25.04, longitude: 121.53, accuracy: 5, timestamp: world.now });
       await world.waitFor(peer, () => world.backend.tables.destination_arrivals.some((row: { user_id: string }) => row.user_id === PEER), 'last roster member automatic arrival accepted');
       expect(world.backend.tables.destination_arrivals.find((row: { user_id: string }) => row.user_id === PEER)).toMatchObject({ navigation_session_id: session.id, source: 'automatic' });

@@ -218,6 +218,7 @@ exports.createExternalNative = function createExternalNative({ platform, strict 
   let locationRunning = false;
   const locationSupported = platform === 'ios' && profile.nativeLocationLiveUpdates !== false;
   const locationModule = boundary('HitherLocation', {
+    supportsMotionActivityReporting: platform === 'ios' ? () => false : undefined,
     supportsOrdinaryBackgroundLiveUpdates: platform === 'ios' ? () => locationSupported : undefined,
     isDeviceLocked: platform === 'ios' ? async () => location.locked : undefined,
     getCurrentLocation: platform === 'android' ? async () => null : undefined,

@@ -26,7 +26,7 @@ export type TypeRole =
   | 'emoji'; // avatar glyphs — no scaling
 
 /**
- * Hard ceiling for ALL Text / TextInput (App.tsx defaultProps).
+ * Ceiling applied directly by AppText and AppTextInput to native text props.
  * Within 1…this, type scales with the system; above system scale is ignored.
  */
 export const GLOBAL_FONT_SCALE_CAP = 1.25;
@@ -58,15 +58,18 @@ export const TYPE_MAX_MULTIPLIER: Record<TypeRole, number> = {
   emoji: 1.0,
 };
 
+export const APP_TEXT_SIZE = { caption: 16, body: 18, title: 22, heading: 28, metric: 50 } as const;
+export const APP_TEXT_LINE_HEIGHT = { caption: 21, body: 24, title: 29, heading: 37, metric: 65 } as const;
+
 /** Design-token base sizes (px) — aligned to DS typography. */
 export const TYPE_BASE: Record<TypeRole, number> = {
-  display: 34,
-  title: 19,
-  body: 16,
-  callout: 15,
-  footnote: 13,
-  caption: 11,
-  metric: 34,
+  display: APP_TEXT_SIZE.heading,
+  title: APP_TEXT_SIZE.title,
+  body: APP_TEXT_SIZE.body,
+  callout: APP_TEXT_SIZE.body,
+  footnote: APP_TEXT_SIZE.caption,
+  caption: APP_TEXT_SIZE.caption,
+  metric: APP_TEXT_SIZE.metric,
   emoji: 16,
 };
 

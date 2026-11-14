@@ -8,6 +8,7 @@ import {
   MapForegroundNavigationResource,
   MapNavigationStartFrameResource,
   MapProgressDeadlineResource,
+  MapRouteCameraResource,
   MapRouteScopePreferenceResource,
   MapSharingHydrationResource,
 } from '../screens/MapScreen/MapScreenResources';
@@ -71,6 +72,31 @@ jest.mock('../api/client', () => ({ listFavoritePlaces: jest.fn() }));
 
 describe('MapScreen named resources', () => {
   let tree: ReactTestRenderer | undefined;
+
+  it('keeps stop-detail focus through late routes and fits the deferred mode after details close', async () => {
+    const fitRoute = jest.fn();
+    const lastFittedRouteRef = { current: null };
+    const point = { latitude: 25, longitude: 121 };
+    const route = { points: [point], distanceMeters: 500, expectedTravelTimeSeconds: 300 };
+    const props: React.ComponentProps<typeof MapRouteCameraResource> = {
+      allowAutoFit: false, activePoint: { id: 'stop', title: 'Stop', order: 0, day: 1, coordinates: point },
+      travelMode: 'walk', lastFittedRouteRef,
+      selfRoute: route,
+      mapRef: { current: { fitRoute, recenter: jest.fn(), centerOn: jest.fn(), focusOblique: jest.fn(), fitToMembers: jest.fn() } },
+      deviceCoords: { latitude: 25.01, longitude: 121 },
+    };
+    await act(async () => { tree = create(React.createElement(MapRouteCameraResource, props)); });
+    await act(async () => tree?.update(React.createElement(MapRouteCameraResource, { ...props,
+      selfRoute: { ...route, expectedTravelTimeSeconds: 280 },
+    })));
+    expect(fitRoute).not.toHaveBeenCalled();
+    await act(async () => tree?.update(React.createElement(MapRouteCameraResource, { ...props, allowAutoFit: true })));
+    expect(fitRoute).toHaveBeenCalledTimes(1);
+    await act(async () => tree?.update(React.createElement(MapRouteCameraResource, { ...props, travelMode: 'drive' })));
+    expect(fitRoute).toHaveBeenCalledTimes(1);
+    await act(async () => tree?.update(React.createElement(MapRouteCameraResource, { ...props, allowAutoFit: true, travelMode: 'drive' })));
+    expect(fitRoute).toHaveBeenCalledTimes(2);
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockOutboxLoads.length = 0;

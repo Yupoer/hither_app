@@ -1,6 +1,14 @@
 import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useMountEffect } from '../../../hooks/useMountEffect';
-import { View, Text, Pressable, StyleSheet, ScrollView, type NativeSyntheticEvent, type NativeScrollEvent } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+} from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

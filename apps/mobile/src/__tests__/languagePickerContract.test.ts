@@ -5,7 +5,7 @@ import { translationKeys } from '../i18n';
 const src = (rel: string) => readFileSync(join(__dirname, '..', rel), 'utf8');
 
 const login = src('screens/LoginScreen.tsx');
-const roleSelect = src('screens/RoleSelectScreen.tsx');
+const teamEntry = src('screens/MyTeamsScreen.tsx');
 const auth = src('screens/AuthScreen.tsx');
 const picker = src('components/LanguagePicker.tsx');
 const helper = src('utils/showLanguageChoice.ts');
@@ -23,42 +23,11 @@ const androidMenu = readFileSync(
 );
 
 describe('language picker placement contract', () => {
-  it('shows LanguagePicker on Login without hiding it behind a session', () => {
-    expect(login).toMatch(/from ['"]\.\.\/components\/LanguagePicker['"]/);
-    expect(login).toContain('<LanguagePicker');
-    expect(login).toContain('variant="menu"');
-    expect(login).toContain('left: 20');
-    expect(login).not.toMatch(/user\s*\?[\s\S]{0,80}<LanguagePicker/);
-  });
-
-  it('shows LanguagePicker on RoleSelect even when user is null', () => {
-    expect(roleSelect).toMatch(/from ['"]\.\.\/components\/LanguagePicker['"]/);
-    expect(roleSelect).toContain('<LanguagePicker');
-    expect(roleSelect).toContain('variant="menu"');
-    const pickerAt = roleSelect.indexOf('<LanguagePicker');
-    expect(pickerAt).toBeGreaterThanOrEqual(0);
-    expect(roleSelect).not.toContain('confirmDeleteAccount');
-  });
-
-  it('keeps RoleSelect language menu stable during outgoing navigation', () => {
-    expect(roleSelect).toContain('variant="menu"');
-    expect(roleSelect).not.toMatch(/canGoBack\(\)/);
-    expect(roleSelect).toContain('leftChrome');
-    expect(roleSelect).toMatch(/left:\s*20/);
-    expect(roleSelect).toMatch(/flexDirection:\s*'row'/);
-    expect(roleSelect).toMatch(/right:\s*20/);
-    expect(roleSelect).toContain("'role_select.sign_out'");
-    expect(roleSelect).not.toContain('langChrome');
-    expect(roleSelect).not.toContain('切換語言');
-    expect(roleSelect).not.toContain('ActionSheetIOS');
-  });
-
-  it('does not show LanguagePicker on Auth for leader or follower', () => {
-    expect(auth).not.toMatch(/from ['"]\.\.\/components\/LanguagePicker['"]/);
-    expect(auth).not.toContain('<LanguagePicker');
-    expect(auth).not.toContain('confirmDeleteAccount');
-    expect(auth).toContain("route.params?.role");
-    expect(auth).toContain('isLeader');
+  it('uses the shared language on the welcome, login, and team sheets', () => {
+    for (const screen of [login, teamEntry, auth]) {
+      expect(screen).toContain('useTranslation()');
+      expect(screen).not.toContain('<LanguagePicker');
+    }
   });
 
   it('writes existing setLanguage and only offers zh/en', () => {
@@ -79,7 +48,7 @@ describe('language picker placement contract', () => {
     expect(picker).not.toContain('切換語言');
   });
 
-  it('opens the RoleSelect menu only through hither-menu UIMenu', () => {
+  it('uses hither-menu in the reusable language control', () => {
     const menu = src('native/menu.ts');
     expect(menu).toContain("requireOptionalNativeModule('HitherMenu')");
     expect(menu).toContain('requireNativeViewManager');
@@ -88,7 +57,6 @@ describe('language picker placement contract', () => {
     expect(picker).not.toContain('ActionSheetIOS');
     expect(picker).not.toContain('Alert.alert');
     expect(picker).not.toContain('showLanguageChoice(');
-    expect(roleSelect).not.toContain('ActionSheetIOS');
     expect(iosMenu).toContain('showsMenuAsPrimaryAction');
     expect(iosMenu).toContain('UIMenu');
     expect(androidMenu).toContain('PopupMenu');

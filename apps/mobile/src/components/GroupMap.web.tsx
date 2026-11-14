@@ -1,5 +1,7 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import React, { forwardRef, useImperativeHandle, useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import type { GroupMapHandle, GroupMapProps } from './GroupMap';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -101,13 +103,13 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 160 },
   note: {
     color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: APP_TEXT_SIZE.caption,
+    lineHeight: APP_TEXT_LINE_HEIGHT.caption,
     marginBottom: spacing.sm,
   },
   section: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '700',
     letterSpacing: 1,
     marginTop: spacing.md,
@@ -135,8 +137,8 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     justifyContent: 'center',
   },
   pinText: { color: colors.textPrimary, fontWeight: '700' },
-  title: { color: colors.textPrimary, fontSize: 16, fontWeight: '600' },
-  sub: { color: colors.textSecondary, fontSize: 13 },
+  title: { color: colors.textPrimary, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
+  sub: { color: colors.textSecondary, fontSize: APP_TEXT_SIZE.caption },
 });
 
 export default GroupMap;

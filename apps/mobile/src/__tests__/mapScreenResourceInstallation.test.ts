@@ -2,6 +2,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { Coordinates, GroupState } from '../types';
 import { useMountEffect } from '../hooks/useMountEffect';
+import { D6HomeChrome } from '../screens/MapScreen/components/D6HomeChrome';
 
 const mockLifecycles = new Map<string, number>();
 const mockLifecycleMounts = jest.fn();
@@ -29,6 +30,7 @@ const mockWorkloadRelease = jest.fn();
 const mockWorkload = jest.fn(() => mockWorkloadRelease);
 const mockMapMount = jest.fn();
 const mockMapUnmount = jest.fn();
+let mockUiVisible = true;
 const mockPrefs = { ready: false, passiveCompanionMode: false, highAccuracy: false, sharingEnabled: false,
   obliqueLocate: false, liveActivityEnabled: false, meetRedMin: 5, gatherCardDefaultExpanded: false,
   gatherCardTitleMarquee: false, gatherCardMarqueeSpeed: 1, arrivalRadiusM: 50,
@@ -112,6 +114,21 @@ jest.mock('../screens/MapScreen/components/InviteMembersOverlay', () => ({ __esM
 jest.mock('../screens/MapScreen/components/RouteEditorSheet', () => ({ __esModule: true, default: 'mock-view', RouteEditorSheet: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/GatheringCarousel', () => ({ __esModule: true, default: 'mock-view', GatheringCarousel: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/AddPlaceConfirmCard', () => ({ __esModule: true, default: 'mock-view', AddPlaceConfirmCard: 'mock-view' }));
+jest.mock('../screens/MapScreen/components/D6HomeChrome', () => ({
+  D6HomeChrome: 'home-chrome', D6Surface: 'home-surface', D6IconButton: 'home-button',
+  D6_ACCENT: '#4C6FFF', d6ChromeStyles: {}, useD6Numbers: () => undefined, d6DayColor: () => '#A35FC9',
+}));
+jest.mock('../screens/MapScreen/components/D6StopCards', () => ({
+  D6StopCard: 'stop-detail', D6AddPlace: 'add-place', defaultD6Departure: () => '2026-11-13',
+}));
+jest.mock('../screens/MapScreen/components/D6RoutePane', () => ({ D6RoutePane: 'itinerary' }));
+jest.mock('../screens/MapScreen/components/D6MembersPane', () => ({ D6MembersPane: 'team' }));
+jest.mock('../screens/MapScreen/components/QuickCommandGrid', () => ({ QuickCommandGrid: 'commands' }));
+jest.mock('../screens/MapScreen/hooks/useD6TravelMode', () => ({
+  useD6TravelMode: () => ({
+    selectedMode: 'auto', mode: 'walk', etaSeconds: null, etaByMode: {}, lifecycle: null,
+  }),
+}));
 jest.mock('../screens/MapScreen/components/ToolsPane', () => ({ __esModule: true, default: 'mock-view', ToolsPane: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/RoutePane', () => ({ __esModule: true, default: 'mock-view', RoutePane: 'mock-view' }));
 jest.mock('../screens/MapScreen/components/MembersPane', () => ({ __esModule: true, default: 'mock-view', MembersPane: 'mock-view' }));
@@ -122,7 +139,8 @@ jest.mock('../screens/MapScreen/components/StorePane', () => ({ __esModule: true
 jest.mock('../components/AccountSheet', () => ({ __esModule: true, default: 'mock-view' }));
 jest.mock('react-native', () => ({
   View: 'view', Text: 'text', ScrollView: 'scroll-view', Pressable: 'pressable',
-  Platform: { OS: 'ios' }, UIManager: {}, Alert: { alert: jest.fn() }, Linking: { openSettings: mockAsync },
+  Platform: { OS: 'ios' }, UIManager: {}, Alert: { alert: jest.fn() },
+  Linking: { openSettings: mockAsync, getInitialURL: async () => null, addEventListener: () => ({ remove: jest.fn() }) },
   LayoutAnimation: { configureNext: jest.fn(), Presets: {} },
   Keyboard: { addListener: () => ({ remove: jest.fn() }) },
   AppState: { currentState: 'active', addEventListener: (_event: string, listener: (state: string) => void) => {
@@ -175,7 +193,8 @@ jest.mock('../screens/MapScreen/hooks/useDeviceLocation', () => ({ useDeviceLoca
 jest.mock('../screens/MapScreen/styles', () => ({ makeStyles: () => ({}) }));
 jest.mock('../state/runtimePowerState', () => ({ subscribeRuntimePowerState: () => () => undefined, getRuntimePowerState: () => mockPower }));
 jest.mock('../state/foregroundUi', () => ({
-  useVisibleUi: () => true, isForegroundUi: () => true, subscribeForegroundUi: () => () => undefined,
+  useVisibleUi: () => mockUiVisible, isForegroundUi: () => mockUiVisible, subscribeForegroundUi: () => () => undefined,
+  useForegroundClock: () => ({ now: Date.now(), lifecycle: null }),
 }));
 jest.mock('../a11y/useFontScaleBucket', () => ({ useFontLayout: () => ({ bucket: 'normal', scale: 1, textScale: 1, boldText: false, s: (n: number) => n }) }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: mockT, language: 'en' }) }));
@@ -265,6 +284,13 @@ it('mounts real resources through every MapScreen return and preserves the nativ
     expect(tree?.root.findByProps({ testID: 'map-native-owner' }).props.initialCenter).toBe(first);
     expect(mockMapMount).toHaveBeenCalledTimes(1);
     expect(mockMapUnmount).not.toHaveBeenCalled();
+    const chrome = tree?.root.findByType(D6HomeChrome);
+    mockUiVisible = false;
+    await act(async () => tree?.update(React.createElement(MapScreen, props)));
+    expect(tree?.root.findByType(D6HomeChrome)).toBe(chrome);
+    mockUiVisible = true;
+    await act(async () => tree?.update(React.createElement(MapScreen, props)));
+    expect(tree?.root.findByType(D6HomeChrome)).toBe(chrome);
     const stops = mockStops.mock.calls.length;
     await act(async () => tree?.unmount()); tree = undefined;
     expect(mockLifecycles.size).toBe(0);

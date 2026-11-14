@@ -7,11 +7,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../supabase';
 import {
-  AVATAR_COLORS,
   AVATAR_EMOJI,
   avatarColorForGroup,
   avatarForGroup,
   displayMemberAvatar,
+  isAvatarColor,
 } from '../../constants/avatars';
 import { memberColor } from '../../glass';
 import { mergeAvatarProfiles } from '../../utils/gatherCommand';
@@ -38,7 +38,7 @@ import type {
   SubgroupInvite,
   SubgroupMode,
 } from '../../types';
-import { generateInviteCode, requireUserId, orThrow } from './_helpers';
+import { requireUserId, orThrow } from './_helpers';
 import { mapDestination, type ItineraryRow } from './DestinationService';
 import {
   listDailyAccommodations,
@@ -82,6 +82,7 @@ export interface SubgroupRow {
   mode: SubgroupMode;
   leader_id: string | null;
   parent_subgroup_id: string | null;
+  created_at?: string | null;
 }
 
 export interface SubgroupInviteRow {
@@ -132,7 +133,7 @@ export function mapGroup(row: GroupRow): Group {
     avatar: storedAvatar && (AVATAR_EMOJI as readonly string[]).includes(storedAvatar.trim())
       ? storedAvatar.trim()
       : avatarForGroup(row.id),
-    avatarColor: storedColor && (AVATAR_COLORS as readonly string[]).includes(storedColor.trim())
+    avatarColor: storedColor && isAvatarColor(storedColor.trim())
       ? storedColor.trim()
       : avatarColorForGroup(row.id),
   };
@@ -177,6 +178,7 @@ export function mapSubgroup(row: SubgroupRow): Subgroup {
     mode: row.mode,
     leaderId: row.leader_id ?? undefined,
     parentId: row.parent_subgroup_id ?? undefined,
+    createdAt: row.created_at ?? undefined,
   };
 }
 
@@ -234,22 +236,46 @@ export async function updateGroupAvatar(
   avatar: string,
   avatarColor?: string,
 ): Promise<Group> {
+  return updateGroupIdentity(groupId, {
+    avatar: AVATAR_EMOJI.some(option => option === avatar) ? avatar : avatarForGroup(groupId),
+    avatarColor: avatarColor && isAvatarColor(avatarColor) ? avatarColor : avatarColorForGroup(groupId),
+  });
+}
+
+export async function updateGroupIdentity(
+  groupId: string,
+  fields: { name?: string; avatar?: string; avatarColor?: string },
+): Promise<Group> {
   await requireUserId();
-  const safeAvatar = (AVATAR_EMOJI as readonly string[]).includes(avatar)
-    ? avatar
-    : avatarForGroup(groupId);
-  const safeColor = avatarColor && (AVATAR_COLORS as readonly string[]).includes(avatarColor)
-    ? avatarColor
-    : avatarColorForGroup(groupId);
+  const patch: { name?: string; avatar?: string; avatar_color?: string } = {};
+  const name = fields.name?.trim();
+  if (name) patch.name = name;
+  if (fields.avatar && AVATAR_EMOJI.some(option => option === fields.avatar)) patch.avatar = fields.avatar;
+  if (fields.avatarColor && isAvatarColor(fields.avatarColor)) patch.avatar_color = fields.avatarColor;
+  if (Object.keys(patch).length === 0) throw new Error('Group update requires a valid name, avatar, or color');
   const { data, error } = await supabase
     .from('groups')
-    .update({ avatar: safeAvatar, avatar_color: safeColor })
+    .update(patch)
     .eq('id', groupId)
     .select('id, name, invite_code, avatar, avatar_color, created_by, created_at, journey_status, active_destination_id, journey_started_at, straggler_alerts, straggler_threshold_m, trip_days, departure_date, accommodation_auto_add')
     .single();
   orThrow(error);
   invalidateMyJoinedGroupsCache();
   return mapGroup(data as GroupRow);
+}
+
+export async function endGroup(groupId: string): Promise<void> {
+  const userId = await requireUserId();
+  const { data, error } = await supabase
+    .from('groups')
+    .delete()
+    .eq('id', groupId)
+    .select('id')
+    .maybeSingle();
+  orThrow(error);
+  if (!data || data.id !== groupId) throw new Error('Team end was not confirmed');
+  if (await requireUserId() !== userId) throw new Error('Account changed during team end');
+  invalidateMyJoinedGroupsCache();
 }
 
 export async function joinGroup(inviteCode: string): Promise<Group> {
@@ -323,7 +349,7 @@ export async function getGroupState(groupId: string): Promise<GroupState> {
     // Do not swallow load failures as an empty list (false "no stay").
     listDailyAccommodations(groupId),
     supabase.from('subgroups')
-      .select('id, name, mode, leader_id, parent_subgroup_id')
+      .select('id, name, mode, leader_id, parent_subgroup_id, created_at')
       .eq('group_id', groupId),
   ]);
 

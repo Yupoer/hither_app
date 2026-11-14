@@ -66,7 +66,6 @@ const groupService = readFileSync(
   join(mobileSrc, 'api/services/GroupService.ts'),
   'utf8',
 );
-const loginScreen = readFileSync(join(mobileSrc, 'screens/LoginScreen.tsx'), 'utf8');
 const accountSheet = readFileSync(
   join(mobileSrc, 'components/AccountSheet.tsx'),
   'utf8',
@@ -320,11 +319,6 @@ describe('client 14-day copy and expiry wiring', () => {
     );
   });
 
-  it('login guest modal discloses the 14-day limit', () => {
-    expect(loginScreen).toContain("t('anon.expiryWarning')");
-    expect(loginScreen).not.toContain('3-day data');
-  });
-
   it('account sheet surfaces expiry until / expired messaging and refreshes on open', () => {
     expect(accountSheet).toContain('anon.expiryUntil');
     expect(accountSheet).toContain('anon.expired');
@@ -394,9 +388,8 @@ describe('membership mutation gate contract', () => {
     expect(groupService).toContain('ANON_EXPIRED_ERROR');
     expect(groupService).toContain('ANON_LEADER_REGISTRATION_REQUIRED');
     // Must not rely on groups.delete under leader-only RLS after failed membership.
-    expect(groupService).not.toMatch(
-      /from\('groups'\)\s*\.delete\(\)/,
-    );
+    const create = groupService.slice(groupService.indexOf('export async function createGroup'), groupService.indexOf('export async function updateGroupAvatar'));
+    expect(create).not.toMatch(/from\('groups'\)\s*\.delete\(\)/);
   });
 
   it('blocks invite share/copy for anonymous leaders via shared helper', () => {

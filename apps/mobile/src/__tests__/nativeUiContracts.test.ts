@@ -95,7 +95,7 @@ describe('iOS native UI contracts', () => {
     expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
     expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
     expect(settingsPanel).toContain('dismissRequested={visible}');
-    expect(settingsIos).toContain('fraction: STAGE_ONE_RATIO');
+    expect(settingsIos).toContain('fraction: stageOneRatio');
     expect(settingsIos).toContain('fraction: stageTwoRatio');
     expect(settingsIos).toContain('presentationDetents(');
     expect(settingsIos).toContain('[stageOneDetent, stageTwoDetent]');
@@ -112,7 +112,7 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain('const actionSlotSize = MAP_SHEET_ACTION_HIT_SIZE;');
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_ICON_SIZE');
     expect(settingsIos).not.toContain('frame({ width: 78, height: 78 })');
-    expect(sheetHeaderActionContent).toContain("action === 'commit' ? 'checkmark' : 'xmark'");
+    expect(sheetHeaderActionContent).toContain('systemName={SHEET_HEADER_SYMBOLS[action]}');
     expect(settingsIos).toContain('<VStack');
     expect(settingsIos.indexOf('</HStack>')).toBeLessThan(settingsIos.indexOf('<RNHostView'));
     expect(settingsIos).toContain('wrapContentInScrollView');
@@ -171,12 +171,12 @@ describe('iOS native UI contracts', () => {
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_VISUAL_SIZE');
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_HIT_SIZE');
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_ICON_SIZE');
-    expect(overlaySheet).toContain('paddingHorizontal: MAP_SHEET_EDGE_INSET');
+    expect(overlaySheet).toContain('paddingHorizontal: SHEET_CORNER_ACTION_INSET');
     expect(overlaySheet).toContain('headerActionSlot');
     expect(settingsPanel).toContain('width: MAP_SHEET_ACTION_HIT_SIZE');
-    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_VISUAL_SIZE = 47');
+    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_VISUAL_SIZE = MAP_SHEET_ACTION_HIT_SIZE');
     expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_HIT_SIZE = 48');
-    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_ICON_SIZE = 24');
+    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_ICON_SIZE = 20');
     expect(mapSheetChrome).toContain('MAP_SHEET_CORNER_RADIUS = 44');
     expect(paywallSheet).toContain('action="close"');
     expect(routeEditorSheet).toContain('doneSystemImage="checkmark"');

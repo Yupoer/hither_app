@@ -10,7 +10,7 @@ const mockPrepare = jest.fn<Promise<'ready' | 'permission_denied'>, [boolean]>(a
 const mockStart = jest.fn(async (input: Parameters<typeof startBackgroundJourney>[0]) => { mockEvents.push(`start:${input.initialDistanceM}`); return 'started' as const; });
 const mockStop = jest.fn(async () => { mockEvents.push('stop'); });
 const mockPrepareNative = jest.fn(async (_groupId: string | null) => true);
-jest.mock('react-native', () => ({ Alert: { alert: jest.fn() } }));
+jest.mock('react-native', () => ({ Alert: { alert: jest.fn() }, Platform: { OS: 'ios' } }));
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(async () => null), setItem: jest.fn(async () => undefined) }));
 jest.mock('../state/backgroundJourney', () => ({
   prepareBackgroundJourneyPermissions: (...args: Parameters<typeof mockPrepare>) => mockPrepare(...args),

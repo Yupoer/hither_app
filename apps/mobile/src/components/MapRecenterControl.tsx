@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Pressable from './MotionPressable';
 import { liquidGlass } from '../native';
 import { glass } from '../glass';
 import { Ionicons } from '@expo/vector-icons';

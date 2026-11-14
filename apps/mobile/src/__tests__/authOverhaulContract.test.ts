@@ -7,12 +7,9 @@ const authFlow = read('apps/mobile/src/state/useAuthFlow.ts');
 const session = read('apps/mobile/src/state/SessionContext.tsx');
 const login = read('apps/mobile/src/screens/LoginScreen.tsx');
 const authFieldIos = read('apps/mobile/src/components/AuthField.ios.tsx');
-const modeSelector = read('apps/mobile/src/components/AuthModeSelector.tsx');
-const modeSelectorIos = read('apps/mobile/src/components/AuthModeSelector.ios.tsx');
 const googleIos = read('apps/mobile/src/state/googleSignIn.ios.ts');
 const googleFallback = read('apps/mobile/src/state/googleSignIn.ts');
 const googleGIcon = read('apps/mobile/src/components/GoogleGIcon.tsx');
-const zh = read('apps/mobile/src/i18n/locales/zh.ts');
 const packageConfig = JSON.parse(read('apps/mobile/package.json')) as {
   dependencies: Record<string, string>;
 };
@@ -51,32 +48,12 @@ describe('auth overhaul contract', () => {
     expect(authFlow).toContain("provider: 'google'");
   });
 
-  it('keeps the login UI single-mounted, stable, accessible, and haptic-aware', () => {
-    expect(login).not.toContain('Alert.alert');
-    expect(login).toContain('emailAlreadyRegistered');
-    expect(login).not.toContain('Animated.timing');
-    expect(login).toContain('formViewport');
-    expect(login).toContain('renderAuthPanel(mode, true)');
-    expect(login).toContain('selectionTick');
-    expect(login).toContain('login-resend-confirmation');
-    expect(login).toContain('getLegalUrl');
-    expect(login).not.toContain('translateX');
-    expect(login).toContain('SOCIAL_AUTH_TIMEOUT_MS = 120_000');
-    expect(login).toContain('timeoutMs: SOCIAL_AUTH_TIMEOUT_MS');
+  it('uses the native text entry boundary and offline provider logo', () => {
     expect(authFieldIos).toContain("from 'react-native'");
     expect(authFieldIos).toContain('<TextInput');
-    expect(login).toContain("primaryAction: { width: '100%'");
-    expect(login).toContain("guestButton: { alignSelf: 'center'");
-    expect(login).toContain("resetAction: { width: '100%'");
-    expect(login).not.toContain('testID="login-signup-terms"');
-    expect(login).not.toContain('termsAccepted');
+    expect(login).toContain('SOCIAL_AUTH_TIMEOUT_MS = 120_000');
     expect(login).toContain('BlockingAuthOverlay');
     expect(googleGIcon).toContain("require('../../assets/google-g.png')");
     expect(existsSync(join(root, 'apps/mobile/assets/google-g.png'))).toBe(true);
-    expect(modeSelector).toContain("width: '66.667%'");
-    expect(modeSelectorIos).toContain('<Picker');
-    expect(modeSelectorIos).toContain("pickerStyle('segmented')");
-    expect(zh).toContain("'login.signupAgreementPrefix': '點擊開始即表示同意'");
-    expect(zh).not.toContain('註冊即表示你同意');
   });
 });

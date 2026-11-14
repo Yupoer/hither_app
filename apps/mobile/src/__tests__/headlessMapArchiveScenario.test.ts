@@ -14,12 +14,19 @@ describe.each(['ios', 'android'])('actual development Map archive on %s', platfo
       longitude: 121.54, position: 1, day: 1, kind: 'destination', closed_at: null });
     const device = await world.device({ id: 'map-archive', userId: LEADER, platform, capabilities: { development: true },
       screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-    await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'actual archive Map');
-    await device.perform('map.card.toggle', { destinationId: DESTINATION });
-    await device.perform('map.journey.command', { destinationId: DESTINATION });
+    const readyId = platform === 'ios' ? 'home-journey-action' : `gather-card-${DESTINATION}`;
+    await world.waitFor(device, (value: Observation) => has(value, readyId), 'actual archive Map');
+    if (platform === 'ios') {
+      await device.host.call({ kind: 'press', testId: 'home-journey-action' });
+    } else {
+      await device.perform('map.card.toggle', { destinationId: DESTINATION });
+      await device.perform('map.journey.command', { destinationId: DESTINATION });
+    }
     await world.waitFor(device, () => [...world.backend.sessions.values()].some((session: { status: string }) => session.status === 'active'), 'active route before archive');
-    await device.perform('map.settings.open');
+    if (platform === 'ios') await device.host.call({ kind: 'press', testId: 'home-profile' });
+    else await device.perform('map.settings.open');
     await device.input({ kind: 'animation', finished: true });
+    if (platform === 'ios') await device.host.call({ kind: 'press', testId: 'settings-page-advanced' });
     await world.waitFor(device, (value: Observation) => has(value, 'settings-archive'), 'development archive control');
     return device;
   }

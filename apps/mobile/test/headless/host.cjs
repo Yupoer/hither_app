@@ -22,6 +22,10 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       setCamera: value => receipts.push({ host: name, method: 'setCamera', value }),
       fitToCoordinates: (...args) => receipts.push({ host: name, method: 'fitToCoordinates', args }),
       getCamera: async () => ({ center: { latitude: 25, longitude: 121 }, pitch: 0, heading: 0, altitude: 1000, zoom: 14 }),
+      coordinateForPoint: async point => ({
+        latitude: 25 + (0.5 - point.y / dimensions.height) * 0.01,
+        longitude: 121 + (point.x / dimensions.width - 0.5) * 0.01,
+      }),
       setNativeProps: value => receipts.push({ host: name, method: 'setNativeProps', value }),
     }), []);
     if ((name === 'Modal' && props.visible === false) || (name === 'SwiftUI.BottomSheet' && props.isPresented === false)) return null;
@@ -45,7 +49,8 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     return { start(callback) { id = ++animationId; animations.set(id, { value, options, callback }); },
       stop() { const animation = animations.get(id); animations.delete(id); animation?.callback?.({ finished: false }); }, reset() {} };
   };
-  const flatten = value => Array.isArray(value) ? Object.assign({}, ...value.map(flatten)) : value || {};
+  const absoluteFill = { position: 'absolute', top: 0, bottom: 0, right: 0, left: 0 };
+  const flatten = value => Array.isArray(value) ? Object.assign({}, ...value.map(flatten)) : value && typeof value === 'object' ? { ...value } : value || {};
   const availability = node => {
     let pointerEvents = true;
     for (let current = node; current; current = current.parent) {
@@ -58,6 +63,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const rn = strict('react-native', {
     __esModule: true,
     ...hosts, Platform: { OS: spec.platform, Version: 26, select: values => values[spec.platform] ?? values.native ?? values.default },
+    Settings: { get: () => undefined, watchKeys: () => 0, clearWatch() {} },
     AppState: appState, Alert: { alert: (...args) => alertQueue.push(args) },
     Linking: strict('Linking', { getInitialURL: async () => null, addEventListener: (event, fn) => {
       assert.equal(event, 'url'); linkingListeners.add(fn); return { remove: () => linkingListeners.delete(fn) };
@@ -69,11 +75,12 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       receipts.push({ host: 'Linking', method: 'sendIntent', action });
     },
     canOpenURL: async () => true, openURL: async url => receipts.push({ host: 'Linking', method: 'openURL', url }), createURL: value => `hither://${value}` }),
-    StyleSheet: { create: value => value, flatten, hairlineWidth: 1, absoluteFill: {}, absoluteFillObject: {} },
+    StyleSheet: { create: value => value, flatten, hairlineWidth: 1, absoluteFill, absoluteFillObject: absoluteFill },
     useWindowDimensions: () => dimensions, Dimensions: { get: () => dimensions, addEventListener: () => ({ remove() {} }) },
     Appearance: { setColorScheme() {}, getColorScheme: () => 'dark', addChangeListener: () => ({ remove() {} }) },
     useColorScheme: () => 'dark', Keyboard: { dismiss() {}, metrics: () => undefined, isVisible: () => false, addListener: () => ({ remove() {} }) },
     AccessibilityInfo: { isReduceMotionEnabled: async () => true, isBoldTextEnabled: async () => false, isHighTextContrastEnabled: async () => false,
+      isReduceTransparencyEnabled: async () => false, isScreenReaderEnabled: async () => false,
       addEventListener: () => ({ remove() {} }), announceForAccessibility() {},
       setAccessibilityFocus: value => receipts.push({ host: 'AccessibilityInfo', method: 'setAccessibilityFocus', value }) },
     findNodeHandle: node => node ? 1 : null,
@@ -127,6 +134,8 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       } else value = next;
       for (const reaction of reactions) evaluateReaction(reaction);
     } });
+    shared.set = next => { shared.value = typeof next === 'function' ? next(value) : next; };
+    shared.get = () => value;
     return shared;
   };
   const useShared = value => React.useState(() => makeShared(value))[0];
@@ -152,18 +161,27 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     withRepeat: value => value, withSequence: (...values) => values.at(-1), runOnJS: fn => fn,
     interpolate: (value, input, output) => output[0] + (value - input[0]) / (input.at(-1) - input[0]) * (output.at(-1) - output[0]),
     interpolateColor: (_value, _input, output) => output[0],
+    ReduceMotion: { System: 'system' },
     Extrapolation: { CLAMP: 'clamp' }, Easing: { linear: value => value, ease: value => value, quad: value => value, cubic: value => value,
       out: fn => fn, in: fn => fn, inOut: fn => fn, bezier: () => value => value },
-    LinearTransition: { springify: () => ({ animation: 'LinearTransition' }) },
+    LinearTransition: {
+      springify: () => ({ animation: 'LinearTransition' }),
+      duration: value => ({ easing: () => ({ animation: 'LinearTransition', duration: value }) }),
+    },
   });
-  for (const name of ['FadeIn', 'FadeInRight', 'FadeOut', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
+  for (const name of ['FadeIn', 'FadeInDown', 'FadeInRight', 'FadeOut', 'FadeOutUp', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
+  animation.SlideInDown = { duration: value => ({ reduceMotion: motion => ({ animation: 'SlideInDown', duration: value, motion }) }) };
   jest.doMock('react-native-reanimated', () => animation);
   jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: React.forwardRef(function ReanimatedSwipeable(props, ref) {
     const [open, setOpen] = React.useState(false);
     const currentProps = React.useRef(props);
     currentProps.current = props;
     const methods = React.useRef(null);
-    if (!methods.current) methods.current = { close: () => { setOpen(false); currentProps.current.onSwipeableClose?.('right'); } };
+    if (!methods.current) methods.current = { close: () => {
+      currentProps.current.onSwipeableWillClose?.('right');
+      setOpen(false);
+      currentProps.current.onSwipeableClose?.('right');
+    } };
     React.useImperativeHandle(ref, () => methods.current, []);
     return React.createElement('host:ReanimatedSwipeable', { ...props, onSwipeableOpen: direction => { setOpen(true); props.onSwipeableOpen?.(direction); } },
       props.children, open && props.renderRightActions?.({ value: 1 }, { value: 1 }, methods.current));
@@ -176,7 +194,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const gesture = () => {
     const object = {};
     for (const method of ['onBegin','onStart','onUpdate','onChange','onEnd','onFinalize','enabled','activeOffsetX','activeOffsetY',
-      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail']) {
+      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail']) {
       object[method] = (...args) => { object[method + 'Input'] = args; return object; };
     }
     return strict('Gesture', object);
@@ -189,20 +207,24 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     Skia: { RuntimeEffect: { Make: source => ({ source }) }, Path: { Make: () => ({ addCircle() {}, moveTo() {}, lineTo() {}, cubicTo() {}, close() {} }) } },
     vec: (x, y) => ({ x, y }),
   }));
-  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Slider','Picker','TextField','Menu','Divider','Section','Form','Label','ProgressView','ContextMenu','BottomSheet','Group','RNHostView'];
+  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Toggle','Slider','Picker','TextField','Menu','Divider','Section','Form','Label','ProgressView','ContextMenu','BottomSheet','Group','RNHostView'];
   jest.doMock('@expo/ui/swift-ui', () => strict('swift-ui', Object.fromEntries(swiftNames.map(name => [name, make(`SwiftUI.${name}`)]))));
   jest.doMock('@expo/ui', () => strict('expo-ui', { Host: make('ExpoUI.Host'), Switch: make('ExpoUI.Switch') }));
   jest.doMock('@expo/ui/community/segmented-control', () => ({ __esModule: true, default: make('SegmentedControl'), SegmentedControl: make('SegmentedControl') }));
   const modifierNames = ['accessibilityLabel','accessibilityHint','buttonStyle','buttonBorderShape','controlSize','font','disabled','frame','foregroundColor',
     'labelStyle','offset','padding','tint','background','cornerRadius','opacity','clipShape','shadow','glassEffect','fixedSize','lineLimit','multilineTextAlignment','environment','tag','rotationEffect','scaleEffect',
-    'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator'];
-  jest.doMock('@expo/ui/swift-ui/modifiers', () => strict('swift-ui/modifiers', Object.fromEntries(modifierNames.map(name => [name, (...args) => ({ modifier: name, args })]))));
+    'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator','presentationCornerRadius','contentShape','menuStyle','menuIndicator','presentationBackground','labelsHidden','toggleStyle'];
+  jest.doMock('@expo/ui/swift-ui/modifiers', () => strict('swift-ui/modifiers', {
+    ...Object.fromEntries(modifierNames.map(name => [name, (...args) => ({ modifier: name, args })])),
+    shapes: { circle: () => ({ type: 'circle' }), capsule: () => ({ type: 'capsule' }) },
+  }));
   jest.doMock('expo-task-manager', () => strict('TaskManager', { __esModule: true,
     defineTask: (name, callback) => { assert(!tasks.has(name), `Task already defined ${name}`); tasks.set(name, callback); },
     isTaskDefined: name => tasks.has(name), isAvailableAsync: async () => true }));
   jest.doMock('expo-haptics', () => strict('Haptics', { selectionAsync: async () => {}, impactAsync: async () => {}, notificationAsync: async () => {},
     ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Soft: 'soft', Rigid: 'rigid' }, NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' } }));
   jest.doMock('expo-status-bar', () => ({ StatusBar: make('StatusBar') }));
+  jest.doMock('expo-font', () => ({ useFonts: () => [true] }));
   jest.doMock('@expo-google-fonts/fredoka', () => ({ useFonts: () => [true], Fredoka_500Medium: 1, Fredoka_600SemiBold: 2 }));
   jest.doMock('expo-blur', () => ({ BlurView: make('BlurView') }));
   jest.doMock('expo-glass-effect', () => strict('Glass', { GlassView: make('GlassView'), isLiquidGlassAvailable: () => false }));
@@ -235,7 +257,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       }
       if (kind === 'panResponder') assert(['onStartShouldSetPanResponder', 'onMoveShouldSetPanResponder',
         'onPanResponderGrant', 'onPanResponderMove', 'onPanResponderRelease', 'onPanResponderTerminate'].includes(phase), `Unknown PanResponder phase ${phase}`);
-      const nativeEvents = ['onLongPress', 'onPress', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
+      const nativeEvents = ['onLongPress', 'onPress', 'onPressIn', 'onPressOut', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
         'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen'];
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
       const property = kind === 'panResponder' ? phase : kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
@@ -245,8 +267,9 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         (testId ? node.props.testID === testId : node.props.accessibilityLabel === label || node.props.modifiers?.some(m => m.modifier === 'accessibilityLabel' && m.args[0] === label));
       const scope = within ? root.root.findAll(match => typeof match.type === 'string' && match.props.testID === within) : [root.root];
       assert.equal(scope.length, 1, `Expected one scope ${within}`);
-      const endpoints = scope[0].findAll(match).flatMap(node => typeof node.props[property] === 'function' ? [node] : node.findAll(child =>
-        visible(child) && typeof child.type === 'string' && child.type.startsWith('host:') && typeof child.props[property] === 'function'));
+      const handler = node => node.props[property] ?? (kind === 'toggle' ? node.props.onIsOnChange : undefined);
+      const endpoints = scope[0].findAll(match).flatMap(node => typeof handler(node) === 'function' ? [node] : node.findAll(child =>
+        visible(child) && typeof child.type === 'string' && child.type.startsWith('host:') && typeof handler(child) === 'function'));
       const unique = [...new Set(endpoints)];
       assert.equal(unique.length, 1, `Expected one ${kind} endpoint ${testId ?? label}, got ${unique.length}`);
       const node = unique[0];
@@ -257,7 +280,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         return { invoked: true, result: node.props[property](value.event, value.gestureState) };
       }
       const event = kind === 'nativeEvent' ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'event')) : value;
-      node.props[property](kind === 'press' ? { nativeEvent: {}, stopPropagation() {} } : event);
+      handler(node)(kind === 'press' ? { nativeEvent: {}, stopPropagation() {} } : event);
       return { invoked: true };
     },
     observeViews(root) {
@@ -282,9 +305,9 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         ...availability(node),
         kind: node.type, testId: node.props.testID, label: node.props.accessibilityLabel ?? node.props.modifiers?.find(m => m.modifier === 'accessibilityLabel')?.args[0],
         disabled: Boolean(node.props.disabled || node.props.accessibilityState?.disabled || node.props.modifiers?.some(m => m.modifier === 'disabled' && m.args[0])),
-        value: node.props.value, showsUserLocation: node.props.showsUserLocation,
+        value: node.props.value ?? node.props.accessibilityValue?.now, showsUserLocation: node.props.showsUserLocation,
         text: node.children.filter(child => typeof child === 'string').join(''),
-        secureTextEntry: node.props.secureTextEntry, selected: node.props.accessibilityState?.selected, checked: node.props.accessibilityState?.checked,
+        secureTextEntry: node.props.secureTextEntry, selected: node.props.accessibilityState?.selected, checked: node.props.accessibilityState?.checked ?? (node.type === 'host:SwiftUI.Toggle' ? node.props.isOn : undefined),
       })).filter(node => !node.hidden && (node.testId || node.label || node.text));
     },
   };

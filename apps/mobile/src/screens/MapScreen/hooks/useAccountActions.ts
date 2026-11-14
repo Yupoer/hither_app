@@ -1,4 +1,4 @@
-import { leaveGroups, saveOnboardingProfile } from '../../../api/client';
+import { endGroup, leaveGroups, saveOnboardingProfile } from '../../../api/client';
 import { clearGroupFeatureTour, clearAddPlaceTour, clearRouteReorderTour } from '../../../featureTour';
 import { type TranslationKey } from '../../../i18n';
 import { type RootStackParamList } from '../../../navigation/RootNavigator';
@@ -40,13 +40,15 @@ export function useAccountActions({
   voluntaryLeaveRef,
 }: UseAccountActionsInput) {
 
-  const confirmLeave = useCallback(() => {
+  const confirmLeave = useCallback((mode: 'legacy' | 'leave' | 'end' = 'legacy') => {
+    if (mode === 'end' && (!isLeader || !groupId)) return;
+    const labelAsEnd = mode === 'end' || (mode === 'legacy' && isLeader);
     // Red style only on the confirm button in the dialog — not on settings rows.
     confirmAction(
       {
-        title: isLeader ? t('map.endGroupTitle') : t('group.leaveTitle'),
-        message: isLeader ? t('map.endGroupMsg') : t('group.leaveMsg'),
-        confirmLabel: isLeader ? t('map.endGroupConfirm') : t('group.leaveConfirm'),
+        title: labelAsEnd ? t('map.endGroupTitle') : t('group.leaveTitle'),
+        message: labelAsEnd ? t('map.endGroupMsg') : t('group.leaveMsg'),
+        confirmLabel: labelAsEnd ? t('map.endGroupConfirm') : t('group.leaveConfirm'),
         cancelLabel: t('common.cancel'),
         destructive: true,
       },
@@ -58,7 +60,8 @@ export function useAccountActions({
             logEvent('group_leave', { groupId, isLeader });
             try {
             if (groupId) {
-              await leaveGroups([groupId]);
+              if (mode === 'end') await endGroup(groupId);
+              else await leaveGroups([groupId]);
               if (!token.isCurrent()) return;
               await clearLiveActivities({ groupIds: [groupId] });
             } else {
@@ -85,7 +88,7 @@ export function useAccountActions({
         logEvent('sign_out');
         await signOut();
         if (!token.isCurrent()) return;
-        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
       },
       {
         screen: 'Map',

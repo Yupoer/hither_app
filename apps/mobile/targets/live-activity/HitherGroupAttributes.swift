@@ -1,14 +1,7 @@
 import ActivityKit
 import Foundation
 
-// COPY of apps/mobile/modules/hither-live-activity/ios/HitherGroupAttributes.swift
-// so this widget target compiles standalone. ActivityKit matches the activity
-// across the app and this extension by the attributes' type name + structure,
-// so the two definitions MUST stay byte-for-byte equivalent in shape. If you
-// edit one, edit the other.
-
-// Keep in sync with the module copy: `@available(iOS 16.1, *)` gates the
-// ActivityKit-backed type so the module pod compiles to the app's 15.1 floor.
+// The app module and widget extension compile identical copies of this ActivityKit payload.
 @available(iOS 16.1, *)
 public struct HitherGroupAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
@@ -19,33 +12,62 @@ public struct HitherGroupAttributes: ActivityAttributes {
     public var personalArrivalSequence: Double?
     public var personalArrivalCorrectionAtMs: Double?
     public var status: String?
+    public var phase: Phase?
     public var gatheringTitle: String?
     public var distanceMeters: Double?
     public var etaSeconds: Double?
     public var sampledAtMs: Double?
     public var etaTargetAtMs: Double?
-    /// Flock progress toward the point, 0...1 (drives the progress bar).
     public var progress: Double?
-    /// How many members have reached the point.
     public var gatheredCount: Int?
-    /// Total members in the group (for the avatar stack).
     public var memberCount: Int?
-    /// Active theme accent as a hex string ("#F5B142") — the widget tints with
-    /// this so the Live Activity follows the app's theme colour.
     public var accentHex: String?
-    /// Travel mode ("walk" | "transit" | "drive") for the transit glyph.
     public var travelMode: String?
-    /// Member avatar emojis for the flock stack ("" = no emoji).
     public var memberEmojis: [String]?
-    /// Arrival state aligned by index with `memberEmojis`.
     public var memberArrived: [Bool]?
-    /// Active gathering-point emoji (Ticket 07); optional chrome next to title.
     public var destinationEmoji: String?
-    /// App language ("zh" | "en"). Missing language formats as zh.
     public var language: String?
+    public var meetTimeMs: Double?
+    public var dayColorHex: String?
+    public var selfFace: Face?
+    public var memberColors: [String]?
 
-    public static let destCJKCap = 10
-    public static let destLatinCap = 16
+    public struct Face: Codable, Hashable {
+      public var emoji: String
+      public var colorHex: String?
+      public var arrived: Bool
+
+      public init(emoji: String, colorHex: String? = nil, arrived: Bool = false) {
+        self.emoji = emoji
+        self.colorHex = colorHex
+        self.arrived = arrived
+      }
+    }
+
+    public enum Phase: String, Codable, Hashable {
+      case enRoute, late, arrivedWaiting, allArrived
+    }
+
+    public struct Presentation: Equatable {
+      public var phase: Phase
+      public var title: String
+      public var icon: String
+      public var accentHex: String?
+      public var dayColorHex: String?
+      public var etaMinutes: Int?
+      public var progress: Double
+      public var meetTime: Date?
+      public var arrived: Int
+      public var total: Int
+      public var selfFace: Face?
+      public var memberFaces: [Face]
+      public var english: Bool
+
+      public var arrivalRatio: Double { total > 0 ? Double(arrived) / Double(total) : 0 }
+      public var countLabel: String { total > 0 ? "\(arrived)/\(total)" : "–" }
+      public var etaUnit: String { english ? "min" : "分" }
+      public var isTraveling: Bool { phase == .enRoute || phase == .late }
+    }
 
     public init(
       navigationSessionId: String? = nil,
@@ -55,6 +77,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       personalArrivalSequence: Double? = nil,
       personalArrivalCorrectionAtMs: Double? = nil,
       status: String? = nil,
+      phase: Phase? = nil,
       gatheringTitle: String? = nil,
       distanceMeters: Double? = nil,
       etaSeconds: Double? = nil,
@@ -68,7 +91,11 @@ public struct HitherGroupAttributes: ActivityAttributes {
       memberEmojis: [String]? = nil,
       memberArrived: [Bool]? = nil,
       destinationEmoji: String? = nil,
-      language: String? = nil
+      language: String? = nil,
+      meetTimeMs: Double? = nil,
+      dayColorHex: String? = nil,
+      selfFace: Face? = nil,
+      memberColors: [String]? = nil
     ) {
       self.navigationSessionId = navigationSessionId
       self.destinationId = destinationId
@@ -77,6 +104,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.personalArrivalSequence = personalArrivalSequence
       self.personalArrivalCorrectionAtMs = personalArrivalCorrectionAtMs
       self.status = status
+      self.phase = phase
       self.gatheringTitle = gatheringTitle
       self.distanceMeters = distanceMeters
       self.etaSeconds = etaSeconds
@@ -91,8 +119,13 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.memberArrived = memberArrived
       self.destinationEmoji = destinationEmoji
       self.language = language
+      self.meetTimeMs = meetTimeMs
+      self.dayColorHex = dayColorHex
+      self.selfFace = selfFace
+      self.memberColors = memberColors
     }
 
+    /// Build a ContentState from the loosely-typed dict the JS bridge sends.
     public init(from state: [String: Any]) {
       self.navigationSessionId = state["navigationSessionId"] as? String
       self.destinationId = state["destinationId"] as? String
@@ -101,6 +134,7 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.personalArrivalSequence = (state["personalArrivalSequence"] as? NSNumber)?.doubleValue
       self.personalArrivalCorrectionAtMs = (state["personalArrivalCorrectionAtMs"] as? NSNumber)?.doubleValue
       self.status = state["status"] as? String
+      self.phase = (state["phase"] as? String).flatMap(Phase.init(rawValue:))
       self.gatheringTitle = state["gatheringTitle"] as? String
       self.distanceMeters = (state["distanceMeters"] as? NSNumber)?.doubleValue
       self.etaSeconds = (state["etaSeconds"] as? NSNumber)?.doubleValue
@@ -115,79 +149,72 @@ public struct HitherGroupAttributes: ActivityAttributes {
       self.memberArrived = state["memberArrived"] as? [Bool]
       self.destinationEmoji = state["destinationEmoji"] as? String
       self.language = state["language"] as? String
-    }
-
-    public var formattedDistance: String? {
-      guard let d = distanceMeters else { return nil }
-      if d < 1000 { return "\(Int(d.rounded())) m" }
-      return String(format: "%.1f km", d / 1000)
-    }
-
-    /// Compact ETA: zh uses 天/小時/分鐘 (max two units); en keeps compactDuration.
-    public var formattedEta: String? {
-      guard let s = etaSeconds else { return nil }
-      return Self.formattedDuration(fromSeconds: s, language: language)
-    }
-
-    public static func usesEnglish(_ language: String?) -> Bool {
-      (language ?? "").lowercased().hasPrefix("en")
-    }
-
-    public static func formattedDuration(fromSeconds seconds: Double, language: String?) -> String {
-      if usesEnglish(language) {
-        return compactDuration(fromSeconds: seconds)
-      }
-      return zhDuration(fromMinutes: Int((seconds / 60).rounded()))
-    }
-
-    /// Shared compact duration used by the widget presentation helpers too.
-    public static func compactDuration(fromSeconds seconds: Double) -> String {
-      let m = Int((seconds / 60).rounded())
-      if m < 1 { return "now" }
-      if m < 60 { return "\(m) min" }
-      return compactDuration(fromMinutes: m)
-    }
-
-    /// 90 → "1hr30", 300 → "5hr", 2160 → "1d12hr". Day scale drops remaining minutes.
-    public static func compactDuration(fromMinutes minutes: Int) -> String {
-      let m = max(0, minutes)
-      if m < 60 { return "\(m)min" }
-      let h = m / 60
-      let mm = m % 60
-      if h < 24 {
-        return mm == 0 ? "\(h)hr" : "\(h)hr\(mm)"
-      }
-      let d = h / 24
-      let rh = h % 24
-      return rh == 0 ? "\(d)d" : "\(d)d\(rh)hr"
-    }
-
-    /// zh: 90m→1小時30分鐘, 26h→1天2小時, 45m→45分鐘, <1m→不到1分鐘. Max two units.
-    public static func zhDuration(fromMinutes minutes: Int) -> String {
-      if minutes < 1 { return "不到1分鐘" }
-      let days = minutes / (24 * 60)
-      let hours = (minutes % (24 * 60)) / 60
-      let mins = minutes % 60
-      if days > 0 {
-        return hours > 0 ? "\(days)天\(hours)小時" : "\(days)天"
-      }
-      if hours > 0 {
-        return mins > 0 ? "\(hours)小時\(mins)分鐘" : "\(hours)小時"
-      }
-      return "\(mins)分鐘"
-    }
-
-    public static func destinationUsesCJK(_ text: String) -> Bool {
-      text.unicodeScalars.contains { scalar in
-        (0x4E00...0x9FFF).contains(scalar.value)
-          || (0x3400...0x4DBF).contains(scalar.value)
-          || (0x20000...0x2A6DF).contains(scalar.value)
+      self.meetTimeMs = (state["meetTimeMs"] as? NSNumber)?.doubleValue
+      self.dayColorHex = state["dayColorHex"] as? String
+      self.memberColors = state["memberColors"] as? [String]
+      if let face = state["selfFace"] as? [String: Any], let emoji = face["emoji"] as? String {
+        self.selfFace = Face(
+          emoji: emoji,
+          colorHex: face["colorHex"] as? String,
+          arrived: face["arrived"] as? Bool ?? false
+        )
       }
     }
 
-    public static func destinationNeedsMarquee(_ text: String) -> Bool {
-      let cap = destinationUsesCJK(text) ? destCJKCap : destLatinCap
-      return text.count > cap
+    public func presentation(groupName: String, now: Date = .now) -> Presentation {
+      let english = language?.lowercased().hasPrefix("en") == true
+      let title = [gatheringTitle, groupName].compactMap {
+        $0?.trimmingCharacters(in: .whitespacesAndNewlines)
+      }.first(where: { !$0.isEmpty }) ?? (english ? "Meeting point" : "集合點")
+      let destinationIcon = destinationEmoji?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      let total = max(0, memberCount ?? memberEmojis?.count ?? 0)
+      let arrived = max(0, min(total, gatheredCount ?? memberArrived?.filter { $0 }.count ?? 0))
+      let validEta = etaSeconds.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+      let minutes = status == "starting" && validEta == 0 ? nil : validEta.map {
+        Int(min(9999, ($0 / 60).rounded(.up)))
+      }
+      let meetTime = meetTimeMs.flatMap { value in
+        value.isFinite && value > 0 ? Date(timeIntervalSince1970: value / 1000) : nil
+      }
+      let etaTarget = etaTargetAtMs.flatMap { value in
+        value.isFinite && value > 0 ? Date(timeIntervalSince1970: value / 1000) : nil
+      } ?? minutes.map { now.addingTimeInterval(Double($0) * 60) }
+
+      let phase: Phase
+      if self.phase == .allArrived || (total > 0 && arrived == total) {
+        phase = .allArrived
+      } else if personalArrived == true {
+        phase = .arrivedWaiting
+      } else if let meetTime, let etaTarget, etaTarget > meetTime {
+        phase = .late
+      } else {
+        phase = .enRoute
+      }
+      let traveling = phase == .enRoute || phase == .late
+      let progress = progress.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil } ?? 0
+      let faceCount = min(6, max(total, memberEmojis?.count ?? 0))
+      let faces = phase == .arrivedWaiting ? (0..<faceCount).map { index in
+        Face(
+          emoji: memberEmojis?[safe: index] ?? "",
+          colorHex: memberColors?[safe: index],
+          arrived: memberArrived?[safe: index] ?? false
+        )
+      } : []
+      return Presentation(
+        phase: phase,
+        title: title,
+        icon: destinationIcon.isEmpty ? "🚩" : destinationIcon,
+        accentHex: accentHex,
+        dayColorHex: dayColorHex,
+        etaMinutes: traveling ? minutes : nil,
+        progress: traveling ? (progress * 100).rounded() / 100 : 0,
+        meetTime: phase == .late ? meetTime : nil,
+        arrived: arrived,
+        total: total,
+        selfFace: traveling ? selfFace : nil,
+        memberFaces: faces,
+        english: english
+      )
     }
   }
 
@@ -195,5 +222,11 @@ public struct HitherGroupAttributes: ActivityAttributes {
 
   public init(groupName: String) {
     self.groupName = groupName
+  }
+}
+
+private extension Array {
+  subscript(safe index: Int) -> Element? {
+    indices.contains(index) ? self[index] : nil
   }
 }

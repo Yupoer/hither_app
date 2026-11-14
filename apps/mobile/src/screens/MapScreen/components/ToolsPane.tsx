@@ -7,7 +7,9 @@ import { ARRIVAL_RADIUS_OPTIONS } from '../../../state/PreferencesContext';
 import { mediumTap, lightTap } from '../../../utils/haptics';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { View, Pressable, Text } from 'react-native';
+import { View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 import type { Palette } from '../../../theme';
 

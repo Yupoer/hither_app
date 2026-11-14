@@ -1,6 +1,9 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import { useMountEffect } from '../hooks/useMountEffect';
 import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { AppText as Text } from '../components/AppText';
+import Pressable from '../components/MotionPressable';
 import AuthField from '../components/AuthField';
 import SafePressable from '../components/SafePressable';
 import CrookIcon from '../components/CrookIcon';
@@ -129,13 +132,13 @@ function PasswordRecoveryDismissal({ clearPasswordRecovery }: { clearPasswordRec
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#080b12', padding: 24, justifyContent: 'center' },
-  title: { color: '#fff', fontSize: 24, fontWeight: '700', textAlign: 'center', marginTop: 18 },
-  hint: { color: 'rgba(235,235,245,0.68)', fontSize: 14, lineHeight: 20, marginTop: 10, marginBottom: 16, textAlign: 'center' },
+  title: { color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '700', textAlign: 'center', marginTop: 18 },
+  hint: { color: 'rgba(235,235,245,0.68)', fontSize: APP_TEXT_SIZE.caption, lineHeight: APP_TEXT_LINE_HEIGHT.caption, marginTop: 10, marginBottom: 16, textAlign: 'center' },
   field: { minHeight: 52, height: 52, borderRadius: 26, paddingHorizontal: 2, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.2)', marginTop: 12 },
   revealButton: { minWidth: 44, height: 52, alignItems: 'center', justifyContent: 'center' },
-  revealText: { color: '#fff', fontSize: 15 },
-  error: { color: '#ff8f8f', fontSize: 13, marginTop: 8 },
+  revealText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption },
+  error: { color: '#ff8f8f', fontSize: APP_TEXT_SIZE.caption, marginTop: 8 },
   cta: { height: 52, borderRadius: 26, backgroundColor: '#ff9f0a', alignItems: 'center', justifyContent: 'center', marginTop: 22 },
   disabled: { opacity: 0.4 },
-  ctaText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  ctaText: { color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '600' },
 });

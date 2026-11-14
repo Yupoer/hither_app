@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { View } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import MeetCountdown from '../../../components/MeetCountdown';
 import { glass } from '../../../glass';
 

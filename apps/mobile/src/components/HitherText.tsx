@@ -1,12 +1,6 @@
 import React, { useMemo } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  type TextInputProps,
-  type TextProps,
-  type TextStyle,
-} from 'react-native';
+import { StyleSheet, type TextInputProps, type TextProps, type TextStyle } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import { TYPE_MAX_MULTIPLIER, type TypeRole } from '../theme/typeScale';
 import { usePreferences } from '../state/PreferencesContext';
 
@@ -23,7 +17,7 @@ export type HitherTextProps = TextProps & {
  * Prefer this over raw Text for user-facing copy; do not hand-roll
  * maxFontSizeMultiplier in feature components.
  *
- * App Settings `textScale` multiplies design fontSize only (not emoji).
+ * App Settings `textScale` scales font size and explicit line height (not emoji).
  * System Dynamic Type still applies via allowFontScaling + role caps.
  */
 export function HitherText({
@@ -40,7 +34,9 @@ export function HitherText({
     if (isEmoji || textScale === 1) return style;
     const flat = StyleSheet.flatten(style) as TextStyle | undefined;
     if (!flat || typeof flat.fontSize !== 'number') return style;
-    return [style, { fontSize: Math.round(flat.fontSize * textScale) }];
+    return [style, { fontSize: Math.round(flat.fontSize * textScale),
+      ...(typeof flat.lineHeight === 'number' ? { lineHeight: Math.ceil(flat.lineHeight * textScale) } : {}),
+    }];
   }, [isEmoji, textScale, style]);
 
   return (
@@ -72,7 +68,9 @@ export function HitherTextInput({
     if (textScale === 1) return style;
     const flat = StyleSheet.flatten(style) as TextStyle | undefined;
     if (!flat || typeof flat.fontSize !== 'number') return style;
-    return [style, { fontSize: Math.round(flat.fontSize * textScale) }];
+    return [style, { fontSize: Math.round(flat.fontSize * textScale),
+      ...(typeof flat.lineHeight === 'number' ? { lineHeight: Math.ceil(flat.lineHeight * textScale) } : {}),
+    }];
   }, [textScale, style]);
 
   return (

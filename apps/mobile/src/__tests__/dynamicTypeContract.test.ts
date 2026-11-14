@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import React from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { AppText, AppTextInput, type AppTextInputRef } from '../components/AppText';
+import { Text as NativeText, TextInput as NativeTextInput } from 'react-native';
 import { makeStyles } from '../screens/MapScreen/styles';
 import {
   BOLD_TEXT_LAYOUT_FACTOR,
@@ -12,12 +16,12 @@ import {
 } from '../theme/typeScale';
 
 jest.mock('react-native', () => ({
+  Text: 'Text', TextInput: 'TextInput',
   Platform: { OS: 'ios' },
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 
 const root = join(__dirname, '..');
-const appTsx = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const mapScreen = readFileSync(join(root, 'screens/MapScreen.tsx'), 'utf8');
 const membersPane = readFileSync(join(root, 'screens/MapScreen/components/MembersPane.tsx'), 'utf8');
 const carousel = readFileSync(join(root, 'screens/MapScreen/components/GatheringCarousel.tsx'), 'utf8');
@@ -25,7 +29,7 @@ const meetTimeChip = readFileSync(join(root, 'screens/MapScreen/components/MeetT
 const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const quickCommands = readFileSync(join(root, 'components/QuickCommandsCard.tsx'), 'utf8');
 const groupMap = readFileSync(join(root, 'components/GroupMap.tsx'), 'utf8');
-const myTeams = readFileSync(join(root, 'screens/MyTeamsScreen.tsx'), 'utf8');
+const entryVisuals = readFileSync(join(root, 'screens/entry/EntryVisuals.tsx'), 'utf8');
 const settingsOverlay = readFileSync(
   join(root, 'screens/MapScreen/components/SettingsOverlay.tsx'),
   'utf8',
@@ -48,11 +52,30 @@ describe('Dynamic Type contract', () => {
     }
   });
 
-  it('installs GLOBAL_FONT_SCALE_CAP as App.tsx Text/TextInput default (not hard 1.0)', () => {
-    expect(appTsx).toContain('GLOBAL_FONT_SCALE_CAP');
-    expect(appTsx).toContain('maxFontSizeMultiplier: GLOBAL_FONT_SCALE_CAP');
-    // Never freeze all type at 1.0 again.
-    expect(appTsx).not.toMatch(/maxFontSizeMultiplier\s*:\s*1\b/);
+  it.each([undefined, 0, 1.1, 3])('passes an explicit system font ceiling to native text and input for requested limit %s', async requested => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(React.createElement(React.Fragment, null,
+      React.createElement(AppText, { maxFontSizeMultiplier: requested }, 'Sample'),
+      React.createElement(AppTextInput, { maxFontSizeMultiplier: requested, allowFontScaling: false }),
+    )); });
+    const expected = requested === 1.1 ? 1.1 : GLOBAL_FONT_SCALE_CAP;
+    expect(view.root.findByType(NativeText).props.maxFontSizeMultiplier).toBe(expected);
+    expect(view.root.findByType(NativeTextInput).props.maxFontSizeMultiplier).toBe(expected);
+    expect(view.root.findByType(NativeTextInput).props.allowFontScaling).toBe(false);
+    await act(async () => view.unmount());
+  });
+
+  it('preserves the native input focus handle through the text policy', async () => {
+    const ref = React.createRef<AppTextInputRef>();
+    const focus = jest.fn();
+    let view!: ReactTestRenderer;
+    await act(async () => { view = create(React.createElement(AppTextInput, { ref }), {
+      createNodeMock: element => element.type === NativeTextInput ? { focus } : null,
+    }); });
+    ref.current?.focus();
+    expect(focus).toHaveBeenCalledTimes(1);
+    await act(async () => view.unmount());
   });
 
   it('keeps command controls in one row across narrow and large-text layouts', () => {
@@ -96,9 +119,7 @@ describe('Dynamic Type contract', () => {
     expect(mapScreen).toContain("typeRole=\"emoji\"");
     expect(groupMap).toContain("typeRole=\"emoji\"");
     expect(groupMap).toMatch(/memberPin:\s*\{[\s\S]*?overflow:\s*'hidden'/);
-    expect(myTeams).toContain("typeRole=\"emoji\"");
-    expect(myTeams).toContain('NativeTeamCard');
-    expect(myTeams).toMatch(/detailAvatarBig:\s*\{[\s\S]*?overflow:\s*'hidden'/);
+    expect(entryVisuals).toContain('allowFontScaling={false}');
   });
 
   it('exposes Settings text size multiplier preference (incl. smallest 0.8)', () => {

@@ -22,13 +22,12 @@ const { energyObservability: energy } = require('../src/state/energyObservabilit
 const { displayRoutePoints } = require('../src/utils/routeLod.ts');
 const { advanceRouteToCoordinate } = require('../src/utils/advanceRouteToCoordinate.ts');
 const { memberMotionDuration } = require('../src/utils/memberMotion.ts');
-const { createStarfieldParticles } = require('../src/utils/starfieldParticles.ts');
-const { advanceStarfieldPosition } = require('../src/utils/starfieldPhase.ts');
+const { gatheringParticlesAt } = require('../src/utils/gatheringCardParticles.ts');
 const route = Array.from({ length: 2000 }, (_, i) => ({
   latitude: 25 + i * 0.000003 + Math.sin(i / 13) * 0.0001,
   longitude: 121 + i * 0.000006,
 }));
-const stars = createStarfieldParticles(390, 844, false);
+let maxParticlesPerCanvas = 0;
 let releases = [], positions = [], cycles = 0, operations = 0, checksum = 0;
 const latencies = [];
 const reconcile = () => {
@@ -37,7 +36,7 @@ const reconcile = () => {
   if (!isForegroundUi()) return;
   for (let i = 0; i < 12; i++) {
     releases.push(energy.mountWorkload({ starfieldCanvasCount: 1, animatedCanvasCount: 1 }));
-    positions.push(stars.map(star => star.x));
+    positions.push(gatheringParticlesAt(5000, 390, 96));
   }
 };
 const unsubscribe = subscribeForegroundUi(reconcile);
@@ -69,8 +68,10 @@ async function run() {
         { coordinates: route[member], sampledAt: 1000 },
         { coordinates: route[member + 10], sampledAt: 6000 }, 6000, true,
       );
-      for (const canvas of positions) for (let i = 0; i < stars.length; i++) {
-        canvas[i] = advanceStarfieldPosition(canvas[i], 50, stars[i].velocity, 390);
+      for (let canvas = 0; canvas < positions.length; canvas++) {
+        positions[canvas] = gatheringParticlesAt(elapsed + 5000, 390, 96);
+        maxParticlesPerCanvas = Math.max(maxParticlesPerCanvas, positions[canvas].length);
+        checksum += positions[canvas].length;
       }
       latencies[operations % 4096] = performance.now() - before;
       operations++;
@@ -99,7 +100,7 @@ async function run() {
     node: process.version, secondsRequested: seconds, wallMs, cpuMs: (cpu.user + cpu.system) / 1000,
     cpuCorePercent: (cpu.user + cpu.system) / (wallMs * 10), operations, idleChecks: cycles,
     routePoints: route.length, memberSamplesPerOperation: 100, concurrentCanvasModels: 12,
-    particlesPerCanvas: stars.length, p95RecentOperationMs: sorted[Math.floor((sorted.length - 1) * 0.95)],
+    maxParticlesPerCanvas, p95RecentOperationMs: sorted[Math.floor((sorted.length - 1) * 0.95)],
     initialRssMb: initial.rss / 1048576, peakRssMb: peakRss / 1048576,
     retainedRssMb: retained.rss / 1048576, initialHeapMb: initial.heapUsed / 1048576,
     peakHeapMb: peakHeap / 1048576, retainedHeapMb: retained.heapUsed / 1048576,

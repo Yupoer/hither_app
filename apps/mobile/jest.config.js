@@ -9,6 +9,7 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   testEnvironment: 'node',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.node.js'],
   roots: ['<rootDir>/src'],
   // Keep legacy screen tests out of the node-only runner; the recovery race
   // harness is explicitly included because it exercises a real hook lifecycle.

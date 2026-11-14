@@ -5,6 +5,7 @@ jest.mock('expo-modules-core', () => ({
 import {
   addPushTokenListener,
   addPushToStartTokenListener,
+  completeGroupActivity,
   endAllGroupActivities,
   endGroupActivity,
   listGroupActivities,
@@ -24,6 +25,7 @@ describe('liveActivity JS boundary (Expo Go no-op)', () => {
     await expect(updateGroupActivity('id', state)).resolves.toBeUndefined();
     await expect(updateAllGroupActivities(state)).resolves.toBeUndefined();
     await expect(endGroupActivity('id')).resolves.toBeUndefined();
+    await expect(completeGroupActivity('session', 'stop')).resolves.toBeUndefined();
     await expect(endAllGroupActivities()).resolves.toBeUndefined();
     await expect(observeExistingActivities()).resolves.toBeUndefined();
     await expect(startPushToStartTokenObservation()).resolves.toBeUndefined();

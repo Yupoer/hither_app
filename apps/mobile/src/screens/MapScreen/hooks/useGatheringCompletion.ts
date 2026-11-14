@@ -14,6 +14,7 @@ import { resolveExitIndexAtStart } from '../../../utils/arrivalCardExit';
 import * as notifications from '../../../native/notifications';
 
 export interface UseGatheringCompletionInput {
+  manualCompletion?: boolean;
   groupId: string | null;
   user: User | null;
   canEditItinerary: boolean;
@@ -42,6 +43,7 @@ export interface UseGatheringCompletionInput {
 }
 
 export function useGatheringCompletion({
+  manualCompletion = false,
   groupId,
   user,
   canEditItinerary,
@@ -313,7 +315,7 @@ export function useGatheringCompletion({
 
   // Remote final arrival (Realtime / workflow reload): leader auto-completes when
   // every *scoped* member has an arrival row — no personal-arrive path required.
-  const committedGatheringCompletionLifecycle = createElement(CommittedGatheringCompletion, { canEditItinerary, groupId, allScopedDestinations, navTargetId, remoteAutoCompleteDestIdsRef, completingDestIdsRef, activeDestinationArrivals, sessionEligibleMembers, t, executeAutoCompleteStop, members });
+  const committedGatheringCompletionLifecycle = manualCompletion ? null : createElement(CommittedGatheringCompletion, { canEditItinerary, groupId, allScopedDestinations, navTargetId, remoteAutoCompleteDestIdsRef, completingDestIdsRef, activeDestinationArrivals, sessionEligibleMembers, t, executeAutoCompleteStop, members });
 
   return {
     lifecycle: createElement(Fragment, { key: 'gathering-completion-runtime' }, committedGatheringCompletionLifecycle), runCompleteGatheringStop, promptCompleteAfterArrival };

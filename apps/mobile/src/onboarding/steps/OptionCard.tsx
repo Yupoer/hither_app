@@ -1,12 +1,13 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import React from 'react';
 import {
   Image,
   Platform,
-  Pressable,
   StyleSheet,
   View,
   type ImageSourcePropType,
 } from 'react-native';
+import Pressable from '../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../state/PreferencesContext';
 import { accentMix, accentOver } from '../../glass';
@@ -177,8 +178,8 @@ const styles = StyleSheet.create({
   },
   icon: { width: 56, height: 56 },
   textCol: { flex: 1, minWidth: 0 },
-  title: { fontSize: 16.5, fontWeight: '700' },
-  subtitle: { fontSize: 12.5, marginTop: 2 },
+  title: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  subtitle: { fontSize: APP_TEXT_SIZE.caption, marginTop: 2 },
   check: {
     width: 24,
     height: 24,

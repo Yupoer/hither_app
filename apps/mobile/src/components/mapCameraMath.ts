@@ -30,6 +30,13 @@ export function initialRegionFor(
   };
 }
 
+export function cameraCenterForTarget(cameraCenter: Coordinates, target: Coordinates, projectedPoint: Coordinates): Coordinates {
+  return {
+    latitude: cameraCenter.latitude + target.latitude - projectedPoint.latitude,
+    longitude: cameraCenter.longitude + target.longitude - projectedPoint.longitude,
+  };
+}
+
 /** Locate-me camera — neighborhood scale (not street-close). */
 export const LOCATE_ZOOM = 15;
 export const LOCATE_ALTITUDE = 1600;

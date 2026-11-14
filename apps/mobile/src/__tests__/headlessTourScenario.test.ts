@@ -4,20 +4,21 @@ const { LEADER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.c
 type Observation = { presentation: { hosts: { testId?: string; disabled?: boolean }[] } };
 const field = (value: Observation, id: string) => value.presentation.hosts.find(host => host.testId === id);
 
-describe.each(['ios', 'android'])('actual contextual tours on %s', platform => {
+describe('legacy Android contextual tours', () => {
+  const platform = 'android';
   jest.setTimeout(120_000);
 
   it('completes the actual group tour without creating journey data and suppresses replay after restart', async () => {
     const world = new World();
     try {
       const device = await world.device({ id: 'group-tour', userId: LEADER, platform, mode: 'app' });
-      const enter = async (first: boolean) => {
-        for (const testId of [...(first ? ['onboarding-skip'] : []), 'role-my-teams', `team-card-${GROUP_ID}`, 'team-enter']) {
-          await world.settle();
-          expect(await device.host.call({ kind: 'press', testId })).toEqual({ invoked: true });
-        }
-      };
-      await enter(true);
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, `team-card-${GROUP_ID}`)), 'returning team');
+      await device.perform('onboarding.markOnboardingReplayForHome');
+      await device.restart();
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, 'onboarding-skip')), 'explicit survey before contextual tour');
+      await device.perform('onboarding.skip');
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, `team-card-${GROUP_ID}`)), 'returning team after survey');
+      expect(await device.perform('teams.enter', { groupId: GROUP_ID })).toEqual({ invoked: true });
       await world.advance(1500);
       await device.input({ kind: 'animation', finished: true });
       await world.waitFor(device, (value: Observation) => Boolean(field(value, 'tour-next')) && !field(value, 'tour-next')?.disabled, 'group tour first measured target');
@@ -36,7 +37,7 @@ describe.each(['ios', 'android'])('actual contextual tours on %s', platform => {
       expect(world.backend.itinerary).toHaveLength(1);
       expect(world.backend.itinerary[0].id).toBe(DESTINATION);
       await device.restart();
-      await enter(false);
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, 'group-map-native')), 'restored team Map');
       await world.advance(1500);
       expect(field(await device.observe(), 'tour-next')).toBeUndefined();
     } finally { await world.close(); }
@@ -75,6 +76,25 @@ describe.each(['ios', 'android'])('actual contextual tours on %s', platform => {
       await open();
       expect(field(await device.observe(), 'tour-next')).toBeUndefined();
       expect(world.backend.itinerary).toHaveLength(1);
+    } finally { await world.close(); }
+  });
+});
+
+describe('iOS D6 contextual entry', () => {
+  it('opens the live route and add-place controls on first team entry without a legacy tour', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'd6-tour', userId: LEADER, platform: 'ios', mode: 'app' });
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, `team-card-${GROUP_ID}`)), 'returning team');
+      expect(await device.perform('teams.enter', { groupId: GROUP_ID })).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, 'home-itinerary-grabber')), 'D6 itinerary entry');
+      expect(await device.host.call({ kind: 'press', testId: 'home-itinerary-grabber' })).toEqual({ invoked: true });
+      expect(await device.host.call({ kind: 'press', testId: 'd6-route-add-place' })).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => Boolean(field(value, 'map-search-input')), 'D6 add-place form');
+      await world.advance(1500);
+      expect(field(await device.observe(), 'tour-next')).toBeUndefined();
+      expect(world.backend.itinerary.map((stop: { id: string }) => stop.id)).toEqual([DESTINATION]);
+      expect(world.backend.sessions.size).toBe(0);
     } finally { await world.close(); }
   });
 });

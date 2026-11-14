@@ -74,7 +74,7 @@ describe('ActivityKit remote push contract', () => {
 
   it('serializes native foreground/headless updates through the same snapshot merge', () => {
     expect(nativeModule).toContain('HitherLiveActivitySnapshot.merge(incoming: incoming, current: current)');
-    expect(nativeModule.match(/await self\.snapshotUpdates\.perform/g)).toHaveLength(5);
+    expect(nativeModule.match(/await self\.snapshotUpdates\.perform/g)).toHaveLength(6);
     expect(nativeModule.match(/await self\.update\(activity, incoming: state\)/g)).toHaveLength(2);
     expect(liveHook).toContain('state.personalArrivalAtMs,');
     expect(jsBridge).toContain('personalArrived?: boolean;');
@@ -84,12 +84,8 @@ describe('ActivityKit remote push contract', () => {
     expect(appAttributes).toContain('destinationEmoji');
     expect(widgetAttributes).toContain('destinationEmoji');
     expect(jsBridge).toContain('destinationEmoji?: string');
-    const widgetUi = readFileSync(
-      join(__dirname, '../../targets/live-activity/HitherLiveActivity.swift'),
-      'utf8',
-    );
-    expect(widgetUi).toContain('destinationEmoji');
-    expect(widgetUi).toContain('displayTitle');
+    expect(appAttributes).toContain('destinationIcon');
+    expect(widget).toContain('Text(presentation.icon)');
   });
 
   it('exposes activity id, push token and per-member arrival to TypeScript', () => {
@@ -186,77 +182,12 @@ describe('ActivityKit remote push contract', () => {
     expect(mapScreen).toContain('memberArrived:');
   });
 
-  it('animates progress bar and percent ~600ms with Reduce Motion branch (#147)', () => {
-    expect(widget).toContain('ProgressMotion');
-    expect(widget).toContain('durationSeconds: Double = 0.6');
-    expect(widget).toContain('reduceMotionDurationSeconds');
-    expect(widget).toContain('accessibilityReduceMotion');
-    expect(widget).toContain('contentTransition(.numericText())');
-    // Shared ProgressRow drives Lock Screen + expanded Dynamic Island.
-    expect(widget).toContain('ProgressRow(value: context.state.clampedProgress');
-  });
-
-  it('keeps the existing information hierarchy with native lock-screen glass', () => {
-    expect(widget).toContain('static let card = Color.black');
-    expect(widget).toContain('正在前往');
-    expect(widget).not.toContain('前往集合點');
-    expect(widget).not.toContain('GATHERING AT');
-    expect(widget).toContain('已抵達');
-    expect(widget).toContain('ProgressBar');
-    expect(widget).toContain('formattedDistance');
-    expect(widget).toContain('etaText');
-    expect(widget).toContain('compactDuration');
-    expect(widget).toContain('DestinationTitle');
-    expect(widget).not.toContain('TimelineView');
-    expect(widget).toContain('.lineLimit(2)');
-    expect(widget).toContain('layoutPriority(0)');
-    expect(widget).not.toContain('minWidth: 88');
-    expect(widget).not.toContain('.fill(accent.opacity(0.22))');
-    expect(widgetAttributes).toContain('1d12hr');
-    expect(widgetAttributes).toContain('不到1分鐘');
-    expect(widgetAttributes).toContain('1小時30分鐘');
-    expect(widgetAttributes).toContain('zhDuration');
-    expect(appAttributes).toContain('public var language: String?');
-    expect(jsBridge).toContain('language?:');
-    expect(mapScreen).toContain('language,');
-  });
-
-  it('uses native glass with a material fallback and shows an estimate without countdown', () => {
-    const lockBackground = widget.slice(widget.indexOf('private struct LockScreenBackground'), widget.indexOf('// MARK: - Lock screen'));
-    expect(lockBackground).toContain('#available(iOS 26.0, *)');
-    expect(lockBackground).toContain('.glassEffect(.regular');
-    expect(lockBackground).toMatch(/\.background\s*\{[\s\S]*RoundedRectangle[\s\S]*\.glassEffect\(\.regular\)/);
-    expect(lockBackground).not.toMatch(/content\s*\.glassEffect/);
-    expect(lockBackground).toContain('.background(.regularMaterial');
-    expect(lockBackground).toContain('activityBackgroundTint(.clear)');
-    expect(widget).toContain('contrast >= 4.5');
+  it('connects all system presentations to the D6 card and phase deep link', () => {
+    expect(widget.match(/LiveActivityCard\(presentation: presentation, expanded:/g)).toHaveLength(2);
+    expect(widget).toContain('hither://live-activity/journey');
+    expect(widget).toContain('hither://live-activity/team');
+    expect(widget).toContain('MinimalActivity(presentation: presentation)');
+    expect(widget).not.toContain('activityBackgroundTint');
     expect(widget).not.toContain('Text(timerInterval:');
-    expect(widget).toContain('EstimatedEta');
-    expect(widget).toContain('Est. ');
-    expect(appAttributes).toContain('etaTargetAtMs: Double?');
-    expect(widgetAttributes).toContain('etaTargetAtMs: Double?');
-    const dynamicIsland = widget.slice(widget.indexOf('} dynamicIsland:'), widget.indexOf('private struct DestinationTitle'));
-    expect(dynamicIsland).not.toContain('glassEffect');
-  });
-
-  it('uses travel-mode leading identity and gathering-title precedence', () => {
-    expect(widget).toContain('TravelModeBadge');
-    expect(widget).toContain('displayTitle(fallbackGroupName:');
-    expect(widget).toContain('modeAccessibilityLabel');
-    // No crook brand mark as leading identity; no crook+mode pair in compact.
-    expect(widget).not.toMatch(/compactLeading:[\s\S]*Crook\(/);
-    // Single activity reconciliation still ends all before start.
-    expect(liveHook).toContain('endAllGroupActivities');
-    expect(liveHook).toContain('PERSIST_MIN_MS = 15_000');
-    expect(liveHook).not.toContain('Math.round(state.distanceMeters / 10) * 10');
-    expect(liveHook).toContain('state.distanceMeters,');
-  });
-
-  it('marks arrival with a check instead of making unarrived avatars unreadable', () => {
-    expect(widget).toContain('let arrived: [Bool]');
-    expect(widget).toContain('isArrived = arrived.indices.contains(i) && arrived[i]');
-    expect(widget).toContain('checkmark.circle.fill');
-    expect(widget).not.toContain('.opacity(isArrived ? 1 : 0.35)');
-    expect(widget).not.toContain('let gathered: Int');
   });
 });

@@ -24,6 +24,37 @@ const control = (value: MapObservation, id: string) => value.presentation.hosts.
 
 describe.each(['ios', 'android'])('actual Map offline journey parent on %s', platform => {
   jest.setTimeout(120000);
+  const ios = platform === 'ios';
+  const journeyId = ios ? 'home-journey-action' : `gather-nav-${DESTINATION}`;
+  const readyLabel = ios ? 'Start' : '開始';
+  const activeLeaderLabel = ios ? 'On the way, hold to end navigation' : '結束導航';
+  const activeMemberLabel = ios ? 'On the way' : '前往中';
+  const requestLabel = ios ? 'Ask leader to start' : '向隊長發送要求開始';
+
+  async function prepare(world: InstanceType<typeof World>, device: Device) {
+    const cardId = ios ? 'home-itinerary-toggle' : `gather-card-${DESTINATION}`;
+    await world.waitFor(device, (value: MapObservation) => Boolean(control(value, cardId)), 'rendered Map destination');
+    if (!ios) await device.perform('map.card.toggle', { destinationId: DESTINATION });
+  }
+
+  async function pressStart(device: Device) {
+    if (ios) {
+      for (const event of ['onPressIn', 'onPressOut']) {
+        expect(await device.host.call({ kind: 'nativeEvent', testId: journeyId, value: { event } })).toEqual({ invoked: true });
+      }
+    }
+    expect(await device.host.call({ kind: 'press', testId: journeyId })).toEqual({ invoked: true });
+  }
+
+  async function pressEnd(device: Device) {
+    if (!ios) {
+      await pressStart(device);
+      return;
+    }
+    for (const event of ['onPressIn', 'onLongPress', 'onPressOut']) {
+      expect(await device.host.call({ kind: 'nativeEvent', testId: journeyId, value: { event } })).toEqual({ invoked: true });
+    }
+  }
 
   it.each(['missing', 'inaccurate'])('MAP-NAV-01 starts offline with %s GPS and follows on the peer only after receipt', async signal => {
     const world = new World();
@@ -32,22 +63,19 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
       const peer: Device = await world.device({ id: 'peer', userId: PEER, platform,
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-      for (const device of [leader, peer]) {
-        await world.waitFor(device, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
-        await device.perform('map.card.toggle', { destinationId: DESTINATION });
-      }
+      for (const device of [leader, peer]) await prepare(world, device);
       leader.online = false;
       if (signal === 'inaccurate') await leader.gps(25.03, 121.53, { accuracy: 500, timestamp: world.now });
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressStart(leader);
       await world.advance(1000);
       const started: MapObservation = await leader.observe();
-      expect(control(started, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(control(started, journeyId)?.label).toBe(activeLeaderLabel);
       expect(started.external.alertDetails).toEqual([]);
-      expect(control(started, `gather-route-status-${DESTINATION}`)?.text).toBe('等待定位');
+      if (!ios) expect(control(started, `gather-route-status-${DESTINATION}`)?.text).toBe('等待定位');
       expect(started.presentation.mapRoutePoints).toBeNull();
       expect(started.durable.operations).toEqual([expect.objectContaining({ operationType: 'start_gathering' })]);
       expect(world.backend.sessions.size).toBe(0);
-      expect(control(await peer.observe(), `gather-nav-${DESTINATION}`)?.label).not.toBe('前往中');
+      expect(control(await peer.observe(), journeyId)?.label).not.toBe(activeMemberLabel);
 
       leader.online = true;
       await world.advance(120000);
@@ -55,10 +83,10 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
       const followed: MapObservation = await world.waitFor(peer, (value: MapObservation) =>
         value.durable.snapshot.activeGathering.activeDestinationId === DESTINATION
         && value.durable.snapshot.activeGathering.journeyPhase === 'en_route', 'peer follows acknowledged Start');
-      if (!control(followed, `gather-nav-${DESTINATION}`)) {
+      if (!control(followed, journeyId)) {
         await peer.perform('map.card.toggle', { destinationId: DESTINATION });
       }
-      expect(control(await peer.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('前往中');
+      expect(control(await peer.observe(), journeyId)?.label).toBe(activeMemberLabel);
       expect([...world.backend.sessions.values()]).toEqual([expect.objectContaining({
         id: started.durable.operations[0].id, status: 'active', started_by: LEADER,
       })]);
@@ -70,21 +98,28 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
     try {
       const device: Device = await world.device({ id: 'leader', userId: LEADER, platform,
         capabilities: { locationServices: blocker !== 'services' }, screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-      await world.waitFor(device, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
-      await device.perform('map.card.toggle', { destinationId: DESTINATION });
+      await prepare(world, device);
       if (blocker === 'permission') {
         await device.input({ kind: 'appState', value: 'background' });
         await device.input({ kind: 'permission', status: 'denied' });
         await device.input({ kind: 'appState', value: 'active' });
         await world.settle();
       }
-      await device.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressStart(device);
       await world.settle();
       const blocked: MapObservation = await device.observe();
-      expect(blocked.external.alertDetails).toEqual([expect.objectContaining({
-        message: blocker === 'permission' ? '目前無法取得定位權限，請至設定開啟。' : '請在裝置設定中開啟定位服務。',
-        buttons: blocker === 'services' && platform === 'ios' ? ['好'] : ['好', '前往設定'],
-      })]);
+      if (blocker === 'permission' && ios) {
+        expect(blocked.external.alertDetails[0]).toMatchObject({
+          message: 'Location has not started. Enable location access in Settings.',
+          buttons: ['Cancel', 'Open Settings'],
+        });
+      }
+      expect(blocked.external.alertDetails.at(-1)).toEqual(expect.objectContaining({
+        message: blocker === 'permission'
+          ? ios ? 'Location permission is unavailable. Enable it in Settings.' : '目前無法取得定位權限，請至設定開啟。'
+          : ios ? 'Turn on Location Services in your device settings.' : '請在裝置設定中開啟定位服務。',
+        buttons: ios ? blocker === 'services' ? ['OK'] : ['OK', 'Open Settings'] : ['好', '前往設定'],
+      }));
       if (blocker === 'permission' || platform === 'android') {
         await device.input({ kind: 'alert', index: 1 });
         const opened: MapObservation = await device.observe();
@@ -102,27 +137,26 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
     try {
       const leader: Device = await world.device({ id: 'leader', userId: LEADER, platform,
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-      await world.waitFor(leader, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
-      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      await prepare(world, leader);
       await world.settle();
       world.hold('sync_group', {
         deviceId: 'leader',
         matches: ({ args }: CoreCall) => args.p_core_operations.some(row => row.operation_type === 'start_gathering'),
       });
       await leader.input({ kind: 'permissionRead', action: 'holdNext' });
-      await leader.host.call({ kind: 'press', testId: `gather-nav-${DESTINATION}` });
+      await pressStart(leader);
       await world.advance(1000);
       const started: MapObservation = await leader.observe();
-      expect(control(started, `gather-nav-${DESTINATION}`)).toMatchObject({ label: '結束導航', disabled: false });
+      expect(control(started, journeyId)).toMatchObject({ label: activeLeaderLabel, disabled: false });
       expect(started.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
       expect(started.durable.operations).toEqual([expect.objectContaining({ operationType: 'start_gathering' })]);
       expect(world.held).toHaveLength(1);
       expect(world.backend.sessions.size).toBe(0);
 
-      await leader.host.call({ kind: 'press', testId: `gather-nav-${DESTINATION}` });
+      await pressEnd(leader);
       const ended: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
         value.durable.operations.length === 2, 'End is saved while Start is still waiting for transport');
-      expect(control(ended, `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      expect(control(ended, journeyId)?.label).toBe(readyLabel);
       const [start, end] = ended.durable.operations;
       expect(end).toMatchObject({ operationType: 'end_gathering', dependencyIds: [start.id] });
       expect(world.backend.sessions.size).toBe(0);
@@ -138,23 +172,22 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
     try {
       const leader: Device = await world.device({ id: 'leader', userId: LEADER, platform,
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-      await world.waitFor(leader, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
-      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      await prepare(world, leader);
       world.hold('sync_group', {
         deviceId: 'leader',
         matches: ({ args }: CoreCall) => args.p_core_operations.some(row => row.operation_type === 'start_gathering'),
       });
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressStart(leader);
       await world.advance(1000);
       const started: MapObservation = await leader.observe();
-      expect(control(started, `gather-nav-${DESTINATION}`)?.label).toBe('結束導航');
+      expect(control(started, journeyId)?.label).toBe(activeLeaderLabel);
       expect(started.durable.snapshot.activeGathering.journeyPhase).toBe('en_route');
       expect(world.held).toHaveLength(1);
 
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressEnd(leader);
       await world.waitFor(leader, (value: MapObservation) =>
-        control(value, `gather-nav-${DESTINATION}`)?.label === '開始', 'local End');
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+        control(value, journeyId)?.label === readyLabel, 'local End');
+      await pressStart(leader);
       const restarted: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
         value.durable.operations.length === 3, 'local restart while the first Start is held');
       expect(restarted.durable.operations.map(row => row.operationType)).toEqual(['start_gathering', 'end_gathering', 'start_gathering']);
@@ -168,7 +201,7 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
       expect(rejected.durable.operations.map(row => row.status)).toEqual(['conflict', 'conflict', 'conflict']);
       expect(rejected.durable.snapshot.activeGathering.journeyPhase).toBe('staying');
       await world.waitFor(leader, (value: MapObservation) =>
-        control(value, `gather-nav-${DESTINATION}`)?.label === '向隊長發送要求開始', 'revoked leader sees the member action');
+        control(value, journeyId)?.label === requestLabel, 'revoked leader sees the member action');
       expect(world.backend.sessions.size).toBe(0);
     } finally { await world.close(); }
   });
@@ -180,24 +213,21 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
       const peer: Device = await world.device({ id: 'peer', userId: PEER, platform,
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-      for (const device of [leader, peer]) {
-        await world.waitFor(device, (value: MapObservation) => !!control(value, `gather-card-${DESTINATION}`), 'rendered Map destination');
-        await device.perform('map.card.toggle', { destinationId: DESTINATION });
-      }
+      for (const device of [leader, peer]) await prepare(world, device);
       const itineraryBefore = structuredClone(world.backend.itinerary);
       const originalPid = (await leader.observe()).pid;
       const peerSyncedAt = (await peer.observe()).durable.snapshot.syncedAt;
       leader.online = false;
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressStart(leader);
       const started: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
-        value.durable.operations.length === 1 && control(value, `gather-nav-${DESTINATION}`)?.label === '結束導航', 'offline Map Start is durable and actionable');
+        value.durable.operations.length === 1 && control(value, journeyId)?.label === activeLeaderLabel, 'offline Map Start is durable and actionable');
       expect(started.durable.snapshot.activeGathering).toMatchObject({ journeyPhase: 'en_route', activeDestinationId: DESTINATION });
       expect(started.durable.operations[0]).toMatchObject({ actorId: LEADER, groupId: GROUP_ID, operationType: 'start_gathering',
         payload: { activeDestinationId: DESTINATION, navigationRequestId: started.durable.operations[0].id } });
       expect(started.external.alertDetails).toEqual([]);
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await pressEnd(leader);
       const ended: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
-        value.durable.operations.length === 2 && control(value, `gather-nav-${DESTINATION}`)?.label === '開始', 'offline Map End retains terminal intent');
+        value.durable.operations.length === 2 && control(value, journeyId)?.label === readyLabel, 'offline Map End retains terminal intent');
       const [start, end] = ended.durable.operations;
       const ids = [start.id, end.id];
       expect(ids[0]).not.toBe(ids[1]);
@@ -223,7 +253,7 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
       leader.child = null;
       await leader.boot();
       const restored: MapObservation = await world.waitFor(leader, (value: MapObservation) =>
-        !!control(value, `gather-card-${DESTINATION}`), 'Map restored from durable storage while offline');
+        Boolean(control(value, ios ? 'home-itinerary-toggle' : `gather-card-${DESTINATION}`)), 'Map restored from durable storage while offline');
       expect(restored.pid).not.toBe(originalPid);
       expect(restored.actorId).toBe(LEADER);
       expect(leader.online).toBe(false);
@@ -233,8 +263,8 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
           dependencyIds: row.dependencyIds, operationType: row.operationType, payload: row.payload })));
       expect(restored.durable.snapshot.activeGathering).toMatchObject({ journeyPhase: 'staying', activeDestinationId: DESTINATION,
         pointStatuses: { [DESTINATION]: 'pending' } });
-      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      expect(control(await leader.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      if (!ios) await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      expect(control(await leader.observe(), journeyId)?.label).toBe(readyLabel);
       expect(world.backend.sessions.size).toBe(0);
 
       leader.online = true;
@@ -248,8 +278,8 @@ describe.each(['ios', 'android'])('actual Map offline journey parent on %s', pla
           && value.durable.snapshot.activeGathering.journeyPhase === 'staying'
           && value.durable.snapshot.activeGathering.activeDestinationId === null, 'peer Map receives final paused journey');
       expect(accepted.durable.snapshot.activeGathering.pointStatuses[DESTINATION]).toBe('pending');
-      if (!control(accepted, `gather-nav-${DESTINATION}`)) await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      expect(control(await leader.observe(), `gather-nav-${DESTINATION}`)?.label).toBe('開始');
+      if (!control(accepted, journeyId)) await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+      expect(control(await leader.observe(), journeyId)?.label).toBe(readyLabel);
       const peerDestination = peerResult.durable.snapshot.destinations.find(row => row.id === DESTINATION);
       expect(peerDestination).toMatchObject({ id: DESTINATION, title: 'Meeting point' });
       expect(peerDestination?.closedAt).toBeUndefined();

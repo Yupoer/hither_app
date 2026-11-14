@@ -455,7 +455,7 @@
         },
         {
           "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
-          "pattern": "Map leader saves one trimmed coordinate pool stop",
+          "pattern": "Map leader saves one trimmed coordinate stop",
           "platforms": [
             "ios",
             "android"
@@ -471,7 +471,7 @@
         },
         {
           "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
-          "pattern": "Map quota preflight opens the existing paywall",
+          "pattern": "Map quota opens the purchase entry",
           "platforms": [
             "ios",
             "android"

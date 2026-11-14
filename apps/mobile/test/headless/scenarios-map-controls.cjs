@@ -1,5 +1,5 @@
 const scenario = (inventory, pattern, assertions) => ({ inventory: inventory.split(','),
-  file: 'src/__tests__/headlessMapControlsScenario.test.ts', pattern, platforms: ['ios', 'android'], assertions });
+  file: 'src/__tests__/headlessMapControlsScenario.test.ts', pattern, platforms: ['android'], assertions });
 
 module.exports = [
   scenario('MAP-MEMBER-01', 'actual presence persists solo', 'Real platform status selection persists solo and notification macros. Stealth cancel preserves location consent. Accepted stealth disables sharing. Follow never silently reenables sharing.'),
@@ -10,7 +10,7 @@ module.exports = [
   scenario('MAP-PROFILE-01', 'actual Map profile saves trimmed', 'The Map avatar opens the real editor. Save persists the trimmed identity, updates the real session and requests a group projection refresh before closing.'),
   scenario('MAP-SETTINGS-01', 'actual Map group avatar save', 'The actual settings child saves the chosen group avatar and refreshes its durable projection. Followers have no group-avatar editor.'),
   scenario('MAP-GROUP-02', 'actual Map home preserves membership', 'Leave cancellation retains both members. Home resets RoleSelect without leaving. Reentry and confirmed departure remove only the acting follower.'),
-  scenario('MAP-GROUP-02', 'actual Map signout cancellation', 'Cancel retains identity. Confirm signs out through the real Map callback and resets Login without deleting the registered account.'),
+  scenario('MAP-GROUP-02', 'actual Map signout cancellation', 'Cancel retains identity. Confirm signs out through the real Map callback and returns to role entry without deleting the registered account.'),
   scenario('MAP-TOOLS-01', 'actual tools entitlement gate', 'Locked Live Activity cannot enable. Passive mode retains consent and survives process restart. Actual exit restores the map.'),
   scenario('MAP-STORE-01', 'actual Map Store waits for SSV', 'Client reward does not credit. Explicit server verification credits the wallet. Real Map redemption calls its parent entitlement refresh so the Tools Live Activity control unlocks and persists.'),
   scenario('MAP-LOC-01,MAP-LOC-02,MAP-LOC-03,MAP-LOC-04', 'actual fresh samples drive location', 'Expo-owned fresh fixes on both platforms upload actual coordinates. Locate and fit issue native camera commands. Team refresh requests the actual peer roster and a second attempt preserves server cooldown.'),

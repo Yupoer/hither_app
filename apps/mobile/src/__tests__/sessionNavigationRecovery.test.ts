@@ -1,5 +1,8 @@
 import React from 'react';
 let mockUser: { id: string } | null = { id: 'account-a' };
+const mockGetTeam = jest.fn(async (_actorId: string): Promise<string | null> => null);
+const mockSetMembership = jest.fn();
+const mockGroup = { id: 'team-a', name: 'Team A' };
 type NavigationSnapshot = { history: string[]; available: string[]; navigate: (route: string) => void; back: () => void };
 function NavigationProbe(_props: NavigationSnapshot) { return null; }
 let renderer: import('react-test-renderer').ReactTestRenderer;
@@ -16,9 +19,16 @@ function MockNavigator({ initialRouteName, children }: { initialRouteName: strin
   });
 }
 jest.mock('@react-navigation/native-stack', () => ({ createNativeStackNavigator: () => ({ Navigator: MockNavigator, Screen: () => null }) }));
-jest.mock('react-native', () => ({ View: 'view' }));
-jest.mock('../components/MetalforgeBackground', () => () => null);
-jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: mockUser }) }));
+jest.mock('react-native', () => ({ View: 'view', StyleSheet: { create: (styles: unknown) => styles } }));
+jest.mock('../components/WaveLoading', () => 'WaveLoading');
+jest.mock('../navigation/teamEntry', () => ({ readLastActiveTeam: (actorId: string) => mockGetTeam(actorId) }));
+jest.mock('../screens/entry/EntryVisuals', () => ({ ENTRY_BACKGROUND: '#0F1220' }));
+jest.mock('../auth/callbacks', () => ({}));
+jest.mock('../api/services/GroupService', () => ({
+  getMyJoinedGroups: async () => [{ group: mockGroup, role: 'leader' }],
+}));
+jest.mock('../state/coreDataStore', () => ({ readCoreSnapshot: async () => null }));
+jest.mock('../state/SessionContext', () => ({ useSession: () => ({ user: mockUser, setMembership: mockSetMembership }) }));
 jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: {} }) }));
 jest.mock('../screens/LoginScreen', () => () => null);
 jest.mock('../screens/RoleSelectScreen', () => () => null);
@@ -30,7 +40,7 @@ const { create, act } = require('react-test-renderer');
 const RootNavigator = require('../navigation/RootNavigator').default;
 
 describe('protected navigation after terminal session removal', () => {
-  it('retains the team route for the same account and starts at home after a process-style remount', async () => {
+  it('retains the team route for the same account and restores it after a process-style remount', async () => {
     mockUser = { id: 'account-a' };
     await act(async () => { renderer = create(React.createElement(RootNavigator)); });
     await act(async () => { readNavigator().navigate('MyTeams'); readNavigator().navigate('Map'); });
@@ -38,11 +48,13 @@ describe('protected navigation after terminal session removal', () => {
     await act(async () => { renderer.update(React.createElement(RootNavigator)); });
     expect(readNavigator().history).toEqual(['RoleSelect', 'MyTeams', 'Map']);
     await act(async () => { renderer.unmount(); });
+    mockGetTeam.mockResolvedValueOnce('team-a');
     await act(async () => { renderer = create(React.createElement(RootNavigator)); });
-    expect(readNavigator().history).toEqual(['RoleSelect']);
+    expect(readNavigator().history).toEqual(['Map']);
+    expect(mockSetMembership).toHaveBeenCalledWith({ group: mockGroup, role: 'leader' });
     await act(async () => { renderer.unmount(); });
   });
-  it('mounts Login with no protected history and rejects queued Map navigation after logout', async () => {
+  it('mounts entry with no protected history and rejects queued Map navigation after logout', async () => {
     const original = console.error;
     const spy = jest.spyOn(console, 'error').mockImplementation((...args) => {
       if (String(args[0]).startsWith('react-test-renderer is deprecated')) return;
@@ -54,9 +66,9 @@ describe('protected navigation after terminal session removal', () => {
     expect(readNavigator().history).toEqual(['RoleSelect', 'Map', 'MyTeams']);
     mockUser = null;
     await act(async () => { renderer.update(React.createElement(RootNavigator)); });
-    expect(readNavigator().history).toEqual(['Login']); expect(readNavigator().available).not.toContain('Map'); expect(readNavigator().available).not.toContain('MyTeams');
+    expect(readNavigator().history).toEqual(['RoleSelect']); expect(readNavigator().available).not.toContain('Map');
     await act(async () => { readNavigator().navigate('Map'); readNavigator().back(); });
-    expect(readNavigator().history).toEqual(['Login']);
+    expect(readNavigator().history).toEqual(['RoleSelect']);
     mockUser = { id: 'account-b' };
     await act(async () => { renderer.update(React.createElement(RootNavigator)); });
     expect(readNavigator().history).toEqual(['RoleSelect']);

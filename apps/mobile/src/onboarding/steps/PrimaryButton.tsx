@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import React, { useMemo } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
@@ -70,7 +71,7 @@ const makeStyles = (scale: number) => {
       paddingVertical: s(14, 10),
       paddingHorizontal: s(16, 12),
     },
-    label: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+    label: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700', textAlign: 'center' },
   });
 };
 

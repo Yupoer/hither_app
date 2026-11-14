@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { lightTap } from '../utils/haptics';
 import type { AuthModeSelectorProps } from './AuthModeSelector';
@@ -80,7 +83,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.28)',
   },
   text: {
-    fontSize: 15.5,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: 'rgba(235, 235, 245, 0.6)',
   },

@@ -1,63 +1,53 @@
-import { useMountEffect } from '../hooks/useMountEffect';
-import { useForegroundClock } from '../state/foregroundUi';
-import React, { useMemo, useState } from 'react';
-import { ActivityIndicator,
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
+import React, { useCallback, useRef, useState } from 'react';
+import {
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
-  Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { AppText as Text } from '../components/AppText';
+import Pressable from '../components/MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import AuthField from '../components/AuthField';
-import AuthModeSelector, { type AuthMode } from '../components/AuthModeSelector';
-import CrookIcon from '../components/CrookIcon';
+import { useMountEffect } from '../hooks/useMountEffect';
+import { useForegroundClock } from '../state/foregroundUi';
 import { useSession } from '../state/SessionContext';
-import { useTheme } from '../state/PreferencesContext';
 import { useTranslation, type TranslationKey } from '../i18n';
-import { accentMix } from '../glass';
 import { runUiAction } from '../utils/uiAction';
-import SafePressable from '../components/SafePressable';
-import NativeGlassButton from '../components/NativeGlassButton';
-import LanguagePicker from '../components/LanguagePicker';
-import MetalforgeBackground from '../components/MetalforgeBackground';
-import BlockingAuthOverlay from '../components/BlockingAuthOverlay';
-import GoogleGIcon from '../components/GoogleGIcon';
-import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface';
-import {
-  errorTap,
-  lightTap,
-  mediumTap,
-  selectionTick,
-  successTap,
-} from '../utils/haptics';
+import { errorTap, mediumTap, successTap } from '../utils/haptics';
 import { getLegalUrl } from '../config/legal';
+import AuthField from '../components/AuthField';
+import BlockingAuthOverlay from '../components/BlockingAuthOverlay';
+import { AppleContinueButton, AuthProviderButton } from '../components/AuthProviderButtons';
+import SheetHeaderAction from '../components/SheetHeaderAction';
+import { MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../components/mapSheetChrome';
+import { ENTRY_ACCENT, ENTRY_BACKGROUND, EntryBackdrop, EntryPrimaryButton } from './entry/EntryVisuals';
 import type { AuthBusyAction, AuthFieldErrors } from '../auth/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
-type Mode = AuthMode;
-type FieldName = 'email' | 'password' | 'confirmPassword';
 type AuthError = { field: keyof AuthFieldErrors; key: TranslationKey };
+type Step = { kind: 'options' | 'email' | 'signin' | 'signup' | 'reset' }
+  | { kind: 'verification'; email: string };
 
-const MIN_PASSWORD = 6;
-// The native account picker is interactive; the generic 15s action timeout
-// must not expire while the user is still choosing an account.
 const SOCIAL_AUTH_TIMEOUT_MS = 120_000;
-const appVersion =
-  Constants.expoConfig?.version ??
-  Constants.nativeAppVersion ??
-  '0.1.7';
-
+const COOLDOWN_MS = 60_000;
+const actionIds = {
+  email_sign_in: 'login.sign_in',
+  email_sign_up: 'login.sign_up',
+  apple: 'login.apple',
+  google: 'login.google',
+  password_reset: 'login.password_reset',
+  resend_confirmation: 'login.resend_confirmation',
+} satisfies Partial<Record<Exclude<AuthBusyAction, null>, string>>;
+type LoginAction = keyof typeof actionIds;
 function mapAuthError(error: unknown): AuthError {
   const candidate = error as { code?: unknown; message?: unknown } | null;
   const code = typeof candidate?.code === 'string' ? candidate.code.toLowerCase() : '';
@@ -114,826 +104,362 @@ function mapAuthError(error: unknown): AuthError {
   return { field: 'form', key: 'login.authUnavailable' };
 }
 
-/**
- * The pre-session auth gate. All three states (sign in, sign up, reset) share
- * one scroll surface so the iOS and Android layouts remain usable on small
- * screens and while the keyboard is open.
- */
 export default function LoginScreen({ navigation }: Props) {
-  const {
-    user,
-    signInWithEmail,
-    signUpWithEmail,
-    signInWithGoogle,
-    signInWithApple,
-    requestPasswordReset,
-    resendSignupConfirmation,
-  } = useSession();
+  const { user, isAnonymous, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple,
+    linkWithGoogle, linkWithApple, upgradeToEmailAccount, requestPasswordReset, resendSignupConfirmation } = useSession();
+  const [mountIdentity] = useState(() => ({ id: user?.id, anonymous: isAnonymous }));
+  const guest = Boolean(user && isAnonymous);
   const insets = useSafeAreaInsets();
-  const isFocused = useIsFocused();
-  const { colors } = useTheme();
+  const focused = useIsFocused();
   const { t } = useTranslation();
-  const accent = colors.accent;
-  const styles = useMemo(() => makeStyles(accent), [accent]);
 
-  const [mode, setMode] = useState<Mode>('signin');
+  const [step, setStep] = useState<Step>({ kind: 'options' });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [busyAction, setBusyAction] = useState<AuthBusyAction>(null);
-  const [errors, setErrors] = useState<AuthFieldErrors>({});
-  const [touched, setTouched] = useState<Record<FieldName, boolean>>({
-    email: false,
-    password: false,
-    confirmPassword: false,
-  });
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [busy, setBusy] = useState<AuthBusyAction>(null);
+  const [error, setError] = useState<AuthError | null>(null);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [resendUntil, setResendUntil] = useState(0);
   const [resetUntil, setResetUntil] = useState(0);
-  const { now, lifecycle: clockLifecycle } = useForegroundClock(1000, Math.max(resendUntil, resetUntil) > Date.now());
-  const resendCooldown = Math.max(0, Math.ceil((resendUntil - now) / 1000));
-  const resetCooldown = Math.max(0, Math.ceil((resetUntil - now) / 1000));
-  const setResendCooldown = (seconds: number) => setResendUntil(Date.now() + seconds * 1000);
-  const setResetCooldown = (seconds: number) => setResetUntil(Date.now() + seconds * 1000);
-  const [resetMode, setResetMode] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
-  const [guestConfirmVisible, setGuestConfirmVisible] = useState(false);
-  const [appleAvailable, setAppleAvailable] = useState(false);
-  const privacyUrl = getLegalUrl('privacy');
-  const termsUrl = getLegalUrl('terms');
-  const isSignUp = mode === 'signup';
-  const busy = busyAction !== null;
-  const emailOk = /\S+@\S+\.\S+/.test(email.trim());
-  const passwordOk = password.replace(/\s/g, '').length >= MIN_PASSWORD;
-  const confirmPasswordOk = password.length > 0 && password === confirmPassword;
-  const formCanSubmit = emailOk
-    && passwordOk
-    && (!isSignUp || confirmPasswordOk);
-  const blockingBusy = busyAction === 'email_sign_in'
-    || busyAction === 'email_sign_up'
-    || busyAction === 'google'
-    || busyAction === 'apple';
+  const cooldownUntil = step.kind === 'reset' ? resetUntil : resendUntil;
+  const { now, lifecycle } = useForegroundClock(1000, cooldownUntil !== 0);
+  const cooldown = Math.min(60, Math.max(0, Math.ceil((cooldownUntil - now) / 1000)));
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const passwordOk = step.kind === 'signup'
+    ? password.replace(/\s/g, '').length >= 8
+    : password.length > 0;
+  const blocking = busy === 'apple' || busy === 'google' || busy === 'email_sign_in' || busy === 'email_sign_up';
+  const identityConfirmed = (busy === 'apple' || step.kind === 'verification') && Boolean(user && !isAnonymous
+    && (mountIdentity.id !== user.id || mountIdentity.anonymous));
+  const close = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.replace('RoleSelect');
+  }, [navigation]);
+  const finished = useRef(false);
+  const finish = useCallback(() => {
+    if (finished.current) return;
+    finished.current = true;
+    successTap();
+    close();
+  }, [close]);
 
   useMountEffect(() => {
-    void AppleAuthentication.isAvailableAsync()
-      .then(setAppleAvailable)
-      .catch(() => setAppleAvailable(false));
+    let mounted = true;
+    if (Platform.OS === 'ios') {
+      void AppleAuthentication.isAvailableAsync().then(available => {
+        if (mounted) setAppleAvailable(available);
+      }).catch(() => undefined);
+    }
+    return () => { mounted = false; };
   });
 
-  const [previousMode, setPreviousMode] = useState(mode);
-  if (previousMode !== mode) {
-    setPreviousMode(mode);
-    setTouched({ email: false, password: false, confirmPassword: false });
-    setErrors({});
-  }
-  const [pendingNavigation, setPendingNavigation] = useState({ navigation, pendingEmail, user, generation: 0 });
-  if (!Object.is(pendingNavigation.navigation, navigation) || !Object.is(pendingNavigation.pendingEmail, pendingEmail) || !Object.is(pendingNavigation.user, user)) {
-    setPendingNavigation({ navigation, pendingEmail, user, generation: pendingNavigation.generation + 1 });
+  function go(next: Exclude<Step['kind'], 'verification'>) {
+    setError(null);
+    setPassword('');
+    setShowPassword(false);
+    setStep({ kind: next });
   }
 
-  function clearFieldError(field: FieldName): void {
-    setErrors((current) => {
-      if (!(field in current)) return current;
-      const next = { ...current };
-      delete next[field];
-      return next;
+  function run(action: LoginAction, perform: (isCurrent: () => boolean) => Promise<void>) {
+    if (busy) return;
+    setError(null);
+    Keyboard.dismiss();
+    mediumTap();
+    void runUiAction(actionIds[action], async (token) => {
+      try {
+        await perform(token.isCurrent);
+      } catch (cause) {
+        if (token.isCurrent()) {
+          setError(mapAuthError(cause));
+          errorTap();
+        }
+        throw cause;
+      }
+    }, {
+      screen: 'Login',
+      timeoutMs: action === 'apple' || action === 'google' ? SOCIAL_AUTH_TIMEOUT_MS : undefined,
+      onBusyChange: next => setBusy(next ? action : null),
+      suppressBanner: true,
+      onError: kind => {
+        if (kind === 'timeout') setError({ field: 'form', key: 'interaction.timeout' });
+      },
     });
   }
 
-  function changeField(field: FieldName, value: string): void {
-    clearFieldError(field);
-    if (field === 'email') setEmail(value);
-    if (field === 'password') setPassword(value);
-    if (field === 'confirmPassword') setConfirmPassword(value);
+  function runSocial(provider: 'apple' | 'google') {
+    run(provider, async isCurrent => {
+      const authenticate = provider === 'apple'
+        ? guest ? linkWithApple : signInWithApple
+        : guest ? linkWithGoogle : signInWithGoogle;
+      if (await authenticate() && isCurrent()) finish();
+    });
   }
 
-  function validateAuthForm(nextMode: Mode): AuthFieldErrors {
-    const next: AuthFieldErrors = {};
-    if (!email.trim()) next.email = t('login.emailRequired');
-    else if (!emailOk) next.email = t('login.emailFormatHint');
-    if (!password) next.password = t('login.passwordRequired');
-    else if (!passwordOk) next.password = t('login.passwordFormatHint');
-    if (nextMode === 'signup') {
-      if (!confirmPassword) next.confirmPassword = t('login.confirmPasswordRequired');
-      else if (!confirmPasswordOk) next.confirmPassword = t('login.confirmPasswordMismatch');
-    }
-    setTouched({ email: true, password: true, confirmPassword: nextMode === 'signup' });
-    setErrors(next);
-    return next;
-  }
-
-  function applyAuthError(error: unknown): void {
-    const mapped = mapAuthError(error);
-    setErrors((current) => ({ ...current, [mapped.field]: t(mapped.key) }));
-  }
-
-  function goToApp(): void {
-    successTap();
-    navigation.replace('RoleSelect');
-  }
-
-  async function submitEmail(token: { isCurrent: () => boolean }): Promise<void> {
-    if (busyAction || !formCanSubmit) {
-      validateAuthForm(mode);
-      return;
-    }
-    mediumTap();
-    try {
-      if (isSignUp) {
-        const result = await signUpWithEmail({
-          email: email.trim(),
-          password,
-        });
-        if (!token.isCurrent()) return;
-        if (result?.status === 'verification_required') {
-          successTap();
-          setPendingEmail(result.email);
+  function submitEmail() {
+    if (!emailOk || !passwordOk) return;
+    const address = email.trim();
+    const signup = step.kind === 'signup';
+    run(signup ? 'email_sign_up' : 'email_sign_in', async isCurrent => {
+      if (signup && guest) {
+        await upgradeToEmailAccount(address, password);
+        if (isCurrent()) {
+          setResendUntil(Date.now() + COOLDOWN_MS);
+          setStep({ kind: 'verification', email: address });
+        }
+        return;
+      }
+      if (signup) {
+        const result = await signUpWithEmail({ email: address, password });
+        if (!isCurrent()) return;
+        if (result.status === 'verification_required') {
+          setResendUntil(0);
+          setStep({ kind: 'verification', email: result.email });
           return;
         }
       } else {
-        await signInWithEmail({ email: email.trim(), password });
-        if (!token.isCurrent()) return;
+        await signInWithEmail({ email: address, password });
       }
-      goToApp();
-    } catch (error) {
-      if (token.isCurrent()) {
-        applyAuthError(error);
-        errorTap();
-      }
-      throw error;
-    }
+      if (isCurrent()) finish();
+    });
   }
 
-  async function runSocial(
-    actionId: 'login.google' | 'login.apple',
-    action: () => Promise<unknown>,
-  ): Promise<void> {
-    if (busyAction) return;
-    mediumTap();
-    await runUiAction(
-      actionId,
-      async (token) => {
-        try {
-          const result = await action();
-          if (!token.isCurrent() || !result) return;
-          if (actionId === 'login.google') goToApp();
-          else successTap();
-        } catch (error) {
-          if (token.isCurrent()) {
-            applyAuthError(error);
-            errorTap();
-          }
-          throw error;
-        }
-      },
-      {
-        screen: 'Login',
-        timeoutMs: SOCIAL_AUTH_TIMEOUT_MS,
-        suppressBanner: true,
-        onBusyChange: (next) => setBusyAction(next ? (actionId === 'login.google' ? 'google' : 'apple') : null),
-        onError: (kind) => {
-          if (kind === 'timeout') {
-            setErrors((current) => ({ ...current, form: t('interaction.timeout') }));
-            errorTap();
-          }
-        },
-      },
-    );
-  }
-
-  async function submitReset(token: { isCurrent: () => boolean }): Promise<void> {
-    if (!emailOk || busyAction) return;
-    mediumTap();
-    try {
+  function submitReset() {
+    if (!emailOk || cooldown > 0) return;
+    run('password_reset', async isCurrent => {
       await requestPasswordReset(email.trim());
-      if (!token.isCurrent()) return;
+      if (!isCurrent()) return;
       successTap();
       setResetSent(true);
-      setResetCooldown(60);
-    } catch (error) {
-      if (token.isCurrent()) {
-        setErrors((current) => ({ ...current, form: t('login.authUnavailable') }));
-        errorTap();
-      }
-      throw error;
-    }
+      setResetUntil(Date.now() + COOLDOWN_MS);
+    });
   }
 
-  async function resendConfirmation(token: { isCurrent: () => boolean }): Promise<void> {
-    if (!pendingEmail || resendCooldown > 0 || busyAction) return;
-    mediumTap();
-    try {
-      await resendSignupConfirmation(pendingEmail);
-      if (!token.isCurrent()) return;
-      setResendCooldown(60);
+  function resendConfirmation(address: string) {
+    if (cooldown > 0) return;
+    run('resend_confirmation', async isCurrent => {
+      await resendSignupConfirmation(address);
+      if (!isCurrent()) return;
       successTap();
-    } catch (error) {
-      if (token.isCurrent()) {
-        setErrors((current) => ({ ...current, form: t('login.authUnavailable') }));
-        errorTap();
-      }
-      throw error;
-    }
+      setResendUntil(Date.now() + COOLDOWN_MS);
+    });
   }
 
-  function openPasswordReset(): void {
-    if (busy) return;
-    lightTap();
-    setResetMode(true);
-    setResetSent(false);
-    setResetCooldown(0);
-    setErrors({});
-    setTouched({ email: false, password: false, confirmPassword: false });
+  function back() {
+    if (step.kind === 'reset') go('signin');
+    else if (step.kind === 'signin' || step.kind === 'signup') go('email');
+    else go('options');
   }
 
-  function backToSignIn(): void {
-    selectionTick();
-    setResetMode(false);
-    setPendingEmail(null);
-    setResetSent(false);
-    setResendCooldown(0);
-    setResetCooldown(0);
-    setMode('signin');
-    setErrors({});
-  }
-
-  function setAuthMode(next: Mode): void {
-    if (next === mode || busy) return;
-    selectionTick();
-    setMode(next);
-  }
-
-  function openGuestConfirm(): void {
-    if (busy) return;
-    lightTap();
-    setGuestConfirmVisible(true);
-  }
-
-  function continueAsGuest(): void {
-    mediumTap();
-    setGuestConfirmVisible(false);
-    setTimeout(() => {
-      navigation.reset({ index: 0, routes: [{ name: 'RoleSelect' }] });
-    }, 100);
-  }
-
-  function cancelGuest(): void {
-    selectionTick();
-    setGuestConfirmVisible(false);
-  }
-
-  function errorFor(field: FieldName, local: string | null): string | undefined {
-    return (touched[field] && local) || errors[field];
-  }
-
-  function renderPasswordToggle(active: boolean, testID: string): React.ReactNode {
-    return (
-      <Pressable
-        onPress={() => {
-          if (!active || busy) return;
-          selectionTick();
-          setShowPassword((current) => !current);
-        }}
-        disabled={!active || busy}
-        accessibilityRole="button"
-        accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-        testID={testID}
-        hitSlop={8}
-        style={styles.revealButton}
-      >
-        <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={24} color="#F4F7FC" />
-      </Pressable>
-    );
-  }
-
-  function renderAuthPanel(panelMode: Mode, active: boolean): React.ReactNode {
-    const panelSignUp = panelMode === 'signup';
-    const panelEmailError = !email.trim()
-      ? t('login.emailRequired')
-      : !emailOk
-        ? t('login.emailFormatHint')
-        : null;
-    const panelPasswordError = !password
-      ? t('login.passwordRequired')
-      : !passwordOk
-        ? t('login.passwordFormatHint')
-        : null;
-    const panelConfirmError = !confirmPassword
-      ? t('login.confirmPasswordRequired')
-      : !confirmPasswordOk
-        ? t('login.confirmPasswordMismatch')
-        : null;
-    const panelCanSubmit = emailOk
-      && passwordOk
-      && (!panelSignUp || confirmPasswordOk);
-    const panelAction: AuthBusyAction = panelSignUp ? 'email_sign_up' : 'email_sign_in';
-    const emailError = errorFor('email', panelEmailError);
-    const passwordError = errorFor('password', panelPasswordError);
-    const confirmError = errorFor('confirmPassword', panelConfirmError);
-    return (
-      <View pointerEvents={active ? 'auto' : 'none'} style={styles.form}>
-        <Text style={styles.label}>{t('login.email')}</Text>
-        <View style={[styles.field, emailError && styles.fieldErrorBorder]}>
-          <AuthField
-            value={email}
-            onChangeText={(value) => changeField('email', value)}
-            onBlur={() => setTouched((current) => ({ ...current, email: true }))}
-            placeholder={t('login.emailPlaceholder')}
-            placeholderTextColor="rgba(235,235,245,0.46)"
-            keyboardAppearance="dark"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-            accessibilityLabel={t('login.email')}
-            testID={active ? 'login-email' : undefined}
-          />
-        </View>
-        {emailError ? <Text style={styles.fieldError}>{emailError}</Text> : null}
-
-        <Text style={styles.label}>{t('login.password')}</Text>
-        <View style={[styles.field, passwordError && styles.fieldErrorBorder]}>
-          <AuthField
-            value={password}
-            onChangeText={(value) => changeField('password', value)}
-            onBlur={() => setTouched((current) => ({ ...current, password: true }))}
-            placeholder={t('login.passwordPlaceholder')}
-            placeholderTextColor="rgba(235,235,245,0.46)"
-            keyboardAppearance="dark"
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry={!showPassword}
-            textContentType={panelSignUp ? 'newPassword' : 'password'}
-            accessibilityLabel={t('login.password')}
-            testID={active ? 'login-password' : undefined}
-          />
-          {renderPasswordToggle(active, active ? 'login-password-toggle' : 'login-password-toggle-inactive')}
-        </View>
-        {passwordError ? <Text style={styles.fieldError}>{passwordError}</Text> : null}
-
-        {panelSignUp ? (
-          <>
-            <Text style={styles.label}>{t('login.confirmPassword')}</Text>
-            <View style={[styles.field, confirmError && styles.fieldErrorBorder]}>
-              <AuthField
-                value={confirmPassword}
-                onChangeText={(value) => changeField('confirmPassword', value)}
-                onBlur={() => setTouched((current) => ({ ...current, confirmPassword: true }))}
-                placeholder={t('login.confirmPasswordPlaceholder')}
-                placeholderTextColor="rgba(235,235,245,0.46)"
-                keyboardAppearance="dark"
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry={!showPassword}
-                textContentType="newPassword"
-                accessibilityLabel={t('login.confirmPassword')}
-                testID={active ? 'login-confirm-password' : undefined}
-              />
-              {confirmPasswordOk ? (
-                <Ionicons name="checkmark" size={24} color="#30d158" style={styles.revealButton} />
-              ) : (
-                <Pressable
-                  onPress={() => {
-                    if (!active || busy) return;
-                    selectionTick();
-                    setShowPassword((current) => !current);
-                  }}
-                  disabled={!active || busy}
-                  accessibilityRole="button"
-                  accessibilityLabel={showPassword ? t('login.hidePassword') : t('login.showPassword')}
-                  testID={active ? 'login-confirm-password-toggle' : undefined}
-                  style={styles.revealButton}
-                >
-                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={24} color="#F4F7FC" />
-                </Pressable>
-              )}
-            </View>
-            {errorFor('confirmPassword', panelConfirmError) ? (
-              <Text style={styles.fieldError}>{errorFor('confirmPassword', panelConfirmError)}</Text>
-            ) : null}
-          </>
-        ) : (
-          <Pressable
-            onPress={openPasswordReset}
-            disabled={busy}
-            accessibilityRole="button"
-            style={styles.forgot}
-            testID={active ? 'login-forgot-password' : undefined}
-          >
-            <Text style={styles.forgotText}>{t('login.forgotPassword')}</Text>
-          </Pressable>
-        )}
-
-        <SafePressable
-          actionId={panelSignUp ? 'login.sign_up' : 'login.sign_in'}
-          screen="Login"
-          onPressAction={submitEmail}
-          onBusyChange={(next) => setBusyAction(next ? panelAction : null)}
-          suppressBanner
-          onActionError={(kind) => {
-            if (kind === 'timeout') {
-              setErrors((current) => ({ ...current, form: t('interaction.timeout') }));
-              errorTap();
-            }
-          }}
-          disabled={!active || !panelCanSubmit || busy}
-          testID={active ? 'login-submit' : undefined}
-          accessibilityRole="button"
-          accessibilityLabel={panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
-          style={[
-            styles.cta,
-            panelSignUp && styles.signupCta,
-            (!panelCanSubmit || busy) && styles.ctaDisabled,
-          ]}
-        >
-          {busy && !blockingBusy ? (
-            <ActivityIndicator accessibilityRole="progressbar" color="#060b14" />
-          ) : (
-            <Text style={styles.ctaText}>
-              {panelSignUp ? t('login.ctaSignUp') : t('login.ctaSignIn')}
-            </Text>
-          )}
-        </SafePressable>
-        {panelSignUp ? (
-          <View style={styles.signupLegal}>
-            <Text style={styles.signupLegalText}>
-              {t('login.signupAgreementPrefix')}{' '}
-              <Text testID="login-terms" onPress={() => termsUrl && void Linking.openURL(termsUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.terms')}</Text>
-              {t('login.signupAgreementAnd')}
-              <Text testID="login-privacy" onPress={() => privacyUrl && void Linking.openURL(privacyUrl)} accessibilityRole="link" style={styles.legalText}>{t('login.privacy')}</Text>
-              {t('login.signupAgreementSuffix')}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    );
-  }
-
-  function renderReset(): React.ReactNode {
-    return (
-      <View style={styles.resetCard}>
-        <Text style={styles.resetHint}>{'請輸入你的註冊電子信箱，\n我們將發送密碼重設連結至你的信箱。'}</Text>
-        <View style={[styles.field, touched.email && !emailOk && styles.fieldErrorBorder]}>
-          <AuthField
-            value={email}
-            onChangeText={(value) => changeField('email', value)}
-            onBlur={() => setTouched((current) => ({ ...current, email: true }))}
-            placeholder={t('login.emailPlaceholder')}
-            placeholderTextColor="rgba(235,235,245,0.46)"
-            keyboardAppearance="dark"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-            accessibilityLabel={t('login.email')}
-            testID="login-reset-email"
-          />
-        </View>
-        {touched.email && !emailOk && !resetSent ? (
-          <Text style={styles.fieldError}>{email ? t('login.emailFormatHint') : t('login.emailRequired')}</Text>
-        ) : null}
-        {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
-        {resetSent ? (
-          <>
-            <Text style={styles.successText}>{t('login.resetSent')}</Text>
-            <Text style={styles.resetHelp}>{t('login.resetHelp')}</Text>
-          </>
-        ) : null}
-        <SafePressable
-          actionId="login.password_reset"
-          screen="Login"
-          onPressAction={submitReset}
-          onBusyChange={(next) => setBusyAction(next ? 'password_reset' : null)}
-          suppressBanner
-          disabled={!emailOk || busy || resetCooldown > 0}
-          testID="login-reset-submit"
-          accessibilityRole="button"
-          accessibilityLabel={resetSent ? t('login.resetResend') : '發送重設連結'}
-          style={[
-            styles.cta,
-            styles.resetAction,
-            (!emailOk || busy || resetCooldown > 0) && styles.ctaDisabled,
-          ]}
-        >
-          {busyAction === 'password_reset' ? (
-            <ActivityIndicator accessibilityRole="progressbar" color="#060b14" />
-          ) : (
-            <Text style={[styles.ctaText, { color: '#060b14', fontWeight: '800', fontSize: 16 }]} numberOfLines={1}>
-              {resetSent ? t('login.resetResend') : '發送重設連結'}
-            </Text>
-          )}
-        </SafePressable>
-        {resetCooldown > 0 ? (
-          <Text style={styles.cooldownText}>{t('login.resendIn', { seconds: resetCooldown })}</Text>
-        ) : null}
-      </View>
-    );
-  }
-
-  function renderPending(): React.ReactNode {
-    return (
-      <View style={styles.pendingCard}>
-              <Ionicons name="mail-outline" size={38} color={accent} />
-        <Text style={styles.sectionTitle}>{t('login.verificationTitle')}</Text>
-        <Text style={styles.pendingEmail}>{pendingEmail}</Text>
-        <Text style={styles.resetHint}>{t('login.verificationPending')}</Text>
-        {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
-        <SafePressable
-          actionId="login.resend_confirmation"
-          screen="Login"
-          onPressAction={resendConfirmation}
-          onBusyChange={(next) => setBusyAction(next ? 'resend_confirmation' : null)}
-          suppressBanner
-          disabled={busy || resendCooldown > 0}
-          testID="login-resend-confirmation"
-          accessibilityRole="button"
-          style={[styles.cta, (busy || resendCooldown > 0) && styles.ctaDisabled]}
-        >
-          {busyAction === 'resend_confirmation' ? (
-            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
-          ) : (
-            <Text style={styles.ctaText}>
-              {resendCooldown > 0 ? `${t('login.resendConfirmation')} (${resendCooldown})` : t('login.resendConfirmation')}
-            </Text>
-          )}
-        </SafePressable>
-        <Pressable testID="login-pending-back" onPress={backToSignIn} accessibilityRole="button" style={styles.backLink}>
-          <Text style={styles.backLinkText}>{t('login.backToSignIn')}</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  const content = pendingEmail ? renderPending() : resetMode ? renderReset() : (
-    <>
-      <AuthModeSelector
-        mode={mode}
-        onChange={setAuthMode}
-        labels={{ signin: t('login.tabSignIn'), signup: t('login.tabSignUp') }}
-        disabled={busy}
-        wide
-      />
-      <View style={styles.formViewport}>{renderAuthPanel(mode, true)}</View>
-      {errors.form ? <Text style={styles.formError}>{errors.form}</Text> : null}
-    </>
-  );
+  const titles = {
+    options: 'entry.saveTeams',
+    email: 'entry.emailTitle',
+    signin: 'entry.passwordTitle',
+    signup: 'entry.createPassword',
+    reset: 'login.resetTitle',
+    verification: 'login.verificationTitle',
+  } satisfies Record<Step['kind'], TranslationKey>;
 
   return (
     <View style={styles.fill}>
-      {clockLifecycle}
-      <PendingEmailNavigation key={pendingNavigation.generation} navigation={navigation} pendingEmail={pendingEmail} user={user} />
-      <MetalforgeBackground active={isFocused} allowInactive={busyAction === 'apple' || busyAction === 'google'} />
-      {!resetMode ? (
-        <View
-          style={[styles.langChrome, { top: insets.top + 8 }]}
-          importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
-          accessibilityElementsHidden={blockingBusy}
-        >
-          <LanguagePicker variant="menu" />
-        </View>
-      ) : null}
-      {!resetMode ? (
-        <View
-          style={[styles.versionChrome, { bottom: Math.max(insets.bottom, 10) }]}
-          pointerEvents="none"
-          importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
-          accessibilityElementsHidden={blockingBusy}
-        >
-          <Text style={styles.versionText}>V{appVersion}</Text>
-        </View>
-      ) : null}
-      {resetMode ? (
-        <View
-          style={[styles.resetBackChrome, { top: insets.top + 8 }]}
-          importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
-          accessibilityElementsHidden={blockingBusy}
-        >
-          <SafePressable
-            actionId="login.reset_back"
-            screen="Login"
-            onPressAction={() => backToSignIn()}
-            disableWhileBusy={false}
-            native={{
-              systemImage: 'chevron.left',
-              shape: 'capsule',
-              width: 45,
-              height: 45,
-              imageSize: 19.2,
-              iconOffset: { x: 1.16 },
-            }}
-            accessibilityLabel={t('common.back')}
-            testID="login-reset-back"
-          />
-        </View>
-      ) : null}
+      <EntryBackdrop active={focused} allowInactive={busy === 'apple' || busy === 'google'} />
+      {lifecycle}
+      {identityConfirmed ? <FinishOnIdentity onFinish={finish} /> : null}
       <KeyboardAvoidingView
-        style={styles.fill}
+        style={styles.transparent}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        importantForAccessibility={blockingBusy ? 'no-hide-descendants' : 'auto'}
-        accessibilityElementsHidden={blockingBusy}
+        accessibilityElementsHidden={blocking}
+        importantForAccessibility={blocking ? 'no-hide-descendants' : 'auto'}
       >
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingTop: insets.top + (resetMode ? 112 : 24), paddingBottom: insets.bottom + 16 }]}
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + SHEET_CORNER_ACTION_INSET, paddingBottom: Math.max(18, insets.bottom) }]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
         >
-          <View>
-            <View style={styles.header}>
-              {resetMode ? (
-                <View style={styles.resetHeaderRow}>
-                  <View style={styles.resetIconSlot}>
-                    <CrookIcon size={56} color={accent} />
-                  </View>
-                  <Text style={styles.title}>{t('login.resetTitle')}</Text>
-                  <View style={styles.resetIconSlot} />
-                </View>
-              ) : (
-                <View style={styles.brand}>
-                  <CrookIcon size={56} color={accent} />
-                  <Text style={styles.title}>Hither</Text>
-                </View>
-              )}
-            </View>
-
-            {content}
-
-            {!pendingEmail && !resetMode && !isSignUp ? (
-              <>
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>或使用其他方式</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-                <View style={styles.socialRow}>
-                  <View style={[styles.socialIcon, busy && styles.ctaDisabled]}>
-                    <NativeGlassButton
-                      onPress={() => void runSocial('login.google', () => signInWithGoogle())}
-                      disabled={busy}
-                      accessibilityLabel={t('login.google')}
-                      testID="login-google"
-                      size={70}
-                      shape="circle"
-                      variant="glass"
-                      style={StyleSheet.absoluteFill}
-                    />
-                    <View pointerEvents="none" style={styles.socialIconOverlay}>
-                      <GoogleGIcon size={33} />
-                    </View>
-                  </View>
-                  {appleAvailable ? (
-                    <NativeGlassButton
-                      systemImage="apple.logo"
-                      onPress={() => void runSocial('login.apple', () => signInWithApple())}
-                      disabled={busy}
-                      accessibilityLabel={t('login.apple')}
-                      testID="login-apple"
-                      size={70}
-                      imageSize={33}
-                      shape="circle"
-                      variant="glass"
-                      foregroundColor="#fff"
-                      iconOffset={{ y: -2 }}
-                      style={[styles.socialIcon, busy && styles.ctaDisabled]}
-                    />
-                  ) : null}
-                </View>
-                <NativeGlassButton
-                  label={t('login.guest')}
-                  systemImage="person"
-                  onPress={openGuestConfirm}
-                  disabled={busy}
-                  accessibilityLabel={t('login.guest')}
-                  testID="login-guest"
-                  shape="capsule"
-                  layout="fit"
-                  width={173}
-                  height={50}
-                  fontSize={15.5}
-                  imageSize={16}
-                  spacing={4}
-                  variant="glass"
-                  style={[styles.guestButton, busy && styles.ctaDisabled]}
-                />
-              </>
-            ) : null}
+          <View style={styles.header}>
+            {step.kind === 'options' ? <Text style={styles.brand}>Hither</Text> : (
+              <SheetHeaderAction
+                accessibilityLabel={t('common.back')} action="back"
+                onPress={back} disabled={Boolean(busy)} testID={step.kind === 'reset' ? 'login-reset-back' : 'login-step-back'}
+              />
+            )}
+            <SheetHeaderAction
+              accessibilityLabel={t('common.close')} action="close"
+              onPress={close} disabled={Boolean(busy)} testID="login-close"
+            />
           </View>
+          <Text accessibilityRole="header" style={styles.title}>{t(titles[step.kind])}</Text>
+
+          {step.kind === 'options' ? (
+            <>
+              <Text style={styles.sub}>{t('entry.saveTeamsDescription')}</Text>
+              <View style={styles.providers}>
+                {appleAvailable ? (
+                  <AppleContinueButton disabled={Boolean(busy)} testID="login-apple" onPress={() => runSocial('apple')} />
+                ) : null}
+                <AuthProviderButton provider="google" disabled={Boolean(busy)} testID="login-google"
+                  label={t('entry.continueGoogle')} onPress={() => runSocial('google')} />
+                <AuthProviderButton provider="email" disabled={Boolean(busy)} testID="login-use-email"
+                  label={t('entry.continueEmail')} onPress={() => go('email')} />
+              </View>
+            </>
+          ) : null}
+
+          {step.kind === 'reset' ? <Text style={styles.sub}>{t('login.resetHint')}</Text> : null}
+          {step.kind === 'email' || step.kind === 'reset' ? (
+            <>
+              <View style={styles.field}>
+                <AuthField
+                  value={email}
+                  onChangeText={next => { setEmail(next); setError(null); }}
+                  placeholder="name@example.com"
+                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  keyboardAppearance="dark"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  textContentType="emailAddress"
+                  accessibilityLabel={t('login.email')}
+                  testID={step.kind === 'email' ? 'login-email' : 'login-reset-email'}
+                />
+              </View>
+              {step.kind === 'email' ? (
+                <EntryPrimaryButton
+                  label={t('entry.continue')} accent={ENTRY_ACCENT} disabled={!emailOk || Boolean(busy)}
+                  testID="login-email-next" onPress={() => { Keyboard.dismiss(); go(guest ? 'signup' : 'signin'); }} style={styles.next}
+                />
+              ) : (
+                <>
+                  {resetSent ? <Text accessibilityRole="alert" style={styles.sub}>{t('login.resetSent')}</Text> : null}
+                  <EntryPrimaryButton
+                    label={cooldown ? t('login.resendIn', { seconds: cooldown }) : t(resetSent ? 'login.resetResend' : 'login.resetSubmit')}
+                    accent={ENTRY_ACCENT} disabled={!emailOk || cooldown > 0 || Boolean(busy)}
+                    testID="login-reset-submit" onPress={submitReset} style={styles.next}
+                  />
+                  {resetSent ? <Text style={styles.sub}>{t('login.resetHelp')}</Text> : null}
+                </>
+              )}
+            </>
+          ) : null}
+
+          {step.kind === 'signin' || step.kind === 'signup' ? (
+            <>
+              <Text style={styles.sub}>{email.trim()}</Text>
+              <View style={styles.field}>
+                <AuthField
+                  value={password}
+                  onChangeText={next => { setPassword(next); setError(null); }}
+                  placeholder={t(step.kind === 'signup' ? 'entry.passwordMinimum' : 'login.password')}
+                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  keyboardAppearance="dark"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry={!showPassword}
+                  textContentType={step.kind === 'signup' ? 'newPassword' : 'password'}
+                  accessibilityLabel={t('login.password')}
+                  testID="login-password"
+                />
+                <Pressable accessibilityRole="button" disabled={Boolean(busy)}
+                  accessibilityLabel={t(showPassword ? 'login.hidePassword' : 'login.showPassword')}
+                  testID="login-password-toggle" onPress={() => setShowPassword(value => !value)} style={styles.reveal}
+                >
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} color="#fff" size={22} />
+                </Pressable>
+              </View>
+              <EntryPrimaryButton
+                label={t(step.kind === 'signup' ? 'entry.createAccount' : 'login.ctaSignIn')} accent={ENTRY_ACCENT}
+                disabled={!passwordOk || Boolean(busy)} testID="login-submit" onPress={submitEmail} style={styles.next}
+              />
+              {step.kind === 'signin' ? (
+                <>
+                  <AuthLink label={t('login.forgotPassword')} onPress={() => go('reset')} disabled={Boolean(busy)} testID="login-forgot-password" />
+                  <AuthLink label={t('entry.createAccount')} onPress={() => go('signup')} disabled={Boolean(busy)} testID="login-create-account" />
+                </>
+              ) : !guest ? (
+                <AuthLink label={t('login.backToSignIn')} onPress={() => go('signin')} disabled={Boolean(busy)} testID="login-back-to-signin" />
+              ) : null}
+            </>
+          ) : null}
+
+          {step.kind === 'verification' ? (
+            <>
+              <Text style={styles.sub}>{step.email}</Text>
+              <Text style={styles.sub}>{t('login.verificationPending')}</Text>
+              {!guest ? <EntryPrimaryButton
+                label={cooldown ? t('login.resendIn', { seconds: cooldown }) : t('login.resendConfirmation')}
+                accent={ENTRY_ACCENT} disabled={cooldown > 0 || Boolean(busy)} testID="login-resend-confirmation"
+                onPress={() => resendConfirmation(step.email)} style={styles.next}
+              /> : null}
+            </>
+          ) : null}
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{t(error.key)}</Text> : null}
+
+          {step.kind === 'options' ? (
+            <View style={styles.legalWrap}>
+              <Text style={styles.legal}>
+                {t('entry.legalPrefix')} <LegalLink document="terms" label={t('login.terms')} /> {t('login.signupAgreementAnd')} <LegalLink document="privacy" label={t('login.privacy')} />
+              </Text>
+            </View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <BlockingAuthOverlay visible={blockingBusy} color={accent} />
-
-      <Modal visible={guestConfirmVisible} transparent animationType="fade" onRequestClose={cancelGuest}>
-        <View style={styles.modalScrim}>
-          <SwiftUIGlassSurface
-            shape="roundedRectangle"
-            cornerRadius={28}
-            style={styles.modalCard}
-          >
-            <Text style={styles.modalTitle}>{t('anon.confirmTitle')}</Text>
-            <Text style={styles.modalWarningText}>{t('anon.warning')}</Text>
-            <Text style={styles.modalWarningText}>{t('anon.expiryWarning')}</Text>
-            <Pressable
-              onPress={continueAsGuest}
-              accessibilityRole="button"
-              accessibilityLabel={t('anon.continue')}
-              testID="guest-confirm-button"
-              style={({ pressed }) => [styles.modalCta, pressed && styles.pressed]}
-            >
-              <Text style={styles.ctaText}>{t('anon.continue')}</Text>
-            </Pressable>
-            <Pressable testID="guest-cancel-button" onPress={cancelGuest} accessibilityRole="button" style={styles.modalSecondary}>
-              <Text style={styles.modalSecondaryText}>{t('common.cancel')}</Text>
-            </Pressable>
-          </SwiftUIGlassSurface>
-        </View>
-      </Modal>
+      <BlockingAuthOverlay visible={blocking} color={ENTRY_ACCENT} />
     </View>
   );
 }
 
-function PendingEmailNavigation({ navigation, pendingEmail, user }: {
-  navigation: Props['navigation'];
-  pendingEmail: string | null;
-  user: ReturnType<typeof useSession>['user'];
-}) {
-  useMountEffect(() => {
-    if (user && pendingEmail) navigation.replace('RoleSelect');
-  });
+function FinishOnIdentity({ onFinish }: { onFinish: () => void }) {
+  useMountEffect(onFinish);
   return null;
 }
 
-const makeStyles = (accent: string) =>
-  StyleSheet.create({
-    fill: { flex: 1 },
-    langChrome: { position: 'absolute', left: 20, zIndex: 10, width: 45, height: 45 },
-    versionChrome: { position: 'absolute', left: 0, right: 0, alignItems: 'center', justifyContent: 'center', zIndex: 10 },
-    versionText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.65)' },
-    resetBackChrome: { position: 'absolute', left: 20, zIndex: 10, width: 45, height: 45 },
-    content: { flexGrow: 1, paddingHorizontal: 24 },
-    header: { alignItems: 'center', marginBottom: 22 },
-    brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    resetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-    resetIconSlot: { width: 50, alignItems: 'flex-start', justifyContent: 'center' },
-    title: { fontSize: 34, fontWeight: '800', color: '#fff' },
-    formViewport: { width: '100%' },
-    form: { width: '100%' },
-    label: { fontSize: 16, fontWeight: '600', letterSpacing: 0.4, color: 'rgba(235,235,245,0.65)', marginTop: 6, marginBottom: 4, marginLeft: 4 },
-    field: { height: 50, borderRadius: 18, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: 'rgba(10,16,28,0.65)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.22)', flexDirection: 'row', alignItems: 'center' },
-    fieldErrorBorder: { borderColor: 'rgba(255,119,119,0.84)' },
-    revealButton: { minWidth: 44, height: 50, alignItems: 'center', justifyContent: 'center' },
-    fieldError: { marginTop: 6, marginLeft: 4, color: '#ff8f8f', fontSize: 13, lineHeight: 18 },
-    formError: { marginTop: 10, marginBottom: 2, color: '#ff8f8f', fontSize: 13, lineHeight: 18, textAlign: 'center' },
-    cta: { height: 52, borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, backgroundColor: accent, borderWidth: StyleSheet.hairlineWidth, borderColor: accentMix(accent, 55), width: '100%' },
-    signupCta: { marginTop: 24 },
-    primaryAction: { width: '100%', alignSelf: 'center', marginTop: 18 },
-    nativeCta: { minHeight: 52, borderRadius: 26, justifyContent: 'center' },
-    resetAction: { width: '100%', alignSelf: 'center', marginTop: 24 },
-    ctaDisabled: { opacity: 0.5 },
-    pressed: { opacity: 0.85 },
-    ctaText: { fontSize: 16, fontWeight: '800', color: '#060b14' },
-    forgot: { alignSelf: 'flex-end', marginTop: 12, marginBottom: 14 },
-    forgotText: { fontSize: 12.5, fontWeight: '600', color: 'rgba(235,235,245,0.72)' },
-    divider: { width: 280, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18, marginBottom: 14 },
-    dividerLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.18)' },
-    dividerText: { fontSize: 16, fontWeight: '600', letterSpacing: 0.4, color: 'rgba(235,235,245,0.65)', textAlign: 'center' },
-    socialIcon: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
-    socialIconOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-    socialRow: { marginTop: 6, marginBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24 },
-    guestButton: { alignSelf: 'center', width: 173, height: 50, borderRadius: 25 },
-    legalText: { fontSize: 12, color: 'rgba(235,235,245,0.6)', textDecorationLine: 'underline' },
-    legalDot: { color: 'rgba(235,235,245,0.4)' },
-    disabledText: { opacity: 0.5 },
-    resetCard: { minHeight: 0 },
-    sectionTitle: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 22 },
-    resetHint: { fontSize: 17, lineHeight: 25, color: 'rgba(235,235,245,0.72)', marginTop: 24, marginBottom: 20 },
-    resetHelp: { fontSize: 13, lineHeight: 19, color: 'rgba(235,235,245,0.65)', marginTop: 8 },
-    cooldownText: { fontSize: 12, color: 'rgba(235,235,245,0.55)', textAlign: 'center', marginTop: 6 },
-    signupLegal: { marginTop: 10, paddingHorizontal: 8 },
-    signupLegalText: { fontSize: 12, lineHeight: 18, textAlign: 'center', color: 'rgba(235,235,245,0.58)' },
-    successText: { fontSize: 14, lineHeight: 20, color: '#9de7b5', marginTop: 14 },
-    backLink: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, marginTop: 10 },
-    backLinkText: { fontSize: 14, color: 'rgba(235,235,245,0.72)', textDecorationLine: 'underline' },
-    pendingCard: { minHeight: 0, alignItems: 'center', paddingTop: 20 },
-    pendingEmail: { fontSize: 17, fontWeight: '600', color: '#F4F7FC', marginTop: 12 },
-    backButton: {
-      minHeight: 46,
-      paddingHorizontal: 16,
-      borderRadius: 23,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-      backgroundColor: 'rgba(255,255,255,0.07)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(220,230,246,0.3)',
-    },
-    backButtonText: { color: '#F4F7FC', fontSize: 17, fontWeight: '600' },
-    modalScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.42)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-    modalCard: { width: '100%', maxWidth: 420, borderRadius: 28, padding: 24 },
-    modalTitle: { fontSize: 21, fontWeight: '700', color: '#F4F7FC', marginBottom: 14 },
-    modalWarningText: { fontSize: 15, lineHeight: 23, color: 'rgba(232,238,248,0.82)', marginBottom: 5 },
-    modalCta: { alignSelf: 'center', width: '100%', minHeight: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginTop: 20, backgroundColor: accent },
-    modalSecondary: { alignSelf: 'center', minHeight: 46, justifyContent: 'center', paddingHorizontal: 14, marginTop: 8 },
-    modalSecondaryText: { fontSize: 15, color: 'rgba(226,233,245,0.72)', textDecorationLine: 'underline' },
-  });
+function AuthLink({ label, testID, onPress, disabled }: {
+  label: string;
+  testID: string;
+  onPress: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} testID={testID} style={styles.link}>
+      <Text style={styles.linkLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function LegalLink({ document, label }: { document: 'privacy' | 'terms'; label: string }) {
+  const url = getLegalUrl(document);
+  return (
+    <Text
+      style={styles.legalLink}
+      accessibilityRole={url ? 'link' : undefined}
+      testID={`login-${document}`}
+      onPress={() => { if (url) void Linking.openURL(url).catch(() => undefined); }}
+    >{label}</Text>
+  );
+}
+
+const styles = StyleSheet.create({
+  fill: { flex: 1, backgroundColor: ENTRY_BACKGROUND },
+  transparent: { flex: 1 },
+  content: { flexGrow: 1, paddingHorizontal: SHEET_CORNER_ACTION_INSET },
+  header: { minHeight: MAP_SHEET_ACTION_HIT_SIZE, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  brand: { color: '#DCE5FF', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', letterSpacing: 0.2 },
+  title: { color: '#fff', fontSize: APP_TEXT_SIZE.heading, fontFamily: 'BricolageGrotesque', fontWeight: '800', letterSpacing: -0.51, marginTop: 26 },
+  sub: { color: '#D9DDF0', fontSize: APP_TEXT_SIZE.body, lineHeight: 25, marginTop: 12 },
+  providers: { gap: 10, marginTop: 27 },
+  legalWrap: { flexGrow: 1, justifyContent: 'flex-end', paddingTop: 36 },
+  legal: { color: 'rgba(255,255,255,0.55)', fontSize: APP_TEXT_SIZE.caption, lineHeight: APP_TEXT_LINE_HEIGHT.caption, textAlign: 'center' },
+  legalLink: { color: 'rgba(255,255,255,0.75)', fontWeight: '600' },
+  field: {
+    minHeight: 54, marginTop: 18, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center',
+    borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  next: { marginTop: 12 },
+  reveal: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  link: { marginTop: 5, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  linkLabel: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '500' },
+  error: { color: '#FF9F95', fontSize: APP_TEXT_SIZE.caption, marginTop: 14 },
+});

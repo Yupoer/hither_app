@@ -1,13 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  AppState,
-  Appearance,
-  Platform,
-  type AppStateStatus,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { AppState, Appearance, Platform, type AppStateStatus, View } from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
@@ -24,8 +16,6 @@ import RootNavigator from './src/navigation/RootNavigator';
 import OnboardingScreen from './src/onboarding/OnboardingScreen';
 import {
   readOnboardingReplayIntent,
-  readOnboardingState,
-  shouldPresentFullOnboarding,
 } from './src/onboarding/sync';
 import {
   isOnboardingHomeBoundary,
@@ -42,7 +32,6 @@ import {
   usePreferences,
   useTheme,
 } from './src/state/PreferencesContext';
-import { GLOBAL_FONT_SCALE_CAP } from './src/theme/typeScale';
 import { metrics } from './src/native';
 import { diagnostics } from './src/state/diagnostics';
 import { uploadMetricPayloadBatch } from './src/api/services/DiagnosticService';
@@ -82,21 +71,6 @@ import { startCoreSyncRuntime } from './src/state/coreSyncRuntime';
 // Keep every RN-native presentation dark, regardless of the iOS system scheme.
 Appearance.setColorScheme('dark');
 
-// Dynamic Type: scale with the system up to GLOBAL_FONT_SCALE_CAP, then freeze.
-// Per-role caps (HitherText) may be tighter. Never reintroduce a hard 1.0 cap.
-const textDefaults = Text as typeof Text & { defaultProps?: Record<string, unknown> };
-textDefaults.defaultProps = {
-  ...(textDefaults.defaultProps ?? {}),
-  maxFontSizeMultiplier: GLOBAL_FONT_SCALE_CAP,
-};
-const textInputDefaults = TextInput as typeof TextInput & {
-  defaultProps?: Record<string, unknown>;
-};
-textInputDefaults.defaultProps = {
-  ...(textInputDefaults.defaultProps ?? {}),
-  maxFontSizeMultiplier: GLOBAL_FONT_SCALE_CAP,
-};
-
 /**
  * Navigation theme + status bar follow the active palette, so the header and
  * screen backgrounds restyle when the user switches theme in Settings.
@@ -110,7 +84,8 @@ function ThemedNavigation() {
   // Live Activity numbers). Held alongside the session/onboarding splash so the
   // first screen never flashes system font before Fredoka swaps in.
   const userId = user?.id;
-  const [fontsLoaded] = useFonts({ Fredoka_500Medium, Fredoka_600SemiBold });
+  const [fontsLoaded, fontError] = useFonts({ Fredoka_500Medium, Fredoka_600SemiBold, BricolageGrotesque: require('./assets/fonts/BricolageGrotesque.ttf') });
+  const fontsReady = fontsLoaded || Boolean(fontError);
 
   useEffect(() => metrics.startRuntimePowerMonitoring(), []);
 
@@ -218,10 +193,6 @@ function ThemedNavigation() {
     };
   }, [ready, diagnosticUploadEnabled, initializing, userId]);
 
-  // First-launch + home-boundary onboarding gate (#171 / #181).
-  // Full onboarding is independent of group feature tour. Reset only marks
-  // replay intent. Presentation happens at RoleSelect / create-join home,
-  // never while the user is still on a team Map session.
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
   const onboardingReadGen = useRef(0);
   const lastRouteNameRef = useRef<string | null>(null);
@@ -238,20 +209,10 @@ function ThemedNavigation() {
       setNeedsOnboarding(false);
       return;
     }
-    if (mode === 'consume') setNeedsOnboarding(null);
     void (async () => {
-      const [state, replayIntent] = await Promise.all([
-        readOnboardingState(),
-        readOnboardingReplayIntent(),
-      ]);
+      const replayIntent = await readOnboardingReplayIntent();
       if (gen !== onboardingReadGen.current) return;
-      setNeedsOnboarding(
-        shouldPresentFullOnboarding({
-          storageCompleted: Boolean(state?.completed),
-          replayIntent,
-          atHomeBoundary: true,
-        }),
-      );
+      setNeedsOnboarding(replayIntent);
     })();
   }, [user, membership]);
 
@@ -260,14 +221,14 @@ function ThemedNavigation() {
   }, [reevaluateOnboarding]);
 
   const navigatorReady =
-    !initializing && needsOnboarding === false && fontsLoaded;
+    !initializing && needsOnboarding === false && fontsReady;
 
   const startupReloadAllowedRef = useRef(true);
   useEffect(() => {
-    if (!initializing && needsOnboarding !== null && fontsLoaded) {
+    if (!initializing && needsOnboarding !== null && fontsReady) {
       startupReloadAllowedRef.current = false;
     }
-  }, [initializing, needsOnboarding, fontsLoaded]);
+  }, [initializing, needsOnboarding, fontsReady]);
   useEffect(() => startOtaUpdateBootstrap(() => startupReloadAllowedRef.current), []);
 
   useEffect(() => {
@@ -282,11 +243,7 @@ function ThemedNavigation() {
     return () => clearTimeout(timer);
   }, [navigatorReady]);
 
-  // Hold the navigator until the persisted session AND the onboarding flag
-  // are resolved, so RootNavigator's initialRouteName sees the correct
-  // logged-in/out state (a restored user skips Login) instead of flashing
-  // the wrong first screen.
-  if (initializing || needsOnboarding === null || !fontsLoaded) {
+  if (initializing || needsOnboarding === null || !fontsReady) {
     return (
       <View
         style={{

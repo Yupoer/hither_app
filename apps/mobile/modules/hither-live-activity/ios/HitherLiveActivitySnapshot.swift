@@ -35,6 +35,10 @@ enum HitherLiveActivitySnapshot {
     for key in ["navigationSessionId", "destinationId"] where merged[key] == nil {
       merged[key] = current[key]
     }
+    for key in ["destinationEmoji", "language", "meetTimeMs", "dayColorHex", "selfFace", "memberColors"]
+    where merged[key] == nil {
+      merged[key] = current[key]
+    }
     let oldArrival = timestamp(current["personalArrivalAtMs"])
     let newArrival = timestamp(incoming["personalArrivalAtMs"])
     let oldSequence = timestamp(current["personalArrivalSequence"])

@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import { unsaveFavoritePlace, type FavoritePlace } from '../../../api/client';
 import DestinationReorderList from '../../../components/DestinationReorderList';
 import OverlaySheet from '../../../components/OverlaySheet';
@@ -11,7 +12,15 @@ import { nextOrderInDay, insertDraftDestination } from '../hooks/useRouteDraft';
 import { type ReorderUpdate } from '../itineraryReorder';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, type View, Text, ScrollView, type NativeSyntheticEvent, type NativeScrollEvent, Alert } from 'react-native';
+import {
+  type View,
+  ScrollView,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
+  Alert,
+} from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import type { RouteDraft } from '../hooks/useRouteDraft';
 import type { MapStyles } from '../styles';
 import type { Palette } from '../../../theme';
@@ -148,7 +157,7 @@ export function RouteEditorSheet({
               style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
             >
               <Ionicons name="trash-outline" size={18} color="#FF5A5F" />
-              <Text style={{ color: '#FF453A', fontSize: 14, fontWeight: '800' }}>
+              <Text style={{ color: '#FF453A', fontSize: APP_TEXT_SIZE.caption, fontWeight: '800' }}>
                 {t('route.deleteSelected', { count: routeSelectedIds.length })}
               </Text>
             </Pressable>

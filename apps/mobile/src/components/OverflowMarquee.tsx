@@ -2,13 +2,13 @@ import { useMountEffect } from '../hooks/useMountEffect';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { AppText as Text } from './AppText';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -16,9 +16,7 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -28,6 +26,7 @@ import { GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
 export const DEFAULT_MARQUEE_PX_PER_SEC = 40;
 export const MARQUEE_SPEED_MIN = 20;
 export const MARQUEE_SPEED_MAX = 80;
+export const MARQUEE_LOOP_GAP = 32;
 
 type Props = {
   text: string;
@@ -45,10 +44,6 @@ type Props = {
   activationDelayMs?: number;
   /** Constant scroll speed in px/s (all marquees share this). Default 40. */
   pixelsPerSecond?: number;
-  /** Pause at the end before restarting the loop (ms). Default 1500. */
-  endPauseMs?: number;
-  /** Pause at the start of each loop cycle after the first (ms). Default 1000. */
-  startPauseMs?: number;
   allowFontScaling?: boolean;
   maxFontSizeMultiplier?: number;
 };
@@ -60,9 +55,7 @@ type Props = {
  * Speed is constant px/s: duration = travel / pxPerSec (no min/max clamps that
  * change effective speed by title length).
  *
- * After the card becomes active, wait activationDelayMs (≈1–2s) holding the
- * static ellipsis, then run the loop:
- *   hold start → scroll left until end fully visible → hold end → snap → repeat.
+ * Two identical copies keep the tail and the next head on the same moving track.
  */
 export default function OverflowMarquee({
   text,
@@ -72,8 +65,6 @@ export default function OverflowMarquee({
   active = true,
   activationDelayMs = 1600,
   pixelsPerSecond = DEFAULT_MARQUEE_PX_PER_SEC,
-  endPauseMs = 1500,
-  startPauseMs = 1000,
   allowFontScaling = true,
   maxFontSizeMultiplier = GLOBAL_FONT_SCALE_CAP,
 }: Props) {
@@ -124,7 +115,7 @@ export default function OverflowMarquee({
   const overflow = textW > viewportW + 1 && viewportW > 0 && textW > 0;
   const shouldMarquee =
     Boolean(enabled) && Boolean(active) && armed && !reduceMotion && overflow;
-  const travel = Math.max(0, textW - viewportW);
+  const travel = textW + MARQUEE_LOOP_GAP;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: offset.value }],
@@ -140,6 +131,8 @@ export default function OverflowMarquee({
       key={`measure-${measureGen}`}
       style={styles.measureHost}
       pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       collapsable={false}
     >
       <Text
@@ -171,8 +164,8 @@ export default function OverflowMarquee({
       ]}
     >
       <MarqueeJobs text={text} fontKey={fontKey} active={active} activationDelayMs={activationDelayMs} enabled={enabled}
-        textW={textW} viewportW={viewportW} endPauseMs={endPauseMs} pxPerSec={pxPerSec} shouldMarquee={shouldMarquee}
-        startPauseMs={startPauseMs} travel={travel} offset={offset} retriedRef={retriedRef}
+        textW={textW} viewportW={viewportW} pxPerSec={pxPerSec} shouldMarquee={shouldMarquee}
+        travel={travel} offset={offset} retriedRef={retriedRef}
         setTextW={setTextW} setMeasureGen={setMeasureGen} setArmed={setArmed} />
       {measureNode}
       <View style={[styles.mouth, lineHeight != null && { height: lineHeight }]}>
@@ -194,7 +187,7 @@ export default function OverflowMarquee({
             <Animated.View
               style={[
                 styles.track,
-                textW > 0 ? { width: textW } : null,
+                { width: travel * 2 },
                 animatedStyle,
               ]}
               pointerEvents="none"
@@ -207,6 +200,16 @@ export default function OverflowMarquee({
                   styles.scrollText,
                   textW > 0 ? { width: textW } : null,
                 ]}
+              >
+                {text}
+              </Text>
+              <Text
+                allowFontScaling={allowFontScaling}
+                maxFontSizeMultiplier={maxFontSizeMultiplier}
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+                style={[style, styles.scrollText, { width: textW }]}
               >
                 {text}
               </Text>
@@ -242,6 +245,7 @@ const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
     flexShrink: 0,
+    columnGap: MARQUEE_LOOP_GAP,
   },
   /**
    * Sibling of mouth (not inside overflow:hidden). Wide host so the full
@@ -267,13 +271,13 @@ const styles = StyleSheet.create({
 
 type MarqueeJobInputs = {
   text: string; fontKey: string; active: boolean; activationDelayMs: number; enabled: boolean;
-  textW: number; viewportW: number; endPauseMs: number; pxPerSec: number; shouldMarquee: boolean;
-  startPauseMs: number; travel: number; offset: ReturnType<typeof useSharedValue<number>>;
+  textW: number; viewportW: number; pxPerSec: number; shouldMarquee: boolean;
+  travel: number; offset: ReturnType<typeof useSharedValue<number>>;
   retriedRef: React.RefObject<boolean>; setTextW: React.Dispatch<React.SetStateAction<number>>;
   setMeasureGen: React.Dispatch<React.SetStateAction<number>>; setArmed: React.Dispatch<React.SetStateAction<boolean>>;
 };
 function MarqueeJobs(props: MarqueeJobInputs) {
-  const { text, fontKey, active, activationDelayMs, enabled, textW, viewportW, endPauseMs, pxPerSec, shouldMarquee, startPauseMs, travel } = props;
+  const { text, fontKey, active, activationDelayMs, enabled, textW, viewportW, pxPerSec, shouldMarquee, travel } = props;
   const [measureInput, setMeasureInput] = useState({ text, fontKey, generation: 0 });
   if (!Object.is(measureInput.text, text) || !Object.is(measureInput.fontKey, fontKey)) {
     setMeasureInput({ text, fontKey, generation: measureInput.generation + 1 });
@@ -287,11 +291,11 @@ function MarqueeJobs(props: MarqueeJobInputs) {
   if (!Object.is(retryInput.enabled, enabled) || !Object.is(retryInput.textW, textW) || !Object.is(retryInput.viewportW, viewportW)) {
     setRetryInput({ enabled, textW, viewportW, generation: retryInput.generation + 1 });
   }
-  const [scrollInput, setScrollInput] = useState({ endPauseMs, pxPerSec, shouldMarquee, startPauseMs, text, travel, generation: 0 });
-  if (!Object.is(scrollInput.endPauseMs, endPauseMs) || !Object.is(scrollInput.pxPerSec, pxPerSec)
-    || !Object.is(scrollInput.shouldMarquee, shouldMarquee) || !Object.is(scrollInput.startPauseMs, startPauseMs)
+  const [scrollInput, setScrollInput] = useState({ pxPerSec, shouldMarquee, text, travel, generation: 0 });
+  if (!Object.is(scrollInput.pxPerSec, pxPerSec)
+    || !Object.is(scrollInput.shouldMarquee, shouldMarquee)
     || !Object.is(scrollInput.text, text) || !Object.is(scrollInput.travel, travel)) {
-    setScrollInput({ endPauseMs, pxPerSec, shouldMarquee, startPauseMs, text, travel, generation: scrollInput.generation + 1 });
+    setScrollInput({ pxPerSec, shouldMarquee, text, travel, generation: scrollInput.generation + 1 });
   }
   return <>
     <MarqueeMeasurementReset key={`measure-${measureInput.generation}`} {...props} />
@@ -333,7 +337,7 @@ function MarqueeRemeasureRetry({ enabled, viewportW, textW, retriedRef, setMeasu
   });
   return null;
 }
-function MarqueeScrollMotion({ offset, shouldMarquee, travel, pxPerSec, startPauseMs, endPauseMs }: MarqueeJobInputs) {
+function MarqueeScrollMotion({ offset, shouldMarquee, travel, pxPerSec }: MarqueeJobInputs) {
   useMountEffect(() => {
     cancelAnimation(offset);
     offset.value = 0;
@@ -343,23 +347,7 @@ function MarqueeScrollMotion({ offset, shouldMarquee, travel, pxPerSec, startPau
     const duration = Math.max(1, Math.round((travel / pxPerSec) * 1000));
 
     offset.value = withRepeat(
-      withSequence(
-        withDelay(
-          startPauseMs,
-          withTiming(-travel, {
-            duration,
-            easing: Easing.linear,
-            reduceMotion: ReduceMotion.System,
-          }),
-        ),
-        withDelay(
-          endPauseMs,
-          withTiming(0, {
-            duration: 0,
-            reduceMotion: ReduceMotion.System,
-          }),
-        ),
-      ),
+      withTiming(-travel, { duration, easing: Easing.linear, reduceMotion: ReduceMotion.System }),
       -1,
       false,
     );

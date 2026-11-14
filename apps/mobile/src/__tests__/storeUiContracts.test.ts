@@ -69,8 +69,8 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).not.toContain('name="coins"');
     expect(storePane).toContain('minHeight: 44');
     expect(premiumBanner).toContain("t('settings.subscribeBannerHint')");
-    expect(premiumBanner).toContain('fontSize: 17');
-    expect(premiumBanner).toContain('fontSize: 13');
+    expect(premiumBanner).toContain('fontSize: APP_TEXT_SIZE.body');
+    expect(premiumBanner).toContain('fontSize: APP_TEXT_SIZE.caption');
     expect(premiumBanner).toContain('justifyContent: \'center\'');
   });
 
@@ -90,7 +90,7 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).toContain('fontSize: s(16, 14)');
   });
 
-  it('Store orders Premium then balance then ad and hides restore', () => {
+  it('the Android store orders Premium then balance then ad', () => {
     const premium = read('components/PremiumPresentation.tsx');
     const paywall = read('components/PaywallSheet.tsx');
     expect(storePane).toContain('onOpenSubscribe');
@@ -99,10 +99,11 @@ describe('four-pane store navigation contracts', () => {
     expect(storePane).toContain('store-ad-cta');
     expect(storePane).toContain('store-premium-ad-divider');
     // Layout order: Premium → divider → balance → ad.
-    const premiumIdx = storePane.indexOf('store-premium-section');
-    const dividerIdx = storePane.indexOf('store-premium-ad-divider');
-    const adIdx = storePane.indexOf('store-ad-cta');
-    const balanceIdx = storePane.indexOf('store-balance');
+    const legacyStore = storePane.slice(storePane.indexOf('accessibilityRole="summary"'));
+    const premiumIdx = legacyStore.indexOf('store-premium-section');
+    const dividerIdx = legacyStore.indexOf('store-premium-ad-divider');
+    const adIdx = legacyStore.indexOf('store-ad-cta');
+    const balanceIdx = legacyStore.indexOf('store-balance');
     expect(premiumIdx).toBeGreaterThan(-1);
     expect(adIdx).toBeGreaterThan(-1);
     expect(balanceIdx).toBeGreaterThan(-1);

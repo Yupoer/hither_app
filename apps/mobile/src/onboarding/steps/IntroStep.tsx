@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import React, { useState } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
   },
   memberIcon: { width: 40, height: 40 },
   caption: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     lineHeight: 22,
     textAlign: 'center',
     paddingHorizontal: 12,

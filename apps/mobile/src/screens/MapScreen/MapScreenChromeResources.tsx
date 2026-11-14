@@ -1,11 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/RootNavigator';
 import type { useSession } from '../../state/SessionContext';
 import type { useGroupState } from '../../state/useGroupState';
 import type { useTranslation } from '../../i18n';
-import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { D6Pane } from './components/D6HomeChrome';
+import { Alert, Linking } from 'react-native';
 import { isDemoGroup } from "../../api/demo";
 
 type MapAccessLossInput = {
@@ -84,6 +86,56 @@ function MapRouteOpenJob({ input }: { input: MapRouteOpenInput }) {
     void syncFromDatabase().finally(() => {
       if (generation === routeOpenSyncGenerationRef.current) routeOpenSyncSessionRef.current = 'done';
     });
+  });
+  return null;
+}
+
+export function HomeTransientNotice({ ms, clear }: { ms: number; clear: () => void }) {
+  useMountEffect(() => {
+    const timer = setTimeout(clear, ms);
+    return () => clearTimeout(timer);
+  });
+  return null;
+}
+
+export function HomeRadiusPreferences({ storageKey, onLoad }: {
+  storageKey: string; onLoad: (values: Readonly<Record<string, number>>) => void;
+}) {
+  useMountEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(storageKey).then(raw => {
+      if (!raw || !active) return;
+      const decoded: unknown = JSON.parse(raw);
+      if (typeof decoded !== 'object' || !decoded) return;
+      const entries = Object.entries(decoded).filter(([, radius]) =>
+        typeof radius === 'number' && Number.isFinite(radius) && radius >= 20 && radius <= 200);
+      onLoad(Object.fromEntries(entries));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  });
+  return null;
+}
+
+type HomeChromeLink = { focus: React.RefObject<(pane: D6Pane | null) => void> } & (
+  { kind: 'invitation'; onConsume: () => void } | { kind: 'activity' }
+);
+
+export function HomeChromeLinks(link: HomeChromeLink) {
+  useMountEffect(() => {
+    if (link.kind === 'invitation') {
+      link.focus.current('team');
+      link.onConsume();
+      return;
+    }
+    let active = true;
+    const open = (url: string | null) => {
+      if (!active || !url?.startsWith('hither://live-activity/')) return;
+      const segment = url.slice('hither://live-activity/'.length).split(/[?#]/)[0];
+      if (segment === 'journey' || segment === 'team') link.focus.current(segment === 'journey' ? 'itinerary' : 'team');
+    };
+    void Linking.getInitialURL().then(open).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', event => open(event.url));
+    return () => { active = false; subscription.remove(); };
   });
   return null;
 }

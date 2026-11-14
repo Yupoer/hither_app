@@ -656,23 +656,23 @@
     {
       "parent": 199,
       "child": 201,
-      "acceptance": "A1 Login (pre-login sign-up methods) shows LanguagePicker and switching updates copy immediately.",
+      "acceptance": "Login uses the shared system language.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 199,
       "child": 201,
-      "acceptance": "A2 RoleSelect shows LanguagePicker even when user is null.",
+      "acceptance": "The welcome and returning team screens use the shared system language, including in guest sessions.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "shows LanguagePicker on RoleSelect even when user is null"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 199,
       "child": 201,
-      "acceptance": "A3 Auth leader and Auth follower do not show LanguagePicker (overridden by #203).",
+      "acceptance": "Create and join sheets use the shared system language.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "does not show LanguagePicker on Auth for leader or follower"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 199,
@@ -698,16 +698,16 @@
     {
       "parent": 203,
       "child": 204,
-      "acceptance": "A1 RoleSelect top-left menu trigger shows the current language plus a chevron and remains stable during outgoing navigation. The create/join Auth screen owns its native back button. Sign-out stays top-right.",
+      "acceptance": "The iOS entry uses the current supported system locale.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "keeps RoleSelect language menu stable during outgoing navigation"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 203,
       "child": 204,
-      "acceptance": "A2 Guest RoleSelect still renders the language menu. RoleSelect delete stays user-gated and is not moved/removed.",
+      "acceptance": "The welcome and returning team screens use the shared system language, including in guest sessions.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "shows LanguagePicker on RoleSelect even when user is null"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 203,
@@ -719,16 +719,16 @@
     {
       "parent": 203,
       "child": 204,
-      "acceptance": "A4 Login keeps default segmented LanguagePicker at top-right. Settings overlay stays on Segmented and does not import LanguagePicker.",
+      "acceptance": "Login uses the shared system language.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 203,
       "child": 204,
-      "acceptance": "A5 Auth leader and Auth follower do not import/render LanguagePicker and do not contain confirmDeleteAccount.",
+      "acceptance": "Create and join sheets use the shared system language.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "does not show LanguagePicker on Auth for leader or follower"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 203,
@@ -957,51 +957,9 @@
     {
       "parent": 206,
       "child": 213,
-      "acceptance": "A1 zh duration matches 90m / 26h / 45m / <1m examples",
+      "acceptance": "D6 shares the system Lock Screen and expanded Dynamic Island card and routes activity taps by phase.",
       "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
-    },
-    {
-      "parent": 206,
-      "child": 213,
-      "acceptance": "A2 At most two duration units",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
-    },
-    {
-      "parent": 206,
-      "child": 213,
-      "acceptance": "A3 Lock and island show 正在前往, not 前往集合點",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
-    },
-    {
-      "parent": 206,
-      "child": 213,
-      "acceptance": "A4 Dest over 10 CJK / 16 Latin uses marquee",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
-    },
-    {
-      "parent": 206,
-      "child": 213,
-      "acceptance": "A5 Dest and ETA do not overlap",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
-    },
-    {
-      "parent": 206,
-      "child": 213,
-      "acceptance": "A6 language is passed on start/update",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
-    },
-    {
-      "parent": 206,
-      "child": 213,
-      "acceptance": "A7 English still uses compactDuration",
-      "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "keeps the existing information hierarchy with native lock-screen glass"
+      "testNamePattern": "connects all system presentations to the D6 card and phase deep link"
     },
     {
       "parent": 206,
@@ -1139,23 +1097,23 @@
     {
       "parent": 206,
       "child": 218,
-      "acceptance": "A1 RoleSelect language uses an attached iOS UIMenu",
+      "acceptance": "The reusable native UI menu control uses platform menu APIs.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+      "testNamePattern": "uses hither-menu in the reusable language control"
     },
     {
       "parent": 206,
       "child": 218,
-      "acceptance": "A2 Not Alert, ActionSheetIOS, or a JS floating popup",
+      "acceptance": "The reusable native UI menu control uses platform menu APIs.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+      "testNamePattern": "uses hither-menu in the reusable language control"
     },
     {
       "parent": 206,
       "child": 218,
-      "acceptance": "A3 Menu stays attached to the button via showsMenuAsPrimaryAction",
+      "acceptance": "The reusable native UI menu control uses platform menu APIs.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+      "testNamePattern": "uses hither-menu in the reusable language control"
     },
     {
       "parent": 206,
@@ -1167,9 +1125,9 @@
     {
       "parent": 206,
       "child": 218,
-      "acceptance": "A5 Login stays segmented",
+      "acceptance": "Login uses the shared system language.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "shows LanguagePicker on Login without hiding it behind a session"
+      "testNamePattern": "uses the shared language on the welcome, login, and team sheets"
     },
     {
       "parent": 206,
@@ -1181,16 +1139,16 @@
     {
       "parent": 206,
       "child": 218,
-      "acceptance": "A7 Contracts flipped and green",
+      "acceptance": "The reusable native UI menu control uses platform menu APIs.",
       "testFile": "languagePickerContract.test.ts",
-      "testNamePattern": "opens the RoleSelect menu only through hither-menu UIMenu"
+      "testNamePattern": "uses hither-menu in the reusable language control"
     },
     {
       "parent": 220,
       "child": 221,
       "acceptance": "A1. MapView 鋪滿 MapScreen，左／上無 #0c1118 黑邊",
       "testFile": "mapStatusSettingsPaywall.test.ts",
-      "testNamePattern": "fills MapView edge-to-edge without mapPadding letterbox"
+      "testNamePattern": "fills the MapView edge-to-edge and makes space for D6 attribution above the floating island"
     },
     {
       "parent": 220,
@@ -2175,9 +2133,9 @@
     {
       "parent": 293,
       "child": 293,
-      "acceptance": "Live Activity renders an ETA estimate with native glass and no countdown timer.",
+      "acceptance": "Live Activity uses the system Lock Screen background and presents a snapshot ETA.",
       "testFile": "liveActivityContract.test.ts",
-      "testNamePattern": "uses native glass with a material fallback"
+      "testNamePattern": "connects all system presentations to the D6 card and phase deep link"
     },
     {
       "parent": 311,
@@ -2581,9 +2539,16 @@
     {
       "parent": 320,
       "child": "map-controls",
-      "acceptance": "Actual Map parent controls execute membership, profile, Store, location and tour workflows on both platforms.",
+      "acceptance": "Android Map parent controls execute membership, profile, Store, location and tour workflows.",
       "testFile": "headlessMapControlsScenario.test.ts",
       "testNamePattern": "actual Map Store waits for SSV|actual Map hands active navigation|actual Map profile saves trimmed"
+    },
+    {
+      "parent": 320,
+      "child": "map-controls",
+      "acceptance": "The iOS team panel persists native presence choices, creates consent-based subgroup invitations, confirms member removal, preserves the invite code, and queues commands and start requests.",
+      "testFile": "headlessD6TeamScenario.test.ts",
+      "testNamePattern": "D6 iOS team and commands through Map"
     },
     {
       "parent": 320,
@@ -2868,9 +2833,16 @@
     {
       "parent": 325,
       "child": 325,
-      "acceptance": "Actual Map entry variants cover follower suggestions, owner favorite deletion, pool moves, malformed import retry, date draft commit and native PanResponder reorder.",
+      "acceptance": "Actual Android Map entry variants cover follower suggestions, owner favorite deletion, pool moves, malformed import retry, date draft commit and native PanResponder reorder.",
       "testFile": "headlessItineraryEntriesScenario.test.ts",
       "testNamePattern": "actual itinerary entry variants on"
+    },
+    {
+      "parent": 325,
+      "child": 325,
+      "acceptance": "The iOS Map itinerary saves a reversed date range with day colors, retains trimmed stops and closed history, deletes selected stops from the island, and persists member suggestions with leader approval.",
+      "testFile": "headlessD6ItineraryScenario.test.ts",
+      "testNamePattern": "saves the reverse-picked trip range|deletes selected stops from the iOS island|lets a leader approve a member suggestion"
     },
     {
       "parent": 325,
@@ -3092,16 +3064,16 @@
     {
       "parent": 375,
       "child": 375,
-      "acceptance": "One navigator-owned moving background survives home, create, join and teams transitions while hidden Map work stops.",
+      "acceptance": "The reusable moving backdrop preserves its canvas while active and releases it when inactive.",
       "testFile": "metalforgeBackgroundLifecycle.test.ts",
-      "testNamePattern": "keeps one moving navigator backdrop"
+      "testNamePattern": "keeps one moving backdrop instance while active"
     },
     {
       "parent": 375,
       "child": 375,
-      "acceptance": "The actual Map host reveals the pane during a held drag once the tab selector fits, hides it again when collapsing, and requests the native iOS user-location indicator.",
+      "acceptance": "The Android Map preserves lazy sheet behavior during gestures. On iOS, the D6 journey control and native location indicator are present.",
       "testFile": "headlessPresentation.test.ts",
-      "testNamePattern": "mounts the map sheet body during a held drag"
+      "testNamePattern": "mounts platform Map chrome and keeps the Android sheet lazy until it opens"
     },
     {
       "parent": 375,
@@ -3144,6 +3116,76 @@
       "acceptance": "Large MetricKit call stacks retain searchable signal classification from actual nested diagnostic metadata.",
       "testFile": "backgroundOpTiming.test.ts",
       "testNamePattern": "classifies actual nested MetricKit metadata"
+    },
+    {
+      "parent": 311,
+      "child": 311,
+      "acceptance": "Meeting-window presentation changes only at the exact fifteen-minute and expiry boundaries, pauses in background, replaces stale deadlines and bounds distant timers.",
+      "testFile": "useNearMeeting.test.ts",
+      "testNamePattern": "updates only|releases its timer|replaces a changed|supports distant"
+    },
+    {
+      "parent": "gathering-status-ui-20261114",
+      "child": "gathering-status-ui-20261114",
+      "acceptance": "The D6 gathering card keeps the untimed pre-departure title free, displays hour-long durations completely and emits moving bounded particles.",
+      "testFile": "d6GatheringHeader.test.ts",
+      "testNamePattern": "leaves the title rail|shows a complete duration|moves existing particles"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "A dragged itinerary stop describes its neighboring insertion points before release, independently from accommodation blocks.",
+      "testFile": "d6Itinerary.test.ts",
+      "testNamePattern": "describes the two neighboring"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "Member rows display actual local and remote location update age and retain a recovery action when location is unavailable.",
+      "testFile": "d6MembersPane.test.ts",
+      "testNamePattern": "shows the accepted self location"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "Native Live Activity start failures are observable rather than silently treated as an active journey.",
+      "testFile": "liveActivityOwnership.test.ts",
+      "testNamePattern": "reports an unavailable native"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "A fresh position can provide display ETA while stale or absent samples are rejected independently from arrival precision.",
+      "testFile": "d6TravelMode.test.ts",
+      "testNamePattern": "uses a recent position for display"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "Daily and legacy accommodations remain separate from draggable stops, without constraining stop order to end at the accommodation.",
+      "testFile": "d6RoutePane.test.ts",
+      "testNamePattern": "keeps daily and older accommodations"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "Text and text input receive explicit native Dynamic Type caps, preserve tighter limits and fixed scaling, and retain native input focus.",
+      "testFile": "dynamicTypeContract.test.ts",
+      "testNamePattern": "passes an explicit system font ceiling|preserves the native input focus"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "Late route results do not replace a selected stop detail focus; a deferred route mode can fit after details close.",
+      "testFile": "mapScreenResources.test.ts",
+      "testNamePattern": "keeps stop-detail focus"
+    },
+    {
+      "parent": "detail-motion-status-20261114",
+      "child": "detail-motion-status-20261114",
+      "acceptance": "Stop focus uses native map projection so the requested position accounts for the real viewport rather than an assumed span.",
+      "testFile": "mapInitialRegion.test.ts",
+      "testNamePattern": "positions a target using the native projected point"
     }
   ]
 }

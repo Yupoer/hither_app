@@ -7,7 +7,7 @@
  */
 import { memberColor } from '../glass';
 
-/** Selectable avatars — 30 emoji, rendered as a 5-column × 6-row grid. */
+/** Selectable avatars. */
 export const AVATAR_EMOJI = [
   '🐑', '🐺', '🦊', '🐰', '🐻',
   '🐼', '🐸', '🐥', '🦁', '🐯',
@@ -25,6 +25,15 @@ export const AVATAR_COLORS = [
   '#E8543F', '#F0883E', '#F4C13E', '#5FB56A', '#3FB4A6',
   '#4A90D9', '#6A5ACD', '#B565C4', '#E06B9A', '#8A8F99',
 ] as const;
+
+export const HOME_AVATAR_COLORS = [
+  '#E0634A', '#F08A3C', '#F3C443', '#5FB36B',
+  '#3FB3A6', '#4A90E2', '#8A6AD9', '#E06A9E',
+] as const;
+
+export function isAvatarColor(color: string): boolean {
+  return [...AVATAR_COLORS, ...HOME_AVATAR_COLORS].some(option => option === color);
+}
 
 /**
  * Pick a default avatar for a user, deterministically from their id — the same
@@ -72,7 +81,7 @@ export function displayMemberAvatar(
   const color = typeof storedColor === 'string' ? storedColor.trim() : '';
   return {
     emoji: known ? trimmed : avatarForUser(userId),
-    color: (AVATAR_COLORS as readonly string[]).includes(color)
+    color: isAvatarColor(color)
       ? color
       : memberColor(userId),
   };

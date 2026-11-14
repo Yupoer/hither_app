@@ -2,6 +2,12 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { MemberLocation, Subgroup } from '../types';
 import { useMountEffect } from '../hooks/useMountEffect';
+import {
+  LEAVE_GROUP_WARN_KEY,
+  useSubgroupActions,
+  type UseSubgroupActionsInput,
+} from '../screens/MapScreen/hooks/useSubgroupActions';
+
 const mockInviteMount = jest.fn();
 const mockInviteCleanup = jest.fn();
 function InviteLifecycleProbe() { useMountEffect(() => { mockInviteMount(); return mockInviteCleanup; }); return null; }
@@ -16,10 +22,10 @@ const mockInvites = {
   refresh: jest.fn(),
 };
 const mockClient = {
-  fetchSentInvites: jest.fn(async () => [{ id: 'sent-1', inviteeName: 'Bo' }]),
-  inviteToSubgroup: jest.fn(async () => undefined),
-  selfMerge: jest.fn(async () => undefined),
-  selfSplit: jest.fn(async () => undefined),
+  fetchSentInvites: jest.fn(async (_subgroupId: string) => [{ id: 'sent-1', inviteeName: 'Bo' }]),
+  inviteToSubgroup: jest.fn(async (_subgroupId: string, _inviteeId: string) => undefined),
+  selfMerge: jest.fn(async (_groupId: string) => undefined),
+  selfSplit: jest.fn(async (_groupId: string, _name: string): Promise<Subgroup> => ({ id: 'new-subgroup', name: 'Your subgroup', mode: 'led' })),
 };
 
 jest.mock('react-native', () => ({ Alert: { alert: (...args: unknown[]) => mockAlert(...args) } }));
@@ -30,17 +36,16 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
     setItem: async (key: string, value: string) => { mockStorage.set(key, value); },
   },
 }));
-jest.mock('../api/client', () => mockClient);
+jest.mock('../api/client', () => ({
+  fetchSentInvites: (subgroupId: string) => mockClient.fetchSentInvites(subgroupId),
+  inviteToSubgroup: (subgroupId: string, inviteeId: string) => mockClient.inviteToSubgroup(subgroupId, inviteeId),
+  selfMerge: (groupId: string) => mockClient.selfMerge(groupId),
+  selfSplit: (groupId: string, name: string) => mockClient.selfSplit(groupId, name),
+}));
 jest.mock('../api/demo', () => ({ isDemoGroup: (id: string | null) => id === 'demo' }));
 jest.mock('../state/useSubgroupInvites', () => ({ useSubgroupInvites: () => mockInvites }));
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn(), logError: jest.fn() }));
 jest.mock('../utils/haptics', () => ({ mediumTap: jest.fn(), selectionTick: jest.fn() }));
-
-import {
-  LEAVE_GROUP_WARN_KEY,
-  useSubgroupActions,
-  type UseSubgroupActionsInput,
-} from '../screens/MapScreen/hooks/useSubgroupActions';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -119,6 +124,35 @@ describe('useSubgroupActions', () => {
     await act(async () => { ok = await readActions().doSelfSplit(); });
     expect(ok).toBe(true);
     expect(mockClient.selfSplit).toHaveBeenCalledWith('g1', 'subgroup.selfSplitName:{"name":"Ada"}');
+  });
+
+  it('creates once for the selected self and invites teammates without silently moving them', async () => {
+    mockStorage.set(LEAVE_GROUP_WARN_KEY, '1');
+    render({ mySubgroupId: undefined, members: [member('u1'), member('u2'), member('u3')] });
+
+    await act(async () => {
+      expect(await readActions().createSubgroup(['u2'], 'u1')).toBe(false);
+      const selection = ['u1', 'u2', 'u2', 'missing'];
+      const creation = readActions().createSubgroup(selection, 'u1');
+      expect(await readActions().createSubgroup(selection, 'u1')).toBe(false);
+      expect(await creation).toBe(true);
+    });
+    expect(mockClient.selfSplit).toHaveBeenCalledTimes(1);
+    expect(mockClient.selfSplit).toHaveBeenCalledWith('g1', 'd6.team.yourSubgroup');
+    expect(mockClient.inviteToSubgroup.mock.calls).toEqual([['new-subgroup', 'u2']]);
+    expect(refresh).toHaveBeenCalledWith('membership_change');
+  });
+
+  it('keeps the created subgroup when an invitation fails and reports the missed teammate', async () => {
+    mockStorage.set(LEAVE_GROUP_WARN_KEY, '1');
+    mockClient.inviteToSubgroup.mockRejectedValueOnce(new Error('network unavailable'));
+    render({ mySubgroupId: undefined, members: [member('u1'), { ...member('u2'), name: 'Ming' }] });
+
+    await act(async () => {
+      expect(await readActions().createSubgroup(['u1', 'u2'], 'u1')).toBe(true);
+    });
+    expect(mockAlert).toHaveBeenCalledWith('subgroup.failed', 'd6.team.inviteFailed:{"names":"Ming"}');
+    expect(refresh).toHaveBeenCalledWith('membership_change');
   });
 
   it('wipes subgroup-scoped UI when I merge back, and reports failure without wiping', async () => {

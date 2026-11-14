@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(__dirname, '..');
@@ -23,34 +23,14 @@ describe('five-screen Liquid Glass redesign contract', () => {
   it('blocks only the four authentication network actions', () => {
     const login = read('screens/LoginScreen.tsx');
     const overlay = read('components/BlockingAuthOverlay.tsx');
-    expect(login).toContain('blockingBusy');
-    expect(login).toContain("busyAction === 'email_sign_in'");
-    expect(login).toContain("busyAction === 'email_sign_up'");
-    expect(login).toContain("busyAction === 'google'");
-    expect(login).toContain("busyAction === 'apple'");
+    expect(login).toContain('visible={blocking}');
+    expect(login).toContain("busy === 'email_sign_in'");
+    expect(login).toContain("busy === 'email_sign_up'");
+    expect(login).toContain("busy === 'google'");
+    expect(login).toContain("busy === 'apple'");
     expect(login).toContain('<BlockingAuthOverlay');
     expect(overlay).toContain('pointerEvents="auto"');
     expect(overlay).toContain('<WaveLoading');
-  });
-
-  it('keeps iOS buttons native and removes the redesigned Home delete action', () => {
-    const role = read('screens/RoleSelectScreen.tsx');
-    const teams = read('screens/MyTeamsScreen.tsx');
-    expect(role).toContain('<NativeRoleActionButton');
-    expect(role).toContain('<NativeTeamsButton');
-    expect(role).not.toContain('confirmDeleteAccount');
-    expect(teams).toContain('<NativeTeamCard');
-    expect(teams).toContain('<NativeGlassButton');
-    expect(read('components/NativeRoleActionButton.ios.tsx')).toContain("buttonBorderShape('roundedRectangle', 30)");
-    const teamsButton = read('components/NativeTeamsButton.ios.tsx');
-    expect(teamsButton).toContain('<Button onPress={onPress}');
-    expect(teamsButton).not.toContain('<Pressable');
-    expect(teamsButton).toContain('count > 0');
-    expect(teams).toContain('testID="teams-empty-create"');
-    expect(teams).toContain('testID="teams-empty-join"');
-    expect(teams).toContain("navigation.replace('Auth', { role: 'leader' })");
-    expect(teams).toContain("navigation.replace('Auth', { role: 'follower' })");
-    expect(read('screens/AuthScreen.tsx')).toContain('systemImage="chevron.left"');
   });
 
   it('keeps signup nickname-free and preserves names when entering an existing team', () => {
@@ -61,7 +41,6 @@ describe('five-screen Liquid Glass redesign contract', () => {
     expect(login).not.toContain('termsAccepted');
     expect(authFlow).not.toContain('data: { nickname: trimmed }');
     expect(teams).not.toContain('updateNickname');
-    expect(read('screens/AuthScreen.tsx')).toContain('updateNickname(nickname)');
     expect(read('api/services/ProfileService.ts')).toContain('.upsert(');
   });
 });

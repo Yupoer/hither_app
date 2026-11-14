@@ -1,17 +1,17 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { useMountEffect } from '../../../hooks/useMountEffect';
-import { ActivityIndicator,
+import { APP_TEXT_SIZE } from '../../../theme/typeScale';
+import React, { useCallback, useState } from 'react';
+import {
+  Platform,
+  ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
   TouchableOpacity,
 } from 'react-native';
+import { AppText as Text } from '../../../components/AppText';
+import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
-import * as Updates from 'expo-updates';
 import SystemToggle from '../../../components/SystemToggle';
 import PrefSlider from '../../../components/PrefSlider';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
@@ -29,31 +29,17 @@ import {
 import { useTranslation } from '../../../i18n';
 import { THEME_ORDER, themes } from '../../../theme';
 import { glass } from '../../../glass';
-import { applyOtaUpdate } from '../../../utils/otaUpdates';
+import { useSettingsUpdate } from './useSettingsUpdate';
 import { premiumPlanForProduct } from '../../../premiumCatalog';
+
+import HomeSettings from './HomeSettings';
+import type { HomeSettingsProps } from './HomeSettings';
+export type { SettingsPage } from './HomeSettings';
 
 const MARQUEE_SPEED_MIN = 20;
 const MARQUEE_SPEED_MAX = 80;
 
-const OTA_UPDATES_USABLE = !__DEV__ && Updates.isEnabled;
-
-function SettingsOtaCheck({ onAvailable }: { onAvailable: (available: boolean) => void }) {
-  useMountEffect(() => {
-    if (!OTA_UPDATES_USABLE) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const result = await Updates.checkForUpdateAsync();
-        if (!cancelled) onAvailable(result.isAvailable);
-      } catch {
-        // A failed manual check keeps the last downloaded update state.
-      }
-    })();
-    return () => { cancelled = true; };
-  });
-  return null;
-}
-interface SettingsOverlayProps {
+export interface SettingsOverlayProps {
   visible: boolean;
   onClose: () => void;
   onArchiveAllForTest: () => void;
@@ -122,7 +108,12 @@ function NavRow({
   );
 }
 
-export const SettingsOverlay = React.memo(function SettingsOverlay({
+export const SettingsOverlay = React.memo(function SettingsOverlay(props: SettingsOverlayProps & Partial<HomeSettingsProps>) {
+  if (Platform.OS === 'ios' && props.renderStore) return <HomeSettings {...props} renderStore={props.renderStore} />;
+  return <LegacySettingsOverlay {...props} />;
+});
+
+const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
   visible,
   onClose,
   onArchiveAllForTest,
@@ -211,61 +202,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
     }
   }, [group?.id, onUpdateGroupAvatar, savingGroupAvatar, groupAvatar, groupAvatarColor, t]);
 
-  const appVersion =
-    Constants.expoConfig?.version ??
-    Constants.nativeAppVersion ??
-    '—';
-
-  const { isUpdateAvailable, isUpdatePending } = Updates.useUpdates();
-  const [otaAvailable, setOtaAvailable] = useState(false);
-  const [applyingOta, setApplyingOta] = useState(false);
-
-  const showOtaApply =
-    OTA_UPDATES_USABLE &&
-    (otaAvailable || isUpdateAvailable || isUpdatePending);
-
-  const handleApplyOta = useCallback(async () => {
-    if (!OTA_UPDATES_USABLE || applyingOta) return;
-    setApplyingOta(true);
-    try {
-      // Shared single-flight with auto bootstrap — double-tap / concurrent
-      // apply cannot stack reloads. skipCheck when Expo already has pending.
-      const outcome = await applyOtaUpdate({
-        manual: true,
-        skipCheck: isUpdatePending,
-      });
-      if (outcome.reloading) {
-        // Process will restart; keep applying state (no false failure toast).
-        return;
-      }
-      setApplyingOta(false);
-      if (outcome.status === 'no_update') {
-        setOtaAvailable(false);
-        return;
-      }
-      if (
-        outcome.status === 'fetch_failed'
-        || outcome.status === 'reload_failed'
-      ) {
-        Alert.alert(t('settings.otaApplyFailed'));
-      }
-    } catch {
-      setApplyingOta(false);
-      Alert.alert(t('settings.otaApplyFailed'));
-    }
-  }, [applyingOta, isUpdatePending, t]);
-
-  const otaSummary = useMemo(() => {
-    // Expo Go / dev client: Updates may be disabled — still show a clear label.
-    if (__DEV__ || !Updates.isEnabled) {
-      return t('settings.otaDev');
-    }
-    if (Updates.isEmbeddedLaunch || !Updates.updateId) {
-      return t('settings.otaEmbedded');
-    }
-    const shortId = Updates.updateId.replace(/-/g, '').slice(0, 8);
-    return t('settings.otaUpdate', { id: shortId });
-  }, [t]);
+  const { appVersion, showOtaApply, applyingOta, handleApplyOta, otaSummary, check } = useSettingsUpdate(visible);
 
   const pageTitle = t('map.overlaySettings');
   const closeChild = () => setPage('root');
@@ -293,7 +230,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
       testID="settings-slide-page"
       pointerEvents="box-none"
     >
-      {visible ? <SettingsOtaCheck onAvailable={setOtaAvailable} /> : null}
+      {check}
       <SettingsChildSheet
         visible={visible}
         onClose={onClose}
@@ -777,7 +714,7 @@ const settingsSlideStyles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     color: '#fff',
-    fontSize: 17,
+    fontSize: APP_TEXT_SIZE.body,
     fontWeight: '700',
     textAlign: 'center',
   },

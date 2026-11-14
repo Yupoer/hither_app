@@ -28,7 +28,7 @@ describe('MapKit route UI contract', () => {
     expect(groupMap).toContain('settledRouteViewport');
     expect(groupMap).not.toContain('bottom: Math.max(24, bottomOverlap + 8)');
     expect(groupMap).toContain('StyleSheet.absoluteFill');
-    expect(groupMap).not.toContain('mapPadding=');
+    expect(groupMap).toContain('mapPadding={homePresentation ?');
     expect(groupMap).not.toContain('oversizedMapStyle');
     expect(mapScreen).toContain('const peekSheetH = detents[0]');
     expect(mapScreen).not.toContain('const halfPeek = peekSheetH / 2');
@@ -50,7 +50,7 @@ describe('MapKit route UI contract', () => {
   it('uses member-to-gathering MapKit routes in the flock rows', () => {
     expect(mapScreen).toContain('useMapKitRoutes({');
     expect(memberPresence).toContain('memberRoutes[m.userId]');
-    expect(mapScreen).toContain('gathering={activePoint}');
+    expect(mapScreen).toContain('gathering={d6Enabled ? homeStop ?? undefined : activePoint}');
     expect(mapScreen).toContain('routePoints={selfRoute?.points}');
     expect(addPlaceCard).toContain('focusOblique(pendingPlace.coordinates)');
     expect(mapScreen).toContain('sameMetricDistance(');

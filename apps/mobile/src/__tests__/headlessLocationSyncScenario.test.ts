@@ -5,7 +5,7 @@ const { GROUP_ID, LEADER, PEER, DESTINATION } = require('../../test/headless/bac
 
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = {
-  presentation: { hosts: { testId?: string; checked?: boolean; text?: string }[];
+  presentation: { hosts: { testId?: string; label?: string; checked?: boolean; text?: string }[];
     mapRoutePoints: { latitude: number; longitude: number }[] | null;
     flockRows: { userId: string; lastUpdated?: string; text: string }[];
     mapMembers: NonNullable<CoreGroupSnapshot['members']> | null; preferences: { sharingEnabled: boolean } };
@@ -18,12 +18,15 @@ type SyncCall = { name: string; deviceId: string; args: { p_core_operations: { o
   p_location_events: { id: string; actorId: string }[]; p_refresh: { requestPeers?: boolean; requestedAt?: string } } };
 const has = (value: Observation, id: string) => value.presentation.hosts.some(host => host.testId === id);
 
+const press = (device: Device, testId: string) => device.host.call({ kind: 'press', testId });
+const pressLabel = (device: Device, label: string) => device.host.call({ kind: 'press', label });
+
 describe.each(['ios', 'android'])('changed location exchange on %s', platform => {
   jest.setTimeout(120000);
   async function map(world: InstanceType<typeof World>, id: string, userId: string) {
     const device = await world.device({ id, userId, platform, capabilities: { nativeLocation: true },
       screen: { name: 'Map', params: { groupId: GROUP_ID } } });
-    await world.waitFor(device, (value: Observation) => has(value, `gather-card-${DESTINATION}`), 'mounted Map destination');
+    await world.waitFor(device, (value: Observation) => has(value, platform === 'ios' ? 'home-journey-action' : `gather-card-${DESTINATION}`), 'mounted Map destination');
     await device.gps(userId === LEADER ? 25.02 : 25.01, 121.52, { accuracy: 5 });
     await world.settle();
     return device;
@@ -32,6 +35,15 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
     for (const phase of ['onBegin', 'onUpdate', 'onEnd']) await device.host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase,
       value: phase === 'onBegin' ? {} : { translationY: -250, velocityY: 0 }, success: true });
     await world.settle();
+  }
+
+  async function start(device: Device) {
+    if (platform === 'ios') {
+      expect(await press(device, 'home-journey-action')).toEqual({ invoked: true });
+      return;
+    }
+    await device.perform('map.card.toggle', { destinationId: DESTINATION });
+    await device.perform('map.journey.command', { destinationId: DESTINATION });
   }
 
   it('MAP-LOC-01 MAP-ARRIVAL-02 shows SDK interruption until a new fix and stops only the arrived personal route', async () => {
@@ -48,8 +60,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await world.advance(1000);
       await leader.gps(25.03, 121.53, { accuracy: 5 });
       await world.waitFor(leader, (value: Observation) => !interrupted(value), 'new fix clears interruption');
-      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await start(leader);
       await world.advance(1000);
       await leader.gps(25.031, 121.53, { accuracy: 5 });
       await world.waitFor(leader, (value: Observation) => Boolean(value.presentation.mapRoutePoints?.length), 'active self route rendered');
@@ -80,8 +91,7 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await world.advance(300000);
       leader.online = false;
       leader.realtime = false;
-      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      await leader.perform('map.journey.command', { destinationId: DESTINATION });
+      await start(leader);
       await world.advance(1000);
       await leader.gps(25.025, 121.525, { accuracy: 5 });
       const pending: Observation = await world.waitFor(leader, (value: Observation) =>
@@ -135,24 +145,40 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       expect(world.backend.locations.get(GROUP_ID + ':' + PEER)?.latitude).toBe(25.01);
       await world.advance(500);
       await leader.input({ kind: 'permission', status: 'denied' });
-      await expand(world, leader);
+      const readRow = (value: Observation) => platform === 'ios'
+        ? value.presentation.mapMembers?.find(row => row.userId === PEER)
+        : value.presentation.flockRows.find(row => row.userId === PEER);
+      const updatedAt = (member: ReturnType<typeof readRow>) => member?.lastUpdated;
+      async function refreshTeam() {
+        if (platform === 'ios') {
+          if (has(await leader.observe(), 'd6-members-pane')) await press(leader, 'home-team-toggle');
+          await press(leader, 'home-team-toggle');
+        } else {
+          if (!has(await leader.observe(), 'map-refresh-locations')) await expand(world, leader);
+          await leader.perform('map.location.refresh');
+        }
+        await world.settle();
+      }
+      await refreshTeam();
       const before: Observation = await leader.observe();
-      const getPeerRow = (value: Observation) => value.presentation.flockRows.find(row => row.userId === PEER);
-      expect(getPeerRow(before)?.text).toMatch(/剛剛更新|Updated just now/);
-
-      await leader.perform('map.location.refresh');
-      await world.waitFor(leader, (value: Observation) => has(value, 'map-refresh-locations'), 'fresh refresh completes');
+      expect(updatedAt(readRow(before))).toBeDefined();
+      if (platform === 'android') {
+        expect(before.presentation.flockRows.find(row => row.userId === PEER)?.text).toMatch(/剛剛更新|Updated just now/);
+      }
       expect(world.backend.locationRefreshes[0].recipient_ids).toEqual([]);
       expect(world.backend.locationRefreshPending.size).toBe(0);
-      expect(getPeerRow(await leader.observe())?.lastUpdated).toBe(getPeerRow(before)?.lastUpdated);
+      expect(updatedAt(readRow(await leader.observe()))).toBe(updatedAt(readRow(before)));
 
       await world.advance(180000);
-      expect(getPeerRow(await leader.observe())?.text).toMatch(/3 分鐘|3 minutes/);
+      if (platform === 'android') {
+        const value: Observation = await leader.observe();
+        expect(value.presentation.flockRows.find(row => row.userId === PEER)?.text).toMatch(/3 分鐘|3 minutes/);
+      }
       leader.realtime = false;
       peer.realtime = false;
       await peer.input({ kind: 'appState', value: 'background' });
       await world.waitFor(peer, (value: Observation) => value.external.watches === 0 && value.external.backgroundTasks.length > 0, 'peer passive background owner');
-      await leader.perform('map.location.refresh');
+      await refreshTeam();
       await world.waitFor(leader, () => world.backend.locationRefreshes.length === 2, 'stale peer refresh ledger without self GPS');
       const request = world.backend.locationRefreshes[1];
       expect(request.recipient_ids).toEqual([PEER]);
@@ -164,13 +190,15 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
       await world.waitFor(peer, () => request.acknowledgements.includes(PEER), 'silent push task captures and ACKs one new fix');
       expect(world.backend.locations.get(GROUP_ID + ':' + PEER)).toMatchObject({ source: 'refresh_request', latitude: 25.034 });
       await world.advance(2000);
-      const result: Observation = await world.waitFor(leader, (value: Observation) => has(value, 'map-refresh-locations')
-        && getPeerRow(value)?.lastUpdated !== getPeerRow(before)?.lastUpdated, 'requester row receives peer sample');
-      expect(getPeerRow(result)?.text).toMatch(/剛剛更新|Updated just now/);
+      const result: Observation = await world.waitFor(leader, (value: Observation) =>
+        updatedAt(readRow(value)) !== updatedAt(readRow(before))
+          && value.durable.snapshot.members?.find(member => member.userId === PEER)?.coordinates?.latitude === 25.034,
+        'requester receives peer sample');
+      if (platform === 'android') {
+        expect(result.presentation.flockRows.find(row => row.userId === PEER)?.text).toMatch(/剛剛更新|Updated just now/);
+      }
       expect(result.external.alerts).toBe(before.external.alerts);
-      expect(result.durable.snapshot.members?.find(member => member.userId === PEER)?.coordinates?.latitude).toBe(25.034);
-      await leader.perform('map.location.refresh');
-      await world.settle();
+      await refreshTeam();
       expect(world.backend.locationRefreshes).toHaveLength(2);
     } finally { await world.close(); }
   });
@@ -182,11 +210,13 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
     try {
       const leader = await map(world, 'scheduled-leader', LEADER);
       const peer = await map(world, 'scheduled-peer', PEER);
-      await expand(world, leader);
-      await leader.perform('map.tab', { index: 2 });
-      await leader.perform('map.live-activity.toggle', { enabled: true });
-      await world.waitFor(leader, (value: Observation) => value.presentation.hosts.some(host => host.testId === 'tools-live-activity-toggle' && host.checked), 'entitled Live Activity preference');
-      await leader.perform('map.tab', { index: 0 });
+      if (platform === 'android') {
+        await expand(world, leader);
+        await leader.perform('map.tab', { index: 2 });
+        await leader.perform('map.live-activity.toggle', { enabled: true });
+        await world.waitFor(leader, (value: Observation) => value.presentation.hosts.some(host => host.testId === 'tools-live-activity-toggle' && host.checked), 'entitled Live Activity preference');
+        await leader.perform('map.tab', { index: 0 });
+      }
       await leader.input({ kind: 'appState', value: 'background' });
       const passive: Observation = await world.waitFor(leader, (value: Observation) => value.external.backgroundTasks.length === 1, 'idle sharing background owner');
       expect(passive.external.backgroundTasks[0].options).toMatchObject({ timeInterval: 600000, distanceInterval: 300, accuracy: 3 });
@@ -219,10 +249,18 @@ describe.each(['ios', 'android'])('changed location exchange on %s', platform =>
         name: string; userId: string; result?: { data?: { snapshot?: unknown } };
       }) => entry.name === 'sync_group' && entry.userId === LEADER && Boolean(entry.result?.data?.snapshot)),
       'foreground requests a full snapshot after the receipt-only exchange');
-      await leader.perform('map.card.toggle', { destinationId: DESTINATION });
-      await leader.perform('map.meet.open', { destinationId: DESTINATION });
-      await leader.perform('map.meet.shortcut', { minutes: 10 });
-      await leader.perform('map.meet.save');
+      if (platform === 'ios') {
+        await press(leader, 'home-itinerary-toggle');
+        await press(leader, `d6-route-row-${DESTINATION}`);
+        expect(await pressLabel(leader, 'Meeting time')).toEqual({ invoked: true });
+        expect(await pressLabel(leader, 'Add 15 minutes')).toEqual({ invoked: true });
+        expect(await press(leader, 'd6-stop-time-save')).toEqual({ invoked: true });
+      } else {
+        await leader.perform('map.card.toggle', { destinationId: DESTINATION });
+        await leader.perform('map.meet.open', { destinationId: DESTINATION });
+        await leader.perform('map.meet.shortcut', { minutes: 10 });
+        await leader.perform('map.meet.save');
+      }
       await world.waitFor(leader, () => Boolean(world.backend.itinerary[0].meet_schedule_occurrence_id), 'captain persisted schedule occurrence');
       const destination = world.backend.itinerary[0];
       const due = Date.parse(destination.meet_at);

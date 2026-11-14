@@ -20,11 +20,32 @@ const has = (value: Observation, testId: string) => value.presentation.hosts.som
 describe.each(['ios', 'android'])('actual App team entry boundaries on %s', platform => {
   jest.setTimeout(120000);
 
-  it('finishes full onboarding through App and opens Login without a restart', async () => {
+  it('opens the welcome entry before authentication and follows its full-screen login action', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'app-welcome', userId: null, platform, mode: 'app' });
+      const welcome = await world.waitFor(device, (value: Observation) => has(value, 'entry-welcome'), 'first welcome');
+      expect(has(welcome, 'auth-code')).toBe(true);
+      expect(has(welcome, 'role-create')).toBe(true);
+      expect(has(welcome, 'onboarding-continue')).toBe(false);
+      expect(await device.perform('home.login')).toEqual({ invoked: true });
+      const login = await world.waitFor(device, (value: Observation) =>
+        value.presentation.route.route === 'Login' && has(value, 'login-use-email'), 'login modal');
+      expect(login.presentation.session?.user).toBeNull();
+      expect(await device.perform('auth.close')).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => has(value, 'entry-welcome'), 'dismissed login');
+    } finally { await world.close(); }
+  });
+
+  it('completes an explicitly replayed onboarding survey and returns to entry', async () => {
     const world = new World();
     try {
       const device = await world.device({ id: 'app-onboarding', userId: null, platform, mode: 'app' });
-      await world.waitFor(device, (value: Observation) => has(value, 'onboarding-continue'), 'App first-launch onboarding');
+      await world.waitFor(device, (value: Observation) => has(value, 'entry-welcome'), 'App welcome');
+      await device.perform('preferences.setLanguage', { args: ['zh'] });
+      await device.perform('onboarding.markOnboardingReplayForHome');
+      await device.restart();
+      await world.waitFor(device, (value: Observation) => has(value, 'onboarding-continue'), 'explicit onboarding replay');
       await device.perform('onboarding.continue');
       await device.perform('onboarding.continue');
       await world.waitFor(device, (value: Observation) => has(value, 'onboarding-theme-forest'), 'permission completion opens theme selection');
@@ -34,9 +55,9 @@ describe.each(['ios', 'android'])('actual App team entry boundaries on %s', plat
         await device.perform('onboarding.option', { label });
         await device.perform('onboarding.continue');
       }
-      expect(has(await device.observe(), 'login-email')).toBe(false);
+      expect(has(await device.observe(), 'entry-welcome')).toBe(false);
       await device.perform('onboarding.continue');
-      const completed = await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'Login' && has(value, 'login-email'), 'App onDone replaces onboarding with Login');
+      const completed = await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'RoleSelect' && has(value, 'entry-welcome'), 'replayed survey returns to welcome');
       expect(has(completed, 'onboarding-continue')).toBe(false);
       expect(completed.presentation.session?.user).toBeNull();
       expect(await device.perform('onboarding.readOnboardingState')).toMatchObject({
@@ -51,9 +72,12 @@ describe.each(['ios', 'android'])('actual App team entry boundaries on %s', plat
     const world = new World();
     try {
       const device = await world.device({ id: 'app-recovery', userId: null, platform, mode: 'app' });
-      await world.waitFor(device, (value: Observation) => has(value, 'onboarding-skip'), 'App first-launch gate');
-      await device.perform('onboarding.skip');
-      await world.waitFor(device, (value: Observation) => has(value, 'login-email'), 'App Login');
+      await world.waitFor(device, (value: Observation) => has(value, 'entry-welcome'), 'welcome entry');
+      await device.perform('preferences.setLanguage', { args: ['zh'] });
+      await device.perform('home.login');
+      await device.perform('auth.email.open');
+      await device.perform('auth.email.edit', { value: 'leader@headless.test' });
+      await device.perform('auth.email.next');
       await device.perform('auth.reset.open');
       await device.perform('auth.reset.edit', { value: 'leader@headless.test' });
       await device.perform('auth.reset.send');
@@ -75,7 +99,7 @@ describe.each(['ios', 'android'])('actual App team entry boundaries on %s', plat
       await world.advance(1199);
       expect(has(await device.observe(), 'role-create')).toBe(false);
       await world.advance(1);
-      const home = await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'RoleSelect' && has(value, 'role-create'), 'App recovery dismissal remounts authenticated navigator');
+      const home = await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'RoleSelect' && has(value, `team-card-${GROUP_ID}`), 'recovery resumes authenticated returning entry');
       expect(home.presentation.session?.user?.id).toBe(LEADER);
       expect(home.presentation.hosts.some((host: { text?: string }) => host.text === '密碼已更新')).toBe(false);
       expect(world.backend.trace.filter((call: { name: string }) => call.name === 'exchangeCodeForSession')).toHaveLength(1);
@@ -89,22 +113,27 @@ describe.each(['ios', 'android'])('actual App team entry boundaries on %s', plat
       world.backend.profiles.get(LEADER).anonymous_expires_at = new Date(world.now + 7 * 86400000).toISOString();
       world.backend.profiles.get(LEADER).preferences = { groupFeatureTourCompleted: true };
       const device = await world.device({ id: 'app-map-account', userId: LEADER, platform, mode: 'app' });
-      await world.waitFor(device, (value: Observation) => has(value, 'onboarding-skip'), 'App restored anonymous onboarding gate');
-      await device.perform('onboarding.skip');
-      await world.waitFor(device, (value: Observation) => has(value, 'role-my-teams'), 'App restored anonymous home');
-      await device.perform('home.teams');
-      await device.perform('teams.expand', { groupId: GROUP_ID });
-      await device.perform('teams.enter');
-      const map = await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'Map' && has(value, `gather-card-${DESTINATION}`), 'saved anonymous team opens actual Map');
+      await world.waitFor(device, (value: Observation) => has(value, `team-card-${GROUP_ID}`), 'saved anonymous team on entry');
+      await device.perform('teams.enter', { groupId: GROUP_ID });
+      const mapControl = platform === 'ios' ? 'home-profile' : `gather-card-${DESTINATION}`;
+      const map = await world.waitFor(device, (value: Observation) => value.presentation.route.route === 'Map' && has(value, mapControl), 'saved anonymous team opens Map');
       expect(map.presentation.session).toMatchObject({ user: { id: LEADER }, isAnonymous: true, membership: { group: { id: GROUP_ID }, role: 'leader' } });
       const memberships = structuredClone(world.backend.memberships);
       expect(world.backend.groups.get(GROUP_ID).created_by).toBe(LEADER);
-      await device.perform('map.settings.open');
-      await device.input({ kind: 'animation', finished: true });
-      await world.waitFor(device, (value: Observation) => has(value, 'settings-page-account'), 'Map settings parent');
-      await device.perform('settings.account');
-      await device.input({ kind: 'animation', finished: true });
-      await world.waitFor(device, (value: Observation) => has(value, 'account-email'), 'real settings account child');
+      if (platform === 'ios') {
+        await device.host.call({ kind: 'press', testId: 'home-profile' });
+        await device.input({ kind: 'animation', finished: true });
+        await world.waitFor(device, (value: Observation) => has(value, 'settings-page-account'), 'D6 You account entry');
+        await device.perform('settings.account');
+        await device.host.call({ kind: 'press', testId: 'account-open-email' });
+      } else {
+        await device.perform('map.settings.open');
+        await device.input({ kind: 'animation', finished: true });
+        await world.waitFor(device, (value: Observation) => has(value, 'settings-page-account'), 'legacy settings account entry');
+        await device.perform('settings.account');
+        await device.input({ kind: 'animation', finished: true });
+      }
+      await world.waitFor(device, (value: Observation) => has(value, 'account-email'), 'account email form');
       await device.perform('account.email', { value: '  app-upgraded@headless.test  ' });
       await device.perform('account.password', { value: 'AppUpgrade123!' });
       await device.perform('account.upgrade');

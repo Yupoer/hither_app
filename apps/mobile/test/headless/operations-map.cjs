@@ -272,7 +272,7 @@ operation('map.carousel.end', ['MAP-SHELL-02', 'MAP-NAV-06'], screen, 'handleMom
 operation('map.presence.select', ['MAP-MEMBER-01'], screen, 'applyPresenceMacroKind', '{ value: follow | solo | stealth }',
   'Actual iOS attached menu changes presence through notification/sharing/solo writes; Android opens its real Alert choices.',
   (app, { value }) => app.platform === 'ios'
-    ? app.host.call({ testId: 'map-presence', kind: 'nativeEvent', value: { event: 'onSelect', nativeEvent: { id: value } } })
+    ? press(app, `map-presence-option-${value}`)
     : press(app, 'map-presence'));
 
 const services = {

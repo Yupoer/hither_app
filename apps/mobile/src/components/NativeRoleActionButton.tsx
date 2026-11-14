@@ -1,5 +1,8 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 
 export type NativeRoleActionButtonProps = {
@@ -55,6 +58,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   iconSlot: { width: 60, height: 56, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 17.5, lineHeight: 21, fontWeight: '800', color: '#fff' },
+  label: { fontSize: APP_TEXT_SIZE.body, lineHeight: APP_TEXT_LINE_HEIGHT.body, fontWeight: '800', color: '#fff' },
   pressed: { opacity: 0.82 },
 });

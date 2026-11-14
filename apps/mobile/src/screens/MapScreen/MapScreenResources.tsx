@@ -352,6 +352,7 @@ function MapTrackingModeJob({ input }: { input: MapTrackingModeInput }) {
 }
 
 type MapRouteCameraInput = {
+  allowAutoFit: boolean;
   activePoint: ReturnType<typeof useJourneyNavigation>['activePoint'];
   travelMode: TravelMode;
   lastFittedRouteRef: React.RefObject<string | null>;
@@ -363,6 +364,7 @@ type MapRouteCameraInput = {
 export function MapRouteCameraResource(input: MapRouteCameraInput) {
   const [previous, setPrevious] = useState({ input, generation: 0 });
   if (!Object.is(previous.input.activePoint, input.activePoint)
+    || !Object.is(previous.input.allowAutoFit, input.allowAutoFit)
     || !Object.is(previous.input.selfRoute, input.selfRoute)
     || !Object.is(previous.input.travelMode, input.travelMode)
     || !Object.is(previous.input.deviceCoords, input.deviceCoords)) {
@@ -372,8 +374,9 @@ export function MapRouteCameraResource(input: MapRouteCameraInput) {
 }
 
 function MapRouteCameraJob({ input }: { input: MapRouteCameraInput }) {
-  const { activePoint, travelMode, lastFittedRouteRef, selfRoute, mapRef, deviceCoords } = input;
+  const { allowAutoFit, activePoint, travelMode, lastFittedRouteRef, selfRoute, mapRef, deviceCoords } = input;
   useMountEffect(() => {
+    if (!allowAutoFit) return;
     const key = activePoint ? `${activePoint.id}:${travelMode}` : null;
     if (activePoint && key && key !== lastFittedRouteRef.current && selfRoute?.points.length) {
       lastFittedRouteRef.current = key;

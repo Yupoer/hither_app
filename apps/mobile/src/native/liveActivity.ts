@@ -50,6 +50,7 @@ type HitherLiveActivityModule = {
   ) => Promise<void>;
   updateAllGroupActivities?: (state: GroupActivityState) => Promise<void>;
   endGroupActivity?: (handle: ActivityHandle) => Promise<void>;
+  completeGroupActivity?: (navigationSessionId: string, destinationId: string) => Promise<void>;
   endAllGroupActivities?: () => Promise<void>;
 };
 
@@ -86,18 +87,18 @@ export interface GroupActivityState {
   /** Active theme accent (hex, e.g. "#F5B142") so the Live Activity tints with
    * the app's theme instead of a baked-in colour. */
   accentHex?: string;
-  /** Current travel mode ('walk' | 'transit' | 'drive') — drives the transit
-   * glyph in the compact island + lock-screen header. */
+  /** Travel mode used by Android and the cloud snapshot. */
   travelMode?: string;
   /** Member avatar emojis for the flock stack (empty string = no emoji set). */
   memberEmojis?: string[];
   /** Per-member arrival flags aligned with `memberEmojis`. */
   memberArrived?: boolean[];
-  /**
-   * Active gathering-point emoji (Ticket 07). Decoded by native ContentState
-   * and rendered next to the gathering title (fallback when missing).
-   */
   destinationEmoji?: string;
+  meetTimeMs?: number | null;
+  dayColorHex?: string;
+  selfFace?: { emoji: string; colorHex?: string; arrived: boolean };
+  /** Avatar colors aligned with memberEmojis. */
+  memberColors?: string[];
   /** App language so native duration copy can format zh/en. Missing → zh. */
   language?: 'zh' | 'en';
 }
@@ -163,6 +164,15 @@ export async function updateAllGroupActivities(
 /** End a running Live Activity. No-op when unsupported. */
 export async function endGroupActivity(handle: ActivityHandle): Promise<void> {
   await HitherLiveActivity?.endGroupActivity?.(handle);
+}
+
+/** Finish the matching journey on iOS, leaving its final Lock Screen card visible briefly. */
+export async function completeGroupActivity(navigationSessionId: string, destinationId: string): Promise<void> {
+  if (HitherLiveActivity?.completeGroupActivity) {
+    await HitherLiveActivity.completeGroupActivity(navigationSessionId, destinationId);
+  } else {
+    await endAllGroupActivities();
+  }
 }
 
 /** End every Hither Live Activity on this device. No-op when unsupported. */

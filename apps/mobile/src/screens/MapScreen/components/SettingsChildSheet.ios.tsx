@@ -19,11 +19,15 @@ import {
   frame,
   font,
   padding,
+  presentationCornerRadius,
   presentationDetents,
+  presentationBackground,
   presentationDragIndicator,
 } from '@expo/ui/swift-ui/modifiers';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
+  MAP_SHEET_CORNER_RADIUS,
+  SHEET_CORNER_ACTION_INSET,
 } from '../../../components/mapSheetChrome';
 import SheetHeaderActionContent from '../../../components/SheetHeaderActionContent.ios';
 import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
@@ -65,13 +69,15 @@ function NativeSettingsChildSheet({
   titleFontSize,
   children,
   initialStage = 0,
+  stageOneRatio = STAGE_ONE_RATIO,
   stageTwoRatio = STAGE_TWO_RATIO,
+  darkMaterial = false,
   wrapContentInScrollView = true,
 }: SettingsChildSheetProps) {
   const nativeChildren = React.Children.toArray(children);
   const rootContent = nativeChildren[0] ?? <View />;
   const nestedSheets = nativeChildren.slice(1);
-  const stageOneDetent = useMemo(() => ({ fraction: STAGE_ONE_RATIO }), []);
+  const stageOneDetent = useMemo(() => ({ fraction: stageOneRatio }), [stageOneRatio]);
   const stageTwoDetent = useMemo(() => ({ fraction: stageTwoRatio }), [stageTwoRatio]);
   const actionSlotSize = MAP_SHEET_ACTION_HIT_SIZE;
   const closeStartedRef = useRef(false);
@@ -118,6 +124,8 @@ function NativeSettingsChildSheet({
               [stageOneDetent, stageTwoDetent],
               { selection: initialStage === 1 ? stageTwoDetent : stageOneDetent },
             ),
+            presentationCornerRadius(MAP_SHEET_CORNER_RADIUS),
+            ...(darkMaterial ? [presentationBackground('#263230f7')] : []),
             presentationDragIndicator('visible'),
             frame({ minWidth: 0, maxWidth: Infinity, minHeight: 0, maxHeight: Infinity }),
             padding({ bottom: 0 }),
@@ -132,7 +140,7 @@ function NativeSettingsChildSheet({
               spacing={0}
               alignment="center"
               modifiers={[
-                padding({ top: 16, leading: 16, trailing: 16 }),
+                padding({ top: SHEET_CORNER_ACTION_INSET, leading: SHEET_CORNER_ACTION_INSET, trailing: SHEET_CORNER_ACTION_INSET }),
                 frame({ minWidth: 0, maxWidth: 10000 }),
               ]}
             >

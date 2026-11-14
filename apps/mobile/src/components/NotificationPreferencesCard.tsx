@@ -1,6 +1,8 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
 import { useMountEffect } from '../hooks/useMountEffect';
 import React, { useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import SystemToggle from './SystemToggle';
 import {
   getNotificationPreferences,
@@ -36,11 +38,21 @@ const ROWS: { key: NotificationCategory; label: TranslationKey }[] = [
 
 export default function NotificationPreferencesCard({
   colors,
+  home = false,
 }: {
   colors: Palette;
+  home?: boolean;
 }) {
   const { t, language } = useTranslation();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const rows = home ? [ROWS[0], ROWS[1], ROWS[2], ROWS[4], ROWS[3]] : ROWS;
+  const rowLabel = (key: NotificationCategory, label: TranslationKey) => {
+    if (!home) return t(label);
+    if (key === 'arrival') return language === 'zh' ? '隊伍動態' : 'Team activity';
+    if (key === 'journey') return language === 'zh' ? '出發與暫停' : 'Departure and pause';
+    if (key === 'followerRequests') return language === 'zh' ? '成員請求' : 'Member requests';
+    return t(label);
+  };
   const [prefs, setPrefs] = useState<NotificationPreferences>(
     DEFAULT_NOTIFICATION_PREFERENCES,
   );
@@ -77,17 +89,17 @@ export default function NotificationPreferencesCard({
 
   return (
     <View style={styles.card}>
-      {ROWS.map(({ key, label }, index) => (
+      {rows.map(({ key, label }, index) => (
         <View
           key={key}
-          style={[styles.row, index === ROWS.length - 1 && styles.rowLast]}
+          style={[styles.row, index === rows.length - 1 && styles.rowLast]}
         >
-          <Text style={styles.label}>{t(label)}</Text>
+          <Text style={[styles.label, home && { color: "#fff", fontSize: APP_TEXT_SIZE.caption }]}>{rowLabel(key, label)}</Text>
           <SystemToggle
             testID={`notification-preference-${key}`}
             value={prefs[key]}
             onValueChange={(v) => toggle(key, v)}
-            accessibilityLabel={t(label)}
+            accessibilityLabel={rowLabel(key, label)}
           />
         </View>
       ))}
@@ -110,5 +122,5 @@ const makeStyles = (colors: Palette) =>
       borderBottomColor: colors.border,
     },
     rowLast: { borderBottomWidth: 0 },
-    label: { color: colors.textPrimary, fontSize: 15 },
+    label: { color: colors.textPrimary, fontSize: APP_TEXT_SIZE.caption, flex: 1, marginEnd: spacing.sm },
   });

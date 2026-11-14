@@ -62,6 +62,7 @@ export {
   mapSubgroupInvite,
   createGroup,
   updateGroupAvatar,
+  endGroup,
   joinGroup,
   getGroupState,
   getGroupRecoverySnapshot,

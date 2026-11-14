@@ -12,6 +12,7 @@ jest.mock('react-native', () => ({
   useWindowDimensions: () => ({ height: 1000, width: 400 }),
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Icon' }));
+jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 54 }) }));
 jest.mock('../components/BottomSheet', () => 'BottomSheet');
 jest.mock('../components/SheetHeaderAction', () => 'HeaderAction');
 jest.mock('../components/SheetHeaderActionContent.ios', () => 'HeaderAction');
@@ -26,7 +27,8 @@ jest.mock('@expo/ui/swift-ui', () => ({
   Spacer: 'Spacer', Text: 'SwiftText', VStack: 'VStack',
 }));
 jest.mock('@expo/ui/swift-ui/modifiers', () => ({
-  frame: () => ({}), font: () => ({}), padding: () => ({}), presentationDetents: () => ({}), presentationDragIndicator: () => ({}),
+  frame: () => ({}), font: () => ({}), padding: () => ({}), presentationDetents: () => ({}),
+  presentationCornerRadius: () => ({}), presentationDragIndicator: () => ({}),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

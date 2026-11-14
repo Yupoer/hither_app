@@ -6,7 +6,7 @@ import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildShe
 const mockChecks: Array<(result: { isAvailable: boolean }) => void> = [];
 jest.mock('react-native', () => ({
   View: 'View', Text: 'Text', ScrollView: 'ScrollView', Pressable: 'Pressable', TouchableOpacity: 'TouchableOpacity',
-  Alert: { alert: jest.fn() }, StyleSheet: { create: (s: unknown) => s },
+  Platform: { OS: 'android' }, Alert: { alert: jest.fn() }, StyleSheet: { create: (s: unknown) => s },
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Icon' }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { version: '1' } } }));
@@ -20,6 +20,7 @@ jest.mock('../components/PrefSlider', () => 'Slider');
 jest.mock('../components/NotificationPreferencesCard', () => 'Notifications');
 jest.mock('../components/PremiumBanner', () => 'Premium');
 jest.mock('../components/AccountSheet', () => ({ AccountSheetContent: 'Account' }));
+jest.mock('../screens/MapScreen/components/HomeSettings', () => 'HomeSettings');
 jest.mock('../screens/MapScreen/components/SettingsChildSheet', () => 'SettingsSheet');
 jest.mock('../state/SessionContext', () => ({ useSession: () => ({ isPro: false }) }));
 jest.mock('../state/PreferencesContext', () => ({

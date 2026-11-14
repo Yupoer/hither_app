@@ -80,12 +80,14 @@ async function run(candidate, compiled, strict, sessionBoundary) {
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     new Function('require', 'module', 'exports', code)(name => {
+      if (name === 'react-native') return mockImports[name];
       if (name.startsWith('.')) return load(path.resolve(path.dirname(filename), name));
       return require(name);
     }, mod, mod.exports);
     return mod.exports;
   }
   const mockImports = {
+    './MotionPressable': { __esModule: true, default: Pressable },
     './useMemberMarkerMotion': { useMemberMarkerMotion: () => ({ coordinate: null, lifecycle: null }) },
     'react-native': { View, Text: View, Pressable, AccessibilityInfo: {
       isReduceMotionEnabled: async () => false,

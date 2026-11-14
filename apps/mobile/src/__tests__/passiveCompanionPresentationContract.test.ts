@@ -236,10 +236,10 @@ describe('OTA-07 full/passive presentation contract', () => {
 
   it('gates passive presentation on preferencesReady to avoid full-chrome flash', () => {
     expect(mapScreen).toContain(
-      'const inPassiveMode = preferencesReady && passiveCompanionMode',
+      'const inPassiveMode = !d6Enabled && preferencesReady && passiveCompanionMode',
     );
     expect(mapScreen).toContain(
-      'const showDenseChrome = preferencesReady && !passiveCompanionMode',
+      'const showDenseChrome = preferencesReady && (d6Enabled || !passiveCompanionMode)',
     );
     expect(mapScreen).toContain('inPassiveMode');
     expect(mapScreen).toContain('showDenseChrome');

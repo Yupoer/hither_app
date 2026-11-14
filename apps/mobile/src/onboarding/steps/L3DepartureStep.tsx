@@ -1,5 +1,7 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import React, { useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, Platform, StyleSheet, View } from 'react-native';
+import Pressable from '../../components/MotionPressable';
 import { HitherText } from '../../components/HitherText';
 import DateTimePicker, {
   DateTimePickerAndroid,
@@ -204,7 +206,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
   },
-  tileLabel: { fontSize: 16, fontWeight: '700' },
+  tileLabel: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   // Enlarged, badge-style "days to go" so it reads as the confirmation moment.
   countdownWrap: { alignItems: 'center', marginTop: 28 },
   countdownPill: {
@@ -216,7 +218,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1.5,
   },
-  countdownText: { fontSize: 20, fontWeight: '800' },
+  countdownText: { fontSize: APP_TEXT_SIZE.title, fontWeight: '800' },
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.5)' },
   // Minimal side padding + centered card so the inline calendar is never
   // clipped on the right.

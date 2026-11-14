@@ -1,3 +1,5 @@
+import { APP_TEXT_SIZE } from '../theme/typeScale';
+import { MAP_ISLAND_HEIGHT } from './mapSheetChrome';
 import { useMemberMarkerMotion } from './useMemberMarkerMotion';
 import { useMountEffect } from '../hooks/useMountEffect';
 import React, {
@@ -15,14 +17,14 @@ import React, {
 import {
   AccessibilityInfo,
   Animated as RNAnimated,
-  Pressable,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker, Polyline, type Camera, type Region } from 'react-native-maps';
+import MapView, { Circle, Marker, Polyline, type Camera, type Region } from 'react-native-maps';
 import type { Coordinates, Destination, MemberLocation } from '../types';
 import { displayMemberAvatar } from '../constants/avatars';
 import { usePreferences, useTheme } from '../state/PreferencesContext';
@@ -35,6 +37,7 @@ import {
   LOCATE_ALTITUDE,
   LOCATE_ZOOM,
   initialRegionFor,
+  cameraCenterForTarget,
   latOffsetForVisibleBand,
 } from './mapCameraMath';
 import { logError, logEvent } from '../utils/activityLog';
@@ -123,6 +126,7 @@ function useGroupMapCommitMeter() {
 /** Optional camera framing for centerOn (defaults = locate-me street level). */
 export type CenterOnOptions = {
   zoom?: number;
+  screenY?: number;
   altitude?: number;
   /** Start navigation can snap to a newly selected point without camera travel. */
   animated?: boolean;
@@ -216,6 +220,15 @@ export interface GroupMapProps {
    * account has no memberships so Control Center does not list Hither.
    */
   showsUserLocation?: boolean;
+  homePresentation?: {
+    currentStopId?: string;
+    dayColor: (day: number | null) => string;
+    subgroupColors: ReadonlyMap<string, string>;
+    onStopPress: (destination: Destination) => void;
+    onBlankPress: () => void;
+    arrivalArea?: { coordinates: Coordinates; radius: number; color: string };
+    command?: { coordinates: Coordinates; text: string };
+  };
 }
 
 /**
@@ -399,6 +412,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
   reduceMotion,
   appActive,
   calloutDescription,
+  homeMarker,
 }: {
   dest: Destination;
   bgColor: string;
@@ -409,6 +423,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
   appActive: boolean;
   /** Override Marker description (stay: "Day N · 住宿"). */
   calloutDescription?: string;
+  homeMarker?: { current: boolean; onPress: () => void };
 }) {
   const { t } = useTranslation();
   // Pulse briefly every 5s — never leave tracksViewChanges true continuously.
@@ -422,7 +437,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
     reduceMotion,
   });
 
-  const markerEmoji = destinationMarkerEmoji(dest);
+  const markerEmoji = homeMarker ? (dest.kind === 'accommodation' ? STAY_MARKER_EMOJI : dest.emoji ?? '📍') : destinationMarkerEmoji(dest);
   const description =
     calloutDescription
     ?? (dest.kind === 'accommodation'
@@ -456,8 +471,16 @@ const DestinationMarker = React.memo(function DestinationMarker({
       anchor={{ x: 0.5, y: 0.5 }}
       style={{ zIndex: isActiveTarget ? 3 : 1 }}
       tracksViewChanges={tracksViewChanges}
+      onPress={homeMarker?.onPress}
+      stopPropagation={Boolean(homeMarker)}
     >
-      <RNAnimated.View
+      {homeMarker ? (
+        <View style={[homeMapStyles.markerHolder, homeMarker.current && { backgroundColor: bgColor + '59' }]}>
+          <View style={[homeMapStyles.pin, { backgroundColor: bgColor }, homeMarker.current && homeMapStyles.currentPin]}>
+            <Text style={homeMarker.current ? homeMapStyles.currentEmoji : homeMapStyles.emoji} allowFontScaling={false}>{markerEmoji}</Text>
+          </View>
+        </View>
+      ) : <RNAnimated.View
         style={[
           markerStyle,
           {
@@ -474,7 +497,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
         <Text style={styles.gatherMarkerEmoji} allowFontScaling={false}>
           {markerEmoji}
         </Text>
-      </RNAnimated.View>
+      </RNAnimated.View>}
     </Marker>
     </>
   );
@@ -500,9 +523,17 @@ const PendingPlaceMarker = React.memo(function PendingPlaceMarker({ pendingPlace
   );
 });
 
-const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, appActive, reduceMotion }: any) {
+const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, appActive, reduceMotion, home, subgroupColor }: {
+  member: MemberLocation;
+  accent: string;
+  styles: ReturnType<typeof makeStyles>;
+  appActive: boolean;
+  reduceMotion: boolean;
+  home?: boolean;
+  subgroupColor?: string;
+}) {
   const isLeader = member.role === 'leader';
-  const ringColor = isLeader ? accent : '#FFFFFF';
+  const ringColor = home ? subgroupColor ?? '#FFFFFF' : isLeader ? accent : '#FFFFFF';
   const displayAvatar = displayMemberAvatar(member.avatar, member.userId, member.avatarColor);
   const bgColor = displayAvatar.color ?? memberColor(member.userId);
   const lat = member.coordinates?.latitude;
@@ -530,24 +561,25 @@ const MemberMarker = React.memo(function MemberMarker({ member, accent, styles, 
       coordinate={coordinate}
       title={member.name}
       description={isLeader ? 'Leader' : 'Follower'}
-      anchor={{ x: 0.5, y: 1 }}
+      anchor={{ x: 0.5, y: home ? 0.5 : 1 }}
       tracksViewChanges={tracksViewChanges}
     >
       <View style={styles.pinWrap}>
-        <View style={styles.pinLabel}>
+        {!home ? <View style={styles.pinLabel}>
           <Text style={styles.pinLabelText} numberOfLines={1}>
             {member.name}
           </Text>
-        </View>
+        </View> : null}
         <View
           style={[
             styles.memberPin,
+            home && homeMapStyles.member,
             {
               backgroundColor: bgColor,
               borderColor: ringColor,
               borderWidth: isLeader ? 3 : 2.5,
             },
-            isLeader && styles.memberPinLeader,
+            !home && isLeader && styles.memberPinLeader,
           ]}
         >
           <HitherText typeRole="emoji" style={styles.memberEmoji}>
@@ -699,6 +731,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     onLongPressCoordinate,
     onRequestGoHome,
     showsUserLocation = true,
+    homePresentation,
   },
   ref,
 ) {
@@ -716,6 +749,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
    * gathering effect does not re-animate on top.
    */
   const centeredModeRef = useRef<'fallback' | 'gathering' | 'user' | null>(cameraState?.current.centeredMode ?? null);
+  const cameraIntent = useRef(0);
   // Finite surface remount: user may retry once; no timer auto-remount.
   const [surfaceKey, setSurfaceKey] = useState(0);
   const [remountUsed, setRemountUsed] = useState(false);
@@ -870,13 +904,28 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     ref,
     () => ({
       recenter: () => {
+        cameraIntent.current += 1;
         if (gathering && mapRef.current) {
           mapRef.current.animateToRegion(initialRegionFor(gathering.coordinates, latOffset), 400);
         }
       },
       centerOn: (coordinates, options) => {
+        const intent = ++cameraIntent.current;
         // User-driven framing — suppress subsequent auto first-gathering animate.
         centeredModeRef.current = 'user';
+        if (options?.screenY != null) {
+          const surface = mapRef.current;
+          if (!surface) return;
+          surface.setCamera({ pitch: 0, heading: 0 });
+          const focus = Math.max(0.1, Math.min(0.9, options.screenY));
+          void Promise.all([surface.getCamera(), surface.coordinateForPoint({ x: windowWidth / 2, y: windowHeight * focus })])
+            .then(([camera, projectedPoint]) => {
+              if (intent !== cameraIntent.current || mapRef.current !== surface || !isVisibleUi()) return;
+              surface.animateCamera({ ...camera, center: cameraCenterForTarget(camera.center, coordinates, projectedPoint), pitch: 0, heading: 0 }, { duration: 320 });
+            })
+            .catch(error => logError('map_focus_failed', error));
+          return;
+        }
         // Flat top-down: animateCamera with pitch 0 so we leave any prior
         // oblique view cleanly (animateToRegion alone can leave pitch).
         // Place picks pass wider zoom/altitude; locate keeps street-level defaults.
@@ -897,6 +946,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
       focusOblique: (coordinates, options) => {
+        cameraIntent.current += 1;
         centeredModeRef.current = 'user';
         // Same visible-band lat shift as centerOn so the pin sits in the
         // strip between carousel and sheet while pitched to 30°.
@@ -918,6 +968,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
       fitRoute: (coordinates) => {
+        cameraIntent.current += 1;
         if (coordinates.length > 1) {
           centeredModeRef.current = 'user';
           mapRef.current?.fitToCoordinates(coordinates, {
@@ -932,6 +983,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
       fitToMembers: () => {
+        cameraIntent.current += 1;
         const coords = members.filter((m) => m.coordinates).map((m) => m.coordinates!);
         if (mapRef.current && coords.length > 0) {
           centeredModeRef.current = 'user';
@@ -947,7 +999,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         }
       },
     }),
-    [gathering, members, latOffset, topOverlap, bottomOverlap],
+    [gathering, members, latOffset, topOverlap, bottomOverlap, windowHeight, windowWidth],
   );
 
   const handleMapSubtreeError = useCallback(() => {
@@ -1027,7 +1079,10 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       // as a flock emoji pin — that would lag on cloud upload cadence.
       showsUserLocation={showsUserLocation}
       showsMyLocationButton={false}
-      showsCompass={mapChrome.compassVisible ?? true}
+      showsCompass={!homePresentation && (mapChrome.compassVisible ?? true)}
+      appleLogoInsets={homePresentation ? { top: 0, left: 12, right: 0, bottom: Math.max(24, insets.bottom - 8) + MAP_ISLAND_HEIGHT + 4 } : mapViewProps.appleLogoInsets}
+      mapPadding={homePresentation ? { top: 0, left: 12, bottom: Math.max(128, insets.bottom + 96), right: 0 } : undefined}
+      onPress={homePresentation ? event => { if (event.nativeEvent.action !== 'marker-press') homePresentation.onBlankPress(); } : undefined}
       pitchEnabled
       rotateEnabled
       // iOS MapKit + Android Google Maps share this path. Callers stage the
@@ -1065,6 +1120,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         ));
       }}
     >
+      {homePresentation?.arrivalArea ? <Circle center={homePresentation.arrivalArea.coordinates} radius={homePresentation.arrivalArea.radius}
+        strokeColor="#ffffffc9" strokeWidth={2} lineDashPattern={[5, 4]} fillColor={homePresentation.arrivalArea.color + '38'} /> : null}
       {displayRoute.length > 1 ? (
         <Polyline
           coordinates={displayRoute}
@@ -1093,7 +1150,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             <DestinationMarker
               key={marker.id}
               dest={fakeDest}
-              bgColor={getColorForDay(dayNum, dayColors)}
+              bgColor={homePresentation?.dayColor(dayNum) ?? getColorForDay(dayNum, dayColors)}
+              homeMarker={homePresentation ? { current: false, onPress: () => homePresentation.onStopPress(fakeDest) } : undefined}
               styles={styles}
               isActiveTarget={false}
               isCompleted={false}
@@ -1106,8 +1164,8 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
         const dest = destinationById.get(marker.id);
         if (!dest) return null;
         // Every destination uses its trip-day color; emoji remains per-stop.
-        const bgColor =
-          dest.kind === 'accommodation'
+        const bgColor = homePresentation ? homePresentation.dayColor(dest.day)
+          : dest.kind === 'accommodation'
             ? getColorForDay(dest.day, dayColors)
             : destinationMarkerColor(dest, dayColors);
         const isCompleted = completedDestinationIds instanceof Set
@@ -1123,6 +1181,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             key={dest.id}
             dest={dest}
             bgColor={bgColor}
+            homeMarker={homePresentation ? { current: homePresentation.currentStopId === dest.id, onPress: () => homePresentation.onStopPress(dest) } : undefined}
             styles={styles}
             isActiveTarget={isActiveTarget}
             isCompleted={isCompleted}
@@ -1140,7 +1199,7 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
       {pendingPlace && (
         <PendingPlaceMarker
           pendingPlace={pendingPlace}
-          accent={colors.accent}
+          accent={routeColor ?? colors.accent}
           styles={styles}
         />
       )}
@@ -1156,10 +1215,19 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
             appActive={allowMarkerMotion}
             reduceMotion={reduceMotion}
             accent={colors.accent}
+            home={Boolean(homePresentation)}
+            subgroupColor={m.subgroupId ? homePresentation?.subgroupColors.get(m.subgroupId) : undefined}
             styles={styles}
           />
         );
       })}
+      {homePresentation?.command ? (
+        <Marker coordinate={homePresentation.command.coordinates} anchor={{ x: 0.5, y: 1.6 }} zIndex={8} tappable={false}>
+          <View style={homeMapStyles.bubble}>
+            <Text numberOfLines={1} style={homeMapStyles.bubbleText}>{homePresentation.command.text}</Text>
+          </View>
+        </Marker>
+      ) : null}
     </MapView>
     </View>
     </MapSubtreeBoundary>
@@ -1176,6 +1244,17 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
     {mapContent}
   </>;
 
+});
+
+const homeMapStyles = StyleSheet.create({
+  markerHolder: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
+  pin: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  currentPin: { width: 46, height: 46, borderRadius: 23, borderWidth: 3 },
+  emoji: { fontSize: 15 },
+  currentEmoji: { fontSize: 22 },
+  member: { width: 38, height: 38, borderRadius: 19 },
+  bubble: { borderRadius: 16, backgroundColor: '#fff', paddingVertical: 7, paddingHorizontal: 13, maxWidth: 200 },
+  bubbleText: { color: '#111', fontWeight: '800', fontSize: APP_TEXT_SIZE.caption },
 });
 
 const makeStyles = (colors: Palette) => StyleSheet.create({
@@ -1227,7 +1306,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255,255,255,0.18)',
   },
-  pinLabelText: { fontSize: 11, fontWeight: '600', color: '#fff' },
+  pinLabelText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff' },
   memberPin: {
     width: 40,
     height: 40,
@@ -1242,7 +1321,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
   },
-  memberInitial: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  memberInitial: { color: '#fff', fontWeight: '600', fontSize: APP_TEXT_SIZE.caption },
   // Fixed glyph size — HitherText typeRole="emoji" disables Dynamic Type.
   memberEmoji: { fontSize: 20 },
   mapFallback: {
@@ -1254,7 +1333,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     gap: 12,
   },
   mapFallbackTitle: {
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: '#F5F7FB',
     marginBottom: 8,
@@ -1277,12 +1356,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     opacity: 0.85,
   },
   mapFallbackBtnText: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: '#1A1206',
   },
   mapFallbackBtnTextSecondary: {
-    fontSize: 15,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: '#F5F7FB',
   },

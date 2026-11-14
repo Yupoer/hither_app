@@ -6,81 +6,29 @@ import {
   shouldRecheckOnboardingOnRouteChange,
 } from '../onboarding/gate';
 
-/**
- * Pure onboarding gates are duplicated as local copies of the production
- * formulas so this suite never loads supabase via onboarding/sync → client.
- * Source contracts assert the real module still exports the same names.
- */
-function shouldPresentFullOnboarding(input: {
-  storageCompleted: boolean;
-  replayIntent: boolean;
-  atHomeBoundary: boolean;
-}): boolean {
-  if (!input.storageCompleted) {
-    if (input.replayIntent) return input.atHomeBoundary;
-    return true;
-  }
-  if (input.replayIntent && input.atHomeBoundary) return true;
-  return false;
-}
-
-function isOnboardingCompleteForTourGate(input: {
-  storageCompleted: boolean;
-  replayIntent: boolean;
-}): boolean {
-  if (input.replayIntent) return false;
-  return input.storageCompleted;
-}
+jest.mock('../api/client', () => ({ saveOnboardingProfile: jest.fn() }));
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+);
+import {
+  isOnboardingCompleteForTourGate,
+  markOnboardingReplayForHome,
+  readOnboardingReplayIntent,
+  writeOnboardingReplayIntent,
+} from '../onboarding/sync';
 
 const app = readFileSync(join(__dirname, '../../App.tsx'), 'utf8');
 const map = readFileSync(join(__dirname, '../screens/MapScreen/hooks/useAccountActions.ts'), 'utf8');
 const sync = readFileSync(join(__dirname, '../onboarding/sync.ts'), 'utf8');
 
 describe('onboarding + tour replay gate (#171)', () => {
-  describe('shouldPresentFullOnboarding', () => {
-    it('shows first-launch incomplete always', () => {
-      expect(
-        shouldPresentFullOnboarding({
-          storageCompleted: false,
-          replayIntent: false,
-          atHomeBoundary: true,
-        }),
-      ).toBe(true);
-      expect(
-        shouldPresentFullOnboarding({
-          storageCompleted: false,
-          replayIntent: false,
-          atHomeBoundary: false,
-        }),
-      ).toBe(true);
-    });
-
-    it('after reset only presents at create/join home boundary', () => {
-      expect(
-        shouldPresentFullOnboarding({
-          storageCompleted: false,
-          replayIntent: true,
-          atHomeBoundary: false,
-        }),
-      ).toBe(false);
-      expect(
-        shouldPresentFullOnboarding({
-          storageCompleted: false,
-          replayIntent: true,
-          atHomeBoundary: true,
-        }),
-      ).toBe(true);
-    });
-
-    it('does not present when completed and no replay intent', () => {
-      expect(
-        shouldPresentFullOnboarding({
-          storageCompleted: true,
-          replayIntent: false,
-          atHomeBoundary: true,
-        }),
-      ).toBe(false);
-    });
+  it('stores an explicit replay request until the survey clears it', async () => {
+    await writeOnboardingReplayIntent(false);
+    expect(await readOnboardingReplayIntent()).toBe(false);
+    await markOnboardingReplayForHome();
+    expect(await readOnboardingReplayIntent()).toBe(true);
+    await writeOnboardingReplayIntent(false);
+    expect(await readOnboardingReplayIntent()).toBe(false);
   });
 
   describe('tour vs onboarding owners', () => {
@@ -134,9 +82,9 @@ describe('onboarding + tour replay gate (#171)', () => {
       expect(body).not.toContain('setNeedsOnboarding');
     });
 
-    it('App presents onboarding via shouldPresentFullOnboarding at RoleSelect home', () => {
-      expect(app).toContain('shouldPresentFullOnboarding');
-      expect(app).toContain('readOnboardingReplayIntent');
+    it('App checks explicit replay at the team entry boundary', () => {
+      expect(app).toContain('await readOnboardingReplayIntent()');
+      expect(app).toContain('setNeedsOnboarding(replayIntent)');
       expect(app).toContain('isOnboardingHomeBoundary');
       expect(app).toContain('shouldRecheckOnboardingOnRouteChange');
       expect(app).toContain("reevaluateOnboarding('consume')");
@@ -165,7 +113,6 @@ describe('onboarding + tour replay gate (#171)', () => {
       expect(sync).toContain("ONBOARDING_REPLAY_INTENT_KEY = 'hither.onboarding.replayIntent'");
       expect(sync).toContain('markOnboardingReplayForHome');
       expect(sync).toContain('isOnboardingCompleteForTourGate');
-      expect(sync).toContain('export function shouldPresentFullOnboarding');
     });
   });
 });

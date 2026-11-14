@@ -30,7 +30,7 @@ jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: { a
 jest.mock('../state/foregroundUi', () => ({ useForegroundClock: () => ({ now: Date.now(), lifecycle: null }), useOptionalVisuals: () => true, useForegroundUi: () => mockForeground }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 jest.mock('react-native', () => ({
-  Keyboard: { addListener: (event: string, listener: (value: { endCoordinates: { height: number } }) => void) => {
+  Keyboard: { dismiss() {}, addListener: (event: string, listener: (value: { endCoordinates: { height: number } }) => void) => {
     mockKeyboardListeners.set(event, listener); return { remove: () => mockKeyboardListeners.delete(event) };
   } },
   Animated: { Value: class { stopAnimation() {} }, View: 'AnimatedView', timing: () => ({}),
@@ -48,11 +48,13 @@ jest.mock('../glass', () => ({ accentMix: () => '#abc', glass: {} }));
 jest.mock('../utils/otaUpdates', () => ({ consumeOtaAppliedNotice: () => mockConsume() }));
 jest.mock('../components/OverlaySheet', () => 'OverlaySheet');
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn() }));
-jest.mock('../utils/uiAction', () => ({ runUiAction: jest.fn() }));
+jest.mock('../utils/uiAction', () => ({ runUiAction: async (_id: string, action: Function) => action({ isCurrent: () => true }) }));
 jest.mock('../utils/haptics', () => ({ errorTap: jest.fn(), lightTap: jest.fn(), mediumTap: jest.fn(), selectionTick: jest.fn(), successTap: jest.fn() }));
 jest.mock('../components/WaveLoading', () => 'WaveLoading');
 jest.mock('../components/AuthField', () => 'AuthField');
-jest.mock('../components/AuthModeSelector', () => 'AuthModeSelector');
+jest.mock('../screens/entry/EntryVisuals', () => ({
+  ENTRY_BACKGROUND: '#0F1220', EntryPrimaryButton: 'EntryPrimaryButton', EntryBackdrop: 'EntryBackdrop',
+}));
 jest.mock('../components/CrookIcon', () => 'CrookIcon');
 jest.mock('../components/SafePressable', () => 'SafePressable');
 jest.mock('../components/NativeGlassButton', () => 'NativeGlassButton');
@@ -65,28 +67,30 @@ const LoginScreen = require('../screens/LoginScreen').default;
 const PasswordRecoveryScreen = require('../screens/PasswordRecoveryScreen').default;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-it('keeps login drafts while changing modes and navigates pending verification on full User identity', async () => {
+it('keeps the Email draft and closes signup once when the callback establishes an identity', async () => {
   let tree!: ReactTestRenderer;
-  const navigation = { replace: mockReplace };
+  const navigation = { replace: mockReplace, canGoBack: () => false };
   const app = () => React.createElement(LoginScreen, { navigation });
   await act(async () => { tree = create(app()); });
+  async function press(testID: string) {
+    await act(async () => { tree.root.findByProps({ testID }).props.onPress(); });
+  }
+  await press('login-use-email');
   await act(async () => { tree.root.findByProps({ testID: 'login-email' }).props.onChangeText('a@example.test'); });
-  await act(async () => { tree.root.findByProps({ mode: 'signin' }).props.onChange('signup'); });
+  await press('login-email-next');
+  await press('login-step-back');
   expect(tree.root.findByProps({ testID: 'login-email' }).props.value).toBe('a@example.test');
-  await act(async () => {
-    tree.root.findByProps({ testID: 'login-password' }).props.onChangeText('secret123');
-    tree.root.findByProps({ testID: 'login-confirm-password' }).props.onChangeText('secret123');
-  });
-  await act(async () => { await tree.root.findByProps({ testID: 'login-submit' }).props.onPressAction({ isCurrent: () => true }); });
+  await press('login-email-next');
+  await press('login-create-account');
+  await act(async () => { tree.root.findByProps({ testID: 'login-password' }).props.onChangeText('secret123'); });
+  await press('login-submit');
   expect(mockReplace).not.toHaveBeenCalled();
   mockSession.user = { id: 'a' };
   await act(async () => { tree.update(app()); });
-  expect(mockReplace).toHaveBeenCalledTimes(1);
-  await act(async () => { tree.update(app()); });
-  expect(mockReplace).toHaveBeenCalledTimes(1);
+  expect(mockReplace).toHaveBeenCalledWith('RoleSelect');
   mockSession.user = { id: 'a' };
   await act(async () => { tree.update(app()); });
-  expect(mockReplace).toHaveBeenCalledTimes(2);
+  expect(mockReplace).toHaveBeenCalledTimes(1);
   await act(async () => { tree.unmount(); });
 });
 

@@ -1,23 +1,25 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import { useMountEffect } from '../hooks/useMountEffect';
 import WaveLoading from './WaveLoading';
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator,
+import {
+  ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
+import Pressable from './MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import OverlaySheet from './OverlaySheet';
+import { AppleContinueButton, AuthProviderButton } from './AuthProviderButtons';
 import { useSession } from '../state/SessionContext';
 import { glass, accentMix } from '../glass';
 import { useTranslation, type TranslationKey } from '../i18n';
@@ -36,12 +38,14 @@ export function AccountSheetContent({
   accent,
   onAccountDeleted,
   contentTopPadding = 12,
+  home = false,
 }: {
   visible: boolean;
   onClose: () => void;
   accent: string;
   onAccountDeleted?: () => void;
   contentTopPadding?: number;
+  home?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const {
@@ -88,6 +92,7 @@ export function AccountSheetContent({
     return t('account.premiumRemainingDays', { days });
   })();
   
+  const [homeEmailOpen, setHomeEmailOpen] = useState(false);
   const [upgradeEmail, setUpgradeEmail] = useState('');
   const [upgradePassword, setUpgradePassword] = useState('');
   const [accountPasswordConfirm, setAccountPasswordConfirm] = useState('');
@@ -206,6 +211,42 @@ export function AccountSheetContent({
           }
         },
       },
+    );
+  }
+
+  if (home) {
+    const homeLabel = (zh: string, en: string) => language === 'zh' ? zh : en;
+    return (
+      <View style={homeAccountStyles.body}>
+        <Text style={homeAccountStyles.title}>{homeLabel('保存你的隊伍', 'Keep your teams')}</Text>
+        <Text style={homeAccountStyles.subtitle}>{homeLabel('換手機也找得回隊伍和金幣。', 'Keep your teams and coins when you change phones.')}</Text>
+        {appleAvailable ? (
+          <AppleContinueButton testID="account-link-apple" disabled={upgradeBusy} onPress={() => { void handleLink('apple'); }} />
+        ) : null}
+        <AuthProviderButton provider="google" testID="account-link-google" disabled={upgradeBusy}
+          label={t('entry.continueGoogle')} onPress={() => { void handleLink('google'); }} />
+        <AuthProviderButton provider="email" testID="account-open-email" disabled={upgradeBusy} expanded={homeEmailOpen}
+          label={t('entry.continueEmail')} onPress={() => setHomeEmailOpen(previous => !previous)} />
+        {homeEmailOpen ? (
+          <>
+            <TextInput style={[styles.accountInput, homeAccountStyles.input]} testID="account-email"
+              value={upgradeEmail} onChangeText={setUpgradeEmail} placeholder="you@example.com"
+              placeholderTextColor={glass.textTertiary} keyboardAppearance="dark"
+              autoCapitalize="none" autoCorrect={false} keyboardType="email-address"
+              accessibilityLabel={t('account.email')} />
+            <TextInput style={[styles.accountInput, homeAccountStyles.input]} testID="account-password"
+              value={upgradePassword} onChangeText={setUpgradePassword} placeholder={t('account.password')}
+              placeholderTextColor={glass.textTertiary} keyboardAppearance="dark"
+              autoCapitalize="none" secureTextEntry accessibilityLabel={t('account.password')} />
+            <Pressable style={homeAccountStyles.button} testID="account-upgrade"
+              onPress={() => { void handleUpgrade(); }} accessibilityRole="button"
+              disabled={!/\S+@\S+\.\S+/.test(upgradeEmail.trim()) || upgradePassword.length < 6 || upgradeBusy}>
+              <Text style={homeAccountStyles.lightText}>{t('account.submit')}</Text>
+            </Pressable>
+          </>
+        ) : null}
+        {upgradeBusy ? <ActivityIndicator color={accent} accessibilityRole="progressbar" /> : null}
+      </View>
     );
   }
 
@@ -574,7 +615,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.58)',
   },
   sectionLabel: {
-    fontSize: 14,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
     color: glass.textSecondary,
     marginBottom: 8,
@@ -593,11 +634,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   rowLabel: {
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     color: '#fff',
   },
   rowValue: {
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     color: glass.textSecondary,
     fontWeight: '500',
     flexShrink: 1,
@@ -609,10 +650,10 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   promoHint: {
-    fontSize: 14,
+    fontSize: APP_TEXT_SIZE.caption,
     color: glass.textSecondary,
     marginBottom: 16,
-    lineHeight: 20,
+    lineHeight: APP_TEXT_LINE_HEIGHT.caption,
   },
   inputRow: {
     flexDirection: 'row',
@@ -625,7 +666,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     color: '#fff',
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     borderWidth: 1,
     borderColor: glass.hairlineStrong,
   },
@@ -635,7 +676,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     color: '#fff',
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     borderWidth: 1,
     borderColor: glass.hairlineStrong,
     marginBottom: 10,
@@ -643,7 +684,7 @@ const styles = StyleSheet.create({
   accountPasswordInput: { marginBottom: 14 },
   passwordError: {
     color: '#ff8f8f',
-    fontSize: 13,
+    fontSize: APP_TEXT_SIZE.caption,
     marginBottom: 10,
   },
   upgradeButton: {
@@ -672,7 +713,7 @@ const styles = StyleSheet.create({
   },
   socialText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
   },
   deleteButton: {
@@ -687,7 +728,7 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: '#ff6b6b',
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '700',
   },
   redeemButton: {
@@ -699,7 +740,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   redeemText: {
-    fontSize: 16,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '600',
   },
+});
+
+
+const homeAccountStyles = StyleSheet.create({
+  body: { gap: 10, paddingTop: 8 },
+  title: { color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', paddingHorizontal: 4 },
+  subtitle: { color: 'rgba(255,255,255,0.68)', fontSize: APP_TEXT_SIZE.caption, paddingHorizontal: 4, marginBottom: 10 },
+  button: { minHeight: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.12)' },
+  lightText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  input: { marginTop: 0 },
 });

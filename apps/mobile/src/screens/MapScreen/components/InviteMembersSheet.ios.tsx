@@ -15,6 +15,8 @@ export default function InviteMembersSheet({
       visible={visible}
       onClose={onClose}
       title={title}
+      titleFontSize={25}
+      darkMaterial
       doneLabel={doneLabel}
       initialStage={0}
       stageTwoRatio={0.8}

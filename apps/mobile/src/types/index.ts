@@ -263,6 +263,7 @@ export interface Subgroup {
   /** Sub-leader (only for mode 'led'). */
   leaderId?: string;
   parentId?: string;
+  createdAt?: string;
 }
 
 /** Lifecycle of a subgroup invite. */

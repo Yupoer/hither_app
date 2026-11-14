@@ -1,7 +1,9 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import React from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
-import { PixelRatio, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { PixelRatio, Platform, StyleSheet, View } from 'react-native';
+import Pressable from '../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -378,7 +380,7 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     bottom: 14,
-    fontSize: 17,
+    fontSize: APP_TEXT_SIZE.body,
     fontWeight: '600',
     textAlign: 'center',
   },

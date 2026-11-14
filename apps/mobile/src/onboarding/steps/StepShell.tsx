@@ -1,14 +1,15 @@
+import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../../theme/typeScale';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import React, { useState } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
 import {
   AccessibilityInfo,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
   type LayoutChangeEvent,
 } from 'react-native';
+import Pressable from '../../components/MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -197,18 +198,18 @@ const styles = StyleSheet.create({
   track: { flex: 1, height: 10, borderRadius: 5, overflow: 'hidden' },
   fillBar: { height: '100%', borderRadius: 5, overflow: 'hidden' },
   fillGrad: { flex: 1, borderRadius: 5 },
-  skip: { fontSize: 14, fontWeight: '600' },
+  skip: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   heading: { marginTop: 18, marginBottom: 18 },
   kicker: {
-    fontSize: 12.5,
+    fontSize: APP_TEXT_SIZE.caption,
     fontWeight: '800',
     letterSpacing: 1.4,
     textTransform: 'uppercase',
     marginBottom: 6,
   },
   // Display-size for onboarding titles; Dynamic Type via typeRole=display.
-  title: { fontSize: 27, fontWeight: '800', lineHeight: 34 },
-  subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6 },
+  title: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', lineHeight: APP_TEXT_LINE_HEIGHT.heading },
+  subtitle: { fontSize: APP_TEXT_SIZE.caption, lineHeight: APP_TEXT_LINE_HEIGHT.caption, marginTop: 6 },
   body: { flex: 1 },
   bodyContent: { flexGrow: 1, paddingBottom: 8 },
   footer: { paddingTop: 12 },

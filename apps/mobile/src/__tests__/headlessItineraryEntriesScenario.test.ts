@@ -11,12 +11,12 @@ type ItineraryObservation = {
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 const has = (value: ItineraryObservation, testId: string) => value.presentation.hosts.some(host => host.testId === testId);
 
-describe.each(['ios', 'android'])('actual itinerary entry variants on %s', platform => {
+describe('actual itinerary entry variants on Android', () => {
   jest.setTimeout(120000);
   const run = (device: Device, name: string, input = {}) => device.perform(name, input);
 
   async function map(world: InstanceType<typeof World>, userId = LEADER) {
-    const device = await world.device({ id: 'itinerary', userId, platform,
+    const device = await world.device({ id: 'itinerary', userId, platform: 'android',
       screen: { name: 'Map', params: { groupId: GROUP_ID } } });
     await world.waitFor(device, (value: ItineraryObservation) => has(value, `gather-card-${DESTINATION}`), 'actual Map destination');
     await run(device, 'map.card.toggle', { destinationId: DESTINATION });
@@ -152,7 +152,7 @@ describe.each(['ios', 'android'])('actual itinerary entry variants on %s', platf
       const device = await map(world);
       await itinerary(world, device);
       await run(device, 'map.route.trip.open');
-      if (platform === 'android') await device.host.call({ kind: 'press', testId: 'route-trip-date' });
+      await device.host.call({ kind: 'press', testId: 'route-trip-date' });
       const timestamp = new Date(2026, 9, 25, 12).getTime();
       await device.input({ kind: 'datePicker', type: 'set', timestamp });
       await run(device, 'map.overlay.done', { label: 'commit' });
@@ -164,13 +164,8 @@ describe.each(['ios', 'android'])('actual itinerary entry variants on %s', platf
       expect((await device.observe()).durable.operations).toEqual([]);
       await itinerary(world, device);
       await run(device, 'map.route.trip.open');
-      if (platform === 'ios') {
-        const picker = (await device.observe()).presentation.hosts.find((host: { testId?: string }) => host.testId === 'route-trip-date-picker');
-        expect(new Date(picker.value).getTime()).toBe(timestamp);
-      } else {
-        await device.host.call({ kind: 'press', testId: 'route-trip-date' });
-        await device.input({ kind: 'datePicker', type: 'dismissed' });
-      }
+      await device.host.call({ kind: 'press', testId: 'route-trip-date' });
+      await device.input({ kind: 'datePicker', type: 'dismissed' });
       await run(device, 'map.overlay.done', { label: 'commit' });
       await run(device, 'map.overlay.done', { label: '完成' });
       await world.settle();

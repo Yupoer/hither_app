@@ -1,3 +1,4 @@
+import { APP_TEXT_SIZE } from '../../theme/typeScale';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import React, { useState } from 'react';
 import { useOptionalVisuals } from '../../state/foregroundUi';
@@ -178,8 +179,8 @@ const styles = StyleSheet.create({
   confettiLayer: { ...StyleSheet.absoluteFill },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
   hero: { width: 180, height: 180 },
-  title: { fontSize: 28, fontWeight: '800', textAlign: 'center' },
-  subtitle: { fontSize: 16, lineHeight: 24, textAlign: 'center', paddingHorizontal: 8 },
+  title: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', textAlign: 'center' },
+  subtitle: { fontSize: APP_TEXT_SIZE.caption, lineHeight: 24, textAlign: 'center', paddingHorizontal: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 8 },
   chip: {
     flexDirection: 'row',
@@ -190,7 +191,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   chipIcon: { width: 30, height: 30 },
-  chipText: { fontSize: 13.5, fontWeight: '600' },
+  chipText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   footer: { paddingTop: 8 },
 });
 

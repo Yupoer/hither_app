@@ -1,4 +1,5 @@
 import CoreLocation
+import CoreMotion
 import ExpoModulesCore
 import UIKit
 
@@ -7,6 +8,36 @@ public class HitherLocationModule: Module {
   private var updates: Task<Void, Never>?
   private var backgroundSession: AnyObject?
   private var generation = 0
+  #if os(iOS)
+  private var activityManager: CMMotionActivityManager?
+
+  private func observeMotionActivity() {
+    guard CMMotionActivityManager.isActivityAvailable() else { return }
+    let authorization = CMMotionActivityManager.authorizationStatus()
+    guard authorization == .authorized || authorization == .notDetermined else { return }
+    let manager = CMMotionActivityManager()
+    activityManager = manager
+    manager.startActivityUpdates(to: .main) { [weak self, weak manager] activity in
+      guard let self, let manager, self.activityManager === manager else { return }
+      var modes: [String] = []
+      if let activity, activity.confidence != .low, !activity.unknown {
+        if activity.automotive { modes.append("drive") }
+        if activity.cycling { modes.append("bicycle") }
+        if activity.walking || activity.running { modes.append("walk") }
+      }
+      if modes.count == 1, let mode = modes.first {
+        self.sendEvent("onMotionActivity", ["mode": mode])
+      } else {
+        self.sendEvent("onMotionActivity", [:])
+      }
+    }
+  }
+
+  private func stopObservingMotionActivity() {
+    activityManager?.stopActivityUpdates()
+    activityManager = nil
+  }
+  #endif
 
   private func stopUpdates() {
     generation += 1
@@ -31,7 +62,23 @@ public class HitherLocationModule: Module {
     }.runOnQueue(.main)
     Events("onBackgroundLocation", "onBackgroundLocationError")
 
-    OnDestroy { self.releaseSession() }
+    #if os(iOS)
+    Events("onMotionActivity")
+    Function("supportsMotionActivityReporting") { CMMotionActivityManager.isActivityAvailable() }
+    OnStartObserving("onMotionActivity") {
+      DispatchQueue.main.async { self.observeMotionActivity() }
+    }
+    OnStopObserving("onMotionActivity") {
+      DispatchQueue.main.async { self.stopObservingMotionActivity() }
+    }
+    #endif
+
+    OnDestroy {
+      self.releaseSession()
+      #if os(iOS)
+      DispatchQueue.main.async { self.stopObservingMotionActivity() }
+      #endif
+    }
 
     Function("supportsOrdinaryBackgroundLiveUpdates") { () -> Bool in
       if #available(iOS 18.0, *) { return true }

@@ -1,461 +1,297 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator,
-  Alert,
+import { APP_TEXT_SIZE } from '../theme/typeScale';
+import React, { useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
-  Keyboard,
-  TouchableWithoutFeedback,
+  useWindowDimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { AppText as Text, AppTextInput as TextInput } from '../components/AppText';
+import Pressable from '../components/MotionPressable';
+import { CommonActions } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { ReduceMotion, SlideInDown } from 'react-native-reanimated';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { createGroup, joinGroup } from '../api/client';
+import { createGroup, getCachedMyJoinedGroups, joinGroup, updateGroupAvatar } from '../api/services/GroupService';
 import { useSession } from '../state/SessionContext';
-import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
-import { accentMix, glass } from '../glass';
-import { logEvent, logError } from '../utils/activityLog';
-import { runUiAction, type UiActionToken } from '../utils/uiAction';
-import SafePressable from '../components/SafePressable';
-import NativeGlassButton from '../components/NativeGlassButton';
-import { mediumTap } from '../utils/haptics';
+import { logEvent } from '../utils/activityLog';
+import { runUiAction } from '../utils/uiAction';
+import { errorTap, mediumTap, selectionTick } from '../utils/haptics';
 import { classifyAnonymousAccessError } from '../anonymousAccess';
 import { getOperationErrorMessage } from '../utils/operationError';
-import { AVATAR_COLORS, AVATAR_EMOJI } from '../constants/avatars';
+import { AVATAR_COLORS, HOME_AVATAR_COLORS, avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../constants/avatars';
+import type { Group } from '../types';
+import { useMountEffect } from '../hooks/useMountEffect';
+import SheetHeaderAction from '../components/SheetHeaderAction';
+import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from '../components/mapSheetChrome';
+import { ENTRY_ACCENT, EntryAvatar, EntryPrimaryButton } from './entry/EntryVisuals';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
-const CODE_LEN = 6;
-const DISPLAY_FONT = 'Fredoka_600SemiBold';
+const teamAvatars = [
+  ['🦊', HOME_AVATAR_COLORS[1]], ['🐑', HOME_AVATAR_COLORS[0]], ['🐺', AVATAR_COLORS[9]],
+  ['🐰', HOME_AVATAR_COLORS[7]], ['🐻', HOME_AVATAR_COLORS[1]], ['🐼', HOME_AVATAR_COLORS[3]],
+  ['🐸', HOME_AVATAR_COLORS[4]], ['🐥', HOME_AVATAR_COLORS[2]], ['🦁', HOME_AVATAR_COLORS[2]],
+  ['🐯', HOME_AVATAR_COLORS[1]], ['🐨', HOME_AVATAR_COLORS[6]], ['🐢', HOME_AVATAR_COLORS[3]],
+  ['🐙', HOME_AVATAR_COLORS[0]], ['🦄', HOME_AVATAR_COLORS[6]], ['🐳', HOME_AVATAR_COLORS[5]],
+  ['🦉', HOME_AVATAR_COLORS[1]], ['🐹', HOME_AVATAR_COLORS[2]], ['🐮', AVATAR_COLORS[9]],
+  ['🐷', HOME_AVATAR_COLORS[7]],
+] as const;
 
-/**
- * Nickname (+ group code for followers) entry. From here the leader creates a
- * group and the follower joins one by code, then both drop straight onto the
- * map — the old separate "Group lobby" screen is gone (design: no lobby).
- *
- * Anonymous Supabase sign-in happens lazily on the first submit; a restored
- * session skips it and just reuses / renames the existing anon user.
- */
 export default function AuthScreen({ navigation, route }: Props) {
-  const role = route.params?.role ?? 'leader';
-  const isLeader = role === 'leader';
   const { signIn, user, updateNickname, setMembership, refreshProfile } = useSession();
-  const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
   const { t, language } = useTranslation();
-  const accent = colors.accent;
-  const styles = useMemo(() => makeStyles(accent), [accent]);
-
-  const [name, setName] = useState(user?.name ?? '');
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const request = route.params;
+  const isLeader = request.role === 'leader';
+  const name = user?.name?.trim() || t('entry.guestName');
+  const [nickname, setNickname] = useState<string>();
   const [groupName, setGroupName] = useState('');
-  const [groupAvatar, setGroupAvatar] = useState<string>(AVATAR_EMOJI[0]);
-  const [groupAvatarColor, setGroupAvatarColor] = useState<string>(AVATAR_COLORS[0]);
-  const [code, setCode] = useState('');
-  const [codeError, setCodeError] = useState(false);
+  const [avatarIndex, setAvatarIndex] = useState(0);
+  const createdTeam = useRef<Group | null>(null);
+  const [nameLocked, setNameLocked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const codeRef = useRef<TextInput>(null);
-  const groupNameRef = useRef<TextInput>(null);
+  const mounted = useRef(true);
+  const [emoji, color] = teamAvatars[avatarIndex];
+  const myAvatar = user
+    ? displayMemberAvatar(user.avatar, user.id, user.avatarColor)
+    : { emoji: '🦊', color: AVATAR_COLORS[1] };
+  const cachedTeam = request.role === 'follower'
+    ? getCachedMyJoinedGroups(user?.id)?.find(info => info.group.inviteCode === request.code)
+    : undefined;
+  const displayedNickname = nickname ?? name;
+  const canSubmit = !busy && (isLeader ? Boolean(groupName.trim()) : Boolean(displayedNickname.trim()));
+  const close = () => {
+    if (busy) return;
+    Keyboard.dismiss();
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.replace('RoleSelect');
+  };
 
-  const codeReady = isLeader ? groupName.trim().length >= 1 : code.length === CODE_LEN;
-  const canSubmit = name.trim().length >= 1 && codeReady && !busy;
+  useMountEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  });
 
-  // The group's name is asked separately from the nickname: unlike a
-  // nickname (editable later), the group name is set once at creation, so
-  // defaulting it to the nickname would permanently weld the two.
-  function handleAuthError(e: unknown) {
-    logError(isLeader ? 'group_create_failed' : 'group_join_failed', e);
-    // Design: a rejected code highlights the code boxes.
-    if (!isLeader) setCodeError(true);
-    const raw = e instanceof Error ? e.message : '';
-    const code =
-      e && typeof e === 'object' && 'code' in e
-        ? String((e as { code?: string }).code ?? '')
-        : '';
-    if (code === 'member_limit' || raw === 'member_limit') {
-      Alert.alert(
-        t('group.joinFailedTitle'),
-        t('paywall.memberCap', { n: 5 }),
-      );
-      return;
+  function handleJoinRejection() {
+    if (request.role !== 'follower') return;
+    const state = navigation.getState();
+    const previous = state.routes[state.index - 1];
+    if (previous && (previous.name === 'RoleSelect' || previous.name === 'MyTeams')) {
+      navigation.dispatch({
+        ...CommonActions.setParams({ rejectedInviteKey: route.key }),
+        source: previous.key,
+        target: state.key,
+      });
+      navigation.goBack();
+    } else {
+      setError(t('group.invalidInviteCode'));
     }
-    const kind = classifyAnonymousAccessError(raw);
-    if (kind === 'registration_required') {
-      Alert.alert(
-        t('anon.registrationRequiredTitle'),
-        t('paywall.memberCapAfterRegister'),
-      );
-      return;
-    }
-    if (kind === 'expired') {
-      Alert.alert(
-        isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
-        t('anon.expired'),
-      );
-      return;
-    }
-    if (code === 'invalid_invite_code') {
-      Alert.alert(t('group.joinFailedTitle'), t('group.invalidInviteCode'));
-      return;
-    }
-    const msg = getOperationErrorMessage(e, language);
-    Alert.alert(
-      isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
-      msg,
-    );
   }
 
-  /** Body for SafePressable — runner supplies token + busy/timeout contract. */
-  async function submitAuth(token: UiActionToken) {
-    if (!canSubmit && !busy) return;
-    const nickname = name.trim();
-    try {
-      // Ensure we have an anonymous user, then keep the nickname current.
-      if (!user) {
-        await signIn({ name: nickname });
-        if (!token.isCurrent()) return;
-      } else if (nickname !== user.name) {
-        await updateNickname(nickname);
-        if (!token.isCurrent()) return;
+  function submitAuth() {
+    if (!canSubmit) return;
+    const actionId = isLeader ? 'auth.create_group' : 'auth.join_group';
+    Keyboard.dismiss();
+    setError(null);
+    void runUiAction(actionId, async (token) => {
+      const current = () => mounted.current && token.isCurrent();
+      const nextName = isLeader ? name : displayedNickname.trim();
+      try {
+        if (!user) {
+          await signIn({ name: nextName });
+        } else if (nextName !== user.name) {
+          await updateNickname(nextName);
+        }
+        if (!current()) return;
+        mediumTap();
+        let group: Group;
+        if (request.role === 'leader') {
+          const created = createdTeam.current ?? await createGroup(groupName.trim());
+          createdTeam.current = created;
+          if (!current()) return;
+          setNameLocked(true);
+          group = await updateGroupAvatar(created.id, emoji, color);
+        } else {
+          group = await joinGroup(request.code);
+        }
+        if (!current()) return;
+        void refreshProfile().catch(() => undefined);
+        logEvent(isLeader ? 'group_create' : 'group_join');
+        setMembership({ group, role: cachedTeam?.role ?? request.role });
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Map', params: { groupId: group.id, ...(isLeader ? { showTeamInvite: true } : {}) } }],
+        });
+      } catch (cause) {
+        if (current()) {
+          errorTap();
+          if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'invalid_invite_code') {
+            handleJoinRejection();
+            return;
+          }
+          const message = cause instanceof Error ? cause.message : '';
+          const access = classifyAnonymousAccessError(message);
+          if (message === 'member_limit') setError(t('paywall.memberCap', { n: 5 }));
+          else if (access === 'registration_required') setError(t('paywall.memberCapAfterRegister'));
+          else if (access === 'expired') setError(t('anon.expired'));
+          else setError(getOperationErrorMessage(cause, language));
+        }
+        throw cause;
       }
-      mediumTap();
-      const group = isLeader
-        ? await createGroup(groupName.trim(), groupAvatar, groupAvatarColor)
-        : await joinGroup(code.trim());
-      // Late results must not update membership or navigation.
-      if (!token.isCurrent()) return;
-      // Server stamps anonymous_expires_at on first membership — re-hydrate so
-      // AccountSheet can show the concrete expiry date (user story 2).
-      await refreshProfile().catch(() => undefined);
-      if (!token.isCurrent()) return;
-      logEvent(isLeader ? 'group_create' : 'group_join');
-      setMembership({ group, role });
-      navigation.replace('Map', { groupId: group.id });
-    } catch (e) {
-      // Local Alert for auth UX; rethrow so runUiAction records ui_action_error.
-      if (token.isCurrent()) handleAuthError(e);
-      throw e;
-    }
+    }, {
+      screen: 'Auth',
+      onBusyChange: next => { if (mounted.current) setBusy(next); },
+      suppressBanner: true,
+      onError: kind => {
+        if (kind === 'timeout' && mounted.current) setError(t('interaction.timeout'));
+      },
+    });
   }
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.fill}>
-        <View
-          style={[
-            styles.content,
-            { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
-          ]}
-        >
-            {/* Only render Back when there is somewhere to go — after an
-                end-group/sign-out reset this screen can be the stack root, and an
-                unconditional goBack() throws "GO_BACK was not handled". */}
-            <View style={styles.topChrome}>
-              {navigation.canGoBack() ? (
-                <NativeGlassButton
-                  testID="auth-back"
-                  onPress={() => navigation.goBack()}
-                  accessibilityLabel={t('common.back')}
-                  systemImage="chevron.left"
-                  shape="capsule"
-                  variant="glass"
-                  width={45}
-                  height={45}
-                  imageSize={19.2}
-                />
-              ) : (
-                <View style={styles.backSpacer} />
-              )}
+    <KeyboardAvoidingView
+      style={styles.overlay}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      accessibilityViewIsModal
+    >
+      <View style={styles.scrim} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={close} disabled={busy} accessible={false} />
+      <Animated.View entering={SlideInDown.duration(260).reduceMotion(ReduceMotion.System)}
+        testID="auth-sheet" style={[styles.sheet, {
+          marginBottom: Math.max(12, insets.bottom - 6), maxHeight: height - insets.top - insets.bottom - 18,
+        }]}>
+        <View style={styles.header}>
+          <Text accessibilityRole="header" style={styles.title}>{isLeader ? t('entry.createTeam') : t('entry.joinTeam')}</Text>
+          <SheetHeaderAction action="close" accessibilityLabel={t('common.close')} onPress={close} disabled={busy} testID="auth-close" />
+        </View>
+      <ScrollView
+        style={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {isLeader ? (
+          <>
+            <View style={styles.preview}>
+              <EntryAvatar size={60} emoji={emoji} color={color} />
+              <View style={styles.teamDetails}>
+                <Text style={styles.teamTitle}>{language === 'zh' ? '隊伍圖示' : 'Team icon'}</Text>
+                <Text style={styles.previewHint}>{language === 'zh' ? '左右滑動，點選一個圖示。' : 'Swipe to browse, then tap an icon.'}</Text>
+              </View>
             </View>
-
-            <Text style={styles.title}>
-              {isLeader ? t('auth.leaderTitle') : t('auth.followerTitle')}
-            </Text>
-            <Text style={styles.label}>{t('auth.nameLabel')}</Text>
-            <View style={styles.field}>
+            <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carousel}>
+              {teamAvatars.map(([itemEmoji, itemColor], index) => (
+                <Pressable
+                  key={itemEmoji}
+                  onPress={() => { selectionTick(); setAvatarIndex(index); }}
+                  accessibilityRole="button"
+                  accessibilityLabel={itemEmoji}
+                  accessibilityState={{ selected: avatarIndex === index }}
+                  style={[styles.avatarChoice, avatarIndex === index && { borderColor: ENTRY_ACCENT }]}
+                >
+                  <EntryAvatar size={42} emoji={itemEmoji} color={itemColor} />
+                </Pressable>
+              ))}
+            </ScrollView>
+            <TextInput
+              accessibilityLabel={t('entry.teamName')}
+              style={[styles.field, styles.teamName]}
+              value={groupName}
+              onChangeText={setGroupName}
+              editable={!busy && !nameLocked}
+              testID="auth-group-name"
+              keyboardAppearance="dark"
+              placeholder={t('entry.teamName')}
+              placeholderTextColor="rgba(255,255,255,0.46)"
+              returnKeyType="done"
+              onSubmitEditing={submitAuth}
+            />
+          </>
+        ) : (
+          <>
+            <View style={styles.teamCard}>
+              {cachedTeam ? (
+                <EntryAvatar size={52} emoji={cachedTeam.group.avatar ?? avatarForGroup(cachedTeam.group.id)} color={cachedTeam.group.avatarColor ?? avatarColorForGroup(cachedTeam.group.id)} />
+              ) : null}
+              <View style={styles.teamDetails}>
+                <Text accessibilityRole="header" style={styles.teamTitle}>{cachedTeam?.group.name ?? t('entry.joinTeam')}</Text>
+                {cachedTeam ? (
+                  <View style={styles.teamMembers}>
+                    {cachedTeam.memberProfiles.slice(0, 9).map((member, index) => {
+                      const avatar = displayMemberAvatar(member.avatar, member.userId ?? `${cachedTeam.group.id}:${index}`, member.avatarColor);
+                      return <EntryAvatar key={member.userId ?? index} emoji={avatar.emoji} color={avatar.color} circle size={22} />;
+                    })}
+                  </View>
+                ) : <Text style={styles.code}>{request.code.slice(0, 3)}-{request.code.slice(3)}</Text>}
+              </View>
+            </View>
+            <View style={styles.nicknameRow}>
+              <EntryAvatar emoji={myAvatar.emoji} color={myAvatar.color} size={50} circle />
               <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder={t('auth.namePlaceholder')}
-                placeholderTextColor="rgba(235,235,245,0.4)"
-                keyboardAppearance="dark"
-                autoCapitalize="none"
-                autoFocus
-                returnKeyType="next"
-                onSubmitEditing={() =>
-                  isLeader ? groupNameRef.current?.focus() : codeRef.current?.focus()
-                }
                 accessibilityLabel={t('auth.nameLabel')}
+                style={[styles.field, styles.nickname]}
+                value={displayedNickname}
+                onChangeText={setNickname}
+                editable={!busy}
                 testID="auth-name"
+                keyboardAppearance="dark"
+                autoCapitalize="words"
+                returnKeyType="done"
+                onSubmitEditing={submitAuth}
               />
             </View>
-
-            {isLeader && (
-              <>
-                <Text style={styles.label}>{t('group.nameLabel')}</Text>
-                <View style={styles.field}>
-                  <TextInput
-                    ref={groupNameRef}
-                    style={styles.input}
-                    value={groupName}
-                    onChangeText={setGroupName}
-                    placeholder={t('group.namePlaceholder')}
-                    placeholderTextColor="rgba(235,235,245,0.4)"
-                    keyboardAppearance="dark"
-                    autoCapitalize="none"
-                    returnKeyType="go"
-                    onSubmitEditing={() => {
-                      if (!canSubmit) return;
-                      void runUiAction(
-                        isLeader ? 'auth.create_group' : 'auth.join_group',
-                        submitAuth,
-                        {
-                          screen: 'Auth',
-                          suppressBanner: true,
-                          onBusyChange: setBusy,
-                          onError: (kind) => {
-                            if (kind === 'timeout') {
-                              Alert.alert(t('group.createFailedTitle'), t('interaction.timeout'));
-                            }
-                          },
-                        },
-                      );
-                    }}
-                    accessibilityLabel={t('group.nameLabel')}
-                    testID="auth-group-name"
-                  />
-                </View>
-                <Text style={styles.label}>{t('settings.groupAvatar')}</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.avatarChoices}
-                  accessibilityLabel={t('settings.groupAvatar')}
-                >
-                  {AVATAR_EMOJI.map((emoji) => (
-                    <Pressable
-                      key={emoji}
-                      onPress={() => setGroupAvatar(emoji)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: groupAvatar === emoji }}
-                      style={[
-                        styles.avatarChoice,
-                        { backgroundColor: groupAvatarColor },
-                        groupAvatar === emoji && styles.avatarChoiceSelected,
-                      ]}
-                    >
-                      <Text style={styles.avatarChoiceText}>{emoji}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-                <View style={styles.avatarColorChoices}>
-                  {AVATAR_COLORS.map((color) => (
-                    <Pressable
-                      key={color}
-                      onPress={() => setGroupAvatarColor(color)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: groupAvatarColor === color }}
-                      style={[
-                        styles.avatarColorChoice,
-                        { backgroundColor: color },
-                        groupAvatarColor === color && styles.avatarColorChoiceSelected,
-                      ]}
-                    />
-                  ))}
-                </View>
-              </>
-            )}
-
-            {!isLeader && (
-              <>
-                <Text style={styles.label}>{t('group.codeLabel')}</Text>
-                <Pressable
-                  style={styles.codeBoxes}
-                  onPress={() => codeRef.current?.focus()}
-                  accessibilityLabel={t('group.codeLabel')}
-                >
-                  {Array.from({ length: CODE_LEN }, (_, i) => (
-                    <React.Fragment key={i}>
-                      {i === CODE_LEN / 2 && <Text style={styles.codeDash}>-</Text>}
-                      <View
-                        style={[
-                          styles.codeCell,
-                          i === code.length && styles.codeCellActive,
-                          codeError && styles.codeCellError,
-                        ]}
-                      >
-                        <Text style={styles.codeChar}>{code[i] ?? ''}</Text>
-                      </View>
-                    </React.Fragment>
-                  ))}
-                  <TextInput
-                    ref={codeRef}
-                    style={styles.codeHidden}
-                    testID="auth-code"
-                    value={code}
-                    onChangeText={(v) => {
-                      setCodeError(false);
-                      setCode(
-                        v.replace(/[^0-9a-z]/gi, '').toUpperCase().slice(0, CODE_LEN),
-                      );
-                    }}
-                    keyboardAppearance="dark"
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    returnKeyType="go"
-                    onSubmitEditing={() => {
-                      if (!canSubmit) return;
-                      void runUiAction(
-                        isLeader ? 'auth.create_group' : 'auth.join_group',
-                        submitAuth,
-                        {
-                          screen: 'Auth',
-                          suppressBanner: true,
-                          onBusyChange: setBusy,
-                          onError: (kind) => {
-                            if (kind === 'timeout') {
-                              Alert.alert(t('group.joinFailedTitle'), t('interaction.timeout'));
-                            }
-                          },
-                        },
-                      );
-                    }}
-                  />
-                </Pressable>
-              </>
-            )}
-
-            <View style={styles.spacer} />
-
-            <SafePressable
-              actionId={isLeader ? 'auth.create_group' : 'auth.join_group'}
-              screen="Auth"
-              onPressAction={submitAuth}
-              onBusyChange={setBusy}
-              suppressBanner
-              onActionError={(kind) => {
-                if (kind === 'timeout') {
-                  Alert.alert(
-                    isLeader ? t('group.createFailedTitle') : t('group.joinFailedTitle'),
-                    t('interaction.timeout'),
-                  );
-                }
-              }}
-              disabled={!canSubmit}
-              testID={isLeader ? 'auth-create-group' : 'auth-join-group'}
-              accessibilityRole="button"
-              style={({ pressed }) => [
-                styles.cta,
-                !canSubmit && styles.ctaDisabled,
-                pressed && canSubmit && styles.pressed,
-              ]}
-            >
-              {busy ? (
-                <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
-              ) : (
-                <>
-                  <Text style={styles.ctaText}>
-                    {isLeader ? t('auth.leaderCta') : t('auth.followerCta')}
-                  </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
-                </>
-              )}
-            </SafePressable>
-
-            <Text style={styles.footer}>
-              {isLeader ? t('auth.leaderFoot') : t('auth.followerFoot')}
-            </Text>
-          </View>
-      </View>
-    </TouchableWithoutFeedback>
+          </>
+        )}
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+        <EntryPrimaryButton
+          accent={ENTRY_ACCENT}
+          label={isLeader ? t('entry.createTeam') : t('teams.join')}
+          testID={isLeader ? 'auth-create-group' : 'auth-join-group'}
+          disabled={!canSubmit}
+          onPress={submitAuth}
+        />
+        {busy ? <ActivityIndicator accessibilityRole="progressbar" color="#fff" /> : null}
+      </ScrollView>
+      </Animated.View>
+    </KeyboardAvoidingView>
   );
 }
 
-const makeStyles = (accent: string) =>
-  StyleSheet.create({
-    fill: { flex: 1 },
-    content: { flex: 1, paddingHorizontal: 24 },
-    topChrome: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    backSpacer: { width: 44, height: 44 },
-    title: { fontSize: 34, fontWeight: '700', color: '#fff', marginTop: 24, marginBottom: 6 },
-    label: {
-      fontSize: 12,
-      fontWeight: '600',
-      letterSpacing: 0.6,
-      color: 'rgba(235,235,245,0.45)',
-      marginTop: 26,
-      marginBottom: 8,
-      marginLeft: 4,
-    },
-    field: {
-      height: 58,
-      borderRadius: 16,
-      justifyContent: 'center',
-      paddingHorizontal: 18,
-      backgroundColor: 'rgba(255,255,255,0.08)',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(255,255,255,0.2)',
-    },
-    input: { fontSize: 19, color: '#fff' },
-    avatarChoices: { gap: 8, paddingHorizontal: 4 },
-    avatarChoice: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      borderColor: 'transparent',
-    },
-    avatarChoiceSelected: { borderColor: '#fff' },
-    avatarChoiceText: { fontSize: 24 },
-    avatarColorChoices: { flexDirection: 'row', gap: 10, marginTop: 10, paddingHorizontal: 4 },
-    avatarColorChoice: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: 'transparent' },
-    avatarColorChoiceSelected: { borderColor: '#fff' },
-    codeBoxes: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    codeCell: {
-      flex: 1,
-      height: 58,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(255,255,255,0.08)',
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.2)',
-    },
-    codeCellActive: { borderColor: accent },
-    codeCellError: { borderColor: glass.danger },
-    codeChar: { fontFamily: DISPLAY_FONT, fontSize: 24, fontWeight: '700', color: '#fff' },
-    codeDash: { fontSize: 22, fontWeight: '600', color: 'rgba(235,235,245,0.4)' },
-    codeHidden: { position: 'absolute', width: 1, height: 1, opacity: 0 },
-    spacer: { flex: 1, minHeight: 24 },
-    cta: {
-      height: 56,
-      borderRadius: 18,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      backgroundColor: accent,
-    },
-    ctaDisabled: { opacity: 0.4 },
-    pressed: { opacity: 0.85 },
-    ctaText: { fontSize: 17, fontWeight: '600', color: '#fff' },
-    footer: {
-      textAlign: 'center',
-      fontSize: 13,
-      color: 'rgba(235,235,245,0.4)',
-      marginTop: 14,
-    },
-  });
+const styles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: MAP_FLOATING_EDGE_INSET },
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: '#07091696' },
+  sheet: { flexShrink: 1, borderRadius: MAP_SHEET_CORNER_RADIUS, backgroundColor: '#23283A',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: '#FFFFFF42' },
+  header: { paddingHorizontal: SHEET_CORNER_ACTION_INSET, paddingTop: SHEET_CORNER_ACTION_INSET, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  title: { flex: 1, minWidth: 0, color: '#fff', fontWeight: '800', fontSize: APP_TEXT_SIZE.heading },
+  scroll: { flexGrow: 0, flexShrink: 1 },
+  content: { padding: SHEET_CORNER_ACTION_INSET, paddingTop: 12, gap: 12 },
+  preview: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  previewHint: { color: '#CDD2E3', fontSize: APP_TEXT_SIZE.caption, marginTop: 3 },
+  carousel: { flexDirection: 'row', gap: 7, alignItems: 'center', paddingVertical: 2 },
+  avatarChoice: { borderRadius: 15, borderWidth: 2, borderColor: 'transparent', padding: 2 },
+  field: {
+    minHeight: 54, color: '#fff', fontSize: APP_TEXT_SIZE.body, paddingHorizontal: 15,
+    borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  teamName: { fontSize: APP_TEXT_SIZE.body, fontWeight: '600' },
+  teamCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 20, padding: 12 },
+  teamDetails: { flex: 1 },
+  teamTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
+  teamMembers: { flexDirection: 'row', gap: 2, marginTop: 4 },
+  nicknameRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  nickname: { flex: 1 },
+  code: { color: 'rgba(255,255,255,0.66)', fontSize: APP_TEXT_SIZE.caption, marginTop: 4, letterSpacing: 2, fontVariant: ['tabular-nums'] },
+  error: { color: '#FF9F95', fontSize: APP_TEXT_SIZE.caption },
+});

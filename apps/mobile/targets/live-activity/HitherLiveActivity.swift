@@ -1,93 +1,10 @@
 import ActivityKit
+import CoreText
 import SwiftUI
 import WidgetKit
-import Foundation
 
-// Live Activity UI: the lock-screen banner + Dynamic Island presentations for
-// the group "heading to gathering point" journey. Styled after the Hither
-// "Gather Card" redesign — a dark glass surface, the shepherd-crook brand mark,
-// the transit glyph, "正在前往" + ETA, a flock progress bar and member-emoji
-// avatars. The accent follows the app's active theme (passed as `accentHex` in)
-// the state); everything else reads from the same live stop as the in-app
-// gather card. Data comes from `HitherGroupAttributes` (started / updated by
-// the app's HitherLiveActivity module); this target only draws it.
-
-// MARK: - Brand
-
-private enum Brand {
-  // Fallback accent (lantern amber) — used only when the app doesn't pass a
-  // theme accent. The live value comes from `ContentState.accentColor`.
-  static let accent = Color(red: 0xF5 / 255, green: 0xB1 / 255, blue: 0x42 / 255)
-  static let card = Color.black
-  static let textPrimary = Color(red: 0xF5 / 255, green: 0xF7 / 255, blue: 0xFB / 255)
-  static let textSecondary = Color(white: 0.85)
-  static let track = Color(white: 0.4)
-  // Deterministic member-avatar palette from the design.
-  static let avatarColors: [Color] = [
-    Color(red: 0x2a / 255, green: 0x34 / 255, blue: 0x50 / 255),
-    Color(red: 0x34 / 255, green: 0x50 / 255, blue: 0x7a / 255),
-    Color(red: 0x4a / 255, green: 0x3a / 255, blue: 0x6a / 255),
-    Color(red: 0x6a / 255, green: 0x4a / 255, blue: 0x3a / 255),
-  ]
-}
-
-private extension Color {
-  /// Text accents must remain readable against the actual opaque surface.
-  static func accessibleAccent(hexString: String?, lightBackground: Bool) -> Color {
-    let hex = (hexString ?? "#F5B142").replacingOccurrences(of: "#", with: "")
-    guard hex.count == 6, let value = UInt64(hex, radix: 16) else {
-      return lightBackground ? .black : .white
-    }
-    func linear(_ byte: UInt64) -> Double {
-      let s = Double(byte) / 255
-      return s <= 0.04045 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
-    }
-    let luminance = 0.2126 * linear((value >> 16) & 255)
-      + 0.7152 * linear((value >> 8) & 255) + 0.0722 * linear(value & 255)
-    let contrast = lightBackground ? 1.05 / (luminance + 0.05) : (luminance + 0.05) / 0.05
-    return contrast >= 4.5 ? Color(hexString: hex)! : lightBackground ? .black : .white
-  }
-  /// Parse a "#RRGGBB" hex string (the app's theme accent). Nil on bad input.
-  init?(hexString: String?) {
-    guard var s = hexString else { return nil }
-    if s.hasPrefix("#") { s.removeFirst() }
-    guard s.count == 6, let v = UInt64(s, radix: 16) else { return nil }
-    self.init(
-      red: Double((v >> 16) & 0xFF) / 255,
-      green: Double((v >> 8) & 0xFF) / 255,
-      blue: Double(v & 0xFF) / 255
-    )
-  }
-}
-
-// MARK: - Crook brand mark
-
-/// Shepherd's crook, the design's SVG path `M24 52 L24 20 C24 6 9 6 9 21`
-/// (viewBox 0 0 40 56), stroked with round caps.
-private struct CrookShape: Shape {
-  func path(in rect: CGRect) -> Path {
-    let sx = rect.width / 40
-    let sy = rect.height / 56
-    func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-      CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy)
-    }
-    var path = Path()
-    path.move(to: pt(24, 52))
-    path.addLine(to: pt(24, 20))
-    path.addCurve(to: pt(9, 21), control1: pt(24, 6), control2: pt(9, 6))
-    return path
-  }
-}
-
-private struct Crook: View {
-  var size: CGFloat
-  var color: Color
-  var body: some View {
-    CrookShape()
-      .stroke(color, style: StrokeStyle(lineWidth: size * 5 / 56, lineCap: .round, lineJoin: .round))
-      .frame(width: size * 40 / 56, height: size)
-  }
-}
+private typealias Presentation = HitherGroupAttributes.ContentState.Presentation
+private typealias Face = HitherGroupAttributes.ContentState.Face
 
 @main
 struct HitherWidgetBundle: WidgetBundle {
@@ -99,409 +16,294 @@ struct HitherWidgetBundle: WidgetBundle {
 struct HitherLiveActivityWidget: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: HitherGroupAttributes.self) { context in
-      LockScreenView(context: context)
-        .modifier(LockScreenBackground())
-        .activitySystemActionForegroundColor(context.state.accentColor)
+      let presentation = context.state.presentation(groupName: context.attributes.groupName)
+      LiveActivityCard(presentation: presentation, expanded: false)
+        .widgetURL(presentation.url)
     } dynamicIsland: { context in
-      let accent = context.state.accentColor
+      let presentation = context.state.presentation(groupName: context.attributes.groupName)
       return DynamicIsland {
-        DynamicIslandExpandedRegion(.leading) {
-          // Leading identity = active travel mode (not crook brand mark).
-          TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 42)
-            .accessibilityLabel(context.state.modeAccessibilityLabel)
-        }
-        DynamicIslandExpandedRegion(.trailing) {
-          VStack(alignment: .trailing, spacing: 0) {
-            if context.state.etaSeconds != nil {
-              EstimatedEta(state: context.state)
-                .font(.system(size: 18, weight: .bold))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            if let d = context.state.formattedDistance {
-              Text(d).font(.system(size: 12)).foregroundStyle(.white)
-            }
-          }
-          .foregroundStyle(.white)
-        }
-        DynamicIslandExpandedRegion(.center) {
-          VStack(alignment: .leading, spacing: 2) {
-            // No duplicate transport icon before「正在前往」— mode is leading only.
-            Text("正在前往")
-              .font(.system(size: 11, weight: .bold))
-              .tracking(0.6)
-              .foregroundStyle(accent)
-            DestinationTitle(
-              text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName)
-            )
-              .font(.system(size: 16, weight: .semibold))
-              .foregroundStyle(Brand.textPrimary)
-              .layoutPriority(0)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
         DynamicIslandExpandedRegion(.bottom) {
-          // BUG-19: match Lock Screen — progress+percent, then avatar stack.
-          VStack(spacing: 10) {
-            ProgressRow(value: context.state.clampedProgress, accent: accent, textColor: .white)
-            HStack {
-              AvatarStack(
-                emojis: context.state.avatarEmojis,
-                arrived: context.state.avatarArrived
-              )
-              Spacer()
-              if let s = context.state.arrivalStatus {
-                Text(s).font(.system(size: 12.5)).foregroundStyle(Brand.textSecondary)
-              }
-            }
-          }
-          .padding(.top, 2)
+          LiveActivityCard(presentation: presentation, expanded: true)
         }
       } compactLeading: {
-        // Compact: travel mode only (no crook + mode pair).
-        Image(systemName: context.state.modeSymbol)
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(accent)
-          .accessibilityLabel(context.state.modeAccessibilityLabel)
+        StopBadge(presentation: presentation, size: 24, showsCheck: !presentation.isTraveling)
       } compactTrailing: {
-        EstimatedEta(state: context.state, compact: true)
-          .font(.system(size: 13, weight: .semibold))
-          .lineLimit(1)
-          .minimumScaleFactor(0.75)
-          .foregroundStyle(.white)
+        if presentation.phase == .allArrived {
+          Image(systemName: "checkmark")
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(presentation.displayColor(light: false))
+        } else {
+          Text(presentation.compactLabel)
+            .font(ActivityTypography.number(20))
+            .foregroundStyle(presentation.displayColor(light: false))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+        }
       } minimal: {
-        Image(systemName: context.state.modeSymbol)
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(accent)
-          .accessibilityLabel(context.state.modeAccessibilityLabel)
+        MinimalActivity(presentation: presentation)
       }
-      .keylineTint(accent)
+      .keylineTint(presentation.accent)
+      .widgetURL(presentation.url)
     }
   }
 }
 
-private struct DestinationTitle: View {
-  let text: String
-
-  var body: some View {
-    Text(text)
-      .lineLimit(2)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-      .accessibilityLabel(text)
-  }
-}
-
-/// Native glass on iOS 26; readable material fallback on earlier systems.
-private struct LockScreenBackground: ViewModifier {
-  func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content
-        // Keep text outside the glass view: applying glass to the entire
-        // content hid the foreground in lock-screen host QA.
-        .background {
-          RoundedRectangle(cornerRadius: 24)
-            .fill(.clear)
-            .glassEffect(.regular)
-        }
-        .activityBackgroundTint(.clear)
-    } else {
-      content
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
-        .activityBackgroundTint(.clear)
-    }
-  }
-}
-
-// MARK: - Lock screen
-
-private struct LockScreenView: View {
-  let context: ActivityViewContext<HitherGroupAttributes>
+private struct LiveActivityCard: View {
+  let presentation: Presentation
+  var expanded: Bool
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.isLuminanceReduced) private var reducedLuminance
 
   var body: some View {
-    let light = colorScheme != .dark
-    let background: Color = light ? .white : .black
-    let primary: Color = light ? .black : Brand.textPrimary
-    let secondary = Color(white: light ? 0.27 : 0.85)
-    let accent = Color.accessibleAccent(hexString: context.state.accentHex, lightBackground: light)
-    return VStack(alignment: .leading, spacing: 10) {
-      HStack(alignment: .top, spacing: 10) {
-        TravelModeBadge(symbol: context.state.modeSymbol, accent: accent, size: 40, plate: background)
-          .accessibilityLabel(context.state.modeAccessibilityLabel)
-          .fixedSize()
-        VStack(alignment: .leading, spacing: 3) {
-          Text("正在前往")
-            .font(.system(size: 10.5, weight: .bold))
-            .foregroundStyle(accent)
-          DestinationTitle(text: context.state.displayTitle(fallbackGroupName: context.attributes.groupName))
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(primary)
-        }
-        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-      }
-      // ETA has its own row: neither a long title nor large type can push it
-      // beyond the lock-screen host's width.
-      if context.state.etaSeconds != nil || context.state.formattedDistance != nil {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-          if context.state.etaSeconds != nil {
-            EstimatedEta(state: context.state)
-              .font(.system(size: 18, weight: .bold))
-              .foregroundStyle(primary)
-              .lineLimit(2)
-              .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-          }
-          if let distance = context.state.formattedDistance {
-            Text(distance).font(.system(size: 12))
-              .foregroundStyle(primary)
-              .lineLimit(2)
-              .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
-          }
-        }
-      }
-      ProgressRow(value: context.state.clampedProgress, accent: accent, textColor: primary,
-        trackColor: Color(white: light ? 0.55 : 0.4))
+    let light = !expanded && colorScheme == .light
+    let color = presentation.displayColor(light: light)
+    VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 8) {
-        AvatarStack(emojis: context.state.avatarEmojis, arrived: context.state.avatarArrived, outline: background)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        if let status = context.state.arrivalStatus {
-          Text(status).font(.system(size: 12.5, weight: .medium))
-            .foregroundStyle(secondary)
-            .lineLimit(2)
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
+        if expanded {
+          StopBadge(presentation: presentation, size: 24, showsCheck: !presentation.isTraveling)
+        } else {
+          Image(systemName: "mappin.circle.fill")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: 20, height: 20)
+            .accessibilityHidden(true)
         }
+        Text(presentation.title)
+          .font(.system(size: 17, weight: .bold))
+          .lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        Headline(presentation: presentation, color: color)
+      }
+      switch presentation.phase {
+      case .enRoute, .late:
+        HStack(spacing: 12) {
+          RouteTrack(presentation: presentation, outline: light ? .white : .black)
+          if let meetTime = presentation.meetTime {
+            Label {
+              Text(meetTime, format: .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+            } icon: {
+              Image(systemName: "clock")
+                .accessibilityHidden(true)
+            }
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(color)
+          } else {
+            Text(presentation.countLabel)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .font(.system(size: 15, weight: .bold).monospacedDigit())
+        .lineLimit(1)
+      case .arrivedWaiting:
+        HStack(spacing: 6) {
+          ForEach(Array(presentation.memberFaces.enumerated()), id: \.offset) { _, face in
+            AvatarBadge(face: face, size: 26)
+              .overlay(Circle().strokeBorder(face.arrived ? presentation.accent : .clear, lineWidth: 2))
+              .opacity(face.arrived ? 1 : reducedLuminance ? 0.55 : 0.30)
+          }
+        }
+      case .allArrived:
+        EmptyView()
       }
     }
-    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
+    .foregroundStyle(expanded ? Color.white : Color.primary)
+    .padding(.horizontal, expanded ? 4 : 16)
+    .padding(.vertical, expanded ? 2 : 14)
+    .frame(maxWidth: .infinity, minHeight: expanded ? nil : 84)
+    .accessibilityElement(children: .combine)
   }
-
 }
 
-/// Leading identity tile: active travel-mode SF Symbol on accent plate.
-private struct TravelModeBadge: View {
-  let symbol: String
-  let accent: Color
-  var size: CGFloat = 44
-  var plate: Color = Color(red: 0.18, green: 0.15, blue: 0.10)
+private struct Headline: View {
+  let presentation: Presentation
+  let color: Color
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 2) {
+      switch presentation.phase {
+      case .enRoute, .late:
+        if let minutes = presentation.etaMinutes {
+          Text(minutes.formatted())
+            .font(ActivityTypography.number(40))
+          Text(presentation.etaUnit)
+            .font(.system(size: 15, weight: .bold))
+        } else {
+          Text("–").font(ActivityTypography.number(40))
+        }
+      case .arrivedWaiting:
+        Text(presentation.countLabel).font(ActivityTypography.number(40))
+      case .allArrived:
+        Image(systemName: "checkmark")
+          .font(.system(size: 29, weight: .semibold))
+          .accessibilityLabel(Text(presentation.english ? "Everyone arrived" : "全員到齊"))
+      }
+    }
+    .foregroundStyle(color)
+    .lineLimit(1)
+    .minimumScaleFactor(0.65)
+    .layoutPriority(1)
+  }
+}
+
+private struct RouteTrack: View {
+  let presentation: Presentation
+  let outline: Color
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    GeometryReader { geometry in
+      let first: CGFloat = 12
+      let last = max(first, geometry.size.width - 13)
+      let length = last - first
+      let avatarX = first + length * presentation.progress
+      ZStack(alignment: .leading) {
+        Capsule()
+          .fill(Color.gray.opacity(0.32))
+          .frame(width: length, height: 4)
+          .offset(x: first)
+        Capsule()
+          .fill(presentation.accent)
+          .frame(width: length * presentation.progress, height: 4)
+          .offset(x: first)
+        AvatarBadge(face: presentation.selfFace, size: 24)
+          .background(Circle().stroke(outline, lineWidth: 4))
+          .position(x: avatarX, y: 13)
+        StopBadge(presentation: presentation, size: 26)
+          .position(x: last, y: 13)
+      }
+      .animation(reduceMotion ? nil : .easeInOut(duration: 0.6), value: presentation.progress)
+    }
+    .frame(height: 26)
+    .accessibilityLabel(Text(presentation.english ? "Route progress" : "路程進度"))
+    .accessibilityValue(Text(presentation.progress.formatted(.percent.precision(.fractionLength(0)))))
+  }
+}
+
+private struct StopBadge: View {
+  let presentation: Presentation
+  let size: CGFloat
+  var showsCheck = false
+
   var body: some View {
     ZStack {
-      RoundedRectangle(cornerRadius: 12)
-        .fill(plate)
-        .frame(width: size, height: size)
-      Image(systemName: symbol)
-        .font(.system(size: size * 0.42, weight: .semibold))
-        .foregroundStyle(accent)
-    }
-  }
-}
-
-// MARK: - Pieces
-
-/// Progress transition timing (#147): ~600ms ease on Lock Screen + Dynamic Island.
-/// Reduce Motion uses a short fade-style update (no long size-move animation).
-private enum ProgressMotion {
-  static let durationSeconds: Double = 0.6
-  static let reduceMotionDurationSeconds: Double = 0.12
-
-  static func animation(reduceMotion: Bool) -> Animation {
-    if reduceMotion {
-      return .easeInOut(duration: reduceMotionDurationSeconds)
-    }
-    return .easeInOut(duration: durationSeconds)
-  }
-}
-
-private struct ProgressBar: View {
-  let value: Double
-  let accent: Color
-  var trackColor: Color = Brand.track
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    GeometryReader { geo in
-      ZStack(alignment: .leading) {
-        Capsule().fill(trackColor)
-        Capsule()
-          .fill(accent)
-          .frame(width: max(6, geo.size.width * value))
-          // Animate width to the latest target (including first 0→60%).
-          .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: value)
-      }
-    }
-    .frame(height: 6)
-  }
-}
-
-/// Progress bar + percent label — shared by Lock Screen and expanded Dynamic Island.
-private struct ProgressRow: View {
-  let value: Double?
-  let accent: Color
-  let textColor: Color
-  var trackColor: Color = Brand.track
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    let pct = value.map { Int((min(1, max(0, $0)) * 100).rounded()) }
-    return HStack(spacing: 8) {
-      ProgressBar(value: value ?? 0, accent: accent, trackColor: trackColor)
-      Text(pct.map { "\($0)%" } ?? "—")
-        .font(.system(size: 12, weight: .semibold).monospacedDigit())
-        .frame(minWidth: 34, alignment: .trailing)
-        .foregroundStyle(textColor)
-        .contentTransition(.numericText())
-        .animation(ProgressMotion.animation(reduceMotion: reduceMotion), value: pct)
-    }
-  }
-}
-
-private struct AvatarStack: View {
-  let emojis: [String]
-  let arrived: [Bool]
-  var outline: Color = Brand.card
-  var body: some View {
-    HStack(spacing: -7) {
-      ForEach(Array(emojis.prefix(4).enumerated()), id: \.offset) { i, emoji in
-        let isArrived = arrived.indices.contains(i) && arrived[i]
-        ZStack {
-          Circle().fill(Brand.avatarColors[i % Brand.avatarColors.count])
-          if !emoji.isEmpty {
-            Text(emoji).font(.system(size: 12))
-          }
-        }
-        .frame(width: 24, height: 24)
-        .overlay(Circle().stroke(outline, lineWidth: 1.5))
-        .overlay(alignment: .bottomTrailing) {
-          if isArrived {
-            Image(systemName: "checkmark.circle.fill")
-              .font(.system(size: 10, weight: .bold)).foregroundStyle(.white, .black)
-          }
-        }
-      }
-    }
-  }
-}
-
-// MARK: - Presentation helpers
-
-/// ETA is an estimate from the latest delivered snapshot, never a ticking timer.
-private struct EstimatedEta: View {
-  let state: HitherGroupAttributes.ContentState
-  var compact = false
-
-  var body: some View {
-    if compact {
-      if let eta = state.shortEta {
-        Text(HitherGroupAttributes.ContentState.usesEnglish(state.language) ? "~" + eta : "約" + eta)
+      Circle().fill(Color(hex: presentation.dayColorHex) ?? Color(rgb: 0xA35FC9))
+      if showsCheck {
+        Image(systemName: "checkmark")
+          .font(.system(size: 13, weight: .bold))
+          .foregroundStyle(.white)
       } else {
-        Text(state.formattedDistance ?? "")
+        Text(presentation.icon)
+          .font(.system(size: 13))
       }
-    } else if let eta = state.etaText {
-      Text(HitherGroupAttributes.ContentState.usesEnglish(state.language)
-        ? "Est. " + (eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)")
-        : "約" + (eta.unit.isEmpty ? eta.value : "\(eta.value) \(eta.unit)"))
     }
+    .frame(width: size, height: size)
+    .accessibilityHidden(true)
   }
 }
 
-private extension HitherGroupAttributes.ContentState {
-  /// The app's theme accent (from `accentHex`), or the brand fallback.
-  var accentColor: Color { Color.accessibleAccent(hexString: accentHex, lightBackground: false) }
+private struct AvatarBadge: View {
+  let face: Face?
+  let size: CGFloat
 
-  /// Gathering point title when present; team/group name only as fallback.
-  /// Prefixes destination emoji when set (Ticket 07), same fallback as JS resolve.
-  func displayTitle(fallbackGroupName: String) -> String {
-    let emoji = destinationEmoji?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let hasEmoji = emoji.map { !$0.isEmpty } ?? false
-    if let t = gatheringTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
-      return hasEmoji ? "\(emoji!) \(t)" : t
+  var body: some View {
+    ZStack {
+      Circle().fill(Color(hex: face?.colorHex) ?? Color(rgb: 0xDCE5EF))
+      if let emoji = face?.emoji, !emoji.isEmpty {
+        Text(emoji).font(.system(size: size == 24 ? 14 : 15))
+      } else {
+        Image(systemName: "person.fill")
+          .font(.system(size: 11, weight: .medium))
+          .foregroundStyle(Color(rgb: 0x34445A))
+      }
     }
-    let g = fallbackGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
-    let base = g.isEmpty ? "集合點" : g
-    return hasEmoji ? "\(emoji!) \(base)" : base
+    .frame(width: size, height: size)
   }
+}
 
-  /// SF Symbol for the active travel mode (transit glyph).
-  var modeSymbol: String {
-    switch travelMode {
-    case "drive": return "car.fill"
-    case "transit": return "bus.fill"
-    case "bicycle": return "bicycle"
-    default: return "figure.walk"
+private struct MinimalActivity: View {
+  let presentation: Presentation
+
+  var body: some View {
+    GeometryReader { geometry in
+      let size = min(37, geometry.size.width, geometry.size.height)
+      let narrow = size < 32
+      let label = presentation.phase == .arrivedWaiting
+        ? narrow ? presentation.arrived.formatted() : presentation.countLabel
+        : presentation.etaMinutes?.formatted() ?? "–"
+      let progress = presentation.phase == .allArrived ? 1
+        : presentation.isTraveling ? presentation.progress : presentation.arrivalRatio
+      ZStack {
+        Circle().strokeBorder(.white.opacity(0.18), lineWidth: 3)
+        Circle()
+          .inset(by: 1.5)
+          .trim(from: 0, to: progress)
+          .stroke(presentation.displayColor(light: false), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+          .rotationEffect(.degrees(-90))
+        if presentation.phase == .allArrived {
+          Image(systemName: "checkmark")
+            .font(.system(size: narrow ? 11 : 14, weight: .bold))
+        } else {
+          Text(label)
+            .font(ActivityTypography.number(narrow ? 11 : 14))
+            .lineLimit(1)
+            .minimumScaleFactor(0.55)
+            .padding(.horizontal, 5)
+        }
+      }
+      .foregroundStyle(.white)
+      .frame(width: size, height: size)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+    .frame(idealWidth: 37, idealHeight: 37)
   }
+}
 
-  /// Accessible text for the leading travel-mode identity.
-  var modeAccessibilityLabel: String {
-    switch travelMode {
-    case "drive": return "開車"
-    case "transit": return "大眾運輸"
-    case "bicycle": return Self.usesEnglish(language) ? "Cycling" : "自行車"
-    default: return "步行"
+private enum ActivityTypography {
+  private static let numberFont: String? = {
+    guard let url = Bundle.main.url(forResource: "BarlowCondensed-ExtraBoldItalic", withExtension: "ttf") else {
+      return nil
     }
+    CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    return "BarlowCondensed-ExtraBoldItalic"
+  }()
+
+  static func number(_ size: CGFloat) -> Font {
+    if let numberFont { return .custom(numberFont, size: size, relativeTo: .title) }
+    return .system(size: size, weight: .heavy).width(.condensed).italic()
+  }
+}
+
+private extension Presentation {
+  var accent: Color { Color(hex: accentHex) ?? Color(rgb: 0x4C6FFF) }
+  var compactLabel: String {
+    if phase == .arrivedWaiting { return countLabel }
+    guard let minutes = etaMinutes else { return "–" }
+    return "\(minutes)\(english ? "m" : "分")"
+  }
+  var url: URL? {
+    URL(string: phase == .arrivedWaiting ? "hither://live-activity/team" : "hither://live-activity/journey")
   }
 
-  /// Emojis to draw in the flock stack — the passed avatars, or blank circles
-  /// sized to the member count when no emojis are available.
-  var avatarEmojis: [String] {
-    if let e = memberEmojis, !e.isEmpty { return Array(e.prefix(4)) }
-    let n = min(memberCount ?? 0, 4)
-    return Array(repeating: "", count: n)
+  func displayColor(light: Bool) -> Color {
+    if phase == .late { return Color(rgb: light ? 0xC26A00 : 0xFF9F0A) }
+    if light { return Color(hex: accentHex, brightness: 0.82) ?? Color(rgb: 0x3E5BD1) }
+    return accent
   }
+}
 
-  var avatarArrived: [Bool] {
-    let count = avatarEmojis.count
-    guard let arrived = memberArrived else {
-      return Array(repeating: false, count: count)
-    }
-    return (0..<count).map { arrived.indices.contains($0) && arrived[$0] }
-  }
-
-  /// Compact ETA for the narrow Dynamic Island regions.
-  var shortEta: String? {
-    guard let s = etaSeconds else { return nil }
-    return HitherGroupAttributes.ContentState.formattedDuration(
-      fromSeconds: s,
-      language: language
+private extension Color {
+  init(rgb: UInt64, brightness: Double = 1) {
+    self.init(
+      red: Double((rgb >> 16) & 0xFF) / 255 * brightness,
+      green: Double((rgb >> 8) & 0xFF) / 255 * brightness,
+      blue: Double(rgb & 0xFF) / 255 * brightness
     )
   }
 
-  /// Hero ETA block. en keeps value+unit under 1h; zh is a single localized string.
-  var etaText: (value: String, unit: String)? {
-    guard let s = etaSeconds else { return nil }
-    if HitherGroupAttributes.ContentState.usesEnglish(language) {
-      let m = Int((s / 60).rounded())
-      if m < 1 { return (value: "<1", unit: "min") }
-      if m < 60 { return (value: "\(m)", unit: "min") }
-      return (
-        value: HitherGroupAttributes.ContentState.compactDuration(fromMinutes: m),
-        unit: ""
-      )
-    }
-    return (
-      value: HitherGroupAttributes.ContentState.formattedDuration(
-        fromSeconds: s,
-        language: language
-      ),
-      unit: ""
-    )
-  }
-
-  /// Progress clamped to 0...1, defaulting to 0 when unknown.
-  var clampedProgress: Double? { progress.map { min(1, max(0, $0)) } }
-
-  /// "2 / 4 已抵達" — the expanded island's arrival caption (nil without a count).
-  var arrivalStatus: String? {
-    guard let total = memberCount, total > 0 else { return nil }
-    return "\(gatheredCount ?? 0) / \(total) 已抵達"
-  }
-
-  /// "2 位已抵達 · 1 人在路上" — the lock screen's flock line.
-  var flockStatus: String? {
-    guard let total = memberCount, total > 0 else { return nil }
-    let gathered = gatheredCount ?? 0
-    let enroute = max(0, total - gathered)
-    return "\(gathered) 位已抵達 · \(enroute) 人在路上"
+  init?(hex: String?, brightness: Double = 1) {
+    guard let raw = hex else { return nil }
+    let value = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+    guard value.count == 6, let rgb = UInt64(value, radix: 16) else { return nil }
+    self.init(rgb: rgb, brightness: brightness)
   }
 }

@@ -31,9 +31,9 @@ describe('navigation interaction contract (go home / re-enter map)', () => {
     expect(body).not.toContain('signOut');
   });
 
-  it('Auth and MyTeams re-enter Map with replace so stack does not accumulate Maps', () => {
-    expect(authScreen).toContain("navigation.replace('Map'");
-    expect(myTeamsScreen).toContain("navigation.replace('Map'");
+  it('Entering a team retains only one Map route', () => {
+    expect(authScreen).toContain("routes: [{ name: 'Map'");
+    expect(myTeamsScreen).toContain("routes: [{ name: 'Map'");
     // Root stack still exposes a single Map route name (not nested stacks).
     expect(rootNavigator).toContain('name="Map"');
     expect(rootNavigator).toContain('<Stack.Screen name="RoleSelect"');
@@ -45,11 +45,11 @@ describe('navigation interaction contract (go home / re-enter map)', () => {
   });
 
   it('leave-group path still resets to RoleSelect separately from go-home', () => {
-    // confirmLeave may reset after leave; that is a different actionId.
-    expect(accountActions).toContain("routes: [{ name: 'RoleSelect' }]");
     const leaveStart = accountActions.indexOf('const confirmLeave = useCallback');
+    const signOutStart = accountActions.indexOf('function startMapSignOut', leaveStart);
     expect(leaveStart).toBeGreaterThanOrEqual(0);
-    const leaveBody = accountActions.slice(leaveStart, leaveStart + 900);
-    expect(leaveBody).toContain('leaveGroup');
+    expect(signOutStart).toBeGreaterThan(leaveStart);
+    const leaveBody = accountActions.slice(leaveStart, signOutStart);
+    expect(leaveBody).toMatch(/await leaveGroups\([\s\S]*leaveGroup\(\)[\s\S]*navigation\.reset\(\{ index: 0, routes: \[\{ name: 'RoleSelect' \}\]/);
   });
 });

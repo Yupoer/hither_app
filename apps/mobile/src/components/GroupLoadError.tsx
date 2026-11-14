@@ -1,5 +1,7 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
+import { AppText as Text } from './AppText';
+import Pressable from './MotionPressable';
 import { useTranslation } from '../i18n';
 import { getOperationErrorMessage, type OperationErrorClassification } from '../utils/operationError';
 

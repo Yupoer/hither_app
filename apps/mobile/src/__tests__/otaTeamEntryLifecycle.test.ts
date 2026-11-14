@@ -19,7 +19,7 @@ import {
 } from '../utils/otaUpdates';
 
 const settings = readFileSync(
-  join(__dirname, '../screens/MapScreen/components/SettingsOverlay.tsx'),
+  join(__dirname, '../screens/MapScreen/components/useSettingsUpdate.tsx'),
   'utf8',
 );
 const myTeams = readFileSync(join(__dirname, '../screens/MyTeamsScreen.tsx'), 'utf8');
@@ -75,10 +75,10 @@ describe('OTA apply single-flight + team entry lifecycle', () => {
   it('team entry is idempotent and reconciles Live Activities before map', () => {
     expect(myTeams).toContain('enterInFlightRef');
     expect(myTeams).toContain('if (enterInFlightRef.current) return');
-    expect(myTeams).toContain("navigation.replace('Map'");
+    expect(myTeams).toContain("routes: [{ name: 'Map'");
     expect(myTeams).toContain('setMembership');
     // Entering the map must not kill an active journey. Explicit leave still clears.
-    const entry = myTeams.slice(myTeams.indexOf("'my_teams.enter_group'"), myTeams.indexOf("navigation.replace('Map'"));
+    const entry = myTeams.slice(myTeams.indexOf("runUiAction('my_teams.enter_group'"), myTeams.indexOf("routes: [{ name: 'Map'"));
     expect(entry).not.toContain('clearLiveActivities(');
     // Guard released on focus, not immediately after sync replace.
     expect(myTeams).toContain('useFocusEffect');

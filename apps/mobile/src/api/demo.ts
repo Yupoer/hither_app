@@ -1,5 +1,6 @@
 import type {
   Coordinates,
+  DailyAccommodation,
   Destination,
   GroupState,
   JourneyStatus,
@@ -66,6 +67,7 @@ const state: GroupState = {
     },
   ],
   destinations: [],
+  dailyAccommodations: [],
   subgroups: [],
   nextDestination: undefined,
 };
@@ -93,6 +95,7 @@ export function getDemoState(
     group: { ...state.group },
     members,
     destinations,
+    dailyAccommodations: state.dailyAccommodations?.map((stay) => ({ ...stay })),
     subgroups: state.subgroups.map((s) => ({ ...s })),
     nextDestination: destinations.find(dest => dest.day != null && !dest.closedAt),
   };
@@ -224,6 +227,12 @@ export function demoUpdateDestinationEmoji(
   );
 }
 
+export function demoMakeDestinationRegular(destinationId: string): void {
+  state.destinations = state.destinations.map(destination => destination.id === destinationId
+    ? { ...destination, kind: 'stop', stayAnchor: false }
+    : destination);
+}
+
 export function demoReorderDestinations(
   updates: (Pick<Destination, 'id' | 'day' | 'meetAt' | 'stayAnchor'> & { position: number })[],
 ): void {
@@ -239,6 +248,24 @@ export function demoReorderDestinations(
       ...(update.stayAnchor === undefined ? {} : { stayAnchor: update.stayAnchor }),
     } : destination;
   }).sort((a, b) => a.order - b.order);
+}
+
+export function demoSetTripDetails(tripDays: number, departureDate: string): void {
+  state.group = { ...state.group, tripDays, departureDate };
+}
+
+export function demoSetDailyAccommodation(
+  stayDate: string,
+  accommodation: Pick<DailyAccommodation, 'title' | 'address' | 'coordinates' | 'sourceDestinationId'> | null,
+): void {
+  const daily = (state.dailyAccommodations ?? []).filter((stay) => stay.stayDate !== stayDate);
+  if (accommodation) daily.push({
+    ...accommodation,
+    id: `demo-daily-${stayDate}`,
+    groupId: DEMO_GROUP_ID,
+    stayDate,
+  });
+  state.dailyAccommodations = daily;
 }
 
 export function demoSetJourneyStatus(status: JourneyStatus): void {
@@ -274,6 +301,7 @@ export function demoSelfSplit(name: string): Subgroup {
     mode: 'collab',
     leaderId: undefined,
     parentId: me.subgroupId,
+    createdAt: new Date().toISOString(),
   };
   state.subgroups.push(sg);
   state.members[0] = { ...me, subgroupId: sg.id };

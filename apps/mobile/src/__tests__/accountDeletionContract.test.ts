@@ -4,7 +4,7 @@ import { translationKeys } from '../i18n';
 
 const src = (rel: string) => readFileSync(join(__dirname, '..', rel), 'utf8');
 
-const roleSelect = src('screens/RoleSelectScreen.tsx');
+const roleSelect = src('screens/MyTeamsScreen.tsx');
 const authScreen = src('screens/AuthScreen.tsx');
 const accountSheet = src('components/AccountSheet.tsx');
 const loginScreen = src('screens/LoginScreen.tsx');
@@ -35,7 +35,7 @@ describe('account deletion placement contract', () => {
     expect(accountSheet).toContain('onBusyChange: setDeleting');
     expect(accountSheet).toMatch(/user\s*\?[\s\S]*confirmDeleteAccount/);
     expect(mapScreen).toContain('onAccountDeleted');
-    expect(mapScreen).toContain("name: 'Login'");
+    expect(mapScreen).toContain("name: 'RoleSelect'");
   });
 
   it('does not add delete on Login or Settings root', () => {
