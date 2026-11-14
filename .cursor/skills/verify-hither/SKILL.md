@@ -150,7 +150,7 @@ Let a failing runner finish its `finally` rather than killing its parent. If for
 
 ## Helpers
 
-This skill reuses maintained helpers in `apps/mobile/test/headless`.
+This skill reuses maintained helpers in `apps/mobile/test/headless`. Its own executable `scripts/precise-location.cjs` adds the Members precision-switch path using the same World and visible host controls. Its exact invocation and retained evidence are in the [journey recipe](features/journey.md#driving-it-with-world).
 
 ```powershell
 node test/headless/run.cjs --list

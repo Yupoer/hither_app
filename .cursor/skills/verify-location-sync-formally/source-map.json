@@ -1,6 +1,6 @@
 {
   "status": "reviewed-integrated-source",
-  "syncCommit": "988a85be743da4f92de20e35ef1e951da9891b0b",
+  "syncCommit": "3c9ab74931191e43459cb6ac3262fe36fd9e11ac",
   "assumedExternalBoundary": "exchangeGroup and the server execute as the captured actor and return actor-bound results. This model/replay does not cover lazy authenticated transport changing credentials, GroupSyncService.exchangeGroup, or SQL p_actor_id versus auth.uid() rejection before effects.",
   "boundedRowLifetime": "All modeled/replayed GPS rows remain unexpired throughout the run. Intentional removal after local TTL expiry, including pruneExpired before authentication, is outside the ACK/deletion invariant and is verified by the owning outbox tests.",
   "excludedRetryScheduling": "Replay fixes the external AppState boundary to background and invokes a second sync explicitly after advancing its controlled clock. scheduleLocationOutboxRetry, timer firing, foreground retry cadence and delivery liveness are outside this bound; internal queue selection/settlement algorithms remain real.",
@@ -23,7 +23,10 @@
         "Publish",
         "Finish"
       ],
-      "contract": "One actor/group mixed exchange; final actor check gates synchronous publication of the full recovery snapshot and its pendingRefreshes to the same listeners. Original mixed-transport failures propagate through both missing-reply seams after durable retry bookkeeping. Replay requires exact successful first/retry publication counts, expected first-call success or lost_reply/account_changed domain error, command forwarding and actor fencing. Receipt-only mode shares the lane and settlement but does not publish a snapshot; it is covered by the owning transport and headless tests, outside this publication replay. This does not cover command execution or GPS freshness."
+      "contract": "One actor/group mixed exchange in recovery or receipt-only mode. Both modes retain ACK-only settlement and final actor fencing. Recovery-kind replies synchronously publish their snapshot and pendingRefreshes exactly once per successful call; receipt-only replies publish nothing. Replay checks both modes across partial/lost replies, retries and account-switch boundaries, including recovery-guard mutation. Command execution, sample freshness, concurrent coalescing and cross-mode transitions remain outside this bound.",
+      "modelParameters": [
+        "IncludeSnapshot"
+      ]
     },
     "apps/mobile/src/state/locationOutbox.ts": {
       "sha256": "b2571f80003dc81b0ea80aae298c2e086477bed680ee9ada09993291fce7be64",
