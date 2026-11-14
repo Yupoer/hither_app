@@ -3125,67 +3125,95 @@
       "testNamePattern": "updates only|releases its timer|replaces a changed|supports distant"
     },
     {
-      "parent": "gathering-status-ui-20261114",
-      "child": "gathering-status-ui-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "The D6 gathering card keeps the untimed pre-departure title free, displays hour-long durations completely and emits moving bounded particles.",
       "testFile": "d6GatheringHeader.test.ts",
       "testNamePattern": "leaves the title rail|shows a complete duration|moves existing particles"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "A dragged itinerary stop describes its neighboring insertion points before release, independently from accommodation blocks.",
       "testFile": "d6Itinerary.test.ts",
       "testNamePattern": "describes the two neighboring"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "Member rows display actual local and remote location update age and retain a recovery action when location is unavailable.",
       "testFile": "d6MembersPane.test.ts",
       "testNamePattern": "shows the accepted self location"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "Native Live Activity start failures are observable rather than silently treated as an active journey.",
       "testFile": "liveActivityOwnership.test.ts",
       "testNamePattern": "reports an unavailable native"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "A fresh position can provide display ETA while stale or absent samples are rejected independently from arrival precision.",
       "testFile": "d6TravelMode.test.ts",
       "testNamePattern": "uses a recent position for display"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "Daily and legacy accommodations remain separate from draggable stops, without constraining stop order to end at the accommodation.",
       "testFile": "d6RoutePane.test.ts",
       "testNamePattern": "keeps daily and older accommodations"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "Text and text input receive explicit native Dynamic Type caps, preserve tighter limits and fixed scaling, and retain native input focus.",
       "testFile": "dynamicTypeContract.test.ts",
       "testNamePattern": "passes an explicit system font ceiling|preserves the native input focus"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "Late route results do not replace a selected stop detail focus; a deferred route mode can fit after details close.",
       "testFile": "mapScreenResources.test.ts",
       "testNamePattern": "keeps stop-detail focus"
     },
     {
-      "parent": "detail-motion-status-20261114",
-      "child": "detail-motion-status-20261114",
+      "parent": 397,
+      "child": 397,
       "acceptance": "Stop focus uses native map projection so the requested position accounts for the real viewport rather than an assumed span.",
       "testFile": "mapInitialRegion.test.ts",
       "testNamePattern": "positions a target using the native projected point"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "The actual iOS D6 card uses a fresh fix for complete hour-long route and distance display, opens Maps, and preserves arrival ownership, deduplication and the explicit Finish action.",
+      "testFile": "headlessD6NavigationScenario.test.ts",
+      "testNamePattern": "shows over-one-hour directions|rejects poor arrival fixes"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "The actual iOS D6 menu imports one selected KML batch and subgroup accessible reordering leaves the main itinerary unchanged.",
+      "testFile": "headlessD6NavigationScenario.test.ts",
+      "testNamePattern": "imports a selected KML batch|keeps subgroup reorder confined"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Native pane layout settles React dimensions after the current spring, restores full layout before a new drag, and reconciles viewport and reduced-motion changes.",
+      "testFile": "d6PaneDrag.test.ts",
+      "testNamePattern": "changes React content dimensions|reconciles external close"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Older iOS binaries and Android retain their supported renderer; native pane views are requested only when the installed binary advertises the capability.",
+      "testFile": "d6PaneNativeAvailability.test.ts",
+      "testNamePattern": "uses the existing panel renderer|exposes the native panel"
     }
   ]
 }
