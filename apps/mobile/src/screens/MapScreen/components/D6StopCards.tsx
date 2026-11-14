@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
   emojiChoice: { width: '20%', minHeight: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   emojiText: { fontSize: 27, color: '#fff' },
   addLayer: { ...StyleSheet.absoluteFill, zIndex: 83 },
-  crosshair: { position: 'absolute', left: '50%', top: '50%', marginLeft: -20, marginTop: -40 },
+  crosshair: { position: 'absolute', left: '50%', top: '50%', marginLeft: -15, marginTop: -30 },
   search: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET },
   searchBar: { minHeight: 88, flexDirection: 'row', alignItems: 'flex-start', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 8, padding: SHEET_CORNER_ACTION_INSET },
   searchIcon: { height: MAP_SHEET_ACTION_HIT_SIZE, justifyContent: 'center' },
