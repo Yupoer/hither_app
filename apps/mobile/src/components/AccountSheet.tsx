@@ -747,10 +747,10 @@ const styles = StyleSheet.create({
 
 
 const homeAccountStyles = StyleSheet.create({
-  body: { gap: 10, paddingTop: 8 },
+  body: { gap: 14, paddingTop: 4 },
   title: { color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', paddingHorizontal: 4 },
-  subtitle: { color: 'rgba(255,255,255,0.68)', fontSize: APP_TEXT_SIZE.caption, paddingHorizontal: 4, marginBottom: 10 },
+  subtitle: { color: 'rgba(255,255,255,0.68)', fontSize: APP_TEXT_SIZE.body, paddingHorizontal: 4, marginBottom: 10 },
   button: { minHeight: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.12)' },
-  lightText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
+  lightText: { color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   input: { marginTop: 0 },
 });

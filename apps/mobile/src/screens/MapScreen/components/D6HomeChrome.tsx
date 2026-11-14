@@ -20,7 +20,7 @@ import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { GestureDetector } from 'react-native-gesture-handler';
-import Reanimated, { Easing, Extrapolation, FadeIn, FadeInDown, FadeOut, FadeOutUp, LinearTransition, interpolate, useAnimatedStyle } from 'react-native-reanimated';
+import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useD6PaneDrag } from './useD6PaneDrag';
 import { D6PaneFrame } from './D6PaneFrame';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,7 +29,7 @@ import GatheringCardParticles from '../../../components/GatheringCardParticles';
 import OverflowMarquee from '../../../components/OverflowMarquee';
 import { HitherText } from '../../../components/HitherText';
 import { MAP_FLOATING_EDGE_INSET, MAP_FLOATING_GRABBER_HEIGHT, MAP_GATHERING_CORNER_RADIUS, MAP_ISLAND_ACTION_HEIGHT,
-  MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_HEIGHT, MAP_SHEET_CORNER_RADIUS,
+  MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_GRABBER_HEIGHT, MAP_ISLAND_HEIGHT, MAP_SHEET_CORNER_RADIUS,
   SHEET_CORNER_ACTION_INSET, D6_SURFACE_COLORS, D6_SURFACE_BORDER_COLOR, D6_SURFACE_SOLID_COLOR } from '../../../components/mapSheetChrome';
 import MapRecenterControl from '../../../components/MapRecenterControl';
 import { useMountEffect } from '../../../hooks/useMountEffect';
@@ -40,6 +40,7 @@ import { formatDistance, type TravelMode } from '../../../utils/geo';
 import { D6_DAY_PALETTE } from '../d6Itinerary';
 import type { Destination } from '../../../types';
 import { d6MeetingDisplay, d6TravelTime } from '../d6GatheringHeader';
+import { lightTap } from '../../../utils/haptics';
 export { d6MeetingDisplay } from '../d6GatheringHeader';
 
 export const D6_ACCENT = '#4C6FFF';
@@ -48,7 +49,7 @@ export type D6Journey = 'empty' | 'ready' | 'going' | 'arrived';
 const FONT = 'BarlowCondensed-ExtraBoldItalic';
 const D6_COUNTDOWN_COLOR = '#7993FF';
 const END_HOLD_MS = 1500;
-const HOLD_FEEDBACK_MS = [380, 820, 1210];
+const HOLD_FEEDBACK_INTERVAL_MS = 40;
 const FACT_TINT = { travel: '#AAC0FF', location: '#F9D48F', people: '#9CE6C7' };
 const JOURNEY_BUTTON_DEPTH = 4;
 const FONTS = { [FONT]: require('../../../../targets/live-activity/BarlowCondensed-ExtraBoldItalic.ttf') };
@@ -265,11 +266,11 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
   const base = Math.max(0, Math.min(1, progress ?? 0));
   const [fill] = useState(() => new Animated.Value(base));
   const [buttonDepth] = useState(() => new Animated.Value(0));
-  const holdFeedback = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const holdFeedback = useRef<ReturnType<typeof setInterval> | null>(null);
   const visible = useForegroundUi();
   const clearHoldFeedback = () => {
-    holdFeedback.current.forEach(timer => clearTimeout(timer));
-    holdFeedback.current = [];
+    if (holdFeedback.current !== null) clearInterval(holdFeedback.current);
+    holdFeedback.current = null;
   };
   const [pressed, setPressed] = useState(false);
   const holding = useRef(false);
@@ -282,7 +283,7 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
     return () => {
       mounted = false;
       subscription?.remove();
-      holdFeedback.current.forEach(timer => clearTimeout(timer));
+      clearHoldFeedback();
       fill.stopAnimation();
       buttonDepth.stopAnimation();
     };
@@ -306,9 +307,6 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
     else Animated.timing(buttonDepth, { toValue, duration: toValue > 0 ? 90 : 150, useNativeDriver: true }).start();
   }
   function runAction() {
-    if (phase !== 'empty') {
-      void Haptics.impactAsync(canLead ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
-    }
     onAction();
   }
   const label = phase === 'empty'
@@ -340,14 +338,15 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
         stoppedTouch.current = false;
         setPressed(true);
         moveFace(JOURNEY_BUTTON_DEPTH);
+        void Haptics.impactAsync(canHold ? Haptics.ImpactFeedbackStyle.Rigid : Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
         if (!canHold) return;
         holding.current = true;
         clearHoldFeedback();
-        holdFeedback.current = HOLD_FEEDBACK_MS.map((delay, index) => setTimeout(() => {
+        holdFeedback.current = setInterval(() => {
           if (holding.current) {
-            void Haptics.impactAsync(index === 0 ? Haptics.ImpactFeedbackStyle.Soft : Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid).catch(() => undefined);
           }
-        }, delay));
+        }, HOLD_FEEDBACK_INTERVAL_MS);
         if (!reduceMotion) animate(1, END_HOLD_MS).start();
       }}
       onPressOut={() => {
@@ -463,11 +462,6 @@ export function D6HomeChrome(props: HomeChromeProps) {
     direction: -1, open: teamOpen, reduceMotion: props.reduceMotion,
     onOpenChange: changeTeam, onDragBegin: closeItineraryBeforeDrag,
   });
-  const islandHeight = island.height;
-  const teamHeaderMotion = useAnimatedStyle(() => ({
-    opacity: interpolate(islandHeight.value, [islandClosed, islandClosed + 76], [0, 1], Extrapolation.CLAMP),
-    bottom: bottom + islandHeight.value - SHEET_CORNER_ACTION_INSET - 48,
-  }));
   const topLabel = topOpen ? (zh ? '收合行程' : 'Close itinerary') : (zh ? '展開行程' : 'Open itinerary');
   const goRoute = () => {
     top.snapTo(top.detent === 'closed' || top.detent === 'full' ? 'half' : 'closed');
@@ -478,7 +472,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
     <View pointerEvents="box-none" style={styles.layer}>
       {top.lifecycle}
       {island.lifecycle}
-      {!hideHeader ? <Reanimated.View entering={FadeInDown.duration(300)} exiting={FadeOutUp.duration(220)} style={StyleSheet.absoluteFill} pointerEvents="box-none"><D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS}
+      {!hideHeader ? <View style={StyleSheet.absoluteFill} pointerEvents="box-none"><D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS}
         style={[styles.top, { top: topEdge }]} open={topOpen}
         surface={<D6Surface radius={MAP_GATHERING_CORNER_RADIUS} />}
         decoration={<View style={[styles.particleField, { height: topClosed }]} pointerEvents="none">
@@ -497,29 +491,32 @@ export function D6HomeChrome(props: HomeChromeProps) {
         </MotionPressable>}
         body={showItinerary ? <View collapsable={false} testID="d6-route-viewport" onLayout={top.contentDidLayout} style={styles.topBody}>{itinerary}</View> : null}
         grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} label={topLabel} testID="home-itinerary-grabber" />}
-      /></Reanimated.View> : null}
+      /></View> : null}
       {!pane && !top.preview && !island.preview && !hideIsland ? <MapRecenterControl style={[styles.controls, { bottom: bottom + islandClosed + 16 }]}
         onFitAll={onFit} onLocate={onLocate} fitAllLabel={zh ? '縮放到全隊' : 'Fit team on map'}
         locateLabel={zh ? '回到我的位置' : 'Show my location'} /> : null}
-      {!hideIsland ? <D6PaneFrame panel={island} direction={-1} cornerRadius={MAP_SHEET_CORNER_RADIUS}
+      {!hideIsland ? <D6PaneFrame panel={island} direction={-1} cornerRadius={MAP_SHEET_CORNER_RADIUS} grabberHeight={MAP_ISLAND_GRABBER_HEIGHT}
         style={[styles.island, { bottom }]} open={teamOpen}
         surface={<D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />}
-        body={showTeam ? <View collapsable={false} testID="d6-team-viewport" onLayout={island.contentDidLayout} style={[styles.teamBody, teamHeader != null && styles.teamBodyWithHeader]}>{team}</View> : null}
+        body={showTeam ? <View collapsable={false} testID="d6-team-viewport" onLayout={island.contentDidLayout} style={styles.teamBody}>
+          {teamHeader != null ? <View style={styles.teamHeader}>{teamHeader}</View> : null}
+          {team}
+        </View> : null}
         grabber={<Grabber gesture={island.gesture} detent={island.detent} snapTo={island.snapTo}
           label={teamOpen ? (zh ? '收合隊伍' : 'Close team') : (zh ? '展開隊伍' : 'Open team')}
-          testID="home-team-toggle" />}
+          testID="home-team-toggle" height={MAP_ISLAND_GRABBER_HEIGHT} />}
         footer={<View style={styles.islandControls} onLayout={({ nativeEvent: { layout: { height } } }) => {
           if (!footer) setIslandControlsHeight(height);
         }}>
         {error && !topOpen ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {footer ?? <View style={styles.islandRow}>
-          <MotionPressable motion="depth" testID="home-profile" accessibilityRole="button" accessibilityLabel={zh ? '你' : 'You'} onPress={onProfile} style={[styles.avatar, { backgroundColor: selfColor }]}>
+          <MotionPressable motion="depth" testID="home-profile" accessibilityRole="button" accessibilityLabel={zh ? '你' : 'You'} onPressIn={lightTap} onPress={onProfile} style={[styles.avatar, { backgroundColor: selfColor }]}>
             <Text allowFontScaling={false} style={styles.avatarEmoji}>{selfEmoji}</Text>
             <View style={[styles.status, { backgroundColor: statusColor }]} />
           </MotionPressable>
           <JourneyButton phase={phase} canLead={canLead} asked={props.asked} busy={props.busy}
             progress={props.progress} reduceMotion={props.reduceMotion} zh={zh} onAction={props.onAction} onStop={props.onStop} />
-          <MotionPressable motion="depth" testID="home-commands" accessibilityRole="button" accessibilityLabel={zh ? '快捷指令' : 'Quick commands'} onPress={onCommands} style={styles.commands}>
+          <MotionPressable motion="depth" testID="home-commands" accessibilityRole="button" accessibilityLabel={zh ? '快捷指令' : 'Quick commands'} onPressIn={lightTap} onPress={onCommands} style={styles.commands}>
             <View>
               <Ionicons name="chatbubble-outline" size={27} color="#fff" />
               <Ionicons name="flash" size={13} color="#fff" style={styles.commandBolt} />
@@ -528,12 +525,6 @@ export function D6HomeChrome(props: HomeChromeProps) {
         </View>}
         </View>}
       /> : null}
-      {!hideIsland && showTeam && teamHeader != null ? <Reanimated.View pointerEvents={teamOpen ? 'box-none' : 'none'}
-        accessibilityElementsHidden={!teamOpen} entering={HEADER_ENTER} exiting={HEADER_EXIT}
-        style={[styles.teamHeader, { top: 'auto', left: MAP_FLOATING_EDGE_INSET + SHEET_CORNER_ACTION_INSET,
-          right: MAP_FLOATING_EDGE_INSET + SHEET_CORNER_ACTION_INSET, height: 48 }, teamHeaderMotion]}>
-        {teamHeader}
-      </Reanimated.View> : null}
     </View>
   );
 }
@@ -549,7 +540,7 @@ export const d6ChromeStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   layer: { ...StyleSheet.absoluteFill, zIndex: 55 },
-  top: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, borderRadius: MAP_GATHERING_CORNER_RADIUS, overflow: 'hidden' },
+  top: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, borderRadius: MAP_GATHERING_CORNER_RADIUS },
   headingButton: { flexShrink: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, paddingTop: 20, paddingBottom: 4 },
   particleField: { position: 'absolute', left: 0, right: 0, top: 0 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60 },
@@ -578,8 +569,7 @@ const styles = StyleSheet.create({
   hot: { color: D6_COUNTDOWN_COLOR },
   topBody: { flex: 1, minHeight: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, marginTop: 6 },
   teamBody: { flex: 1, minHeight: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, marginBottom: 6 },
-  teamHeader: { position: 'absolute', top: SHEET_CORNER_ACTION_INSET, left: SHEET_CORNER_ACTION_INSET, right: SHEET_CORNER_ACTION_INSET, zIndex: 2 },
-  teamBodyWithHeader: { paddingTop: SHEET_CORNER_ACTION_INSET - MAP_ISLAND_BOTTOM_INSET + 56 },
+  teamHeader: { minHeight: 48, marginTop: 6, marginBottom: 12 },
   islandControls: { flexShrink: 0, paddingHorizontal: MAP_ISLAND_BOTTOM_INSET },
   grabArea: { flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   grabTarget: { width: 104, alignItems: 'center', justifyContent: 'center' },
@@ -602,8 +592,7 @@ const styles = StyleSheet.create({
   ctaFace: { flex: 1, minHeight: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2, overflow: 'hidden',
     backgroundColor: '#ffffff1f',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 8 },
-  ctaRaisedFace: { minHeight: MAP_ISLAND_ACTION_HEIGHT - JOURNEY_BUTTON_DEPTH,
-    marginBottom: JOURNEY_BUTTON_DEPTH, backgroundColor: D6_ACCENT },
+  ctaRaisedFace: { minHeight: MAP_ISLAND_ACTION_HEIGHT, backgroundColor: D6_ACCENT },
   ctaSoftPressed: { opacity: 0.85 },
   ctaFaceLarge: { paddingVertical: 4 },
   ctaText: { color: '#fff', textAlign: 'center', fontSize: APP_TEXT_SIZE.body, fontWeight: '800' },

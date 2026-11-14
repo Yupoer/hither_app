@@ -55,9 +55,12 @@ exports.installNavigation = ({ jest, host }) => {
     Navigator: ({ children, initialRouteName, layout }) => {
       const screens = React.Children.toArray(children).filter(React.isValidElement);
       const startParams = screens.find(node => node.props.name === initialRouteName)?.props.initialParams;
-      const [route, setRoute] = React.useState({ name: initialRouteName, params: startParams });
+      const [route, setRoute] = React.useState(() => {
+        const initialRoute = routeWithKey(initialRouteName, startParams);
+        state.routes = [initialRoute];
+        return initialRoute;
+      });
       render = setRoute;
-      React.useEffect(() => { state.routes = [routeWithKey(initialRouteName, startParams)]; }, []);
       React.useEffect(() => {
         state.route = route.name; state.params = route.params;
         if (!state.routes.length) state.routes.push(route);
@@ -65,7 +68,7 @@ exports.installNavigation = ({ jest, host }) => {
       }, [route]);
       const screen = screens.find(node => node.props.name === route.name);
       assert(screen, `Unregistered route ${route.name}`);
-      const content = React.createElement(screen.props.component, { navigation: nav, route: { ...route, key: state.routes.at(-1)?.key } });
+      const content = React.createElement(screen.props.component, { key: state.routes.at(-1)?.key, navigation: nav, route: { ...route, key: state.routes.at(-1)?.key } });
       const routes = state.routes.length ? state.routes : [route];
       return layout ? layout({ state: { index: routes.length - 1, routes }, navigation: nav, descriptors: {}, children: content }) : content;
     }, Screen: () => { throw new Error('Screen registration rendered outside navigator'); },

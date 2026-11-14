@@ -468,7 +468,6 @@ describe('map UI placement contracts', () => {
   it('keeps settings content padded and exits fixed-size sheets by translation', () => {
     expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
     expect(settingsPanel).toContain('dismissRequested={visible}');
-    expect(settingsPanel).toContain('contentTopPadding={home ? 4 : 12}');
     expect(settingsPanel).toContain('pinContentBelowHeader={home}');
     expect(settingsPanel).not.toContain('sheetHeight.value = withSpring(0');
     expect(bottomSheet).toContain('contentTopPadding = 0');

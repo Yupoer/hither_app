@@ -6,7 +6,7 @@ const { LEADER, PEER, GROUP_ID, DESTINATION } = require('../../test/headless/bac
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = {
   presentation: { hosts: { testId?: string; label?: string; text?: string }[];
-    receipts: { host: string; method: string; url?: string }[] };
+    receipts: { host: string; method: string; url?: string; style?: string }[] };
   external: { watches: number };
   durable: { snapshot: CoreGroupSnapshot; operations: CoreOperation[] };
 };
@@ -32,6 +32,41 @@ describe('actual D6 iOS navigation and import safety', () => {
     expect(await press(device, 'home-journey-action')).toEqual({ invoked: true });
     await world.waitFor(device, () => [...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active'), 'shared start committed');
   }
+
+  it('provides touch feedback for all three island actions and cancels high-frequency hold feedback on release and background', async () => {
+    const world = new World();
+    try {
+      const device = await map(world);
+      const touch = (testId: string, event: 'onPressIn' | 'onPressOut') => device.host.call({
+        kind: 'nativeEvent', testId, value: { event, nativeEvent: {} },
+      });
+      const impacts = (value: Observation) => value.presentation.receipts.filter(row => row.host === 'Haptics' && row.method === 'impactAsync');
+      for (const id of ['home-profile', 'home-commands', 'home-journey-action']) {
+        const before = impacts(await device.observe()).length;
+        await touch(id, 'onPressIn');
+        expect(impacts(await device.observe()).length).toBeGreaterThan(before);
+        await touch(id, 'onPressOut');
+      }
+      await start(world, device);
+      await world.waitFor(device, (value: Observation) => host(value, 'home-journey-action')?.label?.includes('hold to end'), 'hold action');
+      const rigid = (value: Observation) => impacts(value).filter(row => row.style === 'rigid').length;
+      const beforeHold = rigid(await device.observe());
+      await touch('home-journey-action', 'onPressIn');
+      await world.advance(400);
+      const held = rigid(await device.observe());
+      expect(held - beforeHold).toBeGreaterThanOrEqual(8);
+      await touch('home-journey-action', 'onPressOut');
+      await world.advance(400);
+      expect(rigid(await device.observe())).toBe(held);
+      expect([...world.backend.sessions.values()].some((row: { status: string }) => row.status === 'active')).toBe(true);
+      await touch('home-journey-action', 'onPressIn');
+      await world.advance(200);
+      await device.input({ kind: 'appState', value: 'background' });
+      const background = rigid(await device.observe());
+      await world.advance(1200);
+      expect(rigid(await device.observe())).toBe(background);
+    } finally { await world.close(); }
+  });
 
   it('shows over-one-hour directions and distance from fresh GPS and opens the selected stop in Maps', async () => {
     const world = new World();

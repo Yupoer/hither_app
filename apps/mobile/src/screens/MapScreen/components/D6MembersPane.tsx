@@ -2,7 +2,8 @@ import { useForegroundClock } from '../../../state/foregroundUi';
 import { locationFreshness, resolveSelfAwareLastUpdated } from '../../../utils/locationFreshness';
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import React, { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { D6PaneScrollView } from './D6PaneScrollView';
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
@@ -261,7 +262,7 @@ export function D6MembersPane({
       {clock.lifecycle}
       {showHeader ? <D6TeamHeader group={group} onOpenTeamSettings={onOpenTeamSettings} onInviteTeam={onInviteTeam} /> : null}
       {myMember && !picking ? renderMember(myMember) : null}
-      <ScrollView testID="d6-team-scroll" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
+      <D6PaneScrollView testID="d6-team-scroll" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
       {group && isNewTeam && myMember && flock.length === 1 && group.inviteCode ? (
         <View style={[styles.codeCard, { backgroundColor: accentMix(accent, 22) }]}>
           <Text
@@ -395,7 +396,7 @@ export function D6MembersPane({
           <Text style={styles.splitLabel}>{t('solo.tempLeave')}</Text>
         </Pressable>
       </>)}
-      </ScrollView>
+      </D6PaneScrollView>
     </View>
   );
 }
@@ -533,7 +534,7 @@ const styles = StyleSheet.create({
   statusDot: { position: 'absolute', right: 0, bottom: 0, width: 11, height: 11, borderWidth: 2, borderRadius: 6, borderColor: '#26302E' },
   inboxBadge: { top: -4, right: -4 },
   stealthAvatar: { opacity: 0.4 },
-  statusPill: { minHeight: 34, paddingHorizontal: 13, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: soft, borderRadius: 17 },
+  statusPill: { minHeight: 28, paddingHorizontal: 9, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: soft, borderRadius: 14 },
   statusLabel: { color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   check: { width: 26, height: 26, borderRadius: 13, borderColor: 'rgba(255,255,255,0.45)', borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   trailing: { flexDirection: 'row', alignItems: 'center', gap: 6 },

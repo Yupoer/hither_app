@@ -98,6 +98,8 @@ function TeamStack({ actorId, consumedInitialInvite }: { actorId: string | undef
         initialParams={startup?.kind === 'team' ? { groupId: startup.groupId } : undefined}
         options={{
           contentStyle: { backgroundColor: colors.background },
+          animation: 'fade',
+          animationTypeForReplace: 'push',
           gestureEnabled: false,
           fullScreenGestureEnabled: false,
         }}

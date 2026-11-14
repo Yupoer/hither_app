@@ -7,6 +7,7 @@ import {
   MapCardWorkloadResource,
   MapForegroundNavigationResource,
   MapNavigationStartFrameResource,
+  MapPermissionRecoveryResource,
   MapProgressDeadlineResource,
   MapRouteCameraResource,
   MapRouteScopePreferenceResource,
@@ -32,6 +33,8 @@ const mockGroupSyncSubscribe = jest.fn((listener: GroupSyncListener) => {
   return () => { mockGroupSyncListeners.delete(listener); };
 });
 const mockRecoverPending = jest.fn(async (..._args: unknown[]) => undefined);
+const mockPermissionState = jest.fn<Promise<{ backgroundStatus: string }>, []>();
+const mockConsumePermission = jest.fn<Promise<boolean>, []>();
 const mockGetItem = jest.fn<Promise<string | null>, [string]>();
 const mockSharingLoads: { actor: string; resolve: (value: boolean | null) => void; reject: (error: Error) => void }[] = [];
 const mockLeaseRelease = jest.fn();
@@ -64,8 +67,8 @@ jest.mock('../state/locationSharingSync', () => ({
 }));
 jest.mock('../state/journeyNotifications', () => ({ notifyJourneyApproach: jest.fn() }));
 jest.mock('../featureTour', () => ({ readAddPlaceTourCompletedLocal: jest.fn(), retryPendingAddPlaceTourAccountSync: jest.fn() }));
-jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationPermission: jest.fn(), recoverPendingLocationRefreshes: (...args: unknown[]) => mockRecoverPending(...args) }));
-jest.mock('../native', () => ({ location: {} }));
+jest.mock('../state/backgroundLocationRefresh', () => ({ consumePendingLocationPermission: () => mockConsumePermission(), recoverPendingLocationRefreshes: (...args: unknown[]) => mockRecoverPending(...args) }));
+jest.mock('../native', () => ({ location: { getPermissionState: () => mockPermissionState() } }));
 jest.mock('../api/client', () => ({ listFavoritePlaces: jest.fn() }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -109,6 +112,34 @@ describe('MapScreen named resources', () => {
     act(() => tree?.unmount());
     tree = undefined;
     jest.useRealTimers();
+  });
+
+  it.each(['denied', 'granted'])('ignores a retired Map permission recovery with a late %s result', async status => {
+    let finishPermission: (value: { backgroundStatus: string }) => void = () => undefined;
+    let finishPending: (value: boolean) => void = () => undefined;
+    mockPermissionState.mockImplementationOnce(() => new Promise(resolve => { finishPermission = resolve; }));
+    mockConsumePermission.mockImplementationOnce(() => new Promise(resolve => { finishPending = resolve; }));
+    const denied = { current: 'old-denied-key' as string | null };
+    const oldAlert = jest.fn();
+    const translate: React.ComponentProps<typeof MapPermissionRecoveryResource>['t'] = key => key;
+    const render = (groupId: string, showLocationPermissionAlert: typeof oldAlert, backgroundPermissionDeniedRef = denied) =>
+      React.createElement(MapPermissionRecoveryResource, {
+        appState: 'active', groupId, backgroundPermissionDeniedRef, showLocationPermissionAlert, t: translate,
+      });
+    act(() => { tree = create(render('old', oldAlert)); });
+    act(() => tree?.unmount());
+    tree = undefined;
+    mockPermissionState.mockResolvedValueOnce({ backgroundStatus: 'denied' });
+    mockConsumePermission.mockResolvedValueOnce(true);
+    const newAlert = jest.fn();
+    const currentDenied = { current: 'current-denied-key' as string | null };
+    await act(async () => { tree = create(render('new', newAlert, currentDenied)); });
+    expect(newAlert).toHaveBeenCalledTimes(1);
+    await act(async () => { finishPermission({ backgroundStatus: status }); finishPending(true); });
+    expect(oldAlert).not.toHaveBeenCalled();
+    expect(denied.current).toBe('old-denied-key');
+    expect(currentDenied.current).toBe('current-denied-key');
+    expect(newAlert).toHaveBeenCalledTimes(1);
   });
 
   it('applies stored sharing after preferences become ready under Strict replay', async () => {

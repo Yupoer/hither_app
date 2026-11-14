@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import { beginAuthCallback, consumeAuthCallback, cancelAuthCallback } from '../auth/callbacks';
 import { changeAuthSession, resumeInstallationCapabilities } from '../api/installationCapabilities';
@@ -189,6 +189,22 @@ export function useAuthFlow({
   setIsPro,
   setMembershipState,
 }: UseAuthFlowParams) {
+  const profileWriteRevisions = useRef({ name: 0, avatar: 0, avatarColor: 0, preferences: 0 });
+  const captureProfileRead = useCallback(() => {
+    const started = profileWriteRevisions.current;
+    return (previous: User | null, incoming: User): User => {
+      if (previous?.id !== incoming.id) return incoming;
+      const latest = profileWriteRevisions.current;
+      return {
+        ...incoming,
+        ...(started.name !== latest.name ? { name: previous.name } : {}),
+        ...(started.avatar !== latest.avatar ? { avatar: previous.avatar } : {}),
+        ...(started.avatarColor !== latest.avatarColor ? { avatarColor: previous.avatarColor } : {}),
+        ...(started.preferences !== latest.preferences ? { preferences: previous.preferences } : {}),
+      };
+    };
+  }, []);
+
   const signIn = useCallback(
     async ({ name }: { name: string; email?: string }): Promise<User> => {
       const nickname = name.trim();
@@ -648,6 +664,10 @@ export function useAuthFlow({
   const updateNickname = useCallback(
     async (nickname: string) => {
       const next = await updateNicknameApi(nickname);
+      profileWriteRevisions.current = {
+        ...profileWriteRevisions.current,
+        name: profileWriteRevisions.current.name + 1,
+      };
       setUser((prev) => (prev ? { ...prev, name: next } : prev));
     },
     [setUser],
@@ -664,6 +684,13 @@ export function useAuthFlow({
       // Overlay keeps its own draft; do not optimistically pollute committed avatar.
       await updateProfileApi(fields);
       const nickname = fields.nickname?.trim();
+      const revisions = profileWriteRevisions.current;
+      profileWriteRevisions.current = {
+        name: revisions.name + (nickname ? 1 : 0),
+        avatar: revisions.avatar + (fields.avatar ? 1 : 0),
+        avatarColor: revisions.avatarColor + (fields.avatarColor ? 1 : 0),
+        preferences: revisions.preferences + (fields.preferences !== undefined ? 1 : 0),
+      };
       setUser((u) =>
         u
           ? {
@@ -680,6 +707,7 @@ export function useAuthFlow({
   );
 
   return {
+    captureProfileRead,
     signIn,
     signInWithGoogle,
     signInWithApple,

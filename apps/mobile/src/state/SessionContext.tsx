@@ -218,6 +218,29 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const {
+    signIn,
+    signInWithGoogle,
+    signInWithApple,
+    linkWithGoogle,
+    linkWithApple,
+    signInWithEmail,
+    signUpWithEmail,
+    signOut,
+    deleteAccount,
+    upgradeToEmailAccount,
+    updateNickname,
+    updateProfile,
+    captureProfileRead,
+  } = useAuthFlow({
+    user,
+    isAnonymous,
+    setUser,
+    setIsAnonymous,
+    setIsPro,
+    setMembershipState,
+  });
+
   // Restore any persisted anonymous session on launch and keep `user.id` in
   // sync with auth state. The nickname is read back from `profiles` so a
   // relaunch shows the same identity.
@@ -328,6 +351,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     async function hydrate(authUser: AuthUser, epoch: number) {
       if (!active || epoch !== authEpoch) return;
+      const mergeProfileRead = captureProfileRead();
       // select('*') so the optional avatar/pro columns are tolerated either way.
       const { data, error: profileError } = await supabase
         .from('profiles')
@@ -368,7 +392,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (!active || epoch !== authEpoch) return;
         setPremiumProjection(cached ? cacheBlobToProjection(cached) : EMPTY_PREMIUM_PROJECTION);
         setTripEntitlement(null);
-        setUser({
+        setUser((previous) => mergeProfileRead(previous, {
           id: authUser.id,
           name: row?.nickname ?? metadataNickname,
           email: authUser.email ?? '',
@@ -382,7 +406,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           proExpiresAt: row?.pro_expires_at ?? undefined,
           anonymousExpiresAt: row?.anonymous_expires_at ?? undefined,
           preferences: normalizeAccountPreferences(row?.preferences),
-        });
+        }));
         setIsAnonymous(!!authUser.is_anonymous);
       }
     }
@@ -512,28 +536,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   if (!Object.is(onboardingUser.user, user)) {
     setOnboardingUser({ user, generation: onboardingUser.generation + 1 });
   }
-
-  const {
-    signIn,
-    signInWithGoogle,
-    signInWithApple,
-    linkWithGoogle,
-    linkWithApple,
-    signInWithEmail,
-    signUpWithEmail,
-    signOut,
-    deleteAccount,
-    upgradeToEmailAccount,
-    updateNickname,
-    updateProfile,
-  } = useAuthFlow({
-    user,
-    isAnonymous,
-    setUser,
-    setIsAnonymous,
-    setIsPro,
-    setMembershipState,
-  });
 
   const requestPasswordReset = useCallback(async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
@@ -778,6 +780,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshProfile = useCallback(async () => {
+    const mergeProfileRead = captureProfileRead();
     const actorId = user?.id;
     const generation = identityGenerationRef.current;
     const isCurrent = () => identityActorIdRef.current === actorId && identityGenerationRef.current === generation;
@@ -808,7 +811,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       } | null;
       setUser((prev) => {
         if (!prev || prev.id !== actorId) return prev;
-        return {
+        return mergeProfileRead(prev, {
           ...prev,
           name: row?.nickname ?? prev.name,
           avatar: row?.avatar ?? prev.avatar,
@@ -828,7 +831,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             ? (row.anonymous_expires_at ?? undefined)
             : prev.anonymousExpiresAt,
           preferences: normalizeAccountPreferences(row?.preferences),
-        };
+        });
       });
       // Mirror server anonymous flag on every refresh (upgrade confirm, etc.).
       setIsAnonymous(!!authUser.is_anonymous);
@@ -858,7 +861,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           .catch(() => undefined);
       }
     }
-  }, [membership?.group.id, user?.id, membershipRevision]);
+  }, [captureProfileRead, membership?.group.id, user?.id, membershipRevision]);
 
   const value = useMemo<SessionContextValue>(
     () => ({

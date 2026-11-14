@@ -17,6 +17,11 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
     try {
       const device = await screen(world, 'ProfileOverlay');
       await world.waitFor(device, (value: any) => value.presentation.session.user?.name === 'Leader', 'profile enrichment before editing');
+      await world.advance(0);
+      world.hold('profiles', { phase: 'delivery', matches: (operation: { steps: unknown[][] }) => operation.steps[0]?.[0] === 'select' });
+      const refresh = device.perform('profile.refresh');
+      await world.advance(0);
+      expect(world.held).toHaveLength(1);
       await device.perform('preferences.setLanguage', { args: ['en'] });
       await device.perform('profile.name', { value: 'Discard me' });
       await device.perform('profile.cancel');
@@ -38,6 +43,11 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await device.perform('command.save');
       await world.settle();
       expect((await device.observe()).presentation.session.customQuickCommands[1]).toEqual({ label: 'Meet', message: 'At the entrance' });
+      await world.release('profiles');
+      await refresh;
+      const refreshed = (await device.observe()).presentation.session;
+      expect(refreshed.user).toMatchObject({ name: 'Renamed', avatar: '🐑' });
+      expect(refreshed.customQuickCommands[1]).toEqual({ label: 'Meet', message: 'At the entrance' });
       world.backend.profiles.delete(LEADER);
       await device.perform('profile.nickname', { args: ['  Recreated profile  '] });
       expect(world.backend.profiles.get(LEADER).nickname).toBe('Recreated profile');

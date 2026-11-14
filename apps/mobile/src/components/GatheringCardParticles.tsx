@@ -112,7 +112,7 @@ function ParticleCanvas({ width, height, frame, time }: {
 }
 
 function ParticleLayer({ paths, index, opacity }: { paths: DerivedValue<SkPath[]>; index: number; opacity: number }) {
-  const path = useDerivedValue(() => paths.value[index]);
+  const path = useDerivedValue(() => paths.value[index].copy());
   return <Path path={path} color="#fff" opacity={opacity} />;
 }
 

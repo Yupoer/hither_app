@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ScrollHandler } from 'react-native-reanimated';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useD6PaneDrag } from '../screens/MapScreen/components/useD6PaneDrag';
 
@@ -11,9 +12,12 @@ let mockStyle: () => { height?: number } = () => ({});
 type Spring = { next: number; completion?: (finished: boolean) => void };
 type Shared = { value: unknown; get: () => unknown; set: (next: unknown) => void };
 type Drag = { translationY: number; velocityY: number };
-const mockShared: Shared[] = [];
 const mockSprings: Spring[] = [];
 const mockCancel = jest.fn();
+const mockScrollTo = jest.fn();
+let mockScrollHandler: ScrollHandler = () => {};
+type Handlers = typeof mockHandlers;
+const mockPanHandlers = new WeakMap<object, Handlers>();
 const mockHandlers = {
   start: () => {}, update: (_event: Drag) => {}, end: (_event: Drag, _success: boolean) => {}, finalize: () => {},
 };
@@ -28,11 +32,15 @@ jest.mock('react-native-reanimated', () => ({
         get: () => shared.value,
         set: next => { if (!mockSprings.some(spring => spring === next)) shared.value = next; },
       };
-      mockShared.push(shared);
       return shared;
     })[0];
   },
-  useAnimatedRef: () => () => true,
+  useAnimatedRef: () => {
+    const { useState } = jest.requireActual<typeof import('react')>('react');
+    return useState(() => () => true)[0];
+  },
+  useAnimatedScrollHandler: (handler: ScrollHandler) => { mockScrollHandler = handler; return handler; },
+  scrollTo: (...args: unknown[]) => mockScrollTo(...args),
   useAnimatedReaction: (reader: typeof mockReadHeight, deliver: (height: number | null) => void) => {
     mockReadHeight = reader;
     mockDeliverHeight = () => deliver(reader());
@@ -50,15 +58,20 @@ jest.mock('react-native-reanimated', () => ({
 }));
 jest.mock('react-native-gesture-handler', () => ({
   Gesture: {
+    Native: () => ({ disallowInterruption() { return this; } }),
     Pan: () => {
+      const handlers = { ...mockHandlers };
       const gesture = {
+        enabled: () => gesture,
         activeOffsetY: () => gesture,
         failOffsetX: () => gesture,
-        onStart: (callback: typeof mockHandlers.start) => { mockHandlers.start = callback; return gesture; },
-        onUpdate: (callback: typeof mockHandlers.update) => { mockHandlers.update = callback; return gesture; },
-        onEnd: (callback: typeof mockHandlers.end) => { mockHandlers.end = callback; return gesture; },
-        onFinalize: (callback: typeof mockHandlers.finalize) => { mockHandlers.finalize = callback; return gesture; },
+        simultaneousWithExternalGesture: () => gesture,
+        onStart: (callback: typeof mockHandlers.start) => { handlers.start = mockHandlers.start = callback; return gesture; },
+        onUpdate: (callback: typeof mockHandlers.update) => { handlers.update = mockHandlers.update = callback; return gesture; },
+        onEnd: (callback: typeof mockHandlers.end) => { handlers.end = mockHandlers.end = callback; return gesture; },
+        onFinalize: (callback: typeof mockHandlers.finalize) => { handlers.finalize = mockHandlers.finalize = callback; return gesture; },
       };
+      mockPanHandlers.set(gesture, handlers);
       return gesture;
     },
   },
@@ -86,18 +99,15 @@ function panel(): ReturnType<typeof useD6PaneDrag> {
   if (!renderer) throw new Error('Panel is not mounted');
   return renderer.root.findByType(Probe).props.panel;
 }
-function height(): Shared {
-  const value = mockShared[2];
-  if (!value) throw new Error('Height is not initialized');
-  return value;
-}
+function height() { return panel().height; }
+
 function spring(): Spring {
   const value = mockSprings.at(-1);
   if (!value) throw new Error('Spring is not initialized');
   return value;
 }
 beforeEach(() => {
-  mockNative = true; mockVisible = true; mockShared.length = 0; mockSprings.length = 0; renders = 0;
+  mockNative = true; mockVisible = true; mockSprings.length = 0; renders = 0;
   jest.clearAllMocks();
 });
 afterEach(() => { act(() => renderer?.unmount()); renderer = undefined; });
@@ -153,13 +163,13 @@ it('preserves fling detents and clamps drag bounds', () => {
   expect(spring().next).toBe(349.6);
 });
 
-it('changes React content dimensions only after the current spring settles and restores full layout before regrab', () => {
+it('keeps the content layout fixed through a settled half detent and a regrab', () => {
   render();
   act(() => panel().snapTo('half'));
   const half = spring();
   expect(panel().layoutHeight).toBe(620);
   act(() => half.completion?.(true));
-  expect(panel().layoutHeight).toBe(349.6);
+  expect(panel().layoutHeight).toBe(620);
   act(() => mockHandlers.start());
   expect(panel().layoutHeight).toBe(620);
   act(() => half.completion?.(true));
@@ -175,7 +185,42 @@ it('reconciles external close, viewport resize and reduced motion', () => {
   expect(panel().preview).toBe(false);
   render({ open: true, full: 400, reduceMotion: true });
   expect(height().get()).toBe(244);
-  expect(panel().layoutHeight).toBe(244);
+  expect(panel().layoutHeight).toBe(400);
+});
+
+it.each([1, -1] satisfies (1 | -1)[])('hands content scrolling to the sheet at its anchored edge without a new gesture, direction %s', direction => {
+  render({ direction, open: true });
+  height().value = 350;
+  const handlers = mockPanHandlers.get(panel().contentGesture);
+  if (!handlers) throw new Error('Content gesture is missing');
+  const scroll = scrollContent;
+  act(() => scroll(100));
+  act(() => handlers.start());
+  const travel = -direction;
+  act(() => handlers.update({ translationY: travel * 40, velocityY: 0 }));
+  expect(height().get()).toBe(350);
+  expect(onDragBegin).not.toHaveBeenCalled();
+  act(() => scroll(direction === -1 ? 0 : 570));
+  act(() => handlers.update({ translationY: travel * 80, velocityY: 0 }));
+  act(() => handlers.update({ translationY: travel * 120, velocityY: 0 }));
+  expect(height().get()).toBe(310);
+  expect(onDragBegin).toHaveBeenCalledTimes(1);
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === -1 ? 0 : 570, false);
+  act(() => handlers.end({ translationY: travel * 120, velocityY: travel * 700 }, true));
+  expect(spring().next).toBe(349.6);
+});
+
+it.each([1, -1] satisfies (1 | -1)[])('expands from content before scrolling and restores an interrupted drag, direction %s', direction => {
+  render({ direction, open: true });
+  height().value = 350;
+  const handlers = mockPanHandlers.get(panel().contentGesture);
+  if (!handlers) throw new Error('Content gesture is missing');
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: direction * 10, velocityY: 0 }));
+  act(() => handlers.update({ translationY: direction * 90, velocityY: 0 }));
+  expect(height().get()).toBe(430);
+  act(() => handlers.finalize());
+  expect(spring().next).toBe(349.6);
 });
 
 it.each([true, false])('stops the spring in background and retains the selected detent on resume, native %s', native => {
@@ -210,4 +255,142 @@ it('keeps the original animated-height path when the native container is unavail
   act(() => panel().snapTo('full'));
   expect(panel().layoutHeight).toBe(100);
   expect(spring().next).toBe(620);
+});
+
+function contentHandlers() {
+  const handlers = mockPanHandlers.get(panel().contentGesture);
+  if (!handlers) throw new Error('Content gesture is missing');
+  return handlers;
+}
+function scrollContent(y: number) {
+  mockScrollHandler({
+    eventName: 'onScroll', contentInset: { top: 0, left: 0, bottom: 0, right: 0 }, zoomScale: 1,
+    contentOffset: { x: 0, y }, contentSize: { width: 320, height: 800 },
+    layoutMeasurement: { width: 320, height: 500 },
+  }, {});
+}
+
+it.each([1, -1] satisfies (1 | -1)[])('hands full-height overflow to content then reverses through the anchored edge in one gesture, direction %s', direction => {
+  render({ direction, open: true });
+  height().value = 350;
+  act(() => scrollContent(direction === 1 ? 570 : 0));
+  const handlers = contentHandlers();
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: direction * 10, velocityY: 0 }));
+  act(() => handlers.update({ translationY: direction * 330, velocityY: 0 }));
+  expect(height().get()).toBe(620);
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 250 : 50, false);
+  act(() => handlers.update({ translationY: direction * 300, velocityY: 0 }));
+  expect(height().get()).toBe(620);
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 280 : 20, false);
+  act(() => handlers.update({ translationY: direction * 270, velocityY: 0 }));
+  expect(height().get()).toBe(610);
+  act(() => handlers.update({ translationY: direction * 290, velocityY: 0 }));
+  expect(height().get()).toBe(620);
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 290 : 10, false);
+  expect(onDragBegin).toHaveBeenCalledTimes(1);
+  act(() => handlers.end({ translationY: direction * 290, velocityY: 0 }, true));
+  act(() => handlers.finalize());
+  expect(panel().detent).toBe('full');
+});
+
+it.each([1, -1] satisfies (1 | -1)[])('does not let native scroll events replace the offset owned by the content gesture, direction %s', direction => {
+  render({ direction, open: true });
+  height().value = 350;
+  act(() => scrollContent(direction === 1 ? 570 : 0));
+  const handlers = contentHandlers();
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: direction * 10, velocityY: 0 }));
+  act(() => handlers.update({ translationY: direction * 330, velocityY: 0 }));
+  act(() => scrollContent(direction === 1 ? 100 : 200));
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 250 : 50, false);
+  act(() => handlers.update({ translationY: direction * 340, velocityY: 0 }));
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 240 : 60, false);
+  act(() => handlers.finalize());
+  expect(spring().next).toBe(349.6);
+  mockScrollTo.mockClear();
+  act(() => scrollContent(120));
+  expect(mockScrollTo).not.toHaveBeenCalled();
+});
+
+it.each(['background', 'resize'] satisfies ('background' | 'resize')[])('cancels content ownership on %s and ignores stale events', change => {
+  render({ direction: -1, open: true });
+  height().value = 350;
+  const handlers = contentHandlers();
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: -10, velocityY: 0 }));
+  act(() => handlers.update({ translationY: -90, velocityY: 0 }));
+  expect(height().get()).toBe(430);
+  mockVisible = change !== 'background';
+  render({ direction: -1, open: true, full: change === 'resize' ? 400 : 620, reduceMotion: true });
+  const expected = change === 'resize' ? 244 : 349.6;
+  expect(height().get()).toBe(expected);
+  act(() => handlers.update({ translationY: -200, velocityY: 0 }));
+  act(() => handlers.end({ translationY: -200, velocityY: -900 }, true));
+  act(() => handlers.finalize());
+  expect(height().get()).toBe(expected);
+  expect(panel().detent).toBe('half');
+  expect(onOpenChange).not.toHaveBeenCalled();
+  mockVisible = true;
+  render({ direction: -1, open: true, reduceMotion: true });
+  height().value = 300;
+  const resumed = contentHandlers();
+  act(() => resumed.start());
+  act(() => resumed.update({ translationY: -10, velocityY: 0 }));
+  act(() => resumed.update({ translationY: -30, velocityY: 0 }));
+  expect(height().get()).toBe(320);
+});
+
+it.each([1, -1] satisfies (1 | -1)[])('leaves an untouched full sheet under native scroll control, direction %s', direction => {
+  render({ direction, open: true });
+  act(() => panel().snapTo('full'));
+  height().value = 620;
+  act(() => scrollContent(150));
+  const handlers = contentHandlers();
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: direction * 50, velocityY: 0 }));
+  act(() => scrollContent(150 - direction * 50));
+  act(() => handlers.update({ translationY: 0, velocityY: 0 }));
+  act(() => handlers.end({ translationY: 0, velocityY: 0 }, true));
+  act(() => handlers.finalize());
+  expect(height().get()).toBe(620);
+  expect(mockScrollTo).not.toHaveBeenCalled();
+  expect(onDragBegin).not.toHaveBeenCalled();
+});
+
+it.each([true, false])('regrabs content at its presentation height and restores unsuccessful release, native %s', native => {
+  mockNative = native;
+  render({ direction: -1, open: true });
+  act(() => panel().snapTo('full'));
+  height().value = 270;
+  act(() => scrollContent(0));
+  const handlers = contentHandlers();
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: -10, velocityY: 0 }));
+  const before = renders;
+  act(() => handlers.update({ translationY: -50, velocityY: 0 }));
+  expect(height().get()).toBe(310);
+  expect(renders).toBe(before);
+  act(() => handlers.end({ translationY: -50, velocityY: -900 }, false));
+  act(() => handlers.finalize());
+  expect(spring().next).toBe(620);
+  act(() => handlers.update({ translationY: -100, velocityY: 0 }));
+  expect(height().get()).toBe(310);
+  expect(panel().detent).toBe('full');
+});
+
+it.each([1, -1] satisfies (1 | -1)[])('reverses immediately after overshooting the closed bound, direction %s', direction => {
+  render({ direction, open: true });
+  height().value = 350;
+  act(() => scrollContent(direction === 1 ? 570 : 0));
+  const handlers = contentHandlers();
+  act(() => handlers.start());
+  act(() => handlers.update({ translationY: -direction * 10, velocityY: 0 }));
+  act(() => handlers.update({ translationY: -direction * 600, velocityY: 0 }));
+  expect(height().get()).toBe(100);
+  act(() => handlers.update({ translationY: -direction * 580, velocityY: 0 }));
+  expect(height().get()).toBe(120);
+  act(() => handlers.end({ translationY: -direction * 580, velocityY: 0 }, true));
+  expect(panel().detent).toBe('closed');
+  expect(onOpenChange).toHaveBeenCalledWith(false);
 });

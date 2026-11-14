@@ -94,7 +94,7 @@ export default function NotificationPreferencesCard({
           key={key}
           style={[styles.row, index === rows.length - 1 && styles.rowLast]}
         >
-          <Text style={[styles.label, home && { color: "#fff", fontSize: APP_TEXT_SIZE.caption }]}>{rowLabel(key, label)}</Text>
+          <Text style={[styles.label, home && { color: '#fff', fontSize: APP_TEXT_SIZE.body }]}>{rowLabel(key, label)}</Text>
           <SystemToggle
             testID={`notification-preference-${key}`}
             value={prefs[key]}

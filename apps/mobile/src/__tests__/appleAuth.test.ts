@@ -7,7 +7,7 @@ const mockUpdateUser = jest.fn();
 const mockProfileUpsert = jest.fn();
 const mockMaybeSingle = jest.fn();
 
-jest.mock('react', () => ({ useCallback: (fn: unknown) => fn }));
+jest.mock('react', () => ({ useCallback: (fn: unknown) => fn, useRef: (current: unknown) => ({ current }) }));
 jest.mock('expo-web-browser', () => ({}));
 jest.mock('expo-auth-session', () => ({ makeRedirectUri: jest.fn() }));
 jest.mock('expo-auth-session/build/QueryParams', () => ({ getQueryParams: jest.fn() }));

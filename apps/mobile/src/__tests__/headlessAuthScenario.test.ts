@@ -64,6 +64,58 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
+  it.each([false, true])('completes profile hydration after email login with a saved nickname = %s', async saveNickname => {
+    const world = new World();
+    try {
+      const device = await login(world);
+      world.backend.profiles.get(LEADER).avatar_color = '#E0634A';
+      world.backend.profiles.get(LEADER).created_at = '2025-01-01T00:00:00Z';
+      world.hold('profiles', { phase: 'delivery', matches: (operation: { steps: unknown[][] }) => operation.steps[0]?.[0] === 'select' });
+      await credentials(device);
+      await device.perform('auth.email.submit');
+      await world.advance(0);
+      const loginReads = world.held.filter((item: { operation: { steps: unknown[][] } }) => item.operation.steps[0]?.[1] !== '*');
+      expect(loginReads).toHaveLength(1);
+      world.held = world.held.filter((item: unknown) => !loginReads.includes(item));
+      for (const item of loginReads) world.respond(item, world.now);
+      await world.settle();
+      expect((await device.observe()).presentation.session.user.name).toBe('Leader');
+      if (saveNickname) await device.perform('profile.nickname', { args: ['Moon'] });
+      expect(world.held).toHaveLength(1);
+      await world.release('profiles');
+      expect((await device.observe()).presentation.session.user).toMatchObject({
+        id: LEADER,
+        name: saveNickname ? 'Moon' : 'Leader',
+        avatarColor: '#E0634A',
+        createdAt: '2025-01-01T00:00:00Z',
+        provider: 'email',
+      });
+    } finally { await world.close(); }
+  });
+
+  it('keeps the first saved nickname when signup hydration finishes later', async () => {
+    const world = new World();
+    try {
+      const device = await login(world);
+      world.backend.configureAuth({ signUpConfirmation: true });
+      world.hold('profiles', { phase: 'delivery', matches: (operation: { steps: unknown[][] }) => operation.steps[0]?.[0] === 'select' });
+      await address(device, 'new-profile@headless.test');
+      await device.perform('auth.signup.select');
+      await device.perform('auth.password.edit', { value: 'Headless123!' });
+      await device.perform('auth.email.submit');
+      await world.advance(0);
+      const registered = (await device.observe()).presentation.session.user;
+      expect(registered).toMatchObject({ name: '', email: 'new-profile@headless.test' });
+      expect(world.held).toHaveLength(1);
+      await device.perform('profile.nickname', { args: ['Moon'] });
+      await world.release('profiles');
+      expect((await device.observe()).presentation.session.user).toMatchObject({
+        id: registered.id, name: 'Moon', provider: 'email',
+      });
+      expect(world.backend.profiles.get(registered.id).nickname).toBe('Moon');
+    } finally { await world.close(); }
+  });
+
   it('separates signup confirmation, resend cooldown, reset failure and back controls', async () => {
     const world = new World();
     try {

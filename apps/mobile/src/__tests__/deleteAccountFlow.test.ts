@@ -21,7 +21,7 @@ const mockUpdateProfile = jest.fn();
 const mockGetGoogleAuthCredentials = jest.fn();
 let mockUsesNativeGoogle = true;
 
-jest.mock('react', () => ({ useCallback: (fn: unknown) => fn }));
+jest.mock('react', () => ({ useCallback: (fn: unknown) => fn, useRef: (current: unknown) => ({ current }) }));
 jest.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 jest.mock('expo-web-browser', () => ({
   openAuthSessionAsync: (...args: unknown[]) => mockOpenAuth(...args),

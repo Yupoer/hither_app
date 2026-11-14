@@ -3204,9 +3204,9 @@
     {
       "parent": 397,
       "child": 397,
-      "acceptance": "Native pane layout settles React dimensions after the current spring, restores full layout before a new drag, and reconciles viewport and reduced-motion changes.",
+      "acceptance": "Native panes keep React content dimensions fixed through drag and detent changes, transfer content motion at either edge, and reconcile viewport and reduced-motion changes.",
       "testFile": "d6PaneDrag.test.ts",
-      "testNamePattern": "changes React content dimensions|reconciles external close"
+      "testNamePattern": "keeps the content layout fixed|hands content scrolling|scrolls full-detent overflow|reconciles external close"
     },
     {
       "parent": 397,
@@ -3214,6 +3214,48 @@
       "acceptance": "Older iOS binaries and Android retain their supported renderer; native pane views are requested only when the installed binary advertises the capability.",
       "testFile": "d6PaneNativeAvailability.test.ts",
       "testNamePattern": "uses the existing panel renderer|exposes the native panel"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Selecting a team changes only a draft; confirming switches exactly once, cancellation discards the draft, and selecting the current team cannot confirm.",
+      "testFile": "homeTeamSelection.test.ts",
+      "testNamePattern": "HomeTeamsPage"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "One hundred confirmed switches among three teams retain one Map route and bounded external subscriptions, watches and timers; same-name replacement remounts the actual screen.",
+      "testFile": "headlessTeamSwitchLifecycle.test.ts",
+      "testNamePattern": "replaces Map through App settings 100 times|same-name replace"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Retired Map owners discard delayed permission results and explanation callbacks while a live owner retains input-change permission preparation.",
+      "testFile": "mapBackgroundLocationResource.test.ts",
+      "testNamePattern": "discards|publishes a permission flight|retains a permission flight"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "The three main island buttons provide touch haptics, and high-frequency hold feedback stops on release and background.",
+      "testFile": "headlessD6NavigationScenario.test.ts",
+      "testNamePattern": "provides touch feedback"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "A delayed profile read preserves fields successfully saved after it started, including repeated same-value saves.",
+      "testFile": "headlessD6YouScenario.test.ts",
+      "testNamePattern": "autosaves the nickname|keeps a saved nickname"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Login and signup hydration still fill complete server profile data while retaining a nickname saved before hydration completes.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "completes profile hydration|keeps the first saved nickname"
     }
   ]
 }

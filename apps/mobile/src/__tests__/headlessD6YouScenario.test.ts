@@ -29,21 +29,48 @@ async function openYou(world: InstanceType<typeof World>, userId = LEADER) {
 describe('D6 You from the real Map screen', () => {
   jest.setTimeout(120000);
 
-  it('autosaves the nickname and avatar color and keeps the parent page live', async () => {
+  it.each(['startup hydration', 'profile refresh'])('autosaves the nickname and avatar color and keeps the parent page live during %s', async source => {
     const world = new World();
     try {
       const device = await openYou(world);
       expect(await press(device, 'settings-page-profile')).toEqual({ invoked: true });
       await world.waitFor(device, (value: Observation) => !!field(value, 'profile-name'), 'profile page');
+      if (source === 'profile refresh') await world.advance(0);
+      world.hold('profiles', { phase: 'delivery', matches: (operation: { steps: unknown[][] }) => operation.steps[0]?.[0] === 'select' });
+      const refresh = source === 'profile refresh' ? device.perform('profile.refresh') : null;
+      await world.advance(0);
+      expect(world.held).toHaveLength(1);
       await device.host.call({ kind: 'changeText', testId: 'profile-name', value: 'Moon' });
       await world.advance(350);
       await world.waitFor(device, () => world.backend.profiles.get(LEADER).nickname === 'Moon', 'nickname autosave');
       expect(await press(device, 'profile-color-#E0634A')).toEqual({ invoked: true });
       await world.waitFor(device, () => world.backend.profiles.get(LEADER).avatar_color === '#E0634A', 'avatar color autosave');
+      await world.release('profiles');
+      await refresh;
+      expect((await device.observe()).presentation.session.user.avatarColor).toBe('#E0634A');
       expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
       const root = await world.waitFor(device, (value: Observation) => field(value, 'settings-page-profile')?.acceptsInput
         && value.presentation.hosts.some(host => host.text === 'Moon'), 'back to You with the saved nickname');
       expect(root.presentation.hosts.some((host: { text?: string }) => host.text === 'Moon')).toBe(true);
+    } finally { await world.close(); }
+  });
+
+  it('keeps a saved nickname even when it matches the current local value', async () => {
+    const world = new World();
+    try {
+      const device = await openYou(world);
+      await world.advance(0);
+      expect((await device.observe()).presentation.session.user.name).toBe('Leader');
+      world.backend.profiles.get(LEADER).nickname = 'Remote name';
+      world.hold('profiles', { phase: 'delivery', matches: (operation: { steps: unknown[][] }) => operation.steps[0]?.[0] === 'select' });
+      const refresh = device.perform('profile.refresh');
+      await world.advance(0);
+      expect(world.held).toHaveLength(1);
+      await device.perform('profile.nickname', { args: ['Leader'] });
+      await world.release('profiles');
+      await refresh;
+      expect((await device.observe()).presentation.session.user.name).toBe('Leader');
+      expect(world.backend.profiles.get(LEADER).nickname).toBe('Leader');
     } finally { await world.close(); }
   });
 

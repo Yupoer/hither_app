@@ -5,15 +5,15 @@ import {
   frame, glassEffect, menuIndicator, menuStyle, padding, shapes,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../../../native';
-import { MAP_SHEET_ACTION_HALO, MAP_SHEET_ACTION_HIT_SIZE } from '../../../components/mapSheetChrome';
+import { MAP_SHEET_ACTION_HALO } from '../../../components/mapSheetChrome';
 import type { MemberStatusMenuProps } from './MemberStatusMenu';
 
 export default function MemberStatusMenu({ items, onSelect, accessibilityLabel: label, label: title, style }: MemberStatusMenuProps) {
   const glass = liquidGlass.isLiquidGlassAvailable();
   const trigger = (
     <HStack spacing={8} modifiers={[
-      padding({ horizontal: 14 }),
-      frame({ height: MAP_SHEET_ACTION_HIT_SIZE }),
+      padding({ horizontal: 10 }),
+      frame({ height: 34 }),
       foregroundColor('#fff'),
       contentShape(shapes.capsule()),
     ]}>
