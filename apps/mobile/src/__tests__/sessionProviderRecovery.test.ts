@@ -21,7 +21,9 @@ jest.mock('../api/supabase', () => ({ supabase: { auth: mockAuth,
   from: () => ({ select: () => ({ eq: () => ({ maybeSingle: () => mockProfile() }) }), upsert: async () => ({ error: null }) }) } }));
 jest.mock('../api/client', () => ({ updateNickname: jest.fn(), updateProfile: jest.fn(), getTripEntitlement: (...args: unknown[]) => mockTripEntitlement(...args), getPremiumProjection: (...args: unknown[]) => mockPremiumProjection(...args), restoreEntitlements: jest.fn() }));
 jest.mock('../api/installationCapabilities', () => ({ resumeInstallationCapabilities: jest.fn() }));
-jest.mock('../state/useAuthFlow', () => ({ useAuthFlow: () => ({}) }));
+jest.mock('../state/useAuthFlow', () => ({ useAuthFlow: () => ({
+  captureProfileRead: () => (_previous: unknown, incoming: unknown) => incoming,
+}) }));
 jest.mock('../state/locationOutbox', () => ({ purgeLocationOutbox: () => mockPurge() }));
 jest.mock('../state/locationPrivacy', () => ({ setLocationAccessContext: jest.fn() }));
 jest.mock('../state/backgroundJourney', () => ({ stopBackgroundJourney: (...args: unknown[]) => mockStop(...args) }));

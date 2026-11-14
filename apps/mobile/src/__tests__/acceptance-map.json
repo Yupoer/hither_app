@@ -3242,6 +3242,20 @@
       "acceptance": "The three main island buttons provide touch haptics, and high-frequency hold feedback stops on release and background.",
       "testFile": "headlessD6NavigationScenario.test.ts",
       "testNamePattern": "provides touch feedback"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "A delayed profile read preserves fields successfully saved after it started, including repeated same-value saves.",
+      "testFile": "headlessD6YouScenario.test.ts",
+      "testNamePattern": "autosaves the nickname|keeps a saved nickname"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Login and signup hydration still fill complete server profile data while retaining a nickname saved before hydration completes.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "completes profile hydration|keeps the first saved nickname"
     }
   ]
 }
