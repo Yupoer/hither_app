@@ -1,5 +1,9 @@
-import { createIdentityWriter } from '../screens/MapScreen/components/useIdentityEditor';
+import { createElement } from 'react';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { createIdentityWriter, useIdentityEditor } from '../screens/MapScreen/components/useIdentityEditor';
 import { displayMemberAvatar, HOME_AVATAR_COLORS } from '../constants/avatars';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 function deferred() {
   let resolve = () => undefined;
@@ -15,6 +19,39 @@ async function settle() {
 
 describe('home identity autosave', () => {
   afterEach(() => jest.useRealTimers());
+
+  it('shows a failed autosave, retries it and trims the displayed nickname on completion', async () => {
+    jest.useFakeTimers();
+    const save = jest.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined);
+    const state: { editor: ReturnType<typeof useIdentityEditor> | null } = { editor: null };
+    function Probe() {
+      state.editor = useIdentityEditor('identity-editor-retry', { name: 'Ada', avatar: '🦊', color: HOME_AVATAR_COLORS[0] }, save);
+      return null;
+    }
+    function editor() {
+      if (!state.editor) throw new Error('Identity editor has not mounted');
+      return state.editor;
+    }
+    let tree: ReactTestRenderer | undefined;
+    try {
+      await act(async () => { tree = create(createElement(Probe)); });
+      act(() => editor().change({ name: ' Ada Lovelace ' }));
+      expect(editor().draft.name).toBe(' Ada Lovelace ');
+      expect(save).not.toHaveBeenCalled();
+      await act(async () => { jest.advanceTimersByTime(350); await settle(); });
+      expect(editor().failed).toBe(true);
+      await act(async () => { await editor().retry(); });
+      expect(save).toHaveBeenLastCalledWith({ name: ' Ada Lovelace ' });
+      expect(editor().failed).toBe(false);
+      await act(async () => { editor().finishName(); });
+      expect(editor().draft.name).toBe('Ada Lovelace');
+      act(() => editor().change({ name: '   ' }));
+      await act(async () => { jest.advanceTimersByTime(350); });
+      expect(save).toHaveBeenCalledTimes(2);
+    } finally {
+      act(() => tree?.unmount());
+    }
+  });
 
   it('debounces nickname changes and saves the last edit on dismissal', async () => {
     jest.useFakeTimers();
