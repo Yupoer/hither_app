@@ -6,6 +6,11 @@ const ios = { fullName: 'receiver on ios receives payload', status: 'passed' };
 const android = { fullName: 'receiver on android receives payload', status: 'passed' };
 assert.equal(evaluate(results([ios]), [family]).accepted, false);
 assert.equal(evaluate(results([ios, android]), [family]).accepted, true);
+assert.equal(evaluate(results([
+  { ...ios, fullName: 'D6 iOS receives payload' },
+  { ...android, fullName: 'legacy Android receives payload' },
+]), [family]).accepted, true);
+assert.equal(evaluate(results([{ ...ios, fullName: 'D6 iOS receives payload' }]), [family]).accepted, false);
 const failedSuite = results([ios, android]);
 failedSuite.testResults[0].status = 'failed';
 failedSuite.testResults[0].testExecError = { message: 'afterAll cleanup failed' };

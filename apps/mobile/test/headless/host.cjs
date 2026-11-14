@@ -258,7 +258,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       if (kind === 'panResponder') assert(['onStartShouldSetPanResponder', 'onMoveShouldSetPanResponder',
         'onPanResponderGrant', 'onPanResponderMove', 'onPanResponderRelease', 'onPanResponderTerminate'].includes(phase), `Unknown PanResponder phase ${phase}`);
       const nativeEvents = ['onLongPress', 'onPress', 'onPressIn', 'onPressOut', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
-        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen'];
+        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen', 'onAccessibilityAction'];
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
       const property = kind === 'panResponder' ? phase : kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
       assert(property, `Unknown host event ${kind}`);

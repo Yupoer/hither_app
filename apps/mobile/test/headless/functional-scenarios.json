@@ -1,5 +1,5 @@
 {
-  "scope": "Finite feasible JavaScript common-trip and adjacent functional behavior families. Each row requires every referenced scenario on the listed platforms; counts are not global scenario coverage.",
+  "scope": "Finite feasible JavaScript common-trip and adjacent functional behavior families. Each row requires every referenced scenario on its listed platforms, including the current iOS D6 and legacy Android entry points; counts are not global scenario coverage.",
   "families": [
     {
       "id": "AUTH-01",
@@ -113,7 +113,7 @@
       "cases": [
         {
           "file": "src/__tests__/headlessAuthScenario.test.ts",
-          "pattern": "opens and cancels guest warning",
+          "pattern": "dismisses login to entry without creating an account",
           "platforms": [
             "ios",
             "android"
@@ -313,7 +313,6 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual leader kick confirmation",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -321,7 +320,6 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual Map home preserves membership",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -329,11 +327,25 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual split warning precedes membership",
           "platforms": [
-            "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessD6TeamScenario.test.ts",
+          "pattern": "confirms kick before removing only the selected member",
+          "platforms": [
+            "ios"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6TeamScenario.test.ts",
+          "pattern": "creates a subgroup with the selected teammate invited",
+          "platforms": [
+            "ios"
+          ]
         }
-      ]
+      ],
+      "platformBehavior": "Android retains the legacy home/leave dialog; iOS uses native teammate menus and subgroup confirmation. Shared membership entry and departure are covered by GROUP-01 and NOTICE-04."
     },
     {
       "id": "PRIVACY-01",
@@ -423,8 +435,14 @@
           "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
           "pattern": "actual follower search and read-only favorite picker",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6ItineraryScenario.test.ts",
+          "pattern": "keeps editing controls hidden",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -438,16 +456,8 @@
       ],
       "cases": [
         {
-          "file": "src/__tests__/headlessMapScenario.test.ts",
-          "pattern": "runs real coordinate validation",
-          "platforms": [
-            "ios",
-            "android"
-          ]
-        },
-        {
           "file": "src/__tests__/headlessCoordinateParentScenario.test.ts",
-          "pattern": "Map search opens a prefilled coordinate form",
+          "pattern": "opens the platform coordinate flow",
           "platforms": [
             "ios",
             "android"
@@ -499,7 +509,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "cancel writes nothing and real confirmation",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -507,8 +516,14 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual search stages an editor confirmation",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6MapScenario.test.ts",
+          "pattern": "adds a renamed map pin on the chosen date",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -533,11 +548,11 @@
           "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
           "pattern": "actual editable favorite deletion persists for its owner",
           "platforms": [
-            "ios",
             "android"
           ]
         }
-      ]
+      ],
+      "platformBehavior": "Both platforms exercise owner-scoped favorite service deletion. The legacy editable favorite-list UI is Android-only."
     },
     {
       "id": "DEST-05",
@@ -567,8 +582,14 @@
           "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
           "pattern": "actual Map import retries a malformed file",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6NavigationScenario.test.ts",
+          "pattern": "imports a selected KML batch",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -585,7 +606,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual Map KML opener reads quota",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -593,15 +613,28 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual follower KML submits a request",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6NavigationScenario.test.ts",
+          "pattern": "imports a selected KML batch",
+          "platforms": [
+            "ios"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6ItineraryScenario.test.ts",
+          "pattern": "keeps editing controls hidden",
+          "platforms": [
+            "ios"
           ]
         }
       ]
     },
     {
       "id": "ROUTE-01",
-      "title": "Route day moves preserve closed history and flush stay selection only on Done",
+      "title": "Route dates preserve closed history; Android drafts flush on Done and iOS updates stays and dates directly",
       "critical": true,
       "sources": [
         "src/screens/MapScreen.tsx"
@@ -611,7 +644,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual move-to-day control",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -619,7 +651,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual stay selection removes its source stop",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -627,8 +658,21 @@
           "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
           "pattern": "actual move-to-pool persists an unscheduled stop",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6ItineraryScenario.test.ts",
+          "pattern": "saves the reverse-picked trip range",
+          "platforms": [
+            "ios"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6MapScenario.test.ts",
+          "pattern": "keeps a stop on the selected day",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -645,15 +689,21 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual subgroup editor captures its own lane",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6NavigationScenario.test.ts",
+          "pattern": "keeps subgroup reorder confined to its lane",
+          "platforms": [
+            "ios"
           ]
         }
       ]
     },
     {
       "id": "ROUTE-03",
-      "title": "Route marker, trip and bulk-delete controls preserve cancellation",
+      "title": "Route editing follows platform controls: Android confirms drafts and deletion, iOS commits date and island selection actions",
       "critical": false,
       "sources": [
         "src/components/DestinationReorderList.tsx"
@@ -663,7 +713,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual marker trip and multi-selection controls",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -671,7 +720,6 @@
           "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
           "pattern": "actual departure selector changes the draft",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -679,8 +727,21 @@
           "file": "src/__tests__/headlessItineraryEntriesScenario.test.ts",
           "pattern": "locked presentation hides selection and drag mode reorders",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6ItineraryScenario.test.ts",
+          "pattern": "deletes selected stops from the iOS island",
+          "platforms": [
+            "ios"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6ItineraryScenario.test.ts",
+          "pattern": "saves the reverse-picked trip range",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -715,7 +776,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual Start then End pauses",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -723,7 +783,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual held Start then End keeps terminal intent",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -731,7 +790,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "starts with fresh GPS while its location upload ACK is delayed",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -766,12 +824,19 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessD6MapScenario.test.ts",
+          "pattern": "starts from the floating control",
+          "platforms": [
+            "ios"
+          ]
         }
       ]
     },
     {
       "id": "NAV-02",
-      "title": "Switch cancellation retains the old session and confirmed switch promotes the right day",
+      "title": "Android target switching preserves cancellation; iOS member start requests remain pending until leader approval",
       "critical": true,
       "sources": [
         "src/screens/MapScreen/hooks/useJourneyNavigation.ts"
@@ -781,7 +846,6 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual switch confirmation preserves old session",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -789,8 +853,14 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "offline member Start request stays pending",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6TeamScenario.test.ts",
+          "pattern": "queues an offline start request",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -807,15 +877,21 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual GPS arrival ignores poor fixes",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6NavigationScenario.test.ts",
+          "pattern": "rejects poor arrival fixes",
+          "platforms": [
+            "ios"
           ]
         }
       ]
     },
     {
       "id": "ARRIVAL-02",
-      "title": "All-arrived completion closes the original session and keeps the audit trail",
+      "title": "All-arrived completion keeps the original session audit: Android closes automatically and iOS waits for Finish",
       "critical": true,
       "sources": [
         "src/screens/MapScreen/hooks/useGatheringCompletion.ts"
@@ -825,8 +901,14 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "automatic arrivals and all-arrived completion",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6NavigationScenario.test.ts",
+          "pattern": "rejects poor arrival fixes",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -867,7 +949,7 @@
     },
     {
       "id": "HISTORY-01",
-      "title": "History deletion confirms and personal arrival corrections keep session ownership",
+      "title": "History and arrival management retain confirmation, ownership and platform entry points",
       "critical": true,
       "sources": [
         "src/screens/MapScreen.tsx"
@@ -877,8 +959,21 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual history cancel retains a waypoint",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6ItineraryScenario.test.ts",
+          "pattern": "opens the original arrival sheet",
+          "platforms": [
+            "ios"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessMapServiceScenario.test.ts",
+          "pattern": "real suggestions and arrival services",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -895,8 +990,14 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual create respond and override controls",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6TeamScenario.test.ts",
+          "pattern": "creates a keep-or-change vote",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -1136,8 +1237,14 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual Map hands active navigation to ordinary background tracking",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
+          "pattern": "transfers one real controller owner",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -1154,7 +1261,6 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual presence persists solo",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -1162,7 +1268,6 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual sharing reenable refuses",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -1170,8 +1275,21 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual Map hands active navigation",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6TeamScenario.test.ts",
+          "pattern": "drives Solo, Stealth and permission-checked sharing",
+          "platforms": [
+            "ios"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessNativeLocationScenario.test.ts",
+          "pattern": "transfers one real controller owner",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -1317,8 +1435,14 @@
           "file": "src/__tests__/headlessMapScenario.test.ts",
           "pattern": "actual GPS directions feed card metrics",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6NavigationScenario.test.ts",
+          "pattern": "shows over-one-hour directions",
+          "platforms": [
+            "ios"
           ]
         }
       ]
@@ -1443,7 +1567,7 @@
         },
         {
           "file": "src/__tests__/headlessStoreEntriesScenario.test.ts",
-          "pattern": "buys annual from the locked Map Tools control",
+          "pattern": "buys annual from the platform Premium entry",
           "platforms": [
             "ios",
             "android"
@@ -1577,7 +1701,7 @@
         },
         {
           "file": "src/__tests__/headlessTeamEntriesScenario.test.ts",
-          "pattern": "finishes full onboarding through App",
+          "pattern": "completes an explicitly replayed onboarding survey",
           "platforms": [
             "ios",
             "android"
@@ -1587,7 +1711,7 @@
     },
     {
       "id": "TOUR-01",
-      "title": "Group and add-place tours complete independently and suppress replay after restart",
+      "title": "Android contextual tours persist completion; iOS opens current route and add-place controls without legacy tours",
       "critical": false,
       "sources": [
         "src/featureTour/useGroupFeatureTour.tsx",
@@ -1598,7 +1722,6 @@
           "file": "src/__tests__/headlessTourScenario.test.ts",
           "pattern": "completes the actual group tour",
           "platforms": [
-            "ios",
             "android"
           ]
         },
@@ -1606,15 +1729,21 @@
           "file": "src/__tests__/headlessTourScenario.test.ts",
           "pattern": "navigates the actual add-place tour",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessTourScenario.test.ts",
+          "pattern": "opens the live route and add-place controls",
+          "platforms": [
+            "ios"
           ]
         }
       ]
     },
     {
       "id": "TOUR-02",
-      "title": "Route tour previous, next, completion and replay state use actual controls",
+      "title": "Android route tour preserves replay state; iOS panels support reversible direct gestures",
       "critical": false,
       "sources": [
         "src/featureTour/routeReorderTour.tsx"
@@ -1624,8 +1753,14 @@
           "file": "src/__tests__/headlessMapControlsScenario.test.ts",
           "pattern": "actual route tour previous next",
           "platforms": [
-            "ios",
             "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessD6MapScenario.test.ts",
+          "pattern": "drags both panels through half and full",
+          "platforms": [
+            "ios"
           ]
         }
       ]
