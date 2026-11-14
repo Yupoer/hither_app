@@ -5,7 +5,7 @@ const { creditReward } = require('../../test/headless/backend-store.cjs');
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
 type Observation = {
   presentation: {
-    hosts: { testId?: string; text?: string; value?: unknown; selected?: boolean; disabled?: boolean }[];
+    hosts: { testId?: string; text?: string; value?: unknown; selected?: boolean; disabled?: boolean; acceptsInput?: boolean }[];
     preferences: { themeName: string; followSystemTextSize: boolean };
   };
   native: { ads: { options: { serverSideVerificationOptions: { customData: string } } }[] };
@@ -41,7 +41,8 @@ describe('D6 You from the real Map screen', () => {
       expect(await press(device, 'profile-color-#E0634A')).toEqual({ invoked: true });
       await world.waitFor(device, () => world.backend.profiles.get(LEADER).avatar_color === '#E0634A', 'avatar color autosave');
       expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
-      const root = await world.waitFor(device, (value: Observation) => !!field(value, 'settings-page-profile'), 'back to You');
+      const root = await world.waitFor(device, (value: Observation) => field(value, 'settings-page-profile')?.acceptsInput
+        && value.presentation.hosts.some(host => host.text === 'Moon'), 'back to You with the saved nickname');
       expect(root.presentation.hosts.some((host: { text?: string }) => host.text === 'Moon')).toBe(true);
     } finally { await world.close(); }
   });
