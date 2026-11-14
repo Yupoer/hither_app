@@ -16,7 +16,7 @@ A leader turns map places into an ordered trip with days and stays. A member sub
 - Use the favorite list or KML importer to choose places.
 - Open Map search and choose Add gathering point by coordinates to enter a name, latitude, and longitude.
 - Open the itinerary tab and route editor. Use a stop's menu, selection mode, day control, or stay control.
-- A member submits a place or KML suggestion. A leader opens the request inbox and approves it.
+- A member submits a place or KML suggestion. A leader expands Map, opens Members, opens that member's inbox, and approves or rejects the request.
 
 ## Driving it with World
 
@@ -33,8 +33,8 @@ Preconditions:
 
 ## Gotchas
 
-- `map.place.first-stop` and `map.place.pool` are different user entries. The trip uses the former; do not claim the pool confirmation from that proof.
-- A route or stay edit can remain a draft until Done. Assert durable state after Done, and verify cancellation writes nothing.
+- `map.place.first-stop` and `map.place.pool` are different user entries. The trip uses both: the leader adds a pool idea, and a member's pool suggestion reaches `map.member.inbox` before leader approval. Check each actor's input and resulting destination separately.
+- Route-sheet Done and swipe dismissal both flush the route draft. Assert durable state after either close. Form cancellation, cancelled deletion confirmation, and drag termination are separate paths that must preserve their prior state.
 - Preserve scope and closed history. A correct-looking main route does not prove subgroup isolation or historical stop protection.
 - Editor quota is checked before opening the coordinate draft. If quota becomes exhausted while the form is already open, submission shows a native Alert and retains the fields. A follower can still submit a suggestion. Neither quota path may insert a destination.
 - KML and search use external file and provider fixtures. If an expected input, selected batch, entitlement, or target host is missing, record the failed path and unmet precondition in the run notes.

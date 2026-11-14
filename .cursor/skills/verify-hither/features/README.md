@@ -6,8 +6,8 @@ This map describes user paths and observable proof for the headless React and Ja
 | --- | --- | --- | --- |
 | `teams` | [Accounts and teams](teams.md) | Guest confirmation, create, join, reenter, leave. | Email, signup, recovery, OAuth, account upgrade, profile. |
 | `itinerary` | [Destinations and itinerary](itinerary.md) | Dropped pins, two days, hotel, move to day, close history. | Search, manual coordinates, favorites, KML, member suggestions, subgroup, drag, date, bulk changes. |
-| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start, pause, and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Offline Start and End, mixed queued sync, passive background callbacks, explicit scheduled Start, manual force completion, consent, native adapter branch. |
-| `members` | [Members and notifications](members.md) | Trio roster, coordinates, solo and rejoin, add-place notices suppressed while solo, departure notices. | Backend/peer refresh, navigation-only separation, invitations, split and merge, kick, profile, individual category preferences, route tour. |
+| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start, pause, and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Offline Start and End, mixed queued sync, passive background callbacks, explicit scheduled Start, manual force completion, consent, precise-location persistence, native adapter branch. |
+| `members` | [Members and notifications](members.md) | Trio roster, coordinates, member suggestion inbox approval, solo and rejoin, add-place notices suppressed while solo, departure notices. | Backend/peer refresh, unread and pending-request badges, navigation-only separation, invitations, split and merge, kick, profile, individual category preferences, route tour. |
 | `store` | [Store and Premium](store.md) | None. | Map store, rewarded ad, redemption, Premium plans, purchase, restore, promo. |
 
 ## Baseline preconditions

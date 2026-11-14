@@ -14,10 +14,12 @@ exports.run = async function run(repo) {
   assert.equal(sources[owners[1]].split(scratchNeedle).length, 2, 'GPS settlement seam changed. Reconcile model and replay before updating source coverage.');
   const publicationNeedle = 'for (const listener of listeners) listener(actorId, reply.recovery, reply.pendingRefreshes);';
   assert.equal(sources[owners[0]].split(publicationNeedle).length, 2, 'Snapshot publication seam changed. Reconcile replay before updating source coverage.');
+  const recoveryGuardNeedle = "if (reply.kind === 'recovery') {";
+  assert.equal(sources[owners[0]].split(recoveryGuardNeedle).length, 2, 'Reply-kind guard changed. Reconcile receipt-only publication coverage.');
   const compiled = new Map();
   let scenarios = 0;
 
-  async function scenario({ coreAcks, gpsMask, loss, switchAt, mutant = null }) {
+  async function scenario({ coreAcks, gpsMask, loss, switchAt, includeSnapshot = true, mutant = null }) {
     let actor = 'A';
     let clock = 100000;
     let networkCalls = 0;
@@ -65,16 +67,19 @@ exports.run = async function run(repo) {
       [absolute('api/services/GroupSyncService.ts'), { exchangeGroup: async input => {
         networkCalls += 1;
         assert.equal(input.actorId, 'A');
+        assert.equal(input.includeSnapshot, includeSnapshot, 'requested reply mode must reach the transport');
         assert.ok(input.events.every(event => event.actorId === 'A'), 'foreign GPS submitted');
         assert.ok(input.operations.every(operation => operation.actorId === 'A'), 'foreign core submitted');
         if (networkCalls === 1 && switchAt === 'before-reply') actor = 'B';
         if (networkCalls === 1 && loss) throw new Error('lost_reply');
         const returnedCore = networkCalls === 1 ? input.operations.slice(0, coreAcks) : input.operations;
         const returnedGpsMask = networkCalls === 1 ? gpsMask : 3;
-        return { coreResults: new Map(returnedCore.map(operation => [operation.id,
+        const receipts = { coreResults: new Map(returnedCore.map(operation => [operation.id,
           { status: 'accepted', operationId: operation.id, entityVersion: 1 }])),
           locationResult: { acceptedIds: input.events.filter(event => gpsIds.includes(event.id) && returnedGpsMask & (1 << gpsIds.indexOf(event.id))).map(event => event.id), rejected: [] },
-          kind: 'recovery', recovery: { group: { id: group } }, locationReceipts: [], pendingRefreshes, refreshAcknowledgements: [], refreshRequest: null, acknowledgedIds: [] };
+          locationReceipts: [], pendingRefreshes, refreshAcknowledgements: [], refreshRequest: null, acknowledgedIds: [] };
+        return includeSnapshot ? { ...receipts, kind: 'recovery', recovery: { group: { id: group } } }
+          : { ...receipts, kind: 'receipts' };
       } }],
     ]);
     const externals = {
@@ -91,6 +96,7 @@ exports.run = async function run(repo) {
       let source = sources[relative] ?? fs.readFileSync(file, 'utf8');
       if (mutant === 'gps-ack-all' && relative === owners[1]) source = source.replace(scratchNeedle, 'const resolvedIds = due.map(entry => entry.id);');
       if (mutant === 'no-dispatch' && relative === owners[0]) source = source.replace(publicationNeedle, '');
+      if (mutant === 'receipt-dispatch' && relative === owners[0]) source = source.replace(recoveryGuardNeedle, 'if (true) {');
       const key = hash(source);
       if (!compiled.has(key)) compiled.set(key, ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText);
       const localRequire = name => {
@@ -122,17 +128,18 @@ exports.run = async function run(repo) {
     const sync = load(absolute('state/groupSync.ts'));
     sync.subscribeGroupSyncSnapshots((owner, snapshot, pending) => {
       assert.equal(pending, pendingRefreshes, 'current actor must receive the same reply pending refresh commands');
-      projections.push({ owner, currentActor: actor, groupId: snapshot.group.id });
+      if (includeSnapshot) assert.equal(snapshot?.group.id, group, 'recovery must publish the requested group');
+      projections.push({ owner, currentActor: actor, groupId: snapshot?.group.id });
     });
     let error = null;
-    try { await sync.syncGroup({ groupId: group }); } catch (caught) { error = caught.message; }
+    try { await sync.syncGroup({ groupId: group, includeSnapshot }); } catch (caught) { error = caught.message; }
     assert.equal(networkCalls, 1, 'one mixed exchange expected');
     const switched = switchAt === 'before-reply' || switchAt === 'after-gps'
       || switchAt === 'before-core-settlement' && (loss || coreAcks > 0);
     assert.equal(actor, switched ? 'B' : 'A', 'account switch stimulus must reach its selected boundary');
     const expectedError = loss ? 'lost_reply' : switched ? 'account_changed' : null;
     assert.equal(error, expectedError, 'first exchange must resolve or reject with its expected domain outcome');
-    const firstPublications = loss || switched ? 0 : 1;
+    const firstPublications = includeSnapshot && !loss && !switched ? 1 : 0;
     assert.equal(projections.length, firstPublications, 'first exchange publication count must match its outcome');
     const expectedCore = loss || switched ? ['core-1', 'core-2'] : ['core-1', 'core-2'].slice(coreAcks);
     const actualCore = Array.from(await db.listAll()).filter(row => row.actorId === 'A').map(row => row.id).sort();
@@ -144,8 +151,8 @@ exports.run = async function run(repo) {
     assert.ok(await db.get('core-other-actor'), 'foreign core row deleted');
     assert.ok(projections.every(item => item.owner === item.currentActor), 'snapshot projected into another actor');
     actor = 'A'; clock += 1000000;
-    await sync.syncGroup({ groupId: group });
-    assert.equal(projections.length, firstPublications + 1, 'successful retry must publish exactly one further snapshot and pending refresh command list');
+    await sync.syncGroup({ groupId: group, includeSnapshot });
+    assert.equal(projections.length, firstPublications + Number(includeSnapshot), 'successful retry must publish exactly its requested snapshot and pending refresh command list');
     assert.equal(networkCalls, 2, 'retry must use one further mixed exchange');
     assert.equal((await db.listAll()).filter(row => row.actorId === 'A').length, 0, 'retry did not settle original core IDs');
     assert.ok(gpsIds.every(id => !gpsRows.has(id)), 'retry did not settle original GPS IDs');
@@ -154,9 +161,9 @@ exports.run = async function run(repo) {
     return { error, gpsRemainingBeforeRetry: expectedGps.length };
   }
 
-  for (const coreAcks of [0, 1, 2]) for (const gpsMask of [0, 1, 2, 3]) {
+  for (const includeSnapshot of [true, false]) for (const coreAcks of [0, 1, 2]) for (const gpsMask of [0, 1, 2, 3]) {
     for (const loss of [false, true]) for (const switchAt of ['none', 'before-reply', 'after-gps', 'before-core-settlement']) {
-      await scenario({ coreAcks, gpsMask, loss, switchAt });
+      await scenario({ coreAcks, gpsMask, loss, switchAt, includeSnapshot });
       scenarios += 1;
     }
   }
@@ -176,6 +183,14 @@ exports.run = async function run(repo) {
   }
   assert.ok(publicationMutationCaught, 'scratch missing listener dispatch mutation escaped');
   await scenario({ coreAcks: 1, gpsMask: 1, loss: false, switchAt: 'none' });
+  let receiptPublicationMutationCaught = false;
+  try { await scenario({ coreAcks: 1, gpsMask: 1, loss: false, switchAt: 'none', includeSnapshot: false, mutant: 'receipt-dispatch' }); }
+  catch (error) {
+    if (!error.message.includes('first exchange publication count must match its outcome')) throw error;
+    receiptPublicationMutationCaught = true;
+  }
+  assert.ok(receiptPublicationMutationCaught, 'scratch receipt-only listener dispatch mutation escaped');
+  await scenario({ coreAcks: 1, gpsMask: 1, loss: false, switchAt: 'none', includeSnapshot: false });
   for (const file of owners) assert.equal(fs.readFileSync(path.join(repo, file), 'utf8'), sources[file], 'product source changed during replay');
-  return { scenarios, mutationCaught, publicationMutationCaught, restoredBaselinePassed: true, sourceSha256: Object.fromEntries(owners.map(file => [file, hash(sources[file])])), scope: 'Real syncGroup, core flush/settlement, GPS exchange/settlement, exact successful snapshot/pending-refresh publication counts and first-call domain outcomes. All GPS rows remain unexpired; local TTL pruning, including pre-auth pruning, is outside this bound. External network, auth/privacy, SQLite driver and native packages mocked. No SQL/server/device execution. Assumes captured-actor execution; does not cover lazy authentication switching or p_actor_id/auth.uid rejection before effects.' };
+  return { scenarios, replyModes: ['recovery', 'receipts'], mutationCaught, publicationMutationCaught, receiptPublicationMutationCaught, restoredBaselinePassed: true, sourceSha256: Object.fromEntries(owners.map(file => [file, hash(sources[file])])), scope: 'Real syncGroup, core flush/settlement and GPS exchange/settlement in both reply modes. Exact recovery publication counts, zero receipt-only publications, and first-call domain outcomes. Each scenario retries in its original reply mode; concurrent requests and transitions between reply modes are outside this bound. All GPS rows remain unexpired; local TTL pruning, including pre-auth pruning, is outside this bound. External network, auth/privacy, SQLite driver and native packages mocked. No SQL/server/device execution. Assumes captured-actor execution; does not cover lazy authentication switching or p_actor_id/auth.uid rejection before effects.' };
 };

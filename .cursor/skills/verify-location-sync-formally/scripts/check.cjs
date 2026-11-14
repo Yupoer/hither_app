@@ -21,15 +21,18 @@ async function main() {
   if (sha256(fs.readFileSync(jar)) !== pinnedJar) throw new Error('TLA2TOOLS_JAR SHA-256 mismatch. Use the pinned artifact in SKILL.md.');
   const model = path.join(skill, 'models/MixedSync.tla');
   const results = [];
-  for (const [name, mutant, violation] of [
-    ['baseline', 0, null],
-    ['ack-all-mutant', 1, 'NoUnacknowledgedDeletion'],
-    ['actor-fence-mutant', 2, 'NoCrossActorProjection'],
+  for (const [name, mutant, violation, includeSnapshot] of [
+    ['baseline', 0, null, true],
+    ['receipt-only', 0, null, false],
+    ['ack-all-mutant', 1, 'NoUnacknowledgedDeletion', true],
+    ['ack-all-receipt-mutant', 1, 'NoUnacknowledgedDeletion', false],
+    ['actor-fence-mutant', 2, 'NoCrossActorProjection', true],
+    ['receipt-publish-mutant', 3, 'NoReceiptOnlyProjection', false],
   ]) {
     const dir = path.join(output, name);
     fs.mkdirSync(dir, { recursive: true });
     fs.copyFileSync(model, path.join(dir, 'MixedSync.tla'));
-    fs.writeFileSync(path.join(dir, 'MixedSync.cfg'), `CONSTANT Mutant = ${mutant}\nSPECIFICATION Spec\nINVARIANTS NoUnacknowledgedDeletion NoCrossActorProjection Conservation\nCHECK_DEADLOCK FALSE\n`);
+    fs.writeFileSync(path.join(dir, 'MixedSync.cfg'), `CONSTANTS Mutant = ${mutant}\nIncludeSnapshot = ${includeSnapshot ? 'TRUE' : 'FALSE'}\nSPECIFICATION Spec\nINVARIANTS NoUnacknowledgedDeletion NoCrossActorProjection NoReceiptOnlyProjection Conservation\nCHECK_DEADLOCK FALSE\n`);
     const run = cp.spawnSync('java', ['-XX:+UseParallelGC', '-Xmx512m', '-cp', path.resolve(jar), 'tlc2.TLC', '-workers', '1', '-cleanup', '-metadir', path.join(dir, 'states'), 'MixedSync'], { cwd: dir, encoding: 'utf8', timeout: 120000 });
     if (run.error) throw run.error;
     const log = run.stdout + run.stderr;
@@ -38,7 +41,7 @@ async function main() {
       throw new Error(`${name} unexpected TLC result. See ${path.join(dir, 'tlc.log')}`);
     }
     const states = log.match(/([\d,]+) states generated, ([\d,]+) distinct states found/);
-    results.push({ name, expectedViolation: violation, exitCode: run.status, distinctStates: states ? Number(states[2].replaceAll(',', '')) : null });
+    results.push({ name, includeSnapshot, expectedViolation: violation, exitCode: run.status, distinctStates: states ? Number(states[2].replaceAll(',', '')) : null });
     console.log(`${name}: ${violation ? 'expected ' + violation + ' caught' : 'passed'}`);
   }
   const replay = await require('./replay.cjs').run(repo);

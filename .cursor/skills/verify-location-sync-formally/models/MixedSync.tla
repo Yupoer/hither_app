@@ -1,7 +1,7 @@
 ---------------------------- MODULE MixedSync ----------------------------
 EXTENDS Naturals, FiniteSets
 
-CONSTANT Mutant
+CONSTANTS Mutant, IncludeSnapshot
 Actors == {"A", "B"}
 Core == {"c1", "c2", "cb"}
 Gps == {"g1", "g2", "gb"}
@@ -9,26 +9,26 @@ Events == Core \cup Gps
 Owner(e) == IF e \in {"cb", "gb"} THEN "B" ELSE "A"
 
 VARIABLES actor, epoch, queue, phase, batch, batchActor, batchEpoch,
-          serverAccepted, reply, observedAcks, removed, projectedWrong, rounds
+          serverAccepted, reply, observedAcks, removed, projectedWrong, projectedReceipt, rounds
 vars == <<actor, epoch, queue, phase, batch, batchActor, batchEpoch,
-          serverAccepted, reply, observedAcks, removed, projectedWrong, rounds>>
+          serverAccepted, reply, observedAcks, removed, projectedWrong, projectedReceipt, rounds>>
 
 Init == /\ actor = "A" /\ epoch = 0 /\ queue = Events
         /\ phase = "idle" /\ batch = {} /\ batchActor = "A" /\ batchEpoch = 0
         /\ serverAccepted = {} /\ reply = {} /\ observedAcks = {}
-        /\ removed = {} /\ projectedWrong = FALSE /\ rounds = 0
+        /\ removed = {} /\ projectedWrong = FALSE /\ projectedReceipt = FALSE /\ rounds = 0
 
 Prepare == /\ phase = "idle" /\ rounds < 2
            /\ batch' = {e \in queue : Owner(e) = actor}
            /\ batchActor' = actor /\ batchEpoch' = epoch /\ phase' = "prepared"
            /\ UNCHANGED <<actor, epoch, queue, serverAccepted, reply,
-                          observedAcks, removed, projectedWrong, rounds>>
+                          observedAcks, removed, projectedWrong, projectedReceipt, rounds>>
 
 SwitchAccount == /\ actor = "A"
                  /\ actor' = "B" /\ epoch' = 1
                  /\ UNCHANGED <<queue, phase, batch, batchActor, batchEpoch,
                                 serverAccepted, reply, observedAcks, removed,
-                                projectedWrong, rounds>>
+                                projectedWrong, projectedReceipt, rounds>>
 
 Receive == /\ phase = "prepared"
            /\ \E accepted \in SUBSET batch :
@@ -39,7 +39,7 @@ Receive == /\ phase = "prepared"
                      /\ observedAcks' = observedAcks \cup ack
            /\ phase' = "replied"
            /\ UNCHANGED <<actor, epoch, queue, batch, batchActor, batchEpoch,
-                          removed, projectedWrong, rounds>>
+                          removed, projectedWrong, projectedReceipt, rounds>>
 
 LoseReply == /\ phase = "prepared"
              /\ \E accepted \in SUBSET batch :
@@ -47,7 +47,7 @@ LoseReply == /\ phase = "prepared"
                   /\ serverAccepted' = serverAccepted \cup accepted
              /\ phase' = "idle" /\ rounds' = rounds + 1
              /\ UNCHANGED <<actor, epoch, queue, batch, batchActor, batchEpoch,
-                            reply, observedAcks, removed, projectedWrong>>
+                            reply, observedAcks, removed, projectedWrong, projectedReceipt>>
 
 Settle(kind) ==
     /\ phase = "replied"
@@ -56,23 +56,26 @@ Settle(kind) ==
        IN /\ queue' = queue \ selected
           /\ removed' = removed \cup selected
     /\ UNCHANGED <<actor, epoch, phase, batch, batchActor, batchEpoch,
-                   serverAccepted, reply, observedAcks, rounds, projectedWrong>>
+                   serverAccepted, reply, observedAcks, rounds, projectedWrong, projectedReceipt>>
 
 Publish == /\ phase = "replied"
+           /\ (IncludeSnapshot \/ Mutant = 3)
            /\ ((actor = batchActor /\ epoch = batchEpoch) \/ Mutant = 2)
            /\ projectedWrong' = (projectedWrong \/ actor # batchActor)
+           /\ projectedReceipt' = (projectedReceipt \/ ~IncludeSnapshot)
            /\ UNCHANGED <<actor, epoch, queue, phase, batch, batchActor,
                           batchEpoch, serverAccepted, reply, observedAcks,
                           removed, rounds>>
 
 Finish == /\ phase = "replied" /\ phase' = "idle" /\ rounds' = rounds + 1
           /\ UNCHANGED <<actor, epoch, queue, batch, batchActor, batchEpoch,
-                         serverAccepted, reply, observedAcks, removed, projectedWrong>>
+                         serverAccepted, reply, observedAcks, removed, projectedWrong, projectedReceipt>>
 
 SettleCore == \E e \in Core : Settle({e})
 Next == Prepare \/ SwitchAccount \/ Receive \/ LoseReply \/ SettleCore \/ Settle(Gps) \/ Publish \/ Finish
 Spec == Init /\ [][Next]_vars
 NoUnacknowledgedDeletion == removed \subseteq observedAcks
 NoCrossActorProjection == ~projectedWrong
+NoReceiptOnlyProjection == ~projectedReceipt
 Conservation == queue \cup removed = Events
 =============================================================================
