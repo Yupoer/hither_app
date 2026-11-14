@@ -502,10 +502,12 @@ function MapPermissionRecoveryJob({ input }: { input: MapPermissionRecoveryInput
   const { appState, backgroundPermissionDeniedRef, showLocationPermissionAlert, t } = input;
   useMountEffect(() => {
     if (appState !== 'active') return;
+    let active = true;
     void Promise.all([
       location.getPermissionState().catch(() => null),
       consumePendingLocationPermission(),
     ]).then(([permission, pending]) => {
+      if (!active) return;
       if (permission?.backgroundStatus === 'granted') {
         backgroundPermissionDeniedRef.current = null;
       }
@@ -517,6 +519,7 @@ function MapPermissionRecoveryJob({ input }: { input: MapPermissionRecoveryInput
       }
     });
     void recoverPendingLocationRefreshes();
+    return () => { active = false; };
   });
   return null;
 }

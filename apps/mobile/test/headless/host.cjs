@@ -78,7 +78,9 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     StyleSheet: { create: value => value, flatten, hairlineWidth: 1, absoluteFill, absoluteFillObject: absoluteFill },
     useWindowDimensions: () => dimensions, Dimensions: { get: () => dimensions, addEventListener: () => ({ remove() {} }) },
     Appearance: { setColorScheme() {}, getColorScheme: () => 'dark', addChangeListener: () => ({ remove() {} }) },
-    useColorScheme: () => 'dark', Keyboard: { dismiss() {}, metrics: () => undefined, isVisible: () => false, addListener: () => ({ remove() {} }) },
+    useColorScheme: () => 'dark', Keyboard: { dismiss() {}, metrics: () => undefined, isVisible: () => false,
+      scheduleLayoutAnimation: event => { receipts.push({ host: 'Keyboard', method: 'scheduleLayoutAnimation', value: event }); },
+      addListener: () => ({ remove() {} }) },
     AccessibilityInfo: { isReduceMotionEnabled: async () => true, isBoldTextEnabled: async () => false, isHighTextContrastEnabled: async () => false,
       isReduceTransparencyEnabled: async () => false, isScreenReaderEnabled: async () => false,
       addEventListener: () => ({ remove() {} }), announceForAccessibility() {},
@@ -184,7 +186,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     } };
     React.useImperativeHandle(ref, () => methods.current, []);
     return React.createElement('host:ReanimatedSwipeable', { ...props, onSwipeableOpen: direction => { setOpen(true); props.onSwipeableOpen?.(direction); } },
-      props.children, open && props.renderRightActions?.({ value: 1 }, { value: 1 }, methods.current));
+      props.children, open && props.renderRightActions?.(makeShared(1), makeShared(-84), methods.current));
   }) }));
   jest.doMock('@react-native-community/slider', () => ({ __esModule: true, default: make('Slider') }));
   jest.doMock('expo-linear-gradient', () => ({ LinearGradient: make('LinearGradient') }));
@@ -194,12 +196,12 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const gesture = () => {
     const object = {};
     for (const method of ['onBegin','onStart','onUpdate','onChange','onEnd','onFinalize','enabled','activeOffsetX','activeOffsetY',
-      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail']) {
+      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail','disallowInterruption']) {
       object[method] = (...args) => { object[method + 'Input'] = args; return object; };
     }
     return strict('Gesture', object);
   };
-  jest.doMock('react-native-gesture-handler', () => strict('gesture-handler', { GestureHandlerRootView: hosts.View,
+  jest.doMock('react-native-gesture-handler', () => strict('gesture-handler', { GestureHandlerRootView: hosts.View, Pressable: hosts.Pressable,
     GestureDetector: make('GestureDetector'), Gesture: { Pan: gesture, Tap: gesture, LongPress: gesture, Native: gesture,
       Race: (...values) => values, Simultaneous: (...values) => values, Exclusive: (...values) => values }, ScrollView: hosts.ScrollView }));
   jest.doMock('@shopify/react-native-skia', () => strict('skia', {
@@ -221,7 +223,10 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('expo-task-manager', () => strict('TaskManager', { __esModule: true,
     defineTask: (name, callback) => { assert(!tasks.has(name), `Task already defined ${name}`); tasks.set(name, callback); },
     isTaskDefined: name => tasks.has(name), isAvailableAsync: async () => true }));
-  jest.doMock('expo-haptics', () => strict('Haptics', { selectionAsync: async () => {}, impactAsync: async () => {}, notificationAsync: async () => {},
+  jest.doMock('expo-haptics', () => strict('Haptics', {
+    selectionAsync: async () => { receipts.push({ host: 'Haptics', method: 'selectionAsync' }); },
+    impactAsync: async style => { receipts.push({ host: 'Haptics', method: 'impactAsync', style }); },
+    notificationAsync: async type => { receipts.push({ host: 'Haptics', method: 'notificationAsync', type }); },
     ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Soft: 'soft', Rigid: 'rigid' }, NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' } }));
   jest.doMock('expo-status-bar', () => ({ StatusBar: make('StatusBar') }));
   jest.doMock('expo-font', () => ({ useFonts: () => [true] }));

@@ -62,6 +62,7 @@ export type MapBackgroundLocationInput = {
 export function MapBackgroundLocationResource(input: MapBackgroundLocationInput & {
   baselineInput: MapJourneyBaselineInput; publishBaseline: PublishMapJourneyBaseline;
 }) {
+  const permissionOwnerActiveRef = useRef(true);
   const nativeIntent = useRef<{ key: string | null; appState: AppStateStatus } | null>(null);
   const applyNativeIntent = useCallback((key: string | null, appState: AppStateStatus, groupId: string | null) => {
     const previousIntent = nativeIntent.current;
@@ -115,13 +116,18 @@ export function MapBackgroundLocationResource(input: MapBackgroundLocationInput 
     && Object.is(previous.input.lastRouteDistanceM, input.lastRouteDistanceM))) {
     setPrevious({ input, generation: previous.generation + 1 });
   }
-  useMountEffect(() => () => {
-    if (nativeIntent.current?.key) void prepareNativeJourneyLocation(null).catch(() => undefined);
+  useMountEffect(() => {
+    permissionOwnerActiveRef.current = true;
+    return () => {
+      permissionOwnerActiveRef.current = false;
+      if (nativeIntent.current?.key) void prepareNativeJourneyLocation(null).catch(() => undefined);
+    };
   });
-  return <MapBackgroundLocationJob key={previous.generation} input={input} applyNativeIntent={applyNativeIntent} />;
+  return <MapBackgroundLocationJob key={previous.generation} input={input} applyNativeIntent={applyNativeIntent} permissionOwnerActiveRef={permissionOwnerActiveRef} />;
 }
-function MapBackgroundLocationJob({ input, applyNativeIntent }: {
+function MapBackgroundLocationJob({ input, applyNativeIntent, permissionOwnerActiveRef }: {
   input: MapBackgroundLocationInput & { baselineInput: MapJourneyBaselineInput; publishBaseline: PublishMapJourneyBaseline };
+  permissionOwnerActiveRef: React.RefObject<boolean>;
   applyNativeIntent: (key: string | null, appState: AppStateStatus, groupId: string | null) => void;
 }) {
   const { backgroundSharingScope, groupId, backgroundStartedKeyRef, backgroundPermissionAttemptedRef, setBackgroundPermissionsPreparedFor, appState, backgroundPermissionDeniedRef, sharingEnabled, backgroundPermissionsPreparedFor, backgroundPermissionPrepareInFlightRef, effectiveNavigationActive, language, backgroundJourneyWantedRef, navTarget, myScopeId, deviceCoords, resolveCurrentNavigationSessionId, pendingLeaderTargetId, highAccuracy, travelMode, localArrivalRadiusM, canEditItinerary, members, sessionEligibleMembers, initialJourneyRef, user, activeDestinationArrivals, state, lastValidPresentation, lastRouteDistanceM, colors, membership, journeyStartCoords, progressDepartedStart, progressMaxSticky, backgroundEtaRef, selfRoute } = input;
@@ -160,9 +166,11 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
         backgroundPermissionAttemptedRef.current = backgroundSharingScope;
         void (async () => {
           const granted = await prepareBackgroundJourneyPermissions(false);
+          if (!permissionOwnerActiveRef.current || backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
           if (granted === 'ready') return granted;
           const key = 'pref.journeyBackgroundExplained';
           const saved = await AsyncStorage.getItem(key);
+          if (!permissionOwnerActiveRef.current || backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
           if (!saved) {
             const accepted = await new Promise<boolean>(resolve => Alert.alert(
               language === 'en' ? 'Share location in the background' : '背景位置分享',
@@ -172,15 +180,16 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
               [{ text: language === 'en' ? 'Not now' : '暫時不要', style: 'cancel', onPress: () => resolve(false) },
                { text: language === 'en' ? 'Continue' : '繼續', onPress: () => resolve(true) }],
             ));
+            if (!permissionOwnerActiveRef.current || backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
             await AsyncStorage.setItem(key, accepted ? 'accepted' : 'declined');
             if (!accepted) return 'permission_denied' as const;
           }
           if (saved === 'declined') return 'permission_denied' as const;
-          if (backgroundJourneyWantedRef.current !== backgroundSharingScope) return 'permission_denied' as const;
+          if (!permissionOwnerActiveRef.current || backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
           return prepareBackgroundJourneyPermissions(true);
         })()
           .then((result) => {
-            if (backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
+            if (!permissionOwnerActiveRef.current || backgroundJourneyWantedRef.current !== backgroundSharingScope) return;
             if (result === 'ready') {
               backgroundPermissionDeniedRef.current = null;
               setBackgroundPermissionsPreparedFor(backgroundSharingScope);
@@ -190,7 +199,7 @@ function MapBackgroundLocationJob({ input, applyNativeIntent }: {
             }
           })
           .catch(() => {
-            if (backgroundJourneyWantedRef.current === backgroundSharingScope) setBackgroundPermissionsPreparedFor(null);
+            if (permissionOwnerActiveRef.current && backgroundJourneyWantedRef.current === backgroundSharingScope) setBackgroundPermissionsPreparedFor(null);
           })
           .finally(() => {
             if (backgroundPermissionPrepareInFlightRef.current === backgroundSharingScope) {

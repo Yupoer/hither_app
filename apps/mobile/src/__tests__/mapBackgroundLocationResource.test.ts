@@ -1,4 +1,7 @@
 import React from 'react';
+import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { rememberPendingLocationPermission } from '../state/backgroundLocationRefresh';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { startBackgroundJourney } from '../state/backgroundJourney';
 import { MapBackgroundLocationResource, type MapBackgroundLocationInput } from '../screens/MapScreen/MapBackgroundLocationResource';
@@ -102,6 +105,78 @@ describe('Map background GPS handoff resource', () => {
     await act(async () => { finish('ready'); });
     expect(background.setBackgroundPermissionsPreparedFor).not.toHaveBeenCalled();
     expect(background.backgroundPermissionPrepareInFlightRef.current).toBeNull();
+  });
+
+  it.each(['ready', 'permission_denied'] as const)('discards a %s permission result after the Map owner unmounts', async result => {
+    let finish: (value: 'ready' | 'permission_denied') => void = () => undefined;
+    mockPrepare.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const baseline = mapJourneyResourceInput();
+    const background = { ...backgroundInput(baseline), appState: 'active' as const, backgroundPermissionsPreparedFor: null };
+    await act(async () => { tree = create(React.createElement(Owner, { baseline, background })); });
+    expect(mockPrepare).toHaveBeenCalledTimes(1);
+    act(() => tree?.unmount());
+    tree = undefined;
+    await act(async () => { finish(result); });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(AsyncStorage.getItem).not.toHaveBeenCalled();
+    expect(background.setBackgroundPermissionsPreparedFor).not.toHaveBeenCalled();
+    expect(rememberPendingLocationPermission).not.toHaveBeenCalled();
+    expect(background.backgroundPermissionPrepareInFlightRef.current).toBeNull();
+  });
+
+  it.each([null, 'declined'])('discards a late %s explanation preference after owner unmount', async saved => {
+    let finish: (value: string | null) => void = () => undefined;
+    jest.mocked(AsyncStorage.getItem).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    mockPrepare.mockResolvedValueOnce('permission_denied');
+    const baseline = mapJourneyResourceInput();
+    const background = { ...backgroundInput(baseline), appState: 'active' as const, backgroundPermissionsPreparedFor: null };
+    await act(async () => { tree = create(React.createElement(Owner, { baseline, background })); });
+    expect(AsyncStorage.getItem).toHaveBeenCalledTimes(1);
+    act(() => tree?.unmount());
+    tree = undefined;
+    await act(async () => { finish(saved); });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(rememberPendingLocationPermission).not.toHaveBeenCalled();
+  });
+
+  it('discards an explanation response after owner unmount without persisting or requesting permission', async () => {
+    mockPrepare.mockResolvedValueOnce('permission_denied');
+    const baseline = mapJourneyResourceInput();
+    const background = { ...backgroundInput(baseline), appState: 'active' as const, backgroundPermissionsPreparedFor: null };
+    await act(async () => { tree = create(React.createElement(Owner, { baseline, background })); });
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    const buttons = jest.mocked(Alert.alert).mock.calls[0][2];
+    act(() => tree?.unmount());
+    tree = undefined;
+    await act(async () => { buttons?.[1].onPress?.(); });
+    expect(AsyncStorage.setItem).not.toHaveBeenCalled();
+    expect(mockPrepare).toHaveBeenCalledTimes(1);
+    expect(background.setBackgroundPermissionsPreparedFor).not.toHaveBeenCalled();
+    expect(rememberPendingLocationPermission).not.toHaveBeenCalled();
+  });
+
+  it('publishes a permission flight result after keyed input changes while its owner stays mounted', async () => {
+    let finish: (value: 'ready') => void = () => undefined;
+    mockPrepare.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const baseline = mapJourneyResourceInput();
+    const background = { ...backgroundInput(baseline), appState: 'active' as const, backgroundPermissionsPreparedFor: null };
+    await act(async () => { tree = create(React.createElement(Owner, { baseline, background })); });
+    await act(async () => tree?.update(React.createElement(Owner, { baseline, background: { ...background, language: 'zh-TW' } })));
+    await act(async () => { finish('ready'); });
+    expect(mockPrepare).toHaveBeenCalledTimes(1);
+    expect(background.setBackgroundPermissionsPreparedFor).toHaveBeenCalledWith('actor:group');
+    expect(background.backgroundPermissionPrepareInFlightRef.current).toBeNull();
+  });
+
+  it('retains a permission flight through Strict effect replay', async () => {
+    let finish: (value: 'ready') => void = () => undefined;
+    mockPrepare.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const baseline = mapJourneyResourceInput();
+    const background = { ...backgroundInput(baseline), appState: 'active' as const, backgroundPermissionsPreparedFor: null };
+    await act(async () => { tree = create(React.createElement(React.StrictMode, null, React.createElement(Owner, { baseline, background }))); });
+    await act(async () => { finish('ready'); });
+    expect(mockPrepare).toHaveBeenCalledTimes(1);
+    expect(background.setBackgroundPermissionsPreparedFor).toHaveBeenCalledWith('actor:group');
   });
 
   it('starts a journey then backgrounds with the prepared sharing permission', async () => {

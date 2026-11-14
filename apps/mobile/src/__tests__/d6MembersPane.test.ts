@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('react-native-gesture-handler', () => ({ GestureDetector: 'GestureDetector' }));
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { Pressable } from 'react-native';
 import { D6MembersPane, type D6MembersPaneProps } from '../screens/MapScreen/components/D6MembersPane';

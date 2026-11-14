@@ -210,7 +210,7 @@ export default function SettingsSheetPanel({
         dismissDistance={height + 40}
         dismissOnDownFromIndex={0}
         edgeToEdgeAtLast={edgeToEdgeAtLast}
-        contentTopPadding={home ? 4 : 12}
+        contentTopPadding={home ? 20 : 12}
         fillContent={fillContent}
         pinContentBelowHeader={home}
         scrollResetKey={scrollResetKey}

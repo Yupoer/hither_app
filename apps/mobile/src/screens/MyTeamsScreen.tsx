@@ -2,6 +2,7 @@ import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useCallback, useRef } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -10,10 +11,12 @@ import {
   View,
 } from 'react-native';
 import Pressable from '../components/MotionPressable';
+import { Pressable as GesturePressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
+import { useMountEffect } from '../hooks/useMountEffect';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { useSession } from '../state/SessionContext';
 import { useJoinedGroups } from '../state/useJoinedGroups';
@@ -52,6 +55,11 @@ export function TeamEntryScreen({ origin, params, navigation }: {
   const returning = origin === 'MyTeams' || groups.length > 0;
   const loadingEntry = loading && actorId !== null && groups.length === 0 && !returning;
   const avatar = user ? displayMemberAvatar(user.avatar, user.id, user.avatarColor) : null;
+  useMountEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const subscription = Keyboard.addListener('keyboardWillChangeFrame', Keyboard.scheduleLayoutAnimation);
+    return () => subscription.remove();
+  });
 
   useFocusEffect(useCallback(() => {
     enterInFlightRef.current = null;
@@ -158,7 +166,7 @@ export function TeamEntryScreen({ origin, params, navigation }: {
           ) : <View />}
           {avatar && !isAnonymous ? (
             <Pressable accessibilityRole="button" accessibilityLabel={t('settings.signOut')} testID="role-signout" onPress={openSignOut}>
-              <EntryAvatar emoji={avatar.emoji} color={avatar.color} size={40} circle />
+              <EntryAvatar emoji={avatar.emoji} color={avatar.color} size={50} circle />
             </Pressable>
           ) : (
             <Pressable accessibilityRole="button" style={styles.login} testID="entry-login" onPress={() => navigation.navigate('Login')}>
@@ -173,6 +181,7 @@ export function TeamEntryScreen({ origin, params, navigation }: {
             ))}
             {groups.length > 0 ? (
               <Pressable testID="teams-clear" accessibilityRole="button" style={styles.clear} onPress={handleClearAllGroups}>
+                <Ionicons name="trash-outline" size={17} color="#FFAAA5" />
                 <HitherText style={styles.clearText}>{t('teams.clear')}</HitherText>
               </Pressable>
             ) : null}
@@ -207,7 +216,7 @@ function TeamCard({ info, onEnter, onLeave }: {
   const { group } = info;
   return (
     <TeamSwipeActions id={group.id} name={group.name} onLeave={onLeave}>
-      <Pressable
+      <GesturePressable
         accessibilityRole="button"
         accessibilityLabel={group.name}
         accessibilityActions={[{ name: 'remove', label: t('teams.leave') }]}
@@ -219,7 +228,7 @@ function TeamCard({ info, onEnter, onLeave }: {
         <EntryAvatar emoji={group.avatar ?? avatarForGroup(group.id)} color={group.avatarColor ?? avatarColorForGroup(group.id)} />
         <HitherText typeRole="title" numberOfLines={2} style={styles.cardText}>{group.name}</HitherText>
         <Ionicons name="chevron-forward" color="rgba(255,255,255,0.5)" size={16} />
-      </Pressable>
+      </GesturePressable>
     </TeamSwipeActions>
   );
 }
@@ -237,8 +246,8 @@ const styles = StyleSheet.create({
   grow: { flexGrow: 1, minHeight: 18 },
   loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   teams: { gap: 10, marginTop: 18 },
-  clear: { minHeight: 48, justifyContent: 'center', alignSelf: 'flex-start', paddingHorizontal: 12 },
-  clearText: { color: '#FF8C86', fontSize: APP_TEXT_SIZE.caption },
+  clear: { minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', paddingHorizontal: 14, borderRadius: 22, backgroundColor: '#FF8C8614', marginTop: 6 },
+  clearText: { color: '#FFAAA5', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   card: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, padding: 12, backgroundColor: 'rgba(255,255,255,0.08)' },
   cardPressed: { backgroundColor: '#2A2F3F' },
   cardText: { flexShrink: 1, flexGrow: 1, fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: '#fff' },

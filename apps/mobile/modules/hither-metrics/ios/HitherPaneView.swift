@@ -2,7 +2,7 @@ import ExpoModulesCore
 import UIKit
 
 final class HitherPaneView: ExpoView {
-  var panelHeight: CGFloat = 0 { didSet { if frameUpdatePending || referenceDirty { scheduleFrameUpdate() } else { applyCurrentFrames() } } }
+  var panelHeight: CGFloat = 0 { didSet { applyCurrentFrames() } }
   var closedHeight: CGFloat = 0 { didSet { if oldValue != closedHeight { invalidateReference() } } }
   var referenceHeight: CGFloat = 0 { didSet {
     if oldValue != referenceHeight {
@@ -23,8 +23,6 @@ final class HitherPaneView: ExpoView {
     }
   } }
 
-  private let viewportMask = CALayer()
-  private let bodyMask = CALayer()
   private weak var surface: UIView?
   private weak var header: UIView?
   private weak var body: UIView?
@@ -39,16 +37,9 @@ final class HitherPaneView: ExpoView {
   }
   private var scrolls: [ScrollViewport] = []
   private var lastAppliedFrame: HitherPaneGeometry?
-  private var frameUpdatePending = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
-    for mask in [viewportMask, bodyMask] {
-      mask.backgroundColor = UIColor.black.cgColor
-      mask.masksToBounds = true
-      mask.actions = ["bounds": NSNull(), "position": NSNull(), "cornerRadius": NSNull()]
-    }
-    layer.mask = viewportMask
   }
 
   // Expo's Swift base omits Fabric's command declaration; retain the native selector.
@@ -81,7 +72,6 @@ final class HitherPaneView: ExpoView {
   override func layoutSubviews() {
     super.layoutSubviews()
     guard bounds.width > 0, bounds.height > 0 else { return }
-    guard referenceDirty || lastSize != bounds.size else { return }
     resolveSlots()
     if lastSize != bounds.size {
       lastSize = bounds.size
@@ -93,17 +83,11 @@ final class HitherPaneView: ExpoView {
       if let body { collectScrolls(body, previous: previous) }
       referenceDirty = false
     }
-    scheduleFrameUpdate()
+    applyCurrentFrames(force: true)
   }
 
   private func scheduleFrameUpdate() {
-    guard !frameUpdatePending else { return }
-    frameUpdatePending = true
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      self.frameUpdatePending = false
-      self.applyCurrentFrames(force: true)
-    }
+    setNeedsLayout()
   }
 
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -136,21 +120,23 @@ final class HitherPaneView: ExpoView {
     let frame = geometry(height: panelHeight)
     guard force || referenceDirty || frame != lastAppliedFrame else { return }
     lastAppliedFrame = frame
-    if viewportMask.frame != frame.visible { viewportMask.frame = frame.visible }
-    if viewportMask.cornerRadius != cornerRadius { viewportMask.cornerRadius = cornerRadius }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
     setFrame(frame.visible, on: surface)
     setFrame(frame.header, on: header)
     if let body {
-      if body.layer.mask !== bodyMask { body.layer.mask = bodyMask }
-      var bodyFrame = body.frame
-      bodyFrame.origin = frame.body.origin
-      setFrame(bodyFrame, on: body)
-      bodyMask.frame = CGRect(x: 0, y: 0, width: bounds.width, height: min(body.bounds.height, frame.body.height))
-      updateScrollInsets(logicalHeight: body.bounds.height, visibleHeight: frame.body.height)
+      body.clipsToBounds = true
+      setFrame(frame.body, on: body)
+      updateScrollInsets(logicalHeight: max(0, referenceHeight - closedHeight), visibleHeight: frame.body.height)
     }
     setFrame(frame.grabber, on: grabber)
     setFrame(frame.footer, on: footer)
-    setFrame(CGRect(x: 0, y: frame.visible.minY, width: bounds.width, height: closedHeight), on: decoration)
+    if let decoration {
+      decoration.clipsToBounds = true
+      decoration.layer.cornerRadius = cornerRadius
+      setFrame(CGRect(x: 0, y: frame.visible.minY, width: bounds.width, height: closedHeight), on: decoration)
+    }
   }
 
   private func setFrame(_ frame: CGRect, on view: UIView?) {
@@ -161,8 +147,6 @@ final class HitherPaneView: ExpoView {
     let hidden = max(0, logicalHeight - visibleHeight)
     for scroll in scrolls {
       guard let view = scroll.view else { continue }
-      let scrolled = view.contentOffset.y > -view.adjustedContentInset.top + 0.5
-      if hidden > 0, !scrolled, !view.isTracking, !view.isDragging, !view.isDecelerating { continue }
       let bottom = scroll.bottomInset + hidden
       if view.contentInset.bottom != bottom { view.contentInset.bottom = bottom }
     }
@@ -212,6 +196,7 @@ final class HitherPaneSurfaceView: ExpoView {
     super.init(appContext: appContext)
     effectView.overrideUserInterfaceStyle = .dark
     effectView.isUserInteractionEnabled = false
+    effectView.clipsToBounds = true
     addSubview(effectView)
     gradient.actions = ["bounds": NSNull(), "position": NSNull(), "cornerRadius": NSNull()]
     gradient.masksToBounds = true
@@ -252,8 +237,7 @@ final class HitherPaneSurfaceView: ExpoView {
     effectView.isHidden = reduced
     guard !reduced, !effectInstalled, window != nil, bounds.width > 0, bounds.height > 0 else { return }
     effectInstalled = true
-    if #available(iOS 26.0, *), let effectClass = NSClassFromString("UIGlassEffect") as? NSObject.Type,
-       effectClass.responds(to: NSSelectorFromString("effectWithStyle:")) {
+    if #available(iOS 26.0, *) {
       let glass = UIGlassEffect(style: .regular)
       glass.isInteractive = false
       effectView.effect = glass

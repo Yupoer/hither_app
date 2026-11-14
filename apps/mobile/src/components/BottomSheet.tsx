@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMountEffect } from '../hooks/useMountEffect';
 import { useVisibleUi } from '../state/foregroundUi';
 import { Platform, ScrollView as RNScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector, ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -236,6 +237,7 @@ export default React.memo(function BottomSheet({
   testID?: string;
 }) {
   const foreground = useVisibleUi();
+  const safeArea = useSafeAreaInsets();
   const scrollRef = useAnimatedRef<RNScrollView>();
   // Live scroll offset, mirrored on the UI thread so the Pan worklet can decide
   // "is the list at the top?" without a JS round-trip.
@@ -605,7 +607,7 @@ export default React.memo(function BottomSheet({
           contentContainerStyle={{
             flexGrow: fillContent ? 1 : undefined,
             paddingHorizontal: pinContentBelowHeader ? SHEET_CORNER_ACTION_INSET : 16,
-            paddingBottom: 40,
+            paddingBottom: Math.max(40, safeArea.bottom + 24),
             paddingTop: (pinContentBelowHeader ? 0 : headerH) + contentTopPadding,
           }}
         >

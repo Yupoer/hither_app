@@ -362,7 +362,7 @@ export function D6AddPlace(props: AddCardProps) {
         key={searchKey} query={localized} region={biasRegion}
         onResult={results => setResponse({ key: searchKey, results })}
       /> : null}
-      {!place && !pinCoordinates ? <View pointerEvents="none" style={styles.crosshair}><Ionicons name="location" size={41} color={D6_ACCENT} /></View> : null}
+      {!place && !pinCoordinates ? <View pointerEvents="none" style={styles.crosshair}><Ionicons name="location" size={30} color={D6_ACCENT} /></View> : null}
       <View style={[styles.search, { top: Math.max(56, insets.top) }]}>
         <View style={styles.searchBar}>
           <D6Surface radius={MAP_SHEET_CORNER_RADIUS} />

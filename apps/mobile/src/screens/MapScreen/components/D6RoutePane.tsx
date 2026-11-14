@@ -29,6 +29,7 @@ import { d6DayRows, d6DropLabel, d6Reorder, d6TripDays, type D6RouteRow as Route
 import type { ReorderUpdate } from '../itineraryReorder';
 import { D6RouteDates } from './D6RouteDates';
 import { D6RouteRow, D6RowFlash, type D6Point } from './D6RouteRow';
+import { D6PaneScrollView } from './D6PaneScrollView';
 
 type Suggestion = { id: string; title: string; avatar?: string; avatarColor?: string };
 export type D6RouteSelection = {
@@ -519,7 +520,7 @@ export function D6RoutePane({
         ) : null}
       </View>
 
-      <ScrollView
+      <D6PaneScrollView
         testID="d6-route-scroll"
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -614,7 +615,7 @@ export function D6RoutePane({
 
         {!popup && status ? <Text accessibilityRole="alert" style={styles.error}>{status}</Text> : null}
         {showLegacy ? legacyContent : null}
-      </ScrollView>
+      </D6PaneScrollView>
 
       {drag ? <View
         pointerEvents="none"
