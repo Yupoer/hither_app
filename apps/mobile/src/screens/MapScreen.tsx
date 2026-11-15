@@ -3467,10 +3467,7 @@ export default function MapScreen({ route, navigation }: Props) {
             style={styles.headerIconBtn}
             accessibilityLabel={t('map.searchA11y')}
             testID="map-search"
-            onPress={() => {
-              lightTap();
-              setSearchVisible(true);
-            }}
+            onPress={() => setSearchVisible(true)}
           />
           </View>
         ) : (
@@ -3487,7 +3484,7 @@ export default function MapScreen({ route, navigation }: Props) {
           style={styles.headerIconBtn}
           accessibilityLabel={t('map.overlaySettings')}
           testID="map-settings"
-          onPress={() => { lightTap(); openSettingsFromSheet(); }}
+          onPress={openSettingsFromSheet}
         />
         </View>
         <Pressable
@@ -4638,6 +4635,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onPaneChange={focusHomePane}
             stop={homeStop ?? null}
             phase={homePhase}
+            hasItinerary={allScopedDestinations.length > 0}
             canLead={canEditItinerary}
             travelMode={travelMode}
             distance={effectiveNavigationActive ? personalDistanceM ?? d6HomeDistance : d6HomeDistance}
@@ -5418,8 +5416,8 @@ export default function MapScreen({ route, navigation }: Props) {
 const EMPTY_HOME_RADII: Readonly<Record<string, number>> = {};
 
 const d6MapStyles = StyleSheet.create({
-  footer: { flexDirection: 'row', gap: 10, marginTop: 'auto', marginBottom: MAP_ISLAND_BOTTOM_INSET },
-  footerButton: { ...d6ChromeStyles.softButton, flex: 1, minHeight: MAP_ISLAND_ACTION_HEIGHT },
+  footer: { flexDirection: 'row', alignItems: 'stretch', gap: 10, marginTop: 'auto', marginBottom: MAP_ISLAND_BOTTOM_INSET },
+  footerButton: { ...d6ChromeStyles.softButton, flex: 1, height: MAP_ISLAND_ACTION_HEIGHT, minHeight: MAP_ISLAND_ACTION_HEIGHT },
   delete: { backgroundColor: '#E5484D' },
   commandsOverlay: { ...StyleSheet.absoluteFill, zIndex: 91, justifyContent: 'flex-end' },
   commandsCard: { ...d6ChromeStyles.bottomCard, position: 'relative', left: undefined, right: undefined, marginHorizontal: MAP_FLOATING_EDGE_INSET },

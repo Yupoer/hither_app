@@ -12,7 +12,7 @@ type Observation = {
     route: { route: string; params?: { groupId?: string }; routes: { name: string; params?: { groupId?: string } }[] };
     session: { membership: { group: { id: string } } | null };
   };
-  external: { channels: number; listeners: number; watches: number };
+  external: { alerts: number; channels: number; listeners: number; watches: number };
   native: { listeners: { iap: number; notification: number; live: number }; location: { listeners: number }; ads: { listeners: number }[] };
   timers: number; pending: unknown[]; fatal: string[];
 };
@@ -49,13 +49,22 @@ it('replaces Map through App settings 100 times without accumulating retired tea
       await world.waitFor(device, (value: Observation) => Boolean(host(value, 'settings-page-teams')), 'settings entry');
       await press('settings-page-teams');
       await world.waitFor(device, (value: Observation) => Boolean(host(value, `settings-team-card-${target}`)), 'team picker');
-      expect(host(await device.observe(), 'settings-team-confirm')?.disabled).toBe(true);
+      expect(host(await device.observe(), 'settings-team-confirm')).toBeUndefined();
       await press(`settings-team-card-${target}`);
       const selected: Observation = await device.observe();
       expect(selected.presentation.session.membership?.group.id).toBe(before.presentation.session.membership?.group.id);
       expect(selected.presentation.route.params?.groupId).toBe(before.presentation.route.params?.groupId);
-      expect(host(selected, `settings-team-card-${target}`)?.selected).toBe(true);
-      await press('settings-team-confirm');
+      expect(host(selected, `settings-team-card-${target}`)?.selected).toBe(false);
+      expect(selected.external.alerts).toBe(1);
+      if (index === 0) {
+        await device.input({ kind: 'alert', index: 0 });
+        const canceled: Observation = await device.observe();
+        expect(canceled.presentation.session.membership?.group.id).toBe(before.presentation.session.membership?.group.id);
+        expect(canceled.presentation.route.params?.groupId).toBe(before.presentation.route.params?.groupId);
+        expect(canceled.external.alerts).toBe(0);
+        await press(`settings-team-card-${target}`);
+      }
+      await device.input({ kind: 'alert', index: 1 });
       await world.waitFor(device, (value: Observation) => value.presentation.session.membership?.group.id === target
         && value.presentation.route.params?.groupId === target && !host(value, 'settings-team-confirm')
         && Boolean(host(value, 'home-profile')), `fresh Map switch ${index + 1}`);

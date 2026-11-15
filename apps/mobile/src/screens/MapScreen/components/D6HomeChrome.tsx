@@ -20,7 +20,7 @@ import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { GestureDetector } from 'react-native-gesture-handler';
-import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, useAnimatedReaction, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { useD6PaneDrag } from './useD6PaneDrag';
 import { D6PaneFrame } from './D6PaneFrame';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -41,6 +41,7 @@ import { D6_DAY_PALETTE } from '../d6Itinerary';
 import type { Destination } from '../../../types';
 import { d6MeetingDisplay, d6TravelTime } from '../d6GatheringHeader';
 import { lightTap } from '../../../utils/haptics';
+import { cancelledD6Touch, d6ActivationKind, type D6DragOwner } from './d6DragOwnership';
 export { d6MeetingDisplay } from '../d6GatheringHeader';
 
 export const D6_ACCENT = '#4C6FFF';
@@ -114,7 +115,7 @@ export function D6IconButton({ name, label, onPress, style, testID }: {
   );
 }
 
-const Grabber = React.memo(function Grabber({ gesture, detent, snapTo, label, testID, height = MAP_FLOATING_GRABBER_HEIGHT }: Pick<ReturnType<typeof useD6PaneDrag>, 'gesture' | 'detent' | 'snapTo'> & {
+const Grabber = React.memo(function Grabber({ gesture, detent, snapTo, pressCancelled, label, testID, height = MAP_FLOATING_GRABBER_HEIGHT }: Pick<ReturnType<typeof useD6PaneDrag>, 'gesture' | 'detent' | 'snapTo' | 'pressCancelled'> & {
   label: string;
   testID: string;
   height?: number;
@@ -129,7 +130,7 @@ const Grabber = React.memo(function Grabber({ gesture, detent, snapTo, label, te
             if (actionName === 'increment') snapTo(detent === 'closed' ? 'half' : 'full');
             if (actionName === 'decrement') snapTo(detent === 'full' ? 'half' : 'closed');
           }}
-          onPress={() => snapTo(detent === 'closed' || detent === 'full' ? 'half' : 'closed')}
+          onPress={event => { if (!cancelledD6Touch(pressCancelled.get(), event)) snapTo(detent === 'closed' || detent === 'full' ? 'half' : 'closed'); }}
           style={[styles.grabTarget, { height }]} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
           <View style={styles.grab} />
         </MotionPressable>
@@ -140,6 +141,7 @@ const Grabber = React.memo(function Grabber({ gesture, detent, snapTo, label, te
 
 type HeaderProps = {
   stop: Destination | null;
+  hasItinerary: boolean;
   phase: D6Journey;
   canLead: boolean;
   travelMode: TravelMode;
@@ -157,7 +159,7 @@ const HEADER_LAYOUT = LinearTransition.duration(420).easing(Easing.inOut(Easing.
 const HEADER_ENTER = FadeIn.duration(320);
 const HEADER_EXIT = FadeOut.duration(180);
 
-const Header = React.memo(function Header({ stop, phase, canLead, travelMode, distance, eta, arrived, total, displayFont, marqueeEnabled, marqueeSpeed, zh }: HeaderProps) {
+const Header = React.memo(function Header({ stop, hasItinerary, phase, canLead, travelMode, distance, eta, arrived, total, displayFont, marqueeEnabled, marqueeSpeed, zh }: HeaderProps) {
   const { fontScale, width } = useWindowDimensions();
   const visible = useVisibleUi();
   const [now, setNow] = useState(Date.now);
@@ -167,7 +169,8 @@ const Header = React.memo(function Header({ stop, phase, canLead, travelMode, di
   const hasTime = time.kind !== 'none';
   const titleMaxWidth = width / 2 + 64 - MAP_FLOATING_EDGE_INSET - SHEET_CORNER_ACTION_INSET - 1;
   const metricFont = displayFont ? { fontFamily: displayFont, fontStyle: 'normal' as const, fontWeight: '400' as const } : undefined;
-  const label = stop?.title ?? (canLead ? (zh ? '新增第一個集合點' : 'Add your first stop') : (zh ? '等待隊長' : 'Waiting for leader'));
+  const label = stop?.title ?? (hasItinerary ? (zh ? '查看行程' : 'View itinerary')
+    : canLead ? (zh ? '新增第一個集合點' : 'Add your first stop') : (zh ? '等待隊長' : 'Waiting for leader'));
   return (
     <Reanimated.View layout={HEADER_LAYOUT} style={[styles.headerRow, largeText && styles.headerRowLarge]}>
       {visible && stop?.meetAt && phase === 'ready' ? <MeetingClock key={stop.meetAt} onTick={setNow} /> : null}
@@ -223,7 +226,7 @@ const Header = React.memo(function Header({ stop, phase, canLead, travelMode, di
             {time.unit ? <HitherText allowFontScaling={!largeText} style={[styles.timeUnit, largeText && styles.timeUnitLarge, time.hot && styles.hot]}>{unit}</HitherText> : null}
           </>}
         </Reanimated.View>
-      ) : !stop && canLead ? <Ionicons name="add" size={23} color="#fff" /> : null}
+      ) : !stop && (canLead || hasItinerary) ? <Ionicons name={hasItinerary ? 'calendar-outline' : 'add'} size={23} color="#fff" /> : null}
     </Reanimated.View>
   );
 });
@@ -260,7 +263,10 @@ type CtaProps = {
   onStop: () => Promise<boolean>;
 };
 
-const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked, busy, progress, reduceMotion, zh, onAction, onStop }: CtaProps) {
+const JourneyButton = React.memo(function JourneyButton({ phase, hasItinerary, pressCancelled, canLead, asked, busy, progress, reduceMotion, zh, onAction, onStop }: CtaProps & {
+  hasItinerary: boolean;
+  pressCancelled: SharedValue<boolean>;
+}) {
   const { fontScale } = useWindowDimensions();
   const largeText = fontScale > 1.45;
   const base = Math.max(0, Math.min(1, progress ?? 0));
@@ -289,6 +295,20 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
     };
   });
   const animate = (target: number, duration: number) => Animated.timing(fill, { toValue: target, duration, useNativeDriver: true });
+  const cancelHold = useCallback(() => {
+    if (holdFeedback.current !== null) clearInterval(holdFeedback.current);
+    holdFeedback.current = null;
+    holding.current = false;
+    stoppedTouch.current = true;
+    fill.stopAnimation();
+    fill.setValue(base);
+    buttonDepth.stopAnimation();
+    buttonDepth.setValue(0);
+    setPressed(false);
+  }, [base, buttonDepth, fill]);
+  useAnimatedReaction(() => pressCancelled.get(), cancelled => {
+    if (cancelled) runOnJS(cancelHold)();
+  });
   const stopNavigation = async () => {
     if (await onStop()) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   };
@@ -302,15 +322,17 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
   const quiet = !canLead && (phase === 'empty' || phase === 'arrived' || asked);
   const elevated = !going && !quiet;
   const depressed = pressed && !unavailable;
+  const shadowVisible = elevated && !unavailable && (phase === 'empty' ? depressed : !depressed);
   function moveFace(toValue: number) {
     if (reduceMotion) buttonDepth.setValue(0);
-    else Animated.timing(buttonDepth, { toValue, duration: toValue > 0 ? 90 : 150, useNativeDriver: true }).start();
+    else if (toValue === 0) Animated.spring(buttonDepth, { toValue: 0, stiffness: 340, damping: 18, mass: 0.8, useNativeDriver: true }).start();
+    else Animated.timing(buttonDepth, { toValue, duration: 90, useNativeDriver: true }).start();
   }
   function runAction() {
     onAction();
   }
   const label = phase === 'empty'
-    ? canLead ? (zh ? '新增集合點' : 'Add a stop') : (zh ? '等待隊長' : 'Waiting for leader')
+    ? canLead ? (hasItinerary ? (zh ? '新增下一個集合點' : 'Add next stop') : (zh ? '新增集合點' : 'Add a stop')) : (zh ? '等待隊長' : 'Waiting for leader')
     : going ? (zh ? '前往中' : 'On the way')
       : phase === 'arrived' ? canLead ? (zh ? '完成' : 'Finish') : (zh ? '已抵達' : 'Arrived')
         : canLead ? (zh ? '出發' : 'Start')
@@ -325,16 +347,16 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
       disabled={unavailable}
       delayLongPress={END_HOLD_MS}
       onLongPress={canHold ? () => {
-        if (!holding.current || stoppedTouch.current) return;
+        if (!holding.current || stoppedTouch.current || pressCancelled.get()) return;
         stoppedTouch.current = true;
         clearHoldFeedback();
         fill.stopAnimation();
         fill.setValue(1);
         void stopNavigation();
       } : undefined}
-      style={[styles.cta, elevated && styles.ctaBase, busy && styles.busy]}
+      style={[styles.cta, shadowVisible && styles.ctaShadow, busy && styles.busy]}
       onPressIn={() => {
-        if (unavailable) return;
+        if (unavailable || pressCancelled.get()) return;
         stoppedTouch.current = false;
         setPressed(true);
         moveFace(JOURNEY_BUTTON_DEPTH);
@@ -359,10 +381,11 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
         if (stoppedTouch.current || reduceMotion) fill.setValue(base);
         else animate(base, 160).start();
       }}
-      onPress={() => {
+      onPress={event => {
+        if (cancelledD6Touch(pressCancelled.get(), event)) return;
         if (stoppedTouch.current) {
           stoppedTouch.current = false;
-          return;
+          if (d6ActivationKind(event) === 'touch') return;
         }
         if (!going) return runAction();
         if (screenReader) return endWithConfirmation();
@@ -386,7 +409,9 @@ const JourneyButton = React.memo(function JourneyButton({ phase, canLead, asked,
         styles.ctaFace,
         elevated && styles.ctaRaisedFace,
         depressed && (!elevated || reduceMotion) && styles.ctaSoftPressed,
-        elevated && { transform: [{ translateY: buttonDepth }] },
+        elevated && { transform: [{ translateY: phase === 'empty'
+          ? buttonDepth.interpolate({ inputRange: [0, JOURNEY_BUTTON_DEPTH], outputRange: [0, -JOURNEY_BUTTON_DEPTH] })
+          : buttonDepth }] },
         largeText && styles.ctaFaceLarge,
       ]}>
         {going ? <ProgressFill key={base} base={base} fill={fill} holding={holding} /> : null}
@@ -439,13 +464,14 @@ export function D6HomeChrome(props: HomeChromeProps) {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(82);
-  const [islandControlsHeight, setIslandControlsHeight] = useState(MAP_ISLAND_HEIGHT - MAP_ISLAND_BOTTOM_INSET);
+  const owner = useSharedValue<D6DragOwner>('idle');
+  const [islandControlsHeight, setIslandControlsHeight] = useState(MAP_ISLAND_HEIGHT - MAP_ISLAND_GRABBER_HEIGHT);
   const topOpen = pane === 'itinerary';
   const teamOpen = pane === 'team';
   const topEdge = Math.max(56, insets.top - 3);
   const bottom = Math.max(24, insets.bottom - 8);
   const topClosed = headerHeight + MAP_FLOATING_GRABBER_HEIGHT;
-  const islandClosed = islandControlsHeight + MAP_ISLAND_BOTTOM_INSET;
+  const islandClosed = islandControlsHeight + MAP_ISLAND_GRABBER_HEIGHT;
   const changeItinerary = useCallback((open: boolean) => onPaneChange(open ? 'itinerary' : null), [onPaneChange]);
   const changeTeam = useCallback((open: boolean) => onPaneChange(open ? 'team' : null), [onPaneChange]);
   const closeTeamBeforeDrag = useCallback(() => { if (teamOpen) changeTeam(false); }, [teamOpen, changeTeam]);
@@ -453,13 +479,13 @@ export function D6HomeChrome(props: HomeChromeProps) {
   const top = useD6PaneDrag({
     closed: topClosed,
     full: Math.max(topClosed, screenHeight - topEdge - bottom - islandClosed - MAP_FLOATING_EDGE_INSET),
-    direction: 1, open: topOpen, reduceMotion: props.reduceMotion,
+    direction: 1, open: topOpen, reduceMotion: props.reduceMotion, owner,
     onOpenChange: changeItinerary, onDragBegin: closeTeamBeforeDrag,
   });
   const island = useD6PaneDrag({
     closed: islandClosed,
     full: Math.max(islandClosed, screenHeight - bottom - topEdge - topClosed - MAP_FLOATING_EDGE_INSET),
-    direction: -1, open: teamOpen, reduceMotion: props.reduceMotion,
+    direction: -1, open: teamOpen, reduceMotion: props.reduceMotion, owner,
     onOpenChange: changeTeam, onDragBegin: closeItineraryBeforeDrag,
   });
   const topLabel = topOpen ? (zh ? '收合行程' : 'Close itinerary') : (zh ? '展開行程' : 'Open itinerary');
@@ -479,18 +505,21 @@ export function D6HomeChrome(props: HomeChromeProps) {
           {stop ? <GatheringCardParticles running={phase === 'going'}
             lowPowerMode={lowPowerMode} thermalState={thermalState} /> : null}
         </View>}
-        header={<MotionPressable testID="home-itinerary-toggle" accessibilityRole="button" accessibilityLabel={!stop && !topOpen && canLead ? (zh ? '新增第一個集合點' : 'Add your first stop') : undefined} accessibilityHint={topLabel}
-          onPress={!stop && !topOpen && canLead ? onAdd : goRoute} style={styles.headingButton}
+        header={<MotionPressable testID="home-itinerary-toggle" accessibilityRole="button" accessibilityLabel={!stop && !props.hasItinerary && !topOpen && canLead ? (zh ? '新增第一個集合點' : 'Add your first stop') : undefined} accessibilityHint={topLabel}
+          onPress={event => {
+            if (cancelledD6Touch(top.pressCancelled.get(), event)) return;
+            if (!stop && !props.hasItinerary && !topOpen && canLead) onAdd(); else goRoute();
+          }} style={styles.headingButton}
           onLayout={({ nativeEvent: { layout: { height } } }) => {
             setHeaderHeight(height);
             onTopHeight(height + MAP_FLOATING_GRABBER_HEIGHT);
           }}>
-          <Header stop={stop} phase={phase} canLead={canLead} travelMode={props.travelMode}
+          <Header stop={stop} hasItinerary={props.hasItinerary} phase={phase} canLead={canLead} travelMode={props.travelMode}
             distance={props.distance} eta={props.eta} arrived={props.arrived} total={props.total}
             displayFont={props.displayFont} marqueeEnabled={props.marqueeEnabled} marqueeSpeed={props.marqueeSpeed} zh={zh} />
         </MotionPressable>}
         body={showItinerary ? <View collapsable={false} testID="d6-route-viewport" onLayout={top.contentDidLayout} style={styles.topBody}>{itinerary}</View> : null}
-        grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} label={topLabel} testID="home-itinerary-grabber" />}
+        grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} pressCancelled={top.pressCancelled} label={topLabel} testID="home-itinerary-grabber" />}
       /></View> : null}
       {!pane && !top.preview && !island.preview && !hideIsland ? <MapRecenterControl style={[styles.controls, { bottom: bottom + islandClosed + 16 }]}
         onFitAll={onFit} onLocate={onLocate} fitAllLabel={zh ? '縮放到全隊' : 'Fit team on map'}
@@ -502,7 +531,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
           {teamHeader != null ? <View style={styles.teamHeader}>{teamHeader}</View> : null}
           {team}
         </View> : null}
-        grabber={<Grabber gesture={island.gesture} detent={island.detent} snapTo={island.snapTo}
+        grabber={<Grabber gesture={island.gesture} detent={island.detent} snapTo={island.snapTo} pressCancelled={island.pressCancelled}
           label={teamOpen ? (zh ? '收合隊伍' : 'Close team') : (zh ? '展開隊伍' : 'Open team')}
           testID="home-team-toggle" height={MAP_ISLAND_GRABBER_HEIGHT} />}
         footer={<View style={styles.islandControls} onLayout={({ nativeEvent: { layout: { height } } }) => {
@@ -510,13 +539,13 @@ export function D6HomeChrome(props: HomeChromeProps) {
         }}>
         {error && !topOpen ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {footer ?? <View style={styles.islandRow}>
-          <MotionPressable motion="depth" testID="home-profile" accessibilityRole="button" accessibilityLabel={zh ? '你' : 'You'} onPressIn={lightTap} onPress={onProfile} style={[styles.avatar, { backgroundColor: selfColor }]}>
+          <MotionPressable motion="depth" testID="home-profile" accessibilityRole="button" accessibilityLabel={zh ? '你' : 'You'} onPressIn={lightTap} onPress={event => { if (!cancelledD6Touch(island.pressCancelled.get(), event)) onProfile(); }} style={[styles.avatar, { backgroundColor: selfColor }]}>
             <Text allowFontScaling={false} style={styles.avatarEmoji}>{selfEmoji}</Text>
             <View style={[styles.status, { backgroundColor: statusColor }]} />
           </MotionPressable>
-          <JourneyButton phase={phase} canLead={canLead} asked={props.asked} busy={props.busy}
+          <JourneyButton phase={phase} hasItinerary={props.hasItinerary} pressCancelled={island.pressCancelled} canLead={canLead} asked={props.asked} busy={props.busy}
             progress={props.progress} reduceMotion={props.reduceMotion} zh={zh} onAction={props.onAction} onStop={props.onStop} />
-          <MotionPressable motion="depth" testID="home-commands" accessibilityRole="button" accessibilityLabel={zh ? '快捷指令' : 'Quick commands'} onPressIn={lightTap} onPress={onCommands} style={styles.commands}>
+          <MotionPressable motion="depth" testID="home-commands" accessibilityRole="button" accessibilityLabel={zh ? '快捷指令' : 'Quick commands'} onPressIn={lightTap} onPress={event => { if (!cancelledD6Touch(island.pressCancelled.get(), event)) onCommands(); }} style={styles.commands}>
             <View>
               <Ionicons name="chatbubble-outline" size={27} color="#fff" />
               <Ionicons name="flash" size={13} color="#fff" style={styles.commandBolt} />
@@ -588,7 +617,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff1f', alignItems: 'center', justifyContent: 'center' },
   commandBolt: { position: 'absolute', top: 6, left: 7 },
   cta: { flex: 1, minHeight: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2 },
-  ctaBase: { backgroundColor: '#354FC5' },
+  ctaShadow: { boxShadow: [{ offsetX: 0, offsetY: JOURNEY_BUTTON_DEPTH, blurRadius: 0, color: '#354FC5' }] },
   ctaFace: { flex: 1, minHeight: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2, overflow: 'hidden',
     backgroundColor: '#ffffff1f',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 8 },

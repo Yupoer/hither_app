@@ -1,7 +1,7 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Modal,
@@ -14,6 +14,7 @@ import {
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { measure, useAnimatedRef, useAnimatedStyle, useDerivedValue, useSharedValue, type AnimatedRef, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
@@ -25,11 +26,14 @@ import type { DailyAccommodation, Destination } from '../../../types';
 import { destinationEmojiDisplay } from '../../../utils/destinationEmojiColor';
 import { lightTap } from '../../../utils/haptics';
 import { localDayKey, openDestinationsForReorder, parseDateOnlyLocal } from '../../../utils/tripDay';
-import { d6DayRows, d6DropLabel, d6Reorder, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
+import { d6DayRows, d6Reorder, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
 import type { ReorderUpdate } from '../itineraryReorder';
 import { D6RouteDates } from './D6RouteDates';
-import { D6RouteRow, D6RowFlash, type D6Point } from './D6RouteRow';
+import { D6RouteRow, D6RouteRowPreview, D6RowFlash } from './D6RouteRow';
 import { D6PaneScrollView } from './D6PaneScrollView';
+import { D6PaneInteractionContext, D6PaneOverlay } from './D6PaneInteraction';
+import { releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
+import { d6DragTarget, d6DropDestination, type D6DragBounds, type D6DragGeometry, type D6DragPresentation, type D6DragSession, type D6DragTarget, type D6Point } from './d6RouteDrag';
 
 type Suggestion = { id: string; title: string; avatar?: string; avatarColor?: string };
 export type D6RouteSelection = {
@@ -72,49 +76,6 @@ export interface D6RoutePaneProps {
   error?: string | null;
 }
 
-type Bounds = D6Point & { width: number; height: number };
-type DragTarget =
-  | { kind: 'day'; day: number }
-  | { kind: 'row'; id: string; edge: 'above' | 'below' };
-
-type DragSession = {
-  row: RouteRow;
-  point: D6Point;
-  offset: D6Point;
-  root: Bounds;
-  source: Bounds;
-  strip: Bounds;
-  days: { day: number; bounds: Bounds }[];
-  rows: { id: string; bounds: Bounds }[];
-};
-
-function measure(view: View | null | undefined): Promise<Bounds | null> {
-  return new Promise((resolve) => {
-    if (!view) { resolve(null); return; }
-    view.measureInWindow((x, y, width, height) => resolve(width > 0 && height > 0
-      ? { x, y, width, height } : null));
-  });
-}
-
-function contains(bounds: Bounds, point: D6Point) {
-  return point.x >= bounds.x && point.x <= bounds.x + bounds.width
-    && point.y >= bounds.y && point.y <= bounds.y + bounds.height;
-}
-
-function findTarget(session: DragSession, point: D6Point): DragTarget | null {
-  if (contains(session.strip, point)) {
-    const day = session.days.find((entry) => contains(entry.bounds, point));
-    return day ? { kind: 'day', day: day.day } : null;
-  }
-  if (point.x < session.root.x || point.x > session.root.x + session.root.width) return null;
-  const first = session.rows[0];
-  const last = session.rows[session.rows.length - 1];
-  if (!first || !last || point.y < Math.max(first.bounds.y - 16, session.strip.y + session.strip.height)
-    || point.y > Math.min(last.bounds.y + last.bounds.height + 48, session.root.y + session.root.height)) return null;
-  const row = session.rows.find((entry) => point.y < entry.bounds.y + entry.bounds.height / 2);
-  return row ? { kind: 'row', id: row.id, edge: 'above' } : { kind: 'row', id: last.id, edge: 'below' };
-}
-
 const WEEKDAYS_ZH = ['日', '一', '二', '三', '四', '五', '六'];
 const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -125,6 +86,16 @@ export function D6RoutePane({
   onAccommodation, onSelectionChange, legacyContent, flashId, poolFlashKey, error,
 }: D6RoutePaneProps) {
   const { language, t } = useTranslation();
+  const panel = useContext(D6PaneInteractionContext);
+  const localOwner = useSharedValue<D6DragOwner>('idle');
+  const owner = panel?.owner ?? localOwner;
+  const dragPoint = useSharedValue<D6Point>({ x: 0, y: 0 });
+  const dragPresentation = useSharedValue<D6DragPresentation | null>(null);
+  const dragSequence = useSharedValue(0);
+  const dragTarget = useDerivedValue(() => {
+    const presentation = dragPresentation.get();
+    return presentation ? d6DragTarget(presentation.geometry, dragPoint.get()) : null;
+  });
   const chinese = language === 'zh';
   const weekdays = chinese ? WEEKDAYS_ZH : WEEKDAYS_EN;
   const [today] = useState(() => new Date());
@@ -156,17 +127,26 @@ export function D6RoutePane({
   const [failure, setFailure] = useState<string | null>(null);
   const [transparencyReduced, setTransparencyReduced] = useState(false);
   const [stripMore, setStripMore] = useState(false);
+  const [stripBefore, setStripBefore] = useState(false);
   const stripScroll = useRef<ScrollView | null>(null);
   const revealNewDay = useRef(false);
   const stripMetrics = useRef({ offset: 0, width: 0, content: 0 });
-  const [drag, setDrag] = useState<{ session: DragSession; target: DragTarget | null } | null>(null);
-  const dragSession = useRef<DragSession | null>(null);
-  const dragGeneration = useRef(0);
-  const latestPoint = useRef<D6Point | null>(null);
-  const rootRef = useRef<View>(null);
-  const stripRef = useRef<View>(null);
-  const rowViews = useRef(new Map<string, View>());
+  const dragSession = useRef<{ token: number; scope: string; session: D6DragSession } | null>(null);
+  const lastDragToken = useRef(0);
+  const rootRef = useAnimatedRef<View>();
+  const stripRef = useAnimatedRef<View>();
+  const [rowRefs, setRowRefs] = useState<ReadonlyMap<string, AnimatedRef<View>>>(() => new Map());
+  const registerRow = useCallback((id: string, ref: AnimatedRef<View> | null) => {
+    setRowRefs(current => {
+      if (current.get(id) === ref || (!ref && !current.has(id))) return current;
+      const next = new Map(current);
+      if (ref) next.set(id, ref); else next.delete(id);
+      return next;
+    });
+  }, []);
   const dayViews = useRef(new Map<number, View>());
+  const dayBounds = useSharedValue<{ version: number; days: { day: number; bounds: D6DragBounds }[] }>({ version: 0, days: [] });
+  const dayMeasurementVersion = useRef(0);
   const openSwipe = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
 
@@ -197,7 +177,22 @@ export function D6RoutePane({
     }
     const { offset, width, content } = stripMetrics.current;
     setStripMore(width > 0 && content - width - offset > 4);
-  }, []);
+    setStripBefore(offset > 4);
+    const version = ++dayMeasurementVersion.current;
+    dayBounds.set({ version, days: [] });
+    for (const [dayNumber, view] of dayViews.current) {
+      view.measureInWindow((x, y, dayWidth, dayHeight) => {
+        if (dayWidth <= 0 || dayHeight <= 0) return;
+        dayBounds.modify(current => {
+          'worklet';
+          return current.version === version ? { version, days: [
+            ...current.days.filter(entry => entry.day !== dayNumber),
+            { day: dayNumber, bounds: { x, y, width: dayWidth, height: dayHeight } },
+          ] } : current;
+        });
+      });
+    }
+  }, [dayBounds]);
 
   function scrollToDay() {
     if (day.number > 1) {
@@ -225,7 +220,7 @@ export function D6RoutePane({
       writing.current = false;
       setBusy(false);
     }
-  }, [t]);
+  }, [setFailure, t]);
 
   const removeRows = useCallback(async (ids: readonly string[], action: 'delete' | 'pool') => {
     if (ids.length === 0) return;
@@ -266,6 +261,31 @@ export function D6RoutePane({
     : [], [selectableRows, selection]);
   const selectionMode = canEdit && selection !== null;
   const selectionCount = selectedIds.length;
+  const rowIdentity = rows.map(row => row.id).join('\n');
+  const dragScope = `${panel?.open ?? true}:${outgoing}:${count}:${day.number}:${selectionMode}:${rowIdentity}`;
+  const committedDragScope = useRef<{ scope: string; clear: () => void } | null>(null);
+  const clearDrag = useCallback(() => {
+    dragSession.current = null;
+    dragPresentation.set(null);
+    releaseD6Drag(owner, 'reorder');
+  }, [dragPresentation, owner]);
+  const bindDragScope = useCallback((view: View | null) => {
+    rootRef(view);
+    if (!view) {
+      const previous = committedDragScope.current;
+      committedDragScope.current = null;
+      previous?.clear();
+      return;
+    }
+    const previous = committedDragScope.current;
+    if (previous?.scope === dragScope && previous.clear === clearDrag) return;
+    previous?.clear();
+    committedDragScope.current = { scope: dragScope, clear: clearDrag };
+  }, [clearDrag, dragScope, rootRef]);
+  useMountEffect(() => () => {
+    committedDragScope.current?.clear();
+    committedDragScope.current = null;
+  });
 
   function openRow(row: RouteRow) {
     if (selection && canEdit) {
@@ -297,7 +317,7 @@ export function D6RoutePane({
     onSelectDay(next);
   }
 
-  function move(row: RouteRow, target: DragTarget) {
+  function move(row: RouteRow, target: D6DragTarget) {
     if (target.kind === 'row' && target.id === row.id) return;
     const ordinary = rows.filter((item) => item.id !== row.id && item.kind === 'destination' && !item.isLegacyStay);
     const beforeId = target.kind === 'row'
@@ -313,49 +333,35 @@ export function D6RoutePane({
     if (updates.length > 0) void write(() => onReorder(updates));
   }
 
-  async function startDrag(row: RouteRow, point: D6Point) {
-    if (writing.current) return;
+  function startDrag(row: RouteRow, token: number, point: D6Point, geometry: D6DragGeometry, scope: string) {
+    if (token <= lastDragToken.current) return;
+    lastDragToken.current = token;
+    if (committedDragScope.current?.scope !== scope || writing.current || (panel && !panel.open)) {
+      if (dragPresentation.get()?.token === token) {
+        dragPresentation.set(null);
+        releaseD6Drag(owner, 'reorder');
+      }
+      return;
+    }
     openSwipe.current?.close();
-    const generation = ++dragGeneration.current;
-    latestPoint.current = point;
-    const candidates = rows.filter((item) => item.id !== row.id && item.kind === 'destination' && !item.isLegacyStay);
-    const [root, source, strip, dayBounds, rowBounds] = await Promise.all([
-      measure(rootRef.current), measure(rowViews.current.get(row.id)), measure(stripRef.current),
-      Promise.all(days.map(async (item) => ({ day: item.number, bounds: await measure(dayViews.current.get(item.number)) }))),
-      Promise.all(candidates.map(async (item) => ({ id: item.id, bounds: await measure(rowViews.current.get(item.id)) }))),
-    ]);
-    if (generation !== dragGeneration.current || !root || !source || !strip) return;
-    const session: DragSession = {
-      row,
-      point: latestPoint.current ?? point,
-      offset: { x: point.x - source.x, y: point.y - source.y },
-      root,
-      source,
-      strip,
-      days: dayBounds.flatMap((entry) => entry.bounds ? [{ day: entry.day, bounds: entry.bounds }] : []),
-      rows: rowBounds.flatMap((entry) => entry.bounds ? [{ id: entry.id, bounds: entry.bounds }] : []),
-    };
-    dragSession.current = session;
-    setDrag({ session, target: findTarget(session, session.point) });
+    const session: D6DragSession = { ...geometry, row,
+      offset: { x: point.x - geometry.source.x, y: point.y - geometry.source.y } };
+    dragSession.current = { token, scope, session };
   }
 
-  function dragMove(point: D6Point) {
-    latestPoint.current = point;
-    if (!dragSession.current) return;
-    const session = { ...dragSession.current, point };
-    dragSession.current = session;
-    setDrag({ session, target: findTarget(session, point) });
-  }
-
-  function endDrag(point?: D6Point) {
-    const session = dragSession.current;
+  function endDrag(token: number, point?: D6Point) {
+    lastDragToken.current = Math.max(lastDragToken.current, token);
+    const active = dragSession.current;
+    if (!active || active.token !== token) return;
     dragSession.current = null;
-    ++dragGeneration.current;
-    latestPoint.current = null;
-    setDrag(null);
-    if (!point || !session) return;
-    const target = findTarget(session, point);
-    if (target) move(session.row, target);
+    if (dragPresentation.get()?.token === token) {
+      dragPresentation.set(null);
+      releaseD6Drag(owner, 'reorder');
+    }
+    if (active.scope !== committedDragScope.current?.scope) return;
+    const session = active.session;
+    const target = d6DropDestination(session, point, rows.map(row => row.id));
+    if (session && target) move(session.row, target);
   }
 
   function changeRange(nextCount: number, nextDeparture: string) {
@@ -366,7 +372,7 @@ export function D6RoutePane({
     });
   }
 
-  const ordinaryRows = rows.filter(row => row.kind === 'destination' && !row.isLegacyStay);
+  const ordinaryRows = useMemo(() => rows.filter(row => row.kind === 'destination' && !row.isLegacyStay), [rows]);
   const accommodationRows = rows.filter(row => row.kind === 'accommodation' || row.isLegacyStay);
   const selectedAll = selectableRows.length > 0 && selectionCount === selectableRows.length;
   const moreActions = canEdit || canEditDates || !!onManageArrivals || !!legacyContent;
@@ -374,7 +380,44 @@ export function D6RoutePane({
   const showStaySlot = canEdit && canEditDates && !selectionMode && day.number < count && !hasStay;
   const status = error ?? failure;
 
+  const dragGeometries = useMemo(() => {
+    const refs = ordinaryRows.flatMap(row => {
+      const ref = rowRefs.get(row.id);
+      return ref ? [{ id: row.id, ref }] : [];
+    });
+    const overlayRef = panel?.overlayRef ?? rootRef;
+    const viewport = panel?.viewport;
+    return new Map(ordinaryRows.map(({ id: sourceId }) => [sourceId, (): D6DragGeometry | null => {
+      'worklet';
+      const root = measure(rootRef);
+      const strip = measure(stripRef);
+      const overlay = measure(overlayRef);
+      const clip = viewport ? measure(viewport.ref) : null;
+      if (!root || !strip || !overlay || (viewport && !clip)) return null;
+      const bottom = viewport && clip
+        ? clip.pageY + Math.max(0, viewport.height.get() - viewport.closed)
+        : root.pageY + root.height;
+      const measuredRows = refs.flatMap(entry => {
+        const bounds = measure(entry.ref);
+        return bounds ? [{ id: entry.id, bounds: {
+          x: bounds.pageX, y: bounds.pageY, width: bounds.width, height: bounds.height,
+        } }] : [];
+      });
+      const source = measuredRows.find(entry => entry.id === sourceId);
+      if (!source) return null;
+      return {
+        root: { x: root.pageX, y: root.pageY, width: root.width, height: Math.max(0, Math.min(root.height, bottom - root.pageY)) },
+        strip: { x: strip.pageX, y: strip.pageY, width: strip.width, height: strip.height },
+        overlay: { x: overlay.pageX, y: overlay.pageY },
+        source: source.bounds,
+        days: dayBounds.get().days,
+        rows: measuredRows.filter(entry => entry.id !== sourceId),
+      };
+    }]));
+  }, [ordinaryRows, rowRefs, panel?.overlayRef, panel?.viewport, rootRef, stripRef, dayBounds]);
+
   const renderRouteRow = (row: RouteRow, index: number) => {
+    const geometry = dragGeometries.get(row.id);
     const canDrag = canEdit && !selectionMode && !busy && row.kind === 'destination' && !row.isLegacyStay;
     const editable = canEdit && (row.kind === 'destination' || canEditDates);
     const canSwipe = editable && !selectionMode && (!busy || removing.has(row.id));
@@ -387,8 +430,6 @@ export function D6RoutePane({
       connectAbove={row.kind === 'destination' && !row.isLegacyStay && index > 0}
       connectBelow={row.kind === 'destination' && !row.isLegacyStay && index < ordinaryRows.length - 1}
       selected={selectionMode && editable ? selectedIds.includes(row.id) : undefined}
-      dragging={drag?.session.row.id === row.id}
-      insertion={drag?.target?.kind === 'row' && drag.target.id === row.id ? drag.target.edge : undefined}
       removing={removing.has(row.id)}
       flash={flashId === row.id || flashed === row.id || (!!row.destination && flashId === row.destination.id)
         || (row.kind === 'accommodation' && flashId === `stay-date:${row.accommodation.stayDate}`)}
@@ -405,10 +446,14 @@ export function D6RoutePane({
         if (openSwipe.current && openSwipe.current !== methods) openSwipe.current.close();
         openSwipe.current = methods;
       }}
-      viewRef={(element) => { if (element) rowViews.current.set(row.id, element); else rowViews.current.delete(row.id); }}
-      drag={canDrag ? {
-        onStart: (point) => { void startDrag(row, point); },
-        onMove: dragMove,
+      measureRef={registerRow}
+      drag={canDrag && geometry ? {
+        owner,
+        point: dragPoint,
+        presentation: dragPresentation,
+        sequence: dragSequence,
+        geometry,
+        onStart: (token, point, geometry) => startDrag(row, token, point, geometry, dragScope),
         onEnd: endDrag,
         onCancel: endDrag,
         onStep: (step) => {
@@ -422,7 +467,7 @@ export function D6RoutePane({
   };
 
   return (
-    <View ref={rootRef} collapsable={false} style={styles.root} testID="d6-route-pane">
+    <View ref={bindDragScope} collapsable={false} style={styles.root} testID="d6-route-pane">
       <D6RouteDayScroll key={day.number} onScrollToDay={scrollToDay} />
       <D6SelectionFooter
         key={`${selectionMode}-${selectionCount}-${busy}`}
@@ -443,7 +488,6 @@ export function D6RoutePane({
             ref={stripScroll}
             horizontal
             showsHorizontalScrollIndicator={false}
-            scrollEnabled={!drag}
             scrollEventThrottle={32}
             onScroll={updateStrip}
             onLayout={({ nativeEvent: { layout } }) => { stripMetrics.current.width = layout.width; updateStrip(); scrollToDay(); }}
@@ -459,7 +503,7 @@ export function D6RoutePane({
           >
             {days.map((item) => {
               const selected = item.number === day.number;
-              const drop = (drag?.target?.kind === 'day' && drag.target.day === item.number) || flashedDay === item.number;
+              const drop = flashedDay === item.number;
               return (
                 <Pressable
                   key={item.number}
@@ -478,6 +522,7 @@ export function D6RoutePane({
                     displayFont ? { fontFamily: displayFont, fontWeight: 'normal', fontStyle: 'normal' } : null,
                   ]}>{item.date.getDate()}</Text>
                   <View style={[styles.color, { backgroundColor: item.color }]} />
+                  <D6DropDayHighlight day={item.number} target={dragTarget} accent={accent} />
                 </Pressable>
               );
             })}
@@ -497,9 +542,12 @@ export function D6RoutePane({
               </Pressable>
             ) : null}
           </ScrollView>
+          {stripBefore ? <LinearGradient pointerEvents="none"
+            colors={['rgba(30,40,38,.38)', 'rgba(30,40,38,0)']}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.fade, styles.fadeLeft]} /> : null}
           {stripMore ? <LinearGradient
             pointerEvents="none"
-            colors={['rgba(30,40,38,0)', 'rgba(30,40,38,.82)']}
+            colors={['rgba(30,40,38,0)', 'rgba(30,40,38,.38)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.fade}
@@ -524,7 +572,6 @@ export function D6RoutePane({
         testID="d6-route-scroll"
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        scrollEnabled={!drag}
         showsVerticalScrollIndicator={false}
       >
         {canEdit && !selectionMode ? suggestions.map((suggestion) => (
@@ -556,7 +603,7 @@ export function D6RoutePane({
 
         {ordinaryRows.map(renderRouteRow)}
         {accommodationRows.length > 0 || showStaySlot ? <View testID="d6-accommodation-section" style={styles.accommodationSection}>
-          <Text accessibilityRole="header" style={styles.accommodationTitle}>{chinese ? '住宿' : 'Accommodation'}</Text>
+          {accommodationRows.length > 0 ? <Text accessibilityRole="header" style={styles.accommodationTitle}>{chinese ? '住宿' : 'Accommodation'}</Text> : null}
           {accommodationRows.map(renderRouteRow)}
 
 
@@ -617,29 +664,8 @@ export function D6RoutePane({
         {showLegacy ? legacyContent : null}
       </D6PaneScrollView>
 
-      {drag ? <View
-        pointerEvents="none"
-        accessibilityElementsHidden
-        style={[styles.dragged, {
-          top: drag.session.point.y - drag.session.offset.y - drag.session.root.y,
-          left: drag.session.source.x - drag.session.root.x + (drag.session.point.x - drag.session.offset.x - drag.session.source.x) * 0.35,
-          width: drag.session.source.width,
-        }]}
-      >
-        <D6RouteRow row={drag.session.row} accent={accent} color={day.color} chinese={chinese} preview />
-      </View> : null}
-
-      {drag ? <View pointerEvents="none" style={[styles.dropHintBar, { backgroundColor: accent }]}>
-        <Text numberOfLines={3} accessibilityLiveRegion="polite" testID="d6-drop-hint" style={styles.dropHint}>{d6DropLabel(rows, drag.session.row.id, drag.target, chinese)}</Text>
-      </View> : null}
-
-      {drag?.target?.kind === 'row' ? (() => {
-        const drop = drag.target;
-        if (drop?.kind !== 'row') return null;
-        const target = drag.session.rows.find(row => row.id === drop.id);
-        return target ? <View testID="d6-active-drop-line" pointerEvents="none" style={[styles.activeDropLine, { backgroundColor: accent,
-          top: target.bounds.y - drag.session.root.y + (drop.edge === 'below' ? target.bounds.height : 0) - 3 }]} /> : null;
-      })() : null}
+      <D6PaneOverlay>{ordinaryRows.map(row => <D6DragPreview key={row.id} row={row}
+        presentation={dragPresentation} target={dragTarget} point={dragPoint} accent={accent} color={day.color} />)}</D6PaneOverlay>
 
       {popup ? <Modal
         animationType="fade"
@@ -684,7 +710,6 @@ export function D6RoutePane({
                 /> : <View>
                   {canEdit ? <MenuRow testID="d6-route-menu-select" title={chinese ? '選取' : 'Select'} onPress={() => { setSelection(new Set()); setPopup(null); }} /> : null}
                   {canEditDates ? <MenuRow testID="d6-route-menu-dates" title={chinese ? '日期' : 'Dates'} onPress={() => { setFailure(null); setPopup('dates'); }} /> : null}
-                  {canEdit ? <MenuRow testID="d6-route-menu-kml" title={chinese ? '匯入 KML' : 'Import KML'} onPress={() => { setPopup(null); onImport(); }} /> : null}
                   {onManageArrivals ? <MenuRow testID="map-arrival-manage" title={t('arrival.manage')} onPress={() => {
                     setPopup(null);
                     onManageArrivals();
@@ -694,6 +719,7 @@ export function D6RoutePane({
                     onCompleteEarly();
                   }} /> : null}
                   {legacyContent ? <MenuRow title={chinese ? '其他行程工具' : 'More itinerary tools'} onPress={() => { setShowLegacy(true); setPopup(null); }} /> : null}
+                  {canEdit ? <MenuRow last testID="d6-route-menu-kml" title={chinese ? '匯入 KML' : 'Import KML'} onPress={() => { setPopup(null); onImport(); }} /> : null}
                 </View>}
               </ScrollView>
               </View>
@@ -703,6 +729,64 @@ export function D6RoutePane({
       </Modal> : null}
     </View>
   );
+}
+
+function D6DropDayHighlight({ day, target, accent }: {
+  day: number;
+  target: DerivedValue<D6DragTarget | null>;
+  accent: string;
+}) {
+  const highlight = useAnimatedStyle(() => {
+    const destination = target.get();
+    return { opacity: destination?.kind === 'day' && destination.day === day ? 1 : 0 };
+  });
+  return <Animated.View pointerEvents="none" accessibilityElementsHidden
+    style={[styles.dayHighlight, { borderColor: accent, backgroundColor: `${accent}33` }, highlight]} />;
+}
+
+function D6DragPreview({ row, presentation, target, point, accent, color }: {
+  row: RouteRow;
+  presentation: SharedValue<D6DragPresentation | null>;
+  target: DerivedValue<D6DragTarget | null>;
+  point: SharedValue<D6Point>;
+  accent: string;
+  color: string;
+}) {
+  const sourceId = row.id;
+  const position = useAnimatedStyle(() => {
+    const active = presentation.get();
+    if (!active || active.sourceId !== sourceId) return { opacity: 0, width: 0 };
+    return {
+      opacity: 1,
+      width: active.geometry.source.width,
+      top: point.get().y - active.offset.y - active.geometry.overlay.y,
+      left: point.get().x - active.offset.x - active.geometry.overlay.x,
+    };
+  });
+  const destinationPreview = useAnimatedStyle(() => {
+    const active = presentation.get();
+    const destination = target.get();
+    if (!active || active.sourceId !== sourceId || destination?.kind !== 'row') return { opacity: 0, width: 0 };
+    const bounds = active.geometry.rows.find(entry => entry.id === destination.id)?.bounds;
+    if (!bounds) return { opacity: 0, width: 0 };
+    return {
+      opacity: 0.28,
+      width: active.geometry.source.width,
+      top: bounds.y + (destination.edge === 'below' ? bounds.height : 0)
+        - active.geometry.source.height / 2 - active.geometry.overlay.y,
+      left: active.geometry.source.x - active.geometry.overlay.x,
+    };
+  });
+  return <>
+    <Animated.View testID={`d6-drop-preview-${sourceId}`} pointerEvents="none" accessibilityElementsHidden
+      style={[styles.dropPreview, { borderColor: accent, backgroundColor: accent }, destinationPreview]}>
+      <D6RouteRowPreview row={row} color={color} />
+    </Animated.View>
+    <Animated.View testID="d6-drag-preview" pointerEvents="none" accessibilityElementsHidden
+      style={[styles.dragged, position]}>
+      <D6RouteRowPreview row={row} color={color} />
+    </Animated.View>
+  </>;
 }
 
 function D6SelectionFooter({ active, count, busy, onSelectionChange, onCancel, onAction }: {
@@ -771,8 +855,8 @@ function Fold({ title, open, onPress, testID }: { title: string; open: boolean; 
   </Pressable>;
 }
 
-function MenuRow({ title, onPress, testID }: { title: string; onPress: () => void; testID?: string }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} style={styles.menuRow} testID={testID}>
+function MenuRow({ title, onPress, testID, last }: { title: string; onPress: () => void; testID?: string; last?: boolean }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} style={[styles.menuRow, last && styles.menuRowLast]} testID={testID}>
     <Text style={styles.rowTitle}>{title}</Text>
   </Pressable>;
 }
@@ -781,19 +865,21 @@ const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0 },
   noHeight: { height: 0 },
   strip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
-  stripInner: { flex: 1, minWidth: 0 },
+  stripInner: { flex: 1, minWidth: 0, overflow: 'hidden', borderRadius: 16 },
   month: { width: 28, alignItems: 'center', justifyContent: 'center' },
   monthText: { color: 'rgba(255,255,255,.5)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
   dayList: { gap: 6, alignItems: 'center', paddingVertical: 3, paddingRight: 6 },
   day: { minHeight: 56, width: 46, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
   daySelected: { backgroundColor: 'white' },
   dropDay: { transform: [{ scale: 1.08 }] },
+  dayHighlight: { ...StyleSheet.absoluteFill, borderWidth: 2, borderRadius: 14 },
   weekday: { color: 'rgba(255,255,255,.65)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   date: { color: 'white', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', fontVariant: ['tabular-nums'] },
   daySelectedText: { color: '#111' },
   color: { width: 14, height: 3, borderRadius: 2, marginTop: 1 },
   addDay: { width: 46, minHeight: 56, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
-  fade: { position: 'absolute', right: 0, top: 0, bottom: 0, width: '14%' },
+  fade: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 18, borderRadius: 16 },
+  fadeLeft: { left: 0, right: undefined },
   selectAll: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
   selectAllText: { color: 'white', fontWeight: '700', fontSize: APP_TEXT_SIZE.caption },
   list: { flex: 1 },
@@ -806,18 +892,16 @@ const styles = StyleSheet.create({
   rowTitle: { flex: 1, minWidth: 0, color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   fold: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
   foldTitle: { color: 'rgba(255,255,255,.55)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
-  stay: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 52, paddingLeft: 4 },
+  stay: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingLeft: 4 },
   stayText: { color: 'rgba(255,255,255,.70)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   dashed: { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.38)', backgroundColor: '#26302E', alignItems: 'center', justifyContent: 'center' },
   add: { minHeight: 48, marginTop: 8, backgroundColor: 'rgba(255,255,255,.12)', borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   addText: { color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   poolRow: { flexDirection: 'row', alignItems: 'center', minHeight: 50, borderRadius: 14, overflow: 'hidden', paddingLeft: 4, gap: 8 },
   poolTitle: { flex: 1, minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  accommodationSection: { marginTop: 18, marginBottom: 12, padding: 12, borderRadius: 22, backgroundColor: '#ffffff12', borderWidth: 1, borderColor: '#ffffff2a' },
-  accommodationTitle: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: '#fff', paddingBottom: 8 },
-  activeDropLine: { position: 'absolute', height: 6, borderRadius: 3, left: 0, right: 0, zIndex: 8, boxShadow: '0 0 0 4px rgba(76,111,255,.2)' },
-  dropHintBar: { position: 'absolute', bottom: 10, left: 12, right: 12, zIndex: 12, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: '#ffffff55', boxShadow: '0 4px 16px rgba(0,0,0,.35)' },
-  dropHint: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
+  accommodationSection: { marginTop: 10, marginBottom: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, backgroundColor: '#ffffff12', borderWidth: 1, borderColor: '#ffffff2a' },
+  accommodationTitle: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: '#fff', paddingBottom: 2 },
+  dropPreview: { position: 'absolute', borderRadius: 14, borderWidth: 1, opacity: 0.28 },
   dragged: { position: 'absolute', zIndex: 4, borderRadius: 14, backgroundColor: '#34423E', boxShadow: '0 12px 26px rgba(0,0,0,.4)' },
   popoverRoot: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: MAP_FLOATING_EDGE_INSET },
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,.4)' },
@@ -828,5 +912,6 @@ const styles = StyleSheet.create({
   popoverBody: { flexGrow: 0, flexShrink: 1 },
   opaque: { backgroundColor: '#26302E' },
   menuRow: { minHeight: 51, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,.14)' },
+  menuRowLast: { borderBottomWidth: 0 },
   error: { color: '#FF8E8E', marginTop: 8, fontSize: APP_TEXT_SIZE.caption },
 });

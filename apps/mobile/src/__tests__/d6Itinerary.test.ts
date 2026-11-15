@@ -1,4 +1,4 @@
-import { D6_DAY_PALETTE, d6DayRows, d6DropLabel, d6Reorder, d6TripDays, d6TripRange, type D6RouteRow } from '../screens/MapScreen/d6Itinerary';
+import { D6_DAY_PALETTE, d6DayRows, d6Reorder, d6TripDays, d6TripRange } from '../screens/MapScreen/d6Itinerary';
 import type { DailyAccommodation, Destination } from '../types';
 
 const stop = (id: string, day: number | null, order: number): Destination => ({
@@ -41,14 +41,4 @@ it('inserts a pool item at the requested stop while preserving other open days',
     { id: 'tail', day: 1, position: 2 },
     { id: 'next', day: 2, position: 3 },
   ]);
-});
-
-it('describes the two neighboring stops before a dragged stop is released and excludes accommodations', () => {
-  const rows: D6RouteRow[] = ['A', 'B', 'C', 'D'].map((id, index) => ({ kind: 'destination', id, destination: stop(id, 1, index) }));
-  rows.splice(2, 0, { kind: 'destination', id: 'hotel', isLegacyStay: true,
-    destination: { ...stop('hotel', 1, 2), kind: 'accommodation' } });
-  expect(d6DropLabel(rows, 'D', { kind: 'row', id: 'B', edge: 'below' }, true)).toBe('放在「B」與「C」之間');
-  expect(d6DropLabel(rows, 'D', { kind: 'row', id: 'A', edge: 'above' }, false)).toBe('Before A');
-  expect(d6DropLabel(rows, 'D', { kind: 'row', id: 'C', edge: 'below' }, false)).toBe('After C');
-  expect(d6DropLabel(rows, 'D', { kind: 'day', day: 2 }, true)).toBe('移至第 2 天');
 });

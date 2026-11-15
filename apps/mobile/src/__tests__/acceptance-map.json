@@ -3134,9 +3134,9 @@
     {
       "parent": 397,
       "child": 397,
-      "acceptance": "A dragged itinerary stop describes its neighboring insertion points before release, independently from accommodation blocks.",
-      "testFile": "d6Itinerary.test.ts",
-      "testNamePattern": "describes the two neighboring"
+      "acceptance": "An active itinerary contact avoids React rerenders, commits one reorder after release despite an unrelated failed grip, retains its gesture and session through same-scope callback updates, and rejects commits after cancellation, a day change, native detach or unmount while preserving ownership acquired by a replacement pane.",
+      "testFile": "d6RoutePane.test.ts",
+      "testNamePattern": "keeps an active contact on the UI thread|never commits a contact after|keeps the mounted gesture and active session|releases ownership on unmount|rejects a queued release immediately|isolates a detached pane before passive cleanup"
     },
     {
       "parent": 397,
@@ -3218,7 +3218,7 @@
     {
       "parent": 397,
       "child": 397,
-      "acceptance": "Selecting a team changes only a draft; confirming switches exactly once, cancellation discards the draft, and selecting the current team cannot confirm.",
+      "acceptance": "Tapping another team opens a central confirmation; cancel and stale callbacks preserve the current team, confirmation switches once, and the current team does not switch.",
       "testFile": "homeTeamSelection.test.ts",
       "testNamePattern": "HomeTeamsPage"
     },
@@ -3256,6 +3256,62 @@
       "acceptance": "Login and signup hydration still fill complete server profile data while retaining a nickname saved before hydration completes.",
       "testFile": "headlessAuthScenario.test.ts",
       "testNamePattern": "completes profile hydration|keeps the first saved nickname"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Independent header, footer and grabber gestures share panel state without allowing a recognizer that failed ownership to move or cancel the current drag.",
+      "testFile": "d6PaneDrag.test.ts",
+      "testNamePattern": "leaves an active drag untouched"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Pane and reorder ownership is exclusive, cancelled or invalidated reorder sessions and drops outside the visible pane never commit, and cancelled pointer activation does not block accessibility activation.",
+      "testFile": "d6DragOwnership.test.ts",
+      "testNamePattern": "allows exactly one owner|never commits a cancelled drag|blocks only the cancelled pointer|rejects a drop below the visible"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Native button fallback dispatches one haptic and action, while disabled controls dispatch neither.",
+      "testFile": "nativeButtonFeedback.test.ts",
+      "testNamePattern": "fires one tap"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Depth controls retract their raised shadow on press and restore it with a spring after release.",
+      "testFile": "motionPressableFeedback.test.ts",
+      "testNamePattern": "retracts the depth shadow"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Avatar scrolling gives selection feedback at each crossed cell while saving only the settled avatar once.",
+      "testFile": "identityPickerScroll.test.ts",
+      "testNamePattern": "ticks each crossed avatar"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "The settings root restores full height after a compact-page back tap finalizes during the transition, with immediate and deferred UI inputs.",
+      "testFile": "foregroundSheetLifecycle.test.ts",
+      "testNamePattern": "restores full settings height when a compact-page back tap"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Native sheet action geometry retains a circular icon-only control with 36-point visual size, 44-point hit size and 17-point icon size.",
+      "testFile": "nativeUiContracts.test.ts",
+      "testNamePattern": "keeps native close controls circular and icon-only"
+    },
+    {
+      "parent": 397,
+      "child": 397,
+      "acceptance": "Journey ready and empty actions apply their requested press shadows and release springs, preserve reduced-motion feedback, reject dragged releases, and retain disabled and navigation-hold behavior.",
+      "testFile": "journeyButtonFeedback.test.ts",
+      "testNamePattern": "press shadow and release spring|cancels a dragged press|shadow feedback with reduced motion|keeps unavailable actions disabled|keeps the navigation hold"
     }
   ]
 }

@@ -166,7 +166,7 @@ export default function SettingsSheetPanel({
   if (!mounted && !visible) return <>{opening}</>;
 
   const header = (
-    <View style={[styles.header, { paddingTop: SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT) }]}>
+    <View style={[styles.header, { paddingTop: Math.max(0, SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT)) }]}>
       {onBack ? (
         <SheetHeaderAction
           action="back"

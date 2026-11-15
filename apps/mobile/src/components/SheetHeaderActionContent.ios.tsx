@@ -16,6 +16,7 @@ import {
   shapes,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../native';
+import { lightTap } from '../utils/haptics';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_ACTION_ICON_SIZE,
@@ -38,13 +39,18 @@ export default function SheetHeaderActionContent({
   testID,
   disabled = false,
 }: Omit<SheetHeaderActionProps, 'style'>) {
+  const handlePress = () => {
+    if (disabled) return;
+    lightTap();
+    onPress();
+  };
   const glass = liquidGlass.isLiquidGlassAvailable();
   const symbolOffset = SYMBOL_OFFSETS[action];
   return (
     <Button
       role={action === 'close' ? 'cancel' : 'default'}
       testID={testID}
-      onPress={disabled ? undefined : onPress}
+      onPress={disabled ? undefined : handlePress}
       modifiers={[
         buttonStyle(glass ? 'plain' : 'bordered'),
         buttonBorderShape('circle'),

@@ -158,6 +158,7 @@ function NativeSettingsChildSheet({
                 action={action}
                 onPress={action === 'commit' ? () => onCommit?.() : closeOnce}
                 accessibilityLabel={doneLabel}
+                disabled={action === 'commit' && !onCommit}
               />
             </HStack>
             <RNHostView matchContents={false}>

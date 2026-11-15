@@ -1,7 +1,7 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import WaveLoading from '../../../components/WaveLoading';
 import React, { useRef, useState } from 'react';
-import { Alert, Linking, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Alert, StyleSheet, View, type ViewStyle } from 'react-native';
 import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { AccountSheetContent } from '../../../components/AccountSheet';
@@ -64,20 +64,22 @@ function Box({ children, style }: { children: React.ReactNode; style?: ViewStyle
   return <View style={[styles.box, style]}>{children}</View>;
 }
 
-function Row({ label, value, action, divider, icon, destructive, testID }: {
+function Row({ label, value, action, divider, icon, destructive, accent, testID }: {
   label: string;
   value?: string;
   action?: () => void;
   divider?: boolean;
   icon?: React.ComponentProps<typeof Ionicons>['name'];
   destructive?: boolean;
+  accent?: boolean;
   testID?: string;
 }) {
+  const { colors: palette } = useTheme();
   const content = (
     <>
-      <HitherText style={[styles.rowLabel, styles.fillRow, destructive && styles.destructive]}>{label}</HitherText>
+      <HitherText style={[styles.rowLabel, styles.fillRow, destructive && styles.destructive, accent && { color: palette.accent }]}>{label}</HitherText>
       {value ? <HitherText style={styles.rowValue}>{value}</HitherText> : null}
-      {icon || (action && !destructive) ? <Ionicons name={icon ?? 'chevron-forward'} size={17} color={icon === 'checkmark' ? colors.success : colors.secondary} /> : null}
+      {icon || (action && !destructive) ? <Ionicons name={icon ?? 'chevron-forward'} size={17} color={accent ? palette.accent : icon === 'checkmark' ? colors.success : colors.secondary} /> : null}
     </>
   );
   const style = [styles.row, divider && styles.divider];
@@ -163,8 +165,8 @@ export default function HomeSettings({
             <Box>
               <Row label={title.notifications} action={() => go('notifications')} testID="settings-page-notifications" />
               <Row label={title.appearance} action={() => go('appearance')} divider testID="settings-page-appearance" />
-              <Row label={t('settings.language')} value={label('系統設定', 'System Settings')} icon="open-outline"
-                action={() => { void Linking.openSettings().catch(() => Alert.alert(t('location.openSettings'))); }}
+              <Row label={t('settings.language')} value={language === 'zh' ? '中文' : 'English'}
+                action={() => go('language')}
                 divider testID="settings-page-language" />
               <Row label={title.mapJourney} action={() => go('mapJourney')} divider testID="settings-page-map-journey" />
             </Box>
@@ -191,7 +193,7 @@ export default function HomeSettings({
         {page === 'notifications' ? (
           <Box style={styles.noTopMargin}><NotificationPreferencesCard home colors={palette} /></Box>
         ) : null}
-        {page === 'appearance' ? <Appearance openLanguage={() => go('language')} /> : null}
+        {page === 'appearance' ? <Appearance /> : null}
         {page === 'mapJourney' ? <MapJourneyPreferences activity={liveActivitySettings} onOpenStore={() => go('store')} /> : null}
         {page === 'language' ? <AppLanguage /> : null}
         {page === 'support' ? <Support visible={visible} onFeedback={onOpenFeedback} /> : null}
@@ -342,7 +344,7 @@ function CoordinationForm({ create, onCancel, onCreated }: { create: UseCoordina
   );
 }
 
-function Appearance({ openLanguage }: { openLanguage: () => void }) {
+function Appearance() {
   const { t, language } = useTranslation();
   const { themeName, setThemeName, textScale, setTextScale, followSystemTextSize, setFollowSystemTextSize } = usePreferences();
   const themes = [
@@ -390,7 +392,6 @@ function Appearance({ openLanguage }: { openLanguage: () => void }) {
           })}
         </View>
       </Box>
-      <Box><Row label={language === 'zh' ? 'App 內語言' : 'In-app language'} action={openLanguage} testID="settings-app-language" /></Box>
     </>
   );
 }
@@ -448,7 +449,6 @@ function Advanced({ onFeedback, openSupport, onArchiveAllForTest, onResetTravel 
         <View style={styles.row}>
           <View style={styles.settingCopy}>
             <HitherText style={styles.rowLabel}>{name}</HitherText>
-            <HitherText style={styles.settingHint}>{t('settings.diagnosticUploadHint')}</HitherText>
           </View>
           <SystemToggle value={diagnosticUploadEnabled} disabled={saving} onValueChange={change} accessibilityLabel={name}
             testID="settings-diagnostic-upload" />
@@ -457,7 +457,7 @@ function Advanced({ onFeedback, openSupport, onArchiveAllForTest, onResetTravel 
         <Row label={t('settings.resetPrefs')} action={onResetTravel} divider testID="settings-reset-travel-preferences" />
         <Row label={t('settings.sectionSupport')} action={openSupport} divider />
       </Box>
-      <Box><Row label={t('feedback.title')} action={onFeedback} testID="settings-feedback-advanced" /></Box>
+      <Box><Row label={t('feedback.title')} action={onFeedback} icon="chatbubble-ellipses-outline" accent testID="settings-feedback-advanced" /></Box>
       {__DEV__ ? (
         <Box><Row label={language === 'zh' ? '全部集合點標記為已完成（測試）' : 'Complete all stops (test)'}
           action={onArchiveAllForTest} testID="settings-archive" /></Box>
@@ -476,27 +476,26 @@ function MapJourneyPreferences({ activity, onOpenStore }: { activity: HomeSettin
     gatherCardMarqueeSpeed, setGatherCardMarqueeSpeed,
   } = usePreferences();
   const settings = [
-    { label: t('settings.obliqueLocate'), hint: t('settings.obliqueLocateHint'),
+    { label: t('settings.obliqueLocate'),
       value: obliqueLocate, change: setObliqueLocate, id: 'oblique-locate' },
-    { label: t('settings.gatherCardDefaultExpanded'), hint: t('settings.homeItineraryDefaultExpandedHint'),
+    { label: t('settings.gatherCardDefaultExpanded'),
       value: gatherCardDefaultExpanded, change: setGatherCardDefaultExpanded, id: 'gather-expanded' },
-    { label: t('settings.gatherCardTitleMarquee'), hint: t('settings.gatherCardTitleMarqueeHint'),
+    { label: t('settings.gatherCardTitleMarquee'),
       value: gatherCardTitleMarquee, change: setGatherCardTitleMarquee, id: 'gather-marquee' },
   ];
   return <Box style={styles.noTopMargin}>
     {activity ? <View style={styles.row}>
       <View style={styles.settingCopy}>
         <HitherText style={styles.rowLabel}>{t('settings.liveActivity')}</HitherText>
-        <HitherText style={styles.settingHint}>{t(activity.unavailable ? 'settings.liveActivityUnavailable' : activity.unlocked ? 'settings.liveActivityHint' : 'settings.liveActivityLocked')}</HitherText>
-        {!activity.unlocked ? <Pressable onPress={onOpenStore} accessibilityRole="button"><HitherText style={[styles.rowLabel, { color: colors.accent }]}>{t('settings.liveActivityActivate')}</HitherText></Pressable> : null}
+        {activity.unavailable || !activity.unlocked ? <HitherText style={styles.settingHint}>{t(activity.unavailable ? 'settings.liveActivityUnavailable' : 'settings.liveActivityLocked')}</HitherText> : null}
+        {!activity.unlocked ? <Pressable onPress={onOpenStore} accessibilityRole="button" style={styles.activateAction}><HitherText style={[styles.rowLabel, { color: palette.accent }]}>{t('settings.liveActivityActivate')}</HitherText></Pressable> : null}
       </View>
       <SystemToggle value={activity.enabled && activity.unlocked} onValueChange={activity.onChange} accessibilityLabel={t('settings.liveActivity')} testID="settings-live-activity" />
     </View> : null}
-    {settings.map(({ label, hint, value, change, id }, index) => (
+    {settings.map(({ label, value, change, id }, index) => (
       <View key={id} style={[styles.row, index > 0 && styles.divider]}>
         <View style={styles.settingCopy}>
           <HitherText style={styles.rowLabel}>{label}</HitherText>
-          <HitherText style={styles.settingHint}>{hint}</HitherText>
         </View>
         <SystemToggle {...{ value, accessibilityLabel: label }} testID={`settings-${id}`} onValueChange={change} />
       </View>
@@ -535,7 +534,7 @@ function Support({ visible, onFeedback }: { visible: boolean; onFeedback: () => 
         <HitherText style={styles.primaryText}>{t(applyingOta ? 'settings.applyingOta' : 'settings.applyOta')}</HitherText>
       </Pressable> : null}
     </Box>
-    <Box><Row label={t('feedback.title')} action={onFeedback} testID="settings-feedback" /></Box>
+    <Box><Row label={t('feedback.title')} action={onFeedback} icon="chatbubble-ellipses-outline" accent testID="settings-feedback" /></Box>
   </>;
 }
 
@@ -544,18 +543,19 @@ const styles = StyleSheet.create({
   fillPage: { flex: 1, paddingTop: 12 },
   box: { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 18, paddingHorizontal: 16, marginTop: 14 },
   noTopMargin: { marginTop: 0 },
-  row: { minHeight: 58, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  row: { minHeight: 48, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 12 },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.12)' },
-  rowLabel: { color: colors.white, fontSize: APP_TEXT_SIZE.body, fontWeight: '600' },
+  rowLabel: { color: colors.white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '500' },
   fillRow: { flex: 1, minWidth: 0 },
-  rowValue: { color: colors.secondary, fontSize: APP_TEXT_SIZE.body, flexShrink: 1 },
+  rowValue: { color: colors.secondary, fontSize: APP_TEXT_SIZE.caption, flexShrink: 1 },
   settingCopy: { flex: 1, minWidth: 0, gap: 5 },
-  settingHint: { color: colors.secondary, fontSize: APP_TEXT_SIZE.body },
+  settingHint: { color: colors.secondary, fontSize: APP_TEXT_SIZE.caption },
+  activateAction: { minHeight: 44, justifyContent: 'center' },
   speedSetting: { paddingVertical: 10, gap: 6 },
   updateAction: { marginBottom: 12 },
   destructive: { color: colors.destructive },
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 4, paddingTop: 2, paddingBottom: 16 },
-  profileAvatar: { boxShadow: '0 4px 0 rgba(0,0,0,0.28)', width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  profileAvatar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
   profileDot: { position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, borderRadius: 8, borderWidth: 3, borderColor: '#26302E' },
   profileEmoji: { fontSize: 36 },
   profileName: { flex: 1, color: colors.white, fontSize: APP_TEXT_SIZE.title, fontWeight: '800' },
@@ -565,11 +565,11 @@ const styles = StyleSheet.create({
   groupName: { marginTop: 14, textAlign: 'center', fontWeight: '600', fontSize: APP_TEXT_SIZE.body },
   code: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.07)', marginTop: 14 },
   codeText: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', letterSpacing: 4, color: colors.white },
-  sectionLabel: { fontSize: APP_TEXT_SIZE.body, fontWeight: '600', color: colors.white, paddingTop: 12, paddingBottom: 6 },
+  sectionLabel: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: colors.white, paddingTop: 12, paddingBottom: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12 },
   chip: { minHeight: 44, borderRadius: 22, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'transparent' },
   chipSelected: { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.66)' },
-  chipLabel: { color: colors.white, fontSize: APP_TEXT_SIZE.body, fontWeight: '600' },
+  chipLabel: { color: colors.white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   policyChoices: { marginTop: 12, paddingBottom: 0 },
   pollActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   primary: { flex: 1, minHeight: 48, borderRadius: 24, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },

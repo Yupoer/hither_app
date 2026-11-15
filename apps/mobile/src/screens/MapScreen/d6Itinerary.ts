@@ -79,16 +79,3 @@ export function d6Reorder(
     ...(action.ids.includes(destination.id) && destination.stayAnchor ? { stayAnchor: false } : {}),
   }));
 }
-
-export function d6DropLabel(rows: readonly D6RouteRow[], draggedId: string, target: { kind: 'row'; id: string; edge: 'above' | 'below' } | { kind: 'day'; day: number } | null, chinese: boolean): string {
-  if (!target) return chinese ? '拖至插入位置' : 'Drag to an insertion point';
-  if (target.kind === 'day') return chinese ? `移至第 ${target.day} 天` : `Move to day ${target.day}`;
-  const stops = rows.filter(row => row.id !== draggedId && row.kind === 'destination' && !row.isLegacyStay);
-  const index = stops.findIndex(row => row.id === target.id) + (target.edge === 'below' ? 1 : 0);
-  const before = stops[index - 1]?.destination?.title;
-  const after = stops[index]?.destination?.title;
-  if (before && after) return chinese ? `放在「${before}」與「${after}」之間` : `Between ${before} and ${after}`;
-  if (after) return chinese ? `放在「${after}」之前` : `Before ${after}`;
-  if (before) return chinese ? `放在「${before}」之後` : `After ${before}`;
-  return chinese ? '放在當天第一站' : 'First stop of the day';
-}

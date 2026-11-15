@@ -138,6 +138,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     } });
     shared.set = next => { shared.value = typeof next === 'function' ? next(value) : next; };
     shared.get = () => value;
+    shared.modify = modifier => { shared.value = modifier ? modifier(value) : value; };
     return shared;
   };
   const useShared = value => React.useState(() => makeShared(value))[0];
@@ -145,7 +146,21 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const animation = strict('reanimated', {
     __esModule: true, default: { View: hosts.View, Text: hosts.Text, ScrollView: hosts.ScrollView,
       createAnimatedComponent: component => component },
-    makeMutable: makeShared, useSharedValue: useShared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
+    makeMutable: makeShared, useSharedValue: useShared, useDerivedValue: fn => {
+      const compute = React.useRef(fn);
+      compute.current = fn;
+      return React.useState(() => ({ get value() { return compute.current(); }, get: () => compute.current() }))[0];
+    }, useAnimatedRef: () => React.useState(() => {
+      const animatedRef = node => {
+        if (node) {
+          animatedRef.current = node;
+          animatedRef.getTag = () => node.getScrollableNode?.() || rn.findNodeHandle(node);
+        }
+        return animatedRef.current;
+      };
+      animatedRef.current = null;
+      return animatedRef;
+    })[0],
     scrollTo: (ref, x, y, animated) => ref.current?.scrollTo({ x, y, animated }),
     useAnimatedStyle: fn => fn(), useAnimatedProps: fn => fn(), useReducedMotion: () => true,
     useFrameCallback: () => React.useRef({ setActive() {} }).current,
@@ -191,12 +206,13 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   jest.doMock('@react-native-community/slider', () => ({ __esModule: true, default: make('Slider') }));
   jest.doMock('expo-linear-gradient', () => ({ LinearGradient: make('LinearGradient') }));
   jest.doMock('expo-clipboard', () => strict('Clipboard', { setStringAsync: async value => receipts.push({ host: 'Clipboard', method: 'setStringAsync', value }) }));
-  jest.doMock('react-native-maps', () => ({ __esModule: true, default: make('MapView'), Marker: make('Marker'), Polyline: make('Polyline') }));
+  jest.doMock('react-native-maps', () => ({ __esModule: true, default: make('MapView'), Marker: make('Marker'), Polyline: make('Polyline'), Circle: make('Circle') }));
   jest.doMock('expo', () => strict('expo', { requireNativeView: name => { assert.equal(name, 'HitherSheetPaneTabs'); return make(name); } }));
   const gesture = () => {
     const object = {};
     for (const method of ['onBegin','onStart','onUpdate','onChange','onEnd','onFinalize','enabled','activeOffsetX','activeOffsetY',
-      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail','disallowInterruption']) {
+      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail','disallowInterruption',
+      'cancelsTouchesInView','onTouchesDown','activateAfterLongPress','blocksExternalGesture','maxPointers']) {
       object[method] = (...args) => { object[method + 'Input'] = args; return object; };
     }
     return strict('Gesture', object);

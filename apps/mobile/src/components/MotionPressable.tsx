@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, type GestureResponderEvent } from 'react-native';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -35,7 +35,9 @@ export default function MotionPressable({
   }
   function handlePressOut(event: GestureResponderEvent) {
     if (typeof style === 'function') setPressed(false);
-    feedback.value = withTiming(0, { duration: reduceMotion ? 0 : 160 });
+    feedback.value = motion === 'depth' && !reduceMotion
+      ? withSpring(0, { stiffness: 340, damping: 18, mass: 0.8 })
+      : withTiming(0, { duration: reduceMotion ? 0 : 160 });
     onPressOut?.(event);
   }
   return <AnimatedPressable {...props} style={[resolved, animated]} onPressIn={handlePressIn} onPressOut={handlePressOut} />;

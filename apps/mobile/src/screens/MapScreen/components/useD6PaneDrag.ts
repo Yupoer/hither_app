@@ -4,7 +4,8 @@ import { useVisibleUi } from '../../../state/foregroundUi';
 import { nativeD6PaneAvailable } from '../../../native/d6Pane';
 import { Gesture } from 'react-native-gesture-handler';
 import type { ScrollView } from 'react-native';
-import { cancelAnimation, dispatchCommand, runOnJS, runOnUI, scrollTo, useAnimatedReaction, useAnimatedRef, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { cancelAnimation, dispatchCommand, runOnJS, runOnUI, scrollTo, useAnimatedReaction, useAnimatedRef, useAnimatedScrollHandler, useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
+import { claimD6Drag, releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
 
 type Detent = 'closed' | 'half' | 'full';
 type ContentDrag = { kind: 'idle' }
@@ -12,7 +13,7 @@ type ContentDrag = { kind: 'idle' }
   | { kind: 'controlled'; translation: number; offset: number };
 
 export function useD6PaneDrag({
-  closed, full, direction, open, reduceMotion, onOpenChange, onDragBegin,
+  closed, full, direction, open, reduceMotion, onOpenChange, onDragBegin, owner: sharedOwner,
 }: {
   closed: number;
   full: number;
@@ -21,8 +22,15 @@ export function useD6PaneDrag({
   reduceMotion: boolean;
   onOpenChange: (open: boolean) => void;
   onDragBegin: () => void;
+  owner?: SharedValue<D6DragOwner>;
 }) {
   const visible = useVisibleUi();
+  const localOwner = useSharedValue<D6DragOwner>('idle');
+  const owner = sharedOwner ?? localOwner;
+  const pressCancelled = useSharedValue(false);
+  const headerDragging = useSharedValue(false);
+  const footerDragging = useSharedValue(false);
+  const grabberDragging = useSharedValue(false);
   const half = closed + (full - closed) * 0.48;
   const [detent, setDetent] = useState<Detent>(open ? 'half' : 'closed');
   const [preview, setPreview] = useState(false);
@@ -41,7 +49,9 @@ export function useD6PaneDrag({
     scrollContent.set(event.contentSize.height);
     scrollViewport.set(event.layoutMeasurement.height);
     const content = contentDrag.get();
-    if (content.kind === 'controlled') {
+    if (owner.get() === 'reorder') {
+      scrollTo(scrollRef, 0, scrollOffset.get(), false);
+    } else if (content.kind === 'controlled') {
       if (Math.abs(event.contentOffset.y - content.offset) > 0.5) {
         scrollTo(scrollRef, 0, content.offset, false);
       }
@@ -61,7 +71,7 @@ export function useD6PaneDrag({
   }, [nativeRef]);
   const finishClosing = useCallback(() => {
     if (target.get() === 'closed' && !dragging.get()) setPreview(false);
-  }, [dragging, target]);
+  }, [dragging, target, setPreview]);
 
   const animateTo = useCallback((next: Detent, velocity = 0) => {
     const nextHeight = next === 'closed' ? closed : next === 'half' ? half : full;
@@ -77,7 +87,7 @@ export function useD6PaneDrag({
       }));
       if (next !== 'closed') setPreview(false);
     }
-  }, [closed, half, full, height, reduceMotion, visible, finishClosing]);
+  }, [closed, half, full, height, reduceMotion, visible, finishClosing, setPreview]);
 
   const sync = () => {
     let next = target.get();
@@ -88,6 +98,10 @@ export function useD6PaneDrag({
       setDetent(next);
       if (!open) setPreview(true);
     }
+    headerDragging.set(false);
+    footerDragging.set(false);
+    grabberDragging.set(false);
+    if (dragging.get()) releaseD6Drag(owner, 'pane');
     contentDrag.set({ kind: 'idle' });
     dragging.set(false);
     animateTo(next);
@@ -106,11 +120,11 @@ export function useD6PaneDrag({
       requested.set(nextOpen);
       onOpenChange(nextOpen);
     }
-  }, [animateTo, onOpenChange, requested, target]);
+  }, [animateTo, onOpenChange, requested, target, setPreview, setDetent]);
   const begin = useCallback(() => {
     setPreview(true);
     onDragBegin();
-  }, [onDragBegin]);
+  }, [onDragBegin, setPreview]);
   const restore = useCallback(() => animateTo(target.get()), [animateTo, target]);
   const contentGesture = useMemo(() => Gesture.Pan()
     .enabled(visible)
@@ -118,11 +132,12 @@ export function useD6PaneDrag({
     .failOffsetX([-16, 16])
     .simultaneousWithExternalGesture(scrollGesture)
     .onStart(() => {
+      if (owner.get() !== 'idle') return;
       contentDrag.set({ kind: 'native', translation: 0 });
     })
     .onUpdate(({ translationY }) => {
       const content = contentDrag.get();
-      if (content.kind === 'idle') return;
+      if (content.kind === 'idle' || owner.get() === 'reorder') return;
       const delta = translationY - content.translation;
       const maximumOffset = Math.max(0, scrollContent.get() - scrollViewport.get()
         + (nativeD6PaneAvailable ? full - height.get() : 0));
@@ -131,6 +146,7 @@ export function useD6PaneDrag({
         const atEdge = direction === -1 ? scrollOffset.get() <= 2 : scrollOffset.get() >= maximumOffset - 2;
         const expanding = direction * delta > 0;
         if (delta === 0 || (expanding ? height.get() >= full - 0.5 : !atEdge)) return;
+        if (!claimD6Drag(owner, 'pane')) return;
         cancelAnimation(height);
         const offset = Math.max(0, Math.min(maximumOffset, scrollOffset.get()));
         contentDrag.set({ kind: 'controlled', translation: translationY, offset });
@@ -167,6 +183,7 @@ export function useD6PaneDrag({
     .onEnd(({ velocityY }, success) => {
       if (contentDrag.get().kind !== 'controlled' || !success) return;
       dragging.set(false);
+      releaseD6Drag(owner, 'pane');
       contentDrag.set({ kind: 'idle' });
       const speed = direction * velocityY;
       const projected = height.get() + Math.max(-64, Math.min(64, speed * 0.12));
@@ -179,14 +196,20 @@ export function useD6PaneDrag({
       contentDrag.set({ kind: 'idle' });
       if (!controlled) return;
       dragging.set(false);
+      releaseD6Drag(owner, 'pane');
       runOnJS(restore)();
     }), [visible, scrollGesture, scrollContent, scrollViewport, scrollOffset, scrollRef,
-    contentDrag, closed, full, half, height, dragging, direction, begin, snapTo, restore]);
-  const gesture = useMemo(() => Gesture.Pan()
+    contentDrag, closed, full, half, height, dragging, direction, begin, snapTo, restore, owner]);
+  const makeChromeGesture = useCallback((acquired: SharedValue<boolean>) => Gesture.Pan()
     .enabled(visible)
     .activeOffsetY([-6, 6])
     .failOffsetX([-16, 16])
+    .cancelsTouchesInView(true)
+    .onTouchesDown(() => { if (owner.get() === 'idle') pressCancelled.set(false); })
     .onStart(() => {
+      if (!claimD6Drag(owner, 'pane')) return;
+      acquired.set(true);
+      pressCancelled.set(true);
       contentDrag.set({ kind: 'idle' });
       dragging.set(true);
       cancelAnimation(height);
@@ -194,12 +217,14 @@ export function useD6PaneDrag({
       runOnJS(begin)();
     })
     .onUpdate(({ translationY }) => {
-      if (!dragging.get()) return;
+      if (!acquired.get() || !dragging.get()) return;
       height.set(Math.max(closed, Math.min(full, origin.get() + direction * translationY)));
     })
     .onEnd(({ translationY, velocityY }, success) => {
-      if (!success || !dragging.get()) return;
+      if (!success || !acquired.get() || !dragging.get()) return;
+      acquired.set(false);
       dragging.set(false);
+      releaseD6Drag(owner, 'pane');
       const speed = direction * velocityY;
       const projection = Math.max(-64, Math.min(64, speed * 0.12));
       const released = Math.max(closed, Math.min(full, origin.get() + direction * translationY));
@@ -209,12 +234,18 @@ export function useD6PaneDrag({
       runOnJS(snapTo)(next, speed);
     })
     .onFinalize(() => {
-      if (!dragging.get()) return;
+      if (!acquired.get()) return;
+      acquired.set(false);
       dragging.set(false);
+      releaseD6Drag(owner, 'pane');
       runOnJS(restore)();
-    }), [visible, begin, closed, contentDrag, direction, dragging, full, half, height, origin, restore, snapTo]);
+    }), [visible, begin, closed, contentDrag, direction, dragging, full, half, height, origin, restore, snapTo, owner, pressCancelled]);
+  const headerGesture = useMemo(() => makeChromeGesture(headerDragging), [makeChromeGesture, headerDragging]);
+  const footerGesture = useMemo(() => makeChromeGesture(footerDragging), [makeChromeGesture, footerDragging]);
+  const gesture = useMemo(() => makeChromeGesture(grabberDragging), [makeChromeGesture, grabberDragging]);
 
   return { detent, preview, height, animatedStyle, nativeRef, contentDidLayout, gesture, snapTo, lifecycle,
+    headerGesture, footerGesture, owner, pressCancelled,
     contentGesture, scrollGesture, scrollRef, scrollHandler, scrollContent, scrollViewport,
     layoutHeight: nativeD6PaneAvailable ? full : closed, closed, full };
 }

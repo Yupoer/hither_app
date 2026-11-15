@@ -1,5 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  MAP_SHEET_ACTION_HIT_SIZE,
+  MAP_SHEET_ACTION_ICON_SIZE,
+  MAP_SHEET_ACTION_VISUAL_SIZE,
+  MAP_SHEET_CORNER_RADIUS,
+} from '../components/mapSheetChrome';
 
 const root = join(__dirname, '..');
 const tabsIos = readFileSync(join(root, 'screens/MapScreen/components/SheetPaneTabs.ios.tsx'), 'utf8');
@@ -28,7 +34,6 @@ const addPlaceCard = readFileSync(join(root, 'screens/MapScreen/components/AddPl
 const mapStyles = readFileSync(join(root, 'screens/MapScreen/styles.ts'), 'utf8');
 const inviteSheetIos = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.ios.tsx'), 'utf8');
 const inviteSheet = readFileSync(join(root, 'screens/MapScreen/components/InviteMembersSheet.tsx'), 'utf8');
-const mapSheetChrome = readFileSync(join(root, 'components/mapSheetChrome.ts'), 'utf8');
 
 describe('iOS native UI contracts', () => {
   it('uses the minimum native bridge for the iOS Liquid Glass selector', () => {
@@ -174,10 +179,12 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain('paddingHorizontal: SHEET_CORNER_ACTION_INSET');
     expect(overlaySheet).toContain('headerActionSlot');
     expect(settingsPanel).toContain('width: MAP_SHEET_ACTION_HIT_SIZE');
-    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_VISUAL_SIZE = MAP_SHEET_ACTION_HIT_SIZE');
-    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_HIT_SIZE = 48');
-    expect(mapSheetChrome).toContain('MAP_SHEET_ACTION_ICON_SIZE = 20');
-    expect(mapSheetChrome).toContain('MAP_SHEET_CORNER_RADIUS = 44');
+    expect({
+      visual: MAP_SHEET_ACTION_VISUAL_SIZE,
+      hit: MAP_SHEET_ACTION_HIT_SIZE,
+      icon: MAP_SHEET_ACTION_ICON_SIZE,
+      cornerRadius: MAP_SHEET_CORNER_RADIUS,
+    }).toEqual({ visual: 36, hit: 44, icon: 17, cornerRadius: 44 });
     expect(paywallSheet).toContain('action="close"');
     expect(routeEditorSheet).toContain('doneSystemImage="checkmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");

@@ -90,13 +90,17 @@ describe('D6 You from the real Map screen', () => {
     } finally { await world.close(); }
   });
 
-  it('opens native language settings and persists the ordered notification controls', async () => {
+  it('opens the in-app language picker and persists the ordered notification controls', async () => {
     const world = new World();
     try {
       const device = await openYou(world);
       expect(await press(device, 'settings-page-language')).toEqual({ invoked: true });
       const opened = await device.observe();
-      expect(opened.presentation.receipts).toEqual(expect.arrayContaining([expect.objectContaining({ host: 'Linking', method: 'openSettings' })]));
+      expect(field(opened, 'settings-language-zh')).toBeDefined();
+      expect(field(opened, 'settings-language-en')).toBeDefined();
+      expect(field(opened, 'settings-language-system')).toBeDefined();
+      expect(await press(device, 'settings-language-en')).toEqual({ invoked: true });
+      expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
       expect(await press(device, 'settings-page-notifications')).toEqual({ invoked: true });
       const page = await world.waitFor(device, (value: Observation) => !!field(value, 'notification-preference-journey'), 'Notifications');
       const rows = page.presentation.hosts.map((host: { testId?: string }) => host.testId)
