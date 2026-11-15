@@ -65,6 +65,8 @@ jest.mock('react-native-gesture-handler', () => ({
         enabled: () => gesture,
         activeOffsetY: () => gesture,
         failOffsetX: () => gesture,
+        cancelsTouchesInView: () => gesture,
+        onTouchesDown: () => gesture,
         simultaneousWithExternalGesture: () => gesture,
         onStart: (callback: typeof mockHandlers.start) => { handlers.start = mockHandlers.start = callback; return gesture; },
         onUpdate: (callback: typeof mockHandlers.update) => { handlers.update = mockHandlers.update = callback; return gesture; },
@@ -161,6 +163,44 @@ it('preserves fling detents and clamps drag bounds', () => {
   act(() => mockHandlers.end({ translationY: 0, velocityY: 400 }, true));
   expect(panel().detent).toBe('half');
   expect(spring().next).toBe(349.6);
+});
+
+it('mounts independent header, footer and grabber pans sharing one height and cancels actions after a drag', () => {
+  render();
+  expect(new Set([panel().headerGesture, panel().footerGesture, panel().gesture]).size).toBe(3);
+  height().value = 200;
+  const header = mockPanHandlers.get(panel().headerGesture);
+  const footer = mockPanHandlers.get(panel().footerGesture);
+  if (!header || !footer) throw new Error('Chrome gestures are missing');
+  act(() => header.start());
+  act(() => header.update({ translationY: 30, velocityY: 0 }));
+  expect(height().get()).toBe(230);
+  expect(panel().pressCancelled.get()).toBe(true);
+  act(() => header.finalize());
+  height().value = 230;
+  act(() => footer.start());
+  act(() => footer.update({ translationY: 20, velocityY: 0 }));
+  expect(height().get()).toBe(250);
+  act(() => footer.finalize());
+  expect(panel().owner.get()).toBe('idle');
+  expect(panel().pressCancelled.get()).toBe(true);
+});
+
+it('leaves pane height and scroll offset unchanged while reorder owns the touch', () => {
+  render({ open: true });
+  height().value = 350;
+  act(() => scrollContent(90));
+  panel().owner.set('reorder');
+  act(() => mockHandlers.start());
+  act(() => mockHandlers.update({ translationY: 70, velocityY: 0 }));
+  const content = contentHandlers();
+  act(() => content.start());
+  act(() => content.update({ translationY: 70, velocityY: 0 }));
+  act(() => scrollContent(200));
+  expect(height().get()).toBe(350);
+  expect(panel().owner.get()).toBe('reorder');
+  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, 90, false);
+  expect(onDragBegin).not.toHaveBeenCalled();
 });
 
 it('keeps the content layout fixed through a settled half detent and a regrab', () => {
@@ -393,4 +433,24 @@ it.each([1, -1] satisfies (1 | -1)[])('reverses immediately after overshooting t
   act(() => handlers.end({ translationY: -direction * 580, velocityY: 0 }, true));
   expect(panel().detent).toBe('closed');
   expect(onOpenChange).toHaveBeenCalledWith(false);
+});
+
+
+it('leaves an active drag untouched when another chrome recognizer did not acquire it', () => {
+  render();
+  const active = mockPanHandlers.get(panel().headerGesture);
+  const rejected = mockPanHandlers.get(panel().footerGesture);
+  if (!active || !rejected) throw new Error('Chrome gestures are missing');
+  act(() => active.start());
+  act(() => active.update({ translationY: 50, velocityY: 0 }));
+  expect(height().get()).toBe(150);
+  act(() => rejected.start());
+  act(() => rejected.update({ translationY: 400, velocityY: 0 }));
+  act(() => rejected.finalize());
+  expect(height().get()).toBe(150);
+  expect(panel().owner.get()).toBe('pane');
+  act(() => active.update({ translationY: 80, velocityY: 0 }));
+  expect(height().get()).toBe(180);
+  act(() => active.end({ translationY: 80, velocityY: 0 }, true));
+  expect(panel().owner.get()).toBe('idle');
 });

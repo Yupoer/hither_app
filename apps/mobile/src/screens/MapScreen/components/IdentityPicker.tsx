@@ -64,20 +64,35 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
   const [width, setWidth] = useState(0);
   const initialAvatar = useRef(avatar);
   const indexFor = (value: string) => Math.max(0, AVATAR_EMOJI.findIndex(emoji => emoji === value));
+  const hapticIndex = useRef(indexFor(avatar));
+  const scrolling = useRef(false);
+  const committedAvatar = useRef(avatar);
   const [positioned, setPositioned] = useState(false);
   const [centeredAvatar, setCenteredAvatar] = useState(avatar);
   const centerAvatar = (value: string, animated: boolean) => {
+    committedAvatar.current = value;
+    hapticIndex.current = indexFor(value);
     setCenteredAvatar(value);
     scroll.current?.scrollTo({ x: indexFor(value) * EMOJI_STRIDE, animated: animated && !reducedMotion });
   };
 
+  const tickNearest = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!scrolling.current) return;
+    const index = Math.max(0, Math.min(AVATAR_EMOJI.length - 1, Math.round(event.nativeEvent.contentOffset.x / EMOJI_STRIDE)));
+    const crossed = Math.abs(index - hapticIndex.current);
+    hapticIndex.current = index;
+    for (let step = 0; step < crossed; step++) selectionTick();
+  };
+
   const chooseNearest = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    tickNearest(event);
+    scrolling.current = false;
     const index = Math.round(event.nativeEvent.contentOffset.x / EMOJI_STRIDE);
     const next = AVATAR_EMOJI[index];
     if (!next) return;
     setCenteredAvatar(next);
-    if (next !== avatar) {
-      selectionTick();
+    if (next !== committedAvatar.current) {
+      committedAvatar.current = next;
       onChange(next);
     }
   };
@@ -90,6 +105,9 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
           showsHorizontalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           snapToInterval={EMOJI_STRIDE}
+          scrollEventThrottle={16}
+          onScrollBeginDrag={() => { scrolling.current = true; }}
+          onScroll={tickNearest}
           onMomentumScrollEnd={chooseNearest}
           onScrollEndDrag={event => {
             if (Math.abs(event.nativeEvent.velocity?.x ?? 0) < 0.05) chooseNearest(event);

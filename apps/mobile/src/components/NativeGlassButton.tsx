@@ -1,9 +1,9 @@
 import { APP_TEXT_SIZE, APP_TEXT_LINE_HEIGHT } from '../theme/typeScale';
 import React from 'react';
+import { lightTap } from '../utils/haptics';
 import {
   StyleSheet,
   type GestureResponderEvent,
-  type PressableProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -108,6 +108,11 @@ export default function NativeGlassButton({
   imageSize,
   spacing = 8,
 }: NativeGlassButtonProps) {
+  const handlePress = () => {
+    if (disabled || !onPress) return;
+    lightTap();
+    onPress();
+  };
   const icon = systemImage ? FALLBACK_ICON[systemImage] ?? 'ellipse-outline' : null;
   const Icon = icon ? getFallbackIcon() : null;
   const defaultControlSize = controlSize === 'extraLarge' ? 78 : controlSize === 'large' ? 64 : 52;
@@ -126,7 +131,7 @@ export default function NativeGlassButton({
         style,
         pressed && styles.pressed,
       ]}
-      onPress={onPress as PressableProps['onPress']}
+      onPress={disabled || !onPress ? undefined : handlePress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}

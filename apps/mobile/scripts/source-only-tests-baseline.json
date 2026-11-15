@@ -37,7 +37,6 @@
     "mapUiContracts.test.ts",
     "mapsPlusCodeContract.test.ts",
     "nativeSwitchContract.test.ts",
-    "nativeUiContracts.test.ts",
     "navResponseAbsence.test.ts",
     "navigationInteractionContract.test.ts",
     "navigationPushContract.test.ts",

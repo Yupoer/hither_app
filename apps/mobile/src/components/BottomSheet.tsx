@@ -67,15 +67,20 @@ interface SheetMotionInput {
   index: number;
 }
 
+type SheetControlSnapshot = Pick<SheetMotionInput, 'foreground' | 'index' | 'dismissRequested'> & {
+  detents: number[];
+};
+
 interface SheetMotionOwner {
   input: SheetMotionInput | null;
   replay: boolean;
   gestureTarget: { index: number; detentsKey: string } | null;
 }
 
-function SheetMotionCommit({ input, owner, detents, dismissDistance, gestureClosePending, dismissEpoch, dismiss, dismissComplete }: {
+function SheetMotionCommit({ input, owner, controlSnapshot, detents, dismissDistance, gestureClosePending, dismissEpoch, dismiss, dismissComplete }: {
   input: SheetMotionInput;
   owner: React.RefObject<SheetMotionOwner>;
+  controlSnapshot: SharedValue<SheetControlSnapshot>;
   detents: number[];
   dismissDistance: number;
   gestureClosePending: SharedValue<boolean>;
@@ -86,6 +91,7 @@ function SheetMotionCommit({ input, owner, detents, dismissDistance, gestureClos
   useMountEffect(() => {
     const { input: previous, replay, gestureTarget } = owner.current;
     const { foreground, height, dismissY, dismissTranslateY, dismissRequested, index } = input;
+    controlSnapshot.value = { foreground, detents, index, dismissRequested };
     const policyChanged = replay || !previous || !Object.is(previous.foreground, foreground)
       || !Object.is(previous.height, height) || !Object.is(previous.dismissY, dismissY);
     const closeChanged = policyChanged || !previous
@@ -258,14 +264,9 @@ export default React.memo(function BottomSheet({
     opacity: canHideHeader && scrollOffset.value > TOP_EPS ? 0 : 1,
   }), [canHideHeader]);
 
-  // Derive UI-thread inputs so pan / sheetStyle worklets always read
-  // current detents & inset without rebuilding Gesture.Pan() every render.
-  const detentsSV = useDerivedValue(() => detents, [detents]);
-  const indexSV = useDerivedValue(() => index, [index]);
-  const foregroundSV = useDerivedValue(() => foreground, [foreground]);
+  const controlSnapshot = useSharedValue<SheetControlSnapshot>({ foreground, detents, index, dismissRequested });
   const bottomInsetSV = useDerivedValue(() => bottomInset, [bottomInset]);
   const dismissIndexSV = useDerivedValue(() => dismissOnDownFromIndex ?? -1, [dismissOnDownFromIndex]);
-  const dismissRequestedSV = useDerivedValue(() => dismissRequested, [dismissRequested]);
   const edgeToEdgeAtLastSV = useDerivedValue(() => edgeToEdgeAtLast ? 1 : 0, [edgeToEdgeAtLast]);
 
   // Per-gesture state (worklet-owned; reset each onBegin, read through onEnd).
@@ -332,8 +333,6 @@ export default React.memo(function BottomSheet({
       generation: motionInput.generation + 1 });
   }
 
-  // Build pan once: worklets read detentsSV / height / gesture shared values.
-  // Do NOT depend on detents array identity — that would recreate every render.
   const pan = useMemo(
     () =>
       Gesture.Pan()
@@ -345,7 +344,8 @@ export default React.memo(function BottomSheet({
         .simultaneousWithExternalGesture(scrollRef as unknown as React.RefObject<React.ComponentType>)
         .onBegin(() => {
           'worklet';
-          if (gestureClosePending.value || dismissRequestedSV.value === false) return;
+          const controls = controlSnapshot.value;
+          if (gestureClosePending.value || controls.dismissRequested === false) return;
           dismissEpoch.value += 1;
           cancelAnimation(height);
           if (dismissTranslateY != null) {
@@ -357,8 +357,9 @@ export default React.memo(function BottomSheet({
         })
         .onUpdate((e) => {
           'worklet';
-          if (gestureClosePending.value || dismissRequestedSV.value === false) return;
-          const d = detentsSV.value;
+          const controls = controlSnapshot.value;
+          if (gestureClosePending.value || controls.dismissRequested === false) return;
+          const d = controls.detents;
           const last = d.length - 1;
           if (gMode.value === MODE_NONE) {
             if (Math.abs(e.translationY) < DECIDE_PX) return;
@@ -407,7 +408,8 @@ export default React.memo(function BottomSheet({
         })
         .onEnd((e, success) => {
           'worklet';
-          if (gestureClosePending.value || dismissRequestedSV.value === false) return;
+          const controls = controlSnapshot.value;
+          if (gestureClosePending.value || controls.dismissRequested === false) return;
           if (!success) {
             // OS interruption is not a released dismissal gesture.
             cancelAnimation(height);
@@ -418,7 +420,7 @@ export default React.memo(function BottomSheet({
             return;
           }
           if (gMode.value === MODE_SHEET) {
-            const d = detentsSV.value;
+            const d = controls.detents;
             const dismissIndex = dismissIndexSV.value;
             const canDismiss = dismissIndex >= 0
               && dismissIndex < d.length
@@ -466,27 +468,24 @@ export default React.memo(function BottomSheet({
           // onBegin also runs for taps and horizontal gestures. Those cancel
           // the in-flight spring but never reach onEnd when recognition fails.
           // Restore the latest controlled detent, not an intermediate height.
-          if (success || gestureClosePending.value || dismissRequestedSV.value === false) return;
-          const d = detentsSV.value;
-          const target = d[Math.max(0, Math.min(indexSV.value, d.length - 1))];
+          const controls = controlSnapshot.value;
+          if (success || gestureClosePending.value || controls.dismissRequested === false) return;
+          const d = controls.detents;
+          const target = d[Math.max(0, Math.min(controls.index, d.length - 1))];
           cancelAnimation(height);
           cancelAnimation(dismissY);
           dismissY.value = 0;
           gMode.value = MODE_NONE;
-          height.value = foregroundSV.value
+          height.value = controls.foreground
             ? withSpring(target, { ...SPRING, velocity: 0 })
             : target;
         }),
-    // Stable shared values + settle + height + scrollRef only — not detents[].
     [
       foreground,
-      foregroundSV,
-      dismissRequestedSV,
-      indexSV,
+      controlSnapshot,
       height,
       settle,
       scrollRef,
-      detentsSV,
       dismissIndexSV,
       gStartH,
       gMode,
@@ -508,7 +507,7 @@ export default React.memo(function BottomSheet({
   // strip can show through below the sheet.
   const sheetStyle = useAnimatedStyle(() => {
     const h = height.value;
-    const d = detentsSV.value;
+    const d = controlSnapshot.value.detents;
     const last = d.length - 1;
     // peek/mid share the same horizontal inset so sheet chrome (e.g. 成員/路線/工具
     // Segmented) does not appear to scale when moving between stage 1 and 2.
@@ -547,7 +546,7 @@ export default React.memo(function BottomSheet({
   // its 44pt lower arc is clipped below the physical screen edge.
   const nativeSurfaceStyle = useAnimatedStyle(() => {
     const h = height.value;
-    const d = detentsSV.value;
+    const d = controlSnapshot.value.detents;
     const surfaceBottomExtension = d.length <= 1
       ? 0
       : interpolate(
@@ -561,7 +560,7 @@ export default React.memo(function BottomSheet({
 
   return (
     <>
-    <SheetMotionCommit key={motionInput.generation} input={motionInput} owner={motionOwner} detents={detents}
+    <SheetMotionCommit key={motionInput.generation} input={motionInput} owner={motionOwner} controlSnapshot={controlSnapshot} detents={detents}
       dismissDistance={dismissDistance ?? 1000} gestureClosePending={gestureClosePending} dismissEpoch={dismissEpoch}
       dismiss={dismiss} dismissComplete={dismissComplete} />
     <GestureDetector gesture={pan}>

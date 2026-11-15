@@ -46,7 +46,7 @@ function Label({ children }: { children: React.ReactNode }) {
 function Action({ title, onPress, primary = false, destructive = false, disabled = false, testID, style }: {
   title: string; onPress: () => void; primary?: boolean; destructive?: boolean; disabled?: boolean; testID?: string; style?: StyleProp<ViewStyle>;
 }) {
-  return <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={title} disabled={disabled} onPress={onPress}
+  return <Pressable testID={testID} motion={primary ? 'depth' : 'scale'} accessibilityRole="button" accessibilityLabel={title} disabled={disabled} onPress={onPress}
     style={[primary ? d6ChromeStyles.primary : d6ChromeStyles.softButton, styles.action, disabled && styles.disabled, style]}>
     <HitherText style={[styles.actionText, destructive && styles.destructive]}>{title}</HitherText>
   </Pressable>;
@@ -389,7 +389,7 @@ export function D6AddPlace(props: AddCardProps) {
                   setShowSuggestions(false);
                   setPinCoordinates(true);
                 }}><Ionicons name="grid-outline" size={20} color="#fff" /><Label>{zh ? '座標' : 'Coordinates'}</Label></Pressable>
-              <Pressable accessibilityRole="button" style={styles.result} onPress={onImport}><Ionicons name="cloud-upload-outline" size={20} color="#fff" /><Label>{zh ? '匯入 KML' : 'Import KML'}</Label></Pressable>
+              <Pressable accessibilityRole="button" style={[styles.result, styles.lastResult]} onPress={onImport}><Ionicons name="cloud-upload-outline" size={20} color="#fff" /><Label>{zh ? '匯入 KML' : 'Import KML'}</Label></Pressable>
             </ScrollView>
           </View>
         ) : null}
@@ -400,7 +400,7 @@ export function D6AddPlace(props: AddCardProps) {
         {!place && pinCoordinates ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
           <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
           <Text style={styles.rowValue}>{zh ? '放下圖釘後，就能用該位置新增集合點。' : 'Drop a pin to use that location for your new stop.'}</Text>
-        </View> : !place ? <Action title={zh ? '用地圖中心' : 'Use map center'} primary onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} /> : <>
+        </View> : !place ? <Action title={zh ? '將地圖中心設為集合點' : 'Add a stop at map center'} primary onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} /> : <>
           <View style={styles.cardHead}>
             <View style={styles.addIdentity}>
               <View style={[styles.placeIcon, { backgroundColor: color }]}>
@@ -489,11 +489,12 @@ const styles = StyleSheet.create({
   addLayer: { ...StyleSheet.absoluteFill, zIndex: 83 },
   crosshair: { position: 'absolute', left: '50%', top: '50%', marginLeft: -15, marginTop: -30 },
   search: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET },
-  searchBar: { minHeight: 88, flexDirection: 'row', alignItems: 'flex-start', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 8, padding: SHEET_CORNER_ACTION_INSET },
+  searchBar: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 6, paddingVertical: 6, paddingLeft: 14, paddingRight: 0, boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
   searchIcon: { height: MAP_SHEET_ACTION_HIT_SIZE, justifyContent: 'center' },
   searchInput: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, fontSize: APP_TEXT_SIZE.body, color: '#fff' },
   results: { marginTop: 8, borderRadius: 24, paddingHorizontal: 12, paddingVertical: 4 },
   result: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#ffffff1a' },
+  lastResult: { borderBottomWidth: 0 },
   addIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   placeIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   placeAddress: { color: '#ffffffa6', fontSize: APP_TEXT_SIZE.caption, marginTop: 3 },

@@ -41,7 +41,7 @@ export function ProfileEditor({ refresh, statusColor }: {
 
   return (
     <View style={editorStyles.body}>
-      <View style={[editorStyles.avatar, { backgroundColor: draft.color, shadowColor: draft.color }]}>
+      <View style={[editorStyles.avatar, { backgroundColor: draft.color }]}>
         <HitherText typeRole="emoji" style={editorStyles.avatarEmoji}>{draft.avatar}</HitherText>
         {statusColor ? <View style={[editorStyles.dot, { backgroundColor: statusColor }]} /> : null}
       </View>
@@ -60,7 +60,7 @@ export function ProfileEditor({ refresh, statusColor }: {
       />
       <EmojiCarousel avatar={draft.avatar} color={draft.color} onChange={next => change({ avatar: next })} prefix="profile" />
       <AvatarColors color={draft.color} onChange={color => change({ color })} label={t('profile.avatarColor')} prefix="profile" />
-      <Pressable style={editorStyles.random} accessibilityRole="button" testID="profile-random"
+      <Pressable style={editorStyles.random} accessibilityRole="button" accessibilityLabel={language === 'zh' ? '隨機頭像與顏色' : 'Random avatar and color'} testID="profile-random"
         onPress={() => {
           selectionTick();
           const avatars = AVATAR_EMOJI.filter(value => value !== draft.avatar);
@@ -70,10 +70,10 @@ export function ProfileEditor({ refresh, statusColor }: {
             color: colors[Math.floor(Math.random() * colors.length)],
           });
         }}>
-        <HitherText style={editorStyles.randomText}>{language === 'zh' ? '🎲 隨機' : '🎲 Random'}</HitherText>
+        <HitherText typeRole="emoji" style={editorStyles.randomText}>🎲</HitherText>
       </Pressable>
       {failed ? (
-        <Pressable style={editorStyles.random} accessibilityRole="button" onPress={() => { void retry(); }}>
+        <Pressable style={editorStyles.retry} accessibilityRole="button" onPress={() => { void retry(); }}>
           <HitherText style={editorStyles.error}>{t('profile.saveFailed')} · {t('interaction.retry')}</HitherText>
         </Pressable>
       ) : null}
@@ -83,11 +83,12 @@ export function ProfileEditor({ refresh, statusColor }: {
 
 const editorStyles = StyleSheet.create({
   body: { alignItems: 'center', paddingTop: 10, paddingBottom: 24 },
-  avatar: { width: 132, height: 132, borderRadius: 66, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 18 }, shadowRadius: 22, shadowOpacity: 0.55 },
+  avatar: { width: 132, height: 132, borderRadius: 66, alignItems: 'center', justifyContent: 'center' },
   avatarEmoji: { fontSize: 74 },
   dot: { width: 26, height: 26, borderRadius: 13, borderWidth: 4, borderColor: '#26302E', position: 'absolute', bottom: 5, right: 5 },
   name: { alignSelf: 'stretch', height: 56, color: '#fff', textAlign: 'center', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', marginTop: 14, paddingVertical: 0 },
-  random: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 22, marginTop: 10, backgroundColor: 'rgba(255,255,255,0.10)' },
-  randomText: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
+  random: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center', borderRadius: 44, marginTop: 10, backgroundColor: 'rgba(255,255,255,0.10)' },
+  retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, marginTop: 10 },
+  randomText: { fontSize: 48 },
   error: { color: '#FF9B9B', fontSize: APP_TEXT_SIZE.caption },
 });

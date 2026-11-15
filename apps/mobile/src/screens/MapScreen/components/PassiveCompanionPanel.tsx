@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accentMix, glass } from '../../../glass';
 import { useTranslation } from '../../../i18n';
-import { mediumTap } from '../../../utils/haptics';
 import type {
   CoarseProgressBucket,
   PassiveCompanionModel,
@@ -185,7 +184,6 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
       Alert.alert(t('passive.noPointTitle'), t('passive.noPointBody'));
       return;
     }
-    mediumTap();
     onOpenExternalNavigation(navigationDestination);
   }, [navigationDestination, onOpenExternalNavigation, t]);
 
@@ -213,7 +211,7 @@ export const PassiveCompanionPanel = React.memo(function PassiveCompanionPanel({
           systemImage="arrow.up.left.and.arrow.down.right"
           foregroundColor="#fff"
           size={46}
-          onPress={() => { mediumTap(); handleSwitchBack(); }}
+          onPress={handleSwitchBack}
           accessibilityLabel={t('passive.switchBack')}
           testID="passive-switch-back"
         />

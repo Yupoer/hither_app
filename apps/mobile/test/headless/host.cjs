@@ -138,6 +138,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     } });
     shared.set = next => { shared.value = typeof next === 'function' ? next(value) : next; };
     shared.get = () => value;
+    shared.modify = modifier => { shared.value = modifier ? modifier(value) : value; };
     return shared;
   };
   const useShared = value => React.useState(() => makeShared(value))[0];
@@ -145,7 +146,11 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const animation = strict('reanimated', {
     __esModule: true, default: { View: hosts.View, Text: hosts.Text, ScrollView: hosts.ScrollView,
       createAnimatedComponent: component => component },
-    makeMutable: makeShared, useSharedValue: useShared, useDerivedValue: fn => ({ value: fn() }), useAnimatedRef: () => React.useRef(null),
+    makeMutable: makeShared, useSharedValue: useShared, useDerivedValue: fn => {
+      const compute = React.useRef(fn);
+      compute.current = fn;
+      return React.useState(() => ({ get value() { return compute.current(); }, get: () => compute.current() }))[0];
+    }, useAnimatedRef: () => React.useRef(null),
     scrollTo: (ref, x, y, animated) => ref.current?.scrollTo({ x, y, animated }),
     useAnimatedStyle: fn => fn(), useAnimatedProps: fn => fn(), useReducedMotion: () => true,
     useFrameCallback: () => React.useRef({ setActive() {} }).current,
@@ -196,7 +201,8 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const gesture = () => {
     const object = {};
     for (const method of ['onBegin','onStart','onUpdate','onChange','onEnd','onFinalize','enabled','activeOffsetX','activeOffsetY',
-      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail','disallowInterruption']) {
+      'failOffsetX','failOffsetY','minDistance','maxDistance','minDuration','numberOfTaps','hitSlop','runOnJS','simultaneousWithExternalGesture','requireExternalGestureToFail','disallowInterruption',
+      'cancelsTouchesInView','onTouchesDown','activateAfterLongPress','blocksExternalGesture','maxPointers']) {
       object[method] = (...args) => { object[method + 'Input'] = args; return object; };
     }
     return strict('Gesture', object);

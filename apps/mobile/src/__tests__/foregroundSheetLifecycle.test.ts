@@ -8,6 +8,8 @@ const mockTimings: any[] = [];
 const mockSprings: any[] = [];
 const mockNativeTimings: any[] = [];
 const mockGestures: any[] = [];
+let mockDeferDerivedUpdates = false;
+const mockDerivedUpdates = new Set<() => void>();
 function mockValue(initial: any): any {
   let value = initial;
   let animation: any;
@@ -49,7 +51,13 @@ jest.mock('react-native-reanimated', () => ({ __esModule: true,
   useDerivedValue: (factory: () => unknown) => {
     const latest = require('react').useRef(factory);
     latest.current = factory;
-    return require('react').useRef({ get value() { return latest.current(); } }).current;
+    const committed = require('react').useRef(factory());
+    if (!mockDeferDerivedUpdates) committed.current = factory();
+    const update = require('react').useRef(() => { committed.current = latest.current(); }).current;
+    mockDerivedUpdates.add(update);
+    return require('react').useRef({ get value() {
+      return mockDeferDerivedUpdates ? committed.current : latest.current();
+    } }).current;
   },
   useAnimatedReaction: () => {}, useAnimatedScrollHandler: () => () => {},
   useAnimatedStyle: (factory: () => unknown) => factory(),
@@ -80,6 +88,7 @@ jest.mock('@expo/ui/swift-ui', () => ({ Host: 'SwiftUIHost', Spacer: 'Spacer', V
 jest.mock('@expo/ui/swift-ui/modifiers', () => ({ frame: (value: unknown) => value, glassEffect: (value: unknown) => value }));
 jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: { glass: 'rgba(1,2,3,0.9)' } }) }));
 import BottomSheet from '../components/BottomSheet';
+import SettingsSheetPanel from '../screens/MapScreen/components/SettingsSheetPanel';
 import { GlassView } from '../native/liquidGlass';
 import SwiftUIGlassSurface from '../components/SwiftUIGlassSurface.ios';
 import OverlaySheet from '../components/OverlaySheet';
@@ -97,6 +106,8 @@ function transition(state: string) {
 }
 beforeEach(() => {
   mockAppState.currentState = 'active';
+  mockDeferDerivedUpdates = false;
+  mockDerivedUpdates.clear();
   mockGestures.length = 0; mockTimings.length = 0; mockNativeTimings.length = 0; mockSprings.length = 0;
   updateRuntimePowerState({ thermalState: 'nominal', lowPowerMode: false });
 });
@@ -557,4 +568,40 @@ it('replays bottom-sheet motion in StrictMode and releases the committed shared-
   expect(mockTimings[1].cancelled).toBe(true);
   await act(async () => { mockTimings[1].callback(true); });
   expect(completed).not.toHaveBeenCalled();
+});
+
+it.each([false, true])('restores full settings height when a compact-page back tap ends during the page transition with deferred UI inputs=%s', async deferred => {
+  const props = {
+    visible: true, home: true, singleStage: true, title: '', onClose: jest.fn(),
+    children: React.createElement('draft'),
+  };
+  let root!: import('react-test-renderer').ReactTestRenderer;
+  const page = (scrollResetKey: string, fitContent: boolean) => React.createElement(SettingsSheetPanel, {
+    ...props, scrollResetKey, fitContent,
+  });
+  await act(async () => { root = create(page('root', false)); });
+  const sheet = root.root.findByProps({ dismissRequested: true });
+  const scroll = root.root.findByProps({ showsVerticalScrollIndicator: false });
+  const header = root.root.find(node => typeof node.props.onLayout === 'function');
+  await act(async () => { header.props.onLayout({ nativeEvent: { layout: { height: 78 } } }); });
+  for (const { name, contentHeight } of [
+    { name: 'mapJourney', contentHeight: 380 },
+    { name: 'advanced', contentHeight: 294 },
+  ]) {
+    await act(async () => { root.update(page(name, true)); });
+    await act(async () => { scroll.props.onContentSizeChange(390, contentHeight); });
+    expect(sheet.props.height.value).toBe(contentHeight + 78);
+    const gesture = mockGestures.at(-1);
+    await act(async () => { gesture.onBegin(); });
+    mockDeferDerivedUpdates = deferred;
+    await act(async () => { root.update(page('root', false)); });
+    await act(async () => { gesture.onFinalize({}, false); });
+    for (const update of mockDerivedUpdates) update();
+    mockDeferDerivedUpdates = false;
+    expect(root.root.findByProps({ dismissRequested: true })).toBe(sheet);
+    expect(root.root.findByProps({ showsVerticalScrollIndicator: false })).toBe(scroll);
+    expect(sheet.props.height.value).toBe(794);
+    expect(sheet.props.dismissTranslateY.value).toBe(0);
+  }
+  await act(async () => { root.unmount(); });
 });

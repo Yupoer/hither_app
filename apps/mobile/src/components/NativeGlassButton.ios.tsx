@@ -17,6 +17,7 @@ import {
   tint,
 } from '@expo/ui/swift-ui/modifiers';
 import { liquidGlass } from '../native';
+import { lightTap } from '../utils/haptics';
 import type { NativeGlassButtonProps } from './NativeGlassButton';
 
 /** SwiftUI button styles are native on iOS 26 and bordered on older iOS. */
@@ -47,6 +48,11 @@ export default function NativeGlassButton({
   iconOffset,
   centerText,
 }: NativeGlassButtonProps) {
+  const handlePress = () => {
+    if (disabled || !onPress) return;
+    lightTap();
+    onPress();
+  };
   const iconOnly = Boolean(!label);
   const controlSizeValue = requestedControlSize
     ?? (size != null && size >= 88 ? 'extraLarge' : size != null && size >= 74 ? 'large' : ((size != null && size < 44) || (height != null && height < 44)) ? 'small' : 'regular');
@@ -96,7 +102,7 @@ export default function NativeGlassButton({
   const button = iconOnly ? (
     <Button
       role={role}
-      onPress={onPress}
+      onPress={disabled || !onPress ? undefined : handlePress}
       testID={testID}
       modifiers={modifiers}
     >
@@ -123,7 +129,7 @@ export default function NativeGlassButton({
   ) : layout === 'fill' ? (
     <Button
       role={role}
-      onPress={onPress}
+      onPress={disabled || !onPress ? undefined : handlePress}
       testID={testID}
       modifiers={modifiers}
     >
@@ -145,7 +151,7 @@ export default function NativeGlassButton({
   ) : centerText && systemImage && label ? (
     <Button
       role={role}
-      onPress={onPress}
+      onPress={disabled || !onPress ? undefined : handlePress}
       testID={testID}
       modifiers={modifiers}
     >
@@ -174,7 +180,7 @@ export default function NativeGlassButton({
   ) : (systemImage && label) || hasCustomTypography ? (
     <Button
       role={role}
-      onPress={onPress}
+      onPress={disabled || !onPress ? undefined : handlePress}
       testID={testID}
       modifiers={modifiers}
     >
@@ -203,7 +209,7 @@ export default function NativeGlassButton({
       label={label ?? accessibilityLabel}
       systemImage={systemImage as never}
       role={role}
-      onPress={onPress}
+      onPress={disabled || !onPress ? undefined : handlePress}
       testID={testID}
       modifiers={modifiers}
     />

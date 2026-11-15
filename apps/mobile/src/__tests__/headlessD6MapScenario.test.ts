@@ -145,8 +145,9 @@ describe('iOS D6 Map', () => {
       await press(device, 'home-journey-action');
       await world.waitFor(device, (value: Observation) => field(value, 'home-journey-action')?.label === 'On the way, hold to end navigation', 'active navigation');
       expect(world.backend.sessions.size).toBe(1);
-      const touch = (event: 'onPressIn' | 'onPressOut' | 'onLongPress') =>
-        device.host.call({ kind: 'nativeEvent', testId: 'home-journey-action', value: { event } });
+      const touch = (event: 'onPressIn' | 'onPressOut' | 'onLongPress' | 'onPress') =>
+        device.host.call({ kind: 'nativeEvent', testId: 'home-journey-action',
+          value: { event, nativeEvent: { changedTouches: [{ identifier: 1 }] } } });
       await touch('onPressIn');
       await touch('onPressOut');
       expect([...world.backend.sessions.values()][0]).toMatchObject({ status: 'active' });
@@ -154,7 +155,7 @@ describe('iOS D6 Map', () => {
       await touch('onLongPress');
       await touch('onPressOut');
       await world.waitFor(device, (value: Observation) => field(value, 'home-journey-action')?.label === 'Start', 'return to ready');
-      await press(device, 'home-journey-action');
+      await touch('onPress');
       expect(world.backend.itinerary.find((stop: { id: string }) => stop.id === DESTINATION)?.closed_at ?? null).toBeNull();
       expect(world.backend.sessions.size).toBe(1);
       expect([...world.backend.sessions.values()][0]).toMatchObject({ status: 'cancelled' });

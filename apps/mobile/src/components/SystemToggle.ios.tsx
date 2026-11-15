@@ -18,4 +18,4 @@ export default function SystemToggle({ value, onValueChange, accessibilityLabel,
   );
 }
 
-const styles = StyleSheet.create({ host: { width: 76, height: 48, flexShrink: 0, overflow: 'visible' } });
+const styles = StyleSheet.create({ host: { width: 76, height: 44, flexShrink: 0, overflow: 'visible' } });
