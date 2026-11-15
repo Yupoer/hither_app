@@ -50,6 +50,40 @@ test('native hosts retain rows, children, refs and disabled or readonly input se
   } finally { await act(async () => root.unmount()); }
 });
 
+test('animated refs stay callable and stable while retaining the installed null-detach and host method contracts', async () => {
+  const { host, modules } = fixture();
+  const rn = modules.get('react-native');
+  const animation = modules.get('react-native-reanimated');
+  let ref;
+  let root;
+  function Screen({ version }) {
+    ref = animation.useAnimatedRef();
+    return React.createElement(rn.ScrollView, { ref, testID: `scroll-${version}` });
+  }
+  await act(async () => { root = create(React.createElement(Screen, { version: 1 })); });
+  const mountedRef = ref;
+  const node = ref.current;
+  try {
+    assert.equal(typeof ref, 'function');
+    assert.equal(ref(), node);
+    assert.equal(ref(null), node);
+    assert.equal(ref(undefined), node);
+    assert.equal(ref.current, node);
+    assert.equal(ref.getTag(), 1);
+    let dimensions;
+    ref.current.measure((...values) => { dimensions = values; });
+    assert.deepEqual(dimensions, [0, 0, 390, 844, 0, 0]);
+    animation.scrollTo(ref, 12, 34, false);
+    assert(host.receipts.some(receipt => receipt.method === 'scrollTo'
+      && receipt.value.x === 12 && receipt.value.y === 34 && receipt.value.animated === false));
+    await act(async () => root.update(React.createElement(Screen, { version: 2 })));
+    assert.equal(ref, mountedRef);
+    assert.equal(ref.current, node);
+    assert(host.observe(root).some(row => row.testId === 'scroll-2'));
+  } finally { await act(async () => root.unmount()); }
+  assert.equal(ref.current, node);
+});
+
 test('animation completion is explicit and disabled gesture callbacks stay blocked', async () => {
   const { host, modules } = fixture();
   const rn = modules.get('react-native');
@@ -179,9 +213,10 @@ test('navigation replacement, reset and a new account navigator retain only the 
 test('view observations retain committed map inputs and each rendered member timestamp', async () => {
   const { host, modules } = fixture();
   const rn = modules.get('react-native');
-  const MapView = modules.get('react-native-maps').default;
+  const { default: MapView, Circle } = modules.get('react-native-maps');
   const GroupMap = React.forwardRef(function GroupMap({ members }, _ref) {
-    return React.createElement(MapView, { testID: 'group-map-native' });
+    return React.createElement(MapView, { testID: 'group-map-native' },
+      React.createElement(Circle, { center: members[0].coordinates, radius: 50 }));
   });
   const FlockRow = React.memo(function FlockRow({ name, lastUpdated }) {
     return React.createElement(rn.Text, null, name + ' updated ' + lastUpdated);
@@ -193,11 +228,14 @@ test('view observations retain committed map inputs and each rendered member tim
   let root;
   await act(async () => { root = create(element(sample)); });
   try {
+    assert.deepEqual(root.root.findByType('host:Circle').props.center, sample.coordinates);
+    assert.equal(root.root.findByType('host:Circle').props.radius, 50);
     assert.deepEqual(host.observeViews(root).mapMembers, [sample]);
     assert.equal(host.observeViews(root).flockRows[0].lastUpdated, sample.capturedAt);
     assert.equal(host.observeViews(root).flockRows[0].text, 'Traveler updated ' + sample.capturedAt);
     const next = { ...sample, coordinates: { latitude: 35.8, longitude: 139.8 }, capturedAt: '2026-10-22T00:01:00Z' };
     await act(async () => root.update(element(next)));
+    assert.deepEqual(root.root.findByType('host:Circle').props.center, next.coordinates);
     assert.deepEqual(host.observeViews(root).mapMembers, [next]);
     assert.equal(host.observeViews(root).flockRows[0].lastUpdated, next.capturedAt);
     await act(async () => root.update(React.createElement(rn.View)));

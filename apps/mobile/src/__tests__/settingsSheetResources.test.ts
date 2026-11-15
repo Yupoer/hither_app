@@ -7,10 +7,11 @@ import { withSpring } from 'react-native-reanimated';
 import { BottomSheet as NativeSheet } from '@expo/ui/swift-ui';
 
 it.each([false, true])('keeps settings header actions below the top edge with compact=%s', async home => {
-  let tree!: ReturnType<typeof create>;
-  await act(async () => { tree = create(React.createElement(SettingsSheetPanel, {
+  const props: React.ComponentProps<typeof SettingsSheetPanel> = {
     visible: true, title: 'settings', onClose: jest.fn(), home, children: React.createElement('div'),
-  })); });
+  };
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(React.createElement(SettingsSheetPanel, props)); });
   const header = tree.root.findByType(BottomSheet).props.header;
   expect(header.props.style[1].paddingTop).toBeGreaterThanOrEqual(0);
   await act(async () => tree.unmount());

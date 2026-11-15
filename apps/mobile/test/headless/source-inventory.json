@@ -7923,13 +7923,13 @@
     "file": "src/screens/MapScreen/components/D6PaneInteraction.tsx",
     "kind": "export",
     "name": "D6PaneOverlay",
-    "hash": "fb84542d9aab88b2129de91c83aab2cd1f11b0741a93d0fb79babdd451aca793"
+    "hash": "7b8818e876913fc2e336ade04a689218581b53c033900767f51e897ba97802ab"
   },
   {
     "file": "src/screens/MapScreen/components/D6PaneInteraction.tsx",
     "kind": "lifecycle",
-    "name": "useLayoutEffect",
-    "hash": "8b63b98db43c6c93e6c56d201d69ab279f6898a055df6b5c76af8f3b40cdd983"
+    "name": "useMountEffect",
+    "hash": "b029b8fa6fde79b06376db2b7a225bb74c4ef1393e105561e9e3b05fea0257cd"
   },
   {
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
@@ -8007,7 +8007,7 @@
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
     "kind": "export",
     "name": "D6RoutePane",
-    "hash": "e7d76b108e7874ee606a6caaa53f685206c2c7411ec5d513ed984eb8ae07d290"
+    "hash": "9f7de0b517a85b367c4757af8a5daf27d4e17bc7b4b581e63a4a5e9a303c8498"
   },
   {
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
@@ -8025,13 +8025,7 @@
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "d79b206bc42816a74285f605f8efecfc2f5e2cf3b92fb01294b3c59fd80cae24"
-  },
-  {
-    "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
-    "kind": "lifecycle",
-    "name": "useLayoutEffect",
-    "hash": "3d1fe204643a4e552af48940ce2052377df082c0b2d87158839b5ad96f82cb20"
+    "hash": "74a962a9726393bd9b675e4450374385543337b9321f636b014247a173629eb6"
   },
   {
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
@@ -8277,13 +8271,13 @@
     "file": "src/screens/MapScreen/components/D6RouteRow.tsx",
     "kind": "export",
     "name": "D6RouteRow",
-    "hash": "fda5c18fe5c418c5cc40849356e6e8b2449dd00015c1631a3d25e7caf4071497"
+    "hash": "438489e20a7e3304c1997d086b4878c1fda231ca234ab6bf709ba60af11ee778"
   },
   {
     "file": "src/screens/MapScreen/components/D6RouteRow.tsx",
     "kind": "lifecycle",
-    "name": "useLayoutEffect",
-    "hash": "526cea49782a82783508d2c1c2b85ea3b48c4057848ba6e684d1c1245eb77a86"
+    "name": "useMountEffect",
+    "hash": "b9768089cf32b07bb205e9c9fd68b07e4f5b52169152ba772dcab018e3ef679e"
   },
   {
     "file": "src/screens/MapScreen/components/D6RouteRow.tsx",
@@ -10365,7 +10359,7 @@
     "file": "src/screens/MapScreen/components/useD6PaneDrag.ts",
     "kind": "export",
     "name": "useD6PaneDrag",
-    "hash": "08adcd341df97700ef41791de3550c644708fd6774ceb903b3366f761b144e09"
+    "hash": "3723d2cc8d32a4c39d6440a60751e83b8ffa5a24e5a455db3de849d4d6ac063d"
   },
   {
     "file": "src/screens/MapScreen/components/useD6PaneDrag.ts",

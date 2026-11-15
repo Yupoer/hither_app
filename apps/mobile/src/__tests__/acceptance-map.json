@@ -3134,9 +3134,9 @@
     {
       "parent": 397,
       "child": 397,
-      "acceptance": "An active itinerary contact avoids React rerenders, commits one reorder after release despite an unrelated failed grip, and never commits after cancellation or a day change.",
+      "acceptance": "An active itinerary contact avoids React rerenders, commits one reorder after release despite an unrelated failed grip, retains its gesture and session through same-scope callback updates, and rejects commits after cancellation, a day change, native detach or unmount while preserving ownership acquired by a replacement pane.",
       "testFile": "d6RoutePane.test.ts",
-      "testNamePattern": "keeps an active contact on the UI thread|never commits a contact after"
+      "testNamePattern": "keeps an active contact on the UI thread|never commits a contact after|keeps the mounted gesture and active session|releases ownership on unmount|rejects a queued release immediately|isolates a detached pane before passive cleanup"
     },
     {
       "parent": 397,

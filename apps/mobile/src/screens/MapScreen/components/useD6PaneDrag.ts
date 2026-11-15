@@ -71,7 +71,7 @@ export function useD6PaneDrag({
   }, [nativeRef]);
   const finishClosing = useCallback(() => {
     if (target.get() === 'closed' && !dragging.get()) setPreview(false);
-  }, [dragging, target]);
+  }, [dragging, target, setPreview]);
 
   const animateTo = useCallback((next: Detent, velocity = 0) => {
     const nextHeight = next === 'closed' ? closed : next === 'half' ? half : full;
@@ -87,7 +87,7 @@ export function useD6PaneDrag({
       }));
       if (next !== 'closed') setPreview(false);
     }
-  }, [closed, half, full, height, reduceMotion, visible, finishClosing]);
+  }, [closed, half, full, height, reduceMotion, visible, finishClosing, setPreview]);
 
   const sync = () => {
     let next = target.get();
@@ -120,11 +120,11 @@ export function useD6PaneDrag({
       requested.set(nextOpen);
       onOpenChange(nextOpen);
     }
-  }, [animateTo, onOpenChange, requested, target]);
+  }, [animateTo, onOpenChange, requested, target, setPreview, setDetent]);
   const begin = useCallback(() => {
     setPreview(true);
     onDragBegin();
-  }, [onDragBegin]);
+  }, [onDragBegin, setPreview]);
   const restore = useCallback(() => animateTo(target.get()), [animateTo, target]);
   const contentGesture = useMemo(() => Gesture.Pan()
     .enabled(visible)

@@ -1,6 +1,6 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useContext, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
@@ -70,13 +70,12 @@ export function D6RouteRow({
   const panel = useContext(D6PaneInteractionContext);
   const measuredRef = useAnimatedRef<View>();
   const acquired = useSharedValue<number | null>(null);
-  const dragRef = useRef(drag);
-  useLayoutEffect(() => { dragRef.current = drag; }, [drag]);
-  const handlers = useMemo(() => ({
-    start: (token: number, point: D6Point, geometry: D6DragGeometry) => dragRef.current?.onStart(token, point, geometry),
-    end: (token: number, point: D6Point) => dragRef.current?.onEnd(token, point),
-    cancel: (token: number) => dragRef.current?.onCancel(token),
-  }), []);
+  const [handlers] = useState(createD6RouteDragCallbacks);
+  const bindDrag = useCallback((view: View | null) => {
+    measuredRef(view);
+    handlers.commit(view ? drag : undefined);
+  }, [drag, handlers, measuredRef]);
+  useMountEffect(() => () => handlers.commit(undefined));
   const owner = drag?.owner;
   const dragPoint = drag?.point;
   const presentation = drag?.presentation;
@@ -256,7 +255,7 @@ export function D6RouteRow({
   return (
     <Animated.View style={[styles.collapsingRow, collapseStyle]}>
       <D6RowCollapse key={removing ? 'collapse' : 'expand'} progress={collapse} removing={!!removing} />
-      <Animated.View ref={measuredRef} collapsable={false} style={[styles.shell, selected !== undefined && styles.selectionSpacing, sourceStyle]} pointerEvents={removing ? 'none' : 'auto'}>
+      <Animated.View ref={bindDrag} collapsable={false} style={[styles.shell, selected !== undefined && styles.selectionSpacing, sourceStyle]} pointerEvents={removing ? 'none' : 'auto'}>
         {content}
         {insertion ? (
           <View pointerEvents="none" style={[
@@ -268,6 +267,16 @@ export function D6RouteRow({
       </Animated.View>
     </Animated.View>
   );
+}
+
+function createD6RouteDragCallbacks() {
+  let committed: D6RouteDrag | undefined;
+  return {
+    commit: (drag: D6RouteDrag | undefined) => { committed = drag; },
+    start: (token: number, point: D6Point, geometry: D6DragGeometry) => committed?.onStart(token, point, geometry),
+    end: (token: number, point: D6Point) => committed?.onEnd(token, point),
+    cancel: (token: number) => committed?.onCancel(token),
+  };
 }
 
 function routeRowDisplay(row: RouteRow) {

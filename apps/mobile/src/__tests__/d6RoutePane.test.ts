@@ -3,6 +3,7 @@ import { measure } from 'react-native-reanimated';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { D6RoutePane, type D6RoutePaneProps, type D6RouteSelection } from '../screens/MapScreen/components/D6RoutePane';
 import type { Destination } from '../types';
+import { D6RouteRow } from '../screens/MapScreen/components/D6RouteRow';
 
 jest.mock('react-native', () => ({
   AccessibilityInfo: {
@@ -79,6 +80,10 @@ const stop = (id: string, day: number): Destination => ({
   id, title: id, day, order: 0, coordinates: { latitude: 25, longitude: 121 },
 });
 
+function mount(element: React.ReactElement) {
+  return create(element, { createNodeMock: () => ({}) });
+}
+
 describe('D6 itinerary panel', () => {
   let renderer: ReactTestRenderer;
   let footer: D6RouteSelection | null;
@@ -149,7 +154,7 @@ describe('D6 itinerary panel', () => {
   it('keeps an active contact on the UI thread and submits once after release despite an unrelated failed grip', async () => {
     const rendered = jest.fn();
     await act(async () => {
-      renderer = create(React.createElement(Profiler, { id: 'route', onRender: rendered }, React.createElement(Shell, { canEdit: true })));
+      renderer = mount(React.createElement(Profiler, { id: 'route', onRender: rendered }, React.createElement(Shell, { canEdit: true })));
     });
     const callbacks = measuredDrag();
     const other = byId('d6-route-drag-b').parent?.props.gesture.callbacks;
@@ -168,8 +173,78 @@ describe('D6 itinerary panel', () => {
     expect(props.onOpenStop).not.toHaveBeenCalled();
   });
 
+  it('keeps the mounted gesture and active session while publishing a same-scope callback update', async () => {
+    await act(async () => { renderer = mount(React.createElement(D6RoutePane, props)); });
+    const gesture = byId('d6-route-drag-a').parent?.props.gesture;
+    const paneRef = byId('d6-route-pane').props.ref;
+    const callbacks = measuredDrag();
+    const row = renderer.root.findAllByType(D6RouteRow)[0];
+    const owner = row.props.drag.owner;
+    const rowRef = row.find(node => String(node.type) === 'AnimatedView' && typeof node.props.ref === 'function').props.ref;
+    act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
+    act(() => { rowRef(null); rowRef({}); });
+    expect(owner.get()).toBe('reorder');
+    expect(props.onReorder).not.toHaveBeenCalled();
+    const onReorder = jest.fn(async () => true);
+    await act(async () => {
+      renderer.update(React.createElement(D6RoutePane, { ...props, onReorder }));
+    });
+    expect(byId('d6-route-pane').props.ref).toBe(paneRef);
+    expect(byId('d6-route-drag-a').parent?.props.gesture).toBe(gesture);
+    expect(owner.get()).toBe('reorder');
+    await act(async () => callbacks.get('end')({ absoluteX: 270, absoluteY: 160 }, true));
+    expect(onReorder).toHaveBeenCalledTimes(1);
+    expect(props.onReorder).not.toHaveBeenCalled();
+  });
+
+  it('rejects a queued release immediately when its native row detaches before passive cleanup', async () => {
+    await act(async () => { renderer = mount(React.createElement(D6RoutePane, props)); });
+    const callbacks = measuredDrag();
+    const row = renderer.root.findAllByType(D6RouteRow)[0];
+    const owner = row.props.drag.owner;
+    const rowRef = row.find(node => String(node.type) === 'AnimatedView' && typeof node.props.ref === 'function').props.ref;
+    act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
+    act(() => rowRef(null));
+    expect(owner.get()).toBe('reorder');
+    await act(async () => callbacks.get('end')({ absoluteX: 270, absoluteY: 160 }, true));
+    expect(props.onReorder).not.toHaveBeenCalled();
+    expect(owner.get()).toBe('idle');
+  });
+
+  it('isolates a detached pane before passive cleanup and preserves ownership acquired by its replacement', async () => {
+    await act(async () => { renderer = mount(React.createElement(D6RoutePane, props)); });
+    const callbacks = measuredDrag();
+    const row = renderer.root.findAllByType(D6RouteRow)[0];
+    const owner = row.props.drag.owner;
+    act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
+    const replacementCommit = jest.fn((view: object | null) => {
+      if (!view) return;
+      expect(owner.get()).toBe('idle');
+      callbacks.get('end')({ absoluteX: 270, absoluteY: 160 }, true);
+      expect(props.onReorder).not.toHaveBeenCalled();
+      owner.set('reorder');
+    });
+    await act(async () => { renderer.update(React.createElement('View', { ref: replacementCommit })); });
+    expect(replacementCommit).toHaveBeenCalledWith(expect.any(Object));
+    expect(props.onReorder).not.toHaveBeenCalled();
+    expect(owner.get()).toBe('reorder');
+  });
+
+  it('releases ownership on unmount and ignores callbacks queued by the detached gesture', async () => {
+    await act(async () => { renderer = mount(React.createElement(D6RoutePane, props)); });
+    const callbacks = measuredDrag();
+    const row = renderer.root.findAllByType(D6RouteRow)[0];
+    const owner = row.props.drag.owner;
+    act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
+    expect(owner.get()).toBe('reorder');
+    act(() => renderer.unmount());
+    expect(owner.get()).toBe('idle');
+    await act(async () => callbacks.get('end')({ absoluteX: 270, absoluteY: 160 }, true));
+    expect(props.onReorder).not.toHaveBeenCalled();
+  });
+
   it.each(['cancel', 'day change'])('never commits a contact after %s', async interruption => {
-    await act(async () => { renderer = create(React.createElement(Shell, { canEdit: true })); });
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: true })); });
     const callbacks = measuredDrag();
     act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
     if (interruption === 'cancel') act(() => callbacks.get('finalize')());
@@ -180,7 +255,7 @@ describe('D6 itinerary panel', () => {
   });
 
   it('keeps the island selection in sync through parent rerenders and day changes', async () => {
-    await act(async () => { renderer = create(React.createElement(Shell, { canEdit: true })); });
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: true })); });
     expect(footer).toBeNull();
     act(() => byId('d6-route-row-a').props.onLongPress());
     expect(footer?.count).toBe(1);
@@ -198,7 +273,7 @@ describe('D6 itinerary panel', () => {
   });
 
   it('shows members the selected day without mounting edit gestures', async () => {
-    await act(async () => { renderer = create(React.createElement(Shell, { canEdit: false })); });
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: false })); });
     expect(byId('d6-route-row-a').props.onLongPress).toBeUndefined();
     expect(byId('d6-route-drag-a')).toBeUndefined();
     expect(byId('d6-route-add-day')).toBeUndefined();
@@ -210,7 +285,7 @@ describe('D6 itinerary panel', () => {
       stop('a', 1), { ...stop('old-bed', 1), order: 1, kind: 'accommodation' },
       { ...stop('b', 1), order: 2 },
     ];
-    await act(async () => { renderer = create(React.createElement(D6RoutePane, {
+    await act(async () => { renderer = mount(React.createElement(D6RoutePane, {
       ...props, destinations, dailyAccommodations: [{ id: 'daily-bed', groupId: 'g', stayDate: '2026-11-01',
         title: 'Hotel', coordinates: { latitude: 25, longitude: 121 } }],
     })); });
@@ -219,7 +294,7 @@ describe('D6 itinerary panel', () => {
     expect(section.findAllByProps({ testID: 'd6-route-row-daily-bed' })).not.toHaveLength(0);
     expect(section.findAllByProps({ testID: 'd6-route-row-a' })).toHaveLength(0);
     expect(byId('d6-route-drag-old-bed')).toBeUndefined();
-    act(() => byId('d6-route-drag-a').props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
+    await act(async () => byId('d6-route-drag-a').props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
     expect(props.onReorder).toHaveBeenCalledWith([
       { id: 'old-bed', day: 1, position: 0 }, { id: 'b', day: 1, position: 1 }, { id: 'a', day: 1, position: 2 },
     ]);

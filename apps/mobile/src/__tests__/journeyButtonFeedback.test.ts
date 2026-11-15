@@ -32,19 +32,23 @@ jest.mock('react-native', () => {
   };
 });
 jest.mock('react-native-reanimated', () => {
+  const { useRef, useState } = jest.requireActual<typeof import('react')>('react');
+  const { useMountEffect } = jest.requireActual<typeof import('../hooks/useMountEffect')>('../hooks/useMountEffect');
   const transition = { duration: () => transition, easing: () => transition };
   return {
     __esModule: true, default: { View: 'ReanimatedView' },
     Easing: { inOut: (value: unknown) => value, cubic: () => undefined },
     FadeIn: transition, FadeOut: transition, LinearTransition: transition,
     runOnJS: (callback: () => void) => callback,
-    useSharedValue: (value: unknown) => require('react').useState(() => ({ value }))[0],
+    useSharedValue: (value: unknown) => useState(() => ({ value }))[0],
     useAnimatedReaction: (prepare: () => boolean, reaction: (current: boolean, previous: boolean | null) => void) => {
-      require('react').useEffect(() => {
-        const run = () => reaction(prepare(), null);
+      const callbacks = useRef({ prepare, reaction });
+      callbacks.current = { prepare, reaction };
+      useMountEffect(() => {
+        const run = () => callbacks.current.reaction(callbacks.current.prepare(), null);
         mockReactions.add(run);
         return () => { mockReactions.delete(run); };
-      }, [prepare, reaction]);
+      });
     },
   };
 });
@@ -121,7 +125,9 @@ it.each(['ready', 'empty'] as const)('renders the %s press shadow and release sp
 });
 it('cancels a dragged press and rejects its stale release after the gesture resets', async () => {
   const { tree, button, depth } = await render();
+  expect(mockReactions.size).toBe(1);
   await act(async () => { button().props.onPressIn(); });
+  expect(mockReactions.size).toBe(1);
   await act(async () => { mockCancelled.set(true); for (const reaction of mockReactions) reaction(); });
   expect(depth()).toBe(0);
   mockCancelled.set(false);
@@ -130,6 +136,7 @@ it('cancels a dragged press and rejects its stale release after the gesture rese
   await act(async () => { button().props.onPressIn(); button().props.onPressOut(); button().props.onPress(touch); });
   expect(props.onAction).toHaveBeenCalledTimes(1);
   await act(async () => { tree.unmount(); });
+  expect(mockReactions.size).toBe(0);
 });
 it.each(['ready', 'empty'] as const)('keeps %s shadow feedback with reduced motion and skips face motion', async phase => {
   const { tree, button, shadow, depth } = await render({ phase, reduceMotion: true });

@@ -1,7 +1,7 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Modal,
@@ -220,7 +220,7 @@ export function D6RoutePane({
       writing.current = false;
       setBusy(false);
     }
-  }, [t]);
+  }, [setFailure, t]);
 
   const removeRows = useCallback(async (ids: readonly string[], action: 'delete' | 'pool') => {
     if (ids.length === 0) return;
@@ -263,10 +263,29 @@ export function D6RoutePane({
   const selectionCount = selectedIds.length;
   const rowIdentity = rows.map(row => row.id).join('\n');
   const dragScope = `${panel?.open ?? true}:${outgoing}:${count}:${day.number}:${selectionMode}:${rowIdentity}`;
-  const latestDragScope = useRef(dragScope);
-  latestDragScope.current = dragScope;
-  const mounted = useRef(true);
-  useMountEffect(() => () => { mounted.current = false; });
+  const committedDragScope = useRef<{ scope: string; clear: () => void } | null>(null);
+  const clearDrag = useCallback(() => {
+    dragSession.current = null;
+    dragPresentation.set(null);
+    releaseD6Drag(owner, 'reorder');
+  }, [dragPresentation, owner]);
+  const bindDragScope = useCallback((view: View | null) => {
+    rootRef(view);
+    if (!view) {
+      const previous = committedDragScope.current;
+      committedDragScope.current = null;
+      previous?.clear();
+      return;
+    }
+    const previous = committedDragScope.current;
+    if (previous?.scope === dragScope && previous.clear === clearDrag) return;
+    previous?.clear();
+    committedDragScope.current = { scope: dragScope, clear: clearDrag };
+  }, [clearDrag, dragScope, rootRef]);
+  useMountEffect(() => () => {
+    committedDragScope.current?.clear();
+    committedDragScope.current = null;
+  });
 
   function openRow(row: RouteRow) {
     if (selection && canEdit) {
@@ -317,7 +336,7 @@ export function D6RoutePane({
   function startDrag(row: RouteRow, token: number, point: D6Point, geometry: D6DragGeometry, scope: string) {
     if (token <= lastDragToken.current) return;
     lastDragToken.current = token;
-    if (!mounted.current || latestDragScope.current !== scope || writing.current || (panel && !panel.open)) {
+    if (committedDragScope.current?.scope !== scope || writing.current || (panel && !panel.open)) {
       if (dragPresentation.get()?.token === token) {
         dragPresentation.set(null);
         releaseD6Drag(owner, 'reorder');
@@ -339,22 +358,11 @@ export function D6RoutePane({
       dragPresentation.set(null);
       releaseD6Drag(owner, 'reorder');
     }
-    if (active.scope !== latestDragScope.current) return;
+    if (active.scope !== committedDragScope.current?.scope) return;
     const session = active.session;
     const target = d6DropDestination(session, point, rows.map(row => row.id));
     if (session && target) move(session.row, target);
   }
-
-  useLayoutEffect(() => {
-    dragSession.current = null;
-    releaseD6Drag(owner, 'reorder');
-    dragPresentation.set(null);
-    return () => {
-      dragSession.current = null;
-      dragPresentation.set(null);
-      releaseD6Drag(owner, 'reorder');
-    };
-  }, [owner, dragPresentation, panel?.open, outgoing, count, day.number, rowIdentity, selectionMode]);
 
   function changeRange(nextCount: number, nextDeparture: string) {
     return write(async () => {
@@ -459,7 +467,7 @@ export function D6RoutePane({
   };
 
   return (
-    <View ref={rootRef} collapsable={false} style={styles.root} testID="d6-route-pane">
+    <View ref={bindDragScope} collapsable={false} style={styles.root} testID="d6-route-pane">
       <D6RouteDayScroll key={day.number} onScrollToDay={scrollToDay} />
       <D6SelectionFooter
         key={`${selectionMode}-${selectionCount}-${busy}`}
