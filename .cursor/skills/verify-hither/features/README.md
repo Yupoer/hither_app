@@ -4,9 +4,9 @@ This map describes user paths and observable proof for the headless React and Ja
 
 | Feature ID | Recipe | Recorded trip coverage | Additional entry points |
 | --- | --- | --- | --- |
-| `teams` | [Accounts and teams](teams.md) | Guest confirmation, create, join, reenter, leave. | Email, signup, recovery, OAuth, account upgrade, profile. |
-| `itinerary` | [Destinations and itinerary](itinerary.md) | Dropped pins, two days, hotel, move to day, close history. | Search, manual coordinates, favorites, KML, member suggestions, subgroup, drag, date, bulk changes. |
-| `journey` | [Shared navigation and offline recovery](journey.md) | Actual Start, pause, and arrival, peer targets, offline abrupt restart, powered-off clock gap. | Offline Start and End, mixed queued sync, passive background callbacks, explicit scheduled Start, manual force completion, consent, precise-location persistence, native adapter branch. |
+| `teams` | [Accounts and teams](teams.md) | Welcome, anonymous create and join, saved-team restore, leave. | Login, signup, recovery, OAuth, account upgrade, profile, iOS team switching. |
+| `itinerary` | [Destinations and itinerary](itinerary.md) | Android pins, two days, hotel, move to day, and closed stops. iOS pin suggestion. | Search, coordinate flows, favorites, KML, iOS day and order editing, subgroup, bulk changes. |
+| `journey` | [Shared navigation and offline recovery](journey.md) | Android Start, pause, and completion, peer targets, abrupt offline restart, powered-off clock gap. | Offline Start and End, iOS Finish, force completion, passive uploads, scheduled Start, consent, Android precision switch, native adapter branch. |
 | `members` | [Members and notifications](members.md) | Trio roster, coordinates, member suggestion inbox approval, solo and rejoin, add-place notices suppressed while solo, departure notices. | Backend/peer refresh, unread and pending-request badges, navigation-only separation, invitations, split and merge, kick, profile, individual category preferences, route tour. |
 | `store` | [Store and Premium](store.md) | None. | Map store, rewarded ad, redemption, Premium plans, purchase, restore, promo. |
 
@@ -14,13 +14,15 @@ This map describes user paths and observable proof for the headless React and Ja
 
 - Use Node >=22.16.0 and independent dependencies installed from this checkout's lockfile with postinstall patches.
 - Start a new `World` and output path for each scenario. `world.device()` initializes isolated durable storage and fixtures automatically.
-- A screen-level scenario can seed a fixture identity. A full App proof begins signed out and uses actual onboarding and auth callbacks.
+- A scenario can seed an identity to test later behavior. Use an App scenario starting signed out when verifying the authentication path. The recorded trip enters from Welcome.
 - Every feature reports the exact route and entry point driven, the platform, command, source SHA and dirty state, and evidence directory.
-- Use `describe.each(['ios', 'android'])` suites for platform-specific assertions. The recorded trip uses an iOS leader, Android member A, and iOS member B. A mixed trip does not prove that every action ran on both platforms.
+- Select the cases that drive each platform's actual controls. The recorded trip uses an Android leader, iOS member A, and Android member B. A mixed trip does not show that every action ran on both platforms.
 
 ## Driving conventions
 
 Read the corresponding production entry and existing scenario before extending a recipe. Prefer registry names and `testID` hosts to text matching. Preserve guards, confirmation alerts, and fixture errors. Wait for committed state, acknowledgment, or the receiving actor instead of counting mock calls.
+
+Use an English iOS test locale for cases with English labels, including scheduled Start, offline Start requests, member votes, and itinerary arrival management. Without a native language fixture, the actor can inherit the host's `Intl` locale. On a non-English host, preserve the original report if the label fails and record any replay's locale.
 
 The Windows recipes use `test/headless/run.ps1` with the default 4.5% CPU rate for the owned launch. Save its resource report alongside the Jest result. The cap retains every scenario and separate device process. Use virtual time and completion events as described in the skill; do not add human reaction delays. A resource cap and a reduction in CPU work are different measurements, so retain CPU time and elapsed time together with host CPU share.
 
@@ -41,7 +43,7 @@ $env:HITHER_HEADLESS_EVIDENCE = Join-Path $verifySuiteDirectory 'worlds'
 } | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $verifySuiteDirectory 'source.json')
 ```
 
-Save the selected command, its stdout, stderr, and exit code alongside that JSON. Require a nonzero executed test count, no failed cases, and both declared platform cases. A skipped entry point stays unexecuted. The suites close each World in `finally`; retain the JSON and action records after they finish. To cover every mapped entry together, use the full headless command in the skill once, then require the functional scenario report to pass. That denominator includes the parent integrations listed below.
+Save the selected command, stdout, stderr, and exit code alongside the source record. Require the intended case names, their declared platforms, and no failures. A skipped entry point stays unexecuted. Inspect the World receipts after the suite closes. Use the full headless command in the skill to report the scenario denominator; keep separate helpers and native acceptance separate.
 
 ## Proof and skip reporting
 

@@ -18,11 +18,11 @@ npm ci --no-audit --no-fund
 
 Require Node >=22.16.0 for `node:sqlite`. Keep `patch-package` postinstall enabled. If the Windows npm shim cannot find `npm-cli.js`, invoke the `node_modules/npm/bin/npm-cli.js` beside the actual Node installation with that installation's `node.exe`.
 
-There is no server, port, Expo Go, device, or emulator to keep alive. The Drive command launches the actual `App.tsx` in owned isolated Node processes. Each `World` starts with a new `hither-headless-*` temporary directory and runs production SQLite initialization. It supplies a fixture backend with a leader, member, group `TEST42`, and one stop. The recorded trip starts signed out, then creates a separate group through the guest and team screens. It needs no live account, `.env`, remote migration, or production credentials.
+There is no server, port, Expo Go, device, or emulator to keep alive. The Drive command launches the actual `App.tsx` in owned isolated Node processes. Each `World` starts with a new `hither-headless-*` temporary directory and runs production SQLite initialization. It supplies a fixture backend with a leader, member, group `TEST42`, and one stop. The recorded trip starts signed out on Welcome. Creating or joining a team there signs in anonymously. It needs no live account, `.env`, remote migration, or production credentials.
 
 On Windows, use `test/headless/run.ps1` for the CPU budget. It caps its own launch and descendants with a 4.5% Windows Job CPU rate, restores the caller's environment and its own rate on exit, and writes actual CPU time, elapsed time and owned host CPU share to `-ResourceReport`. Other programs are outside that budget. Each device keeps its own process, globals, SDK fixtures and durable storage. Only source-derived compilation data is cached under this checkout's `node_modules/.cache/hither-headless`; input changes invalidate it. The first cold compilation can cost more than a warm iteration. V8 compilation caching is disabled when `NODE_V8_COVERAGE` is present. On other hosts, invoke the same Node drivers directly; the Windows resource cap is separate from functional verification.
 
-`app.boot` alone is not usable readiness. Require an operable `onboarding-skip` host, successful guest confirmation, and `membership.confirmed` observations with route `Map`, membership, and `map-search`. `trio.roster` must show all three travelers. The runner exercises these controls and fails when the expected path is unavailable. World shutdown runs in `finally`, including after a failed drive.
+`app.boot` alone is not usable readiness. The trip waits for `entry-welcome`, then uses the rendered create or join flow. Require `membership.confirmed` with route `Map`, the expected membership, and `home-itinerary-grabber` on iOS or `map-search` on Android. `trio.roster` must show all three travelers. World shutdown runs in `finally`, including after a failed drive.
 
 ## Doctor
 
@@ -91,7 +91,7 @@ Write-Output "Exit code $verifyExit"
 
 Use a new output path on every attempt. The CLI refuses an existing directory. The sibling console and source files survive even if startup fails before the evidence directory is created. Keep the output path and exit code for Cleanup. An exit of 1 can be a behavior mismatch or a harness failure. Inspect both `failed` and `harnessFailure` in `summary.json`.
 
-The runner clicks `onboarding-skip`, `login-guest`, `guest-confirm-button`, `role-create`, and `role-join`, then uses registry commands such as `team.create`, `team.join`, `map.pin.drop`, `map.place.first-stop`, and `map.journey.command`. These reach rendered production callbacks with visibility and disabled guards. `map-bottom-sheet` gestures invoke the actual registered callback phases. They do not reproduce physical touch or animation rendering.
+The Android leader opens `role-create` and uses `team.group-name` and `team.create`. The other travelers enter the issued code with `team.code`, enter a nickname, and use `team.join`. The [Teams map](features/teams.md) separates this entry from optional Login and onboarding replay. The trip drives the Android sheet and the iOS itinerary and place controls. The driver calls rendered production callbacks with visibility and disabled guards. It does not reproduce physical touch or native animation rendering.
 
 For an entry point outside this trip, use the corresponding feature's exact Jest command or extend a `World` scenario through the registry. `node test/headless/run.cjs --list` prints the current commands, sources, input shapes, levels, and completion contracts. A service call or standalone component receipt does not prove its parent screen path. `perform()` can return before persistence or acknowledgment. Use `world.waitFor()` for the durable result and recipient convergence, and always `finally { await world.close(); }`.
 
@@ -150,7 +150,7 @@ Let a failing runner finish its `finally` rather than killing its parent. If for
 
 ## Helpers
 
-This skill reuses maintained helpers in `apps/mobile/test/headless`. Its own executable `scripts/precise-location.cjs` adds the Members precision-switch path using the same World and visible host controls. Its exact invocation and retained evidence are in the [journey recipe](features/journey.md#driving-it-with-world).
+This skill reuses maintained helpers in `apps/mobile/test/headless`. Its own executable `scripts/precise-location.cjs` checks Android's precision switch persistence and records its availability on the iOS Team pane. See the [journey recipe](features/journey.md#driving-it-with-world) for the command and proof.
 
 ```powershell
 node test/headless/run.cjs --list
@@ -171,4 +171,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Complete verification requires every functiona
 
 For maintenance, use `pstack:maintain-verification-skill` and update this map when a route, callback, fixture contract, or observable result changes. Inventory alignment and executed feature coverage remain separate claims.
 
-For a periodic pass over all maps, run the recorded trip and the separate [Store parent case](features/store.md#driving-it-with-world). Check the named observations and backend effects for each feature. Verify the World cleanup receipts and keep the source record, coverage, failures, and outcome in the run's evidence directory.
+For a periodic pass over all maps, run the recorded trip and the separate [Map Store cases](features/store.md#driving-it-with-world). Check the named observations and backend effects for each feature. Verify the World cleanup receipts and keep the source record, coverage, failures, and outcome in the run's evidence directory.

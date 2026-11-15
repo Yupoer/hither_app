@@ -14,6 +14,7 @@ const { World } = require(path.join(mobile, 'test/headless/world.cjs'));
 const { LEADER, GROUP_ID, DESTINATION } = require(path.join(mobile, 'test/headless/backend.cjs'));
 const doctor = fs.readFileSync(path.join(__dirname, '../SKILL.md'), 'utf8').match(/@'\r?\n([\s\S]*?)\r?\n'@ \| node/)[1];
 const results = [];
+const verifiedUnreachable = [];
 const source = {
   revision: cp.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
   dirty: cp.execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' }).trim(),
@@ -24,14 +25,21 @@ fs.writeFileSync(path.join(directory, 'source.json'), JSON.stringify(source, nul
 
 const field = value => value.presentation.hosts.find(host => host.testId === 'map-precise-location');
 async function members(world, device) {
-  await world.waitFor(device, value => value.presentation.hosts.some(host => host.testId === `gather-card-${DESTINATION}`), 'Map hydration');
+  const iOS = device.spec.platform === 'ios';
+  const mapControl = iOS ? 'home-team-toggle' : `gather-card-${DESTINATION}`;
+  const health = await world.waitFor(device, value => value.presentation.preferences.ready &&
+    value.presentation.hosts.some(host => host.testId === mapControl && !host.hidden), 'Map hydration');
   world.check();
-  const health = await device.observe();
   assert.equal(health.pid, device.child.pid);
   assert.equal(health.generation, device.generation);
   assert.deepEqual(health.fatal, []);
   assert.equal(health.presentation.route.route, 'Map');
-  assert.equal(health.presentation.preferences.ready, true);
+  if (iOS) {
+    const opened = await device.host.call({ kind: 'press', testId: 'home-team-toggle' });
+    assert.equal(opened.invoked, true);
+    return world.waitFor(device, value => value.presentation.hosts.some(host =>
+      host.testId === 'd6-members-pane' && !host.hidden), 'iOS Team pane');
+  }
   for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
     const result = await device.host.call({ kind: 'gesture', testId: 'map-bottom-sheet', phase,
       value: phase === 'onBegin' ? {} : { translationY: -250, velocityY: 0 }, success: true });
@@ -52,6 +60,12 @@ async function run() {
       const device = await world.device({ id: `precise-${platform}`, userId: LEADER, platform,
         screen: { name: 'Map', params: { groupId: GROUP_ID } } });
       const initial = await members(world, device);
+      if (platform === 'ios') {
+        assert.equal(field(initial), undefined, 'Revisit the recipe if iOS Team exposes a precision switch');
+        verifiedUnreachable.push({ platform, route: ['Map', 'Team'], control: 'map-precise-location',
+          reason: 'The iOS Team pane has no precision switch' });
+        continue;
+      }
       assert.equal(initial.presentation.preferences.highAccuracy, false);
       assert.equal(field(initial).checked, false);
       const gathering = initial.durable.snapshot.activeGathering;
@@ -73,12 +87,12 @@ async function run() {
 }
 
 run().then(() => {
-  const summary = { passed: results.length, failed: 0, results,
+  const summary = { passed: results.length, failed: 0, results, verifiedUnreachable,
     limits: 'Rendered Map callbacks and device-local preference persistence in isolated Node actors; no native switch rendering, GPS accuracy, sensor cadence, or device acceptance.' };
   fs.writeFileSync(path.join(directory, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
   console.log(JSON.stringify(summary));
 }).catch(error => {
-  fs.writeFileSync(path.join(directory, 'summary.json'), JSON.stringify({ passed: results.length, failed: 1, results, error: error.stack }, null, 2) + '\n');
+  fs.writeFileSync(path.join(directory, 'summary.json'), JSON.stringify({ passed: results.length, failed: 1, results, verifiedUnreachable, error: error.stack }, null, 2) + '\n');
   console.error(error);
   process.exitCode = 1;
 });
