@@ -72,9 +72,8 @@ export function D6RouteRow({
   const acquired = useSharedValue<number | null>(null);
   const [handlers] = useState(createD6RouteDragCallbacks);
   const bindDrag = useCallback((view: View | null) => {
-    measuredRef(view);
     handlers.commit(view ? drag : undefined);
-  }, [drag, handlers, measuredRef]);
+  }, [drag, handlers]);
   useMountEffect(() => () => handlers.commit(undefined));
   const owner = drag?.owner;
   const dragPoint = drag?.point;
@@ -237,6 +236,7 @@ export function D6RouteRow({
       </View>
       {drag ? <GestureDetector gesture={reorderGesture}>
         <View
+          ref={bindDrag}
           collapsable={false}
           testID={`d6-route-drag-${row.id}`}
           style={styles.handle}
@@ -255,7 +255,7 @@ export function D6RouteRow({
   return (
     <Animated.View style={[styles.collapsingRow, collapseStyle]}>
       <D6RowCollapse key={removing ? 'collapse' : 'expand'} progress={collapse} removing={!!removing} />
-      <Animated.View ref={bindDrag} collapsable={false} style={[styles.shell, selected !== undefined && styles.selectionSpacing, sourceStyle]} pointerEvents={removing ? 'none' : 'auto'}>
+      <Animated.View ref={measuredRef} collapsable={false} style={[styles.shell, selected !== undefined && styles.selectionSpacing, sourceStyle]} pointerEvents={removing ? 'none' : 'auto'}>
         {content}
         {insertion ? (
           <View pointerEvents="none" style={[

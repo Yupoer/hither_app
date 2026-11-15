@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { D6RoutePane, type D6RoutePaneProps, type D6RouteSelection } from '../screens/MapScreen/components/D6RoutePane';
 import type { Destination } from '../types';
 import { D6RouteRow } from '../screens/MapScreen/components/D6RouteRow';
+import { applyReorderUpdates } from '../screens/MapScreen/itineraryReorder';
 
 jest.mock('react-native', () => ({
   AccessibilityInfo: {
@@ -40,35 +41,52 @@ jest.mock('react-native-gesture-handler', () => ({
   },
 }));
 jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: 'Swipeable' }));
-jest.mock('react-native-reanimated', () => ({
-  __esModule: true,
-  default: { View: 'AnimatedView' },
-  runOnJS: (callback: () => void) => callback,
-  measure: jest.fn(() => null),
-  useAnimatedRef: () => {
-    const { useState } = jest.requireActual<typeof import('react')>('react');
-    return useState(() => () => null)[0];
-  },
-  useAnimatedStyle: (style: () => object) => style(),
-  useDerivedValue: (compute: () => unknown) => {
-    const { useRef, useState } = jest.requireActual<typeof import('react')>('react');
-    const current = useRef(compute);
-    current.current = compute;
-    return useState(() => ({ get: () => current.current() }))[0];
-  },
-  useSharedValue: (initial: unknown) => {
-    const { useState } = jest.requireActual<typeof import('react')>('react');
-    return useState(() => {
-      let value = initial;
-      return {
-        get: () => value,
-        set: (next: unknown) => { value = next; },
-        modify: (compute: (previous: unknown) => unknown) => { value = compute(value); },
-      };
-    })[0];
-  },
-  withTiming: (value: number) => value,
-}));
+jest.mock('react-native-reanimated', () => {
+  const { Component, createElement, forwardRef } = jest.requireActual<typeof import('react')>('react');
+  type NativeProps = Record<string, unknown> & { forwardedRef: React.Ref<object> };
+  class NativeAnimatedView extends Component<NativeProps> {
+    setComponentRef = (view: object | null) => {
+      const ref = this.props.forwardedRef;
+      if (typeof ref === 'function') ref(view);
+      else if (ref) ref.current = view;
+    };
+    render() {
+      const { forwardedRef, ...props } = this.props;
+      return createElement('AnimatedView', { ...props, ref: this.setComponentRef });
+    }
+  }
+  const AnimatedView = forwardRef<object, Record<string, unknown>>((props, ref) =>
+    createElement(NativeAnimatedView, { ...props, forwardedRef: ref }));
+  return {
+    __esModule: true,
+    default: { View: AnimatedView },
+    runOnJS: (callback: () => void) => callback,
+    measure: jest.fn(() => null),
+    useAnimatedRef: () => {
+      const { useState } = jest.requireActual<typeof import('react')>('react');
+      return useState(() => () => null)[0];
+    },
+    useAnimatedStyle: (style: () => object) => style(),
+    useDerivedValue: (compute: () => unknown) => {
+      const { useRef, useState } = jest.requireActual<typeof import('react')>('react');
+      const current = useRef(compute);
+      current.current = compute;
+      return useState(() => ({ get: () => current.current() }))[0];
+    },
+    useSharedValue: (initial: unknown) => {
+      const { useState } = jest.requireActual<typeof import('react')>('react');
+      return useState(() => {
+        let value = initial;
+        return {
+          get: () => value,
+          set: (next: unknown) => { value = next; },
+          modify: (compute: (previous: unknown) => unknown) => { value = compute(value); },
+        };
+      })[0];
+    },
+    withTiming: (value: number) => value,
+  };
+});
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 62, bottom: 34, left: 0, right: 0 }) }));
 jest.mock('../components/SwiftUIGlassSurface', () => ({ __esModule: true, default: 'SwiftUIGlassSurface' }));
 jest.mock('../utils/haptics', () => ({ lightTap: jest.fn() }));
@@ -173,6 +191,49 @@ describe('D6 itinerary panel', () => {
     expect(props.onOpenStop).not.toHaveBeenCalled();
   });
 
+  it.each(['same day', 'another day'])('accepts a second drag to %s after reordering in the same mounted pane', async target => {
+    function EditableRoute() {
+      const [destinations, setDestinations] = useState(() =>
+        props.destinations.map((destination, order) => ({ ...destination, order })));
+      return React.createElement(D6RoutePane, {
+        ...props, destinations,
+        onReorder: async updates => {
+          const saved = await props.onReorder(updates);
+          if (saved) setDestinations(current => applyReorderUpdates(current, updates, props.departureDate));
+          return saved;
+        },
+      });
+    }
+    await act(async () => { renderer = mount(React.createElement(EditableRoute)); });
+    const pane = renderer.root.findByType(D6RoutePane);
+    const row = renderer.root.findAllByType(D6RouteRow)[0];
+    const first = measuredDrag();
+    act(() => first.get('start')({ absoluteX: 270, absoluteY: 95 }));
+    await act(async () => first.get('end')({ absoluteX: 270, absoluteY: 170 }, true));
+    expect(props.onReorder).toHaveBeenCalledTimes(1);
+    expect(renderer.root.findAllByType(D6RouteRow).map(row => row.props.row.id)).toEqual(['b', 'a']);
+    expect(renderer.root.findByType(D6RoutePane)).toBe(pane);
+    expect(renderer.root.findAllByType(D6RouteRow)[1]).toBe(row);
+
+    for (const day of [1, 2]) {
+      act(() => byId(`d6-route-day-${day}`).props.ref({
+        measureInWindow: (deliver: (x: number, y: number, width: number, height: number) => void) =>
+          deliver((day - 1) * 52, 0, 52, 64),
+      }));
+    }
+    act(() => renderer.root.findByProps({ horizontal: true }).props.onLayout({ nativeEvent: { layout: { width: 300 } } }));
+    const callbacks = measuredDrag();
+    const owner = row.props.drag.owner;
+    act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 150 }));
+    expect(owner.get()).toBe('reorder');
+    const point = target === 'same day' ? { absoluteX: 270, absoluteY: 80 } : { absoluteX: 78, absoluteY: 30 };
+    await act(async () => callbacks.get('end')(point, true));
+    expect(props.onReorder).toHaveBeenCalledTimes(2);
+    expect(props.onReorder).toHaveBeenLastCalledWith(expect.arrayContaining([
+      { id: 'a', day: target === 'same day' ? 1 : 2, position: target === 'same day' ? 0 : 2 },
+    ]));
+  });
+
   it('keeps the mounted gesture and active session while publishing a same-scope callback update', async () => {
     await act(async () => { renderer = mount(React.createElement(D6RoutePane, props)); });
     const gesture = byId('d6-route-drag-a').parent?.props.gesture;
@@ -180,7 +241,7 @@ describe('D6 itinerary panel', () => {
     const callbacks = measuredDrag();
     const row = renderer.root.findAllByType(D6RouteRow)[0];
     const owner = row.props.drag.owner;
-    const rowRef = row.find(node => String(node.type) === 'AnimatedView' && typeof node.props.ref === 'function').props.ref;
+    const rowRef = byId('d6-route-drag-a').props.ref;
     act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
     act(() => { rowRef(null); rowRef({}); });
     expect(owner.get()).toBe('reorder');
@@ -202,7 +263,7 @@ describe('D6 itinerary panel', () => {
     const callbacks = measuredDrag();
     const row = renderer.root.findAllByType(D6RouteRow)[0];
     const owner = row.props.drag.owner;
-    const rowRef = row.find(node => String(node.type) === 'AnimatedView' && typeof node.props.ref === 'function').props.ref;
+    const rowRef = byId('d6-route-drag-a').props.ref;
     act(() => callbacks.get('start')({ absoluteX: 270, absoluteY: 95 }));
     act(() => rowRef(null));
     expect(owner.get()).toBe('reorder');
