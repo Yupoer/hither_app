@@ -2,6 +2,7 @@
 """Verify an exact production Hither IPA and, when requested, submit it once."""
 
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -28,6 +29,7 @@ IPA_SHA = re.compile(r"[0-9a-f]{64}")
 UUID = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
 UPLOAD_SUCCESS = "Your binary has been successfully uploaded to App Store Connect!"
 SUBMISSION_FILES = ("submission-intent.json", "eas-submit.log", "submission-receipt.json")
+APPLE_FILES = ("apple-direct-intent.json", "apple-direct-upload.log", "apple-direct-submission.json")
 RELEASE_IDENTITY = ("sourceSha", "ipaSha256", "appVersion", "buildNumber")
 SYMBOL_HELPERS = Path(__file__).with_name("retain-ios-debug-symbols.py")
 
@@ -180,8 +182,9 @@ def parse_submission(log, identity, url_pattern, exit_code=None):
     if submission_id:
         if upload_reported:
             status = "uploaded"
-        elif ("Something went wrong when submitting your app to Apple App Store Connect." in log
-                or "The submission has been canceled" in log):
+        elif "The submission has been canceled" in log:
+            status = "canceled"
+        elif "Something went wrong when submitting your app to Apple App Store Connect." in log:
             status = "failed"
         else:
             status = "scheduled"
@@ -205,7 +208,7 @@ def load_receipt(path, identity, url_pattern):
     if any(receipt.get(key) != value for key, value in identity.items()):
         raise ValueError(f"{path.name} does not identify this verified IPA")
     status = receipt.get("easStatus")
-    if status not in {"uploaded", "scheduled", "failed", "unknown"}:
+    if status not in {"uploaded", "scheduled", "canceled", "failed", "unknown"}:
         raise ValueError(f"{path.name} has no recognized EAS status")
     url_match = url_pattern.fullmatch(f"Submission details: {receipt.get('submissionUrl')}")
     if status != "unknown" and (url_match is None or url_match[2] != receipt.get("submissionId")):
@@ -214,6 +217,15 @@ def load_receipt(path, identity, url_pattern):
     exit_code = receipt.get("easExitCode")
     return submission_receipt(identity, status, submission_url, submission_id,
                               exit_code if type(exit_code) is int else None)
+
+
+def require_submit_source(repo, verification):
+    if (git(repo, "rev-parse", "HEAD").decode().strip() != verification["sourceSha"]
+            or git(repo, "status", "--porcelain", "--untracked-files=normal", "--", "apps/mobile")):
+        raise ValueError("submit from the clean mobile checkout at --source-sha")
+    require_master_ci(verification["sourceSha"])
+    if runpy.run_path(str(SYMBOL_HELPERS))["sha256"](Path(verification["ipa"])) != verification["ipaSha256"]:
+        raise ValueError("IPA changed before submission")
 
 
 def submit_ipa(repo, release_dir, verification, config, existing_receipt=None):
@@ -231,16 +243,13 @@ def submit_ipa(repo, release_dir, verification, config, existing_receipt=None):
         return parse_submission(log, identity, url_pattern)
     if log_path.exists():
         raise ValueError(f"{log_path} already exists without an intent; reconcile that upload before submitting")
-    if (git(repo, "rev-parse", "HEAD").decode().strip() != identity["sourceSha"]
-            or git(repo, "status", "--porcelain", "--untracked-files=normal", "--", "apps/mobile")):
-        raise ValueError("submit from the clean mobile checkout at --source-sha")
+    if any((release_dir / name).exists() for name in APPLE_FILES):
+        raise ValueError("Reconcile the existing direct Apple upload before submitting.")
     npx = shutil.which("npx")
     if npx is None:
         raise ValueError("npx is required for EAS submission")
-    require_master_ci(identity["sourceSha"])
+    require_submit_source(repo, verification)
     ipa = verification["ipa"]
-    if runpy.run_path(str(SYMBOL_HELPERS))["sha256"](Path(ipa)) != identity["ipaSha256"]:
-        raise ValueError("IPA changed before EAS submission")
 
     write_receipt(intent_path, identity, exclusive=True)
     log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -257,6 +266,50 @@ def submit_ipa(repo, release_dir, verification, config, existing_receipt=None):
     return receipt
 
 
+def submit_direct(repo, release_dir, verification, config):
+    identity = {key: verification[key] for key in RELEASE_IDENTITY}
+    intent, log, receipt = (release_dir / name for name in APPLE_FILES)
+    if receipt.exists():
+        saved = json.loads(receipt.read_text())
+        if (any(saved.get(key) != value for key, value in identity.items())
+                or saved.get("transport") != "altool" or saved.get("ascAppId") != ASC_APP_ID
+                or saved.get("status") not in {"uploaded", "unconfirmed"}):
+            raise ValueError("direct upload receipt belongs to a different IPA")
+        return saved
+    if intent.exists() or log.exists():
+        raise ValueError("Reconcile the existing direct upload in App Store Connect before retrying.")
+    eas_intent, eas_log, eas_receipt = (release_dir / name for name in SUBMISSION_FILES)
+    if any(path.exists() for path in (eas_intent, eas_log, eas_receipt)):
+        pattern = submission_pattern(config)
+        if not eas_intent.is_file() or json.loads(eas_intent.read_text()) != identity:
+            raise ValueError("EAS submission evidence does not identify this IPA")
+        prior = parse_submission(eas_log.read_text(errors="replace"), identity, pattern) if eas_log.is_file() else {}
+        if prior.get("easStatus") != "canceled":
+            raise ValueError("Confirm cancellation of the existing EAS submission before direct upload.")
+    key = os.environ.get("ASC_KEY_ID", "")
+    issuer = os.environ.get("ASC_ISSUER_ID", "")
+    key_path = Path(os.environ.get("ASC_KEY_PATH", ""))
+    if (not re.fullmatch(r"[A-Z0-9]+", key) or not re.fullmatch(UUID, issuer, re.IGNORECASE)
+            or not key_path.is_absolute() or not key_path.is_file()):
+        raise ValueError("Configure ASC_KEY_ID, ASC_ISSUER_ID and an absolute ASC_KEY_PATH outside the checkout.")
+    if key_path.resolve().is_relative_to(repo.resolve()):
+        raise ValueError("ASC_KEY_PATH must be outside the checkout.")
+    require_submit_source(repo, verification)
+    identity.update(transport="altool", ascAppId=ASC_APP_ID)
+    write_receipt(intent, identity, exclusive=True)
+    print(f"Waiting for direct Apple upload. Private log: {log}", file=sys.stderr, flush=True)
+    with os.fdopen(os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as stream:
+        result = subprocess.run([
+            "/usr/bin/xcrun", "altool", "--upload-package", verification["ipa"],
+            "--api-key", key, "--api-issuer", issuer, "--p8-file-path", str(key_path),
+            "--output-format", "json",
+        ], stdout=stream, stderr=subprocess.STDOUT)
+    outcome = {**identity, "status": "uploaded" if result.returncode == 0 else "unconfirmed",
+               "exitCode": result.returncode, "appleProcessing": "unknown"}
+    write_receipt(receipt, outcome)
+    return outcome
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path.cwd(),
@@ -266,11 +319,15 @@ def main():
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--release-dir", type=Path, required=True,
                         help="absolute private directory for this IPA's receipts; reuse it when resuming")
+    parser.add_argument("--transport", choices=("eas", "apple"), default="eas",
+                        help="use EAS Submit or Apple's altool with configured ASC credentials")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--verify-only", action="store_true")
     mode.add_argument("--submission-receipt", type=Path,
                       help="read a prior submission receipt for the same verified IPA without submitting")
     args = parser.parse_args()
+    if args.transport == "apple" and args.submission_receipt:
+        parser.error("--submission-receipt reads an EAS receipt")
 
     try:
         repo = Path(os.fsdecode(git(args.repo, "rev-parse", "--show-toplevel").strip()))
@@ -281,9 +338,14 @@ def main():
         if args.verify_only:
             print(json.dumps(verification, sort_keys=True))
             return 0
-        receipt = submit_ipa(repo, output, verification, config, args.submission_receipt)
+        with (output / ".submission.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if args.transport == "apple":
+                receipt = submit_direct(repo, output, verification, config)
+            else:
+                receipt = submit_ipa(repo, output, verification, config, args.submission_receipt)
         print(json.dumps(receipt, sort_keys=True))
-        if receipt["easStatus"] == "uploaded":
+        if receipt.get("easStatus", receipt.get("status")) == "uploaded":
             return 0
         print("Upload unconfirmed. Inspect the retained submission evidence before any retry.", file=sys.stderr)
         return 1
