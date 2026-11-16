@@ -28,6 +28,7 @@ import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_CORNER_RADIUS,
   SHEET_CORNER_ACTION_INSET,
+  SETTINGS_SHEET_CONTENT_INSET,
 } from '../../../components/mapSheetChrome';
 import SheetHeaderActionContent from '../../../components/SheetHeaderActionContent.ios';
 import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
@@ -51,17 +52,18 @@ function NativeSettingsPresentationReset({ visible, closeStartedRef, dismissComp
   return null;
 }
 
-/** Main settings uses RN for exact edge-to-edge geometry; child pages stay native. */
 export default function SettingsChildSheet(props: SettingsChildSheetProps) {
   if (props.singleStage) return <SettingsSheetPanel {...props} />;
   return <NativeSettingsChildSheet {...props} />;
 }
 
-/** iOS child settings sheets remain system SwiftUI sheets. */
 function NativeSettingsChildSheet({
   visible,
   onClose,
   onDismissComplete,
+  testID,
+  navigation,
+  backLabel = 'back',
   action = 'close',
   doneLabel = action === 'close' ? 'close' : 'commit',
   onCommit,
@@ -80,6 +82,9 @@ function NativeSettingsChildSheet({
   const stageOneDetent = useMemo(() => ({ fraction: stageOneRatio }), [stageOneRatio]);
   const stageTwoDetent = useMemo(() => ({ fraction: stageTwoRatio }), [stageTwoRatio]);
   const actionSlotSize = MAP_SHEET_ACTION_HIT_SIZE;
+  const isSettingsChild = navigation === 'child';
+  const selectedDetent = initialStage === 1 ? stageTwoDetent : stageOneDetent;
+  const headerInset = isSettingsChild ? SETTINGS_SHEET_CONTENT_INSET : SHEET_CORNER_ACTION_INSET;
   const closeStartedRef = useRef(false);
   const dismissCompleteRef = useRef(false);
   const onDismissCompleteRef = useRef(onDismissComplete);
@@ -106,6 +111,7 @@ function NativeSettingsChildSheet({
     <>
     <NativeSettingsPresentationReset key={String(visible)} visible={visible} closeStartedRef={closeStartedRef} dismissCompleteRef={dismissCompleteRef} />
     <Host
+      testID={testID}
       style={styles.host}
       colorScheme="dark"
       // Settings sheets stay mounted for native presentation transitions. A
@@ -121,8 +127,8 @@ function NativeSettingsChildSheet({
           key={visible ? `settings-presented-${initialStage}` : 'settings-hidden'}
           modifiers={[
             presentationDetents(
-              [stageOneDetent, stageTwoDetent],
-              { selection: initialStage === 1 ? stageTwoDetent : stageOneDetent },
+              isSettingsChild ? [selectedDetent] : [stageOneDetent, stageTwoDetent],
+              { selection: selectedDetent },
             ),
             presentationCornerRadius(MAP_SHEET_CORNER_RADIUS),
             ...(darkMaterial ? [presentationBackground('#263230f7')] : []),
@@ -140,11 +146,18 @@ function NativeSettingsChildSheet({
               spacing={0}
               alignment="center"
               modifiers={[
-                padding({ top: SHEET_CORNER_ACTION_INSET, leading: SHEET_CORNER_ACTION_INSET, trailing: SHEET_CORNER_ACTION_INSET }),
+                padding({ top: isSettingsChild ? 4 : SHEET_CORNER_ACTION_INSET, leading: headerInset, trailing: headerInset }),
                 frame({ minWidth: 0, maxWidth: 10000 }),
               ]}
             >
-              <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} />
+              {isSettingsChild ? (
+                <SheetHeaderActionContent
+                  testID="settings-child-back"
+                  action="back"
+                  onPress={closeOnce}
+                  accessibilityLabel={backLabel}
+                />
+              ) : <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} />}
               <SwiftText
                 modifiers={[
                   frame({ minWidth: 0, maxWidth: Infinity, minHeight: actionSlotSize, ...(titleFontSize == null ? { maxHeight: actionSlotSize } : {}), alignment: 'center' }),
@@ -153,20 +166,22 @@ function NativeSettingsChildSheet({
               >
                 {title}
               </SwiftText>
-              <SheetHeaderActionContent
-                testID="settings-child-back"
-                action={action}
-                onPress={action === 'commit' ? () => onCommit?.() : closeOnce}
-                accessibilityLabel={doneLabel}
-                disabled={action === 'commit' && !onCommit}
-              />
+              {isSettingsChild ? <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} /> : (
+                <SheetHeaderActionContent
+                  testID="settings-child-back"
+                  action={action}
+                  onPress={action === 'commit' ? () => onCommit?.() : closeOnce}
+                  accessibilityLabel={doneLabel}
+                  disabled={action === 'commit' && !onCommit}
+                />
+              )}
             </HStack>
             <RNHostView matchContents={false}>
               <View style={styles.sheetBody}>
                 {wrapContentInScrollView ? (
                   <ScrollView
                     style={styles.scroll}
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[styles.scrollContent, isSettingsChild && styles.settingsScrollContent]}
                     showsVerticalScrollIndicator={false}
                   >
                     {initialStage === 1 ? rootContent : children}
@@ -208,6 +223,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 40,
   },
+  settingsScrollContent: { paddingTop: 4, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
   contentFill: {
     flex: 1,
   },

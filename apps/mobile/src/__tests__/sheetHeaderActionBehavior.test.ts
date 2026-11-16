@@ -6,6 +6,8 @@ import {
   MAP_SHEET_ACTION_VISUAL_SIZE,
   MAP_SHEET_EDGE_INSET,
   MAP_FLOATING_GRABBER_HEIGHT,
+  MAP_ISLAND_ACTION_HEIGHT,
+  MAP_ISLAND_BOTTOM_INSET,
   MAP_ISLAND_GRABBER_HEIGHT,
   MAP_ISLAND_HEIGHT,
   SHEET_CORNER_ACTION_INSET,
@@ -106,9 +108,11 @@ it('keeps the shared SwiftUI action interactive inside native settings sheets', 
   await act(async () => tree.unmount());
 });
 
-it('keeps 44pt targets while aligning smaller visuals 16pt from the sheet edge', () => {
+it('keeps a 44pt action 16pt from the sheet edge and equal space around island controls', () => {
   expect(MAP_SHEET_ACTION_HIT_SIZE).toBe(44);
-  expect(MAP_SHEET_ACTION_VISUAL_SIZE).toBe(36);
+  expect(MAP_SHEET_ACTION_VISUAL_SIZE).toBe(44);
   expect(SHEET_CORNER_ACTION_INSET + (MAP_SHEET_ACTION_HIT_SIZE - MAP_SHEET_ACTION_VISUAL_SIZE) / 2).toBe(MAP_SHEET_EDGE_INSET);
-  expect([MAP_FLOATING_GRABBER_HEIGHT, MAP_ISLAND_GRABBER_HEIGHT, MAP_ISLAND_HEIGHT]).toEqual([32, 32, 106]);
+  expect(MAP_FLOATING_GRABBER_HEIGHT).toBe(32);
+  expect(MAP_ISLAND_BOTTOM_INSET).toBe(MAP_ISLAND_GRABBER_HEIGHT);
+  expect(MAP_ISLAND_HEIGHT).toBe(MAP_ISLAND_ACTION_HEIGHT + 2 * MAP_ISLAND_GRABBER_HEIGHT);
 });

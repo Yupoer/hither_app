@@ -11,6 +11,40 @@ All six modes are manual. The default, `inspect-release`, only reads EAS metadat
 setup while retaining source, CI, backend, compatibility, intent and readback
 guards.
 
+## Release scripts
+
+Use a clean checkout of the reviewed `master` SHA and a private output directory
+outside the checkout. Run the selector without `--execute` to print the route and
+its compatibility evidence. Add `--execute` to run the selected route.
+
+```sh
+python3 -B scripts/ios-release.py --source-sha "$source_sha"
+python3 -B scripts/ios-release.py --source-sha "$source_sha" \
+  --release-dir "$release_dir" --execute --backend-verified
+```
+
+| Route | Script and options |
+| --- | --- |
+| Production OTA | `ios-release-ota.py --source-sha "$source_sha" --release-dir "$release_dir" --backend-verified` |
+| Mac production build and startup | `ios-release-local.py --source-sha "$source_sha" --release-dir "$release_dir"` with optional `--simulator "$udid"` |
+| Signed IPA only | `ios-release-local.py` with the same arguments and `--build-only` |
+| Verify or submit an existing IPA | `ios-release-upload.py --source-sha "$source_sha" --ipa "$ipa_path" --sha256 "$ipa_sha256" --release-dir "$release_dir"` with `--verify-only` for verification |
+| Explicit GitHub Actions mode | `ios-release-actions.py --source-sha "$source_sha" --release-dir "$release_dir" --mode <mode>` with `--backend-verified` for `submit` |
+
+Run the scripts from the checkout root with `python3 -B scripts/<script>`. OTA
+requires an eligible binary record and a mobile product change. The selector
+uses the Mac when the record cannot establish compatibility. A compatible
+source with only non-product changes since the recorded baseline needs no app
+release. A Git-only request ends at Git verification. Cloud modes remain explicit.
+
+For a new Mac build, review both startup screenshots under `startup/`, then
+submit the exact `ipaPath` and `ipaSha256` from `local-build.json`. Verify
+required backend changes before submission. Keep the release directory to
+resume the same attempt. For Actions routes the saved run ID and outcome
+allow another invocation to watch the existing run. Check App Store Connect
+after the EAS upload, then update the binary record with the delivered source
+and reviewed Apple evidence so the next compatible change can select OTA.
+
 ## Build on the Mac by default
 
 1. Pin the reviewed `master` SHA and verify that its `master` push CI passed.
@@ -112,9 +146,9 @@ flowchart TD
 
 PR CI verifies the proposed patch. Release admission requires a successful
 `master` push CI run for the exact selected source and its current attempt.
-An ancestor source is permitted for native modes; OTA additionally requires
-current master immediately before publication. Stale binary evidence does not
-automatically select or dispatch native work.
+An ancestor source is permitted for native modes. OTA requires current master
+immediately before publication. A release plan is read-only until execution is
+requested.
 
 | Owner | Evidence and limit |
 | --- | --- |
@@ -143,7 +177,7 @@ as the authoritative compatibility comparison baseline. This operator source
 attestation is distinct from observed binary provenance. Missing historical
 build 79 IPA bytes alone are not a mandatory blocker for that approved path.
 The guarded CD route can now represent that attestation through a version 2
-record. The [current review](ios-production-compatibility-20261103.md) records
+record. The [2026-11-03 review](ios-production-compatibility-20261103.md) records
 build 79 and runtime `0.1.13` against the working `017bf952` OTA baseline. It does
 not manufacture Build 79 source provenance. Real runtime compatibility,
 authentication and a publication receipt still need their own evidence.

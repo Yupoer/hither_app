@@ -426,6 +426,7 @@ const DestinationMarker = React.memo(function DestinationMarker({
   homeMarker?: { current: boolean; onPress: () => void };
 }) {
   const { t } = useTranslation();
+  const markerRef = useRef<React.ComponentRef<typeof Marker>>(null);
   // Pulse briefly every 5s — never leave tracksViewChanges true continuously.
   const [pulseOn, setPulseOn] = useState(false);
   const scaleAnim = useRef(new RNAnimated.Value(1)).current;
@@ -465,17 +466,24 @@ const DestinationMarker = React.memo(function DestinationMarker({
     <DestinationMarkerPulse canPulse={canPulse} isActiveTarget={isActiveTarget} reduceMotion={reduceMotion} scaleAnim={scaleAnim} setPulseOn={setPulseOn} />
     {bitmapTracking}
     <Marker
+      ref={markerRef}
+      identifier={homeMarker ? dest.id : undefined}
       coordinate={dest.coordinates}
-      title={dest.title}
-      description={description}
+      title={homeMarker ? undefined : dest.title}
+      description={homeMarker ? undefined : description}
       anchor={{ x: 0.5, y: 0.5 }}
       style={{ zIndex: isActiveTarget ? 3 : 1 }}
       tracksViewChanges={tracksViewChanges}
-      onPress={homeMarker?.onPress}
+      onSelect={homeMarker ? () => {
+        markerRef.current?.hideCallout();
+        homeMarker.onPress();
+      } : undefined}
       stopPropagation={Boolean(homeMarker)}
     >
       {homeMarker ? (
-        <View style={[homeMapStyles.markerHolder, homeMarker.current && { backgroundColor: bgColor + '59' }]}>
+        <View accessible accessibilityRole="button" accessibilityLabel={[dest.title, description].filter(Boolean).join(', ')}
+          onAccessibilityTap={homeMarker.onPress} testID={`d6-map-stop-${dest.id}`}
+          style={[homeMapStyles.markerHolder, homeMarker.current && { backgroundColor: bgColor + '59' }]}>
           <View style={[homeMapStyles.pin, { backgroundColor: bgColor }, homeMarker.current && homeMapStyles.currentPin]}>
             <Text style={homeMarker.current ? homeMapStyles.currentEmoji : homeMapStyles.emoji} allowFontScaling={false}>{markerEmoji}</Text>
           </View>
@@ -1247,11 +1255,11 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 });
 
 const homeMapStyles = StyleSheet.create({
-  markerHolder: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
-  pin: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  currentPin: { width: 46, height: 46, borderRadius: 23, borderWidth: 3 },
-  emoji: { fontSize: 15 },
-  currentEmoji: { fontSize: 22 },
+  markerHolder: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  pin: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  currentPin: { width: 36, height: 36, borderRadius: 18, borderWidth: 2 },
+  emoji: { fontSize: 13 },
+  currentEmoji: { fontSize: 18 },
   member: { width: 38, height: 38, borderRadius: 19 },
   bubble: { borderRadius: 16, backgroundColor: '#fff', paddingVertical: 7, paddingHorizontal: 13, maxWidth: 200 },
   bubbleText: { color: '#111', fontWeight: '800', fontSize: APP_TEXT_SIZE.caption },

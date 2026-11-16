@@ -18,6 +18,7 @@ import {
   MAP_SHEET_COMPACT_GRABBER_HEIGHT,
   MAP_SHEET_GRABBER_HEIGHT,
   SHEET_CORNER_ACTION_INSET,
+  SETTINGS_SHEET_CONTENT_INSET,
 } from '../../../components/mapSheetChrome';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
 import { APP_TEXT_SIZE, GLOBAL_FONT_SCALE_CAP } from '../../../theme/typeScale';
@@ -62,6 +63,8 @@ export type SettingsSheetPanelProps = {
   visible: boolean;
   onClose: () => void;
   onDismissComplete?: () => void;
+  testID?: string;
+  navigation?: 'root' | 'child';
   onBack?: () => void;
   action?: 'close' | 'commit';
   doneLabel?: string;
@@ -92,6 +95,8 @@ export default function SettingsSheetPanel({
   visible,
   onClose,
   onDismissComplete,
+  testID,
+  navigation,
   onBack,
   action = 'close',
   doneLabel = action === 'close' ? 'close' : 'commit',
@@ -165,24 +170,32 @@ export default function SettingsSheetPanel({
 
   if (!mounted && !visible) return <>{opening}</>;
 
-  const header = (
-    <View style={[styles.header, { paddingTop: Math.max(0, SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT)) }]}>
-      {onBack ? (
+  const goBack = onBack ?? onClose;
+  const showBackAction = navigation === 'child';
+  const header = navigation === 'root' && !title ? undefined : (
+    <View style={[
+      styles.header,
+      { paddingTop: Math.max(0, SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT)) },
+      navigation && styles.settingsHeader,
+    ]}>
+      {showBackAction ? (
         <SheetHeaderAction
           action="back"
-          onPress={onBack}
+          onPress={goBack}
           accessibilityLabel={backLabel}
-          testID={home ? "settings-child-back" : undefined}
+          testID="settings-child-back"
         />
       ) : <View style={styles.headerActionSlot} />}
       <Text maxFontSizeMultiplier={GLOBAL_FONT_SCALE_CAP} style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]} numberOfLines={titleFontSize != null ? 2 : 1}>{title}</Text>
-      <SheetHeaderAction
-        testID={home || singleStage ? "settings-root-close" : "settings-child-back"}
-        action={action}
-        onPress={action === 'commit' ? () => onCommit?.() : onClose}
-        accessibilityLabel={doneLabel}
-        disabled={action === 'commit' && !onCommit}
-      />
+      {navigation ? <View style={styles.headerActionSlot} /> : (
+        <SheetHeaderAction
+          testID={home || singleStage ? "settings-root-close" : "settings-child-back"}
+          action={action}
+          onPress={action === 'commit' ? () => onCommit?.() : onClose}
+          accessibilityLabel={doneLabel}
+          disabled={action === 'commit' && !onCommit}
+        />
+      )}
     </View>
   );
 
@@ -192,10 +205,11 @@ export default function SettingsSheetPanel({
     <View
       pointerEvents={visible ? 'auto' : 'none'}
       accessibilityViewIsModal={visible}
+      onAccessibilityEscape={goBack}
       style={[StyleSheet.absoluteFill, { zIndex }]}
     >
       <Animated.View style={[styles.scrim, scrimStyle]} pointerEvents={visible ? 'auto' : 'none'}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={goBack} />
       </Animated.View>
       <BottomSheet
         height={sheetHeight}
@@ -204,13 +218,16 @@ export default function SettingsSheetPanel({
         onIndexChange={setIndex}
         bottomInset={0}
         onDismiss={handleDismiss}
+        onSwipeBack={onBack}
         onDismissComplete={runUnmount}
         dismissRequested={visible}
         dismissTranslateY={sheetTranslateY}
         dismissDistance={height + 40}
         dismissOnDownFromIndex={0}
         edgeToEdgeAtLast={edgeToEdgeAtLast}
-        contentTopPadding={home ? 20 : 12}
+        contentTopPadding={navigation ? (wrapContentInScrollView ? 4 : 0) : home ? 20 : 12}
+        contentHorizontalPadding={navigation ? (wrapContentInScrollView ? SETTINGS_SHEET_CONTENT_INSET : 0) : undefined}
+        testID={testID}
         fillContent={fillContent}
         pinContentBelowHeader={home}
         scrollResetKey={scrollResetKey}
@@ -245,6 +262,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SHEET_CORNER_ACTION_INSET,
     paddingBottom: 0,
   },
+  settingsHeader: { paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
   headerActionSlot: {
     width: MAP_SHEET_ACTION_HIT_SIZE,
     height: MAP_SHEET_ACTION_HIT_SIZE,

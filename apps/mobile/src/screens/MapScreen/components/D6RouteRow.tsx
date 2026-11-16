@@ -14,6 +14,8 @@ import { D6PaneInteractionContext } from './D6PaneInteraction';
 import { claimD6Drag, releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
 import type { D6DragGeometry, D6DragPresentation, D6Point } from './d6RouteDrag';
 
+const SWIPE_ACTIONS_WIDTH = 152;
+
 export type D6RouteDrag = {
   owner: SharedValue<D6DragOwner>;
   point: SharedValue<D6Point>;
@@ -215,7 +217,7 @@ export function D6RouteRow({
                 rightThreshold={50}
                 simultaneousWithExternalGesture={fullSwipe}
                 onSwipeableOpenStartDrag={() => { if (swipe.current) onSwipe?.(swipe.current); }}
-                onSwipeableWillOpen={() => openOffset.set(-152)}
+                onSwipeableWillOpen={() => openOffset.set(-SWIPE_ACTIONS_WIDTH)}
                 onSwipeableWillClose={() => openOffset.set(0)}
                 renderRightActions={(_progress, translate, methods) => (
                   <SwipeActions
@@ -370,9 +372,9 @@ const styles = StyleSheet.create({
   insertion: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 3 },
   insertionTop: { top: 0 },
   insertionBottom: { bottom: 0 },
-  actions: { flexDirection: 'row' },
-  action: { width: 76, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  pool: { backgroundColor: '#5C6662' },
-  remove: { backgroundColor: '#E5484D' },
+  actions: { width: SWIPE_ACTIONS_WIDTH, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
+  action: { minWidth: 44, minHeight: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  pool: { flex: 1, backgroundColor: '#5C6662' },
+  remove: { width: 62, backgroundColor: '#E5484D' },
   actionText: { color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
 });

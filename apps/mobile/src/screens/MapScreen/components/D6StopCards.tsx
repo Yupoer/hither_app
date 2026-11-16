@@ -1,5 +1,5 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
-import Animated, { Easing, FadeInDown, FadeOutUp, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import React, { useState } from 'react';
 import {
   Keyboard,
@@ -141,9 +141,21 @@ export function D6StopCard(props: StopCardProps) {
   const headerHeight = useSharedValue(0);
   const bodyHeight = useSharedValue(0);
   const [timeDraftKey, setTimeDraftKey] = useState(0);
-  const maxHeight = height - insets.top - 32;
-  const cardSize = useAnimatedStyle(() => headerHeight.get() > 0 && bodyHeight.get() > 0
-    ? { height: Math.min(maxHeight, headerHeight.get() + bodyHeight.get() + SHEET_CORNER_ACTION_INSET * 2 + 10) } : {});
+  const bottomInset = Math.max(24, insets.bottom - 8);
+  const maxHeight = height - insets.top - bottomInset - 12;
+  const entrance = useSharedValue(0);
+  useMountEffect(() => {
+    entrance.set(withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }));
+    return () => cancelAnimation(entrance);
+  });
+  const cardStyle = useAnimatedStyle(() => {
+    const measured = headerHeight.get() + bodyHeight.get() + SHEET_CORNER_ACTION_INSET * 2 + 10;
+    return {
+      height: headerHeight.get() > 0 && bodyHeight.get() > 0 ? Math.min(maxHeight, measured) : undefined,
+      opacity: entrance.get(),
+      transform: [{ translateY: (1 - entrance.get()) * 14 }],
+    };
+  });
   const date = stop.day == null ? null : dateForTripDay(departureDate, stop.day);
   const dateLabel = date && (zh
     ? `${date.getMonth() + 1}/${date.getDate()} 週${'日一二三四五六'[date.getDay()]}`
@@ -155,7 +167,7 @@ export function D6StopCard(props: StopCardProps) {
     onEdit(edit === editor ? null : editor);
   };
   return (
-    <Animated.View testID="d6-stop-card" entering={FadeInDown.duration(300)} exiting={FadeOutUp.duration(200)} style={[d6ChromeStyles.bottomCard, { bottom: Math.max(24, insets.bottom - 8), maxHeight }, cardSize]}>
+    <Animated.View testID="d6-stop-card" style={[d6ChromeStyles.bottomCard, { bottom: bottomInset, maxHeight }, cardStyle]}>
       <D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />
         <View style={styles.cardHead} onLayout={event => headerHeight.set(event.nativeEvent.layout.height)}>
           <View style={styles.cardIdentity}>
@@ -198,7 +210,7 @@ export function D6StopCard(props: StopCardProps) {
           <SystemToggle accessibilityLabel={zh ? '住宿' : 'Accommodation'} testID="d6-stop-stay" value={stays} disabled={busy} onValueChange={onStay} />
         </CardRow> : null}
         {error ? <Text accessibilityRole="alert" style={styles.destructive}>{error}</Text> : null}
-        <View style={styles.actionRow}>
+        <View style={[styles.actionRow, styles.detailActions]}>
           <Action title={zh ? '地圖' : 'Maps'} onPress={onMaps} />
           {onHistory ? <Action title={zh ? '抵達紀錄' : 'Arrivals'} onPress={onHistory} /> : null}
           {canEdit ? <Action title={zh ? '刪除' : 'Delete'} disabled={busy} destructive onPress={onDelete} /> : null}
@@ -473,6 +485,7 @@ const styles = StyleSheet.create({
   radiusEditor: { paddingTop: 8, paddingBottom: 14 },
   automatic: { width: '50%', alignSelf: 'center', flexGrow: 0, marginTop: 8 },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  detailActions: { paddingHorizontal: 8, flexWrap: 'wrap' },
   action: { flexGrow: 1, minHeight: 52 },
   rowLabel: { color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '600' },
   rowValue: { color: '#ffffffba', fontSize: APP_TEXT_SIZE.body, flexShrink: 1, fontVariant: ['tabular-nums'] },

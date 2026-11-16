@@ -50,6 +50,32 @@ test('native hosts retain rows, children, refs and disabled or readonly input se
   } finally { await act(async () => root.unmount()); }
 });
 
+test('Modal reports native presentation and iOS dismissal and lays out noninteractive content', async () => {
+  const { host, modules } = fixture();
+  const { Modal, View } = modules.get('react-native');
+  const events = [];
+  const element = visible => React.createElement(Modal, {
+    visible, onShow: () => events.push('shown'), onDismiss: () => events.push('dismissed'),
+  }, React.createElement(View, { pointerEvents: 'none' },
+    React.createElement(View, { testID: 'card', onLayout: event => events.push(event.nativeEvent.layout) })));
+  let root;
+  await act(async () => { root = create(element(false)); });
+  try {
+    assert.deepEqual(events, []);
+    await act(async () => root.update(element(true)));
+    const layout = { x: 0, y: 0, width: 320, height: 280 };
+    assert.deepEqual(host.call(root, { kind: 'nativeEvent', testId: 'card',
+      value: { event: 'onLayout', nativeEvent: { layout } },
+    }), { invoked: true });
+    await act(async () => root.update(element(true)));
+    assert.deepEqual(events, ['shown', layout]);
+
+    await act(async () => root.update(element(false)));
+    assert.deepEqual(events, ['shown', layout, 'dismissed']);
+    assert(!host.observe(root).some(node => node.testId === 'card'));
+  } finally { await act(async () => root.unmount()); }
+});
+
 test('animated refs stay callable and stable while retaining the installed null-detach and host method contracts', async () => {
   const { host, modules } = fixture();
   const rn = modules.get('react-native');

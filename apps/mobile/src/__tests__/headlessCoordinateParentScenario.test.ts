@@ -182,7 +182,12 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
       expect(blocked.durable.operations).toEqual([]);
       expect(world.backend.itinerary).toHaveLength(5);
       if (d6) {
-        await press(device, 'settings-root-close');
+        await press(device, 'settings-child-back');
+        await world.waitFor(device, (value: Observation) => has(value, 'settings-page-profile'), 'Shop returns to settings');
+        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
+          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
+            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
+        }
         await device.input({ kind: 'animation', finished: true });
         await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add')?.label === 'Unlock more stops'
           && !has(value, 'store-premium-restore'), 'coordinate draft after closing Shop');

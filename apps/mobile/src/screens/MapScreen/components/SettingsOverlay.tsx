@@ -1,3 +1,4 @@
+import { HITHER_ACCENT } from '../../../theme/brand';
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import React, { useCallback, useState } from 'react';
 import {
@@ -79,6 +80,7 @@ function NavRow({
   onPress,
   styles,
   accessibilityLabel,
+  accent,
   testID,
 }: {
   title: string;
@@ -86,6 +88,7 @@ function NavRow({
   onPress: () => void;
   styles: any;
   accessibilityLabel?: string;
+  accent?: string;
   testID?: string;
 }) {
   return (
@@ -98,12 +101,12 @@ function NavRow({
       activeOpacity={0.7}
     >
       <View style={styles.settingsTopCopy}>
-        <Text style={styles.settingsTopTitle}>{title}</Text>
+        <Text style={[styles.settingsTopTitle, accent && { color: accent }]}>{title}</Text>
         {description ? (
           <Text style={styles.settingsTopDescription}>{description}</Text>
         ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={glass.textTertiary} />
+      <Ionicons name="chevron-forward" size={18} color={accent ?? glass.textTertiary} />
     </TouchableOpacity>
   );
 }
@@ -235,6 +238,8 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
         visible={visible}
         onClose={onClose}
         onDismissComplete={onDismissComplete}
+        testID="settings-panel"
+        navigation="root"
         title={pageTitle}
         zIndex={80}
         initialStage={1}
@@ -242,7 +247,7 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
         edgeToEdgeAtLast
         singleStage
       >
-      <View style={styles.overlayBody}>
+      <View>
         {!isPro ? (
           <View testID="settings-subscribe-banner-hit-area">
             <PremiumBanner
@@ -361,6 +366,7 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
           <NavRow
             title={t('feedback.title')}
             onPress={onOpenFeedback}
+            accent={HITHER_ACCENT}
             styles={styles}
             accessibilityLabel={t('feedback.title')}
           />
@@ -394,6 +400,8 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'account'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.account')}
         initialStage={1}
         stageTwoRatio={0.9}
@@ -403,7 +411,7 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
           visible={page === 'account'}
           onClose={closeChild}
           accent={accent}
-          contentTopPadding={12}
+          contentTopPadding={4}
           onAccountDeleted={onAccountDeleted}
         />
       </SettingsChildSheet>
@@ -411,11 +419,13 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'groupAvatar'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.groupAvatar')}
         initialStage={1}
         stageTwoRatio={0.8}
       >
-        <View style={styles.overlayBody}>
+        <View>
           <Text style={styles.settingsInlineLabel}>{t('settings.groupAvatarHint')}</Text>
           <View style={settingsSlideStyles.groupAvatarGrid}>
             {AVATAR_EMOJI.map((emoji) => (
@@ -448,12 +458,14 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
                 onPress={() => setGroupAvatarColor(color)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: groupAvatarColor === color }}
-                style={[
+                style={settingsSlideStyles.groupAvatarColorAction}
+              >
+                <View style={[
                   settingsSlideStyles.groupAvatarColor,
                   { backgroundColor: color },
                   groupAvatarColor === color && settingsSlideStyles.groupAvatarColorSelected,
-                ]}
-              />
+                ]} />
+              </Pressable>
             ))}
           </ScrollView>
           <TouchableOpacity
@@ -471,10 +483,12 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'language'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.language')}
 
       >
-        <View style={styles.overlayBody}>
+        <View>
           {[
             { key: 'zh' as const, label: '中文' },
             { key: 'en' as const, label: 'English' },
@@ -499,10 +513,12 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'theme'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.theme')}
 
       >
-        <View style={styles.overlayBody}>
+        <View>
           {THEME_ORDER.map((n) => (
             <Pressable
               key={n}
@@ -534,10 +550,12 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'textSize'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.textSize')}
 
       >
-        <View style={styles.overlayBody}>
+        <View>
           <View testID="settings-text-scale-slider">
             <PrefSlider
               accent={accent}
@@ -564,10 +582,12 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'notifications'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.notifSection')}
 
       >
-        <View style={styles.overlayBody}>
+        <View>
           <NotificationPreferencesCard colors={{ ...themes.night, accent }} />
         </View>
       </SettingsChildSheet>
@@ -575,10 +595,12 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'mapJourney'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.sectionMapJourney')}
 
       >
-        <View style={styles.overlayBody}>
+        <View>
           <View style={styles.accuracyRow}>
             <View style={styles.accuracyCopy}>
               <Text style={styles.accuracyLabel}>{t('settings.obliqueLocate')}</Text>
@@ -637,10 +659,12 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
       <SettingsChildSheet
         visible={page === 'support'}
         onClose={closeChild}
+        navigation="child"
+        backLabel={t('common.back')}
         title={t('settings.sectionSupport')}
 
       >
-        <View style={styles.overlayBody}>
+        <View>
           {showOtaApply ? (
             <TouchableOpacity
               style={[
@@ -720,7 +744,8 @@ const settingsSlideStyles = StyleSheet.create({
   },
   headerSpacer: { width: 44, height: 44 },
   groupAvatarGrid: {
-    width: 300,
+    width: '100%',
+    maxWidth: 300,
     alignSelf: 'center',
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -739,11 +764,13 @@ const settingsSlideStyles = StyleSheet.create({
   groupAvatarChoiceSelected: { borderColor: '#fff' },
   groupAvatarEmoji: { fontSize: 26 },
   groupAvatarColors: {
-    width: 300,
+    width: '100%',
+    maxWidth: 300,
     alignSelf: 'center',
     paddingBottom: 18,
   },
   groupAvatarColorsContent: { flexDirection: 'row', gap: 10 },
+  groupAvatarColorAction: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   groupAvatarColor: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'transparent' },
   groupAvatarColorSelected: { borderColor: '#fff' },
 });

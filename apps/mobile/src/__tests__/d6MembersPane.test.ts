@@ -1,7 +1,7 @@
 import React from 'react';
 jest.mock('react-native-gesture-handler', () => ({ GestureDetector: 'GestureDetector' }));
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { Pressable } from 'react-native';
+import { Pressable, ScrollView } from 'react-native';
 import { D6MembersPane, type D6MembersPaneProps } from '../screens/MapScreen/components/D6MembersPane';
 import type { CoordinationRequestView } from '../screens/MapScreen/hooks/useCoordinationRequests';
 import type { Group, PendingInvite } from '../types';
@@ -121,7 +121,7 @@ describe('D6 team panel', () => {
   }
   afterEach(() => act(() => renderer.unmount()));
 
-  it('shows the accepted self location time, remote sample age and a persistent recovery action', () => {
+  it('shows the accepted self location time and remote age, with team settings and my status in the same scroll view', () => {
     const recovery = jest.fn();
     const props = buildProps({ selfSampleAtMs: Date.now(), locationWarning: '尚未開始定位', onLocationRecovery: recovery,
       flock: [
@@ -130,22 +130,25 @@ describe('D6 team panel', () => {
       ],
     });
     render(props);
-    const self = renderer.root.findAll(node => node.props.testID === 'd6-member-updated-me').at(-1)!;
-    const remote = renderer.root.findAll(node => node.props.testID === 'd6-member-updated-other').at(-1)!;
+    const list = renderer.root.findByType(ScrollView);
+    const self = list.findAll(node => node.props.testID === 'd6-member-updated-me').at(-1)!;
+    const remote = list.findAll(node => node.props.testID === 'd6-member-updated-other').at(-1)!;
+    const settings = list.findAllByType(Pressable).find(node => node.props.testID === 'd6-team-settings');
+    act(() => settings?.props.onPress());
+    expect(props.onOpenTeamSettings).toHaveBeenCalledTimes(1);
+    expect(list.findAllByProps({ testID: 'map-presence' })).not.toHaveLength(0);
     expect(self.props.children).toBe('locationUpdate.justNow');
     expect(remote.props.children).toBe('locationUpdate.minutes 5');
     act(() => button('d6-self-location-warning')?.props.onPress());
     expect(recovery).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a new one-person team its invitation code and routes both entry points to the same sheet', () => {
+  it('shows a single invitation action beside the new team code', () => {
     const props = buildProps({ isNewTeam: true });
     render(props);
-    act(() => {
-      button('map-invite-members')?.props.onPress();
-      button('d6-team-invite-code')?.props.onPress();
-    });
-    expect(props.onInviteTeam).toHaveBeenCalledTimes(2);
+    expect(button('map-invite-members')).toBeUndefined();
+    act(() => button('d6-team-invite-code')?.props.onPress());
+    expect(props.onInviteTeam).toHaveBeenCalledTimes(1);
   });
 
   it('shows only active-team invitations and eligible votes, retains my selection and casts the real option', async () => {

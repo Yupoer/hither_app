@@ -90,6 +90,41 @@ describe('D6 You from the real Map screen', () => {
     } finally { await world.close(); }
   });
 
+  it('returns from feedback to its originating settings page and swipes back one settings level at a time', async () => {
+    const world = new World();
+    try {
+      const device = await openYou(world);
+      expect(await press(device, 'settings-page-advanced')).toEqual({ invoked: true });
+      expect(await press(device, 'settings-advanced-support')).toEqual({ invoked: true });
+      expect(await press(device, 'settings-feedback')).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => field(value, 'feedback-description')?.acceptsInput, 'feedback above Support');
+      expect(await device.host.call({ kind: 'press', testId: 'settings-child-back', within: 'feedback-sheet' })).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => field(value, 'settings-feedback')?.acceptsInput
+        && !field(value, 'feedback-description'), 'feedback returns to Support');
+
+      const swipeDown = async () => {
+        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
+          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
+            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
+        }
+        await device.input({ kind: 'animation', finished: true });
+      };
+
+      await swipeDown();
+      const advanced = await world.waitFor(device, (value: Observation) =>
+        field(value, 'settings-feedback-advanced')?.acceptsInput, 'Support returns to Advanced');
+      expect(field(advanced, 'settings-root-close')).toBeUndefined();
+      expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
+      const root = await world.waitFor(device, (value: Observation) =>
+        field(value, 'settings-page-profile')?.acceptsInput, 'Advanced returns to settings root');
+      expect(field(root, 'settings-child-back')).toBeUndefined();
+      expect(field(root, 'settings-root-close')).toBeUndefined();
+      await swipeDown();
+      await world.waitFor(device, (value: Observation) => field(value, 'home-profile')?.acceptsInput
+        && !field(value, 'settings-panel'), 'root settings swipe returns to Map');
+    } finally { await world.close(); }
+  });
+
   it('opens the in-app language picker and persists the ordered notification controls', async () => {
     const world = new World();
     try {

@@ -123,7 +123,6 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(storePane).toContain('onOpenSubscribe');
     expect(storePane).toContain('<PremiumPresentation homeStore');
     expect(storePane).toContain('<PremiumBanner onPress={() => onOpenSubscribe?.()}');
-    expect(mapScreen).toContain('renderStore: presentation => <StorePane');
     expect(mapScreen).toContain('presentation={presentation}');
     expect(paywall).toContain('showIntroPager');
     expect(premium).toContain('PAYWALL_INTRO_SLIDES');

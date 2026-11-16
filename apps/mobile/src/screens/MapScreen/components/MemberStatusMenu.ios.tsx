@@ -12,8 +12,8 @@ export default function MemberStatusMenu({ items, onSelect, accessibilityLabel: 
   const glass = liquidGlass.isLiquidGlassAvailable();
   const trigger = (
     <HStack spacing={8} modifiers={[
-      padding({ horizontal: 10 }),
-      frame({ height: 34 }),
+      padding({ horizontal: 15, vertical: 10.5 }),
+      frame({ minHeight: 41 }),
       foregroundColor('#fff'),
       contentShape(shapes.capsule()),
     ]}>

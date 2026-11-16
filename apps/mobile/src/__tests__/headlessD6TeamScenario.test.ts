@@ -37,6 +37,14 @@ async function openTeam(world: InstanceType<typeof World>, device: Device) {
   return world.waitFor(device, (value: Observation) => has(value, 'd6-members-pane') && has(value, 'map-presence'), 'D6 team pane');
 }
 
+async function openCommands(device: Device) {
+  expect(await press(device, 'home-commands')).toEqual({ invoked: true });
+  expect(await device.host.call({ kind: 'nativeEvent', testId: 'd6-command-card',
+    value: { event: 'onLayout', nativeEvent: { layout: { x: 0, y: 0, width: 366, height: 320 } } },
+  })).toEqual({ invoked: true });
+  await device.input({ kind: 'animation', finished: true });
+}
+
 describe('D6 iOS team and commands through Map', () => {
   jest.setTimeout(120000);
 
@@ -202,7 +210,7 @@ describe('D6 iOS team and commands through Map', () => {
       expect(has(await leader.observe(), `member-inbox-badge-${PEER}`)).toBe(false);
 
       follower.online = false;
-      await press(follower, 'home-commands');
+      await openCommands(follower);
       await press(follower, 'quick-command-request_start');
       const offline: Observation = await world.waitFor(follower, (value: Observation) =>
         value.durable.operations.some(row => row.operationType === 'send_command'), 'offline start request saved');
@@ -210,6 +218,7 @@ describe('D6 iOS team and commands through Map', () => {
       expect(world.backend.tables.commands).toEqual([]);
       follower.online = true;
       await world.advance(30000);
+      await follower.input({ kind: 'animation', finished: true });
       await world.waitFor(leader, (value: Observation) => has(value, `member-inbox-badge-${PEER}`), 'leader sees pending request');
       const [request] = world.backend.tables.commands;
       expect(request).toMatchObject({ sender_id: PEER, target_user_id: LEADER, destination_id: DESTINATION, request_status: 'pending' });
@@ -234,7 +243,7 @@ describe('D6 iOS team and commands through Map', () => {
       world.hold('sync_group', { deviceId: 'd6-send-command', matches: (operation: SyncCommand) =>
         operation.args.p_core_operations.some(row => row.operation_type === 'send_command'),
       });
-      await press(peer, 'home-commands');
+      await openCommands(peer);
       await world.waitFor(peer, (value: Observation) => has(value, 'quick-command-need_help'), 'member quick command');
       await press(peer, 'quick-command-need_help');
       const sending: Observation = await world.waitFor(peer, (value: Observation) =>
@@ -242,6 +251,7 @@ describe('D6 iOS team and commands through Map', () => {
       expect(sending.durable.operations.find(row => row.operationType === 'send_command')?.payload).toMatchObject({ type: 'need_help' });
       expect(world.backend.tables.commands).toEqual([]);
       await world.advance(380);
+      await peer.input({ kind: 'animation', finished: true });
       const bubble: Observation = await world.waitFor(peer, (value: Observation) =>
         !has(value, 'd6-quick-commands') && text(value, 'Need help'), 'quick-command bubble on map');
       expect(bubble.durable.operations).toHaveLength(1);

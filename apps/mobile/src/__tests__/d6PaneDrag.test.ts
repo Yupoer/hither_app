@@ -18,6 +18,7 @@ const mockScrollTo = jest.fn();
 let mockScrollHandler: ScrollHandler = () => {};
 type Handlers = typeof mockHandlers;
 const mockPanHandlers = new WeakMap<object, Handlers>();
+const mockPanEnabled = new WeakMap<object, boolean>();
 const mockHandlers = {
   start: () => {}, update: (_event: Drag) => {}, end: (_event: Drag, _success: boolean) => {}, finalize: () => {},
 };
@@ -62,7 +63,7 @@ jest.mock('react-native-gesture-handler', () => ({
     Pan: () => {
       const handlers = { ...mockHandlers };
       const gesture = {
-        enabled: () => gesture,
+        enabled: (enabled: boolean) => { mockPanEnabled.set(gesture, enabled); return gesture; },
         activeOffsetY: () => gesture,
         failOffsetX: () => gesture,
         cancelsTouchesInView: () => gesture,
@@ -453,4 +454,28 @@ it('leaves an active drag untouched when another chrome recognizer did not acqui
   expect(height().get()).toBe(180);
   act(() => active.end({ translationY: 80, velocityY: 0 }, true));
   expect(panel().owner.get()).toBe('idle');
+});
+
+it('opens at the requested height and leaves the itinerary body to native scrolling', () => {
+  render({ open: true, openHeight: 550, dragFromContent: false, reduceMotion: true });
+  expect(height().get()).toBe(550);
+  expect(mockPanEnabled.get(panel().contentGesture)).toBe(false);
+  expect(mockPanEnabled.get(panel().gesture)).toBe(true);
+  act(() => scrollContent(110));
+  expect(height().get()).toBe(550);
+  expect(mockScrollTo).not.toHaveBeenCalled();
+});
+
+it('preserves a full detent when another sheet temporarily owns interaction', () => {
+  render({ open: true, reduceMotion: true });
+  const pendingSnap = panel().snapTo;
+  act(() => panel().snapTo('full'));
+  render({ open: true, enabled: false, reduceMotion: true });
+  expect(mockPanEnabled.get(panel().gesture)).toBe(false);
+  act(() => pendingSnap('closed'));
+  expect(onOpenChange).not.toHaveBeenCalled();
+  render({ open: true, reduceMotion: true });
+  expect(panel().detent).toBe('full');
+  expect(height().get()).toBe(620);
+  expect(mockPanEnabled.get(panel().gesture)).toBe(true);
 });
