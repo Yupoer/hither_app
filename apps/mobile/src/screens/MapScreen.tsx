@@ -51,10 +51,10 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   AccessibilityInfo,
   Alert,
   AppState,
+  Animated as NativeAnimated,
   LayoutAnimation,
   Linking,
   Platform,
@@ -73,16 +73,20 @@ import Animated, {
   runOnJS,
   interpolate,
   Extrapolation,
+  ReduceMotion,
   withSpring,
+  withDelay,
+  withSequence,
+  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { D6_ACCENT, D6HomeChrome, D6Surface, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
+import { D6_ACCENT, D6HomeChrome, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
 import { D6RoutePane, type D6RouteSelection } from './MapScreen/components/D6RoutePane';
 import { D6AddPlace, D6StopCard, defaultD6Departure, type D6StopEditor, type StopPlacement } from './MapScreen/components/D6StopCards';
-import { D6MembersPane, D6TeamHeader } from './MapScreen/components/D6MembersPane';
-import { QuickCommandGrid } from './MapScreen/components/QuickCommandGrid';
+import { D6MembersPane } from './MapScreen/components/D6MembersPane';
+import { D6CommandsSheet } from './MapScreen/components/D6CommandsSheet';
 import { D6_MEMBER_STATUS_COLORS, getD6MemberStatus, getD6SubgroupPresentation } from './MapScreen/d6TeamPresentation';
 import { useD6TravelMode } from './MapScreen/hooks/useD6TravelMode';
 import type { SettingsPage } from './MapScreen/components/SettingsOverlay';
@@ -92,7 +96,7 @@ import { useVisibleUi, isForegroundUi, subscribeForegroundUi } from '../state/fo
 import { useNearMeeting } from '../state/useNearMeeting';
 import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
-import { MAP_FLOATING_EDGE_INSET, MAP_ISLAND_ACTION_HEIGHT, MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_HEIGHT, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
+import { MAP_ISLAND_ACTION_HEIGHT, MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_HEIGHT, MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
 import {
   cameraAfterSuccessfulAdd,
   cameraOnLongPress,
@@ -357,6 +361,11 @@ export default function MapScreen({ route, navigation }: Props) {
   const [homePoolFlashKey, setHomePoolFlashKey] = useState(0);
   const [homeAsked, setHomeAsked] = useState<string | null>(null);
   const [homeCommand, setHomeCommand] = useState<string | null>(null);
+  const [commandSheet, setCommandSheet] = useState<{
+    id: number; groupId: string; phase: 'open' | 'closing';
+  } | null>(null);
+  const commandSequence = useRef(0);
+  const [commandSheetProgress] = useState(() => new NativeAnimated.Value(0));
   const [homeSettingsPage, setHomeSettingsPage] = useState<SettingsPage>('root');
   const { lifecycle: gatherCardExpansionLifecycle,
     isCardExpanded,
@@ -419,6 +428,9 @@ export default function MapScreen({ route, navigation }: Props) {
   const dark = themes.night;
 
   const groupId = route.params?.groupId ?? membership?.group.id ?? null;
+  if (commandSheet?.phase === 'open' && commandSheet.groupId !== groupId) {
+    setCommandSheet({ ...commandSheet, phase: 'closing' });
+  }
   const powerState = useSyncExternalStore(subscribeRuntimePowerState, getRuntimePowerState, getRuntimePowerState);
   const [localActionError, setLocalActionError] = useState<{ title: string; message: string; destinationId?: string } | null>(null);
   const showOperationFailure = useCallback((title: string, message: string) => setLocalActionError({ title, message }), []);
@@ -1490,9 +1502,17 @@ export default function MapScreen({ route, navigation }: Props) {
    */
   const remoteAutoCompleteDestIdsRef = useRef<Set<string>>(new Set());
   const [arrivalCelebrateDestId, setArrivalCelebrateDestId] = useState<string | null>(null);
+  const homeCelebration = useSharedValue(0);
+  const playHomeCelebration = useCallback(() => {
+    const fadeMs = 220;
+    homeCelebration.set(withSequence(
+      withTiming(1, { duration: fadeMs }),
+      withDelay(PERSONAL_ARRIVAL_CELEBRATE_MS - 2 * fadeMs, withTiming(0, { duration: fadeMs }), ReduceMotion.Never),
+    ));
+  }, [homeCelebration]);
   const [requestingStartDestId, setRequestingStartDestId] = useState<string | null>(null);
 
-  /** #149: after stop completes (closedAt), hold effect 3.2s then 440ms card exit. */
+  /** Keep the legacy carousel card in place through its completion animation. */
   const startArrivalCardExit = useCallback((
     destination: Destination,
     indexAtStart = 0,
@@ -1505,6 +1525,7 @@ export default function MapScreen({ route, navigation }: Props) {
       indexAtStart,
     );
     if (!started) return; // idempotent — no double exit / ghost
+    if (d6Enabled) playHomeCelebration();
     setArrivalExitRecords((prev) => {
       const next = new Map(prev);
       next.set(destination.id, started);
@@ -1515,7 +1536,7 @@ export default function MapScreen({ route, navigation }: Props) {
       next.set(destination.id, destination);
       return next;
     });
-    // Cancel personal-arrival 1.6s clear so it cannot truncate the 3.2s hold (#149).
+    // Replace any personal-arrival timer so it cannot clear completion feedback.
     cancelCelebrateClearTimer(celebrateClearTimersRef.current, destination.id);
     setArrivalCelebrateDestId(destination.id);
     armCelebrateClearTimer(
@@ -1563,7 +1584,7 @@ export default function MapScreen({ route, navigation }: Props) {
       }, ARRIVAL_EFFECT_HOLD_MS + ARRIVAL_CARD_EXIT_MS),
     );
     arrivalExitTimersRef.current.set(destination.id, timers);
-  }, []);
+  }, [d6Enabled, playHomeCelebration]);
 
   // Detect newly completed stops → start hold/exit (not historical closed on mount).
   const knownClosedDestIdsRef = useRef<Set<string> | null>(null);
@@ -3008,6 +3029,7 @@ export default function MapScreen({ route, navigation }: Props) {
     if (!alreadyShown) {
       arrivalFeedbackShownRef.current = destination.id;
       setArrivalCelebrateDestId(destination.id);
+      if (d6Enabled) playHomeCelebration();
       alertBuzz();
       // Tracked so startArrivalCardExit can cancel this before the 3.2s hold.
       armCelebrateClearTimer(
@@ -4266,15 +4288,18 @@ export default function MapScreen({ route, navigation }: Props) {
       if (mapMountedRef.current) setConfirmPlaceBusy(false);
     }
   };
-  const onHomeStop = (stop: Destination) => {
+  const showHomeStop = (stop: Destination) => {
     setHomePane(null);
     setHomeSelection(null);
     setHomeDetail(stop);
-    mapRef.current?.centerOn(stop.coordinates, { screenY: 0.18 });
     setHomeStopEditor(null);
     setHomeRadiusPreview(undefined);
     setLocalActionError(null);
     setHomeSplit(null);
+  };
+  const onHomeStop = (stop: Destination) => {
+    showHomeStop(stop);
+    mapRef.current?.centerOn(stop.coordinates, { screenY: 0.18 });
   };
   const homeDetailLive = homeDetail ? allScopedDestinations.find(destination => destination.id === homeDetail.id) ?? homeDetail : null;
   const homeDaily = homeDetailLive ? dailyAccommodations.find(stay =>
@@ -4558,7 +4583,7 @@ export default function MapScreen({ route, navigation }: Props) {
             currentStopId: homeStop?.id,
             dayColor: homeColor,
             subgroupColors: homeSubgroupColors,
-            onStopPress: onHomeStop,
+            onStopPress: showHomeStop,
             onBlankPress: () => { if (!homeAdd && (homePane || homeDetail)) focusHomePane(null); },
             arrivalArea: homeDetailLive && (homeStopEditor === 'radius' || homeDetailLive.id === homeStop?.id) ? {
               coordinates: homeDetailLive.coordinates,
@@ -4654,13 +4679,22 @@ export default function MapScreen({ route, navigation }: Props) {
             selfEmoji={homeSelf.emoji}
             selfColor={homeSelf.color ?? '#F3C443'}
             statusColor={homeStatusColor}
-            hideIsland={Boolean(homeDetail)}
-            hideHeader={Boolean(homeDetail)}
+            suspended={Boolean(homeDetail)}
+            commandsPresented={commandSheet != null}
+            commandsProgress={commandSheetProgress}
+            departureDate={routeDepartureDate}
+            dayStopCount={routeDepartureDate || homePhase !== 'ready' || homeStop?.day == null ? 0 : allScopedDestinations.filter(stop =>
+              stop.day === homeStop.day && stop.kind !== 'accommodation').length}
+            celebration={homeCelebration}
             onAdd={() => openHomeAdd()}
             onAction={goHomeJourney}
             onStop={() => homeStop ? requestTeamEnd(homeStop, Math.max(0, destinations.indexOf(homeStop))) : Promise.resolve(false)}
             onProfile={() => openHomeSettings('root')}
-            onCommands={() => setOverlay('commands')}
+            onCommands={() => {
+              if (!groupId || commandSheet) return;
+              const id = ++commandSequence.current;
+              setCommandSheet(current => current ?? { id, groupId, phase: 'open' });
+            }}
             onFit={fitAllMembers}
             onLocate={locateMe}
             onTopHeight={setCarouselHeight}
@@ -4705,9 +4739,7 @@ export default function MapScreen({ route, navigation }: Props) {
                 </Pressable> : null}
               </View> : null}
             />}
-            teamHeader={<D6TeamHeader group={group} onOpenTeamSettings={() => openHomeSettings('team')} onInviteTeam={() => setOverlay('invite')} />}
             team={<D6MembersPane
-                showHeader={false}
                 selfSampleAtMs={deviceCoordsAcceptedAtMs}
                 locationWarning={!sharingEnabled ? t('map.locationSharingStopped') : sourceHealthKind === 'permissionDenied'
                   ? t('map.locationNotStarted') : sourceHealthKind === 'interrupted' ? t('map.locationInterrupted')
@@ -4783,83 +4815,91 @@ export default function MapScreen({ route, navigation }: Props) {
             onImport={() => openKmlImportForScope(myScopeId)}
             onCommit={() => void commitHomePlace()}
           /> : null}
-          {homeDetailLive && !homeAdd ? <D6StopCard
-            key={homeDetailLive.id}
-            stop={homeDetailLive}
-            zh={zh}
-            color={homeColor(homeDetailLive.day)}
-            departureDate={homeDeparture}
-            current={homeStop?.id === homeDetailLive.id}
-            canEdit={canEditItinerary}
-            canSetStay={canEditHomeTrip && homeDetailLive.day != null && !homeDetailLive.closedAt}
-            stays={Boolean(homeDaily || homeDetailLive.kind === 'accommodation')}
-            busy={homeStopBusy}
-            displayFont={d6DisplayFont}
-            edit={homeStopEditor}
-            onEdit={edit => { setHomeStopEditor(edit); setHomeRadiusPreview(undefined); }}
-            radius={homeRadiusPreview ?? homeRadii[homeDetailLive.id] ?? 50}
-            radiusOverride={homeRadii[homeDetailLive.id]}
-            onRadiusPreview={setHomeRadiusPreview}
-            onRadius={onHomeStopRadius}
-            travelMode={homeTravel.selectedMode}
-            modeEtas={homeTravel.etaByMode}
-            onMode={mode => { setTravelMode(mode); setHomeStopEditor(null); }}
-            error={homeError}
-            onTime={(value, reminder) => changeHomeStop(async () => {
-              if (!groupId || !canEditItinerary) return false;
-              await setDestinationMeetTime(homeDetailLive.id, value?.toISOString() ?? null, value ? reminder : null, groupId);
-              await syncFromDatabase();
-            }, 'editor')}
-            onIcon={emoji => changeHomeStop(async () => {
-              if (!groupId || !canEditItinerary) return false;
-              await updateDestinationEmojiColor(groupId, homeDetailLive.id, { emoji });
-              await syncFromDatabase();
-            }, 'editor')}
-            onStay={next => void changeHomeStop(async () => {
-              if (!next) {
-                const regular = await unsetD6Accommodation(homeDetailLive, homeDaily);
-                if (!regular) return false;
-                if (mapMountedRef.current) setHomeDetail(detail => detail?.id === homeDetailLive.id ? regular : detail);
-                return true;
-              }
-              if (homeDetailLive.day == null) return false;
-              const saved = await assignD6Accommodation(homeDetailLive.day, { title: homeDetailLive.title, address: homeDetailLive.address,
-                coordinates: homeDetailLive.coordinates, sourceDestinationId: homeDetailLive.id });
-              if (saved && mapMountedRef.current) setHomeStopEditor(null);
-              return saved;
-            })}
-            onClose={closeHomeDetail}
-            onMaps={() => {
-              const { latitude, longitude } = homeDetailLive.coordinates;
-              const mode = travelMode === 'transit' ? 'r' : travelMode === 'drive' ? 'd' : 'w';
-              void Linking.openURL(`https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=${mode}`).catch(() => openExternalNavigation(homeDetailLive));
-            }}
-            onDelete={() => void changeHomeStop(async () => {
-              const deleted = homeDaily
-                ? await mutateD6Accommodation(homeDaily, 'delete')
-                : await deleteD6Destinations([homeDetailLive.id]);
-              if (deleted && mapMountedRef.current) {
-                setHomeDay(homeDetailLive.day ?? homeSelectedDay);
-                setHomePane('itinerary');
-              }
-              return deleted;
-            }, 'card')}
-            onHistory={homeDetailLive.closedAt ? () => {
-              setArrivalDestination(homeDetailLive);
-              setOverlay('arrival');
-              closeHomeDetail();
-            } : undefined}
-          /> : null}
-          {overlay === 'commands' && groupId ? <KeyboardAvoidingView pointerEvents="box-none" behavior="padding" style={d6MapStyles.commandsOverlay}>
-            <Pressable accessibilityLabel={t('common.cancel')} style={StyleSheet.absoluteFill} onPress={() => setOverlay(null)} />
-            <View style={[d6MapStyles.commandsCard, { marginBottom: Math.max(24, insets.bottom - 8), maxHeight: windowHeight - insets.top - 60 }]}>
-              <D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />
-              <QuickCommandGrid groupId={groupId} isLeader={isLeader} accent={accent} onAccent="#fff"
-                requestStartDestinationId={homeStop?.id} onCommandSent={setHomeCommand} onClose={() => setOverlay(null)} />
-            </View>
-          </KeyboardAvoidingView> : null}
+          <View collapsable={false} pointerEvents="box-none" style={d6MapStyles.stopDetailLayer}>
+            {homeDetailLive && !homeAdd ? <D6StopCard
+              key={homeDetailLive.id}
+              stop={homeDetailLive}
+              zh={zh}
+              color={homeColor(homeDetailLive.day)}
+              departureDate={homeDeparture}
+              current={homeStop?.id === homeDetailLive.id}
+              canEdit={canEditItinerary}
+              canSetStay={canEditHomeTrip && homeDetailLive.day != null && !homeDetailLive.closedAt}
+              stays={Boolean(homeDaily || homeDetailLive.kind === 'accommodation')}
+              busy={homeStopBusy}
+              displayFont={d6DisplayFont}
+              edit={homeStopEditor}
+              onEdit={edit => { setHomeStopEditor(edit); setHomeRadiusPreview(undefined); }}
+              radius={homeRadiusPreview ?? homeRadii[homeDetailLive.id] ?? 50}
+              radiusOverride={homeRadii[homeDetailLive.id]}
+              onRadiusPreview={setHomeRadiusPreview}
+              onRadius={onHomeStopRadius}
+              travelMode={homeTravel.selectedMode}
+              modeEtas={homeTravel.etaByMode}
+              onMode={mode => { setTravelMode(mode); setHomeStopEditor(null); }}
+              error={homeError}
+              onTime={(value, reminder) => changeHomeStop(async () => {
+                if (!groupId || !canEditItinerary) return false;
+                await setDestinationMeetTime(homeDetailLive.id, value?.toISOString() ?? null, value ? reminder : null, groupId);
+                await syncFromDatabase();
+              }, 'editor')}
+              onIcon={emoji => changeHomeStop(async () => {
+                if (!groupId || !canEditItinerary) return false;
+                await updateDestinationEmojiColor(groupId, homeDetailLive.id, { emoji });
+                await syncFromDatabase();
+              }, 'editor')}
+              onStay={next => void changeHomeStop(async () => {
+                if (!next) {
+                  const regular = await unsetD6Accommodation(homeDetailLive, homeDaily);
+                  if (!regular) return false;
+                  if (mapMountedRef.current) setHomeDetail(detail => detail?.id === homeDetailLive.id ? regular : detail);
+                  return true;
+                }
+                if (homeDetailLive.day == null) return false;
+                const saved = await assignD6Accommodation(homeDetailLive.day, { title: homeDetailLive.title, address: homeDetailLive.address,
+                  coordinates: homeDetailLive.coordinates, sourceDestinationId: homeDetailLive.id });
+                if (saved && mapMountedRef.current) setHomeStopEditor(null);
+                return saved;
+              })}
+              onClose={closeHomeDetail}
+              onMaps={() => {
+                const { latitude, longitude } = homeDetailLive.coordinates;
+                const mode = travelMode === 'transit' ? 'r' : travelMode === 'drive' ? 'd' : 'w';
+                void Linking.openURL(`https://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=${mode}`).catch(() => openExternalNavigation(homeDetailLive));
+              }}
+              onDelete={() => void changeHomeStop(async () => {
+                const deleted = homeDaily
+                  ? await mutateD6Accommodation(homeDaily, 'delete')
+                  : await deleteD6Destinations([homeDetailLive.id]);
+                if (deleted && mapMountedRef.current) {
+                  setHomeDay(homeDetailLive.day ?? homeSelectedDay);
+                  setHomePane('itinerary');
+                }
+                return deleted;
+              }, 'card')}
+              onHistory={homeDetailLive.closedAt ? () => {
+                setArrivalDestination(homeDetailLive);
+                setOverlay('arrival');
+                closeHomeDetail();
+              } : undefined}
+            /> : null}
+          </View>
         </>
       ) : null}
+
+      {commandSheet ? <D6CommandsSheet
+        key={commandSheet.id}
+        open={commandSheet.phase === 'open'}
+        progress={commandSheetProgress}
+        reduceMotion={tourReduceMotion}
+        groupId={commandSheet.groupId}
+        isLeader={isLeader}
+        requestStartDestinationId={homeStop?.id}
+        onCommandSent={setHomeCommand}
+        onClose={() => setCommandSheet(current => current?.id === commandSheet.id && current.phase === 'open'
+          ? { ...current, phase: 'closing' } : current)}
+        onDismiss={() => setCommandSheet(current => current?.id === commandSheet.id ? null : current)}
+      /> : null}
 
       {!d6Enabled ? <AddPlaceConfirmCard
         accent={accent}
@@ -5112,7 +5152,7 @@ export default function MapScreen({ route, navigation }: Props) {
           },
           onCreateTeam: () => openTeamRouteAfterSettings('create'),
           onJoinTeam: () => openTeamRouteAfterSettings('join'),
-          renderStore: presentation => <StorePane
+          renderStore: (presentation, onRequireRegistration) => <StorePane
             presentation={presentation}
             groupId={groupId}
             groupName={group?.name ?? null}
@@ -5120,7 +5160,7 @@ export default function MapScreen({ route, navigation }: Props) {
             personalPremiumActive={premiumProjection.personalPremiumActive}
             accent={accent}
             t={t}
-            onRequireRegistration={() => setHomeSettingsPage('account')}
+            onRequireRegistration={onRequireRegistration}
             onEntitlementChanged={() => { void refreshStoreEntitlements(); }}
             onOpenSubscribe={() => openPaywall(undefined, { showRestore: false })}
           />,
@@ -5270,6 +5310,7 @@ export default function MapScreen({ route, navigation }: Props) {
       >
       <FeedbackSheet
         visible={overlay === 'feedback'}
+        fromSettings={settingsOpen}
         onClose={() => setOverlay(null)}
       />
       </View>
@@ -5419,8 +5460,7 @@ const d6MapStyles = StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'stretch', gap: 10, marginTop: 'auto', marginBottom: MAP_ISLAND_BOTTOM_INSET },
   footerButton: { ...d6ChromeStyles.softButton, flex: 1, height: MAP_ISLAND_ACTION_HEIGHT, minHeight: MAP_ISLAND_ACTION_HEIGHT },
   delete: { backgroundColor: '#E5484D' },
-  commandsOverlay: { ...StyleSheet.absoluteFill, zIndex: 91, justifyContent: 'flex-end' },
-  commandsCard: { ...d6ChromeStyles.bottomCard, position: 'relative', left: undefined, right: undefined, marginHorizontal: MAP_FLOATING_EDGE_INSET },
+  stopDetailLayer: { ...StyleSheet.absoluteFill, overflow: 'hidden', zIndex: 89 },
   secondary: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ffffff28', paddingTop: 4 },
 });
 

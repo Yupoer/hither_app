@@ -183,6 +183,7 @@ export default React.memo(function BottomSheet({
   header,
   onHeaderHeight,
   onDismiss,
+  onSwipeBack,
   onDismissComplete,
   dismissRequested,
   dismissTranslateY,
@@ -190,6 +191,7 @@ export default React.memo(function BottomSheet({
   dismissOnDownFromIndex,
   edgeToEdgeAtLast = true,
   contentTopPadding = 0,
+  contentHorizontalPadding,
   fillContent = false,
   pinContentBelowHeader = false,
   scrollResetKey,
@@ -214,6 +216,7 @@ export default React.memo(function BottomSheet({
   onHeaderHeight?: (h: number) => void;
   /** Close the sheet after a committed downward fling from this detent or above. */
   onDismiss?: () => void;
+  onSwipeBack?: () => void;
   /** Called after a translateY-based exit is fully off-screen. */
   onDismissComplete?: () => void;
   /** Controlled visibility for translateY-based sheets. */
@@ -228,6 +231,7 @@ export default React.memo(function BottomSheet({
   edgeToEdgeAtLast?: boolean;
   /** Extra space between the pinned header and scroll content. */
   contentTopPadding?: number;
+  contentHorizontalPadding?: number;
   fillContent?: boolean;
   pinContentBelowHeader?: boolean;
   scrollResetKey?: string;
@@ -426,7 +430,11 @@ export default React.memo(function BottomSheet({
               && dismissIndex < d.length
               && gStartH.value >= d[dismissIndex] - EPS
               && (e.translationY > DISMISS_TRAVEL || e.velocityY > DISMISS_VELOCITY);
-            if (canDismiss) {
+            if (canDismiss && onSwipeBack) {
+              height.value = withSpring(d[controls.index], SPRING);
+              dismissY.value = withSpring(0, SPRING);
+              runOnJS(onSwipeBack)();
+            } else if (canDismiss) {
               gestureClosePending.value = true;
               const epoch = ++dismissEpoch.value;
               if (dismissTranslateY != null) {
@@ -493,6 +501,7 @@ export default React.memo(function BottomSheet({
       scrollOffset,
       dismiss,
       dismissComplete,
+      onSwipeBack,
       dismissDistanceSV,
       dismissTranslateY,
       dismissY,
@@ -605,7 +614,7 @@ export default React.memo(function BottomSheet({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
             flexGrow: fillContent ? 1 : undefined,
-            paddingHorizontal: pinContentBelowHeader ? SHEET_CORNER_ACTION_INSET : 16,
+            paddingHorizontal: contentHorizontalPadding ?? (pinContentBelowHeader ? SHEET_CORNER_ACTION_INSET : 16),
             paddingBottom: Math.max(40, safeArea.bottom + 24),
             paddingTop: (pinContentBelowHeader ? 0 : headerH) + contentTopPadding,
           }}

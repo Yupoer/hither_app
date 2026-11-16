@@ -1,6 +1,6 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import WaveLoading from '../../../components/WaveLoading';
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Alert, StyleSheet, View, type ViewStyle } from 'react-native';
 import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +30,7 @@ import { MAP_SHEET_CORNER_RADIUS } from '../../../components/mapSheetChrome';
 import PrefSlider from '../../../components/PrefSlider';
 import { useSettingsUpdate } from './useSettingsUpdate';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
+import { HITHER_ACCENT } from '../../../theme/brand';
 
 export type SettingsPage = 'root' | 'profile' | 'team' | 'teams' | 'store' | 'notifications' | 'appearance' | 'account' | 'advanced' | 'coordination' | 'mapJourney' | 'support' | 'language';
 
@@ -39,7 +40,7 @@ export type HomeSettingsProps = {
   memberCount?: number;
   profileStatusColor?: string;
   refresh?: () => void;
-  renderStore: (view: 'shop' | 'coins' | 'hidden') => React.ReactNode;
+  renderStore: (view: 'shop' | 'coins' | 'hidden', onRequireRegistration: () => void) => React.ReactNode;
   onShareGroup?: () => void;
   onOpenCoordination?: () => void;
   onCreateCoordination?: UseCoordinationRequestsResult['createRequest'];
@@ -54,7 +55,7 @@ export type HomeSettingsProps = {
 const colors = {
   white: '#fff',
   secondary: 'rgba(255,255,255,0.68)',
-  accent: '#4C6FFF',
+  accent: HITHER_ACCENT,
   success: '#34C759',
   destructive: '#FF6B6B',
 };
@@ -74,18 +75,21 @@ function Row({ label, value, action, divider, icon, destructive, accent, testID 
   accent?: boolean;
   testID?: string;
 }) {
-  const { colors: palette } = useTheme();
   const content = (
     <>
-      <HitherText style={[styles.rowLabel, styles.fillRow, destructive && styles.destructive, accent && { color: palette.accent }]}>{label}</HitherText>
+      <HitherText style={[styles.rowLabel, styles.fillRow, destructive && styles.destructive, accent && { color: HITHER_ACCENT }]}>{label}</HitherText>
       {value ? <HitherText style={styles.rowValue}>{value}</HitherText> : null}
-      {icon || (action && !destructive) ? <Ionicons name={icon ?? 'chevron-forward'} size={17} color={accent ? palette.accent : icon === 'checkmark' ? colors.success : colors.secondary} /> : null}
+      {icon || (action && !destructive) ? <Ionicons name={icon ?? 'chevron-forward'} size={17} color={accent ? HITHER_ACCENT : icon === 'checkmark' ? colors.success : colors.secondary} /> : null}
     </>
   );
   const style = [styles.row, divider && styles.divider];
   return action ? (
     <Pressable testID={testID} style={style} onPress={action} accessibilityRole="button">{content}</Pressable>
   ) : <View testID={testID} style={style}>{content}</View>;
+}
+
+function entryStack(page: SettingsPage): SettingsPage[] {
+  return page === 'root' ? ['root'] : ['root', page];
 }
 
 export default function HomeSettings({
@@ -99,15 +103,18 @@ export default function HomeSettings({
   const { user, isAnonymous, deleteAccount } = useSession();
   const { colors: palette } = useTheme();
   const avatar = displayMemberAvatar(user?.avatar, user?.id ?? '', user?.avatarColor);
-  const [stack, setStack] = useState<SettingsPage[]>([initialPage]);
+  const [stack, setStack] = useState(() => entryStack(initialPage));
   const [entry, setEntry] = useState({ visible, initialPage });
   if (entry.visible !== visible || entry.initialPage !== initialPage) {
     setEntry({ visible, initialPage });
-    if (visible) setStack([initialPage]);
+    if (visible) setStack(entryStack(initialPage));
   }
   const page = stack[stack.length - 1];
-  const go = (next: SettingsPage) => setStack(previous => [...previous, next]);
-  const back = () => setStack(previous => previous.slice(0, -1));
+  const go = (next: SettingsPage) => setStack(previous => previous.at(-1) === next ? previous : [...previous, next]);
+  const back = useCallback(() => {
+    setStack(previous => previous.length > 1 && previous.at(-1) === page ? previous.slice(0, -1) : previous);
+  }, [page]);
+  const isRoot = page === 'root';
   const [mounted, setMounted] = useState(visible);
   const [teamsLoading, setTeamsLoading] = useState(false);
   if (visible && !mounted) setMounted(true);
@@ -132,12 +139,12 @@ export default function HomeSettings({
   const registered = !!user && !isAnonymous;
 
   return (<>
-    <SettingsSheetPanel home singleStage visible={visible} zIndex={80} scrollResetKey={page}
+    <SettingsSheetPanel home singleStage testID="settings-panel" visible={visible} zIndex={80} scrollResetKey={page}
       fitContent={page !== 'root' && page !== 'profile' && page !== 'team' && page !== 'store' && page !== 'teams'}
       fillContent={page === 'teams'}
       background={<D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />}
-      title={title[page]} titleFontSize={24} doneLabel={label('關閉', 'Close')} backLabel={t('common.back')}
-      onClose={onClose} onBack={stack.length > 1 ? back : undefined}
+      title={title[page]} titleFontSize={24} backLabel={t('common.back')}
+      navigation={isRoot ? 'root' : 'child'} onClose={onClose} onBack={isRoot ? undefined : back}
       onDismissComplete={() => { setMounted(false); onDismissComplete?.(); }}>
       <View testID="settings-slide-page" style={page === 'teams' ? styles.fillPage : undefined}>
         {page === 'root' ? (
@@ -154,7 +161,7 @@ export default function HomeSettings({
             {group ? <HomeTeamCard team={group} count={memberCount} onPress={() => go('team')} /> : null}
           </>
         ) : null}
-        {mounted ? renderStore(page === 'root' ? 'coins' : page === 'store' ? 'shop' : 'hidden') : null}
+        {mounted ? renderStore(page === 'root' ? 'coins' : page === 'store' ? 'shop' : 'hidden', () => go('account')) : null}
         {page === 'root' ? (
           <>
             <Box>
@@ -222,7 +229,7 @@ export default function HomeSettings({
           </>
         ) : null}
         {page === 'account' && !registered ? (
-          <AccountSheetContent home visible onClose={stack.length > 1 ? back : onClose} accent={colors.accent} onAccountDeleted={onAccountDeleted} />
+          <AccountSheetContent home visible onClose={back} accent={colors.accent} onAccountDeleted={onAccountDeleted} />
         ) : null}
       </View>
     </SettingsSheetPanel>
@@ -455,7 +462,7 @@ function Advanced({ onFeedback, openSupport, onArchiveAllForTest, onResetTravel 
         </View>
         <Row label={t('settings.resetAllPrefs')} action={resetting ? undefined : confirmReset} divider testID="settings-reset-preferences" />
         <Row label={t('settings.resetPrefs')} action={onResetTravel} divider testID="settings-reset-travel-preferences" />
-        <Row label={t('settings.sectionSupport')} action={openSupport} divider />
+        <Row label={t('settings.sectionSupport')} action={openSupport} divider testID="settings-advanced-support" />
       </Box>
       <Box><Row label={t('feedback.title')} action={onFeedback} icon="chatbubble-ellipses-outline" accent testID="settings-feedback-advanced" /></Box>
       {__DEV__ ? (
@@ -540,7 +547,7 @@ function Support({ visible, onFeedback }: { visible: boolean; onFeedback: () => 
 
 const styles = StyleSheet.create({
   teamsLoadingOverlay: { ...StyleSheet.absoluteFill, zIndex: 81, alignItems: 'center', justifyContent: 'center' },
-  fillPage: { flex: 1, paddingTop: 12 },
+  fillPage: { flex: 1 },
   box: { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 18, paddingHorizontal: 16, marginTop: 14 },
   noTopMargin: { marginTop: 0 },
   row: { minHeight: 48, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 12 },

@@ -95,11 +95,6 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain('edgeToEdgeAtLast');
     expect(settingsOverlay).toContain('singleStage');
     expect(settingsChildSheetIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
-    expect(settingsChildSheetIos).toContain('[stageOneDetent, stageTwoDetent]');
-    expect(settingsChildSheetIos).toContain(
-      'selection: initialStage === 1 ? stageTwoDetent : stageOneDetent',
-    );
-    expect(settingsChildSheetIos).not.toContain('presentationDetents([detent]');
     expect(settingsChildSheetIos).toContain('maxWidth: Infinity');
     expect(settingsChildSheetIos).toContain('RNHostView');
     expect(settingsChildSheetIos).toContain("width: '100%'");

@@ -33,7 +33,7 @@ describe('D6 gathering header', () => {
   it('separates calculating, arrival and localized travel facts', () => {
     expect(d6MeetingDisplay(stop, 'going', null, now, 'en-GB')).toEqual({ kind: 'status', status: 'calculating' });
     expect(d6MeetingDisplay(stop, 'going', Infinity, now, 'en-GB')).toEqual({ kind: 'status', status: 'calculating' });
-    expect(d6MeetingDisplay(stop, 'arrived', 0, now, 'en-GB')).toEqual({ kind: 'time', value: '✓', hot: true });
+    expect(d6MeetingDisplay(stop, 'arrived', 0, now, 'en-GB')).toEqual({ kind: 'none' });
     expect(d6TravelTime(4980, true)).toBe('1 時 23 分');
     expect(d6TravelTime(4980, false)).toBe('1 h 23 min');
     expect(d6TravelTime(120, true)).toBe('2 分');

@@ -141,6 +141,7 @@ jest.mock('react-native', () => ({
   View: 'view', Text: 'text', ScrollView: 'scroll-view', Pressable: 'pressable',
   Platform: { OS: 'ios' }, UIManager: {}, Alert: { alert: jest.fn() },
   Linking: { openSettings: mockAsync, getInitialURL: async () => null, addEventListener: () => ({ remove: jest.fn() }) },
+  Animated: { Value: class { constructor(public value: number) {} } },
   LayoutAnimation: { configureNext: jest.fn(), Presets: {} },
   Keyboard: { addListener: () => ({ remove: jest.fn() }) },
   AppState: { currentState: 'active', addEventListener: (_event: string, listener: (state: string) => void) => {

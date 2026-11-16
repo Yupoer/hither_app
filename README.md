@@ -94,7 +94,7 @@ Hither uses local review. A GitHub Issue is optional. PR delivery and direct `ma
 
 The release entry is `hither-release`. A Git-only request stops after Git verification. OTA-only and build-only requests keep their stated limits. A plain commit or push does not start a release.
 
-The [iOS CD release routes](docs/ios-cd-release.md) describe the verified-binary OTA gate, retained native modes, and checks required after publication.
+The [iOS release scripts](docs/ios-cd-release.md#release-scripts) select the OTA or Mac route from the pinned source and the verified binary record. The same guide covers existing IPA submission, explicit GitHub Actions modes, and publication checks.
 
 ### Local quick checks and CI scope
 

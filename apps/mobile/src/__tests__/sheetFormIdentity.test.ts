@@ -120,3 +120,23 @@ it('clears the feedback deferred close on unmount and closes exactly once on the
   act(() => { jest.advanceTimersByTime(1000); });
   expect(close).toHaveBeenCalledTimes(1);
 });
+
+
+it('keeps a newly opened report draft when a submission completes after Back', async () => {
+  jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick'] });
+  let resolveFeedback!: () => void;
+  mockSubmitFeedback.mockImplementationOnce(() => new Promise<void>(resolve => { resolveFeedback = resolve; }));
+  const close = jest.fn();
+  const render = (visible: boolean) => React.createElement(FeedbackSheet, { visible, fromSettings: true, onClose: close });
+  act(() => { view = create(render(true)); });
+  const description = () => view.root.findByType('Input' as never);
+  const sheet = () => view.root.findByType('SettingsSheet' as never);
+  act(() => { description().props.onChangeText('First report'); });
+  act(() => { view.root.findAllByType('Button' as never).at(-1)!.props.onPress(); });
+  act(() => { sheet().props.onClose(); view.update(render(false)); });
+  act(() => { view.update(render(true)); description().props.onChangeText('New draft'); });
+  await act(async () => { resolveFeedback(); });
+  act(() => { jest.advanceTimersByTime(1000); });
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(description().props.value).toBe('New draft');
+});

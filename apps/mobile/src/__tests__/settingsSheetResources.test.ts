@@ -97,3 +97,27 @@ it('resets native close/dismiss ownership only when visibility changes', async (
   expect(onDismissComplete).toHaveBeenCalledTimes(2);
   await act(async () => tree.unmount());
 });
+
+
+it.each(['Back', 'native dismiss'])('shows only a left Back action and returns one time via %s', async method => {
+  const onClose = jest.fn();
+  let tree!: ReturnType<typeof create>;
+  const props = {
+    visible: true, title: 'Notifications', navigation: 'child', backLabel: 'Back', onClose, children: null,
+  } satisfies React.ComponentProps<typeof NativeSettingsChildSheet>;
+  await act(async () => {
+    tree = create(React.createElement(NativeSettingsChildSheet, props));
+  });
+  const header = tree.root.findByType('HStack' as never);
+  const actions = header.findAllByType('HeaderAction' as never);
+  expect(actions.map(item => [item.props.action, item.props.accessibilityLabel])).toEqual([['back', 'Back']]);
+  expect(header.children[0]).toBe(actions[0]);
+  await act(async () => {
+    const sheet = tree.root.findByType(NativeSheet);
+    if (method === 'Back') actions[0].props.onPress();
+    else sheet.props.onIsPresentedChange(false);
+    sheet.props.onDismiss();
+  });
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await act(async () => tree.unmount());
+});

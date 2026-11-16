@@ -510,10 +510,18 @@ public final class HitherMetricsModule: Module {
     }
   }
 
+  private let journeyHoldHaptics = JourneyHoldHaptics()
+
   public func definition() -> ModuleDefinition {
     Name("HitherMetrics")
     Events("powerStateChanged")
     Constant("supportsNativePane") { true }
+    AsyncFunction("startJourneyHoldHaptics") { (durationMs: Double, intervalMs: Double) in
+      try self.journeyHoldHaptics.start(durationMs: durationMs, intervalMs: intervalMs)
+    }.runOnQueue(.main)
+    AsyncFunction("stopJourneyHoldHaptics") {
+      self.journeyHoldHaptics.stop()
+    }.runOnQueue(.main)
     View(HitherPaneView.self) {
       Prop("closedHeight") { (view: HitherPaneView, value: Double) in view.closedHeight = CGFloat(value) }
       Prop("referenceHeight") { (view: HitherPaneView, value: Double) in view.referenceHeight = CGFloat(value) }
@@ -559,7 +567,12 @@ public final class HitherMetricsModule: Module {
       self.subscriber.prepare()
     }
 
+    OnAppEntersBackground {
+      DispatchQueue.main.async { [journeyHoldHaptics = self.journeyHoldHaptics] in journeyHoldHaptics.stop() }
+    }
+
     OnDestroy {
+      DispatchQueue.main.async { [journeyHoldHaptics = self.journeyHoldHaptics] in journeyHoldHaptics.stop() }
       self.stopPowerObserving()
       self.sampler.setEnabled(false)
       self.collectionLock.lock()

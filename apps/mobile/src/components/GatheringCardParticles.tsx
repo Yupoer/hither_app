@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Canvas, Path, Skia, type SkPath } from '@shopify/react-native-skia';
-import Animated, { type DerivedValue, useAnimatedStyle, useDerivedValue, useFrameCallback, useReducedMotion,
+import { Canvas, Group, Path, Skia, type SkPath } from '@shopify/react-native-skia';
+import { type DerivedValue, type SharedValue, useDerivedValue, useFrameCallback, useReducedMotion,
   useSharedValue, withTiming } from 'react-native-reanimated';
 import { useMountEffect } from '../hooks/useMountEffect';
 import { useForegroundUi } from '../state/foregroundUi';
@@ -40,18 +40,15 @@ function GatheringCardParticles({
     clock.value += Math.min(64, frameElapsed.value);
     frameElapsed.value = 0;
   }, false);
-  const flightStyle = useAnimatedStyle(() => ({ opacity: blend.value }));
   return (
     <View testID="gathering-card-particles" pointerEvents="none" accessibilityElementsHidden
       style={styles.fill} onLayout={({ nativeEvent: { layout: { width, height } } }) =>
         setSize(current => current.width === width && current.height === height ? current : { width, height })}>
       <ParticleMotion key={moving ? 'move' : allowsMotion ? 'settle' : 'idle'}
         moving={moving} allowsMotion={allowsMotion} blend={blend} settle={setSettled} />
-      {drawing && size.width > 0 && size.height > 0 ? (
-        <Animated.View style={[styles.fill, flightStyle]}>
-          <ParticleCanvas {...size} frame={frame} time={clock} />
-        </Animated.View>
-      ) : null}
+      {drawing && size.width > 0 && size.height > 0
+        ? <ParticleCanvas {...size} frame={frame} time={clock} blend={blend} />
+        : null}
     </View>
   );
 }
@@ -59,7 +56,7 @@ function GatheringCardParticles({
 function ParticleMotion({ moving, allowsMotion, blend, settle }: {
   moving: boolean;
   allowsMotion: boolean;
-  blend: ReturnType<typeof useSharedValue<number>>;
+  blend: SharedValue<number>;
   settle: (value: boolean) => void;
 }) {
   useMountEffect(() => {
@@ -78,11 +75,12 @@ function ParticleMotion({ moving, allowsMotion, blend, settle }: {
   return null;
 }
 
-function ParticleCanvas({ width, height, frame, time }: {
+function ParticleCanvas({ width, height, frame, time, blend }: {
   width: number;
   height: number;
   frame: ReturnType<typeof useFrameCallback>;
-  time: ReturnType<typeof useSharedValue<number>>;
+  time: SharedValue<number>;
+  blend: SharedValue<number>;
 }) {
   useMountEffect(() => {
     time.set(0);
@@ -103,10 +101,12 @@ function ParticleCanvas({ width, height, frame, time }: {
   });
   return (
     <Canvas style={StyleSheet.absoluteFill}>
-      {GATHERING_PARTICLE_SHADES.map((opacity, index) => <ParticleLayer key={index}
-        index={index} opacity={opacity * 0.16} paths={paths} />)}
-      {GATHERING_PARTICLE_SHADES.map((opacity, index) => <ParticleLayer key={index + GATHERING_PARTICLE_SHADES.length}
-        index={index + GATHERING_PARTICLE_SHADES.length} opacity={opacity} paths={paths} />)}
+      <Group opacity={blend}>
+        {GATHERING_PARTICLE_SHADES.map((opacity, index) => <ParticleLayer key={index}
+          index={index} opacity={opacity * 0.16} paths={paths} />)}
+        {GATHERING_PARTICLE_SHADES.map((opacity, index) => <ParticleLayer key={index + GATHERING_PARTICLE_SHADES.length}
+          index={index + GATHERING_PARTICLE_SHADES.length} opacity={opacity} paths={paths} />)}
+      </Group>
     </Canvas>
   );
 }

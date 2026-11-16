@@ -1,47 +1,12 @@
 {
-  "schemaVersion": 2,
-  "kind": "reviewed_compatibility",
+  "schemaVersion": 1,
+  "kind": "binary_provenance",
   "platform": "ios",
   "channel": "production",
-  "comparisonBaselineSha": "017bf952db09c353ae7b14984d941be8c584fa30",
-  "binarySourceSha": null,
-  "runtimeVersion": "0.1.13",
-  "appVersion": "0.1.13",
-  "buildNumber": "79",
+  "sourceSha": "4ea1d7c62ed09401468902a9ba565b0b9965f0fa",
+  "runtimeVersion": "0.1.16",
+  "appVersion": "0.1.16",
+  "buildNumber": "87",
   "appleState": "IN_BETA_TESTING",
-  "evidence": "docs/ios-production-compatibility-20261103.md",
-  "reviewedMobilePaths": {
-    "apps/mobile/modules/hither-location/ios/HitherLocationModule.swift": {
-      "baselineBlobSha": "df7efee2018055da80f727feb3ffbc6c2e26d0f9",
-      "reviewedBlobSha": "c81d05199f531cba1db24c9b739c4f1eddcd596f"
-    },
-    "apps/mobile/modules/hither-location/ios/LocationDeliveryPolicy.swift": {
-      "baselineBlobSha": "1bfb99fa2bf8653586334df9bddd6335b703b729",
-      "reviewedBlobSha": "03fa7b56dc2af4ee9c7de58e9a178b6d69c6eef3"
-    },
-    "apps/mobile/package.json": {
-      "baselineBlobSha": "730347eb83d98033ae8f94e4c6edc4e1911a4d38",
-      "reviewedBlobSha": "a6fb28a5275ed944d06a8380ee16818db3549092"
-    },
-    "apps/mobile/src/native/backgroundLocation.ts": {
-      "baselineBlobSha": "c924e614e82677bcec34c857adb1dc6403bed959",
-      "reviewedBlobSha": "e4fc5dc7d4465d324e435fec027b9a14c3231de0"
-    },
-    "apps/mobile/src/native/location.ts": {
-      "baselineBlobSha": "fd7d26543f1fd00287722393f5632758108e7c6f",
-      "reviewedBlobSha": "43afdcfec22513347debccb17f2681238574a49e"
-    },
-    "apps/mobile/src/native/locationSourceHealth.ts": {
-      "baselineBlobSha": null,
-      "reviewedBlobSha": "d41b7aa4185f972caa5bf328a1d22e7629843e50"
-    },
-    "apps/mobile/src/native/maps.ts": {
-      "baselineBlobSha": "ca00f9d93c918d0bb6bebe90f90b03c91a51370c",
-      "reviewedBlobSha": "f61769965d05cf5a87896ea39463aaec2dea2bcf"
-    },
-    "apps/mobile/App.tsx": {
-      "baselineBlobSha": "d09ad5aa8ad3e7f93df952eb9dab03b54b341c01",
-      "reviewedBlobSha": "eca08afd3f796fa106d9cf3c6890bfb08159d195"
-    }
-  }
+  "evidence": "docs/ios-production-build-87.md"
 }

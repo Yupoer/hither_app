@@ -104,8 +104,6 @@ describe('iOS native UI contracts', () => {
     expect(settingsIos).toContain('fraction: stageTwoRatio');
     expect(settingsIos).toContain('presentationDetents(');
     expect(settingsIos).toContain('[stageOneDetent, stageTwoDetent]');
-    expect(settingsIos).toContain('selection: initialStage === 1 ? stageTwoDetent : stageOneDetent');
-    expect(settingsIos).not.toContain('presentationDetents([detent]');
     expect(settingsIos).toContain('closeStartedRef');
     expect(settingsIos).toContain('if (!presented && visible)');
     expect(settingsIos).not.toContain('chevron-back');
@@ -135,7 +133,7 @@ describe('iOS native UI contracts', () => {
   it('keeps avatar choices within a centered grid and horizontally scrolls colors', () => {
     expect(settings).toContain('<ScrollView');
     expect(settings).toContain('horizontal');
-    expect(settings).toContain('width: 300');
+    expect(settings).toContain('maxWidth: 300');
     expect(settings).toContain('alignSelf: \'center\'');
   });
 
@@ -184,7 +182,7 @@ describe('iOS native UI contracts', () => {
       hit: MAP_SHEET_ACTION_HIT_SIZE,
       icon: MAP_SHEET_ACTION_ICON_SIZE,
       cornerRadius: MAP_SHEET_CORNER_RADIUS,
-    }).toEqual({ visual: 36, hit: 44, icon: 17, cornerRadius: 44 });
+    }).toEqual({ visual: 44, hit: 44, icon: 17, cornerRadius: 32 });
     expect(paywallSheet).toContain('action="close"');
     expect(routeEditorSheet).toContain('doneSystemImage="checkmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");

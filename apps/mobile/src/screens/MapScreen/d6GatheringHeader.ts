@@ -8,7 +8,7 @@ type MeetingDisplay =
   | { kind: 'time'; value: string; hot?: boolean; unit?: boolean };
 
 export function d6MeetingDisplay(stop: Destination | null, phase: D6Journey, eta: number | null, now: number, locale: string): MeetingDisplay {
-  if (phase === 'arrived') return { kind: 'time', value: '✓', hot: true };
+  if (phase === 'arrived') return { kind: 'none' };
   if (phase === 'going') {
     if (eta == null || !Number.isFinite(eta)) return { kind: 'status', status: 'calculating' };
     const minutes = Math.max(0, Math.ceil(eta / 60));

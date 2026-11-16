@@ -6,7 +6,8 @@ import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import Pressable from './MotionPressable';
 import SettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet';
 import { useTranslation, type TranslationKey } from '../i18n';
-import { useTheme } from '../state/PreferencesContext';
+import { HITHER_ACCENT } from '../theme/brand';
+import { SETTINGS_SHEET_CONTENT_INSET } from './mapSheetChrome';
 import { glass, accentMix } from '../glass';
 import { submitFeedback } from '../api/feedback';
 import { logEvent, logError } from '../utils/activityLog';
@@ -28,18 +29,19 @@ const CATEGORIES: { key: Category; label: TranslationKey }[] = [
 /** Text-only feedback form, opened from Settings. */
 export default function FeedbackSheet({
   visible,
+  fromSettings = false,
   onClose,
 }: {
   visible: boolean;
+  fromSettings?: boolean;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
-  const { accent, accentText } = colors;
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<Category>('bug');
   const [status, setStatus] = useState<Status>('form');
   const mountedRef = useRef(true);
+  const presentationRef = useRef(0);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useMountEffect(() => {
@@ -60,6 +62,7 @@ export default function FeedbackSheet({
   }
 
   function handleClose() {
+    presentationRef.current += 1;
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
@@ -70,26 +73,29 @@ export default function FeedbackSheet({
 
   async function submit() {
     if (!description.trim() || status === 'sending') return;
+    const presentation = presentationRef.current;
+    const stillPresented = () => mountedRef.current && presentationRef.current === presentation;
     await runUiAction(
       'feedback.submit',
       async (token) => {
+        if (!stillPresented()) return;
         setStatus('sending');
         logEvent('feedback_submit', { category });
         try {
           await submitFeedback(category, description);
           if (!token.isCurrent()) return;
           logEvent('feedback_submit_ok', { category });
+          if (!stillPresented()) return;
           setStatus('sent');
-          // Token is cleared in runUiAction finally after success — do not gate
-          // deferred close on isCurrent(). Use mount lifetime instead.
+          // runUiAction clears the token before this presentation timer fires.
           if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
           closeTimerRef.current = setTimeout(() => {
             closeTimerRef.current = null;
-            if (mountedRef.current) handleClose();
+            if (stillPresented()) handleClose();
           }, 1000);
         } catch (e) {
           logError('feedback_submit_failed', e, { category });
-          if (token.isCurrent()) setStatus('error');
+          if (token.isCurrent() && stillPresented()) setStatus('error');
           throw e;
         }
       },
@@ -98,7 +104,7 @@ export default function FeedbackSheet({
         suppressBanner: true,
         // Timeout (and errors) must leave the permanent spinner state.
         onError: () => {
-          setStatus((prev) => (prev === 'sending' ? 'error' : prev));
+          if (stillPresented()) setStatus((prev) => (prev === 'sending' ? 'error' : prev));
         },
       },
     );
@@ -107,7 +113,10 @@ export default function FeedbackSheet({
   return (
     <SettingsChildSheet
       visible={visible}
+      testID="feedback-sheet"
       onClose={handleClose}
+      navigation={fromSettings ? "child" : undefined}
+      backLabel={t('common.back')}
       title={t('feedback.title')}
       titleFontSize={25}
       darkMaterial
@@ -115,7 +124,7 @@ export default function FeedbackSheet({
       stageTwoRatio={0.88}
       wrapContentInScrollView={false}
     >
-      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={styles.body}>
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false} contentContainerStyle={[styles.body, fromSettings && styles.settingsBody]}>
         <Text style={styles.categoryLabel}>{t('feedback.categoryLabel')}</Text>
         <View style={styles.categoryRow}>
           {CATEGORIES.map((c) => {
@@ -129,7 +138,7 @@ export default function FeedbackSheet({
                 accessibilityState={{ selected }}
                 style={[
                   styles.categoryChip,
-                  selected && { backgroundColor: accentMix(accent, 26), borderColor: accent },
+                  selected && styles.categoryChipSelected,
                 ]}
               >
                 <Text style={[styles.categoryChipText, selected && { color: '#fff' }]}>
@@ -159,7 +168,6 @@ export default function FeedbackSheet({
         <Pressable
           style={[
             styles.cta,
-            { backgroundColor: accentMix(accent, 90), borderColor: accentMix(accent, 50) },
             (!description.trim() || status === 'sending') && styles.ctaDisabled,
           ]}
           testID="feedback-submit"
@@ -168,9 +176,9 @@ export default function FeedbackSheet({
           accessibilityRole="button"
         >
           {status === 'sending' ? (
-            <ActivityIndicator accessibilityRole="progressbar" color={accentText} />
+            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
           ) : (
-            <Text style={[styles.ctaText, { color: accentText }]}>{t('feedback.send')}</Text>
+            <Text style={styles.ctaText}>{t('feedback.send')}</Text>
           )}
         </Pressable>
       </ScrollView>
@@ -180,6 +188,7 @@ export default function FeedbackSheet({
 
 const styles = StyleSheet.create({
   body: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 26, gap: 14 },
+  settingsBody: { paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET, paddingTop: 4 },
   categoryLabel: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700', color: glass.textSecondary },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   categoryChip: {
@@ -191,6 +200,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: glass.hairline,
   },
+  categoryChipSelected: { backgroundColor: accentMix(HITHER_ACCENT, 26), borderColor: HITHER_ACCENT },
   categoryChipText: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: glass.textSecondary },
   input: {
     minHeight: 128,
@@ -205,6 +215,8 @@ const styles = StyleSheet.create({
   error: { fontSize: APP_TEXT_SIZE.caption, color: glass.danger },
   success: { fontSize: APP_TEXT_SIZE.caption, color: glass.ok },
   cta: {
+    backgroundColor: HITHER_ACCENT,
+    borderColor: HITHER_ACCENT,
     minHeight: 56,
     borderRadius: 28,
     paddingHorizontal: 16,

@@ -170,6 +170,10 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       expect(account.presentation.session.user.id).toBe(LEADER);
       expect(world.backend.rewardSessions.size).toBe(0);
       expect(account.native.receipts.some((receipt: Receipt) => receipt.method === 'iap.requestPurchase')).toBe(false);
+      if (iOS) {
+        expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
+        await world.waitFor(device, (value: Observation) => has(value, 'store-ad-cta') && !has(value, 'account-email'), 'account returns to Store');
+      }
     } finally { await world.close(); }
   });
 
@@ -249,7 +253,16 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       })]));
       expect(activated.native.receipts.some((receipt: Receipt) => receipt.method === 'iap.requestPurchase')).toBe(false);
       await device.input({ kind: 'alert', index: 0 });
-      expect(await (iOS ? press(device, 'settings-root-close') : device.host.call({ kind: 'press', label: '取消' }))).toEqual({ invoked: true });
+      if (iOS) {
+        expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
+        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
+          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
+            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
+        }
+        await device.input({ kind: 'animation', finished: true });
+      } else {
+        expect(await device.host.call({ kind: 'press', label: '取消' })).toEqual({ invoked: true });
+      }
       await enableLegacyParentLiveActivity(world, device);
     } finally { await world.close(); }
   });
