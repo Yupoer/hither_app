@@ -3,10 +3,10 @@
   "kind": "binary_provenance",
   "platform": "ios",
   "channel": "production",
-  "sourceSha": "4ea1d7c62ed09401468902a9ba565b0b9965f0fa",
-  "runtimeVersion": "0.1.16",
-  "appVersion": "0.1.16",
-  "buildNumber": "87",
+  "sourceSha": "f11507b8f50ce8ee852e5e21b064cba299119f0a",
+  "runtimeVersion": "0.1.17",
+  "appVersion": "0.1.17",
+  "buildNumber": "88",
   "appleState": "IN_BETA_TESTING",
-  "evidence": "docs/ios-production-build-87.md"
+  "evidence": "docs/ios-production-build-88.md"
 }

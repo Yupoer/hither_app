@@ -100,6 +100,30 @@ class UploadTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, error):
                     self.verify_fixture()
 
+    def test_direct_upload_requires_cancellation_of_the_same_eas_attempt(self):
+        upload.write_receipt(self.output / "submission-intent.json", self.identity)
+        (self.output / "eas-submit.log").write_text(SCHEDULED)
+        with patch.object(upload.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "Confirm cancellation"):
+                upload.submit_direct(self.repo, self.output, self.verification, CONFIG)
+        run.assert_not_called()
+
+    def test_direct_upload_uses_exact_ipa_and_resumes_from_receipt(self):
+        upload.write_receipt(self.output / "submission-intent.json", self.identity)
+        (self.output / "eas-submit.log").write_text(SCHEDULED + "The submission has been canceled\n")
+        with tempfile.NamedTemporaryFile() as key, patch.dict(upload.os.environ, {
+                "ASC_KEY_ID": "TEST123", "ASC_ISSUER_ID": SUBMISSION_ID, "ASC_KEY_PATH": key.name,
+        }), patch.object(upload, "require_submit_source") as source, patch.object(
+            upload.subprocess, "run", return_value=subprocess.CompletedProcess([], 0),
+        ) as run:
+            receipt = upload.submit_direct(self.repo, self.output, self.verification, CONFIG)
+            self.assertEqual(upload.submit_direct(self.repo, self.output, self.verification, CONFIG), receipt)
+        source.assert_called_once_with(self.repo, self.verification)
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0][:4], ["/usr/bin/xcrun", "altool", "--upload-package", str(self.ipa)])
+        self.assertEqual(receipt["status"], "uploaded")
+        self.assertEqual(receipt["ipaSha256"], self.digest)
+
     def test_dispatch_waits_for_exact_path_and_reuse_reads_receipt(self):
         def run(command, **kwargs):
             self.assertEqual(kwargs["cwd"], self.repo / "apps/mobile")

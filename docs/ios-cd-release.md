@@ -29,6 +29,7 @@ python3 -B scripts/ios-release.py --source-sha "$source_sha" \
 | Mac production build and startup | `ios-release-local.py --source-sha "$source_sha" --release-dir "$release_dir"` with optional `--simulator "$udid"` |
 | Signed IPA only | `ios-release-local.py` with the same arguments and `--build-only` |
 | Verify or submit an existing IPA | `ios-release-upload.py --source-sha "$source_sha" --ipa "$ipa_path" --sha256 "$ipa_sha256" --release-dir "$release_dir"` with `--verify-only` for verification |
+| Direct Apple upload | `ios-release-upload.py` with the same IPA arguments and `--transport apple` |
 | Explicit GitHub Actions mode | `ios-release-actions.py --source-sha "$source_sha" --release-dir "$release_dir" --mode <mode>` with `--backend-verified` for `submit` |
 
 Run the scripts from the checkout root with `python3 -B scripts/<script>`. OTA
@@ -42,8 +43,15 @@ submit the exact `ipaPath` and `ipaSha256` from `local-build.json`. Verify
 required backend changes before submission. Keep the release directory to
 resume the same attempt. For Actions routes the saved run ID and outcome
 allow another invocation to watch the existing run. Check App Store Connect
-after the EAS upload, then update the binary record with the delivered source
+after upload, then update the binary record with the delivered source
 and reviewed Apple evidence so the next compatible change can select OTA.
+
+Direct upload uses the Mac's `xcrun altool`. Configure `ASC_KEY_ID`,
+`ASC_ISSUER_ID` and `ASC_KEY_PATH` with a key file outside the checkout. Check
+App Store Connect for the exact version and build before submitting. When an
+EAS attempt exists, wait for its confirmed cancellation and reuse its release
+directory. The upload script reads that cancellation and retains a separate
+direct upload receipt.
 
 ## Build on the Mac by default
 
