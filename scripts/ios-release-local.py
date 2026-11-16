@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Build a pinned production IPA locally and verify full Release simulator startup.
-
-Git/CI admission and screenshot review belong to the caller. This route never submits.
-"""
+"""Build a pinned production IPA locally and prepare Release cold-start evidence for review."""
 
 import argparse
 from contextlib import contextmanager
@@ -186,9 +183,11 @@ def existing_ipa(source, output):
 
 def local_environment(output):
     env = dict(os.environ)
+    # EAS resolves the project before loading its production environment.
+    env.pop('EAS_BUILD_PROFILE', None)
     temporary = output / 'build-tmp'
     temporary.mkdir(exist_ok=True)
-    env.update(CI='1', TMPDIR=str(temporary) + '/', EAS_BUILD_PROFILE='production')
+    env.update(CI='1', TMPDIR=str(temporary) + '/')
     return env
 
 
@@ -207,7 +206,7 @@ def prepare_dependencies(source, output, env):
         raise ValueError('Node 22 is required for local production builds')
     expected = {'sourceSha': source, 'node': node, 'checkout': str(REPO)}
     if not marker.exists() or read_json(marker) != expected or not (MOBILE / 'node_modules').is_dir():
-        run(['npm', 'ci'], env=env, log=output / 'npm-ci.log', timeout=1800)
+        run(['npm', 'ci', '--include=dev'], env=env, log=output / 'npm-ci.log', timeout=1800)
         write_json(marker, expected)
     run(['npm', 'run', 'verify:runtime'], env=env, log=output / 'verify-runtime.log')
 
@@ -225,9 +224,16 @@ def build_ipa(source, output, config, env):
                      'GYM_BUILDLOG_PATH': str(output / 'gym-logs'),
                      'EAS_LOCAL_BUILD_WORKINGDIR': str(output / 'eas-work'),
                      'EAS_LOCAL_BUILD_SKIP_CLEANUP': '1'}
-        run([*EAS, 'build', '--platform', 'ios', '--profile', 'production', '--local',
-             '--non-interactive', '--output', str(ipa)], env=build_env,
-            log=output / 'eas-build.log', timeout=10800)
+        expo_plist = MOBILE / 'ios/Hither/Supporting/Expo.plist'
+        original = expo_plist.read_bytes()
+        try:
+            run([*EAS, 'build', '--platform', 'ios', '--profile', 'production', '--local',
+                 '--non-interactive', '--output', str(ipa)], env=build_env,
+                log=output / 'eas-build.log', timeout=10800)
+        finally:
+            # The pinned EAS CLI can strip the trailing newline while preparing its archive.
+            if original.endswith(b'\n') and expo_plist.read_bytes() == original[:-1]:
+                expo_plist.write_bytes(original)
     metadata = verify_ipa(ipa, archive, output, config)
     receipt = {**(receipt or {}), **identity(source, output), **metadata,
                'ipaSha256': digest(ipa), 'schemaVersion': 1, 'easCliVersion': '21.0.2',
@@ -379,6 +385,7 @@ def main(argv=None):
         config = read_json(MOBILE / 'app.json')['expo']
         env = local_environment(output)
         receipt = build_ipa(args.source_sha, output, config, env)
+        require_source(args.source_sha)
         if not args.build_only:
             command = [sys.executable, str(Path(__file__).resolve()), '--source-sha', args.source_sha,
                        '--release-dir', str(output), '--_simulator-stage']

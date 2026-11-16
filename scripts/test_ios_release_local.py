@@ -24,6 +24,12 @@ class LocalReleaseTests(unittest.TestCase):
     def write(self, name, payload):
         LOCAL.write_json(self.output / name, payload)
 
+    def test_production_config_is_deferred_until_eas_loads_the_environment(self):
+        with patch.dict('os.environ', {'EAS_BUILD_PROFILE': 'production'}):
+            env = LOCAL.local_environment(self.output)
+        self.assertNotIn('EAS_BUILD_PROFILE', env)
+        self.assertEqual(env['CI'], '1')
+
     def test_shared_verifier_uses_external_temp_and_requires_archive_uuid_match(self):
         ipa, archive = self.output / 'Hither.ipa', self.output / 'Hither.xcarchive'
         ipa.write_bytes(b'IPA')
@@ -85,6 +91,10 @@ class LocalReleaseTests(unittest.TestCase):
         self.assertEqual(LOCAL.read_json(self.output / 'local-build.json'), receipt)
 
     def test_build_pins_eas_and_puts_work_archive_and_temporary_files_in_output(self):
+        expo_plist = self.output / 'ios/Hither/Supporting/Expo.plist'
+        expo_plist.parent.mkdir(parents=True)
+        expo_plist.write_bytes(b'<plist/>\n')
+
         def command(argv, **kwargs):
             self.assertEqual(argv[:3], ['npx', '--yes', 'eas-cli@21.0.2'])
             self.assertIn('--local', argv)
@@ -94,10 +104,13 @@ class LocalReleaseTests(unittest.TestCase):
             self.assertEqual(kwargs['env']['GYM_DERIVED_DATA_PATH'], str(self.output / 'device-derived-data'))
             self.assertTrue(kwargs['env']['TMPDIR'].startswith(str(self.output)))
             self.assertTrue((self.output / 'local-build-intent.json').is_file())
+            expo_plist.write_bytes(b'<plist/>')
             (self.output / 'Hither.ipa').write_bytes(b'IPA')
-        with patch.object(LOCAL, 'run', side_effect=command), patch.object(LOCAL, 'preflight_tools'), \
+        with patch.object(LOCAL, 'MOBILE', self.output), \
+                patch.object(LOCAL, 'run', side_effect=command), patch.object(LOCAL, 'preflight_tools'), \
                 patch.object(LOCAL, 'prepare_dependencies'), patch.object(LOCAL, 'verify_ipa', return_value={}):
             LOCAL.build_ipa(SOURCE, self.output, {}, LOCAL.local_environment(self.output))
+        self.assertEqual(expo_plist.read_bytes(), b'<plist/>\n')
 
     def test_existing_receipt_still_reverifies_signature_and_archive(self):
         ipa = self.output / 'Hither.ipa'
