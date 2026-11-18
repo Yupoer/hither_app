@@ -56,6 +56,7 @@ function handlerFor(options: {
   apply?: Record<string, unknown> | null;
   applyError?: unknown;
   environment?: string;
+  onRpc?: () => void;
   trip?: boolean;
 }) {
   const payload = options.trip
@@ -86,17 +87,20 @@ function handlerFor(options: {
       },
     }),
     createAdmin: () => ({
-      rpc: async () => ({
-        data: options.apply ?? {
-          ok: true,
-          durable: true,
-          duplicate: false,
-          status: 'active',
-          entitlementVersion: 1,
-          personalPremiumActive: true,
-        },
-        error: options.applyError ?? null,
-      }),
+      rpc: async () => {
+        options.onRpc?.();
+        return {
+          data: options.apply ?? {
+            ok: true,
+            durable: true,
+            duplicate: false,
+            status: 'active',
+            entitlementVersion: 1,
+            personalPremiumActive: true,
+          },
+          error: options.applyError ?? null,
+        };
+      },
       from: () => ({
         select() { return this; },
         eq() { return this; },
@@ -155,10 +159,21 @@ Deno.test('cross-user originalTransactionId returns 422 and does not look durabl
   }
 });
 
-Deno.test('Production JWS verifies on a Sandbox-configured deployed function', async () => {
-  const response = await handlerFor({ environment: 'Production' })(request());
-  if (response.status !== 200) {
-    throw new Error(`dual-env purchase rejected: ${response.status}`);
+Deno.test('Production JWS cannot reach Sandbox subscription or trip ledgers', async () => {
+  for (const trip of [false, true]) {
+    let rpcCalls = 0;
+    const response = await handlerFor({
+      environment: 'Production',
+      onRpc: () => rpcCalls += 1,
+      trip,
+    })(request(trip
+      ? { product_id: 'hither.small_trip_pass', group_id: 'group-1' }
+      : {}));
+    const result = await body(response);
+    if (response.status !== 422 || result.error !== 'environment_mismatch') {
+      throw new Error(`${trip ? 'trip' : 'subscription'} environment mismatch was not rejected`);
+    }
+    if (rpcCalls !== 0) throw new Error('environment mismatch reached an entitlement ledger');
   }
 });
 

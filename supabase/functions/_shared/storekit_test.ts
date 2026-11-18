@@ -173,11 +173,12 @@ Deno.test('server configuration fails closed without root pin or exact two produ
   if (!configured) throw new Error('complete configuration was rejected');
 });
 
-Deno.test('deployed configuration accepts Production and Sandbox and rejects Xcode', () => {
+Deno.test('deployed configuration accepts only its exact StoreKit environment', () => {
   const configured = storeKitConfigFromEnv((name) => ({
     APPLE_BUNDLE_ID: 'app.hither.mobile',
     APPLE_STORE_ENVIRONMENT: 'Production',
     PREMIUM_PRODUCT_IDS: 'app.hither.premium.monthly,app.hither.premium.annual',
+    PREMIUM_TRIP_PRODUCT_ID: 'hither.small_trip_pass',
     PREMIUM_SUBSCRIPTION_GROUP_ID: 'hither-premium',
     APPLE_ROOT_CERT_SHA256: 'abc',
   }[name]));
@@ -188,7 +189,9 @@ Deno.test('deployed configuration accepts Production and Sandbox and rejects Xco
     1_800_000_010_000,
     'hash',
   );
-  if (!sandbox.ok) throw new Error(`Sandbox JWS rejected: ${sandbox.error}`);
+  if (sandbox.ok || sandbox.error !== 'environment_mismatch') {
+    throw new Error('Production deployment accepted a Sandbox subscription');
+  }
   const production = validateStoreKitTransaction(
     payload({ environment: 'Production' }),
     { ...configured, appAccountToken: config.appAccountToken },
@@ -196,6 +199,22 @@ Deno.test('deployed configuration accepts Production and Sandbox and rejects Xco
     'hash',
   );
   if (!production.ok) throw new Error(`Production JWS rejected: ${production.error}`);
+  const sandboxTrip = validateStoreKitTripTransaction(
+    tripPayload({ environment: 'Sandbox' }),
+    { ...configured, appAccountToken: config.appAccountToken },
+    1_800_000_010_000,
+    'hash-trip',
+  );
+  if (sandboxTrip.ok || sandboxTrip.error !== 'environment_mismatch') {
+    throw new Error('Production deployment accepted a Sandbox trip purchase');
+  }
+  const productionTrip = validateStoreKitTripTransaction(
+    tripPayload({ environment: 'Production' }),
+    { ...configured, appAccountToken: config.appAccountToken },
+    1_800_000_010_000,
+    'hash-trip',
+  );
+  if (!productionTrip.ok) throw new Error(`Production trip JWS rejected: ${productionTrip.error}`);
   const xcode = validateStoreKitTransaction(
     payload({ environment: 'Xcode' }),
     { ...configured, appAccountToken: config.appAccountToken },

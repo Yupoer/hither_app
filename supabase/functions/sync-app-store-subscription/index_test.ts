@@ -234,6 +234,40 @@ Deno.test('service_role bound originalTransactionId apply is idempotent', async 
   }
 });
 
+Deno.test('service sync rejects an environment outside its configured deployment', async () => {
+  let appleCalls = 0;
+  let databaseCalls = 0;
+  const handler = createSyncHandler({
+    env: (name) => envValues[name],
+    now: () => 1_800_000_010_000,
+    fetchImpl: async () => {
+      appleCalls += 1;
+      return { ok: false, status: 500, json: async () => ({}) };
+    },
+    createAdmin: () => ({
+      rpc: async () => {
+        databaseCalls += 1;
+        return { data: null, error: new Error('unexpected database call') };
+      },
+      from: () => {
+        databaseCalls += 1;
+        return queryWithResult(async () => ({ data: null, error: null }));
+      },
+    }),
+  });
+  const response = await handler(request(
+    { originalTransactionId: ORIGINAL, environment: 'Production' },
+    'service_role',
+  ));
+  const result = await read(response);
+  if (response.status !== 422 || result.error !== 'environment_mismatch') {
+    throw new Error(`expected environment mismatch, got ${response.status} ${result.error}`);
+  }
+  if (appleCalls !== 0 || databaseCalls !== 0) {
+    throw new Error('environment mismatch reached Apple or the transaction ledger');
+  }
+});
+
 Deno.test('new secret key API auth preserves bound service sync without anon key', async () => {
   const handler = createSyncHandler({
     env: (name) => name === 'SUPABASE_ANON_KEY' ? undefined : envValues[name],

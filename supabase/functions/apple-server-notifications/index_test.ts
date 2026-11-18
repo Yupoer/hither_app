@@ -378,45 +378,32 @@ Deno.test('TEST notifications without transaction info are acknowledged', async 
   if (calls.length > 0) throw new Error('TEST notification touched the ledger');
 });
 
-Deno.test('Production notifications verify on a Sandbox-configured deployed function', async () => {
+Deno.test('Production notifications cannot reach a Sandbox-configured ledger', async () => {
   const productionOuter = {
     ...outerPayload,
     data: { ...outerPayload.data, environment: 'Production' },
   };
-  const productionTxn = { ...transactionPayload, environment: 'Production' };
+  let verificationCalls = 0;
   const handler = createNotificationHandler({
     env: (name) => envValues[name],
     now: () => 1_800_000_010_000,
-    verifyJws: (compactJws) => Promise.resolve({
-      ok: true as const,
-      header: { alg: 'ES256' },
-      payload: (compactJws === 'outer-jws' ? productionOuter : productionTxn) as never,
-      jwsSha256: `hash-${compactJws}`,
-    }),
-    createAdmin: () => ({
-      rpc: async (name: string) => {
-        if (name === 'record_storekit_notification') {
-          return { data: { ok: true, duplicate: false, accepted: false }, error: null };
-        }
-        if (name === 'apply_storekit_transaction') {
-          return { data: { ok: true, durable: true, duplicate: false }, error: null };
-        }
-        if (name === 'accept_storekit_notification') {
-          return { data: { ok: true, accepted: true }, error: null };
-        }
-        throw new Error(`unexpected rpc ${name}`);
-      },
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({ data: { user_id: 'user-1' }, error: null }),
-          }),
-        }),
-      }),
-    }) as never,
+    verifyJws: () => {
+      verificationCalls += 1;
+      return Promise.resolve({
+        ok: true as const,
+        header: { alg: 'ES256' },
+        payload: productionOuter as never,
+        jwsSha256: 'hash-outer-jws',
+      });
+    },
+    createAdmin: () => {
+      throw new Error('environment mismatch reached the database');
+    },
   });
   const response = await handler(request());
-  if (response.status !== 200) {
-    throw new Error(`dual-env notification rejected: ${response.status}`);
+  const result = await body(response);
+  if (response.status !== 422 || result.error !== 'environment_mismatch') {
+    throw new Error(`expected environment mismatch, got ${response.status} ${result.error}`);
   }
+  if (verificationCalls !== 1) throw new Error('mismatched notification verified nested JWS data');
 });

@@ -38,8 +38,6 @@ export type StoreKitEnvironment = 'Production' | 'Sandbox' | 'Xcode';
 export type StoreKitVerificationConfig = {
   bundleId: string;
   environment: StoreKitEnvironment;
-  /** Deployed functions allow Production and Sandbox together; Xcode is rejected. */
-  allowedEnvironments: readonly StoreKitEnvironment[];
   productIds: readonly string[];
   subscriptionGroupId: string;
   /** Optional consumable SKU; kept outside the two subscription ids. */
@@ -202,23 +200,14 @@ function dateFromMilliseconds(value: unknown): string | null {
 }
 
 export function allowedStoreKitEnvironments(
-  config: Pick<StoreKitVerificationConfig, 'environment'> & {
-    allowedEnvironments?: readonly StoreKitEnvironment[];
-  },
+  config: Pick<StoreKitVerificationConfig, 'environment'>,
 ): readonly StoreKitEnvironment[] {
-  if (config.allowedEnvironments && config.allowedEnvironments.length > 0) {
-    return config.allowedEnvironments;
-  }
   return [config.environment];
 }
 
 export function validateStoreKitTransaction(
   payload: StoreKitTransactionPayload,
-  config: Omit<StoreKitVerificationConfig, 'appleRootCertSha256'> | (
-    Omit<StoreKitVerificationConfig, 'appleRootCertSha256' | 'allowedEnvironments'> & {
-      allowedEnvironments?: readonly StoreKitEnvironment[];
-    }
-  ),
+  config: Omit<StoreKitVerificationConfig, 'appleRootCertSha256'>,
   nowMs = Date.now(),
   jwsSha256 = '',
 ): { ok: true; transaction: ValidatedStoreKitTransaction } | { ok: false; error: string } {
@@ -317,7 +306,6 @@ export function validateStoreKitTransaction(
 export function validateStoreKitTripTransaction(
   payload: StoreKitTransactionPayload,
   config: Pick<StoreKitVerificationConfig, 'bundleId' | 'environment' | 'appAccountToken'> & {
-    allowedEnvironments?: readonly StoreKitEnvironment[];
     tripProductId?: string | null;
   },
   _nowMs = Date.now(),
@@ -409,13 +397,9 @@ export function storeKitConfigFromEnv(
     || !appleRootCertSha256
   ) return null;
   const configured = environment as StoreKitEnvironment;
-  const allowedEnvironments: readonly StoreKitEnvironment[] = configured === 'Xcode'
-    ? ['Xcode']
-    : ['Production', 'Sandbox'];
   return {
     bundleId,
     environment: configured,
-    allowedEnvironments,
     productIds,
     subscriptionGroupId,
     appAccountToken: '',
