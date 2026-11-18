@@ -5,7 +5,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(46);
+select plan(51);
 
 insert into auth.users (id, email, is_anonymous) values
   ('b1111111-1111-4111-8111-111111111111', 'security-leader@example.test', false),
@@ -182,8 +182,28 @@ select ok(
   'trigger/maintenance SD function is not anonymously executable'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.effective_live_activity_entitlement(uuid,uuid)', 'EXECUTE'),
-  'audit: entitlement helper remains authenticated-executable for follow-up cross-group review'
+  not has_function_privilege('authenticated', 'public.profile_has_lifetime_premium(uuid)', 'EXECUTE'),
+  'authenticated cannot probe another profile lifetime Premium state'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.group_has_active_premium(uuid)', 'EXECUTE'),
+  'authenticated cannot probe a non-member group Premium state'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.effective_live_activity_entitlement(uuid,uuid)', 'EXECUTE'),
+  'authenticated cannot probe effective entitlement with arbitrary subjects'
+);
+select ok(
+  has_function_privilege('service_role', 'public.profile_has_lifetime_premium(uuid)', 'EXECUTE'),
+  'service role retains the profile Premium helper'
+);
+select ok(
+  has_function_privilege('service_role', 'public.group_has_active_premium(uuid)', 'EXECUTE'),
+  'service role retains the group Premium helper'
+);
+select ok(
+  has_function_privilege('service_role', 'public.effective_live_activity_entitlement(uuid,uuid)', 'EXECUTE'),
+  'service role retains the effective entitlement helper'
 );
 
 -- JSON-only role claims are used below; the legacy role GUC is intentionally
