@@ -3,7 +3,7 @@ import { uploadPerformanceBatch } from '../api/services/PerformanceService';
 import { __resetDiagnosticConsentForTests, hydrateDiagnosticConsent, setDiagnosticConsentEnabled } from '../state/diagnosticConsent';
 import { requestWithDeadline } from '../utils/requestDeadline';
 
-const mockMetricRpc = jest.fn(async (..._args: unknown[]): Promise<{ data?: true; error: null | Error }> => ({ data: true, error: null }));
+const mockMetricRpc = jest.fn(async (..._args: unknown[]): Promise<{ data: boolean | null; error: Error | null }> => ({ data: true, error: null }));
 const mockDiagnosticRpc = jest.fn(async (..._args: unknown[]) => ({ data: { acceptedIds: ['row'], rejected: [] }, error: null }));
 const mockPerformanceRpc = jest.fn(async (..._args: unknown[]) => ({ data: { acceptedIds: ['row'], rejected: [] }, error: null }));
 const mockRequireUser = jest.fn(async () => 'actor');
@@ -16,7 +16,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true, default: { getItem: async () => null, setItem: async () => undefined },
 }));
 jest.mock('../api/supabase', () => ({
-  supabase: { rpc: (name: string, ...args: unknown[]) => mockBuilder(name === 'ingest_metric_payload' ? mockMetricRpc(name, ...args) : mockDiagnosticRpc(name, ...args)) },
+  supabase: {
+    rpc: (name: string, ...args: unknown[]) => name === 'ingest_metric_payload'
+      ? mockBuilder(mockMetricRpc(name, ...args))
+      : mockBuilder(mockDiagnosticRpc(name, ...args)),
+  },
   baseSupabase: { rpc: (...args: unknown[]) => mockBuilder(mockPerformanceRpc(...args)) },
 }));
 jest.mock('../api/services/_helpers', () => ({ requireUserId: () => mockRequireUser(), orThrow: (error: unknown) => { if (error) throw error; } }));
@@ -32,7 +36,7 @@ beforeEach(() => {
 });
 
 it.each([false, true])('stops the drained batch after revocation during payload one and cannot revive it on re-enable=%s', async (reEnable) => {
-  let finish: (result: { error: null }) => void = () => undefined;
+  let finish: (result: { data: boolean; error: null }) => void = () => undefined;
   mockMetricRpc.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const pending = uploadMetricPayloadBatch(payloads, () => true);
   await settle();
@@ -40,15 +44,15 @@ it.each([false, true])('stops the drained batch after revocation during payload 
   await setDiagnosticConsentEnabled(false);
   expect(mockRequestSignal?.aborted).toBe(true);
   if (reEnable) await setDiagnosticConsentEnabled(true);
-  finish({ error: null });
-  expect(await pending).toEqual(['payload-0']);
+  finish({ data: true, error: null });
+  expect(await pending).toEqual({ acceptedIds: ['payload-0'], expiredIds: [] });
   expect(mockMetricRpc).toHaveBeenCalledTimes(1);
 });
 
 it('aborts submission delayed inside transport token lookup and keeps it aborted after re-enable', async () => {
   let finishToken: () => void = () => undefined;
   const token = new Promise<void>(resolve => { finishToken = resolve; });
-  const fetchBoundary = jest.fn(async () => ({ error: null }));
+  const fetchBoundary = jest.fn(async () => ({ data: true, error: null }));
   mockMetricRpc.mockImplementationOnce(async () => {
     await token;
     return requestWithDeadline(fetchBoundary, 10_000, mockRequestSignal);
@@ -57,7 +61,7 @@ it('aborts submission delayed inside transport token lookup and keeps it aborted
   await settle();
   await setDiagnosticConsentEnabled(false); await setDiagnosticConsentEnabled(true);
   finishToken();
-  expect(await pending).toEqual([]);
+  expect(await pending).toEqual({ acceptedIds: [], expiredIds: [] });
   expect(fetchBoundary).not.toHaveBeenCalled();
   expect(mockMetricRpc).toHaveBeenCalledTimes(1);
 });
@@ -101,15 +105,36 @@ it('stops diagnostic submission if consent is revoked during persistent installa
 });
 
 it('keeps five-payload batching and stops obsolete app lifecycles or failed submissions', async () => {
-  expect(await uploadMetricPayloadBatch(payloads, () => true)).toHaveLength(5);
+  expect((await uploadMetricPayloadBatch(payloads, () => true)).acceptedIds).toHaveLength(5);
   expect(mockMetricRpc).toHaveBeenCalledTimes(5);
-  expect(await uploadMetricPayloadBatch(payloads, () => false)).toEqual([]);
-  mockMetricRpc.mockResolvedValueOnce({ data: true, error: new Error('upstream unavailable') });
-  expect(await uploadMetricPayloadBatch(payloads, () => true)).toEqual([]);
+  expect(await uploadMetricPayloadBatch(payloads, () => false)).toEqual({ acceptedIds: [], expiredIds: [] });
+  mockMetricRpc.mockResolvedValueOnce({ data: null, error: new Error('upstream unavailable') });
+  expect(await uploadMetricPayloadBatch(payloads, () => true)).toEqual({ acceptedIds: [], expiredIds: [] });
   await expect(uploadMetricPayload({ ...payloads[0], json: '[]' })).rejects.toThrow('JSON object');
   await setDiagnosticConsentEnabled(false);
   expect(await uploadMetricPayload(payloads[0])).toBe(false);
-  expect(await uploadMetricPayloadBatch(payloads, () => true)).toEqual([]);
+  expect(await uploadMetricPayloadBatch(payloads, () => true)).toEqual({ acceptedIds: [], expiredIds: [] });
+});
+
+it('discards expired MetricKit records and continues uploading fresh records', async () => {
+  mockMetricRpc.mockResolvedValueOnce({ data: false, error: null });
+  mockMetricRpc.mockResolvedValueOnce({ data: true, error: null });
+  mockMetricRpc.mockResolvedValueOnce({ data: null, error: new Error('upstream unavailable') });
+
+  const result = await uploadMetricPayloadBatch(payloads, () => true);
+
+  expect(result).toEqual({ acceptedIds: ['payload-1'], expiredIds: ['payload-0'] });
+  expect(mockMetricRpc.mock.calls.map(([, args]) => args)).toEqual(
+    payloads.slice(0, 3).map(({ id }) => expect.objectContaining({ p_id: id })),
+  );
+});
+
+it('retains a MetricKit record without a definitive acknowledgement', async () => {
+  mockMetricRpc.mockResolvedValueOnce({ data: null, error: null });
+  expect(await uploadMetricPayloadBatch(payloads, () => true)).toEqual({
+    acceptedIds: [], expiredIds: [],
+  });
+  expect(mockMetricRpc).toHaveBeenCalledTimes(1);
 });
 
 it('fences diagnostic and performance API siblings after auth awaits without changing their results', async () => {

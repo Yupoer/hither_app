@@ -309,9 +309,11 @@ begin
     raise exception 'unauthorized' using errcode = '42501';
   end if;
   if p_received_at is null or not isfinite(p_received_at)
-     or p_received_at < statement_timestamp() - interval '30 days'
      or p_received_at > statement_timestamp() + interval '5 minutes' then
     raise exception 'stale_telemetry' using errcode = '22023';
+  end if;
+  if p_received_at < statement_timestamp() - interval '30 days' then
+    return false;
   end if;
   if jsonb_typeof(p_payload) is distinct from 'object' then
     raise exception 'invalid_telemetry_payload' using errcode = '22023';

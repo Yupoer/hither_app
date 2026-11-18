@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(30);
+select plan(32);
 
 insert into auth.users (id, email) values
   ('c1111111-1111-4111-8111-111111111111', 'telemetry@example.test');
@@ -170,15 +170,29 @@ select is(
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'c1111111-1111-4111-8111-111111111111', true);
-select throws_ok(
-  $$select public.ingest_metric_payload(
+select is(
+  public.ingest_metric_payload(
     'c2000000-0000-4000-8000-000000000002', 'device-0001', 'metric', '{}',
     statement_timestamp() - interval '31 days'
-  )$$,
-  '22023',
-  'stale_telemetry',
-  'stale metric timestamps are rejected'
+  ),
+  false,
+  'expired metric payload returns a terminal result for the spool'
 );
+
+reset role;
+select is(
+  (select count(*) from public.metric_payloads
+    where id = 'c2000000-0000-4000-8000-000000000002'),
+  0::bigint,
+  'expired metric payload is never stored'
+);
+select is(
+  (select event_count from public.telemetry_retained_usage
+    where user_id = 'c1111111-1111-4111-8111-111111111111'),
+  3::bigint,
+  'expired metric payload consumes no retained quota'
+);
+set local role authenticated;
 select throws_ok(
   $$select public.ingest_metric_payload(
     'c2000000-0000-4000-8000-000000000003', 'device-0001', 'metric', '{}',

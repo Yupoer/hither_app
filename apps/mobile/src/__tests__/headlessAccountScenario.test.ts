@@ -503,11 +503,18 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await device.perform('preferences.setDiagnosticUploadEnabled', { args: [true] });
       await expect(device.perform('diagnostics.uploadMetricPayload', { args: [{ id: 'invalid', kind: 'metric', json: '[]', receivedAt: world.now }] })).rejects.toThrow('JSON object');
       expect(await device.perform('diagnostics.uploadMetricPayload', { args: [{ id: 'metric-ok', kind: 'metric', json: '{"duration":7}', receivedAt: world.now }] })).toBe(true);
-      const payloads = [{ id: 'batch-ok', kind: 'metric', json: '{"duration":8}', receivedAt: world.now },
+      const payloads = [
+        { id: 'batch-expired', kind: 'metric', json: '{}', receivedAt: world.now - 31 * 24 * 60 * 60 * 1000 },
+        { id: 'batch-ok', kind: 'metric', json: '{"duration":8}', receivedAt: world.now },
         { id: 'batch-invalid', kind: 'metric', json: '[]', receivedAt: world.now },
-        { id: 'batch-after-invalid', kind: 'metric', json: '{}', receivedAt: world.now }];
-      expect(await device.perform('diagnostics.uploadMetricPayloadBatch', { payloads, current: false })).toEqual([]);
-      expect(await device.perform('diagnostics.uploadMetricPayloadBatch', { payloads })).toEqual(['batch-ok']);
+        { id: 'batch-after-invalid', kind: 'metric', json: '{}', receivedAt: world.now },
+      ];
+      expect(await device.perform('diagnostics.uploadMetricPayloadBatch', { payloads, current: false })).toEqual({
+        acceptedIds: [], expiredIds: [],
+      });
+      expect(await device.perform('diagnostics.uploadMetricPayloadBatch', { payloads })).toEqual({
+        acceptedIds: ['batch-ok'], expiredIds: ['batch-expired'],
+      });
       expect(world.backend.tables.metric_payloads.map((row: any) => row.id)).toEqual(['metric-ok', 'batch-ok']);
     } finally { await world.close(); }
   });

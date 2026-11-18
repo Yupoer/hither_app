@@ -178,6 +178,9 @@ function execute(b, operation) {
   }
   if (name === 'ingest_metric_payload') {
     keys(args, 'p_id p_device_id p_kind p_payload p_received_at');
+    const receivedAt = Date.parse(args.p_received_at);
+    if (!Number.isFinite(receivedAt) || receivedAt > b.now + 5 * 60 * 1000) return fail('stale_telemetry', '22023');
+    if (receivedAt < b.now - 30 * 24 * 60 * 60 * 1000) return ok(false);
     const existing = b.tables.metric_payloads.find(row => row.id === args.p_id);
     if (existing && existing.user_id !== userId) return fail('metric_payload_owner_mismatch');
     if (!existing) b.tables.metric_payloads.push({

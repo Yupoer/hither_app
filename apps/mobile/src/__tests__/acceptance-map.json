@@ -3312,6 +3312,34 @@
       "acceptance": "Journey ready and empty actions apply their requested press shadows and release springs, preserve reduced-motion feedback, reject dragged releases, and retain disabled and navigation-hold behavior.",
       "testFile": "journeyButtonFeedback.test.ts",
       "testNamePattern": "press shadow and release spring|cancels a dragged press|shadow feedback with reduced motion|keeps unavailable actions disabled|keeps the navigation hold"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Expired MetricKit records leave the local queue, fresh records upload, and uncertain submissions are retained",
+      "testFile": "diagnosticSubmissionConsent.test.ts",
+      "testNamePattern": "discards expired MetricKit records and continues uploading fresh records|retains a MetricKit record without a definitive acknowledgement"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Revoking diagnostic consent aborts the active MetricKit request and stops the drained batch",
+      "testFile": "diagnosticSubmissionConsent.test.ts",
+      "testNamePattern": "stops the drained batch after revocation"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Expired MetricKit records consume no storage or quota. Duplicate submissions by the same owner consume quota once",
+      "testFile": "supabase/tests/telemetry_limits.test.sql",
+      "testNamePattern": "expired metric payload is never stored|expired metric payload consumes no retained quota|duplicate metric payload does not consume quota twice"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Only approved ingestion RPCs can write telemetry and retained storage is bounded",
+      "testFile": "supabase/tests/telemetry_limits.test.sql",
+      "testNamePattern": "authenticated cannot insert|quota failures create no metric rows|retention removes expired raw telemetry rows"
     }
   ]
 }
