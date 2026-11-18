@@ -15,7 +15,6 @@ export type SheetPresentationProps = {
   onSelectionChange?: (detent: SheetDetent) => void;
   backgroundColor?: string;
   allowBackgroundInteraction?: boolean;
-  ignoreKeyboardInsets?: boolean;
   dismissDisabled?: boolean;
   children: React.ReactNode;
 };

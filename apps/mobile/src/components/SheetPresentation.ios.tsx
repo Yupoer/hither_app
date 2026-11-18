@@ -3,7 +3,6 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheet, Group, Host, RNHostView } from '@expo/ui/swift-ui';
 import {
-  ignoreSafeArea,
   interactiveDismissDisabled,
   onAppear,
   presentationBackground,
@@ -32,7 +31,6 @@ export default function SheetPresentation({
   onSelectionChange,
   backgroundColor = D6_SURFACE_SOLID_COLOR,
   allowBackgroundInteraction = false,
-  ignoreKeyboardInsets = false,
   dismissDisabled = false,
   children,
 }: SheetPresentationProps) {
@@ -56,7 +54,6 @@ export default function SheetPresentation({
           presentationBackground(usesSystemInsets ? backgroundColor : 'transparent'),
           presentationBackgroundInteraction(allowBackgroundInteraction ? 'enabled' : 'disabled'),
           interactiveDismissDisabled(dismissDisabled),
-          ...(ignoreKeyboardInsets ? [ignoreSafeArea({ regions: 'keyboard', edges: 'bottom' })] : []),
           ...(onOpenComplete ? [onAppear(onOpenComplete)] : []),
         ]}>
           <RNHostView matchContents={false}>

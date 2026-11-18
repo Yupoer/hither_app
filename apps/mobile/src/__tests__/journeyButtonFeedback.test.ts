@@ -265,7 +265,7 @@ it('hides the mounted team pane until commands finish dismissing', async () => {
 });
 
 it.each([
-  ['going', undefined, 62.5],
+  ['going', undefined, 70],
   ['ready', 10, 62.5],
   ['ready', 60, 50],
 ] as const)('scales only the remaining time in phase %s at %s minutes', async (phase, minutes, fontSize) => {

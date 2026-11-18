@@ -410,7 +410,7 @@ export function D6AddPlace(props: AddCardProps) {
         </View>
       </>}
       <SheetPresentation visible={sheetVisible} detents={detents} selection={detents[0]} onClose={onClose} onDismiss={onSheetDismiss}
-        backgroundColor={ADD_SHEET_BACKGROUND} allowBackgroundInteraction ignoreKeyboardInsets={!place}>
+        backgroundColor={ADD_SHEET_BACKGROUND} allowBackgroundInteraction>
         <View testID="d6-add-card" style={[styles.addSheetBody, !place && styles.addSheetCompactBody]}>
           {!place && pinCoordinates ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
             <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
