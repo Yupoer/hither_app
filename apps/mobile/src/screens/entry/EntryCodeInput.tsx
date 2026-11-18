@@ -6,7 +6,7 @@ import Pressable from '../../components/MotionPressable';
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import { useTranslation } from '../../i18n';
-import { INVITE_CODE_LENGTH, normalizeInviteCode } from '../../navigation/teamEntry';
+import { INVITE_CODE_LENGTH, isValidInviteCode, normalizeInviteCode } from '../../utils/inviteCode';
 import NativeGlassButton from '../../components/NativeGlassButton';
 import { ENTRY_ACCENT } from './EntryVisuals';
 
@@ -30,13 +30,17 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
     ));
   });
 
+  function submitCode(value: string) {
+    if (!isValidInviteCode(value)) return;
+    Keyboard.dismiss();
+    setCode('');
+    onJoin(value);
+  }
+
   function updateCode(value: string) {
     const normalized = normalizeInviteCode(value);
     setCode(normalized);
-    if (normalized.length !== INVITE_CODE_LENGTH || normalized === code) return;
-    Keyboard.dismiss();
-    setCode('');
-    onJoin(normalized);
+    if (normalized.length === INVITE_CODE_LENGTH && normalized !== code) submitCode(normalized);
   }
 
   const rows = Array.from({ length: 2 }, (_, row) =>
@@ -68,6 +72,7 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
             ref={input}
             value={code}
             onChangeText={updateCode}
+            onSubmitEditing={() => submitCode(code)}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             accessibilityLabel={t('group.codeLabel')}
@@ -77,6 +82,7 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
             keyboardAppearance="dark"
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
+            returnKeyType="go"
             caretHidden
             style={styles.input}
           />

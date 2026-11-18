@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeInviteCode, readInviteLink, readLastActiveTeam, writeLastActiveTeam } from '../navigation/teamEntry';
+import { formatInviteCode } from '../utils/inviteCode';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
@@ -22,6 +23,13 @@ describe('team entry boundaries', () => {
     expect(readInviteLink('hither://join?code=TEST42ABCDEFGHJKLMNP&code=TEST42ABCDEFGHJKLMNQ', origin)).toBeNull();
     expect(readInviteLink('hither://join?code=TEST42ABCDEFGHJKLMNP#x', origin)).toBeNull();
     expect(readInviteLink('hither://join?code=TEST', origin)).toBeNull();
+  });
+
+  it('reads and formats legacy invitations during the client rollout', () => {
+    expect(readInviteLink(`${origin}/join?code=old-123`, origin)).toBe('OLD123');
+    expect(readInviteLink('https://unknown.test/join?code=OLD123', origin)).toBeNull();
+    expect(formatInviteCode('OLD123')).toBe('OLD-123');
+    expect(formatInviteCode('TEST42ABCDEFGHJKLMNP')).toBe('TEST4-2ABCD-EFGHJ-KLMNP');
   });
 
   it('persists the active team for the selected account and clears it when the user returns to entry', async () => {

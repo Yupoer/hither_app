@@ -539,6 +539,25 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
+  it('submits a six-character invite only after keyboard confirmation during rollout', async () => {
+    const world = new World();
+    try {
+      world.backend.groups.get(GROUP_ID).invite_code = 'OLD123';
+      const device = await world.device({ id: 'legacy-invite-entry', userId: null, platform, mode: 'app' });
+      await world.waitFor(device, (value: any) => control(value, 'auth-code'), 'invite entry');
+      await device.perform('team.code', { value: 'old-123' });
+      expect((await device.observe()).presentation.route.route).toBe('RoleSelect');
+      expect(calls(world, 'join_group')).toHaveLength(0);
+
+      await device.host.call({ kind: 'submit', testId: 'auth-code' });
+      const confirmation = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Auth', 'legacy invite confirmation');
+      expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'OLD123' });
+      await device.perform('team.join');
+      await world.waitFor(device, (value: any) => value.presentation.session.membership?.group.id === GROUP_ID, 'joined using the legacy server');
+      expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'OLD123' });
+    } finally { await world.close(); }
+  });
+
   it('restores durable identity, retries transient foreground refresh and clears only terminal sessions', async () => {
     const world = new World();
     try {

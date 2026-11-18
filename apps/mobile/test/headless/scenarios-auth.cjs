@@ -25,6 +25,8 @@ module.exports = [
     'An empty name prevents creation. A complete normalized invite code opens confirmation. No membership changes before confirmation. Anonymous auth failure creates no group. Successful guest create trims the team name and chooses a default profile name, blocks duplicate submission, writes membership and navigates Map. Invite sanitation, invalid-code membership retention, guest rename and existing-identity join are verified.'],
   ['G02', 'opens a trusted invite link as a confirmation without joining until the user acts',
     'An unknown host does not navigate; a trusted join link presents confirmation. Neither guest auth nor membership occurs until the confirm action.'],
+  ['G02', 'submits a six-character invite only after keyboard confirmation during rollout',
+    'Typing six characters stays on entry so a longer code can be completed. The keyboard action opens confirmation, and the unchanged server accepts its existing code after explicit join.'],
   ['A20,A21', 'restores durable identity, retries transient foreground refresh and clears only terminal sessions',
     'Local identity precedes profile enrichment and survives process restart. Startup refresh is not duplicated. Foreground network errors retain identity and retry at 2 then 4 seconds. Terminal refresh clears actor and stops retries.'],
   ['A22', 'cancels registered signout, keeps identity on auth failure and clears state after successful retry',

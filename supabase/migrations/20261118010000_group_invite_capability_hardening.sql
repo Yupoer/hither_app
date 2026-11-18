@@ -1,3 +1,15 @@
+begin;
+
+drop policy if exists "groups: insert own" on public.groups;
+revoke insert on table public.groups from public, anon, authenticated;
+revoke update on table public.groups from public, anon, authenticated;
+-- Completing or cancelling navigation uses the caller's existing leader RLS.
+grant update (
+  name, avatar, avatar_color, journey_status, active_destination_id, journey_started_at,
+  straggler_alerts, straggler_threshold_m
+)
+  on table public.groups to authenticated;
+
 create or replace function public.generate_group_invite_code()
 returns text
 language plpgsql
@@ -50,12 +62,6 @@ begin
   end loop;
 end;
 $$;
-
-drop policy if exists "groups: insert own" on public.groups;
-revoke insert on table public.groups from public, anon, authenticated;
-revoke update on table public.groups from public, anon, authenticated;
-grant update (name, avatar, avatar_color, journey_status, straggler_alerts, straggler_threshold_m)
-  on table public.groups to authenticated;
 
 create or replace function public.create_group(p_name text)
 returns public.groups
@@ -250,3 +256,5 @@ $$;
 
 revoke all on function public.join_group(text) from public, anon;
 grant execute on function public.join_group(text) to authenticated;
+
+commit;

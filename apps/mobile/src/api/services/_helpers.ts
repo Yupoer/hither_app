@@ -1,4 +1,3 @@
-import * as Crypto from 'expo-crypto';
 import { supabase } from '../supabase';
 import {
   getDefaultAuthRecovery,
@@ -13,8 +12,9 @@ import { INVITE_CODE_ALPHABET, INVITE_CODE_LENGTH } from '../../utils/inviteCode
 
 /** Generate a local code with the same cryptographic alphabet and entropy as the server. */
 export function generateInviteCode(): string {
+  const crypto = require('expo-crypto') as typeof import('expo-crypto');
   return Array.from(
-    Crypto.getRandomBytes(INVITE_CODE_LENGTH),
+    crypto.getRandomBytes(INVITE_CODE_LENGTH),
     byte => INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length],
   ).join('');
 }

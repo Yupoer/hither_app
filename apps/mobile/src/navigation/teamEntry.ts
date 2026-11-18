@@ -1,12 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   INVITE_CODE_LENGTH,
-  formatInviteCode,
   isValidInviteCode,
   normalizeInviteCode,
 } from '../utils/inviteCode';
 
-export { INVITE_CODE_LENGTH, formatInviteCode, normalizeInviteCode };
+export { INVITE_CODE_LENGTH, normalizeInviteCode };
 
 export function readInviteLink(value: string, trustedOrigin: string | undefined): string | null {
   try {

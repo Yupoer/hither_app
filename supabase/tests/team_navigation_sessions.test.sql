@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(38);
+select plan(40);
 
 select has_table('public', 'navigation_sessions', 'navigation_sessions exists');
 select has_table('public', 'navigation_member_states', 'navigation_member_states exists');
@@ -246,6 +246,11 @@ select is(
   'completed',
   'completing navigation closes the current session'
 );
+select ok(
+  (select journey_status = 'paused' and active_destination_id is null and journey_started_at is null
+    from public.groups where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+  'completing navigation clears the active group journey'
+);
 select is(
   (select closed_at is not null from public.itinerary_items
     where id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2'),
@@ -265,6 +270,11 @@ select is(
   )).status,
   'cancelled',
   'cancelling navigation stops the session'
+);
+select ok(
+  (select journey_status = 'paused' and active_destination_id is null and journey_started_at is null
+    from public.groups where id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+  'cancelling navigation clears the active group journey'
 );
 select is(
   (select closed_at is null from public.itinerary_items
