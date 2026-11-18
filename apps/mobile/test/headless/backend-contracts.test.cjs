@@ -38,6 +38,7 @@ const pausedGroup = published.findLast(event => event.table === 'groups');
 assert.equal(pausedGroup.old.journey_status, 'going');
 assert.equal(pausedGroup.old.active_destination_id, session.destination_id);
 assert.equal(pausedGroup.new.journey_status, 'paused');
+assert.equal(rpc('ack_navigation_session', { p_session_id: session.id, p_status: 'offline', p_detail: {} }, PEER).error.code, 'P0002');
 const subgroup = rpc('self_split', { p_group: GROUP_ID, p_name: 'Peer subgroup' }, PEER).data;
 rpc('invite_to_subgroup', { p_subgroup: subgroup.id, p_invitee: LEADER }, PEER);
 const invite = b.tables.subgroup_invites[0];
