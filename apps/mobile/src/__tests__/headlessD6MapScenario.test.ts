@@ -36,7 +36,9 @@ describe('iOS D6 Map', () => {
       await world.waitFor(device, (value: Observation) => field(value, 'home-itinerary-grabber'), 'route tab');
       await press(device, 'home-itinerary-grabber');
       expect(await press(device, 'd6-route-add-place')).toEqual({ invoked: true });
-      expect(field(await device.observe(), 'map-search-input')).toBeTruthy();
+      const searching = await device.observe();
+      expect(field(searching, 'map-search-input')).toBeTruthy();
+      expect(field(searching, 'd6-add-map-center')).toBeTruthy();
       await device.perform('map.pin.drop', { latitude: 25.05, longitude: 121.54 });
       const draft = await world.waitFor(device, (value: Observation) => field(value, 'd6-place-rename'), 'staged place title');
       expect(field(draft, 'confirm-place-name')).toBeUndefined();
@@ -57,6 +59,29 @@ describe('iOS D6 Map', () => {
       await press(device, `d6-route-row-${row.id}`);
       const details = await world.waitFor(device, (value: Observation) => textOf(value).includes('Meeting time'), 'stop details');
       expect(textOf(details)).toContain('Coffee stop');
+    } finally { await world.close(); }
+  });
+
+  it('replaces open stop details with pin confirmation when the map is held', async () => {
+    const world = new World();
+    try {
+      const device = await openMap(world);
+      await press(device, 'home-itinerary-grabber');
+      await world.waitFor(device, (value: Observation) => field(value, `d6-route-row-${DESTINATION}`), 'current stop row');
+      await press(device, `d6-route-row-${DESTINATION}`);
+      await world.waitFor(device, (value: Observation) => field(value, 'd6-stop-close'), 'stop detail sheet');
+
+      await device.perform('map.pin.drop', { latitude: 25.05, longitude: 121.54 });
+      const pinned = await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add'), 'pin confirmation');
+      expect(field(pinned, 'd6-stop-close')).toBeUndefined();
+      expect(field(pinned, 'd6-add-close')).toBeDefined();
+      expect(field(pinned, 'home-journey-action')).toBeUndefined();
+      expect(textOf(pinned)).toContain('New gathering point');
+
+      await press(device, 'd6-add-close');
+      const map = await world.waitFor(device, (value: Observation) => field(value, 'home-journey-action'), 'map controls restored');
+      expect(field(map, 'confirm-place-add')).toBeUndefined();
+      expect(world.backend.itinerary).toHaveLength(1);
     } finally { await world.close(); }
   });
 
@@ -89,25 +114,25 @@ describe('iOS D6 Map', () => {
     const world = new World();
     try {
       const device = await openMap(world);
-      const handle = (testId: string, phase: string, translationY = 0) =>
-        device.host.call({ kind: 'gesture', testId, phase, value: { translationY, velocityY: 0 } });
-      const move = async (testId: string, offsets: number[], detent: number) => {
+      const handle = (testId: string, phase: string, translationY = 0, velocityY = 0) =>
+        device.host.call({ kind: 'gesture', testId, phase, value: { translationY, velocityY } });
+      const move = async (testId: string, offsets: number[], detent: number, releaseVelocity = 0) => {
         await handle(testId, 'onStart');
         for (const y of offsets) await handle(testId, 'onUpdate', y);
-        await handle(testId, 'onEnd', offsets.at(-1));
+        await handle(testId, 'onEnd', offsets.at(-1), releaseVelocity);
         await world.waitFor(device, (value: Observation) => field(value, testId)?.value === detent, `detent ${detent}`);
       };
       const itinerary = 'home-itinerary-grabber';
       const team = 'home-team-toggle';
       await press(device, itinerary);
       expect(field(await device.observe(), itinerary)?.value).toBe(1);
-      await move(itinerary, [265], 2);
-      await move(itinerary, [-400, -235], 1);
-      await move(itinerary, [-240], 0);
-      await move(team, [-170], 1);
-      await move(team, [-260], 2);
-      await move(team, [390, 240], 1);
-      await move(itinerary, [250], 1);
+      await move(itinerary, [64], 2);
+      await move(itinerary, [-400, -64], 1);
+      await move(itinerary, [-64], 0);
+      await move(team, [-64], 1);
+      await move(team, [-18], 2, -900);
+      await move(team, [390, 64], 1);
+      await move(itinerary, [64], 1);
       const result = await device.observe();
       expect(field(result, team)?.value).toBe(0);
       expect(field(result, 'd6-members-pane')).toBeUndefined();

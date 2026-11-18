@@ -35,10 +35,6 @@ const settingsPanel = readFileSync(
   join(__dirname, '../screens/MapScreen/components/SettingsSheetPanel.tsx'),
   'utf8',
 );
-const settingsChildSheetIos = readFileSync(
-  join(__dirname, '../screens/MapScreen/components/SettingsChildSheet.ios.tsx'),
-  'utf8',
-);
 const reorderList = readFileSync(
   join(__dirname, '../components/DestinationReorderList.tsx'),
   'utf8',
@@ -80,7 +76,7 @@ describe('map UI placement contracts', () => {
     expect(mapScreen).toContain('suppressed: false');
   });
 
-  it('opens the main settings page at one full-width 90% stage', () => {
+  it('keeps the configured settings stages on the React Native fallback', () => {
     expect(settingsChildSheet).toContain('SettingsSheetPanel');
     expect(settingsPanel).toContain("import BottomSheet from '../../../components/BottomSheet'");
     expect(settingsPanel).toContain('STAGE_ONE_RATIO = 0.52');
@@ -94,10 +90,6 @@ describe('map UI placement contracts', () => {
     expect(settingsOverlay).toContain('stageTwoRatio={0.9}');
     expect(settingsOverlay).toContain('edgeToEdgeAtLast');
     expect(settingsOverlay).toContain('singleStage');
-    expect(settingsChildSheetIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
-    expect(settingsChildSheetIos).toContain('maxWidth: Infinity');
-    expect(settingsChildSheetIos).toContain('RNHostView');
-    expect(settingsChildSheetIos).toContain("width: '100%'");
     expect(settingsPanel).not.toContain('PanResponder');
   });
 

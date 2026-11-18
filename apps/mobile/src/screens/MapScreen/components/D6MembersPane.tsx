@@ -260,14 +260,15 @@ export function D6MembersPane({
   const showSplitActions = Boolean(myMember && !mySubgroupId);
   const showInviteAction = Boolean(group && !inviteCode);
   const invite = (testID: string) => <Pressable
-    style={[styles.inviteButton, { backgroundColor: accent }]}
+    motion="depth"
+    style={[styles.inviteButton, styles.teamInvite, { backgroundColor: accent }]}
     onPress={onInviteTeam}
     accessibilityRole="button"
     accessibilityLabel={t('map.inviteMembers')}
     testID={testID}
   >
     <Ionicons name="share-outline" color={onAccent} size={17} />
-    <Text style={[styles.inviteLabel, { color: onAccent }]}>{t('d6.team.invite')}</Text>
+    <Text style={[styles.inviteLabel, styles.teamInviteLabel, { color: onAccent }]}>{t('d6.team.invite')}</Text>
   </Pressable>;
 
   return (
@@ -404,7 +405,7 @@ export function D6MembersPane({
               </Pressable>
             </View>
           ) : null}
-          {showInviteAction ? invite('map-invite-members') : null}
+          {showInviteAction ? <View style={styles.teamInviteRow}>{invite('map-invite-members')}</View> : null}
         </View>
       ) : null}
       </D6PaneScrollView>
@@ -514,7 +515,7 @@ const styles = StyleSheet.create({
   teamName: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.title, fontWeight: '700' },
   smallCircle: { width: 44, height: 44 },
   menuIcon: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  codeCard: { borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, marginVertical: 6 },
+  codeCard: { borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 12, paddingStart: 16, paddingVertical: 12, marginVertical: 6 },
   inviteCode: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.heading, fontVariant: ['tabular-nums'], letterSpacing: 3 },
   fallbackCodeFont: { fontWeight: '900', fontStyle: 'italic' },
   card: { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 20, marginVertical: 5 },
@@ -523,6 +524,9 @@ const styles = StyleSheet.create({
   invitePrompt: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   inviteActions: { flexDirection: 'row', gap: 6, marginLeft: 'auto' },
   inviteButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 22, gap: 5, minHeight: 44, paddingHorizontal: 14, backgroundColor: soft },
+  teamInviteRow: { flexDirection: 'row', justifyContent: 'flex-end' },
+  teamInvite: { flexShrink: 1, paddingVertical: 8 },
+  teamInviteLabel: { flexShrink: 1, textAlign: 'center' },
   inviteLabel: { color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   acceptButton: { backgroundColor: white },
   acceptLabel: { color: '#171717' },

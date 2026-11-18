@@ -102,15 +102,8 @@ describe('D6 You from the real Map screen', () => {
       await world.waitFor(device, (value: Observation) => field(value, 'settings-feedback')?.acceptsInput
         && !field(value, 'feedback-description'), 'feedback returns to Support');
 
-      const swipeDown = async () => {
-        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
-          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
-            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
-        }
-        await device.input({ kind: 'animation', finished: true });
-      };
-
-      await swipeDown();
+      expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
+        value: { event: 'onSelectionChange', detentIndex: 0 } })).toEqual({ invoked: true });
       const advanced = await world.waitFor(device, (value: Observation) =>
         field(value, 'settings-feedback-advanced')?.acceptsInput, 'Support returns to Advanced');
       expect(field(advanced, 'settings-root-close')).toBeUndefined();
@@ -119,7 +112,8 @@ describe('D6 You from the real Map screen', () => {
         field(value, 'settings-page-profile')?.acceptsInput, 'Advanced returns to settings root');
       expect(field(root, 'settings-child-back')).toBeUndefined();
       expect(field(root, 'settings-root-close')).toBeUndefined();
-      await swipeDown();
+      expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
+        value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
       await world.waitFor(device, (value: Observation) => field(value, 'home-profile')?.acceptsInput
         && !field(value, 'settings-panel'), 'root settings swipe returns to Map');
     } finally { await world.close(); }

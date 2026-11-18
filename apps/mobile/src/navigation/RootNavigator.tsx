@@ -1,5 +1,5 @@
 import React, { useRef, useState, type RefObject } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NavigationHelpers } from '@react-navigation/native';
 import LoginScreen from '../screens/LoginScreen';
@@ -83,7 +83,10 @@ function TeamStack({ actorId, consumedInitialInvite }: { actorId: string | undef
         contentStyle: { backgroundColor: ENTRY_BACKGROUND },
       }}
     >
-      <Stack.Screen name="RoleSelect" component={RoleSelectScreen} options={{ contentStyle: styles.transparent }} />
+      <Stack.Screen name="RoleSelect" component={RoleSelectScreen} options={{
+        contentStyle: styles.transparent,
+        animation: Platform.OS === 'ios' ? 'fade' : 'default',
+      }} />
       <Stack.Screen name="Login" component={LoginScreen} options={{ presentation: 'fullScreenModal' }} />
       <Stack.Screen name="Auth" component={AuthScreen} options={{
         presentation: 'transparentModal',

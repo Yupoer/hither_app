@@ -255,11 +255,8 @@ describe.each(['ios', 'android'])('actual App Map Store entry points on %s', pla
       await device.input({ kind: 'alert', index: 0 });
       if (iOS) {
         expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
-        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
-          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
-            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
-        }
-        await device.input({ kind: 'animation', finished: true });
+        expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
+          value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
       } else {
         expect(await device.host.call({ kind: 'press', label: '取消' })).toEqual({ invoked: true });
       }

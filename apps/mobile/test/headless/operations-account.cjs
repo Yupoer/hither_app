@@ -88,6 +88,10 @@ for (const [name, ids, id, kind] of [['email', 'P01', 'account-email', 'changeTe
 for (const [name, ids, id, kind] of [['name', 'P06,P07', 'profile-name', 'changeText'],
   ['save', 'P07', 'overlay-done'], ['cancel', 'P06', 'overlay-close']]) {
   if (name === 'save') register('profile.save', ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', 'handleSave', 'screen', '{}', app => app.host.call({ kind: 'press', testId: 'overlay-done' }));
+  else if (name === 'cancel') register('profile.cancel', ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', 'handleCancel', 'screen', '{}',
+    app => app.platform === 'ios'
+      ? app.host.call({ kind: 'nativeEvent', testId: 'overlay-sheet-presentation', value: { event: 'onIsPresentedChange', isPresented: false } })
+      : app.host.call({ kind: 'press', testId: id }));
   else control(`profile.${name}`, ids, 'src/screens/MapScreen/components/ProfileOverlay.tsx', name === 'name' ? 'setProfileName' : 'handleCancel', id, kind);
 }
 for (const field of ['avatar', 'color']) register(`profile.${field}`, 'P06,P07', 'src/screens/MapScreen/components/ProfileOverlay.tsx',
@@ -96,7 +100,9 @@ for (const field of ['avatar', 'color']) register(`profile.${field}`, 'P06,P07',
 for (const [name, id, kind] of [['label', 'custom-command-label', 'changeText'], ['message', 'custom-command-message', 'changeText'],
   ['save', 'custom-command-save'], ['cancel', 'overlay-close']]) {
   const symbol = { label: 'setLabel', message: 'setMessage', save: 'save', cancel: 'onClose' }[name];
-  control(`command.${name}`, 'P09', 'src/components/CustomQuickCommandSheet.tsx', symbol, id, kind);
+  if (name === 'cancel') register('command.cancel', 'P09', 'src/components/CustomQuickCommandSheet.tsx', symbol, 'screen', '{}',
+    app => app.host.call({ kind: 'press', testId: app.platform === 'ios' ? 'overlay-header-close' : id }));
+  else control(`command.${name}`, 'P09', 'src/components/CustomQuickCommandSheet.tsx', symbol, id, kind);
 }
 
 for (const [symbol, ids] of [['createGroup', 'G01'], ['joinGroup', 'G02'], ['updateGroupAvatar', 'G03'],

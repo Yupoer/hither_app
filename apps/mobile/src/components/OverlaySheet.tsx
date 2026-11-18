@@ -31,10 +31,11 @@ const DISMISS_TRAVEL = 90;
 const DISMISS_VELOCITY = 0.6;
 
 function OverlayVisibilityMotion({ foreground, visible, t, dragY, atTop, visibleRef, openCompleted,
-  gestureClosePending, motionGeneration, onOpenComplete, finishGestureClose, setContentMounted }: {
+  gestureClosePending, motionGeneration, onOpenComplete, finishGestureClose, setContentMounted, onDismiss }: {
   foreground: boolean;
   visible: boolean;
   t: Animated.Value;
+  onDismiss?: () => void;
   dragY: Animated.Value;
   atTop: React.RefObject<boolean>;
   visibleRef: React.RefObject<boolean>;
@@ -81,6 +82,7 @@ function OverlayVisibilityMotion({ foreground, visible, t, dragY, atTop, visible
         }
       } else {
         setContentMounted(false);
+        onDismiss?.();
       }
     });
     return cancelMotion;
@@ -97,24 +99,12 @@ function OverlayVisibilityMotion({ foreground, visible, t, dragY, atTop, visible
  * When `onDone` is provided, the Done button commits via `onDone` while scrim
  * tap / drag-dismiss still call `onClose` (cancel without committing).
  */
-export default function OverlaySheet({
-  visible,
-  onClose,
-  onOpenComplete,
-  onDone,
-  title,
-  doneLabel = 'Done',
-  doneSystemImage,
-  headerLeft,
-  opaque = false,
-  material = 'mapSheet',
-  edgeToEdge = false,
-  children,
-  floatingContent,
-}: {
+export type OverlaySheetProps = {
   visible: boolean;
   onClose: () => void;
   onOpenComplete?: () => void;
+  onDismiss?: () => void;
+  dismissDisabled?: boolean;
   /** If set, Done calls this instead of `onClose` (commit vs cancel). */
   onDone?: () => void;
   title: string;
@@ -132,7 +122,26 @@ export default function OverlaySheet({
   edgeToEdge?: boolean;
   children: React.ReactNode;
   floatingContent?: React.ReactNode;
-}) {
+  presentedContent?: React.ReactNode;
+};
+
+export default function OverlaySheet({
+  visible,
+  onClose,
+  onOpenComplete,
+  onDone,
+  title,
+  doneLabel = 'Done',
+  doneSystemImage,
+  headerLeft,
+  opaque = false,
+  material = 'mapSheet',
+  edgeToEdge = false,
+  children,
+  floatingContent,
+  presentedContent,
+  onDismiss,
+}: OverlaySheetProps) {
   const foreground = useVisibleUi();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -180,7 +189,8 @@ export default function OverlaySheet({
     foreground={foreground} visible={visible} t={t} dragY={dragY} atTop={atTop} visibleRef={visibleRef}
     openCompleted={openCompletedRef} gestureClosePending={gestureClosePendingRef}
     motionGeneration={motionGenerationRef} onOpenComplete={onOpenCompleteRef}
-    finishGestureClose={finishGestureClose} setContentMounted={setContentMounted} />;
+    finishGestureClose={finishGestureClose} setContentMounted={setContentMounted}
+    onDismiss={contentMounted ? onDismiss : undefined} />;
 
   // Two drag-to-dismiss responders sharing one release rule: one on the
   // grabber/header (drags anywhere on it), one on the body that only claims a
@@ -311,6 +321,7 @@ export default function OverlaySheet({
         </View>
       </Animated.View>
       {visible ? floatingContent : null}
+      {presentedContent}
     </View>
     </>
   );

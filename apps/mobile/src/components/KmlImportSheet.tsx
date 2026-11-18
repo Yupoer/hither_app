@@ -33,6 +33,7 @@ type Step =
 export default React.memo(function KmlImportSheet({
   visible,
   onClose,
+  onDismissComplete,
   currentCount,
   remainingQuota,
   canWrite = true,
@@ -43,6 +44,7 @@ export default React.memo(function KmlImportSheet({
 }: {
   visible: boolean;
   onClose: () => void;
+  onDismissComplete?: () => void;
   /** Open (unfinished) gathering points in scope — not total including closed. */
   currentCount: number;
   /** Team one-shot extra point credits remaining. */
@@ -164,6 +166,7 @@ export default React.memo(function KmlImportSheet({
     <SettingsChildSheet
       visible={visible}
       onClose={handleClose}
+      onDismissComplete={onDismissComplete}
       title={t('kml.importTitle')}
       titleFontSize={25}
       darkMaterial

@@ -1,4 +1,5 @@
 import React, { Profiler, useState } from 'react';
+import { Platform } from 'react-native';
 import { measure } from 'react-native-reanimated';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { D6RoutePane, type D6RoutePaneProps, type D6RouteSelection } from '../screens/MapScreen/components/D6RoutePane';
@@ -12,6 +13,7 @@ jest.mock('react-native', () => ({
     addEventListener: () => ({ remove: jest.fn() }),
   },
   Modal: 'Modal',
+  Platform: { OS: 'android' },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
   StyleSheet: { create: (styles: object) => styles, absoluteFill: {}, hairlineWidth: 1 },
@@ -88,6 +90,7 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 62, bottom: 34, left: 0, right: 0 }) }));
+jest.mock('../components/SheetPresentation', () => 'NativeSheet');
 jest.mock('../components/SwiftUIGlassSurface', () => ({ __esModule: true, default: 'SwiftUIGlassSurface' }));
 jest.mock('../utils/haptics', () => ({ lightTap: jest.fn() }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ language: 'zh', t: (key: string) => key }) }));
@@ -168,6 +171,19 @@ describe('D6 itinerary panel', () => {
       .mockReturnValueOnce(bounds(0, 124, 300, 54));
     return byId('d6-route-drag-a').parent?.props.gesture.callbacks;
   }
+
+  it('waits for the iOS route sheet to dismiss before opening another presentation', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: true })); });
+    const sheet = () => renderer.root.findByType('NativeSheet' as never);
+    await act(async () => byId('d6-route-options').props.onPress());
+    expect(sheet().props.visible).toBe(true);
+    await act(async () => byId('d6-route-menu-kml').props.onPress());
+    expect(sheet().props.visible).toBe(false);
+    expect(props.onImport).not.toHaveBeenCalled();
+    await act(async () => sheet().props.onDismiss());
+    expect(props.onImport).toHaveBeenCalledTimes(1);
+  });
 
   it('keeps an active contact on the UI thread and submits once after release despite an unrelated failed grip', async () => {
     const rendered = jest.fn();

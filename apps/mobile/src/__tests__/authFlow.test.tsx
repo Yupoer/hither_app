@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import AuthScreen from '../screens/AuthScreen';
+import SheetPresentation from '../components/SheetPresentation';
 
 const mockSignIn = jest.fn();
 const mockUpdateNickname = jest.fn();
@@ -9,6 +10,11 @@ const mockRefreshProfile = jest.fn();
 const mockCreateGroup = jest.fn();
 const mockJoinGroup = jest.fn();
 const mockUpdateGroupAvatar = jest.fn();
+
+jest.mock('../components/SheetPresentation', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 
@@ -103,7 +109,18 @@ describe('AuthScreen form actions', () => {
     expect(mockSignIn).toHaveBeenCalledWith({ name: 'entry.guestName' });
     expect(mockCreateGroup).toHaveBeenCalledWith('Trip');
     expect(mockUpdateGroupAvatar).toHaveBeenCalledWith('group-1', expect.any(String), expect.any(String));
+    expect(navigation.reset).not.toHaveBeenCalled();
+    expect(screen.UNSAFE_getByType(SheetPresentation).props.visible).toBe(false);
+    act(() => screen.UNSAFE_getByType(SheetPresentation).props.onDismiss());
     expect(navigation.reset).toHaveBeenCalledWith({ index: 0, routes: [{ name: 'Map', params: { groupId: 'group-1', showTeamInvite: true } }] });
+  });
+  it('returns to the entry screen after a native swipe dismissal', () => {
+    const screen = render(<AuthScreen navigation={navigation as never} route={{ params: { role: 'leader' } } as never} />);
+    const sheet = () => screen.UNSAFE_getByType(SheetPresentation);
+    act(() => sheet().props.onClose());
+    expect(navigation.replace).not.toHaveBeenCalled();
+    act(() => sheet().props.onDismiss());
+    expect(navigation.replace).toHaveBeenCalledWith('RoleSelect');
   });
   it('keeps create-and-start disabled for a whitespace-only team name', () => {
     const screen = render(<AuthScreen navigation={navigation as never} route={{ params: { role: 'leader' } } as never} />);
@@ -118,6 +135,9 @@ describe('AuthScreen form actions', () => {
     await act(async () => { fireEvent.press(screen.getByTestId('auth-join-group')); });
     expect(mockSignIn).toHaveBeenCalledWith({ name: 'Alex' });
     expect(mockJoinGroup).toHaveBeenCalledWith('ABC234');
+    expect(navigation.reset).not.toHaveBeenCalled();
+    expect(screen.UNSAFE_getByType(SheetPresentation).props.visible).toBe(false);
+    act(() => screen.UNSAFE_getByType(SheetPresentation).props.onDismiss());
     expect(navigation.reset).toHaveBeenCalledWith({ index: 0, routes: [{ name: 'Map', params: { groupId: 'group-1' } }] });
   });
 });

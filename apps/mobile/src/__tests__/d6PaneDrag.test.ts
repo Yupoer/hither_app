@@ -151,7 +151,7 @@ it('keeps closing content until the spring completes and ignores an interrupted 
   expect(onOpenChange).toHaveBeenCalledWith(false);
 });
 
-it('preserves fling detents and clamps drag bounds', () => {
+it('allows a long drag to cross both detents and ignores velocity without travel', () => {
   render();
   act(() => mockHandlers.start());
   act(() => mockHandlers.update({ translationY: 900, velocityY: 0 }));
@@ -162,8 +162,34 @@ it('preserves fling detents and clamps drag bounds', () => {
   height().value = 300;
   act(() => mockHandlers.start());
   act(() => mockHandlers.end({ translationY: 0, velocityY: 400 }, true));
+  expect(panel().detent).toBe('full');
+  expect(spring().next).toBe(620);
+});
+
+it.each([1, -1] satisfies (1 | -1)[])('changes adjacent detents with a short pull or flick, direction %s', direction => {
+  render({ direction });
+  function release(travel: number, speed: number) {
+    const gesture = mockPanHandlers.get(panel().gesture);
+    if (!gesture) throw new Error('Grabber gesture is missing');
+    const event = { translationY: direction * travel, velocityY: direction * speed };
+    act(() => gesture.start());
+    act(() => gesture.update(event));
+    act(() => gesture.end(event, true));
+  }
+  release(14, 100);
+  expect(panel().detent).toBe('closed');
+  height().value = 100;
+  release(22, 100);
   expect(panel().detent).toBe('half');
-  expect(spring().next).toBe(349.6);
+  height().value = 349.6;
+  release(16, 920);
+  expect(panel().detent).toBe('full');
+  height().value = 620;
+  release(-16, -920);
+  expect(panel().detent).toBe('half');
+  height().value = 349.6;
+  release(-22, -100);
+  expect(panel().detent).toBe('closed');
 });
 
 it('mounts independent header, footer and grabber pans sharing one height and cancels actions after a drag', () => {
@@ -248,7 +274,8 @@ it.each([1, -1] satisfies (1 | -1)[])('hands content scrolling to the sheet at i
   expect(onDragBegin).toHaveBeenCalledTimes(1);
   expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === -1 ? 0 : 570, false);
   act(() => handlers.end({ translationY: travel * 120, velocityY: travel * 700 }, true));
-  expect(spring().next).toBe(349.6);
+  expect(panel().detent).toBe('closed');
+  expect(spring().next).toBe(100);
 });
 
 it.each([1, -1] satisfies (1 | -1)[])('expands from content before scrolling and restores an interrupted drag, direction %s', direction => {

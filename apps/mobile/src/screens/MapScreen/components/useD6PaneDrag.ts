@@ -8,6 +8,37 @@ import { cancelAnimation, dispatchCommand, runOnJS, runOnUI, scrollTo, useAnimat
 import { claimD6Drag, releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
 
 type Detent = 'closed' | 'half' | 'full';
+const DETENT_ORDER = ['closed', 'half', 'full'] satisfies readonly Detent[];
+const MAX_SNAP_TRAVEL = 18;
+const DETENT_SNAP_FRACTION = 0.32;
+const MIN_FLICK_TRAVEL = 6;
+const MIN_FLICK_SPEED = 650;
+
+function releaseDetent(
+  target: Detent,
+  origin: number,
+  released: number,
+  velocity: number,
+  heights: Readonly<Record<Detent, number>>,
+): Detent {
+  'worklet';
+  const travel = released - origin;
+  const direction = Math.sign(travel);
+  if (direction === 0) return target;
+  const distance = Math.abs(travel);
+  const flick = distance >= MIN_FLICK_TRAVEL && direction * velocity >= MIN_FLICK_SPEED;
+  let next = target;
+  let index = DETENT_ORDER.indexOf(target);
+  while (true) {
+    const adjacent = DETENT_ORDER[index + direction];
+    if (!adjacent) return next;
+    const threshold = Math.min(MAX_SNAP_TRAVEL, Math.abs(heights[adjacent] - heights[next]) * DETENT_SNAP_FRACTION);
+    const crossed = distance >= threshold && direction * (released - heights[next]) >= threshold;
+    if (!crossed) return next === target && flick ? adjacent : next;
+    next = adjacent;
+    index += direction;
+  }
+}
 type ContentDrag = { kind: 'idle' }
   | { kind: 'native'; translation: number }
   | { kind: 'controlled'; translation: number; offset: number };
@@ -157,6 +188,7 @@ export function useD6PaneDrag({
         if (delta === 0 || (expanding ? height.get() >= full - 0.5 : !atEdge)) return;
         if (!claimD6Drag(owner, 'pane')) return;
         cancelAnimation(height);
+        origin.set(height.get());
         const offset = Math.max(0, Math.min(maximumOffset, scrollOffset.get()));
         contentDrag.set({ kind: 'controlled', translation: translationY, offset });
         scrollOffset.set(offset);
@@ -195,9 +227,7 @@ export function useD6PaneDrag({
       releaseD6Drag(owner, 'pane');
       contentDrag.set({ kind: 'idle' });
       const speed = direction * velocityY;
-      const projected = height.get() + Math.max(-64, Math.min(64, speed * 0.12));
-      const next: Detent = projected <= (closed + half) / 2 ? 'closed'
-        : projected <= (half + full) / 2 ? 'half' : 'full';
+      const next = releaseDetent(target.get(), origin.get(), height.get(), speed, { closed, half, full });
       runOnJS(snapTo)(next, speed);
     })
     .onFinalize(() => {
@@ -208,7 +238,7 @@ export function useD6PaneDrag({
       releaseD6Drag(owner, 'pane');
       runOnJS(restore)();
     }), [interactive, dragFromContent, scrollGesture, scrollContent, scrollViewport, scrollOffset, scrollRef,
-    contentDrag, closed, full, half, height, dragging, direction, begin, snapTo, restore, owner]);
+    contentDrag, closed, full, half, height, dragging, direction, begin, snapTo, restore, owner, origin, target]);
   const makeChromeGesture = useCallback((acquired: SharedValue<boolean>) => Gesture.Pan()
     .enabled(interactive)
     .activeOffsetY([-6, 6])
@@ -235,11 +265,9 @@ export function useD6PaneDrag({
       dragging.set(false);
       releaseD6Drag(owner, 'pane');
       const speed = direction * velocityY;
-      const projection = Math.max(-64, Math.min(64, speed * 0.12));
-      const released = Math.max(closed, Math.min(full, origin.get() + direction * translationY));
-      const projected = released + projection;
-      const next: Detent = projected <= (closed + half) / 2 ? 'closed'
-        : projected <= (half + full) / 2 ? 'half' : 'full';
+      const start = origin.get();
+      const released = Math.max(closed, Math.min(full, start + direction * translationY));
+      const next = releaseDetent(target.get(), start, released, speed, { closed, half, full });
       runOnJS(snapTo)(next, speed);
     })
     .onFinalize(() => {
@@ -248,7 +276,7 @@ export function useD6PaneDrag({
       dragging.set(false);
       releaseD6Drag(owner, 'pane');
       runOnJS(restore)();
-    }), [interactive, begin, closed, contentDrag, direction, dragging, full, half, height, origin, restore, snapTo, owner, pressCancelled]);
+    }), [interactive, begin, closed, contentDrag, direction, dragging, full, half, height, origin, restore, snapTo, owner, pressCancelled, target]);
   const headerGesture = useMemo(() => makeChromeGesture(headerDragging), [makeChromeGesture, headerDragging]);
   const footerGesture = useMemo(() => makeChromeGesture(footerDragging), [makeChromeGesture, footerDragging]);
   const gesture = useMemo(() => makeChromeGesture(grabberDragging), [makeChromeGesture, grabberDragging]);
