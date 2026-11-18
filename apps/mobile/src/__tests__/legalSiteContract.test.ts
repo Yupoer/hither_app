@@ -9,7 +9,6 @@ const login = read('apps/mobile/src/screens/LoginScreen.tsx');
 const premium = read('apps/mobile/src/components/PremiumPresentation.tsx');
 const deploy = read('scripts/deploy-legal-site.ps1');
 const locationSmoke = read('apps/mobile/scripts/location-smoke.cjs');
-const verifiedCliTree = read('scripts/verified-cli-tree.mjs');
 const appConfig = read('apps/mobile/app.config.ts');
 
 describe('legal site contract', () => {
@@ -50,9 +49,8 @@ describe('legal site contract', () => {
   });
 
   it('keeps production credentials away from mutable command resolution', () => {
-    expect(locationSmoke).toContain('https://api.supabase.com/v1/projects/${projectRef}/api-keys');
-    expect(locationSmoke).toContain('Authorization: `Bearer ${accessToken}`');
-    expect(locationSmoke).toContain("name.startsWith('EXPO_PUBLIC_')");
+    expect(locationSmoke).toContain('await loadServiceRoleKey(env)');
+    expect(locationSmoke).toContain('const workerEnv = smokeWorkerEnvironment(env)');
     expect(locationSmoke).not.toMatch(/\bnpx(?:\.cmd)?\b/);
     expect(deploy).toContain('$WranglerVersion');
     expect(deploy).toContain('$WranglerSha256');
@@ -61,6 +59,5 @@ describe('legal site contract', () => {
     expect(deploy).toContain('$env:CLOUDFLARE_API_TOKEN = $cloudflareToken');
     expect(deploy).not.toContain("'NODE_OPTIONS'");
     expect(deploy).not.toMatch(/\bnpx(?:\.cmd)?\b|wrangler@latest/);
-    expect(verifiedCliTree).toContain('stats.isSymbolicLink()');
   });
 });

@@ -3,6 +3,20 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "Live smoke uses a fixed Supabase Management API for service-role lookup, rejects unavailable keys, and keeps admin settings out of workers.",
+      "testFile": "apps/mobile/scripts/location-smoke-credentials.test.cjs",
+      "testNamePattern": "requests the legacy service role|rejects nullable, masked|filters worker environment"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "Legal deployment requires a reviewed Wrangler version and tree digest without resolving a mutable package under deployment credentials.",
+      "testFile": "legalSiteContract.test.ts",
+      "testNamePattern": "keeps production credentials away from mutable command resolution"
+    },
+    {
       "parent": 346,
       "child": 346,
       "acceptance": "SDK 57 rollback directives from check or fetch reload the app through the existing automatic and manual OTA lifecycle.",
