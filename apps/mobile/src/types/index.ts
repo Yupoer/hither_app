@@ -176,7 +176,7 @@ export interface User {
 export type JourneyStatus = 'going' | 'paused';
 
 /**
- * A travel group. `inviteCode` is the 6-character "group code" users type to
+ * A travel group. `inviteCode` is the 20-character capability users type to
  * join (uppercase letters/digits, ambiguous chars removed).
  */
 export interface Group {

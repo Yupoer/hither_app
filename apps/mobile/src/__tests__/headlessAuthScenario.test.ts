@@ -493,23 +493,23 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       await world.waitFor(device, (value: any) => control(value, 'auth-code'), 'returning team code');
       await device.perform('team.code', { value: 'bad-??' });
       expect(control(await device.observe(), 'auth-code').value).toBe('BAD');
-      await device.perform('team.code', { value: 'BAD000' });
-      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'BAD000' });
+      await device.perform('team.code', { value: 'BAD24ABCDEFGHJKLMNPQ' });
+      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'BAD24ABCDEFGHJKLMNPQ' });
       expect(calls(world, 'join_group')).toHaveLength(0);
       await device.perform('team.join');
       const rejected = await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect' && control(value, 'auth-code'), 'bad code returns to entry');
       expect(control(rejected, 'auth-code').value).toBe('');
       expect(rejected.presentation.session.membership.group.name).toBe('Guest team');
       expect(rejected.external.alerts).toBe(0);
-      await device.perform('team.code', { value: 'te-st42!' });
-      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'TEST42' });
+      await device.perform('team.code', { value: 'test4-2abcde-fghjklmnp!' });
+      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'TEST42ABCDEFGHJKLMNP' });
       await device.perform('team.name', { value: '  Renamed Guest  ' });
       await device.perform('team.join');
       const joined = await world.waitFor(device, (value: any) => value.presentation.session.membership?.group.id === GROUP_ID && value.presentation.route.route === 'Map', 'guest joined existing team');
       expect(joined.presentation.session.membership.role).toBe('follower');
       expect(world.backend.profiles.get(actor).nickname).toBe('Renamed Guest');
       expect(calls(world, 'signInAnonymously')).toHaveLength(2);
-      expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'TEST42' });
+      expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'TEST42ABCDEFGHJKLMNP' });
     } finally { await world.close(); }
   });
 
@@ -518,9 +518,9 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     try {
       const device = await world.device({ id: 'invite-entry', userId: null, platform, mode: 'app' });
       await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect', 'welcome');
-      await device.input({ kind: 'linking', url: 'https://unknown.example/join?code=TEST42' });
+      await device.input({ kind: 'linking', url: 'https://unknown.example/join?code=TEST42ABCDEFGHJKLMNP' });
       expect((await device.observe()).presentation.route.route).toBe('RoleSelect');
-      await device.perform('team.code', { value: 'BAD000' });
+      await device.perform('team.code', { value: 'BAD24ABCDEFGHJKLMNPQ' });
       await device.perform('team.join');
       const rejected = await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect'
         && value.presentation.route.params?.rejectedInviteKey, 'invalid code returns to mounted entry');
@@ -528,9 +528,9 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       expect(rejected.external.alerts).toBe(0);
       const joinCallsBeforeLink = calls(world, 'join_group').length;
       const anonymousCallsBeforeLink = calls(world, 'signInAnonymously').length;
-      await device.input({ kind: 'linking', url: 'hither://join?code=test42' });
+      await device.input({ kind: 'linking', url: 'hither://join?code=test4-2abcde-fghjklmnp' });
       const confirmation = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Auth', 'invite confirmation');
-      expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'TEST42' });
+      expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'TEST42ABCDEFGHJKLMNP' });
       expect(calls(world, 'join_group')).toHaveLength(joinCallsBeforeLink);
       expect(calls(world, 'signInAnonymously')).toHaveLength(anonymousCallsBeforeLink);
       await device.perform('team.join');

@@ -22,7 +22,7 @@ module.exports = [
   ['A06', 'reports Google profile failures and stage timeouts without navigating to home',
     'Profile network failure and 12 second profile timeout show stage feedback without navigation. iOS exchange times out at 12 seconds. Late profile and exchange responses do not navigate.'],
   ['A19,G01,G02', 'creates and joins through lazy anonymous auth while rejecting empty and invalid group submissions',
-    'An empty name prevents creation. A sixth normalized invite character opens confirmation. No membership changes before confirmation. Anonymous auth failure creates no group. Successful guest create trims the team name and chooses a default profile name, blocks duplicate submission, writes membership and navigates Map. Invite sanitation, invalid-code membership retention, guest rename and existing-identity join are verified.'],
+    'An empty name prevents creation. A complete normalized invite code opens confirmation. No membership changes before confirmation. Anonymous auth failure creates no group. Successful guest create trims the team name and chooses a default profile name, blocks duplicate submission, writes membership and navigates Map. Invite sanitation, invalid-code membership retention, guest rename and existing-identity join are verified.'],
   ['G02', 'opens a trusted invite link as a confirmation without joining until the user acts',
     'An unknown host does not navigate; a trusted join link presents confirmation. Neither guest auth nor membership occurs until the confirm action.'],
   ['A20,A21', 'restores durable identity, retries transient foreground refresh and clears only terminal sessions',

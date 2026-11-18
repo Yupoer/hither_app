@@ -155,8 +155,8 @@ describe('D6 iOS team and commands through Map', () => {
       await device.perform('map.group.share-code');
       await device.input({ kind: 'animation', finished: true });
       expect((await device.observe()).presentation.receipts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ host: 'Clipboard', method: 'setStringAsync', value: 'TEST42' }),
-        expect.objectContaining({ host: 'Share', method: 'share', value: { message: expect.stringContaining('TEST42') } }),
+        expect.objectContaining({ host: 'Clipboard', method: 'setStringAsync', value: 'TEST42ABCDEFGHJKLMNP' }),
+        expect.objectContaining({ host: 'Share', method: 'share', value: { message: expect.stringContaining('TEST42ABCDEFGHJKLMNP') } }),
       ]));
       expect(world.backend.memberships).toHaveLength(2);
     } finally { await world.close(); }

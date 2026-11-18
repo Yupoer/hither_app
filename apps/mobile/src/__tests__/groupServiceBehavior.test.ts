@@ -441,8 +441,8 @@ describe('GroupService mutations and demo branches', () => {
     mockIsDemoGroup.mockReturnValue(true);
     await expect(kickGroupMember('demo', 'u-2')).rejects.toThrow('kick_not_supported_in_demo');
     mockIsDemoGroup.mockReturnValue(false);
-    mockedSupabase.rpc.mockResolvedValueOnce({ data: 'ABC123', error: null });
-    await expect(kickGroupMember('g-1', 'u-2')).resolves.toBe('ABC123');
+    mockedSupabase.rpc.mockResolvedValueOnce({ data: 'TEST42ABCDEFGHJKLMNP', error: null });
+    await expect(kickGroupMember('g-1', 'u-2')).resolves.toBe('TEST42ABCDEFGHJKLMNP');
     mockedSupabase.rpc.mockResolvedValueOnce({ data: 'bad', error: null });
     await expect(kickGroupMember('g-1', 'u-2')).rejects.toThrow('kick_group_member_invalid_code');
   });

@@ -116,7 +116,7 @@ flowchart TD
 
 ### 5.3 隊伍
 
-- Leader 建立隊伍與 6 碼 invite code。
+- Leader 建立隊伍與高熵 invite code。
 - Follower 使用代碼加入。
 - 同一帳號可加入多隊。
 - MyTeams 顯示隊名、人數、代碼與成員 avatar。

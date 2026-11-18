@@ -4,6 +4,9 @@ jest.mock('../api/supabase', () => ({
     auth: { getSession: jest.fn(), refreshSession: jest.fn() },
   },
 }));
+jest.mock('expo-crypto', () => ({
+  getRandomBytes: jest.fn((length: number) => new Uint8Array(length).map((_, index) => index)),
+}));
 
 import { supabase } from '../api/supabase';
 import {
@@ -45,9 +48,9 @@ afterEach(() => {
 });
 
 describe('_helpers auth and error seams', () => {
-  it('generates a six-character code from the safe invite alphabet', () => {
+  it('generates a 100-bit code from the safe invite alphabet', () => {
     const code = generateInviteCode();
-    expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+    expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{20}$/);
   });
 
   it('uses the configured auth controller for session, user, and operation helpers', async () => {

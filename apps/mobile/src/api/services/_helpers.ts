@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import { supabase } from '../supabase';
 import {
   getDefaultAuthRecovery,
@@ -8,15 +9,13 @@ import {
   classifyOperationError,
   type OperationErrorClassification,
 } from '../../utils/operationError';
+import { INVITE_CODE_ALPHABET, INVITE_CODE_LENGTH } from '../../utils/inviteCode';
 
-const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-/** Generate a 6-char invite code from the schema's character set. */
+/** Generate a local code with the same cryptographic alphabet and entropy as the server. */
 export function generateInviteCode(): string {
   return Array.from(
-    { length: 6 },
-    () =>
-      INVITE_CODE_CHARS[Math.floor(Math.random() * INVITE_CODE_CHARS.length)],
+    Crypto.getRandomBytes(INVITE_CODE_LENGTH),
+    byte => INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length],
   ).join('');
 }
 

@@ -39,6 +39,10 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
     onJoin(normalized);
   }
 
+  const rows = Array.from({ length: 2 }, (_, row) =>
+    Array.from({ length: INVITE_CODE_LENGTH / 2 }, (_, column) => row * (INVITE_CODE_LENGTH / 2) + column),
+  );
+
   return (
     <View>
       <Animated.View style={codeMotion}>
@@ -47,13 +51,17 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
           style={styles.boxes}
           onPress={() => input.current?.focus()}
         >
-          {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => (
-            <View key={index} style={[
-              styles.cell,
-              index === 3 && styles.cellBreak,
-              index === code.length && (focused || (!rejected && !code)) && styles.cellActive,
-            ]}>
-              <Text style={styles.character}>{code[index]}</Text>
+          {rows.map((indexes, row) => (
+            <View key={row} style={styles.row}>
+              {indexes.map(index => (
+                <View key={index} style={[
+                  styles.cell,
+                  index % 10 === 5 && styles.cellBreak,
+                  index === code.length && (focused || (!rejected && !code)) && styles.cellActive,
+                ]}>
+                  <Text style={styles.character}>{code[index]}</Text>
+                </View>
+              ))}
             </View>
           ))}
           <TextInput
@@ -93,15 +101,16 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
 }
 
 const styles = StyleSheet.create({
-  boxes: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  boxes: { gap: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   cell: {
-    maxWidth: 48, flex: 1, height: 60, borderRadius: 16, alignItems: 'center',
+    maxWidth: 34, flex: 1, height: 48, borderRadius: 12, alignItems: 'center',
     justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.09)', borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
-  cellBreak: { marginLeft: 10 },
+  cellBreak: { marginLeft: 6 },
   cellActive: { borderWidth: 2, borderColor: ENTRY_ACCENT },
-  character: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', color: '#fff' },
+  character: { fontSize: APP_TEXT_SIZE.body, fontWeight: '800', fontStyle: 'italic', color: '#fff' },
   input: { ...StyleSheet.absoluteFill, opacity: 0.02, color: 'transparent' },
   divider: { textAlign: 'center', color: 'rgba(255,255,255,0.55)', fontSize: APP_TEXT_SIZE.caption, marginVertical: 12 },
 });

@@ -9,7 +9,10 @@ import { configureDefaultAuthRecovery } from '../api/authRecovery';
 jest.mock('../api/supabase', () => ({
   supabase: { from: jest.fn(), rpc: jest.fn(), auth: { getSession: jest.fn() } },
 }));
-jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'test-device-id') }));
+jest.mock('expo-crypto', () => ({
+  randomUUID: jest.fn(() => 'test-device-id'),
+  getRandomBytes: jest.fn((length: number) => new Uint8Array(length).map((_, index) => index)),
+}));
 jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
@@ -72,10 +75,10 @@ beforeEach(() => {
 });
 
 describe('pure mappers (snake_case row -> camelCase type)', () => {
-  it('generateInviteCode: 6 chars from the schema set', () => {
+  it('generateInviteCode: 20 chars from the schema set', () => {
     for (let i = 0; i < 25; i++) {
       expect(generateInviteCode()).toMatch(
-        /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,
+        /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{20}$/,
       );
     }
   });

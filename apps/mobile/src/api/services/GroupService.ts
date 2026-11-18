@@ -49,6 +49,7 @@ import {
   ANON_LEADER_REGISTRATION_REQUIRED,
   classifyAnonymousAccessError,
 } from '../../anonymousAccess';
+import { isValidInviteCode } from '../../utils/inviteCode';
 
 export interface GroupRow {
   id: string;
@@ -711,7 +712,7 @@ export async function kickGroupMember(
     p_user_id: userId,
   });
   orThrow(error);
-  if (typeof data !== 'string' || data.length !== 6) {
+  if (typeof data !== 'string' || !isValidInviteCode(data)) {
     throw new Error('kick_group_member_invalid_code');
   }
   invalidateMyJoinedGroupsCache();

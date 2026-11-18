@@ -31,6 +31,7 @@ import PrefSlider from '../../../components/PrefSlider';
 import { useSettingsUpdate } from './useSettingsUpdate';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
 import { HITHER_ACCENT } from '../../../theme/brand';
+import { formatInviteCode } from '../../../utils/inviteCode';
 
 export type SettingsPage = 'root' | 'profile' | 'team' | 'teams' | 'store' | 'notifications' | 'appearance' | 'account' | 'advanced' | 'coordination' | 'mapJourney' | 'support' | 'language';
 
@@ -276,7 +277,15 @@ function HomeTeamSettings({ group, isLeader, refresh, share, showCode, coordinat
       {failed ? <Row label={t('profile.saveFailed')} value={t('interaction.retry')} action={() => { void retry(); }} /> : null}
       {showCode || share ? (
         <View style={styles.code}>
-          <HitherText typeRole="metric" style={[styles.codeText, numberFont && { fontFamily: numberFont, fontStyle: 'normal', fontWeight: '400' }]}>{showCode ? group.inviteCode : ''}</HitherText>
+          <HitherText
+            typeRole="metric"
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+            numberOfLines={1}
+            style={[styles.codeText, numberFont && { fontFamily: numberFont, fontStyle: 'normal', fontWeight: '400' }]}
+          >
+            {showCode ? formatInviteCode(group.inviteCode) : ''}
+          </HitherText>
           {share ? <SheetHeaderAction action="share" onPress={share}
             accessibilityLabel={t('map.shareInviteLink')} testID="settings-team-share" /> : null}
         </View>
@@ -571,7 +580,7 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, borderRadius: 16, color: colors.white, backgroundColor: 'rgba(255,255,255,0.09)', paddingHorizontal: 12, fontSize: APP_TEXT_SIZE.body },
   groupName: { marginTop: 14, textAlign: 'center', fontWeight: '600', fontSize: APP_TEXT_SIZE.body },
   code: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.07)', marginTop: 14 },
-  codeText: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', letterSpacing: 4, color: colors.white },
+  codeText: { flex: 1, fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', letterSpacing: 4, color: colors.white },
   sectionLabel: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: colors.white, paddingTop: 12, paddingBottom: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12 },
   chip: { minHeight: 44, borderRadius: 22, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'transparent' },
