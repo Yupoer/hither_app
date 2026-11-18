@@ -9,9 +9,34 @@ let generation = 0;
 let blocked = false;
 let authChanges: Promise<unknown> = Promise.resolve();
 
-export function changeAuthSession<T>(operation: () => Promise<T>, revoke = true, signOutOnFailure = true): Promise<T> {
+export type AuthActorLease = {
+  actorId: string;
+  assertCurrent: () => Promise<void>;
+};
+
+function actorChangedError(): Error & { code: string } {
+  const error = new Error('The active account changed. Please try again.') as Error & { code: string };
+  error.name = 'AuthActorChangedError';
+  error.code = 'auth_actor_changed';
+  return error;
+}
+
+async function assertCurrentAuthActor(actorId: string): Promise<void> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (data.session?.user.id !== actorId) throw actorChangedError();
+}
+
+function queueAuthSessionChange<T>(
+  operation: () => Promise<T>,
+  revoke: boolean,
+  signOutOnFailure: boolean,
+  expectedActorId?: string,
+): Promise<T> {
   const pending = authChanges.then(async () => {
+    if (expectedActorId) await assertCurrentAuthActor(expectedActorId);
     if (revoke) await revokeInstallationCapabilities();
+    if (expectedActorId) await assertCurrentAuthActor(expectedActorId);
     const finishFailedTransition = async () => {
       if (!revoke || !signOutOnFailure) return;
       const ended = await supabase.auth.signOut({ scope: 'local' });
@@ -25,6 +50,22 @@ export function changeAuthSession<T>(operation: () => Promise<T>, revoke = true,
   });
   authChanges = pending.catch(() => undefined);
   return pending;
+}
+
+export function changeAuthSession<T>(operation: () => Promise<T>, revoke = true, signOutOnFailure = true): Promise<T> {
+  return queueAuthSessionChange(operation, revoke, signOutOnFailure);
+}
+
+export function changeAuthSessionForActor<T>(
+  actorId: string,
+  operation: (lease: AuthActorLease) => Promise<T>,
+  revoke = false,
+): Promise<T> {
+  const lease: AuthActorLease = {
+    actorId,
+    assertCurrent: () => assertCurrentAuthActor(actorId),
+  };
+  return queueAuthSessionChange(() => operation(lease), revoke, false, actorId);
 }
 
 export function getInstallationId(): Promise<string> {

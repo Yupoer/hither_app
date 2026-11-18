@@ -1,7 +1,12 @@
 import { useCallback, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import { beginAuthCallback, consumeAuthCallback, cancelAuthCallback } from '../auth/callbacks';
-import { changeAuthSession, resumeInstallationCapabilities } from '../api/installationCapabilities';
+import {
+  changeAuthSession,
+  changeAuthSessionForActor,
+  resumeInstallationCapabilities,
+  type AuthActorLease,
+} from '../api/installationCapabilities';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { supabase } from '../api/supabase';
@@ -43,6 +48,49 @@ type SupabaseAuthUser = {
 };
 
 type GoogleAuthStage = 'token_exchange' | 'profile_bootstrap';
+
+function requireAuthActor(
+  authUser: SupabaseAuthUser | null | undefined,
+  actorId: string,
+): SupabaseAuthUser {
+  if (!authUser || authUser.id !== actorId) {
+    throw new AuthFlowError(
+      'The active account changed. Please try again.',
+      'auth_actor_changed',
+    );
+  }
+  return authUser;
+}
+
+async function linkedUserForActor(
+  initiatingUser: User,
+  linkedUser: SupabaseAuthUser,
+  provider: 'google' | 'apple',
+  fallbackEmail: string | null | undefined,
+  lease: AuthActorLease,
+): Promise<{ nextUser: User; stillAnonymous: boolean }> {
+  const actorId = initiatingUser.id;
+  const linkedActor = requireAuthActor(linkedUser, actorId);
+  await lease.assertCurrent();
+  await supabase.rpc('clear_anonymous_expiry_if_registered', {
+    p_uid: actorId,
+  }).then(() => undefined, () => undefined);
+
+  const { data: refreshed, error } = await supabase.auth.getUser();
+  if (error) throw toAuthFlowError(error, `${provider === 'google' ? 'Google' : 'Apple'} linking failed.`);
+  const refreshedActor = requireAuthActor(refreshed.user, actorId);
+  await lease.assertCurrent();
+  const stillAnonymous = !!refreshedActor.is_anonymous;
+  return {
+    nextUser: {
+      ...initiatingUser,
+      email: linkedActor.email ?? fallbackEmail ?? initiatingUser.email,
+      provider: stillAnonymous ? initiatingUser.provider : provider,
+      anonymousExpiresAt: stillAnonymous ? initiatingUser.anonymousExpiresAt : undefined,
+    },
+    stillAnonymous,
+  };
+}
 
 function safeGoogleErrorCode(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -391,21 +439,31 @@ export function useAuthFlow({
   const linkWithGoogle = useCallback(async (): Promise<User | null> => {
     if (!user) throw new Error('No active account to link');
 
-    let authUser: SupabaseAuthUser | null = null;
     let useHostedFallback = false;
     try {
       const credentials = await getGoogleAuthCredentials();
       if (!credentials) return null;
       const { idToken: token, accessToken } = credentials;
-      const linked = await supabase.auth.linkIdentity({
-        provider: 'google',
-        token,
-        ...(accessToken ? { access_token: accessToken } : {}),
+      return await changeAuthSessionForActor(user.id, async (lease) => {
+        const linked = await supabase.auth.linkIdentity({
+          provider: 'google',
+          token,
+          ...(accessToken ? { access_token: accessToken } : {}),
+        });
+        if (linked.error || !linked.data.user) {
+          throw toAuthFlowError(linked.error, 'Google linking failed.');
+        }
+        const { nextUser, stillAnonymous } = await linkedUserForActor(
+          user,
+          linked.data.user,
+          'google',
+          undefined,
+          lease,
+        );
+        setUser(previous => previous?.id === user.id ? nextUser : previous);
+        setIsAnonymous(stillAnonymous);
+        return nextUser;
       });
-      if (linked.error || !linked.data.user) {
-        throw toAuthFlowError(linked.error, 'Google linking failed.');
-      }
-      authUser = linked.data.user;
     } catch (error) {
       // Native iOS linking must not reopen the Supabase-hosted prompt. Android
       // can retain its existing browser flow until its native module is built.
@@ -418,14 +476,16 @@ export function useAuthFlow({
 
     if (useHostedFallback) {
       const redirectTo = await beginAuthCallback('link');
-      const { data, error } = await supabase.auth.linkIdentity({
-        provider: 'google',
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-          queryParams: { prompt: 'select_account' },
-        },
-      });
+      const { data, error } = await changeAuthSessionForActor(user.id, () => (
+        supabase.auth.linkIdentity({
+          provider: 'google',
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+            queryParams: { prompt: 'select_account' },
+          },
+        })
+      ));
       if (error || !data?.url) {
         throw toAuthFlowError(error, 'Google linking failed.');
       }
@@ -437,28 +497,20 @@ export function useAuthFlow({
       if (!session?.user || session.user.id !== user.id) {
         throw new AuthFlowError('Google linking callback was rejected.', 'auth_callback_rejected');
       }
-      authUser = session.user;
+      return changeAuthSessionForActor(user.id, async (lease) => {
+        const { nextUser, stillAnonymous } = await linkedUserForActor(
+          user,
+          session.user,
+          'google',
+          undefined,
+          lease,
+        );
+        setUser(previous => previous?.id === user.id ? nextUser : previous);
+        setIsAnonymous(stillAnonymous);
+        return nextUser;
+      });
     }
-
-    if (!authUser) return null;
-
-    // Preserve the same UID. Only the SECURITY DEFINER RPC may clear
-    // anonymous_expires_at, and only when is_anonymous is already false.
-    await supabase.rpc('clear_anonymous_expiry_if_registered', {
-      p_uid: user.id,
-    }).then(() => undefined, () => undefined);
-
-    const { data: refreshed } = await supabase.auth.getUser();
-    const stillAnon = !!refreshed.user?.is_anonymous;
-    const nextUser = {
-      ...user,
-      email: authUser.email ?? user.email,
-      provider: stillAnon ? user.provider : 'google',
-      anonymousExpiresAt: stillAnon ? user.anonymousExpiresAt : undefined,
-    };
-    setUser(nextUser);
-    setIsAnonymous(stillAnon);
-    return nextUser;
+    return null;
   }, [setIsAnonymous, setUser, user]);
 
   const linkWithApple = useCallback(async (): Promise<User | null> => {
@@ -478,30 +530,27 @@ export function useAuthFlow({
       });
       if (!credential.identityToken) throw new Error('Apple linking failed');
 
-      const { data, error } = await supabase.auth.linkIdentity({
-        provider: 'apple',
-        token: credential.identityToken,
-        nonce: rawNonce,
+      return await changeAuthSessionForActor(user.id, async (lease) => {
+        const { data, error } = await supabase.auth.linkIdentity({
+          provider: 'apple',
+          token: credential.identityToken,
+          nonce: rawNonce,
+        });
+        if (error) throw toAuthFlowError(error, 'Apple linking failed');
+        if (!data.user) throw new AuthFlowError('Apple linking failed', 'auth_user_missing');
+
+        const { nextUser, stillAnonymous } = await linkedUserForActor(
+          user,
+          data.user,
+          'apple',
+          credential.email,
+          lease,
+        );
+        resumeInstallationCapabilities();
+        setUser(previous => previous?.id === user.id ? nextUser : previous);
+        setIsAnonymous(stillAnonymous);
+        return nextUser;
       });
-      if (error) throw toAuthFlowError(error, 'Apple linking failed');
-      if (!data.user) throw new AuthFlowError('Apple linking failed', 'auth_user_missing');
-
-      await supabase.rpc('clear_anonymous_expiry_if_registered', {
-        p_uid: user.id,
-      }).then(() => undefined, () => undefined);
-
-      const { data: refreshed } = await supabase.auth.getUser();
-      const stillAnon = !!refreshed.user?.is_anonymous;
-      const nextUser = {
-        ...user,
-        email: data.user.email ?? credential.email ?? user.email,
-        provider: stillAnon ? user.provider : 'apple',
-        anonymousExpiresAt: stillAnon ? user.anonymousExpiresAt : undefined,
-      };
-      resumeInstallationCapabilities();
-      setUser(nextUser);
-      setIsAnonymous(stillAnon);
-      return nextUser;
     } catch (error) {
       if ((error as { code?: string }).code === 'ERR_REQUEST_CANCELED') return null;
       throw error;
@@ -587,34 +636,47 @@ export function useAuthFlow({
     [setUser, setIsAnonymous],
   );
 
-  const signOut = useCallback(() => changeAuthSession(async () => {
-    await cancelAuthCallback();
-    if (isAnonymous) {
+  const signOut = useCallback(() => {
+    if (isAnonymous && !user) {
+      return Promise.reject(new AuthFlowError(
+        'The active account changed. Please try again.',
+        'auth_actor_changed',
+      ));
+    }
+    const operation = async (lease?: AuthActorLease) => {
+      await cancelAuthCallback();
+      if (isAnonymous) {
+        await lease?.assertCurrent();
+        const { error } = await supabase.rpc('delete_anonymous_account');
+        orThrow(error);
+      }
+      const signedOut = await supabase.auth.signOut({ scope: 'local' });
+      orThrow(signedOut.error);
+      setUser(null);
+      setIsAnonymous(false);
+      setIsPro(false);
+      setMembershipState(null);
+    };
+    return user
+      ? changeAuthSessionForActor(user.id, operation, true)
+      : changeAuthSession(() => operation(), true, false);
+  }, [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState, user]);
+
+  const deleteAccount = useCallback(() => {
+    if (!user) return Promise.reject(new Error('No active account to delete'));
+    return changeAuthSessionForActor(user.id, async (lease) => {
+      await cancelAuthCallback();
+      await lease.assertCurrent();
       const { error } = await supabase.rpc('delete_anonymous_account');
       orThrow(error);
       const signedOut = await supabase.auth.signOut({ scope: 'local' });
       orThrow(signedOut.error);
-    } else {
-      const signedOut = await supabase.auth.signOut({ scope: 'local' });
-      orThrow(signedOut.error);
-    }
-    setUser(null);
-    setIsAnonymous(false);
-    setIsPro(false);
-    setMembershipState(null);
-  }, true, false), [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState]);
-
-  const deleteAccount = useCallback(() => changeAuthSession(async () => {
-    await cancelAuthCallback();
-    const { error } = await supabase.rpc('delete_anonymous_account');
-    orThrow(error);
-    const signedOut = await supabase.auth.signOut({ scope: 'local' });
-      orThrow(signedOut.error);
-    setUser(null);
-    setIsAnonymous(false);
-    setIsPro(false);
-    setMembershipState(null);
-  }, true, false), [setUser, setIsAnonymous, setIsPro, setMembershipState]);
+      setUser(null);
+      setIsAnonymous(false);
+      setIsPro(false);
+      setMembershipState(null);
+    }, true);
+  }, [setUser, setIsAnonymous, setIsPro, setMembershipState, user]);
 
   const upgradeToEmailAccount = useCallback(
     async (email: string, password: string) => {
@@ -623,40 +685,47 @@ export function useAuthFlow({
       // updateUser attaches email/password to the *same* auth.uid() — profiles,
       // memberships, and trip rows keyed by uid are preserved.
       const normalizedEmail = email.trim();
-      const { error } = await supabase.auth.updateUser(
-        isAnonymous ? { email: normalizedEmail, password } : { password },
-      );
-      if (error) throw toAuthFlowError(error, 'Unable to update the account.');
-      // Never raw-update anonymous_expires_at from the client. The RPC only
-      // clears the column when auth.users.is_anonymous is already false
-      // (e.g. confirm-email already applied, or project has confirm off).
-      if (isAnonymous) {
-        await supabase.rpc('clear_anonymous_expiry_if_registered', {
-          p_uid: uid,
-        }).then(() => undefined, () => undefined);
-      }
+      await changeAuthSessionForActor(uid, async (lease) => {
+        const { data, error } = await supabase.auth.updateUser(
+          isAnonymous ? { email: normalizedEmail, password } : { password },
+        );
+        if (error) throw toAuthFlowError(error, 'Unable to update the account.');
+        requireAuthActor(data.user, uid);
+        await lease.assertCurrent();
+        // Never raw-update anonymous_expires_at from the client. The RPC only
+        // clears the column when auth.users.is_anonymous is already false
+        // (e.g. confirm-email already applied, or project has confirm off).
+        if (isAnonymous) {
+          await supabase.rpc('clear_anonymous_expiry_if_registered', {
+            p_uid: uid,
+          }).then(() => undefined, () => undefined);
+        }
 
-      const { data: refreshed } = await supabase.auth.getUser();
-      const stillAnon = !!refreshed.user?.is_anonymous;
-      setUser((prev) =>
-        prev
-          ? {
-              ...prev,
-              email: normalizedEmail || prev.email,
-              // Keep server expiry until identity is actually non-anonymous.
-              anonymousExpiresAt: stillAnon
-                ? prev.anonymousExpiresAt
-                : undefined,
-              provider: stillAnon
-                ? prev.provider
-                : prev.provider === 'anonymous'
-                  ? 'email'
-                  : prev.provider,
-            }
-          : prev,
-      );
-      // Do not invent registered state while confirm-email is still pending.
-      setIsAnonymous(stillAnon);
+        const { data: refreshed, error: refreshError } = await supabase.auth.getUser();
+        if (refreshError) throw toAuthFlowError(refreshError, 'Unable to update the account.');
+        const refreshedActor = requireAuthActor(refreshed.user, uid);
+        await lease.assertCurrent();
+        const stillAnon = !!refreshedActor.is_anonymous;
+        setUser((prev) =>
+          prev?.id === uid
+            ? {
+                ...prev,
+                email: normalizedEmail || prev.email,
+                // Keep server expiry until identity is actually non-anonymous.
+                anonymousExpiresAt: stillAnon
+                  ? prev.anonymousExpiresAt
+                  : undefined,
+                provider: stillAnon
+                  ? prev.provider
+                  : prev.provider === 'anonymous'
+                    ? 'email'
+                    : prev.provider,
+              }
+            : prev,
+        );
+        // Do not invent registered state while confirm-email is still pending.
+        setIsAnonymous(stillAnon);
+      });
     },
     [isAnonymous, setIsAnonymous, setUser, user],
   );

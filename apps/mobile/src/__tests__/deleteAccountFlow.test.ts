@@ -1,4 +1,13 @@
-jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
+const mockAssertCurrentActor = jest.fn(async () => undefined);
+const mockChangeAuthSessionForActor = jest.fn((
+  actorId: string,
+  operation: (lease: { actorId: string; assertCurrent: () => Promise<void> }) => Promise<unknown>,
+) => operation({ actorId, assertCurrent: mockAssertCurrentActor }));
+jest.mock('../api/installationCapabilities', () => ({
+  changeAuthSession: (operation: () => Promise<unknown>) => operation(),
+  changeAuthSessionForActor: mockChangeAuthSessionForActor,
+  resumeInstallationCapabilities: jest.fn(),
+}));
 jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(async () => 'https://hither-legal.pages.dev/auth/callback?state=test'), cancelAuthCallback: jest.fn(), consumeAuthCallback: jest.fn() }));
 const mockRpc = jest.fn();
 const mockSignOut = jest.fn();
@@ -117,8 +126,8 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     mockGetGoogleAuthCredentials.mockResolvedValue({
       idToken: 'google-id-token', accessToken: null, nonce: null,
     });
-    mockGetUser.mockResolvedValue({ data: { user: { is_anonymous: false } } });
-    mockUpdateUser.mockResolvedValue({ error: null });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', is_anonymous: false } }, error: null });
+    mockUpdateUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
   });
 
   it.each(['signInWithGoogle', 'linkWithGoogle'] as const)('uses the installed SDK HTTPS callback option for hosted %s', async method => {
@@ -156,6 +165,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     expect(setIsAnonymous).toHaveBeenCalledWith(false);
     expect(setIsPro).toHaveBeenCalledWith(false);
     expect(setMembershipState).toHaveBeenCalledWith(null);
+    expect(mockChangeAuthSessionForActor).toHaveBeenCalledWith('u1', expect.any(Function), true);
   });
 
   it('deleteAccount keeps the session when the RPC fails', async () => {
@@ -180,6 +190,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     await flow.signOut();
     expect(mockRpc).toHaveBeenCalledWith('delete_anonymous_account');
     expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(mockChangeAuthSessionForActor).toHaveBeenCalledWith('u1', expect.any(Function), true);
   });
 
   it('covers neighboring auth helpers so changed-function coverage stays honest', async () => {
@@ -401,7 +412,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
 
   it('links Google natively without replacing the existing account UID', async () => {
     mockLinkIdentity.mockResolvedValueOnce({
-      data: { user: { id: 'linked-u1', email: 'linked@example.test' } },
+      data: { user: { id: 'u1', email: 'linked@example.test' } },
       error: null,
     });
     const setUser = jest.fn();
@@ -417,12 +428,52 @@ describe('useAuthFlow deleteAccount and signOut', () => {
       token: 'google-id-token',
     });
     expect(mockOpenAuth).not.toHaveBeenCalled();
-    expect(setUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }));
+    expect(mockChangeAuthSessionForActor).toHaveBeenCalledWith('u1', expect.any(Function));
+    const updater = setUser.mock.calls[0][0] as (previous: { id: string }) => unknown;
+    expect(updater({ id: 'u1' })).toEqual(expect.objectContaining({ id: 'u1' }));
+    expect(updater({ id: 'account-b' })).toEqual({ id: 'account-b' });
+  });
+
+  it.each(['linkWithGoogle', 'linkWithApple'] as const)(
+    'rejects a %s result for an account other than the initiator',
+    async method => {
+      mockLinkIdentity.mockResolvedValueOnce({
+        data: { user: { id: 'account-b', email: 'other@example.test' } },
+        error: null,
+      });
+      mockAppleSignIn.mockResolvedValue({
+        identityToken: 'apple.jwt',
+        email: 'other@example.test',
+      });
+      const setUser = jest.fn();
+
+      await expect(makeFlow({ setUser })[method]()).rejects.toMatchObject({
+        code: 'auth_actor_changed',
+      });
+      expect(setUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a link when the refreshed session belongs to another account', async () => {
+    mockLinkIdentity.mockResolvedValueOnce({
+      data: { user: { id: 'u1', email: 'linked@example.test' } },
+      error: null,
+    });
+    mockGetUser.mockResolvedValueOnce({
+      data: { user: { id: 'account-b', is_anonymous: false } },
+      error: null,
+    });
+    const setUser = jest.fn();
+
+    await expect(makeFlow({ setUser }).linkWithGoogle()).rejects.toMatchObject({
+      code: 'auth_actor_changed',
+    });
+    expect(setUser).not.toHaveBeenCalled();
   });
 
   it('links Google/Apple and applies profile updaters on success and RPC reject', async () => {
     mockLinkIdentity.mockResolvedValue({
-      data: { user: { email: 'g@example.test' } },
+      data: { user: { id: 'u1', email: 'g@example.test' } },
       error: null,
     });
     mockAppleSignIn.mockResolvedValue({
@@ -443,7 +494,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
 
     mockRpc.mockRejectedValueOnce(new Error('already cleared'));
     mockLinkIdentity.mockResolvedValue({
-      data: { user: { email: 'a@example.test' } },
+      data: { user: { id: 'u1', email: 'a@example.test' } },
       error: null,
     });
     const appleFlow = makeFlow();
@@ -456,6 +507,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     const upgradeFlow = makeFlow();
     await upgradeFlow.upgradeToEmailAccount('ada@example.test', 'secret1');
     expect(mockUpdateUser).toHaveBeenLastCalledWith({ password: 'secret1' });
+    expect(mockChangeAuthSessionForActor).toHaveBeenCalledWith('u1', expect.any(Function));
     await upgradeFlow.updateProfile({ nickname: 'Ada', avatar: 'fox' });
   });
 });
