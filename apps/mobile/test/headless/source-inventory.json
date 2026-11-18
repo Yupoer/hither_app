@@ -21,7 +21,7 @@
     "file": "App.tsx",
     "kind": "lifecycle",
     "name": "useEffect",
-    "hash": "d916080b0578e1f3ea5e908df107df00003e16e824424d9ff1c60fe7ab4ccef9"
+    "hash": "1a66baa12fe19c1f208c18f946769058e57fdf04f63745193cffac81b9674baf"
   },
   {
     "file": "App.tsx",
@@ -813,13 +813,13 @@
     "file": "src/api/services/DiagnosticService.ts",
     "kind": "export",
     "name": "uploadMetricPayload",
-    "hash": "67946059c6749f623441c16a861e6aaa89e15b26b9828fbfbf69ac3f7004b274"
+    "hash": "9c9e4f95b6346b6934b41b7efd6332119bc86ee9a2251c420ce577a3ed4da02e"
   },
   {
     "file": "src/api/services/DiagnosticService.ts",
     "kind": "export",
     "name": "uploadMetricPayloadBatch",
-    "hash": "55cef14acfa6d36216f8a44a398340449774be238c6398cdf48c3b4767001f4d"
+    "hash": "a7b1c1b41c2869739566fef095202595fd6c725638dd84c426a4b5c91e494e44"
   },
   {
     "file": "src/api/services/EntitlementService.ts",
@@ -1347,7 +1347,7 @@
     "file": "src/api/services/PerformanceService.ts",
     "kind": "export",
     "name": "uploadPerformanceBatch",
-    "hash": "6096409484259b46f922fed811464508b1d07524c57cca4a59f463edd53ef44d"
+    "hash": "f1cc152964d93acbb26c156aadff6c9312167fc5140a0485f86fa720cb13d6af"
   },
   {
     "file": "src/api/services/ProfileService.ts",
