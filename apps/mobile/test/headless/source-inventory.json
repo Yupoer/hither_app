@@ -567,7 +567,13 @@
     "file": "src/api/installationCapabilities.ts",
     "kind": "export",
     "name": "changeAuthSession",
-    "hash": "2942aa8dfe675c15efe8b3d42cd76640fae57fef0a4ced3d73df424d4ab6d939"
+    "hash": "7d67b05e585c21b964d2f79e01653e23b8caabf70e7fdc74d74db64db550bd62"
+  },
+  {
+    "file": "src/api/installationCapabilities.ts",
+    "kind": "export",
+    "name": "changeAuthSessionForActor",
+    "hash": "0122d714145b90527dadf7c878a2171a021cd149d59ca61ac67fb7c47e8b73b6"
   },
   {
     "file": "src/api/installationCapabilities.ts",
@@ -1527,7 +1533,19 @@
     "file": "src/auth/callbacks.ts",
     "kind": "export",
     "name": "beginAuthCallback",
-    "hash": "1776bacc238c80bfef461a8cff81414ad2aa8c5e069aad6240ae72cf7f67d631"
+    "hash": "2e8d7d75f54f4a24f86f41c8b42c2debd2fdc480f7531b3810d1cc99b03c3ce5"
+  },
+  {
+    "file": "src/auth/callbacks.ts",
+    "kind": "export",
+    "name": "beginAuthCallback",
+    "hash": "b78232ef50fbc45c3e8a0f59c87cabca262c07d0213663a67f4b0006643d7e78"
+  },
+  {
+    "file": "src/auth/callbacks.ts",
+    "kind": "export",
+    "name": "beginAuthCallback",
+    "hash": "29094b15e934c1f723c5c9ec0354772205835006e21493b1051262c768ef2e51"
   },
   {
     "file": "src/auth/callbacks.ts",
@@ -11481,7 +11499,7 @@
     "file": "src/state/SessionContext.tsx",
     "kind": "export",
     "name": "SessionProvider",
-    "hash": "6eec2b09d2c0b08702607e677f46b3f08cd79f426386c361cc77c50604e0ea44"
+    "hash": "639ef5eceff2905e78f5f0cea09f1bd70902d11eb9d6ca9166190ebf6349dc11"
   },
   {
     "file": "src/state/SessionContext.tsx",
@@ -12789,7 +12807,7 @@
     "file": "src/state/useAuthFlow.ts",
     "kind": "export",
     "name": "useAuthFlow",
-    "hash": "74da5083d255bc2c1223fcc09f05d9978a932eb58859f23f574d5e1ce807f6a0"
+    "hash": "2c2e59409ea163ac986d5711adfe983b79808b8c084c62668616e8ef952f42d0"
   },
   {
     "file": "src/state/useForegroundReconcile.ts",

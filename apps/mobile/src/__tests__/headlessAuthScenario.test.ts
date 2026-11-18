@@ -420,8 +420,7 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
-  it('keeps the replacement account when Android delivers an earlier Google link', async () => {
-    if (platform !== 'android') return;
+  (platform === 'android' ? it : it.skip)('keeps the replacement account when Android delivers an earlier Google link', async () => {
     const world = new World();
     try {
       const device = await world.device({ id: 'link-actor-switch', userId: LEADER, platform, screen: { name: 'RoleSelect' } });

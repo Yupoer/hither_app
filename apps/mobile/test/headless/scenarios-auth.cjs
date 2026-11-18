@@ -19,6 +19,8 @@ module.exports = [
     'Wrong protocol/origin/path/state, duplicate parameters, token/hash/error fields and expiry are rejected. Recovery consumes once and rejects replay. Recovery form blocks invalid passwords, retains draft on failed update, persists successful password and clears success at 1200 milliseconds.'],
   ['A16', 'handles deep-link callbacks once and consumes a rejected exchange before another delivery',
     'Actual Linking listener accepts recovery. Identical and different simultaneous deliveries share one exchange. Failed exchange consumes the transaction before another delivery even when the code later becomes valid.'],
+  ['A16,P03', 'keeps the replacement account when Android delivers an earlier Google link',
+    'After the active account changes, Android Linking delivers the earlier callback without invoking the SDK exchange or changing the replacement identity.', ['android']],
   ['A06', 'reports Google profile failures and stage timeouts without navigating to home',
     'Profile network failure and 12 second profile timeout show stage feedback without navigation. iOS exchange times out at 12 seconds. Late profile and exchange responses do not navigate.'],
   ['A19,G01,G02', 'creates and joins through lazy anonymous auth while rejecting empty and invalid group submissions',
@@ -37,5 +39,5 @@ module.exports = [
     'Anonymous signout removes backend identity/profile. AccountSheet cancel does not delete. Server failure preserves account and suppresses callbacks. Success deletes auth/profile/memberships/native activities and closes exactly once.'],
   ['A24', 'drops team Premium on leave while retaining authoritative personal Premium when refresh fails',
     'Authoritative personal/team Premium exists before leave. Failed null-group projection still clears selected membership/trip/team access. Personal Premium, account and backend membership survive local session leave.'],
-].map(([inventory, pattern, assertions]) => ({ inventory: inventory.split(','),
-  file: 'src/__tests__/headlessAuthScenario.test.ts', pattern, platforms: ['ios', 'android'], assertions }));
+].map(([inventory, pattern, assertions, platforms = ['ios', 'android']]) => ({ inventory: inventory.split(','),
+  file: 'src/__tests__/headlessAuthScenario.test.ts', pattern, platforms, assertions }));

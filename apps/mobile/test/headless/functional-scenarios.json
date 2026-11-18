@@ -206,6 +206,13 @@
           ]
         },
         {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "keeps the replacement account when Android delivers an earlier Google link",
+          "platforms": [
+            "android"
+          ]
+        },
+        {
           "file": "src/__tests__/headlessTeamEntriesScenario.test.ts",
           "pattern": "upgrades an anonymous leader through Map settings account",
           "platforms": [
