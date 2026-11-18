@@ -52,7 +52,7 @@ export async function uploadMetricPayload(input: {
   receivedAt: number;
 }, revision = getDiagnosticConsentRevision(), isCurrent: () => boolean = () => true): Promise<boolean> {
   if (!(await getDiagnosticConsentEnabled()) || !isDiagnosticConsentCurrent(revision) || !isCurrent()) return false;
-  const uid = await requireUserId();
+  await requireUserId();
   if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) return false;
   const deviceId = await getOrCreateLiveActivityDeviceId();
   if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) return false;
@@ -61,13 +61,12 @@ export async function uploadMetricPayload(input: {
     throw new Error('MetricKit payload must be a JSON object');
   }
   const submission = createDiagnosticSubmissionAbort(revision);
-  const { error } = await Promise.resolve(supabase.from('metric_payloads').insert({
-    id: input.id,
-    user_id: uid,
-    device_id: deviceId,
-    kind: input.kind,
-    payload: parsed,
-    received_at: new Date(input.receivedAt).toISOString(),
+  const { error } = await Promise.resolve(supabase.rpc('ingest_metric_payload', {
+    p_id: input.id,
+    p_device_id: deviceId,
+    p_kind: input.kind,
+    p_payload: parsed,
+    p_received_at: new Date(input.receivedAt).toISOString(),
   }).abortSignal(submission.signal)).finally(submission.dispose);
   orThrow(error);
   return true;

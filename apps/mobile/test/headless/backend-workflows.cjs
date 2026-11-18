@@ -176,6 +176,31 @@ function execute(b, operation) {
     for (const event of args.p_events) { assert(typeof event.id === 'string' && typeof event.event === 'string' && typeof event.deviceId === 'string'); b.diagnostics.set(`${userId}:${event.id}`, structuredClone(event)); acceptedIds.push(event.id); }
     return ok({ acceptedIds, rejected: [] });
   }
+  if (name === 'ingest_metric_payload') {
+    keys(args, 'p_id p_device_id p_kind p_payload p_received_at');
+    const existing = b.tables.metric_payloads.find(row => row.id === args.p_id);
+    if (existing && existing.user_id !== userId) return fail('metric_payload_owner_mismatch');
+    if (!existing) b.tables.metric_payloads.push({
+      id: args.p_id, user_id: userId, device_id: args.p_device_id,
+      kind: args.p_kind, payload: structuredClone(args.p_payload),
+      received_at: args.p_received_at, created_at: iso(b),
+    });
+    return ok(true);
+  }
+  if (name === 'ingest_performance_batch') {
+    keys(args, 'p_events'); const acceptedIds = [];
+    for (const event of args.p_events) {
+      const existing = b.tables.performance_events.find(row => row.id === event.id);
+      if (existing && existing.user_id !== userId) continue;
+      if (!existing) b.tables.performance_events.push({
+        id: event.id, user_id: userId, session_id: event.sessionId,
+        occurred_at: new Date(event.timestamp).toISOString(), event_type: event.eventType,
+        operation: event.operation, payload: structuredClone(event.payload), created_at: iso(b),
+      });
+      acceptedIds.push(event.id);
+    }
+    return ok({ acceptedIds, rejected: [] });
+  }
   if (name === 'submit_feedback') {
     keys(args, 'p_context_tag p_description'); if (!userId) return fail('not_authenticated');
     if (!args.p_description?.trim()) return fail('invalid_description', '22023');
