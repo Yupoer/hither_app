@@ -126,6 +126,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "submits a six-character invite only after keyboard confirmation during rollout",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -178,6 +186,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "retries AccountSheet cleanup after remote deletion without another delete",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },
@@ -202,6 +218,13 @@
           "pattern": "links",
           "platforms": [
             "ios",
+            "android"
+          ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "keeps the replacement account when Android delivers an earlier Google link",
+          "platforms": [
             "android"
           ]
         },

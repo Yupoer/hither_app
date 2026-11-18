@@ -10,6 +10,7 @@ import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 import type { Group } from '../../../types';
+import { formatInviteCode } from '../../../utils/inviteCode';
 
 export interface InviteMembersOverlayProps {
   accent: string;
@@ -59,21 +60,14 @@ export function InviteMembersOverlay({
             accessibilityRole="text"
             accessibilityLabel={group?.inviteCode ?? ''}
           >
-            {Array.from({ length: 6 }, (_, index) => (
-              <React.Fragment key={index}>
-                {index === 3 ? <Text style={styles.inviteCodeDash}>-</Text> : null}
-                <View style={styles.inviteCodeCell}>
-                  <Text
-                    style={styles.inviteCodeChar}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.7}
-                    numberOfLines={1}
-                  >
-                    {group?.inviteCode?.[index] ?? ''}
-                  </Text>
-                </View>
-              </React.Fragment>
-            ))}
+            <Text
+              style={inviteStyles.code}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              numberOfLines={1}
+            >
+              {formatInviteCode(group?.inviteCode ?? '')}
+            </Text>
           </View>
         )}
         {inviteBlockedForAnonymousLeader ? (
@@ -132,6 +126,7 @@ export function InviteMembersOverlay({
 const inviteStyles = StyleSheet.create({
   body: { paddingHorizontal: 20, paddingTop: 10 },
   hint: { color: '#ffffffba', fontSize: APP_TEXT_SIZE.body, lineHeight: 24 },
+  code: { flex: 1, color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
   label: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   action: { height: 54, borderRadius: 27, backgroundColor: '#ffffff1f' },
 });

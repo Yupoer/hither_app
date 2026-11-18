@@ -26,6 +26,7 @@ import {
 } from '../d6TeamPresentation';
 import type { UseCoordinationRequestsResult } from '../hooks/useCoordinationRequests';
 import { MemberInboxBadge } from './MemberInboxBadge';
+import { formatInviteCode } from '../../../utils/inviteCode';
 
 type TeamMember = Pick<MemberLocation, 'userId' | 'name' | 'avatar' | 'subgroupId' | 'sharingEnabled' | 'lastUpdated'>
   & { color: string; dist: string; arrived: boolean; isLeader: boolean };
@@ -283,7 +284,7 @@ export function D6MembersPane({
             adjustsFontSizeToFit
             numberOfLines={1}
           >
-            {inviteCode}
+            {formatInviteCode(inviteCode)}
           </Text>
           {invite('d6-team-invite-code')}
         </View>

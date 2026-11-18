@@ -16,7 +16,6 @@ begin
     (follower, follower::text || '@team-cleanup.example.test', false);
   insert into public.profiles(id, nickname) values (leader, 'Cleanup leader'), (follower, 'Cleanup follower')
     on conflict (id) do nothing;
-  perform set_config('request.jwt.claim.sub', leader::text, true);
   insert into public.groups(name, invite_code, created_by)
     values ('cleanup occupied fixture', substr(gen_random_uuid()::text, 1, 6), leader) returning id into occupied_group;
   insert into public.groups(name, invite_code, created_by)
@@ -29,6 +28,7 @@ begin
     (occupied_group, 'Keep this stop', 0, 1), (empty_group, 'Delete this stop', 0, 1);
 
   -- Exercise the authenticated client's bulk clear-all, including RLS.
+  perform set_config('request.jwt.claim.sub', leader::text, true);
   execute 'set local role authenticated';
   delete from public.memberships where user_id = leader and group_id in (occupied_group, empty_group);
   -- A caller cannot clear another user's membership.

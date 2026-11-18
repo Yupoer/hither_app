@@ -16,7 +16,6 @@ import {
   type AppleFetch,
 } from '../_shared/appStoreServerApi.ts';
 import {
-  allowedStoreKitEnvironments,
   storeKitConfigFromEnv,
   validateStoreKitTransaction,
   type StoreKitEnvironment,
@@ -336,11 +335,11 @@ export function createSyncHandler(
     if (isService) {
       const admin = createAdmin(supabaseUrl, adminKey(env));
       const originalTransactionId = requiredString(body, 'originalTransactionId', 'original_transaction_id');
-      const environment = (requiredString(body, 'environment') ?? 'Production') as StoreKitEnvironment;
+      const environment = requiredString(body, 'environment') ?? baseConfig.environment;
       if (!originalTransactionId) {
         return json(400, { ok: false, error: 'original_transaction_id_required' });
       }
-      if (!allowedStoreKitEnvironments(baseConfig).includes(environment)) {
+      if (environment !== baseConfig.environment) {
         return json(422, { ok: false, error: 'environment_mismatch' });
       }
       const { data: bindRow, error: bindError } = await admin
@@ -444,32 +443,29 @@ export function createSyncHandler(
       return applyValidated(admin, userData.user.id, verified.transaction, 'app-store-server-api:device-jws');
     }
 
+    const { environment } = config;
     const requestedOriginal = requiredString(body, 'originalTransactionId', 'original_transaction_id');
-    if (requestedOriginal) {
-      const { data: bindRow } = await admin
-        .from('premium_transaction_bindings')
-        .select('user_id,environment')
-        .eq('original_transaction_id', requestedOriginal)
-        .maybeSingle();
-      if (typeof bindRow?.user_id !== 'string' || bindRow.user_id !== userData.user.id) {
-        await admin.rpc('record_premium_security_event', {
-          p_event_type: 'transaction_binding_mismatch',
-          p_user_id: userData.user.id,
-          p_other_user_id: bindRow?.user_id ?? null,
-          p_original_transaction_id: requestedOriginal,
-          p_environment: bindRow?.environment ?? null,
-          p_reason: 'user supplied originalTransactionId not bound to caller',
-        });
-        outcomeLog('transaction_binding_mismatch');
-        return json(422, { ok: false, error: 'transaction_binding_mismatch' });
-      }
-    }
-
-    const { data: ownBind } = await admin
+    const bindingQuery = admin
       .from('premium_transaction_bindings')
-      .select('original_transaction_id,environment,user_id')
-      .eq('user_id', userData.user.id)
-      .maybeSingle();
+      .select('original_transaction_id,user_id')
+      .eq('environment', environment);
+    const { data: ownBind, error: bindError } = await (requestedOriginal
+      ? bindingQuery.eq('original_transaction_id', requestedOriginal)
+      : bindingQuery.eq('user_id', userData.user.id)
+    ).maybeSingle();
+    if (bindError) return json(503, { ok: false, error: 'binding_lookup_failed' });
+    if (requestedOriginal && ownBind?.user_id !== userData.user.id) {
+      await admin.rpc('record_premium_security_event', {
+        p_event_type: 'transaction_binding_mismatch',
+        p_user_id: userData.user.id,
+        p_other_user_id: ownBind?.user_id ?? null,
+        p_original_transaction_id: requestedOriginal,
+        p_environment: environment,
+        p_reason: 'user supplied originalTransactionId not bound to caller',
+      });
+      outcomeLog('transaction_binding_mismatch');
+      return json(422, { ok: false, error: 'transaction_binding_mismatch' });
+    }
     if (typeof ownBind?.original_transaction_id !== 'string') {
       outcomeLog('no_bound_subscription');
       return json(404, { ok: false, error: 'subscription_required' });
@@ -478,7 +474,6 @@ export function createSyncHandler(
       outcomeLog('server_configuration_missing');
       return json(503, { ok: false, error: 'server_configuration_missing' });
     }
-    const environment = (ownBind.environment as StoreKitEnvironment) ?? 'Production';
     const lookup = await fetchSignedTransactionInfo({
       secrets,
       transactionId: ownBind.original_transaction_id,

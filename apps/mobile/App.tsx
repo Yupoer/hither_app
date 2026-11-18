@@ -131,9 +131,9 @@ function ThemedNavigation() {
       if (!isCurrent()) return { sent: 0, remaining: 0 };
       const allPayloads = await metrics.drainPayloads();
       if (!isCurrent()) return { sent: 0, remaining: 0 };
-      const acknowledged = await uploadMetricPayloadBatch(allPayloads, isCurrent);
+      const { acceptedIds, expiredIds } = await uploadMetricPayloadBatch(allPayloads, isCurrent);
       if (!isCurrent()) return { sent: 0, remaining: 0 };
-      for (const payload of allPayloads.filter(item => acknowledged.includes(item.id))) {
+      for (const payload of allPayloads.filter(item => acceptedIds.includes(item.id))) {
         // Allow-listed crash class only — never raw MetricKit JSON in diagnostics.
         const crashClass = classifyMetricPayload(payload.kind, payload.json);
         void diagnostics
@@ -146,13 +146,13 @@ function ThemedNavigation() {
           })
           .catch(() => undefined);
       }
-      await metrics.removePayloads(acknowledged);
+      await metrics.removePayloads([...acceptedIds, ...expiredIds]);
       return {
-        sent: logs.diagnosticSent + logs.performanceSent + acknowledged.length,
+        sent: logs.diagnosticSent + logs.performanceSent + acceptedIds.length,
         remaining:
           logs.diagnosticRemaining +
           logs.performanceRemaining +
-          Math.max(0, allPayloads.length - acknowledged.length),
+          Math.max(0, allPayloads.length - acceptedIds.length - expiredIds.length),
       };
     });
     setLogBatchSchedulerEnabled(true);

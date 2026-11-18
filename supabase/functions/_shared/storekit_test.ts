@@ -173,37 +173,35 @@ Deno.test('server configuration fails closed without root pin or exact two produ
   if (!configured) throw new Error('complete configuration was rejected');
 });
 
-Deno.test('deployed configuration accepts Production and Sandbox and rejects Xcode', () => {
-  const configured = storeKitConfigFromEnv((name) => ({
-    APPLE_BUNDLE_ID: 'app.hither.mobile',
-    APPLE_STORE_ENVIRONMENT: 'Production',
-    PREMIUM_PRODUCT_IDS: 'app.hither.premium.monthly,app.hither.premium.annual',
-    PREMIUM_SUBSCRIPTION_GROUP_ID: 'hither-premium',
-    APPLE_ROOT_CERT_SHA256: 'abc',
-  }[name]));
-  if (!configured) throw new Error('complete configuration was rejected');
-  const sandbox = validateStoreKitTransaction(
-    payload({ environment: 'Sandbox' }),
-    { ...configured, appAccountToken: config.appAccountToken },
-    1_800_000_010_000,
-    'hash',
-  );
-  if (!sandbox.ok) throw new Error(`Sandbox JWS rejected: ${sandbox.error}`);
-  const production = validateStoreKitTransaction(
-    payload({ environment: 'Production' }),
-    { ...configured, appAccountToken: config.appAccountToken },
-    1_800_000_010_000,
-    'hash',
-  );
-  if (!production.ok) throw new Error(`Production JWS rejected: ${production.error}`);
-  const xcode = validateStoreKitTransaction(
-    payload({ environment: 'Xcode' }),
-    { ...configured, appAccountToken: config.appAccountToken },
-    1_800_000_010_000,
-    'hash',
-  );
-  if (xcode.ok || xcode.error !== 'environment_mismatch') {
-    throw new Error('Xcode must be rejected on deployed functions');
+Deno.test('StoreKit validates subscriptions and trip passes only in the configured environment', () => {
+  const environments = ['Production', 'Sandbox', 'Xcode'] as const;
+  for (const deployment of environments) {
+    const configured = storeKitConfigFromEnv((name) => ({
+      APPLE_BUNDLE_ID: config.bundleId,
+      APPLE_STORE_ENVIRONMENT: deployment,
+      PREMIUM_PRODUCT_IDS: config.productIds.join(','),
+      PREMIUM_TRIP_PRODUCT_ID: config.tripProductId,
+      PREMIUM_SUBSCRIPTION_GROUP_ID: config.subscriptionGroupId,
+      APPLE_ROOT_CERT_SHA256: 'abc',
+    }[name]));
+    if (!configured) throw new Error(`configuration rejected ${deployment}`);
+    const deploymentConfig = { ...configured, appAccountToken: config.appAccountToken };
+
+    for (const environment of environments) {
+      const results = [
+        validateStoreKitTransaction(payload({ environment }), deploymentConfig, 1_800_000_010_000),
+        validateStoreKitTripTransaction(tripPayload({ environment }), deploymentConfig),
+      ];
+      for (const result of results) {
+        if (environment === deployment) {
+          if (!result.ok || result.transaction.environment !== environment) {
+            throw new Error(`${deployment} did not preserve its matching transaction environment`);
+          }
+        } else if (result.ok || result.error !== 'environment_mismatch') {
+          throw new Error(`${deployment} did not reject ${environment} as an environment mismatch`);
+        }
+      }
+    }
   }
 });
 

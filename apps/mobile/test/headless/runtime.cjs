@@ -127,6 +127,7 @@ exports.run = async function run(jest) {
   };
   const storage = store('async');
   const secure = store('secure');
+  let failSessionRemoval = false;
   const appListeners = new Set();
   let latestGps;
   const watches = new Map();
@@ -182,7 +183,14 @@ exports.run = async function run(jest) {
   }));
   jest.doMock('@react-native-async-storage/async-storage', () => strict('AsyncStorage', { __esModule: true, default: storage, ...storage }));
   jest.doMock('expo-secure-store', () => strict('SecureStore', {
-    getItemAsync: secure.getItem, setItemAsync: secure.setItem, deleteItemAsync: secure.removeItem,
+    getItemAsync: secure.getItem, setItemAsync: secure.setItem,
+    deleteItemAsync: async key => {
+      if (failSessionRemoval && key === 'sb-headless-auth-token') {
+        failSessionRemoval = false;
+        throw new Error('SecureStore session deletion failed');
+      }
+      await secure.removeItem(key);
+    },
   }));
   jest.doMock('expo-sqlite', () => ({
     openDatabaseAsync: async name => {
@@ -460,6 +468,8 @@ exports.run = async function run(jest) {
           await app.render();
         } else if (input.kind === 'auth.configureNative') {
           authFixture.configureNative(input.value);
+        } else if (input.kind === 'failSessionRemoval') {
+          failSessionRemoval = true;
         } else if (input.kind === 'linking') {
           assert.equal(typeof input.url, 'string'); assert(host, 'Linking input requires native host');
           for (const listener of host.linkingListeners) listener({ url: input.url });

@@ -6,7 +6,7 @@ import Pressable from '../../components/MotionPressable';
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useMountEffect } from '../../hooks/useMountEffect';
 import { useTranslation } from '../../i18n';
-import { INVITE_CODE_LENGTH, normalizeInviteCode } from '../../navigation/teamEntry';
+import { INVITE_CODE_LENGTH, isValidInviteCode, normalizeInviteCode } from '../../utils/inviteCode';
 import NativeGlassButton from '../../components/NativeGlassButton';
 import { ENTRY_ACCENT } from './EntryVisuals';
 
@@ -30,14 +30,22 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
     ));
   });
 
+  function submitCode(value: string) {
+    if (!isValidInviteCode(value)) return;
+    Keyboard.dismiss();
+    setCode('');
+    onJoin(value);
+  }
+
   function updateCode(value: string) {
     const normalized = normalizeInviteCode(value);
     setCode(normalized);
-    if (normalized.length !== INVITE_CODE_LENGTH || normalized === code) return;
-    Keyboard.dismiss();
-    setCode('');
-    onJoin(normalized);
+    if (normalized.length === INVITE_CODE_LENGTH && normalized !== code) submitCode(normalized);
   }
+
+  const rows = Array.from({ length: 2 }, (_, row) =>
+    Array.from({ length: INVITE_CODE_LENGTH / 2 }, (_, column) => row * (INVITE_CODE_LENGTH / 2) + column),
+  );
 
   return (
     <View>
@@ -47,19 +55,24 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
           style={styles.boxes}
           onPress={() => input.current?.focus()}
         >
-          {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => (
-            <View key={index} style={[
-              styles.cell,
-              index === 3 && styles.cellBreak,
-              index === code.length && (focused || (!rejected && !code)) && styles.cellActive,
-            ]}>
-              <Text style={styles.character}>{code[index]}</Text>
+          {rows.map((indexes, row) => (
+            <View key={row} style={styles.row}>
+              {indexes.map(index => (
+                <View key={index} style={[
+                  styles.cell,
+                  index % 10 === 5 && styles.cellBreak,
+                  index === code.length && (focused || (!rejected && !code)) && styles.cellActive,
+                ]}>
+                  <Text style={styles.character}>{code[index]}</Text>
+                </View>
+              ))}
             </View>
           ))}
           <TextInput
             ref={input}
             value={code}
             onChangeText={updateCode}
+            onSubmitEditing={() => submitCode(code)}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             accessibilityLabel={t('group.codeLabel')}
@@ -69,6 +82,7 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
             keyboardAppearance="dark"
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
+            returnKeyType="go"
             caretHidden
             style={styles.input}
           />
@@ -93,15 +107,16 @@ export default function EntryCodeInput({ onJoin, onCreate, rejected }: {
 }
 
 const styles = StyleSheet.create({
-  boxes: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  boxes: { gap: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   cell: {
-    maxWidth: 48, flex: 1, height: 60, borderRadius: 16, alignItems: 'center',
+    maxWidth: 34, flex: 1, height: 48, borderRadius: 12, alignItems: 'center',
     justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.09)', borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
   },
-  cellBreak: { marginLeft: 10 },
+  cellBreak: { marginLeft: 6 },
   cellActive: { borderWidth: 2, borderColor: ENTRY_ACCENT },
-  character: { fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', color: '#fff' },
+  character: { fontSize: APP_TEXT_SIZE.body, fontWeight: '800', fontStyle: 'italic', color: '#fff' },
   input: { ...StyleSheet.absoluteFill, opacity: 0.02, color: 'transparent' },
   divider: { textAlign: 'center', color: 'rgba(255,255,255,0.55)', fontSize: APP_TEXT_SIZE.caption, marginVertical: 12 },
 });

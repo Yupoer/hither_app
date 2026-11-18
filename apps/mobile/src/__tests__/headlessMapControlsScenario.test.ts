@@ -134,8 +134,8 @@ describe('legacy Android Map controls', () => {
       await device.input({ kind: 'animation', finished: true });
       const value = await device.observe();
       expect(value.presentation.receipts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ host: 'Clipboard', method: 'setStringAsync', value: 'TEST42' }),
-        expect.objectContaining({ host: 'Share', method: 'share', value: { message: expect.stringContaining('TEST42') } }),
+        expect.objectContaining({ host: 'Clipboard', method: 'setStringAsync', value: 'TEST42ABCDEFGHJKLMNP' }),
+        expect.objectContaining({ host: 'Share', method: 'share', value: { message: expect.stringContaining('TEST42ABCDEFGHJKLMNP') } }),
       ]));
       expect(world.backend.memberships).toHaveLength(2);
       await world.advance(1500);

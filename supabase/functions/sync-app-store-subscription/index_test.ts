@@ -234,6 +234,109 @@ Deno.test('service_role bound originalTransactionId apply is idempotent', async 
   }
 });
 
+Deno.test('service sync rejects an environment outside its configured deployment', async () => {
+  let appleCalls = 0;
+  let databaseCalls = 0;
+  const handler = createSyncHandler({
+    env: (name) => envValues[name],
+    now: () => 1_800_000_010_000,
+    fetchImpl: async () => {
+      appleCalls += 1;
+      return { ok: false, status: 500, json: async () => ({}) };
+    },
+    createAdmin: () => ({
+      rpc: async () => {
+        databaseCalls += 1;
+        return { data: null, error: new Error('unexpected database call') };
+      },
+      from: () => {
+        databaseCalls += 1;
+        return queryWithResult(async () => ({ data: null, error: null }));
+      },
+    }),
+  });
+  const response = await handler(request(
+    { originalTransactionId: ORIGINAL, environment: 'Production' },
+    'service_role',
+  ));
+  const result = await read(response);
+  if (response.status !== 422 || result.error !== 'environment_mismatch') {
+    throw new Error(`expected environment mismatch, got ${response.status} ${result.error}`);
+  }
+  if (appleCalls !== 0 || databaseCalls !== 0) {
+    throw new Error('environment mismatch reached Apple or the transaction ledger');
+  }
+});
+
+Deno.test('subscription sync resolves historical bindings in the configured environment', async () => {
+  const bindings: Record<string, string>[] = [
+    { original_transaction_id: ORIGINAL, user_id: USER_ID, environment: 'Production' },
+    { original_transaction_id: ORIGINAL, user_id: USER_ID, environment: 'Sandbox' },
+  ];
+  let appleCalls = 0;
+  let applyCalls = 0;
+  const handler = createSyncHandler({
+    env: (name) => name === 'APPLE_STORE_ENVIRONMENT' ? 'Production' : envValues[name],
+    now: () => 1_800_000_010_000,
+    createUser: () => ({
+      auth: { getUser: async () => ({ data: { user: { id: USER_ID } }, error: null }) },
+    }),
+    createAdmin: () => ({
+      from: (table) => {
+        if (table === 'premium_app_account_tokens') {
+          return queryWithResult(async () => ({
+            data: { app_account_token: ACCOUNT_TOKEN },
+            error: null,
+          }));
+        }
+        if (table !== 'premium_transaction_bindings') throw new Error(`unexpected table ${table}`);
+        let matches = bindings;
+        return {
+          select() { return this; },
+          eq(column, value) {
+            matches = matches.filter((row) => row[column] === value);
+            return this;
+          },
+          async maybeSingle() {
+            if (matches.length > 1) return { data: null, error: new Error('multiple bindings') };
+            return { data: matches[0] ?? null, error: null };
+          },
+        };
+      },
+      rpc: async (name, args) => {
+        if (name !== 'apply_storekit_transaction' || args.p_environment !== 'Production') {
+          throw new Error('sync did not apply the configured environment');
+        }
+        applyCalls += 1;
+        return { data: { ok: true, durable: true, status: 'active' }, error: null };
+      },
+    }),
+    connectJwt: 'test-connect-jwt',
+    fetchImpl: async (url) => {
+      if (new URL(String(url)).hostname !== 'api.storekit.itunes.apple.com') {
+        throw new Error('sync looked up a transaction outside the configured environment');
+      }
+      appleCalls += 1;
+      return { ok: true, status: 200, json: async () => ({ signedTransactionInfo: 'apple-jws' }) };
+    },
+    verifyJws: async () => ({
+      ok: true as const,
+      header: { alg: 'ES256' },
+      payload: { ...transactionPayload, environment: 'Production' },
+      jwsSha256: 'hash-transaction',
+    }),
+  });
+
+  for (const body of [{}, { originalTransactionId: ORIGINAL }]) {
+    const response = await handler(request(body));
+    const result = await read(response);
+    if (response.status !== 200 || result.durable !== true) {
+      throw new Error(`expected Production binding sync, got ${response.status} ${result.error}`);
+    }
+  }
+  if (appleCalls !== 2 || applyCalls !== 2) throw new Error('expected each lookup to apply once');
+});
+
 Deno.test('new secret key API auth preserves bound service sync without anon key', async () => {
   const handler = createSyncHandler({
     env: (name) => name === 'SUPABASE_ANON_KEY' ? undefined : envValues[name],

@@ -12,6 +12,7 @@ import {
   prefColumn,
 } from "./messages.ts";
 import {
+  currentMemberRecipientIds,
   locationRefreshRecipientIds,
   requestStartRecipientIds,
 } from "./recipients.ts";
@@ -129,6 +130,25 @@ Deno.test("uses only the server-authorized location-refresh recipient set", () =
     }),
     [],
   );
+});
+
+Deno.test("revalidates explicit targets and location-refresh recipients", () => {
+  const currentMembers = [
+    { user_id: "active-follower" },
+    { user_id: "leader" },
+  ];
+  const refreshRecipients = locationRefreshRecipientIds({
+    category: "location_refresh",
+    group_id: "g1",
+    sender_id: "leader",
+    recipient_ids: ["active-follower", "former-member", "active-follower"],
+  });
+  assertEquals(
+    currentMemberRecipientIds(refreshRecipients, currentMembers),
+    ["active-follower"],
+  );
+  assertEquals(currentMemberRecipientIds(["leader"], currentMembers), ["leader"]);
+  assertEquals(currentMemberRecipientIds(["former-member"], currentMembers), []);
 });
 
 Deno.test("marks UNREGISTERED and invalid token as dead", () => {

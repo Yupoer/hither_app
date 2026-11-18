@@ -68,7 +68,9 @@ node scripts/check-changed-coverage.mjs
 node scripts/location-smoke.cjs --live --admin --duration=300
 ```
 
-`--admin` 僅用 Supabase CLI 已授權的管理金鑰建立與清理本次 ID；不把 service role 傳給 worker，不把密碼或 token 放入報告。需要明確的 `--live --admin` 才會執行；早期 anonymous authenticated 批次遇到註冊限流，因此正式可重跑入口改用管理建立。清理先刪本次 memberships、再刪本次 groups、最後刪本次 users，並由新的 Premium parent guard 避免已刪團隊被 trigger 重建 projection。輸出 temp evidence 目錄；report.json 保存資源 ID、階段、差異及清理，calls.jsonl 保存往返結果／事件 ID／時間（登入憑證除外）。失敗仍清理本次資源。
+執行 live smoke 前，在信任的本機 shell 設定 `SUPABASE_SERVICE_ROLE_KEY` 為 Hither 專案的 service role key，或設定 `SUPABASE_ACCESS_TOKEN` 讓主程序向固定的 Supabase Management API 讀取 legacy `service_role`。原先只執行 `supabase login` 的環境需另外設定其中一項。worker 只收到 Supabase URL、公用金鑰及所需的系統設定。管理憑證僅用於建立與清理本次資源，報告省略登入憑證。
+
+需要明確的 `--live --admin` 才會執行；早期 anonymous authenticated 批次遇到註冊限流，因此正式可重跑入口改用管理建立。清理先刪本次 memberships、再刪本次 groups、最後刪本次 users，並由新的 Premium parent guard 避免已刪團隊被 trigger 重建 projection。輸出 temp evidence 目錄；report.json 保存資源 ID、階段、差異及清理，calls.jsonl 保存往返結果／事件 ID／時間（登入憑證除外）。失敗仍清理本次資源。
 
 從 repository root，以獨立暫存安裝 PGlite（不更動 App dependencies）：
 

@@ -1,5 +1,10 @@
 const assert = require('node:assert/strict');
-const { randomUUID } = require('node:crypto');
+const { randomBytes, randomUUID } = require('node:crypto');
+
+const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const generateInviteCode = () => [...randomBytes(20)]
+  .map(byte => INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length])
+  .join('');
 
 const publicProfile = row => ({ id: row.id, nickname: row.nickname, avatar: row.avatar ?? null, avatar_color: row.avatar_color ?? null });
 
@@ -27,8 +32,8 @@ const schemas = {
   push_tokens: { fields: 'user_id device_id token platform updated_at', owner: 'user_id', modes: ['upsert'], conflict: 'user_id,token' },
   device_live_activity_tokens: { fields: 'user_id device_id push_to_start_token live_activities_enabled accent_hex updated_at', owner: 'user_id', modes: ['select', 'upsert', 'update', 'delete'], conflict: 'user_id,device_id' },
   live_activity_sessions: { fields: 'user_id device_id activity_id group_id destination_id push_token accent_hex initial_distance_m current_distance_m eta_seconds travel_mode last_progress_bucket updated_at', owner: 'user_id', modes: ['upsert', 'update', 'delete'], conflict: 'user_id,group_id' },
-  metric_payloads: { fields: 'id user_id device_id kind payload received_at', owner: 'user_id', modes: ['insert'] },
-  performance_events: { fields: 'id user_id session_id occurred_at event_type operation payload', owner: 'user_id', modes: ['upsert'], conflict: 'id' },
+  metric_payloads: { fields: 'id user_id device_id kind payload received_at', owner: 'user_id', modes: ['select'] },
+  performance_events: { fields: 'id user_id session_id occurred_at event_type operation payload', owner: 'user_id', modes: ['select'] },
   visited_waypoints: { fields: 'id user_id group_id destination_id navigation_session_id arrival_id name latitude longitude arrived_at', modes: ['select', 'insert', 'delete'] },
   core_entity_versions: { fields: 'group_id entity_type entity_id entity_version state', modes: ['select'] },
   commands: { fields: 'id group_id sender_id type message latitude longitude expires_at created_at destination_id target_user_id request_status', modes: ['select'] },
@@ -217,7 +222,7 @@ function execute(b, operation) {
   const { kind, name, userId, args = {}, steps = [] } = operation;
   if (kind === 'auth') return require('./backend-auth.cjs').execute(b, operation);
   if (kind === 'table') return executeTable(b, operation);
-  if (kind === 'rpc') assert(steps.every(step => name === 'ingest_diagnostic_batch' && step[0] === 'abortSignal'), `Unexpected RPC builder steps ${name}`);
+  if (kind === 'rpc') assert(steps.every(step => ['ingest_diagnostic_batch', 'ingest_metric_payload', 'ingest_performance_batch'].includes(name) && step[0] === 'abortSignal'), `Unexpected RPC builder steps ${name}`);
   const fault = require('./backend-faults.cjs').take(b, operation);
   if (fault) return fault;
   const workflow = require('./backend-workflows.cjs').execute(b, operation);
@@ -234,7 +239,7 @@ function execute(b, operation) {
     if (!userId) return fail('not_authenticated');
     if (anonymousExpired(b, userId)) return fail('anonymous access expired', 'P0401');
     if (typeof args.p_name !== 'string' || !args.p_name.trim()) return fail('invalid_name', '22023');
-    const group = { id: randomUUID(), name: args.p_name.trim(), invite_code: randomUUID().replaceAll('-', '').slice(0, 6).toUpperCase(), created_by: userId, created_at: iso(b), journey_status: 'paused', active_destination_id: null, journey_started_at: null, trip_days: 1, departure_date: iso(b).slice(0, 10), accommodation_auto_add: true };
+    const group = { id: randomUUID(), name: args.p_name.trim(), invite_code: generateInviteCode(), created_by: userId, created_at: iso(b), journey_status: 'paused', active_destination_id: null, journey_started_at: null, trip_days: 1, departure_date: iso(b).slice(0, 10), accommodation_auto_add: true };
     b.groups.set(group.id, group);
     b.memberships.push({ group_id: group.id, user_id: userId, role: 'leader', status: 'active', solo: false, subgroup_id: null, created_at: iso(b) });
     if (b.authUsers?.get(userId)?.is_anonymous && b.profiles.has(userId) && !b.profiles.get(userId).anonymous_expires_at) b.profiles.get(userId).anonymous_expires_at = new Date(b.now + 14 * 86400000).toISOString();
@@ -274,7 +279,7 @@ function execute(b, operation) {
     if (!leader(b, args.p_group_id, userId) || args.p_user_id === userId) return fail('leader_required');
     b.memberships = b.memberships.filter(m => !(m.group_id === args.p_group_id && m.user_id === args.p_user_id));
     const group = b.groups.get(args.p_group_id); const oldGroup = structuredClone(group);
-    group.invite_code = randomUUID().slice(0, 6).toUpperCase(); b.publish('groups', group, 'UPDATE', oldGroup); return ok(group.invite_code);
+    group.invite_code = generateInviteCode(); b.publish('groups', group, 'UPDATE', oldGroup); return ok(group.invite_code);
   }
   return undefined;
 }

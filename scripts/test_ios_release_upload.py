@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import plistlib
@@ -159,6 +160,17 @@ class UploadTests(unittest.TestCase):
             self.assertEqual(upload.submit_ipa(self.repo, self.output, self.verification, CONFIG)["easStatus"], "uploaded")
             dispatch.assert_not_called()
 
+    def test_changed_ipa_cannot_reach_submission(self):
+        self.ipa.write_bytes(b'replaced after verification')
+        with patch.object(upload, "git", side_effect=[SOURCE.encode(), b""]), \
+                patch.object(upload, "require_master_ci"), \
+                patch.object(upload.shutil, "which", return_value="/fake/npx"), \
+                patch.object(upload.subprocess, "run") as dispatch:
+            with self.assertRaisesRegex(ValueError, "IPA changed before submission"):
+                upload.submit_ipa(self.repo, self.output, self.verification, CONFIG)
+            dispatch.assert_not_called()
+        self.assertFalse((self.output / "submission-intent.json").exists())
+
     def test_release_directory_keeps_original_verification_for_different_ipa(self):
         path = self.output / "ipa-receipt.json"
         upload.ensure_artifact_receipt(path, self.verification)
@@ -168,17 +180,52 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text()), self.verification)
 
     def test_explicit_prior_receipt_must_identify_same_ipa(self):
-        receipt = upload.parse_submission(f"{SCHEDULED}\n{upload.UPLOAD_SUCCESS}\n", self.identity,
-                                          upload.submission_pattern(CONFIG))
+        pattern = upload.submission_pattern(CONFIG)
+        receipt = upload.parse_submission(f"{SCHEDULED}\n{upload.UPLOAD_SUCCESS}\n", self.identity, pattern)
         path = self.output / "prior.json"
         upload.write_receipt(path, receipt)
-        with patch.object(upload.subprocess, "run") as dispatch:
-            observed = upload.submit_ipa(self.repo, self.output, self.verification, CONFIG, path)
-            self.assertEqual(observed, receipt)
-            wrong_ipa = {**self.verification, "ipaSha256": "b" * 64}
-            with self.assertRaisesRegex(ValueError, "does not identify"):
-                upload.submit_ipa(self.repo, self.output, wrong_ipa, CONFIG, path)
-            dispatch.assert_not_called()
+        self.assertEqual(upload.load_receipt(path, self.identity, pattern), receipt)
+        wrong_ipa = {**self.identity, "ipaSha256": "b" * 64}
+        with self.assertRaisesRegex(ValueError, "does not identify"):
+            upload.load_receipt(path, wrong_ipa, pattern)
+
+    def cli_arguments(self):
+        return ["--source-sha", SOURCE, "--ipa", str(self.ipa), "--sha256", self.digest,
+                "--release-dir", str(self.output)]
+
+    def test_existing_ipa_cli_never_submits(self):
+        with patch.object(upload, "git", return_value=str(self.repo).encode()), \
+                patch.object(upload, "release_directory", return_value=self.output), \
+                patch.object(upload, "read_source", return_value=CONFIG), \
+                patch.object(upload, "verify_ipa", return_value=self.verification) as verify, \
+                patch.object(upload, "submit_ipa") as eas, patch.object(upload, "submit_direct") as apple, \
+                patch("sys.stdout", new_callable=io.StringIO) as output, patch("sys.stderr", new_callable=io.StringIO):
+            for flags in ([], ["--transport", "apple"], ["--provenance-receipt", str(self.output / "local-build.json")]):
+                with self.subTest(flags=flags), self.assertRaises(SystemExit) as exit_error:
+                    upload.main([*self.cli_arguments(), *flags])
+                self.assertEqual(exit_error.exception.code, 2)
+            verify.assert_not_called()
+            self.assertEqual(upload.main([*self.cli_arguments(), "--verify-only"]), 0)
+            verify.assert_called_once_with(self.ipa, SOURCE, self.digest, CONFIG)
+            self.assertEqual(json.loads(output.getvalue()), self.verification)
+            eas.assert_not_called()
+            apple.assert_not_called()
+
+    def test_existing_ipa_cli_recovers_saved_attempt_without_dispatch(self):
+        upload.write_receipt(self.output / "submission-intent.json", self.identity)
+        (self.output / "eas-submit.log").write_text(SCHEDULED)
+        with patch.object(upload, "git", return_value=str(self.repo).encode()), \
+                patch.object(upload, "release_directory", return_value=self.output), \
+                patch.object(upload, "read_source", return_value=CONFIG), \
+                patch.object(upload, "verify_ipa", return_value=self.verification), \
+                patch.object(upload, "submit_ipa") as eas, patch.object(upload, "submit_direct") as apple, \
+                patch("sys.stdout", new_callable=io.StringIO) as output, patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(upload.main([*self.cli_arguments(), "--submission-status"]), 1)
+            receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt["easStatus"], "scheduled")
+        self.assertEqual(receipt["submissionId"], SUBMISSION_ID)
+        eas.assert_not_called()
+        apple.assert_not_called()
 
 
 if __name__ == "__main__":

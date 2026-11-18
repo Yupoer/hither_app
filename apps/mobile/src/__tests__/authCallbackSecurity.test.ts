@@ -1,19 +1,28 @@
 const mockStore = new Map<string, string>();
 const mockExchange = jest.fn();
 const mockRevoke = jest.fn();
+let mockActor: string | null;
 jest.mock('expo-crypto', () => ({ randomUUID: () => 'random-state' }));
 jest.mock('../api/authStorage', () => ({ supabaseAuthStorage: {
   getItem: async (key: string) => mockStore.get(key) ?? null,
   setItem: async (key: string, value: string) => { mockStore.set(key, value); },
   removeItem: async (key: string) => { mockStore.delete(key); },
 } }));
-jest.mock('../api/supabase', () => ({ supabase: { auth: { exchangeCodeForSession: (...args: unknown[]) => mockExchange(...args) } } }));
-jest.mock('../api/installationCapabilities', () => ({
-  changeAuthSession: async (operation: () => Promise<unknown>, revoke: boolean) => {
-    if (revoke) await mockRevoke();
-    return operation();
-  }, resumeInstallationCapabilities: jest.fn(),
-}));
+jest.mock('../api/supabase', () => ({ supabase: { auth: {
+  getSession: async () => ({ data: { session: mockActor ? { user: { id: mockActor } } : null }, error: null }),
+  exchangeCodeForSession: (...args: unknown[]) => mockExchange(...args),
+} } }));
+jest.mock('../api/installationCapabilities', () => {
+  const actual = jest.requireActual('../api/installationCapabilities');
+  return {
+    ...actual,
+    changeAuthSession: (operation: () => Promise<unknown>, revoke = true) => actual.changeAuthSession(async () => {
+      if (revoke) await mockRevoke();
+      return operation();
+    }, false),
+  };
+});
+import { changeAuthSession } from '../api/installationCapabilities';
 import { beginAuthCallback, cancelAuthCallback, consumeAuthCallback, validateAuthCallback } from '../auth/callbacks';
 
 describe('HTTPS PKCE auth callbacks', () => {
@@ -21,6 +30,7 @@ describe('HTTPS PKCE auth callbacks', () => {
     process.env.EXPO_PUBLIC_AUTH_CALLBACK_ORIGIN = 'https://auth.example.test';
     await cancelAuthCallback();
     jest.clearAllMocks();
+    mockActor = 'user';
     mockExchange.mockResolvedValue({ data: { user: { id: 'user' }, session: {} }, error: null });
   });
   it('accepts a locally initiated recovery and exchanges its code only once', async () => {
@@ -32,12 +42,51 @@ describe('HTTPS PKCE auth callbacks', () => {
     expect(await consumeAuthCallback(callback + '&code=pkce-code')).toBeNull();
     expect(mockExchange).toHaveBeenCalledTimes(1);
   });
-  it.each(['oauth', 'link', 'signup'] as const)('preserves normal %s callback behavior', async kind => {
+  it.each(['oauth', 'signup'] as const)('preserves normal %s callback behavior', async kind => {
     const callback = await beginAuthCallback(kind);
     const result = await consumeAuthCallback(callback + '&code=code');
     expect(result?.user.id).toBe('user');
     expect(result?.recovery).toBe(false);
-    expect(mockRevoke).toHaveBeenCalledTimes(kind === 'link' ? 0 : 1);
+    expect(mockRevoke).toHaveBeenCalledTimes(1);
+  });
+  it('exchanges a link for the initiating actor without revoking its installation', async () => {
+    const callback = await beginAuthCallback('link', 'user');
+    const result = await consumeAuthCallback(callback + '&code=code');
+    expect(result?.user.id).toBe('user');
+    expect(result?.recovery).toBe(false);
+    expect(mockRevoke).not.toHaveBeenCalled();
+  });
+  it('rejects a link after a queued actor switch before the SDK exchanges the code', async () => {
+    const callback = await beginAuthCallback('link', 'user');
+    let releaseSwitch!: () => void;
+    const switchReady = new Promise<void>(resolve => { releaseSwitch = resolve; });
+    const switching = changeAuthSession(async () => {
+      await switchReady;
+      mockActor = 'replacement';
+    }, false);
+
+    const url = callback + '&code=code';
+    const delivery = consumeAuthCallback(url);
+    expect(consumeAuthCallback(url)).toBe(delivery);
+    const rejected = expect(delivery).rejects.toMatchObject({ code: 'auth_actor_changed' });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const exchangedBeforeSwitch = mockExchange.mock.calls.length;
+    releaseSwitch();
+    await switching;
+    await rejected;
+
+    expect(exchangedBeforeSwitch).toBe(0);
+    expect(mockExchange).not.toHaveBeenCalled();
+    expect(mockRevoke).not.toHaveBeenCalled();
+    mockActor = 'user';
+    await expect(consumeAuthCallback(url)).resolves.toBeNull();
+  });
+  it('rejects an unbound stored link from an earlier app version', async () => {
+    mockStore.set('hither.auth-pending-transaction', JSON.stringify({
+      kind: 'link', state: 'legacy', expiresAt: Date.now() + 1000,
+    }));
+    await expect(consumeAuthCallback('https://auth.example.test/auth/callback?state=legacy&code=code')).resolves.toBeNull();
+    expect(mockExchange).not.toHaveBeenCalled();
   });
   it('rejects unsolicited links and arbitrary bearer injection without an exchange', async () => {
     expect(await consumeAuthCallback('hither://auth/callback#access_token=attacker&refresh_token=attacker')).toBeNull();

@@ -17,7 +17,7 @@ function addThirdFollower(world: InstanceType<typeof World>, solo = false) {
 async function observer(world: InstanceType<typeof World>, platform: string, id: string, userId: string, role: 'leader' | 'follower') {
   const device = await world.device({ id, userId, platform, screen: { name: 'NotificationPreferences' } });
   await world.waitFor(device, (value: Observation) => !value.presentation.session.initializing, `${id} session ready`);
-  await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42' }, role }] });
+  await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role }] });
   await device.host.mount({ name: 'NativeObservers' });
   await world.waitFor(device, (value: Observation) => value.native.listeners.notification === 1, `${id} subscribed`);
   return device;

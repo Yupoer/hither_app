@@ -13,7 +13,11 @@ class Query implements PromiseLike<QueryResult> {
   operation = 'select';
   filters: { column: string; value: unknown }[] = [];
 
-  constructor(readonly table: string, private readonly execute: QueryResolver) {}
+  constructor(
+    readonly table: string,
+    private readonly execute: QueryResolver,
+    readonly rpcArgs: Record<string, unknown> = {},
+  ) {}
 
   select(columns: string) { this.columns = columns; return this; }
   eq(column: string, value: unknown) { this.filters.push({ column, value }); return this; }
@@ -64,6 +68,13 @@ function responseFor(query: Query): QueryResult {
   if (query.operation !== 'select') throw new Error(`unexpected ${query.operation} on ${query.table}`);
   switch (query.table) {
     case 'memberships': return ok(members);
+    case 'current_push_member_ids': {
+      const { p_group_id, p_user_ids } = query.rpcArgs;
+      if (p_group_id !== 'group' || !Array.isArray(p_user_ids)) {
+        throw new Error('unexpected push membership query arguments');
+      }
+      return ok(members.filter(member => p_user_ids.includes(member.user_id)).map(({ user_id }) => ({ user_id })));
+    }
     case 'profiles': return query.columns === 'nickname'
       ? ok({ nickname: 'Leader' }) : ok([{ id: 'leader', avatar: '🦊' }, { id: 'peer', avatar: '🐑' }]);
     case 'notification_preferences': return ok([]);
@@ -97,11 +108,13 @@ function loadHandler(resolveQuery: QueryResolver = responseFor) {
     PUSH_WEBHOOK_SECRET: 'fixture-secret', APNS_KEY: 'fixture-key', APNS_KEY_ID: 'fixture-key-id',
     APNS_TEAM_ID: 'fixture-team', APNS_BUNDLE_ID: 'app.hither.mobile',
   };
+  const executeQuery: QueryResolver = query => {
+    queries.push(query);
+    return resolveQuery(query);
+  };
   const client = {
-    from: (table: string) => new Query(table, query => {
-      queries.push(query);
-      return resolveQuery(query);
-    }),
+    from: (table: string) => new Query(table, executeQuery),
+    rpc: (name: string, args: Record<string, unknown>) => new Query(name, executeQuery, args),
   };
   const send = (kind: string) => async (
     _config: unknown, _auth: string, token: string, payload: Record<string, unknown>,
@@ -166,10 +179,13 @@ const queryNames = (queries: Query[]) => queries.map(query => `${query.table}:${
 describe('send-push independent read batches', () => {
   it('starts alert-token and live-session reads together after notification preferences', async () => {
     const preferences = deferred();
+    const alertEligibility = deferred();
     const tokens = deferred();
     const sessions = deferred();
+    let membershipQueries = 0;
     const app = loadHandler(query => {
       if (query.table === 'notification_preferences') return preferences.promise;
+      if (query.table === 'current_push_member_ids' && membershipQueries++ === 0) return alertEligibility.promise;
       if (query.table === 'push_tokens') return tokens.promise;
       if (query.table === 'live_activity_sessions') return sessions.promise;
       return responseFor(query);
@@ -180,8 +196,14 @@ describe('send-push independent read batches', () => {
     preferences.resolve(ok([]));
     await flush();
     expect(app.queries.map(query => query.table).sort()).toEqual([
-      'memberships', 'profiles', 'notification_preferences', 'push_tokens', 'live_activity_sessions',
+      'memberships', 'profiles', 'notification_preferences', 'current_push_member_ids', 'live_activity_sessions',
     ].sort());
+    expect(app.queries.find(query => query.table === 'current_push_member_ids')?.rpcArgs).toEqual({
+      p_group_id: 'group', p_user_ids: ['peer'],
+    });
+    alertEligibility.resolve(ok([{ user_id: 'peer' }]));
+    await flush();
+    expect(app.queries.some(query => query.table === 'push_tokens')).toBe(true);
     sessions.resolve(ok([liveSession]));
     await flush();
     expect(app.providerToken).not.toHaveBeenCalled();
@@ -199,6 +221,18 @@ describe('send-push independent read batches', () => {
       }),
     });
     expect(app.sends.map(send => send.token).sort()).toEqual(['activity-token', 'alert-token']);
+  });
+
+  it('stops before loading tokens or sending when the recipient membership check fails', async () => {
+    const app = loadHandler(query => query.table === 'current_push_member_ids'
+      ? { data: null, error: new Error('membership lookup failed') }
+      : responseFor(query));
+    const result = await app.send(arrivalPayload);
+    expect(result.status).toBe(500);
+    expect(await result.json()).toEqual({ error: 'membership lookup failed' });
+    expect(app.queries.some(query => query.table === 'push_tokens')).toBe(false);
+    expect(app.providerToken).not.toHaveBeenCalled();
+    expect(app.sends).toEqual([]);
   });
 
   it('starts destination, profile and arrival reads together before delivering an activity update', async () => {

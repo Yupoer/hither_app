@@ -43,6 +43,7 @@ import {
   type PushPayload,
 } from "./messages.ts";
 import {
+  currentMemberRecipientIds,
   locationRefreshRecipientIds,
   navigationScopeMembers,
   specialAlertRecipientIds,
@@ -153,6 +154,36 @@ async function loadTokenRows(userIds: string[]): Promise<DeviceTokenRow[]> {
       platform: normalizePlatform(row.platform),
     }),
   );
+}
+
+async function loadCurrentMemberIds(
+  groupId: string,
+  userIds: string[],
+): Promise<string[]> {
+  const candidates = [...new Set(userIds.filter((userId) => userId.length > 0))];
+  if (candidates.length === 0) return [];
+
+  const { data, error } = await supabase.rpc("current_push_member_ids", {
+    p_group_id: groupId,
+    p_user_ids: candidates,
+  });
+  if (error) throw error;
+  return currentMemberRecipientIds(candidates, (data ?? []) as { user_id: string }[]);
+}
+
+async function filterCurrentMemberRows<T extends { user_id: string }>(
+  groupId: string,
+  rows: T[],
+): Promise<T[]> {
+  const currentIds = new Set(await loadCurrentMemberIds(groupId, rows.map((row) => row.user_id)));
+  return rows.filter((row) => currentIds.has(row.user_id));
+}
+
+async function loadCurrentMemberTokenRows(
+  groupId: string,
+  userIds: string[],
+): Promise<DeviceTokenRow[]> {
+  return loadTokenRows(await loadCurrentMemberIds(groupId, userIds));
 }
 
 /**
@@ -387,8 +418,8 @@ Deno.serve(async (req) => {
     );
 
     const [tokenResult, refreshTokenResult, liveSessionResult] = await Promise.allSettled([
-      loadTokenRows(allowedAlertUsers),
-      loadTokenRows(locationRefreshRecipientIds(payload)),
+      loadCurrentMemberTokenRows(payload.group_id, allowedAlertUsers),
+      loadCurrentMemberTokenRows(payload.group_id, locationRefreshRecipientIds(payload)),
       loadLiveSessions(payload, members, sender),
     ]);
     if (tokenResult.status === "rejected") throw tokenResult.reason;
@@ -487,18 +518,21 @@ async function handleNavigationSession(
     || latest.version !== payload.version) return json({ sent: 0, ignored: "superseded_session_event" });
   members = navigationScopeMembers(members, target.scope_subgroup_id);
   const origin = target.origin === 'scheduled' ? 'scheduled' : 'manual';
-  const controlTokens = await loadTokenRows(navigationRemoteRecipients({ origin, senderId: payload.sender_id,
-    userIds: members.filter(member => !member.solo).map(member => member.user_id) }));
+  const controlTokens = await loadCurrentMemberTokenRows(payload.group_id, navigationRemoteRecipients({
+    origin,
+    senderId: payload.sender_id,
+    userIds: members.filter(member => !member.solo).map(member => member.user_id),
+  }));
   const controlReport = await sendBackgroundLocationRefreshes(controlTokens, payload);
   if (controlReport.failures.length > 0) console.warn("navigation_control_delivery_failed");
 
-  const eligibleUserIds = await filterNotificationPreferences(
-    members.filter((member) => !member.solo).map((member) => member.user_id),
-    "navigation_session",
-  );
   const isStart = payload.status === "active" && payload.version === 1;
 
   if (isStart) {
+    const eligibleUserIds = await filterNotificationPreferences(
+      members.filter((member) => !member.solo).map((member) => member.user_id),
+      "navigation_session",
+    );
     const [tokenResponse, groupResponse, destinationResponse, handleResponse] = await Promise.all([
       eligibleUserIds.length > 0
         ? supabase
@@ -529,7 +563,7 @@ async function handleNavigationSession(
     const recipients = navigationStartRecipients({ origin, senderId: payload.sender_id,
       userIds: eligibleUserIds, usersWithHandle,
       usersWithStartToken: new Set(startRowsRaw.map(row => row.user_id)) });
-    const existingUsers = recipients.existingUserIds;
+    const existingUsers = await loadCurrentMemberIds(payload.group_id, recipients.existingUserIds);
     let existingReport = emptyReport();
     if (existingUsers.length) {
       const { error } = await supabase.from("live_activity_sessions")
@@ -542,12 +576,13 @@ async function handleNavigationSession(
         .filter(row => existingUsers.includes(row.user_id));
       existingReport = await sendLiveActivities(handles, members, memberByUser, payload);
     }
-    const startRows = startRowsRaw.filter(row => recipients.startUserIds.includes(row.user_id));
+    const startCandidates = startRowsRaw.filter(row => recipients.startUserIds.includes(row.user_id));
     const fallbackUserIds = recipients.alertUserIds;
-    const fallbackTokenRows = await loadTokenRows(fallbackUserIds);
+    const fallbackTokenRows = await loadCurrentMemberTokenRows(payload.group_id, fallbackUserIds);
 
     let startReport = emptyReport();
-    if (startRows.length > 0) {
+    let startRows: DeviceLiveActivityTokenRow[] = [];
+    if (startCandidates.length > 0) {
       const timestamp = Math.floor(Date.now() / 1000);
       const groupName = (groupResponse.data?.name as string | undefined) ?? "Hither";
       const gatheringTitle =
@@ -575,6 +610,7 @@ async function handleNavigationSession(
         (member) => avatarByUser.get(member.user_id) ?? "🙂",
       );
       const memberArrived = visibleMembers.map(member => arrivedIds.has(member.user_id));
+      startRows = await filterCurrentMemberRows(payload.group_id, startCandidates);
       // Live Activity start is iOS-only.
       startReport = await deliverProvider("apns", startRows, async () => {
         const cfg = readApnsConfig();
@@ -612,7 +648,10 @@ async function handleNavigationSession(
         .filter((row) => deadStartTokens.includes(row.push_to_start_token))
         .map((row) => row.user_id)
         .filter((userId) => origin === 'manual' && userId !== payload.sender_id);
-      const deadStartFallbackRows = await loadTokenRows(deadStartUsers);
+      const deadStartFallbackRows = await loadCurrentMemberTokenRows(
+        payload.group_id,
+        deadStartUsers,
+      );
       fallbackReport = mergeReports(fallbackReport, await sendAlerts(deadStartFallbackRows, payload));
     }
     const deadFallbackTokens = deadTokens(fallbackReport);
@@ -739,7 +778,7 @@ async function loadLiveSessions(
 
   const rows = (data ?? []) as LiveSessionRow[];
   if (payload.category !== "arrival" && payload.category !== "straggler") {
-    return rows;
+    return filterCurrentMemberRows(payload.group_id, rows);
   }
 
   const scopedUsers = new Set(
@@ -747,7 +786,10 @@ async function loadLiveSessions(
       .filter((member) => member.subgroup_id === sender.subgroup_id)
       .map((member) => member.user_id),
   );
-  return rows.filter((session) => scopedUsers.has(session.user_id));
+  return filterCurrentMemberRows(
+    payload.group_id,
+    rows.filter((session) => scopedUsers.has(session.user_id)),
+  );
 }
 
 async function sendLiveActivities(

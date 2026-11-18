@@ -31,6 +31,7 @@ import { useMountEffect } from '../hooks/useMountEffect';
 import SheetHeaderAction from '../components/SheetHeaderAction';
 import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from '../components/mapSheetChrome';
 import { ENTRY_ACCENT, EntryAvatar, EntryPrimaryButton } from './entry/EntryVisuals';
+import { formatInviteCode } from '../utils/inviteCode';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -232,7 +233,11 @@ export default function AuthScreen({ navigation, route }: Props) {
                       return <EntryAvatar key={member.userId ?? index} emoji={avatar.emoji} color={avatar.color} circle size={22} />;
                     })}
                   </View>
-                ) : <Text style={styles.code}>{request.code.slice(0, 3)}-{request.code.slice(3)}</Text>}
+                ) : (
+                  <Text style={styles.code} adjustsFontSizeToFit minimumFontScale={0.7} numberOfLines={1}>
+                    {formatInviteCode(request.code)}
+                  </Text>
+                )}
               </View>
             </View>
             <View style={styles.nicknameRow}>

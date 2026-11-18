@@ -28,7 +28,7 @@ function sessionActor(value: string | null | undefined): string | null {
 
 /** Persist only in SecureStore. Keep the newest rotation readable through
  * temporary write failure; serialize each key and fence queued writes on logout.
- * A failed deletion retains a process-local tombstone and retries on later use.
+ * A failed deletion rejects while retaining a tombstone for a later retry.
  */
 export function createSupabaseAuthStorage(
   secureStore: AuthStorageAdapter = SecureStore,
@@ -47,7 +47,7 @@ export function createSupabaseAuthStorage(
     }).catch(() => undefined);
     return flight;
   }
-  async function flush(key: string, generation: number): Promise<void> {
+  async function flush(key: string, generation: number, rejectDeleteFailure = false): Promise<void> {
     if (generations.get(key) !== generation || !pending.has(key)) return;
     const value = latest.get(key);
     try {
@@ -55,9 +55,10 @@ export function createSupabaseAuthStorage(
       else await secureStore.setItemAsync(key, value);
       persistedActors.set(key, sessionActor(value));
       if (generations.get(key) === generation) pending.delete(key);
-    } catch {
+    } catch (error) {
       // A later read/write retries persistence. Never return an older token
       // merely because the newest rotated credential could not be written.
+      if (value == null && rejectDeleteFailure) throw error;
     }
   }
   const storage: SupabaseAuthStorage = {
@@ -114,7 +115,7 @@ export function createSupabaseAuthStorage(
       generations.set(key, generation);
       latest.set(key, null);
       pending.add(key);
-      return serialize(key, () => flush(key, generation));
+      return serialize(key, () => flush(key, generation, true));
     },
   };
   return {

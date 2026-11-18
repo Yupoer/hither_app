@@ -114,7 +114,11 @@ function execute(b, operation) {
     keys(args, 'p_session_id p_status p_detail');
     const session = b.sessions.get(args.p_session_id);
     const row = b.tables.navigation_member_states.find(r => r.navigation_session_id === args.p_session_id && r.user_id === userId);
-    if (!session || !row || !member(b, session.group_id, userId)) return fail('not_session_member');
+    const membership = session && member(b, session.group_id, userId);
+    if (!session || session.status !== 'active' || Date.parse(session.expires_at) <= b.now || !row
+      || !membership || (membership.subgroup_id ?? null) !== (session.scope_subgroup_id ?? null)) {
+      return fail('navigation session not found', 'P0002');
+    }
     assert(['pending', 'activity_started', 'tracking_active', 'permission_denied', 'location_disabled', 'app_force_quit_suspected', 'offline', 'push_unavailable', 'sharing_disabled', 'arriving', 'arrived', 'missed', 'cancelled'].includes(args.p_status), 'Navigation status contract');
     Object.assign(row, { local_status: args.p_status, detail: args.p_detail, acknowledged_at: iso(b), updated_at: iso(b),
       latest_distance_m: args.p_detail.latestDistanceMeters ?? row.latest_distance_m,
@@ -174,6 +178,34 @@ function execute(b, operation) {
   if (name === 'ingest_diagnostic_batch') {
     keys(args, 'p_events'); const acceptedIds = [];
     for (const event of args.p_events) { assert(typeof event.id === 'string' && typeof event.event === 'string' && typeof event.deviceId === 'string'); b.diagnostics.set(`${userId}:${event.id}`, structuredClone(event)); acceptedIds.push(event.id); }
+    return ok({ acceptedIds, rejected: [] });
+  }
+  if (name === 'ingest_metric_payload') {
+    keys(args, 'p_id p_device_id p_kind p_payload p_received_at');
+    const receivedAt = Date.parse(args.p_received_at);
+    if (!Number.isFinite(receivedAt) || receivedAt > b.now + 5 * 60 * 1000) return fail('stale_telemetry', '22023');
+    if (receivedAt < b.now - 30 * 24 * 60 * 60 * 1000) return ok(false);
+    const existing = b.tables.metric_payloads.find(row => row.id === args.p_id);
+    if (existing && existing.user_id !== userId) return fail('metric_payload_owner_mismatch');
+    if (!existing) b.tables.metric_payloads.push({
+      id: args.p_id, user_id: userId, device_id: args.p_device_id,
+      kind: args.p_kind, payload: structuredClone(args.p_payload),
+      received_at: args.p_received_at, created_at: iso(b),
+    });
+    return ok(true);
+  }
+  if (name === 'ingest_performance_batch') {
+    keys(args, 'p_events'); const acceptedIds = [];
+    for (const event of args.p_events) {
+      const existing = b.tables.performance_events.find(row => row.id === event.id);
+      if (existing && existing.user_id !== userId) continue;
+      if (!existing) b.tables.performance_events.push({
+        id: event.id, user_id: userId, session_id: event.sessionId,
+        occurred_at: new Date(event.timestamp).toISOString(), event_type: event.eventType,
+        operation: event.operation, payload: structuredClone(event.payload), created_at: iso(b),
+      });
+      acceptedIds.push(event.id);
+    }
     return ok({ acceptedIds, rejected: [] });
   }
   if (name === 'submit_feedback') {

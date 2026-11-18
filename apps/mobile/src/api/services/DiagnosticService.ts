@@ -45,45 +45,51 @@ export async function ingestDiagnosticBatch(
   };
 }
 
-export async function uploadMetricPayload(input: {
-  id: string;
-  kind: 'metric' | 'diagnostic';
-  json: string;
-  receivedAt: number;
-}, revision = getDiagnosticConsentRevision(), isCurrent: () => boolean = () => true): Promise<boolean> {
-  if (!(await getDiagnosticConsentEnabled()) || !isDiagnosticConsentCurrent(revision) || !isCurrent()) return false;
-  const uid = await requireUserId();
-  if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) return false;
+export async function uploadMetricPayload(input: MetricPayloadFile): Promise<boolean> {
+  return (await submitMetricPayload(input, getDiagnosticConsentRevision(), () => true)) === true;
+}
+
+async function submitMetricPayload(
+  input: MetricPayloadFile,
+  revision: number,
+  isCurrent: () => boolean,
+): Promise<boolean | null> {
+  if (!(await getDiagnosticConsentEnabled()) || !isDiagnosticConsentCurrent(revision) || !isCurrent()) return null;
+  await requireUserId();
+  if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) return null;
   const deviceId = await getOrCreateLiveActivityDeviceId();
-  if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) return false;
+  if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) return null;
   const parsed: unknown = JSON.parse(input.json);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('MetricKit payload must be a JSON object');
   }
   const submission = createDiagnosticSubmissionAbort(revision);
-  const { error } = await Promise.resolve(supabase.from('metric_payloads').insert({
-    id: input.id,
-    user_id: uid,
-    device_id: deviceId,
-    kind: input.kind,
-    payload: parsed,
-    received_at: new Date(input.receivedAt).toISOString(),
+  const { data, error } = await Promise.resolve(supabase.rpc('ingest_metric_payload', {
+    p_id: input.id,
+    p_device_id: deviceId,
+    p_kind: input.kind,
+    p_payload: parsed,
+    p_received_at: new Date(input.receivedAt).toISOString(),
   }).abortSignal(submission.signal)).finally(submission.dispose);
   orThrow(error);
-  return true;
+  return typeof data === 'boolean' ? data : null;
 }
 
-/** One existing batch (five payloads), fenced across every asynchronous boundary. */
-export async function uploadMetricPayloadBatch(payloads: MetricPayloadFile[], isCurrent: () => boolean): Promise<string[]> {
+/** Drain up to five records while the originating consent and app lifecycle are current. */
+export async function uploadMetricPayloadBatch(payloads: MetricPayloadFile[], isCurrent: () => boolean) {
   const revision = getDiagnosticConsentRevision();
-  if (!(await getDiagnosticConsentEnabled()) || !isDiagnosticConsentCurrent(revision) || !isCurrent()) return [];
-  const accepted: string[] = [];
+  const acceptedIds: string[] = [];
+  const expiredIds: string[] = [];
+  if (!(await getDiagnosticConsentEnabled()) || !isDiagnosticConsentCurrent(revision) || !isCurrent()) {
+    return { acceptedIds, expiredIds };
+  }
   for (const payload of payloads.slice(0, 5)) {
     if (!isDiagnosticConsentCurrent(revision) || !isCurrent()) break;
     try {
-      if (!(await uploadMetricPayload(payload, revision, isCurrent))) break;
-      accepted.push(payload.id);
+      const accepted = await submitMetricPayload(payload, revision, isCurrent);
+      if (accepted === null) break;
+      (accepted ? acceptedIds : expiredIds).push(payload.id);
     } catch { break; }
   }
-  return accepted;
+  return { acceptedIds, expiredIds };
 }

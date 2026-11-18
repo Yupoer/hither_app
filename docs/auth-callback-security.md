@@ -37,11 +37,24 @@ Before releasing a compatible binary:
    The checked-in Android association uses that actual certificate. If Google
    Play App Signing uses another certificate, add its public SHA-256 before
    claiming verified links for a Play-distributed binary.
-2. Deploy `apps/legal-site` to that same origin, preserving the `.well-known`
-   directory and `_headers`; verify that both association URLs return the JSON
-   files with `application/json`, not a fallback HTML page. The checked-in AASA
-   already targets the existing default origin's iOS app. The Android file must
-   be generated using the actual release certificate.
+2. From a trusted Windows PowerShell session, set `BREVO_SENDER_EMAIL`, the
+   Pages project account's `CLOUDFLARE_ACCOUNT_ID`, and a scoped
+   `CLOUDFLARE_API_TOKEN`. Use a standalone Wrangler installation provisioned
+   from a reviewed lockfile before loading deployment credentials. Record its
+   exact Wrangler version and the digest from
+   `node scripts/verified-cli-tree.mjs $wranglerRoot` during that review. Keep
+   the expected digest outside the installation and reuse it at deployment.
+
+   ```powershell
+   .\scripts\deploy-legal-site.ps1 -WranglerRoot $wranglerRoot `
+     -WranglerVersion $reviewedVersion -WranglerSha256 $reviewedSha256
+   ```
+
+   `$wranglerRoot` is the absolute installation directory containing
+   `node_modules\wrangler`. Check the script's readback and verify that both
+   association URLs return their JSON files with `application/json`. The AASA
+   targets the default origin's iOS app. Generate the Android file using the
+   actual release certificate.
 3. Run `scripts/configure-auth-urls.ps1` after public HTTPS deployment verification.
    It checks source readback before PATCHing only Supabase Auth
    `site_url` and `uri_allow_list`; do not rerun the SMTP configuration script.

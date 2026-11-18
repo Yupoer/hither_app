@@ -38,6 +38,7 @@ const pausedGroup = published.findLast(event => event.table === 'groups');
 assert.equal(pausedGroup.old.journey_status, 'going');
 assert.equal(pausedGroup.old.active_destination_id, session.destination_id);
 assert.equal(pausedGroup.new.journey_status, 'paused');
+assert.equal(rpc('ack_navigation_session', { p_session_id: session.id, p_status: 'offline', p_detail: {} }, PEER).error.code, 'P0002');
 const subgroup = rpc('self_split', { p_group: GROUP_ID, p_name: 'Peer subgroup' }, PEER).data;
 rpc('invite_to_subgroup', { p_subgroup: subgroup.id, p_invitee: LEADER }, PEER);
 const invite = b.tables.subgroup_invites[0];
@@ -53,6 +54,10 @@ assert.equal(invoke('verify-and-apply-purchase', { signed_transaction: 'verified
 assert.equal(invoke('verify-and-apply-purchase', { signed_transaction: 'verified-jws', transaction_id: 'txn-1' }).data.duplicate, true);
 assert.equal(rpc('get_premium_projection', { p_group_id: GROUP_ID }, PEER).data.teamPremiumActive, true);
 assert.equal(rpc('ingest_diagnostic_batch', { p_events: [{ id: 'event-1', event: 'boot', deviceId: 'device-1' }] }).data.acceptedIds[0], 'event-1');
+assert.equal(rpc('ingest_metric_payload', { p_id: 'metric-1', p_device_id: 'device-1', p_kind: 'metric', p_payload: {}, p_received_at: new Date(b.now).toISOString() }).data, true);
+assert.deepEqual(rpc('ingest_performance_batch', { p_events: [{ id: 'performance-1', timestamp: b.now, sessionId: 'session-1', eventType: 'sample', operation: 'contract', payload: {} }] }).data.acceptedIds, ['performance-1']);
+assert.deepEqual(b.tables.metric_payloads.map(row => row.id), ['metric-1']);
+assert.deepEqual(b.tables.performance_events.map(row => row.id), ['performance-1']);
 assert.throws(() => invoke('unknown-function', {}), /Unknown SDK request kind/);
 console.log('Backend navigation, subgroup, diagnostics and verification contracts passed');
 

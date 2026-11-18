@@ -5,6 +5,10 @@ const migration = readFileSync(
   join(__dirname, '../../../../supabase/migrations/20260717050721_performance_tracing.sql'),
   'utf8',
 ).toLowerCase();
+const boundedIngestion = readFileSync(
+  join(__dirname, '../../../../supabase/migrations/20261118030000_bounded_telemetry_ingestion.sql'),
+  'utf8',
+).toLowerCase();
 
 const service = readFileSync(
   join(__dirname, '../api/services/PerformanceService.ts'),
@@ -16,12 +20,19 @@ const performance = readFileSync(
 );
 
 describe('performance tracing contract', () => {
-  it('stores bounded raw events and protects them with user-owned RLS', () => {
+  it('stores bounded raw events behind quota-enforcing ingestion', () => {
     expect(migration).toContain('create table public.performance_events');
     expect(migration).toContain('octet_length(payload::text) <= 32768');
     expect(migration).toContain('alter table public.performance_events enable row level security');
-    expect(migration).toContain('performance_events: own insert');
-    expect(migration).toContain('grant select, insert on public.performance_events to authenticated');
+    expect(boundedIngestion).toContain('revoke insert, update on public.diagnostic_sessions');
+    expect(boundedIngestion).toContain('public.performance_events from anon, authenticated');
+    expect(boundedIngestion).toContain('create or replace function public.ingest_performance_batch');
+    expect(boundedIngestion).toContain('telemetry_hourly_quota_exceeded');
+    expect(boundedIngestion).toContain('telemetry_daily_quota_exceeded');
+    expect(boundedIngestion).toContain('telemetry_retained_quota_exceeded');
+    expect(boundedIngestion.indexOf('perform public.consume_telemetry_quota(')).toBeLessThan(
+      boundedIngestion.indexOf('insert into public.diagnostic_sessions'),
+    );
   });
 
   it('keeps rollups server-only and schedules daily aggregation', () => {
@@ -38,10 +49,19 @@ describe('performance tracing contract', () => {
     expect(migration).not.toContain('cron.job_run_details');
   });
 
-  it('acknowledges duplicate performance ids without a 409 retry loop', () => {
-    expect(service).toContain('.upsert(');
-    expect(service).toContain("onConflict: 'id'");
-    expect(service).toContain('ignoreDuplicates: true');
+  it('acknowledges duplicate performance ids without reopening direct inserts', () => {
+    expect(service).toContain("baseSupabase.rpc('ingest_performance_batch'");
+    expect(boundedIngestion).toMatch(
+      /insert into public\.performance_events[\s\S]*?on conflict \(id\) do nothing/,
+    );
+    expect(boundedIngestion).toContain("where id = v_id and user_id = v_uid");
+  });
+
+  it('expires raw telemetry and bounded rollups through scheduled retention', () => {
+    expect(boundedIngestion).toContain("statement_timestamp() - interval '30 days'");
+    expect(boundedIngestion).toContain('ranked.retained_row > 1000');
+    expect(boundedIngestion).toContain('bucket_date < current_date - 90');
+    expect(boundedIngestion).toContain("'hither-telemetry-retention'");
   });
 
   it('keeps full tracing short and samples successful API spans without eager flush timers', () => {
