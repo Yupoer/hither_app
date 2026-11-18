@@ -28,9 +28,9 @@ python3 -B scripts/ios-release.py --source-sha "$source_sha" \
 | Production OTA | `ios-release-ota.py --source-sha "$source_sha" --release-dir "$release_dir" --backend-verified` |
 | Mac production build and startup | `ios-release-local.py --source-sha "$source_sha" --release-dir "$release_dir"` with optional `--simulator "$udid"` |
 | Signed IPA only | `ios-release-local.py` with the same arguments and `--build-only` |
+| Mac build, startup review and submission | `ios-release-local.py --source-sha "$source_sha" --release-dir "$release_dir" --submit --backend-verified` |
 | Verify an existing IPA | `ios-release-upload.py --source-sha "$source_sha" --ipa "$ipa_path" --sha256 "$ipa_sha256" --release-dir "$release_dir" --verify-only` |
-| Submit a guarded local IPA | `ios-release-upload.py --provenance-receipt "$release_dir/local-build.json" --release-dir "$release_dir"` |
-| Direct Apple upload | `ios-release-upload.py` with the guarded local receipt and `--transport apple` |
+| Inspect an existing submission | `ios-release-upload.py` with the same IPA identity arguments and `--submission-status` in place of `--verify-only` |
 | Explicit GitHub Actions mode | `ios-release-actions.py --source-sha "$source_sha" --release-dir "$release_dir" --mode <mode>` with `--backend-verified` for `submit` |
 
 Run the scripts from the checkout root with `python3 -B scripts/<script>`. OTA
@@ -39,22 +39,19 @@ uses the Mac when the record cannot establish compatibility. A compatible
 source with only non-product changes since the recorded baseline needs no app
 release. A Git-only request ends at Git verification. Cloud modes remain explicit.
 
-For a new Mac build, review both startup screenshots under `startup/`, then
-submit with that private release directory's `local-build.json`. The upload
-route derives the source, IPA path and digest from its guarded provenance and
-does not accept independently supplied identity values. Verify
-required backend changes before submission. Keep the release directory to
-resume the same attempt. For Actions routes the saved run ID and outcome
-allow another invocation to watch the existing run. Check App Store Connect
-after upload, then update the binary record with the delivered source
-and reviewed Apple evidence so the next compatible change can select OTA.
+The selector accepts `--submit --execute --backend-verified` when its route is
+`local`. Use a new private release directory on the trusted Mac. The builder
+retains the fresh IPA's source and SHA-256 in memory until submission. Build
+receipts support verification and status recovery. Submission of a build from
+a completed or interrupted invocation requires starting a fresh trusted build
+after reconciling any previous upload.
 
-Direct upload uses the Mac's `xcrun altool`. Configure `ASC_KEY_ID`,
-`ASC_ISSUER_ID` and `ASC_KEY_PATH` with a key file outside the checkout. Check
-App Store Connect for the exact version and build before submitting. When an
-EAS attempt exists, wait for its confirmed cancellation and reuse its release
-directory. The upload script reads that cancellation and retains a separate
-direct upload receipt.
+The default submission transport is EAS. To use the Mac's `xcrun altool`, set
+`ASC_KEY_ID`, `ASC_ISSUER_ID` and an absolute `ASC_KEY_PATH` outside the checkout
+and add `--transport apple` to the local builder command. Check App Store
+Connect for the exact version and build before either transport is confirmed.
+For Actions routes the saved run ID and outcome allow another invocation to
+watch the existing run.
 
 ## Build on the Mac by default
 
@@ -66,39 +63,31 @@ direct upload receipt.
    missing prerequisite and wait for an explicit cloud request. Check for
    in-progress production builds or uploads first; GitHub's concurrency group
    does not cover the Mac.
-2. From `apps/mobile`, run `CI=1 npm ci` and `npm run verify:runtime`.
-   Use the pinned EAS CLI and the `production` profile. Set `release_dir` to a
-   new private absolute directory outside the checkout and keep the archive
-   alongside the IPA:
+2. From the checkout root, use an interactive terminal on the Mac. With SSH,
+   allocate a terminal for the review prompt. After required production backend
+   changes have been verified, run the builder with a new private absolute
+   directory outside the checkout:
 
    ```sh
-   GYM_ARCHIVE_PATH="$release_dir/Hither.xcarchive" \
-     npx --yes eas-cli@21.0.2 build --platform ios --profile production \
-       --local --non-interactive --output "$release_dir/Hither.ipa"
+   python3 -B scripts/ios-release-local.py --source-sha "$source_sha" \
+     --release-dir "$release_dir" --submit --backend-verified
    ```
 
-3. Verify the IPA's integrity, signature, App and widget IDs and versions,
-   embedded runtime, and production channel. Record the source SHA, IPA SHA-256
-   and App/Widget executable UUIDs. Keep the matching archive and dSYMs for
-   [crash investigation](crash-investigation.md#retain-signed-build-symbols).
-   A local `build-only` request ends here.
-4. Before a new binary is uploaded, verify any required production backend
-   deployment and [full Release startup](ios-release-startup-validation.md).
-   Reuse valid cold-start evidence for the same source, production configuration
-   and relevant iOS runtime. If only the matching Release simulator `.app`
-   exists, run the launch verifier on it and review both screenshots. If there
-   is no matching simulator app or evidence, build and verify it on the Mac.
-   Keep local Derived Data for incremental simulator builds.
-5. Check for an existing submission of that version and build. Submit the
-   verified IPA by exact path:
-
-   ```sh
-   npx --yes eas-cli@21.0.2 submit --platform ios --profile production \
-     --path "$release_dir/Hither.ipa" --non-interactive --wait
-   ```
-
-   Check Apple processing and device acceptance separately. If upload status is
-   unclear, look up that submission before retrying with the same IPA.
+3. The builder checks the IPA's integrity, signature, App and widget IDs and
+   versions, embedded runtime, and production channel. Keep the IPA, matching
+   archive and dSYMs for [crash investigation](crash-investigation.md#retain-signed-build-symbols).
+   For a local build-only request, use `--build-only` in place of
+   `--submit --backend-verified`.
+4. Keep the submission invocation running at the review prompt. Review both
+   [Release startup](ios-release-startup-validation.md) screenshots in `startup/`
+   and confirm the displayed build is absent in App Store Connect. Type `submit`
+   when both checks pass. The transport rechecks the pinned source and IPA
+   SHA-256 before uploading.
+5. Check Apple processing and device acceptance separately. If the invocation
+   is interrupted or the upload status is unclear, preserve the release directory
+   and use `--submission-status` or the private submission logs, then reconcile
+   the result in App Store Connect before a new attempt. Update the binary record
+   after reviewing Apple evidence.
 
 ## Install CI and CD dependencies
 

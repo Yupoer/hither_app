@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import plistlib
@@ -74,39 +75,6 @@ class UploadTests(unittest.TestCase):
                 upload.runpy, "run_path", return_value=helpers):
             return upload.verify_ipa(self.ipa, SOURCE, self.digest, CONFIG)
 
-    def local_provenance(self):
-        archive = self.output / "Hither.xcarchive"
-        archive.mkdir()
-        trusted_ipa = self.output / "Hither.ipa"
-        self.ipa.replace(trusted_ipa)
-        self.ipa = trusted_ipa
-        self.digest = hashlib.sha256(self.ipa.read_bytes()).hexdigest()
-        self.identity.update(ipaSha256=self.digest)
-        self.verification.update(ipa=str(self.ipa), ipaSha256=self.digest)
-        intent = {"sourceSha": SOURCE, "ipaPath": str(self.ipa), "archivePath": str(archive),
-                  "status": "unknown"}
-        admission = {"schemaVersion": 1, "sourceSha": SOURCE,
-                     "workflowPath": ".github/workflows/ci.yml",
-                     "status": "completed", "conclusion": "success"}
-        upload.write_receipt(self.output / "local-build-intent.json", intent)
-        upload.write_receipt(self.output / "ci-admission.json", admission)
-        receipt = {**intent, "schemaVersion": 2, "ipaSha256": self.digest,
-                   "appVersion": CONFIG["version"], "build": "87",
-                   "runtimeVersion": CONFIG["runtimeVersion"], "channel": "production",
-                   "binaries": [
-                       {"bundleIdentifier": upload.APP_ID, "executable": "Hither",
-                        "uuids": [{"architecture": "arm64", "uuid": "00EC8EDA-B242-364F-B804-158C5DBF7373"}]},
-                       {"bundleIdentifier": upload.WIDGET_ID, "executable": "Widget",
-                        "uuids": [{"architecture": "arm64", "uuid": "00EC8EDA-B242-364F-B804-158C5DBF7373"}]},
-                   ],
-                   "easCliVersion": "21.0.2", "easUpload": "not_attempted",
-                   "provenance": {"kind": "guarded-local-build",
-                                  "buildIntentSha256": upload.sha256(self.output / "local-build-intent.json"),
-                                  "ciAdmissionSha256": upload.sha256(self.output / "ci-admission.json")}}
-        path = self.output / "local-build.json"
-        upload.write_receipt(path, receipt)
-        return path, receipt
-
     def test_verifies_both_bundle_uuids_and_production_identity(self):
         metadata = self.verify_fixture()
         self.assertEqual((metadata["ipaSha256"], metadata["appVersion"], metadata["buildNumber"],
@@ -132,33 +100,6 @@ class UploadTests(unittest.TestCase):
                 self.make_ipa(widget_build=widget, channel=channel)
                 with self.assertRaisesRegex(ValueError, error):
                     self.verify_fixture()
-
-    def test_submission_identity_requires_guarded_local_provenance(self):
-        with self.assertRaisesRegex(ValueError, "must come only"):
-            upload.release_inputs(self.output, False, None, SOURCE, self.ipa, self.digest)
-        path, receipt = self.local_provenance()
-        source, ipa, digest, observed = upload.release_inputs(
-            self.output, False, path, None, None, None)
-        self.assertEqual((source, ipa, digest, observed), (SOURCE, self.ipa, self.digest, receipt))
-        upload.require_provenance_match(receipt, self.verify_fixture())
-
-    def test_submission_rejects_synthesized_or_changed_provenance(self):
-        outside = self.repo / "supplied.json"
-        upload.write_receipt(outside, {})
-        with self.assertRaisesRegex(ValueError, "this release directory"):
-            upload.load_local_provenance(outside, self.output)
-        path, _ = self.local_provenance()
-        (self.output / "local-build-intent.json").write_text("{}")
-        with self.assertRaisesRegex(ValueError, "does not bind"):
-            upload.load_local_provenance(path, self.output)
-
-    def test_verify_only_preserves_explicit_diagnostic_inputs(self):
-        self.assertEqual(upload.release_inputs(
-            self.output, True, None, SOURCE, self.ipa, self.digest),
-            (SOURCE, self.ipa, self.digest, None))
-        with self.assertRaisesRegex(ValueError, "requires"):
-            upload.release_inputs(self.output, True, self.output / "local-build.json",
-                                  SOURCE, self.ipa, self.digest)
 
     def test_direct_upload_requires_cancellation_of_the_same_eas_attempt(self):
         upload.write_receipt(self.output / "submission-intent.json", self.identity)
@@ -219,6 +160,17 @@ class UploadTests(unittest.TestCase):
             self.assertEqual(upload.submit_ipa(self.repo, self.output, self.verification, CONFIG)["easStatus"], "uploaded")
             dispatch.assert_not_called()
 
+    def test_changed_ipa_cannot_reach_submission(self):
+        self.ipa.write_bytes(b'replaced after verification')
+        with patch.object(upload, "git", side_effect=[SOURCE.encode(), b""]), \
+                patch.object(upload, "require_master_ci"), \
+                patch.object(upload.shutil, "which", return_value="/fake/npx"), \
+                patch.object(upload.subprocess, "run") as dispatch:
+            with self.assertRaisesRegex(ValueError, "IPA changed before submission"):
+                upload.submit_ipa(self.repo, self.output, self.verification, CONFIG)
+            dispatch.assert_not_called()
+        self.assertFalse((self.output / "submission-intent.json").exists())
+
     def test_release_directory_keeps_original_verification_for_different_ipa(self):
         path = self.output / "ipa-receipt.json"
         upload.ensure_artifact_receipt(path, self.verification)
@@ -228,17 +180,52 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(json.loads(path.read_text()), self.verification)
 
     def test_explicit_prior_receipt_must_identify_same_ipa(self):
-        receipt = upload.parse_submission(f"{SCHEDULED}\n{upload.UPLOAD_SUCCESS}\n", self.identity,
-                                          upload.submission_pattern(CONFIG))
+        pattern = upload.submission_pattern(CONFIG)
+        receipt = upload.parse_submission(f"{SCHEDULED}\n{upload.UPLOAD_SUCCESS}\n", self.identity, pattern)
         path = self.output / "prior.json"
         upload.write_receipt(path, receipt)
-        with patch.object(upload.subprocess, "run") as dispatch:
-            observed = upload.submit_ipa(self.repo, self.output, self.verification, CONFIG, path)
-            self.assertEqual(observed, receipt)
-            wrong_ipa = {**self.verification, "ipaSha256": "b" * 64}
-            with self.assertRaisesRegex(ValueError, "does not identify"):
-                upload.submit_ipa(self.repo, self.output, wrong_ipa, CONFIG, path)
-            dispatch.assert_not_called()
+        self.assertEqual(upload.load_receipt(path, self.identity, pattern), receipt)
+        wrong_ipa = {**self.identity, "ipaSha256": "b" * 64}
+        with self.assertRaisesRegex(ValueError, "does not identify"):
+            upload.load_receipt(path, wrong_ipa, pattern)
+
+    def cli_arguments(self):
+        return ["--source-sha", SOURCE, "--ipa", str(self.ipa), "--sha256", self.digest,
+                "--release-dir", str(self.output)]
+
+    def test_existing_ipa_cli_never_submits(self):
+        with patch.object(upload, "git", return_value=str(self.repo).encode()), \
+                patch.object(upload, "release_directory", return_value=self.output), \
+                patch.object(upload, "read_source", return_value=CONFIG), \
+                patch.object(upload, "verify_ipa", return_value=self.verification) as verify, \
+                patch.object(upload, "submit_ipa") as eas, patch.object(upload, "submit_direct") as apple, \
+                patch("sys.stdout", new_callable=io.StringIO) as output, patch("sys.stderr", new_callable=io.StringIO):
+            for flags in ([], ["--transport", "apple"], ["--provenance-receipt", str(self.output / "local-build.json")]):
+                with self.subTest(flags=flags), self.assertRaises(SystemExit) as exit_error:
+                    upload.main([*self.cli_arguments(), *flags])
+                self.assertEqual(exit_error.exception.code, 2)
+            verify.assert_not_called()
+            self.assertEqual(upload.main([*self.cli_arguments(), "--verify-only"]), 0)
+            verify.assert_called_once_with(self.ipa, SOURCE, self.digest, CONFIG)
+            self.assertEqual(json.loads(output.getvalue()), self.verification)
+            eas.assert_not_called()
+            apple.assert_not_called()
+
+    def test_existing_ipa_cli_recovers_saved_attempt_without_dispatch(self):
+        upload.write_receipt(self.output / "submission-intent.json", self.identity)
+        (self.output / "eas-submit.log").write_text(SCHEDULED)
+        with patch.object(upload, "git", return_value=str(self.repo).encode()), \
+                patch.object(upload, "release_directory", return_value=self.output), \
+                patch.object(upload, "read_source", return_value=CONFIG), \
+                patch.object(upload, "verify_ipa", return_value=self.verification), \
+                patch.object(upload, "submit_ipa") as eas, patch.object(upload, "submit_direct") as apple, \
+                patch("sys.stdout", new_callable=io.StringIO) as output, patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(upload.main([*self.cli_arguments(), "--submission-status"]), 1)
+            receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt["easStatus"], "scheduled")
+        self.assertEqual(receipt["submissionId"], SUBMISSION_ID)
+        eas.assert_not_called()
+        apple.assert_not_called()
 
 
 if __name__ == "__main__":

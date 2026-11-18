@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Verify an exact production Hither IPA and, when requested, submit it once."""
+"""Verify an existing production Hither IPA and inspect its saved submission evidence."""
 
 import argparse
-import fcntl
-import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -113,14 +111,14 @@ def bundle_metadata(app, widget, config):
     }
 
 
-def verify_ipa(ipa, source_sha, expected_sha, config):
+def verify_ipa(ipa, source_sha, expected_sha, config, *, temporary_dir=None):
     if not ipa.is_absolute() or not ipa.is_file() or ipa.suffix != ".ipa":
         raise ValueError("--ipa must name an existing absolute .ipa path")
     symbols = runpy.run_path(str(SYMBOL_HELPERS))
     if not IPA_SHA.fullmatch(expected_sha) or symbols["sha256"](ipa) != expected_sha:
         raise ValueError("IPA SHA-256 does not match --sha256")
     safe_zip(ipa)
-    with tempfile.TemporaryDirectory(prefix="hither-ipa-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="hither-ipa-", dir=temporary_dir) as temporary:
         root = Path(temporary)
         command_check("/usr/bin/ditto", "-x", "-k", str(ipa), str(root))
         app = only_directory(root / "Payload", "*.app")
@@ -157,86 +155,6 @@ def write_receipt(path, value, *, exclusive=False):
                 os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
-
-
-def sha256(path):
-    result = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            result.update(chunk)
-    return result.hexdigest()
-
-
-def load_local_provenance(path, release_dir):
-    expected_path = release_dir / "local-build.json"
-    if path is None:
-        raise ValueError("submission requires --provenance-receipt from the guarded local build")
-    if path.is_symlink() or not path.is_file() or path.resolve() != expected_path:
-        raise ValueError("--provenance-receipt must be this release directory's local-build.json")
-    receipt = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(receipt, dict):
-        raise ValueError("local build provenance must be a JSON object")
-    ipa = release_dir / "Hither.ipa"
-    archive = release_dir / "Hither.xcarchive"
-    intent_path = release_dir / "local-build-intent.json"
-    admission_path = release_dir / "ci-admission.json"
-    if (ipa.is_symlink() or not ipa.is_file() or archive.is_symlink() or not archive.is_dir()
-            or any(item.is_symlink() for item in (intent_path, admission_path))
-            or not intent_path.is_file() or not admission_path.is_file()):
-        raise ValueError("local build provenance is missing its guarded build artifacts")
-    expected_identity = {
-        "sourceSha": receipt.get("sourceSha"),
-        "ipaPath": str(ipa),
-        "archivePath": str(archive),
-    }
-    intent = json.loads(intent_path.read_text(encoding="utf-8"))
-    admission = json.loads(admission_path.read_text(encoding="utf-8"))
-    provenance = receipt.get("provenance")
-    if (receipt.get("schemaVersion") != 2
-            or not SOURCE_SHA.fullmatch(str(receipt.get("sourceSha", "")))
-            or not IPA_SHA.fullmatch(str(receipt.get("ipaSha256", "")))
-            or any(receipt.get(key) != value for key, value in expected_identity.items())
-            or receipt.get("easCliVersion") != "21.0.2"
-            or receipt.get("easUpload") != "not_attempted"
-            or not isinstance(intent, dict)
-            or any(intent.get(key) != value for key, value in expected_identity.items())
-            or intent.get("status") != "unknown"
-            or not isinstance(admission, dict)
-            or admission.get("schemaVersion") != 1
-            or admission.get("sourceSha") != receipt.get("sourceSha")
-            or admission.get("workflowPath") != ".github/workflows/ci.yml"
-            or admission.get("status") != "completed"
-            or admission.get("conclusion") != "success"
-            or provenance != {"kind": "guarded-local-build",
-                              "buildIntentSha256": sha256(intent_path),
-                              "ciAdmissionSha256": sha256(admission_path)}):
-        raise ValueError("local build provenance does not bind this source and IPA")
-    return receipt, ipa
-
-
-def release_inputs(release_dir, verify_only, provenance_path, source_sha, ipa, expected_sha):
-    if verify_only:
-        if provenance_path is not None or source_sha is None or ipa is None or expected_sha is None:
-            raise ValueError("--verify-only requires --source-sha, --ipa, and --sha256 only")
-        return source_sha, ipa, expected_sha, None
-    if source_sha is not None or ipa is not None or expected_sha is not None:
-        raise ValueError("submission identity must come only from --provenance-receipt")
-    provenance, trusted_ipa = load_local_provenance(provenance_path, release_dir)
-    return provenance["sourceSha"], trusted_ipa, provenance["ipaSha256"], provenance
-
-
-def require_provenance_match(provenance, verification):
-    expected = {
-        "sourceSha": verification["sourceSha"],
-        "ipaSha256": verification["ipaSha256"],
-        "appVersion": verification["appVersion"],
-        "build": verification["buildNumber"],
-        "runtimeVersion": verification["runtimeVersion"],
-        "channel": verification["channel"],
-        "binaries": verification["binaries"],
-    }
-    if any(provenance.get(key) != value for key, value in expected.items()):
-        raise ValueError("verified IPA does not match its guarded local build provenance")
 
 
 def ensure_artifact_receipt(path, verification):
@@ -309,12 +227,8 @@ def require_submit_source(repo, verification):
         raise ValueError("IPA changed before submission")
 
 
-def submit_ipa(repo, release_dir, verification, config, existing_receipt=None):
-    identity = {key: verification[key] for key in RELEASE_IDENTITY}
+def read_eas_attempt(release_dir, identity, url_pattern):
     intent_path, log_path, receipt_path = (release_dir / name for name in SUBMISSION_FILES)
-    url_pattern = submission_pattern(config)
-    if existing_receipt is not None:
-        return load_receipt(existing_receipt, identity, url_pattern)
     if receipt_path.exists():
         return load_receipt(receipt_path, identity, url_pattern)
     if intent_path.exists():
@@ -324,6 +238,16 @@ def submit_ipa(repo, release_dir, verification, config, existing_receipt=None):
         return parse_submission(log, identity, url_pattern)
     if log_path.exists():
         raise ValueError(f"{log_path} already exists without an intent; reconcile that upload before submitting")
+    return None
+
+
+def submit_ipa(repo, release_dir, verification, config):
+    identity = {key: verification[key] for key in RELEASE_IDENTITY}
+    url_pattern = submission_pattern(config)
+    prior = read_eas_attempt(release_dir, identity, url_pattern)
+    if prior is not None:
+        return prior
+    intent_path, log_path, receipt_path = (release_dir / name for name in SUBMISSION_FILES)
     if any((release_dir / name).exists() for name in APPLE_FILES):
         raise ValueError("Reconcile the existing direct Apple upload before submitting.")
     npx = shutil.which("npx")
@@ -347,16 +271,20 @@ def submit_ipa(repo, release_dir, verification, config, existing_receipt=None):
     return receipt
 
 
+def read_direct_receipt(path, identity):
+    saved = json.loads(path.read_text())
+    if (any(saved.get(key) != value for key, value in identity.items())
+            or saved.get("transport") != "altool" or saved.get("ascAppId") != ASC_APP_ID
+            or saved.get("status") not in {"uploaded", "unconfirmed"}):
+        raise ValueError("direct upload receipt belongs to a different IPA")
+    return saved
+
+
 def submit_direct(repo, release_dir, verification, config):
     identity = {key: verification[key] for key in RELEASE_IDENTITY}
     intent, log, receipt = (release_dir / name for name in APPLE_FILES)
     if receipt.exists():
-        saved = json.loads(receipt.read_text())
-        if (any(saved.get(key) != value for key, value in identity.items())
-                or saved.get("transport") != "altool" or saved.get("ascAppId") != ASC_APP_ID
-                or saved.get("status") not in {"uploaded", "unconfirmed"}):
-            raise ValueError("direct upload receipt belongs to a different IPA")
-        return saved
+        return read_direct_receipt(receipt, identity)
     if intent.exists() or log.exists():
         raise ValueError("Reconcile the existing direct upload in App Store Connect before retrying.")
     eas_intent, eas_log, eas_receipt = (release_dir / name for name in SUBMISSION_FILES)
@@ -391,51 +319,53 @@ def submit_direct(repo, release_dir, verification, config):
     return outcome
 
 
-def main():
+def show_submission(receipt):
+    print(json.dumps(receipt, sort_keys=True))
+    if receipt.get("easStatus", receipt.get("status")) == "uploaded":
+        return 0
+    print("Upload unconfirmed. Inspect the retained submission evidence before any retry.", file=sys.stderr)
+    return 1
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path.cwd(),
                         help="Git checkout containing the pinned source (defaults to the current checkout)")
-    parser.add_argument("--source-sha")
-    parser.add_argument("--ipa", type=Path)
-    parser.add_argument("--sha256")
+    parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--ipa", type=Path, required=True)
+    parser.add_argument("--sha256", required=True)
     parser.add_argument("--release-dir", type=Path, required=True,
                         help="absolute private directory for this IPA's receipts; reuse it when resuming")
-    parser.add_argument("--provenance-receipt", type=Path,
-                        help="guarded local-build.json required for every submission")
-    parser.add_argument("--transport", choices=("eas", "apple"), default="eas",
-                        help="use EAS Submit or Apple's altool with configured ASC credentials")
-    mode = parser.add_mutually_exclusive_group()
+    mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--verify-only", action="store_true")
+    mode.add_argument("--submission-status", action="store_true",
+                      help="inspect the verified IPA's saved local attempt without uploading")
     mode.add_argument("--submission-receipt", type=Path,
                       help="read a prior submission receipt for the same verified IPA without submitting")
-    args = parser.parse_args()
-    if args.transport == "apple" and args.submission_receipt:
-        parser.error("--submission-receipt reads an EAS receipt")
+    args = parser.parse_args(argv)
 
     try:
         repo = Path(os.fsdecode(git(args.repo, "rev-parse", "--show-toplevel").strip()))
         output = release_directory(args.release_dir)
-        source_sha, ipa, expected_sha, provenance = release_inputs(
-            output, args.verify_only, args.provenance_receipt, args.source_sha, args.ipa, args.sha256)
-        config = read_source(repo, source_sha)
-        verification = verify_ipa(ipa, source_sha, expected_sha, config)
-        if provenance is not None:
-            require_provenance_match(provenance, verification)
+        config = read_source(repo, args.source_sha)
+        verification = verify_ipa(args.ipa, args.source_sha, args.sha256, config)
         ensure_artifact_receipt(output / "ipa-receipt.json", verification)
         if args.verify_only:
             print(json.dumps(verification, sort_keys=True))
             return 0
-        with (output / ".submission.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            if args.transport == "apple":
-                receipt = submit_direct(repo, output, verification, config)
-            else:
-                receipt = submit_ipa(repo, output, verification, config, args.submission_receipt)
-        print(json.dumps(receipt, sort_keys=True))
-        if receipt.get("easStatus", receipt.get("status")) == "uploaded":
-            return 0
-        print("Upload unconfirmed. Inspect the retained submission evidence before any retry.", file=sys.stderr)
-        return 1
+        identity = {key: verification[key] for key in RELEASE_IDENTITY}
+        url_pattern = submission_pattern(config)
+        if args.submission_receipt:
+            return show_submission(load_receipt(args.submission_receipt, identity, url_pattern))
+        apple_intent, apple_log, apple_receipt = (output / name for name in APPLE_FILES)
+        if apple_receipt.is_file():
+            return show_submission(read_direct_receipt(apple_receipt, identity))
+        if apple_intent.exists() or apple_log.exists():
+            raise ValueError("Direct upload outcome is unconfirmed; reconcile it in App Store Connect.")
+        receipt = read_eas_attempt(output, identity, url_pattern)
+        if receipt is None:
+            raise ValueError("No saved submission attempt identifies this IPA.")
+        return show_submission(receipt)
     except KeyboardInterrupt:
         print("Interrupted. Keep the release directory and inspect its submission evidence before any retry.", file=sys.stderr)
         return 130

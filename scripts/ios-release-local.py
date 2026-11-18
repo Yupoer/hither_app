@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a pinned production IPA locally and prepare Release cold-start evidence for review."""
+"""Build a pinned production IPA locally, with optional submission after startup review."""
 
 import argparse
 from contextlib import contextmanager
@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 from uuid import UUID
+import zipfile
 
 sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[1]
@@ -36,6 +37,7 @@ def load_helper(name, filename):
 GATE = load_helper('local_release_launch_gate', 'run-ios-release-launch.py')
 SYMBOLS = load_helper('local_release_symbols', 'retain-ios-debug-symbols.py')
 RELEASE = load_helper('local_release_admission', 'ios_release.py')
+UPLOAD = load_helper('local_release_upload', 'ios-release-upload.py')
 
 
 def run(command, *, cwd=MOBILE, env=None, log=None, timeout=600):
@@ -127,27 +129,25 @@ def validate_metadata(app, config, platform):
     return info
 
 
-def verify_ipa(ipa, archive, output, config):
-    if not archive.is_dir():
+def verify_ipa(ipa, archive, output, source, config):
+    if ipa.is_symlink() or not ipa.is_file():
+        raise ValueError('the local build must produce a regular Hither.ipa')
+    if archive.is_symlink() or not archive.is_dir():
         raise ValueError('matching Hither.xcarchive is required beside the IPA')
-    run([sys.executable, str(REPO / 'scripts/ios-release-upload.py'),
-         '--source-sha', run(['git', 'rev-parse', 'HEAD'], cwd=REPO),
-         '--ipa', str(ipa), '--sha256', digest(ipa), '--release-dir', str(output),
-         '--repo', str(REPO), '--verify-only'], env=local_environment(output),
-        log=output / 'ipa-verification.log')
-    metadata = read_json(output / 'ipa-receipt.json')
-    if metadata['appVersion'] != config['version'] or metadata['runtimeVersion'] != config['runtimeVersion']:
-        raise ValueError('verified IPA does not match the checkout configuration')
-    for binary in metadata['binaries']:
+    try:
+        verification = UPLOAD.verify_ipa(ipa, source, digest(ipa), config,
+                                         temporary_dir=local_environment(output)['TMPDIR'])
+    except (KeyError, TypeError, zipfile.BadZipFile, plistlib.InvalidFileException) as error:
+        raise ValueError('the local build produced an invalid IPA') from error
+    for binary in verification['binaries']:
         executable = binary['executable']
         matches = [candidate for candidate in (archive / 'dSYMs').glob('*.dSYM')
                    if (candidate / 'Contents/Resources/DWARF' / executable).is_file()
                    and SYMBOLS.dwarf_uuids(candidate / 'Contents/Resources/DWARF' / executable) == binary['uuids']]
         if len(matches) != 1:
             raise ValueError(f'archive must contain exactly one matching dSYM for {executable}')
-    return {'appVersion': metadata['appVersion'], 'build': metadata['buildNumber'],
-            'runtimeVersion': metadata['runtimeVersion'], 'channel': metadata['channel'],
-            'binaries': metadata['binaries']}
+    UPLOAD.ensure_artifact_receipt(output / 'ipa-receipt.json', verification)
+    return verification
 
 
 def identity(source, output):
@@ -158,27 +158,6 @@ def identity(source, output):
 def check_identity(receipt, expected):
     if any(receipt.get(key) != value for key, value in expected.items()):
         raise ValueError('existing local build belongs to different source or paths')
-
-
-def bind_local_provenance(receipt, source, output):
-    expected = identity(source, output)
-    check_identity(receipt, expected)
-    intent_path = output / 'local-build-intent.json'
-    admission_path = output / 'ci-admission.json'
-    intent = read_json(intent_path)
-    admission = read_json(admission_path)
-    check_identity(intent, expected)
-    if intent.get('status') != 'unknown':
-        raise ValueError('local build intent has an invalid status')
-    if (admission.get('schemaVersion') != 1 or admission.get('sourceSha') != source
-            or admission.get('workflowPath') != '.github/workflows/ci.yml'
-            or admission.get('status') != 'completed' or admission.get('conclusion') != 'success'):
-        raise ValueError('CI admission does not authorize this local build source')
-    return {**receipt, 'schemaVersion': 2, 'provenance': {
-        'kind': 'guarded-local-build',
-        'buildIntentSha256': digest(intent_path),
-        'ciAdmissionSha256': digest(admission_path),
-    }}
 
 
 def existing_ipa(source, output):
@@ -232,8 +211,10 @@ def prepare_dependencies(source, output, env):
     run(['npm', 'run', 'verify:runtime'], env=env, log=output / 'verify-runtime.log')
 
 
-def build_ipa(source, output, config, env):
+def build_ipa(source, output, config, env, *, fresh=False):
     receipt = existing_ipa(source, output)
+    if fresh and receipt is not None:
+        raise ValueError('submission requires an IPA built in this invocation')
     ipa, archive = output / 'Hither.ipa', output / 'Hither.xcarchive'
     if receipt is None:
         preflight_tools(env)
@@ -255,11 +236,13 @@ def build_ipa(source, output, config, env):
             # The pinned EAS CLI can strip the trailing newline while preparing its archive.
             if original.endswith(b'\n') and expo_plist.read_bytes() == original[:-1]:
                 expo_plist.write_bytes(original)
-    metadata = verify_ipa(ipa, archive, output, config)
+    verification = verify_ipa(ipa, archive, output, source, config)
+    metadata = {name: verification[name] for name in ('appVersion', 'runtimeVersion', 'channel', 'binaries', 'ipaSha256')}
     receipt = {**(receipt or {}), **identity(source, output), **metadata,
-               'ipaSha256': digest(ipa), 'schemaVersion': 2, 'easCliVersion': '21.0.2',
-               'easUpload': 'not_attempted', 'deviceAcceptance': 'not_verified'}
-    return receipt
+               'easUpload': (receipt or {}).get('easUpload', 'not_attempted'),
+               'build': verification['buildNumber'], 'schemaVersion': 1, 'easCliVersion': '21.0.2',
+               'deviceAcceptance': 'not_verified'}
+    return receipt, verification
 
 
 def select_simulator(requested, devices, runtimes):
@@ -389,9 +372,17 @@ def main(argv=None):
     parser.add_argument('--source-sha', required=True)
     parser.add_argument('--release-dir', type=Path, required=True)
     parser.add_argument('--simulator', help='booted iOS UDID; defaults to the only booted iOS device')
-    parser.add_argument('--build-only', action='store_true')
-    parser.add_argument('--_simulator-stage', action='store_true', help=argparse.SUPPRESS)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--build-only', action='store_true')
+    mode.add_argument('--submit', action='store_true', help='submit a fresh build after interactive startup review')
+    mode.add_argument('--_simulator-stage', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--backend-verified', action='store_true')
+    parser.add_argument('--transport', choices=('eas', 'apple'), help='upload transport for --submit (default: eas)')
     args = parser.parse_args(argv)
+    if args.transport and not args.submit:
+        parser.error('--transport requires --submit')
+    if args.submit and (not args.backend_verified or not sys.stdin.isatty()):
+        parser.error('--submit requires --backend-verified and a terminal for startup review')
     require_source(args.source_sha)
     output = prepare_directory(args.release_dir)
     if sys.platform != 'darwin':
@@ -401,12 +392,13 @@ def main(argv=None):
         simulator_stage(args, output)
         return
     with release_lock(output):
+        if args.submit and any(path.name != '.local-release.lock' for path in output.iterdir()):
+            raise ValueError('--submit requires a new empty release directory; inspect retained attempts before retrying')
         write_json(output / 'ci-admission.json', RELEASE.require_master_ci(args.source_sha))
-        config = read_json(MOBILE / 'app.json')['expo']
+        config = UPLOAD.read_source(REPO, args.source_sha)
         env = local_environment(output)
-        receipt = build_ipa(args.source_sha, output, config, env)
+        receipt, verification = build_ipa(args.source_sha, output, config, env, fresh=args.submit)
         require_source(args.source_sha)
-        receipt = bind_local_provenance(receipt, args.source_sha, output)
         write_json(output / 'local-build.json', receipt)
         if not args.build_only:
             command = [sys.executable, str(Path(__file__).resolve()), '--source-sha', args.source_sha,
@@ -418,12 +410,33 @@ def main(argv=None):
             receipt['startupEvidence'] = str(output / 'startup/launch-receipt.json')
             receipt['visualReview'] = 'pending'
             write_json(output / 'local-build.json', receipt)
-        print(f'Local release artifacts: {output / "local-build.json"}; upload not attempted.')
+        print(f'Local release artifacts: {output / "local-build.json"}', flush=True)
+        if not args.submit:
+            return 0
+
+        print(f'Review both cold-start screenshots in {output / "startup"} and check App Store Connect '
+              f'for version {verification["appVersion"]} build {verification["buildNumber"]}.', flush=True)
+        if input('Type submit after completing those checks: ') != 'submit':
+            print('Upload canceled before submission.', file=sys.stderr)
+            return 1
+        require_source(args.source_sha)
+        receipt['visualReview'] = 'confirmed'
+        upload_state = 'appleUpload' if args.transport == 'apple' else 'easUpload'
+        receipt[upload_state] = 'unknown'
+        write_json(output / 'local-build.json', receipt)
+        submit = UPLOAD.submit_direct if args.transport == 'apple' else UPLOAD.submit_ipa
+        submission = submit(REPO, output, verification, config)
+        receipt[upload_state] = submission.get('easStatus', submission.get('status'))
+        write_json(output / 'local-build.json', receipt)
+        return UPLOAD.show_submission(submission)
 
 
 if __name__ == '__main__':
     try:
-        main()
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print('Interrupted. Keep the release directory and inspect its submission evidence.', file=sys.stderr)
+        sys.exit(130)
+    except (OSError, EOFError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f'Local iOS release failed: {error}', file=sys.stderr)
         sys.exit(1)

@@ -108,6 +108,20 @@
       "testNamePattern": "independent app processes|real SQLite|shutdown hangs|actor crash"
     },
     {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "A separately supplied IPA can be verified and its previous submission status can be recovered without triggering a new upload.",
+      "testFile": "scripts/test_ios_release_upload.py",
+      "testNamePattern": "test_existing_ipa_cli_never_submits|test_existing_ipa_cli_recovers_saved_attempt_without_dispatch"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "The Mac submission uses a fresh build from the pinned source, including startup confirmation and the verified IPA digest.",
+      "testFile": "scripts/test_ios_release_local.py",
+      "testNamePattern": "test_submit_requires_a_fresh_build_and_startup_confirmation|test_fresh_build_rejects_a_retained_ipa"
+    },
+    {
       "parent": 298,
       "child": 298,
       "acceptance": "The production Live Activity travel_mode constraint accepts bicycle and existing modes and rejects unsupported values.",

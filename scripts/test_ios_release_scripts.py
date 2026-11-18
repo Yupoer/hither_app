@@ -1,5 +1,7 @@
 """Exercise release route selection and resumable CD dispatch."""
 
+import importlib.util
+import io
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,6 +12,9 @@ import ios_release as release
 
 
 SOURCE = "a" * 40
+SELECTOR_SPEC = importlib.util.spec_from_file_location("release_selector", Path(__file__).with_name("ios-release.py"))
+SELECTOR = importlib.util.module_from_spec(SELECTOR_SPEC)
+SELECTOR_SPEC.loader.exec_module(SELECTOR)
 
 
 class ReleasePlanTests(unittest.TestCase):
@@ -35,6 +40,19 @@ class ReleasePlanTests(unittest.TestCase):
     def test_invalid_source_configuration_does_not_build(self):
         with self.assertRaisesRegex(ValueError, "invalid_app_configuration"):
             self.plan([], eligible=False, reason="invalid_app_configuration")
+
+    def test_selector_forwards_explicit_local_submission(self):
+        arguments = ["--source-sha", SOURCE, "--release-dir", "/unused", "--execute", "--backend-verified"]
+        with patch.object(SELECTOR, "require_pinned_checkout"), \
+                patch.object(SELECTOR, "release_plan", return_value={"route": "local"}), \
+                patch.object(SELECTOR.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, \
+                patch("sys.stdout", new_callable=io.StringIO):
+            self.assertEqual(SELECTOR.main(arguments), 0)
+            self.assertNotIn("--submit", run.call_args.args[0])
+            self.assertEqual(SELECTOR.main([*arguments, "--submit"]), 0)
+            command = run.call_args.args[0]
+            self.assertIn("scripts/ios-release-local.py", command)
+            self.assertEqual(command[-2:], ["--submit", "--backend-verified"])
 
 
 class DispatchTests(unittest.TestCase):
