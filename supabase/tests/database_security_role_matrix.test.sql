@@ -182,16 +182,19 @@ select ok(
   'trigger/maintenance SD function is not anonymously executable'
 );
 select ok(
-  not has_function_privilege('authenticated', 'public.profile_has_lifetime_premium(uuid)', 'EXECUTE'),
-  'authenticated cannot probe another profile lifetime Premium state'
+  not has_function_privilege('anon', 'public.profile_has_lifetime_premium(uuid)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.profile_has_lifetime_premium(uuid)', 'EXECUTE'),
+  'client roles cannot execute the profile Premium helper'
 );
 select ok(
-  not has_function_privilege('authenticated', 'public.group_has_active_premium(uuid)', 'EXECUTE'),
-  'authenticated cannot probe a non-member group Premium state'
+  not has_function_privilege('anon', 'public.group_has_active_premium(uuid)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.group_has_active_premium(uuid)', 'EXECUTE'),
+  'client roles cannot execute the group Premium helper'
 );
 select ok(
-  not has_function_privilege('authenticated', 'public.effective_live_activity_entitlement(uuid,uuid)', 'EXECUTE'),
-  'authenticated cannot probe effective entitlement with arbitrary subjects'
+  not has_function_privilege('anon', 'public.effective_live_activity_entitlement(uuid,uuid)', 'EXECUTE')
+    and not has_function_privilege('authenticated', 'public.effective_live_activity_entitlement(uuid,uuid)', 'EXECUTE'),
+  'client roles cannot execute the effective entitlement helper'
 );
 select ok(
   has_function_privilege('service_role', 'public.profile_has_lifetime_premium(uuid)', 'EXECUTE'),
