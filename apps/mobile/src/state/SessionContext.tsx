@@ -12,7 +12,10 @@ import React, {
 import { AppState, Linking } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { beginAuthCallback, consumeAuthCallback } from '../auth/callbacks';
-import { resumeInstallationCapabilities } from '../api/installationCapabilities';
+import {
+  changeAuthSessionForActor,
+  resumeInstallationCapabilities,
+} from '../api/installationCapabilities';
 import { supabase } from '../api/supabase';
 import {
   updateNickname as updateNicknameApi,
@@ -549,12 +552,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!isPasswordRecovery) {
         throw new AuthFlowError('Password recovery is not active.', 'recovery_not_active');
       }
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw toAuthFlowError(error, 'Password update failed.');
-      setIsPasswordRecovery(false);
-      setPasswordRecoverySuccess(true);
+      if (!user) {
+        throw new AuthFlowError('The active account changed. Please try again.', 'auth_actor_changed');
+      }
+      const actorId = user.id;
+      await changeAuthSessionForActor(actorId, async (lease) => {
+        const { data, error } = await supabase.auth.updateUser({ password });
+        if (error) throw toAuthFlowError(error, 'Password update failed.');
+        if (!data.user || data.user.id !== actorId) {
+          throw new AuthFlowError('The active account changed. Please try again.', 'auth_actor_changed');
+        }
+        await lease.assertCurrent();
+        setIsPasswordRecovery(false);
+        setPasswordRecoverySuccess(true);
+      });
     },
-    [isPasswordRecovery],
+    [isPasswordRecovery, user],
   );
 
   const resendSignupConfirmation = useCallback(async (email: string) => {

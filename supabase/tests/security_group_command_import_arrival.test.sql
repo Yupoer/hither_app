@@ -12,7 +12,7 @@ insert into public.profiles(id,nickname) values
  ('c2222222-2222-4222-8222-222222222222','Follower'),
  ('c3333333-3333-4333-8333-333333333333','Free');
 insert into public.groups(id,name,invite_code,created_by) values
- ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Security','SECURE','c2222222-2222-4222-8222-222222222222'),
+ ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Security','SECUREABCDEFGHJKLMNP','c2222222-2222-4222-8222-222222222222'),
  ('cbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','Free','FREE01','c3333333-3333-4333-8333-333333333333');
 insert into public.memberships(group_id,user_id,role) values
  ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','c1111111-1111-4111-8111-111111111111','leader'),
@@ -87,8 +87,11 @@ begin
  end loop;
  assert not exists(select 1 from public.core_notification_outbox where group_id='caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), 'denied commands entered outbox';
  for t in select unnest(array['need_restroom','need_break','need_help','found_something','request_start','custom']) loop
-   insert into public.commands(group_id,sender_id,type) values
-     ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+   begin
+     insert into public.commands(group_id,sender_id,type) values
+       ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+     raise exception 'follower direct command insert accepted: %',t;
+   exception when insufficient_privilege then null; end;
  end loop;
 end;
 $$;
@@ -97,8 +100,11 @@ do $$
 declare t text; g public.groups;
 begin
  for t in select unnest(array['gather','find_gathering','depart','rest','be_careful','go_left','go_right','stop','hurry_up','custom']) loop
-   insert into public.commands(group_id,sender_id,type) values
-     ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+   begin
+     insert into public.commands(group_id,sender_id,type) values
+       ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+     raise exception 'leader direct command insert accepted: %',t;
+   exception when insufficient_privilege then null; end;
  end loop;
  g := public.create_group('Bootstrap');
  assert exists(select 1 from public.groups where id=g.id), 'atomic creation cannot read group';
@@ -135,7 +141,7 @@ $$;
 reset role;
 delete from public.memberships where group_id='caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and user_id='c2222222-2222-4222-8222-222222222222';
 do $$ begin
- assert (select invite_code<>'SECURE' from public.groups where id='caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), 'leave did not revoke old invite';
+ assert (select invite_code<>'SECUREABCDEFGHJKLMNP' from public.groups where id='caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), 'leave did not revoke old invite';
 end; $$;
 set local role authenticated;
 select set_config('request.jwt.claim.sub','c2222222-2222-4222-8222-222222222222',true);
@@ -143,7 +149,7 @@ do $$
 declare r jsonb;
 begin
  assert not exists(select 1 from public.groups where id='caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), 'former creator still sees invite';
- begin perform public.join_group('SECURE'); raise exception 'revoked invite accepted';
+ begin perform public.join_group('SECUREABCDEFGHJKLMNP'); raise exception 'revoked invite accepted';
  exception when sqlstate 'P0002' then null; end;
  r := public.apply_core_operation_v3('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0302','caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),
    'itinerary','caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',0,'record_arrival',

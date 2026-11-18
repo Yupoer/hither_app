@@ -1,4 +1,11 @@
-jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
+jest.mock('../api/installationCapabilities', () => ({
+  changeAuthSession: (operation: () => Promise<unknown>) => operation(),
+  changeAuthSessionForActor: (
+    actorId: string,
+    operation: (lease: { actorId: string; assertCurrent: () => Promise<void> }) => Promise<unknown>,
+  ) => operation({ actorId, assertCurrent: async () => undefined }),
+  resumeInstallationCapabilities: jest.fn(),
+}));
 jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(), consumeAuthCallback: jest.fn(), cancelAuthCallback: jest.fn() }));
 const mockGetGoogleAuthCredentials = jest.fn();
 const mockSignInWithIdToken = jest.fn();

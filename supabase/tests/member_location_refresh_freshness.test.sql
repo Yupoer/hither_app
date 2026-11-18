@@ -48,12 +48,16 @@ begin
 
   update public.location_refresh_requests set requested_at = now() - interval '61 seconds' where group_id = g;
   update public.location_refresh_pending set requested_at = now() - interval '61 seconds' where group_id = g;
-  update public.member_locations set captured_at = now() where group_id = g and user_id = stale_peer;
-  insert into public.member_locations(group_id, user_id, latitude, longitude, captured_at)
-    values (g, missing_peer, 25, 121, now());
   truncate pg_temp.member_refresh_pushes;
 
   set local role authenticated;
+  perform set_config('request.jwt.claim.sub', stale_peer::text, true);
+  update public.member_locations set captured_at = now() where group_id = g and user_id = stale_peer;
+  perform set_config('request.jwt.claim.sub', missing_peer::text, true);
+  insert into public.member_locations(group_id, user_id, latitude, longitude, captured_at)
+    values (g, missing_peer, 25, 121, now());
+
+  perform set_config('request.jwt.claim.sub', requester::text, true);
   request := public.request_group_location_refresh(g);
   reset role;
 

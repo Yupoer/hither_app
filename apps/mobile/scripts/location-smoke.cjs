@@ -4,30 +4,28 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
-const { fork, execFileSync } = require('node:child_process');
+const { fork } = require('node:child_process');
 const crypto = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { parseEnv, isDeepStrictEqual } = require('node:util');
+const { projectOrigin, loadServiceRoleKey, smokeWorkerEnvironment } = require('./location-smoke-credentials.cjs');
 if (!process.argv.includes('--live') || !process.argv.includes('--admin')) throw new Error('Explicit --live --admin required for scoped setup and complete cleanup');
 const seconds = Number(process.argv.find(x => x.startsWith('--duration='))?.split('=')[1] ?? 300);
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hither-location-smoke-'));
-const env = { ...parseEnv(fs.readFileSync(path.resolve(__dirname, '../.env'), 'utf8')), ...process.env, HITHER_SMOKE_DIR: directory };
-assert.equal(new URL(env.EXPO_PUBLIC_SUPABASE_URL).hostname, 'htqrucnjafhhvxdqslbv.supabase.co', 'Smoke setup must target the configured Hither project');
+const env = { ...parseEnv(fs.readFileSync(path.resolve(__dirname, '../.env'), 'utf8')), ...process.env };
+const supabaseUrl = env.EXPO_PUBLIC_SUPABASE_URL;
+if (!URL.canParse(supabaseUrl) || new URL(supabaseUrl).href !== `${projectOrigin}/`) {
+  throw new Error('Smoke setup must target the configured Hither project');
+}
 const manifest = { directory, startedAt: new Date().toISOString(), actors: [], groups: [], checks: [], cleanup: [] };
 const save = () => fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(manifest, null, 2));
 // --admin is setup/cleanup only. Never pass the service role into a worker.
 let admin;
-if (process.argv.includes('--admin')) {
-  const keys = JSON.parse(execFileSync('cmd.exe', ['/d', '/s', '/c', 'npx.cmd --yes supabase projects api-keys --project-ref htqrucnjafhhvxdqslbv --output json'], { cwd: path.resolve(__dirname, '../../..'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-  const key = keys.find(k => k.name === 'service_role')?.api_key;
-  if (!key) throw new Error('admin setup key unavailable');
-  admin = createClient(env.EXPO_PUBLIC_SUPABASE_URL, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  manifest.setup = 'admin; tested clients use password-authenticated sessions';
-}
+const workerEnv = smokeWorkerEnvironment(env);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let seq = 0;
 function worker(index) {
-  const child = fork(path.join(__dirname, 'location-smoke-worker.cjs'), [], { env: { ...env, HITHER_SMOKE_ACTOR: String(index) }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  const child = fork(path.join(__dirname, 'location-smoke-worker.cjs'), [], { env: { ...workerEnv, HITHER_SMOKE_DIR: directory, HITHER_SMOKE_ACTOR: String(index) }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const pending = new Map();
   child.on('error', error => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(error); } pending.clear(); });
   child.stderr.on('data', data => { if (!String(data).includes('ExperimentalWarning')) fs.appendFileSync(path.join(directory, 'worker-errors.log'), data); });
@@ -49,7 +47,7 @@ function worker(index) {
     });
   } };
 }
-const actors = Array.from({ length: 6 }, (_, i) => worker(i));
+const actors = [];
 const check = (name, details = {}) => { manifest.checks.push({ name, at: new Date().toISOString(), ...details }); save(); console.log(`PASS ${name}`); };
 const view = state => state.members.map(m => ({ id: m.userId, subgroupId: m.subgroupId, coordinates: m.coordinates, received: m.uploadedAt ?? m.lastUpdated, captured: m.capturedAt })).sort((a, b) => a.id.localeCompare(b.id));
 async function converge(team, count) {
@@ -87,16 +85,16 @@ async function waitArrival(observers, destinationId, userId, arrived) {
 (async () => {
   console.log(`Evidence: ${directory}`); save();
   try {
+    const key = await loadServiceRoleKey(env);
+    admin = createClient(projectOrigin, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    for (let i = 0; i < 6; i++) actors.push(worker(i));
+    manifest.setup = 'admin; tested clients use password-authenticated sessions';
     for (const a of actors) {
-      if (admin) {
-        const credentials = { email: `dummy-${crypto.randomUUID()}@hither.invalid`, password: crypto.randomBytes(32).toString('base64url') };
-        const created = await admin.auth.admin.createUser({ ...credentials, email_confirm: true, user_metadata: { test_run: path.basename(directory) } });
-        if (created.error) throw created.error;
-        manifest.actors.push({ index: a.index, userId: created.data.user.id }); save();
-        assert.equal((await a.call('auth', credentials)).userId, created.data.user.id);
-      } else {
-        const identity = await a.call('auth'); manifest.actors.push({ index: a.index, ...identity }); save();
-      }
+      const credentials = { email: `dummy-${crypto.randomUUID()}@hither.invalid`, password: crypto.randomBytes(32).toString('base64url') };
+      const created = await admin.auth.admin.createUser({ ...credentials, email_confirm: true, user_metadata: { test_run: path.basename(directory) } });
+      if (created.error) throw created.error;
+      manifest.actors.push({ index: a.index, userId: created.data.user.id }); save();
+      assert.equal((await a.call('auth', credentials)).userId, created.data.user.id);
     }
     const A = await actors[0].call('create', { name: `Dummy sync A ${path.basename(directory)}` }); manifest.groups.push(A.id); save();
     const B = await actors[4].call('create', { name: `Dummy sync B ${path.basename(directory)}` }); manifest.groups.push(B.id); save();
@@ -286,18 +284,18 @@ async function waitArrival(observers, destinationId, userId, arrived) {
     }
     // Followers first; leaders last. Only identities returned by this run are eligible.
     for (const i of [3, 2, 1, 5, 0, 4]) {
-      if (!manifest.actors.some(a => a.index === i)) { actors[i].child.kill(); continue; }
+      const actor = actors[i];
+      if (!actor) continue;
+      const identity = manifest.actors.find(a => a.index === i);
+      if (!identity) { actor.child.kill(); continue; }
       try {
-        if (admin) {
-          await actors[i].call('cleanup', { managed: true }).catch(() => undefined);
-          const identity = manifest.actors.find(a => a.index === i);
-          const removed = await admin.auth.admin.deleteUser(identity.userId);
-          if (removed.error) throw removed.error;
-          manifest.cleanup.push({ deleted: identity.userId });
-        } else manifest.cleanup.push(await actors[i].call('cleanup'));
+        await actor.call('cleanup', { managed: true }).catch(() => undefined);
+        const removed = await admin.auth.admin.deleteUser(identity.userId);
+        if (removed.error) throw removed.error;
+        manifest.cleanup.push({ deleted: identity.userId });
       }
       catch (e) { manifest.cleanup.push({ index: i, error: e.message }); process.exitCode = 1; }
-      actors[i].child.kill(); save();
+      actor.child.kill(); save();
     }
     console.log(JSON.stringify({ passed: manifest.passed, checks: manifest.checks.length, cleaned: manifest.cleanup.filter(x => x.deleted).length, report: path.join(directory, 'report.json') }));
   }

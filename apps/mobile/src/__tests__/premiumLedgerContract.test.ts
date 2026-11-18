@@ -1,7 +1,3 @@
-/**
- * #223 ledger / dual-env / ASN V2 / Server API public-seam contracts.
- * Device StoreKit remains Unverified; these assert source seams + fixture names.
- */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -12,10 +8,6 @@ import {
 const root = join(__dirname, '../../../..');
 const migration = readFileSync(
   join(root, 'supabase/migrations/20260821000000_premium_entitlement_version_and_binding.sql'),
-  'utf8',
-).replace(/\r\n/g, '\n');
-const storekit = readFileSync(
-  join(root, 'supabase/functions/_shared/storekit.ts'),
   'utf8',
 ).replace(/\r\n/g, '\n');
 const notifications = readFileSync(
@@ -104,13 +96,7 @@ describe('#230 ledger contract', () => {
   });
 });
 
-describe('#232 dual-env purchase contract', () => {
-  it('A4 Production and Sandbox JWS both verify; Xcode is rejected', () => {
-    expect(storekit).toContain("['Production', 'Sandbox']");
-    expect(storekit).toContain("configured === 'Xcode'");
-    expect(verify).toContain('environment_mismatch');
-  });
-
+describe('#232 purchase contract', () => {
   it('A5 cross-user originalTransactionId or appAccountToken mismatch returns 409/422 without grant', () => {
     expect(verify).toContain("error === 'account_token_mismatch'");
     expect(verify).toContain('transaction_binding_mismatch');

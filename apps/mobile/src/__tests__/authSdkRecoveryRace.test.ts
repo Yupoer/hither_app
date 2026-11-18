@@ -9,8 +9,7 @@ function credential(actor: string, refresh: string) {
   return { access_token: token, token_type: 'bearer', refresh_token: refresh, expires_in: 3600,
     user: { id: actor, aud: 'authenticated', email: `${actor}@example.test`, app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() } };
 }
-function harness() {
-  const disk = new Map<string, string>();
+function harness(disk = new Map<string, string>()) {
   const secure = { getItemAsync: async (key: string) => disk.get(key) ?? null,
     setItemAsync: jest.fn(async (key: string, value: string) => { disk.set(key, value); }),
     deleteItemAsync: jest.fn(async (key: string) => { disk.delete(key); }) };
@@ -36,9 +35,9 @@ function harness() {
     global: { fetch: withRetryableAuthRefresh(fetcher) },
   });
   const recovery = createAuthRecovery(createSupabaseAuthRecoveryAdapter(client.auth, storage, 'auth'));
-  return { client, storage, secure, recovery, rotating: () => pending, rotations: () => rotationCount,
+  return { client, storage, secure, recovery, disk, rotating: () => pending, rotations: () => rotationCount,
     finish: (actor = 'actor-a') => release(new Response(JSON.stringify(credential(actor, 'rotated-refresh')), { status: 200 })),
-    fail: () => release(new Response(JSON.stringify({ code: 'refresh_token_not_found', error_code: 'refresh_token_not_found', msg: 'Invalid refresh token' }), { status: 400 })),
+    fail: (code = 'refresh_token_not_found') => release(new Response(JSON.stringify({ code, error_code: code, msg: 'Invalid refresh token' }), { status: 400 })),
   };
 }
 async function waitUntil(predicate: () => boolean) {
@@ -87,6 +86,37 @@ describe('actual Supabase SDK refresh concurrency', () => {
     expect(await h.storage.getItem('auth')).toBeNull();
     expect(events.slice(events.indexOf('SIGNED_OUT') + 1)).not.toContain('TOKEN_REFRESHED');
     data.subscription.unsubscribe();
+  });
+  it('rejects logout before SIGNED_OUT when durable session deletion fails', async () => {
+    const h = harness(); await h.client.auth.signInWithPassword({ email: 'a@example.test', password: 'local-fixture' });
+    const events: string[] = [];
+    const { data } = h.client.auth.onAuthStateChange(event => { events.push(event); });
+    const failure = new Error('session deletion failed');
+    h.secure.deleteItemAsync.mockRejectedValueOnce(failure);
+    await expect(h.client.auth.signOut({ scope: 'local' })).rejects.toBe(failure);
+    expect(events).not.toContain('SIGNED_OUT');
+    await expect(h.storage.getLocalItem!('auth')).resolves.toBeNull();
+    const cold = await createSupabaseAuthStorage(h.secure).storage.getItem('auth');
+    expect(JSON.parse(cold ?? 'null').user.id).toBe('actor-a');
+    data.subscription.unsubscribe();
+  });
+  it('clears a stale credential on cold recovery when the server confirms the account is gone', async () => {
+    const warm = harness();
+    await warm.client.auth.signInWithPassword({ email: 'a@example.test', password: 'local-fixture' });
+    warm.secure.deleteItemAsync.mockRejectedValueOnce(new Error('session deletion failed'));
+    await expect(warm.client.auth.signOut({ scope: 'local' })).rejects.toThrow('session deletion failed');
+
+    const cold = harness(warm.disk);
+    const terminal = jest.fn();
+    const unsubscribe = cold.recovery.subscribeTerminal(terminal);
+    const recovered = cold.recovery.getSession({ forceRefresh: true });
+    const reported = expect(recovered).rejects.toMatchObject({ code: 'user_not_found' });
+    await waitUntil(cold.rotating);
+    cold.fail('user_not_found');
+    await reported;
+    expect(terminal).toHaveBeenCalledTimes(1);
+    await expect(cold.secure.getItemAsync('auth')).resolves.toBeNull();
+    unsubscribe();
   });
   it('a stale terminal refresh failure cannot erase a newer account', async () => {
     const h = harness(); await h.client.auth.signInWithPassword({ email: 'a@example.test', password: 'local-fixture' });

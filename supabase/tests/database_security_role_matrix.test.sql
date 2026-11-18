@@ -34,19 +34,19 @@ insert into public.groups (id, name, invite_code, created_by) values
   (
     'b1aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'Security group',
-    'SEC001',
+    'SEC2AABCDEFGHJKLMNPQ',
     'b1111111-1111-4111-8111-111111111111'
   ),
   (
     'b1bbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     'Other group',
-    'SEC002',
+    'SEC2BABCDEFGHJKLMNPQ',
     'b3333333-3333-4333-8333-333333333333'
   ),
   (
     'b6aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'Expired group',
-    'SEC006',
+    'SEC2CABCDEFGHJKLMNPQ',
     'b6666666-6666-4666-8666-666666666666'
   );
 
@@ -339,7 +339,7 @@ select set_config(
   true
 );
 select lives_ok(
-  $$select public.join_group('SEC001')$$,
+  $$select public.join_group('SEC2AABCDEFGHJKLMNPQ')$$,
   'authorized join_group RPC can insert a membership'
 );
 select is(

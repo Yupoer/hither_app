@@ -68,6 +68,7 @@ for (const [name, ids, symbol, id, kind] of [
 const entry = 'src/screens/entry/EntryCodeInput.tsx';
 const teams = 'src/screens/MyTeamsScreen.tsx';
 control('team.code', 'G02,T02,T12', entry, 'updateCode', 'auth-code', 'changeText');
+control('team.code.submit', 'G02', entry, 'submitCode', 'auth-code', 'submit');
 control('home.create', 'T01,T11', entry, 'EntryCodeInput', 'role-create');
 control('home.login', 'A12', teams, 'TeamEntryScreen', 'entry-login');
 control('home.signout', 'A22', teams, 'startSignOut', 'role-signout');
@@ -202,7 +203,7 @@ exports.scenarios = [
   scenario('G11,G12', 'enqueues trip and solo changes', 'Trip and solo actions update actual durable SQLite projections while offline and replay into the external backend after reconnection.'),
   scenario('V01,V02,V03,V04,V05,V06,V07,V08,V09,V10,V11,V12,V13,V14,V15,V17', 'persists every preference', 'Actual provider setters apply normalization, preserve day colors and rehydrate persisted values after device restart.'),
   scenario('V06,V17', 'ignores malformed persisted preferences', 'Malformed enums and JSON retain defaults; legacy sharing migrates only when the current key is absent.'),
-  scenario('V16,D03,D04,D05,D06', 'writes sanitized diagnostics', 'Consent gates real SQLite records; exports omit sensitive fields; upload acknowledges owned records; revocation purges pending records; metric batches stop at invalid or stale inputs.'),
+  scenario('V16,D03,D04,D05,D06', 'writes sanitized diagnostics', 'Consent gates SQLite records and revocation purges pending records. Exports omit sensitive fields. Metric batches distinguish expired records from accepted records, continue to fresh uploads, and stop at invalid inputs.'),
   scenario('X02,X03', 'shares one OTA apply flight', 'Concurrent manual applies share check/fetch/reload; failures stay failures; each changed update notice is consumed once; foreground bootstrap unsubscribes.'),
   scenario('X01,X02', 'checks OTA when settings opens', 'Visible settings checks the external update SDK and the actual support button performs check/fetch/reload in order.'),
   scenario('V02,V03,V04,V16,V18,V19', 'navigates real settings children', 'Actual child controls persist language/theme/text size and diagnostics; child close returns to root; reopening resets the page; reset routes to its caller boundary.'),

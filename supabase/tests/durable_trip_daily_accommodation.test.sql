@@ -9,7 +9,7 @@ insert into auth.users(id, email, is_anonymous) values
  ('b2222222-2222-4222-8222-222222222222', 'durable-trip-member@example.test', false),
  ('b3333333-3333-4333-8333-333333333333', 'durable-trip-newcomer@example.test', false);
 insert into public.groups(id, name, invite_code, created_by) values
- ('beeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'Durable trip', 'DURSTAY1', 'b1111111-1111-4111-8111-111111111111');
+ ('beeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'Durable trip', 'DURSTAY2ABCDEFGHJKLM', 'b1111111-1111-4111-8111-111111111111');
 insert into public.memberships(group_id, user_id, role) values
  ('beeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'b1111111-1111-4111-8111-111111111111', 'leader'),
  ('beeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'b2222222-2222-4222-8222-222222222222', 'follower');
@@ -91,7 +91,7 @@ begin
 
   nav := public.start_navigation_session(g, point, session_id);
   perform set_config('request.jwt.claim.sub', 'b3333333-3333-4333-8333-333333333333', true);
-  perform public.join_group('DURSTAY1');
+  perform public.join_group('DURSTAY2ABCDEFGHJKLM');
   assert not exists (select 1 from public.navigation_member_states where navigation_session_id = session_id
     and user_id = 'b3333333-3333-4333-8333-333333333333'), 'mid-session newcomer unexpectedly in original roster';
   result := public.apply_core_operation_v3(gen_random_uuid(), g, 'b3333333-3333-4333-8333-333333333333',

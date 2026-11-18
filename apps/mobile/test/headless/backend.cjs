@@ -19,7 +19,7 @@ class Backend {
     this.sessions = new Map();
     this.versions = new Map();
     this.groups = new Map([[GROUP_ID, {
-      id: GROUP_ID, name: 'Headless team', invite_code: 'TEST42', created_by: LEADER,
+      id: GROUP_ID, name: 'Headless team', invite_code: 'TEST42ABCDEFGHJKLMNP', created_by: LEADER,
       created_at: new Date(EPOCH).toISOString(), journey_status: 'paused', active_destination_id: null,
       trip_days: 1, departure_date: '2026-10-22',
     }]]);

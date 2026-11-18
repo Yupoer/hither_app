@@ -121,11 +121,14 @@ describe('rotating credentials and logout persistence races', () => {
     await expect(storage.getItem('auth')).resolves.toBeNull();
     expect(secure.setItemAsync).toHaveBeenCalledTimes(1);
   });
-  it('keeps a logout tombstone through deletion failure and permits a subsequent fresh sign-in', async () => {
+  it('rejects logout deletion failure while retaining a tombstone for retry', async () => {
     const secure = adapter(); secure.disk.set('auth', 'old');
-    secure.deleteItemAsync.mockRejectedValueOnce(new Error('device locked'));
+    const failure = new Error('device locked');
+    secure.deleteItemAsync.mockRejectedValueOnce(failure);
     const { storage } = createSupabaseAuthStorage(secure);
-    await storage.removeItem('auth');
+    await expect(storage.removeItem('auth')).rejects.toBe(failure);
+    await expect(storage.getLocalItem!('auth')).resolves.toBeNull();
+    await expect(createSupabaseAuthStorage(secure).storage.getItem('auth')).resolves.toBe('old');
     await expect(storage.getItem('auth')).resolves.toBeNull();
     expect(secure.disk.has('auth')).toBe(false);
     await storage.setItem('auth', 'next-user');

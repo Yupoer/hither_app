@@ -437,12 +437,14 @@ describe('GroupService mutations and demo branches', () => {
     stop();
   });
 
-  it('kicks members only through the atomic RPC and validates its returned code', async () => {
+  it('kicks members only through the atomic RPC and accepts current and legacy response codes', async () => {
     mockIsDemoGroup.mockReturnValue(true);
     await expect(kickGroupMember('demo', 'u-2')).rejects.toThrow('kick_not_supported_in_demo');
     mockIsDemoGroup.mockReturnValue(false);
-    mockedSupabase.rpc.mockResolvedValueOnce({ data: 'ABC123', error: null });
-    await expect(kickGroupMember('g-1', 'u-2')).resolves.toBe('ABC123');
+    mockedSupabase.rpc.mockResolvedValueOnce({ data: 'TEST42ABCDEFGHJKLMNP', error: null });
+    await expect(kickGroupMember('g-1', 'u-2')).resolves.toBe('TEST42ABCDEFGHJKLMNP');
+    mockedSupabase.rpc.mockResolvedValueOnce({ data: 'OLD123', error: null });
+    await expect(kickGroupMember('g-1', 'u-2')).resolves.toBe('OLD123');
     mockedSupabase.rpc.mockResolvedValueOnce({ data: 'bad', error: null });
     await expect(kickGroupMember('g-1', 'u-2')).rejects.toThrow('kick_group_member_invalid_code');
   });

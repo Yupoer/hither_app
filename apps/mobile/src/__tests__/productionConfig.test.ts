@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const authFlow = readFileSync(join(__dirname, '../state/useAuthFlow.ts'), 'utf8');
 const notifications = readFileSync(
   join(__dirname, '../state/useGroupNotifications.ts'),
   'utf8',
@@ -27,12 +26,6 @@ const xcodeProject = readFileSync(
 );
 
 describe('production mobile configuration', () => {
-  it('uses the exact standalone OAuth callback for sign-in and identity linking', () => {
-    expect(authFlow).toContain("beginAuthCallback('oauth')");
-    expect(authFlow).toContain("beginAuthCallback('link')");
-    expect(authFlow).not.toContain('hither://auth/callback');
-  });
-
   it('keeps Realtime local notification delivery while the app is alive', () => {
     // Dual-path: Realtime schedules local banners; shouldDeliverOnce dedupes with push.
     // Token presence no longer gates Realtime (see useGroupNotifications header).

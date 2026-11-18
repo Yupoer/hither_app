@@ -6,9 +6,16 @@ const mockGet = jest.fn(); const mockRefresh = jest.fn(); const mockLocal = jest
 const mockProfile = jest.fn(); const mockStop = jest.fn(); const mockClearActivities = jest.fn();
 const mockPremiumProjection = jest.fn(); const mockTripEntitlement = jest.fn();
 const mockPurge = jest.fn(); const mockListeners = new Set<(event: string, session: unknown) => void>();
+const mockUpdateUser = jest.fn();
+const mockAssertCurrentActor = jest.fn(async () => undefined);
+const mockChangeAuthSessionForActor = jest.fn((
+  actorId: string,
+  operation: (lease: { actorId: string; assertCurrent: () => Promise<void> }) => Promise<unknown>,
+) => operation({ actorId, assertCurrent: mockAssertCurrentActor }));
 let mockAppListener: (state: string) => void;
 const mockAuth = {
   getSession: mockGet, refreshSession: mockRefresh, startAutoRefresh: jest.fn(), stopAutoRefresh: jest.fn(),
+  updateUser: (...args: unknown[]) => mockUpdateUser(...args),
   onAuthStateChange: (listener: (event: string, session: unknown) => void) => {
     mockListeners.add(listener); return { data: { subscription: { unsubscribe: () => { mockListeners.delete(listener); } } } };
   },
@@ -20,7 +27,10 @@ jest.mock('expo-web-browser', () => ({ maybeCompleteAuthSession: jest.fn() }));
 jest.mock('../api/supabase', () => ({ supabase: { auth: mockAuth,
   from: () => ({ select: () => ({ eq: () => ({ maybeSingle: () => mockProfile() }) }), upsert: async () => ({ error: null }) }) } }));
 jest.mock('../api/client', () => ({ updateNickname: jest.fn(), updateProfile: jest.fn(), getTripEntitlement: (...args: unknown[]) => mockTripEntitlement(...args), getPremiumProjection: (...args: unknown[]) => mockPremiumProjection(...args), restoreEntitlements: jest.fn() }));
-jest.mock('../api/installationCapabilities', () => ({ resumeInstallationCapabilities: jest.fn() }));
+jest.mock('../api/installationCapabilities', () => ({
+  changeAuthSessionForActor: mockChangeAuthSessionForActor,
+  resumeInstallationCapabilities: jest.fn(),
+}));
 jest.mock('../state/useAuthFlow', () => ({ useAuthFlow: () => ({
   captureProfileRead: () => (_previous: unknown, incoming: unknown) => incoming,
 }) }));
@@ -60,6 +70,7 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     mockStop.mockResolvedValue(undefined); mockClearActivities.mockResolvedValue(undefined); mockPurge.mockResolvedValue(undefined);
     mockTripEntitlement.mockResolvedValue(null);
     mockPremiumProjection.mockResolvedValue({ personalPremiumActive: false, teamPremiumActive: false });
+    mockUpdateUser.mockResolvedValue({ data: { user: { id: 'account-a' } }, error: null });
     mockLocal.mockResolvedValue({ data: { session: stored }, error: null });
     mockGet.mockImplementation(() => mockLocal());
     mockRefresh.mockResolvedValue({ data: { session: { ...stored, access_token: 'fresh' } }, error: null });
@@ -134,6 +145,25 @@ describe('SessionProvider restoration and expiry navigation state', () => {
     expect(readSnapshot().isPasswordRecovery).toBe(false); expect(readSnapshot().passwordRecoverySuccess).toBe(false);
     expect(mockStop).toHaveBeenCalledTimes(1); expect(mockClearActivities).toHaveBeenCalledWith({ localOnly: true });
     expect(mockPurge).toHaveBeenCalledTimes(1);
+  });
+  it('binds password recovery to the callback actor before publishing success', async () => {
+    await mount();
+    await act(async () => { emit('PASSWORD_RECOVERY', stored); jest.runOnlyPendingTimers(); await drain(); });
+    await act(async () => { await readSnapshot().completePasswordRecovery('Changed123!'); });
+    expect(mockChangeAuthSessionForActor).toHaveBeenCalledWith('account-a', expect.any(Function));
+    expect(mockUpdateUser).toHaveBeenCalledWith({ password: 'Changed123!' });
+    expect(readSnapshot().isPasswordRecovery).toBe(false);
+    expect(readSnapshot().passwordRecoverySuccess).toBe(true);
+  });
+  it('rejects password recovery when updateUser returns a different actor', async () => {
+    mockUpdateUser.mockResolvedValueOnce({ data: { user: { id: 'account-b' } }, error: null });
+    await mount();
+    await act(async () => { emit('PASSWORD_RECOVERY', stored); jest.runOnlyPendingTimers(); await drain(); });
+    await expect(readSnapshot().completePasswordRecovery('Changed123!')).rejects.toMatchObject({
+      code: 'auth_actor_changed',
+    });
+    expect(readSnapshot().isPasswordRecovery).toBe(true);
+    expect(readSnapshot().passwordRecoverySuccess).toBe(false);
   });
   it('preserves same-actor membership and premium through a temporary profile failure', async () => {
     mockProfile.mockResolvedValue({ data: null, error: { status: 503 } });

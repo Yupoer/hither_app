@@ -3,6 +3,20 @@
   "description": "L1 meta gate: each child acceptance maps to a real test. FULL_IMPLEMENT must append entries for the parent being delivered. Empty entries is valid only when META_PARENT=pure-chore (PR body: <!-- hither-test-meta parent: pure-chore -->). Required parent ids fail L1 if zero matching entries.",
   "entries": [
     {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "Live smoke uses a fixed Supabase Management API for service-role lookup, rejects unavailable keys, and keeps admin settings out of workers.",
+      "testFile": "apps/mobile/scripts/location-smoke-credentials.test.cjs",
+      "testNamePattern": "requests the legacy service role|rejects nullable, masked|filters worker environment"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "Legal deployment requires a reviewed Wrangler version and tree digest without resolving a mutable package under deployment credentials.",
+      "testFile": "legalSiteContract.test.ts",
+      "testNamePattern": "keeps production credentials away from mutable command resolution"
+    },
+    {
       "parent": 346,
       "child": 346,
       "acceptance": "SDK 57 rollback directives from check or fetch reload the app through the existing automatic and manual OTA lifecycle.",
@@ -106,6 +120,20 @@
       "acceptance": "The harness isolates actor storage, executes genuine SQL rollback, and reaps owned crashed or hung processes with failure receipts.",
       "testFile": "headlessHarnessContract.test.ts",
       "testNamePattern": "independent app processes|real SQLite|shutdown hangs|actor crash"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "A separately supplied IPA can be verified and its previous submission status can be recovered without triggering a new upload.",
+      "testFile": "scripts/test_ios_release_upload.py",
+      "testNamePattern": "test_existing_ipa_cli_never_submits|test_existing_ipa_cli_recovers_saved_attempt_without_dispatch"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "The Mac submission uses a fresh build from the pinned source, including startup confirmation and the verified IPA digest.",
+      "testFile": "scripts/test_ios_release_local.py",
+      "testNamePattern": "test_submit_requires_a_fresh_build_and_startup_confirmation|test_fresh_build_rejects_a_retained_ipa"
     },
     {
       "parent": 298,
@@ -229,9 +257,37 @@
     {
       "parent": 285,
       "child": 285,
+      "acceptance": "Hosted Google link callbacks exchange once for the initiating actor and reject queued account changes and unbound stored links before SDK exchange.",
+      "testFile": "authCallbackSecurity.test.ts",
+      "testNamePattern": "exchanges a link for the initiating actor|rejects a link after a queued actor switch|rejects an unbound stored link"
+    },
+    {
+      "parent": 285,
+      "child": 285,
+      "acceptance": "Android Linking preserves a replacement account when a hosted Google link callback belongs to a prior actor.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "keeps the replacement account when Android delivers an earlier Google link"
+    },
+    {
+      "parent": 285,
+      "child": 285,
       "acceptance": "Logout drains and revokes installation capabilities before losing authentication and fences late account writes.",
       "testFile": "installationCapabilities.test.ts",
       "testNamePattern": "drains an in-flight registration|reports revocation failure|rejects an old account registration"
+    },
+    {
+      "parent": 285,
+      "child": 285,
+      "acceptance": "Queued sensitive auth operations reach the SDK only while the initiating account is active.",
+      "testFile": "installationCapabilities.test.ts",
+      "testNamePattern": "checks an actor lease when queued work reaches its sensitive operation"
+    },
+    {
+      "parent": 285,
+      "child": 285,
+      "acceptance": "Google and Apple links update the initiating account and reject a different linked or refreshed account.",
+      "testFile": "deleteAccountFlow.test.ts",
+      "testNamePattern": "result for an account other than the initiator|rejects a link when the refreshed session|links Google/Apple and applies profile updaters"
     },
     {
       "parent": 285,
@@ -255,6 +311,20 @@
       "testNamePattern": "unauthorized|already_used|101|follower"
     },
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Durable commands limit payload bytes, delivery quota, and recipient fan-out while preserving valid follower requests.",
+      "testFile": "supabase/tests/command_push_bounds.test.sql",
+      "testNamePattern": "eleventh command|daily sender budget|cannot expand beyond four recipients|targeted follower request remains available"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Malformed command receipts reserve operation identity, store compact oversized payload fingerprints, and limit new rejected rows without charging replays.",
+      "testFile": "supabase/tests/command_push_bounds.test.sql",
+      "testNamePattern": "retains a compact validation receipt|reserves its operation ID|full rejection budget stops fresh malformed receipts|replays and rejection quota exhaustion add no durable work"
+    },
+    {
       "parent": 285,
       "child": 285,
       "acceptance": "StoreKit authentic fixtures pass while cryptographically valid wrong-purpose certificate chains are rejected before privileged reads.",
@@ -271,9 +341,9 @@
     {
       "parent": 285,
       "child": 285,
-      "acceptance": "KMZ rejects excessive directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
+      "acceptance": "KMZ rejects excessive or ambiguous directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
       "testFile": "kmlLoad.test.ts",
-      "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|parses KML inside KMZ"
+      "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|rejects a later EOCD signature|parses KML inside KMZ"
     },
     {
       "parent": 282,
@@ -666,6 +736,27 @@
       "acceptance": "A7 zh/en catalogs include the new account.delete* keys with identical key sets.",
       "testFile": "accountDeletionContract.test.ts",
       "testNamePattern": "adds matching zh/en account.delete catalog keys"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "After remote account deletion, a failed local sign-out stays explicit and is retryable without repeating deletion or affecting a replacement account.",
+      "testFile": "deleteAccountFlow.test.ts",
+      "testNamePattern": "retries only local cleanup|rejects a local deletion retry|keeps local identity when durable logout rejects"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "Successful logout waits for durable session removal, and cold recovery clears a stale credential when the account no longer exists.",
+      "testFile": "authSdkRecoveryRace.test.ts",
+      "testNamePattern": "rejects logout before SIGNED_OUT|clears a stale credential on cold recovery"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "AccountSheet keeps the identity and shows failure when durable cleanup fails, then completes exactly once after a local retry.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "retries AccountSheet cleanup after remote deletion without another delete"
     },
     {
       "parent": 199,
@@ -1615,9 +1706,9 @@
     {
       "parent": 223,
       "child": 232,
-      "acceptance": "A4 Production and Sandbox JWS both verify; Xcode is rejected",
-      "testFile": "premiumLedgerContract.test.ts",
-      "testNamePattern": "A4 Production and Sandbox JWS both verify"
+      "acceptance": "A4 A StoreKit deployment accepts subscriptions and trip passes in its configured environment and rejects other environments",
+      "testFile": "supabase/functions/_shared/storekit_test.ts",
+      "testNamePattern": "StoreKit validates subscriptions and trip passes only in the configured environment"
     },
     {
       "parent": 223,
@@ -2621,6 +2712,20 @@
       "testNamePattern": "fences a shared upload completion|rejects a different fix"
     },
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Legacy navigation acknowledgments require an active, unexpired session, existing roster membership and current scope, and valid arrivals retain their durable effect.",
+      "testFile": "supabase/tests/navigation_ack_scope_authorization.test.sql",
+      "testNamePattern": "a legitimate active arrival keeps its durable arrival effect|rejected terminal expiry and scope paths add no arrival effects"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Terminal cleanup preserves roster identity and historical arrivals while a scoped leader can still mark an absent member missed.",
+      "testFile": "supabase/tests/navigation_ack_scope_authorization.test.sql",
+      "testNamePattern": "terminal cleanup cannot change roster identity|terminal cleanup marks only the scoped member without an arrival as missed"
+    },
+    {
       "parent": 318,
       "child": 318,
       "acceptance": "A held refresh upload from the original account cannot complete for a replacement account, and the accepted event retains its original actor.",
@@ -2661,6 +2766,27 @@
       "acceptance": "All four notification name paths preserve labels and public lookup failures retain fallback names without querying private profiles.",
       "testFile": "headlessPublicProfileNotifications.test.ts",
       "testNamePattern": "uses only public nicknames|keeps notification fallbacks"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Queued Live Activity starts and updates reach only users with current group access.",
+      "testFile": "supabase/functions/send-push/liveActivityMembership_test.ts",
+      "testNamePattern": "Live Activity start and update reach only currently eligible members"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The backend-only push eligibility query excludes departed and expired anonymous users while retaining registered and unexpired group members.",
+      "testFile": "supabase/tests/current_push_member_ids.test.sql",
+      "testNamePattern": "only the backend service role|batch eligibility keeps registered and unexpired members"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Token reads wait for current recipient eligibility while independent session reads remain concurrent. An eligibility lookup error stops delivery.",
+      "testFile": "sendPushReadBatches.test.ts",
+      "testNamePattern": "starts alert-token and live-session reads together|recipient membership check fails"
     },
     {
       "parent": 270,
@@ -2717,6 +2843,27 @@
       "acceptance": "Legacy recovery retains authenticated access and the complete public recovery envelope while excluding private profile fields.",
       "testFile": "supabase/tests/public_profiles.test.sql",
       "testNamePattern": "legacy recovery remains callable only|legacy recovery preserves the public snapshot envelope"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The database issues and rotates strong group invites, limits effective grants and keeps group settings under leader RLS.",
+      "testFile": "supabase/tests/group_invite_capability_hardening.test.sql",
+      "testNamePattern": "membership deletion rotates to a strong capability|authenticated group updates are limited|policy still fences follower writes"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Leader-authorized navigation completion and cancellation still clear the active group journey.",
+      "testFile": "supabase/tests/team_navigation_sessions.test.sql",
+      "testNamePattern": "(completing|cancelling) navigation clears the active group journey"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The forward-compatible app submits an existing six-character invite explicitly without treating the first six characters of a longer invite as a complete code.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "submits a six-character invite only after keyboard confirmation during rollout"
     },
     {
       "parent": 316,
@@ -2941,6 +3088,27 @@
       "acceptance": "Self departure removes the member from the leader roster and delivers one member-left participation notification under the current master contract.",
       "testFile": "headlessNotificationJourneyScenario.test.ts",
       "testNamePattern": "leaving the group updates"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Turning off location sharing purges precise locations and blocks direct client writes and peer reads; turning sharing on again restores owner writes and peer visibility.",
+      "testFile": "supabase/tests/member_location_sync.mjs",
+      "testNamePattern": "disabling sharing deletes retained locations|direct peer reads hide disabled members|re-enabled owners can update and share locations"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Manual refresh only wakes eligible peers until those peers publish their own fresh fixes.",
+      "testFile": "supabase/tests/member_location_refresh_freshness.test.sql",
+      "testNamePattern": "manual refresh only wakes eligible peers without a fresh fix"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Clearing the caller's memberships removes their locations and preserves the other member's location and team.",
+      "testFile": "supabase/tests/team_cleanup.test.sql",
+      "testNamePattern": "authenticated clear-all preserves other users and occupied groups"
     },
     {
       "parent": 366,
@@ -3326,6 +3494,41 @@
       "acceptance": "Journey ready and empty actions apply their requested press shadows and release springs, preserve reduced-motion feedback, reject dragged releases, and retain disabled and navigation-hold behavior.",
       "testFile": "journeyButtonFeedback.test.ts",
       "testNamePattern": "press shadow and release spring|cancels a dragged press|shadow feedback with reduced motion|keeps unavailable actions disabled|keeps the navigation hold"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "The candidate acceptance-map check uses the same dispatched parent issue as the published draft PR, after credential-isolated generation.",
+      "testFile": "scripts/test_claude_fix_security.py",
+      "testNamePattern": "check_candidate_parent"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Expired MetricKit records leave the local queue, fresh records upload, and uncertain submissions are retained",
+      "testFile": "diagnosticSubmissionConsent.test.ts",
+      "testNamePattern": "discards expired MetricKit records and continues uploading fresh records|retains a MetricKit record without a definitive acknowledgement"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Revoking diagnostic consent aborts the active MetricKit request and stops the drained batch",
+      "testFile": "diagnosticSubmissionConsent.test.ts",
+      "testNamePattern": "stops the drained batch after revocation"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Expired MetricKit records consume no storage or quota. Duplicate submissions by the same owner consume quota once",
+      "testFile": "supabase/tests/telemetry_limits.test.sql",
+      "testNamePattern": "expired metric payload is never stored|expired metric payload consumes no retained quota|duplicate metric payload does not consume quota twice"
+    },
+    {
+      "parent": 417,
+      "child": 417,
+      "acceptance": "Only approved ingestion RPCs can write telemetry and retained storage is bounded",
+      "testFile": "supabase/tests/telemetry_limits.test.sql",
+      "testNamePattern": "authenticated cannot insert|quota failures create no metric rows|retention removes expired raw telemetry rows"
     }
   ]
 }

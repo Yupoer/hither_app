@@ -9,7 +9,7 @@ jest.mock('../api/supabase', () => ({ supabase: {
   auth: { getSession: async () => ({ data: { session: mockActor ? { user: { id: mockActor } } : null }, error: null }), signOut: (...args: unknown[]) => mockSignOut(...args) },
   rpc: (...args: unknown[]) => mockRpc(...args),
 } }));
-import { changeAuthSession, revokeInstallationCapabilities, resumeInstallationCapabilities, writeInstallationCapability } from '../api/installationCapabilities';
+import { changeAuthSession, changeAuthSessionForActor, revokeInstallationCapabilities, resumeInstallationCapabilities, writeInstallationCapability } from '../api/installationCapabilities';
 import { getSharedLiveActivityTokenGate } from '../utils/liveActivityTokenGate';
 
 describe('installation capability lifecycle', () => {
@@ -59,6 +59,25 @@ describe('installation capability lifecycle', () => {
     finish(); await first;
     expect((await second).error.message).toBe('bad password');
     expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+  it('checks an actor lease when queued work reaches its sensitive operation', async () => {
+    let finish!: () => void;
+    const first = changeAuthSession(async () => new Promise<void>(resolve => { finish = resolve; }), false);
+    const sensitiveOperation = jest.fn(async () => 'linked');
+    const guarded = changeAuthSessionForActor('account-a', sensitiveOperation);
+    while (!finish) await Promise.resolve();
+    mockActor = 'account-b';
+    finish();
+    await first;
+    await expect(guarded).rejects.toMatchObject({ code: 'auth_actor_changed' });
+    expect(sensitiveOperation).not.toHaveBeenCalled();
+
+    mockActor = 'account-a';
+    await expect(changeAuthSessionForActor('account-a', async (lease) => {
+      await lease.assertCurrent();
+      return sensitiveOperation();
+    })).resolves.toBe('linked');
+    expect(sensitiveOperation).toHaveBeenCalledTimes(1);
   });
   it('keeps logout failures retryable and reports failed sign-in cleanup explicitly', async () => {
     await expect(changeAuthSession(async () => { throw new Error('delete RPC failed'); }, true, false)).rejects.toThrow('delete RPC failed');
