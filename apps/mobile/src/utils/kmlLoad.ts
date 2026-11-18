@@ -119,8 +119,9 @@ function checkKmzDirectory(buffer: ArrayBuffer, maxBytes: number): void {
   let end = buffer.byteLength - 22;
   const first = Math.max(0, end - 65535);
   for (; end >= first; end -= 1) {
-    if (view.getUint32(end, true) === 0x06054b50 &&
-        end + 22 + view.getUint16(end + 20, true) === buffer.byteLength) break;
+    if (view.getUint32(end, true) !== 0x06054b50) continue;
+    if (end + 22 + view.getUint16(end + 20, true) !== buffer.byteLength) return bad();
+    break;
   }
   if (end < first) return bad();
   const count = view.getUint16(end + 10, true);

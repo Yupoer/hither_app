@@ -271,9 +271,9 @@
     {
       "parent": 285,
       "child": 285,
-      "acceptance": "KMZ rejects excessive directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
+      "acceptance": "KMZ rejects excessive or ambiguous directories, declared sizes, compression ratios and actual streamed expansion while accepting valid archives.",
       "testFile": "kmlLoad.test.ts",
-      "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|parses KML inside KMZ"
+      "testNamePattern": "rejects KMZ declared expanded bytes|rejects KMZ entry tables and compression ratios|hard-aborts KMZ streamed expansion|rejects a lying entry count|rejects a later EOCD signature|parses KML inside KMZ"
     },
     {
       "parent": 282,

@@ -151,6 +151,22 @@ describe('loadKmlKmzFromAsset', () => {
     expect(loadZip).not.toHaveBeenCalled();
   });
 
+  it('rejects a later EOCD signature before JSZip can reinterpret the directory', async () => {
+    const original = await kmz(GOOD_KML);
+    const trailing = new Uint8Array(23);
+    trailing.set([0x50, 0x4b, 0x05, 0x06]);
+    const bytes = new Uint8Array(original.byteLength + trailing.byteLength);
+    bytes.set(new Uint8Array(original));
+    bytes.set(trailing, original.byteLength);
+    new DataView(bytes.buffer).setUint16(original.byteLength - 2, trailing.byteLength, true);
+    const loadZip = jest.fn(JSZip.loadAsync);
+    const result = await loadKmlKmzFromAsset({ uri: 'file://ambiguous.kmz' }, makeIo({
+      readBinary: async () => bytes.buffer, loadZip,
+    }));
+    expect(result).toMatchObject({ kind: 'error', code: 'bad_zip', stage: 'unzipKmz' });
+    expect(loadZip).not.toHaveBeenCalled();
+  });
+
   it('returns bad_zip when KMZ unzip fails', async () => {
     const result = await loadKmlKmzFromAsset(
       { uri: 'file://x.kmz', name: 'x.kmz' },
@@ -177,7 +193,11 @@ describe('loadKmlKmzFromAsset', () => {
   });
 
   it('parses KML inside KMZ', async () => {
-    const buffer = await kmz(GOOD_KML);
+    const buffer = await new JSZip().file('doc.kml', GOOD_KML).generateAsync({
+      type: 'arraybuffer',
+      compression: 'DEFLATE',
+      comment: 'Google My Maps export',
+    });
     const result = await loadKmlKmzFromAsset(
       { uri: 'file://x.kmz', name: 'x.kmz' },
       makeIo({
