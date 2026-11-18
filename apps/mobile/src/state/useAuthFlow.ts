@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import { beginAuthCallback, consumeAuthCallback, cancelAuthCallback } from '../auth/callbacks';
-import { changeAuthSession, resumeInstallationCapabilities } from '../api/installationCapabilities';
+import { changeAuthSession, resumeInstallationCapabilities, revokeInstallationCapabilities } from '../api/installationCapabilities';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { supabase } from '../api/supabase';
@@ -190,6 +190,7 @@ export function useAuthFlow({
   setMembershipState,
 }: UseAuthFlowParams) {
   const profileWriteRevisions = useRef({ name: 0, avatar: 0, avatarColor: 0, preferences: 0 });
+  const deletedActorAwaitingSignOut = useRef<string | null>(null);
   const captureProfileRead = useCallback(() => {
     const started = profileWriteRevisions.current;
     return (previous: User | null, incoming: User): User => {
@@ -587,34 +588,35 @@ export function useAuthFlow({
     [setUser, setIsAnonymous],
   );
 
-  const signOut = useCallback(() => changeAuthSession(async () => {
-    await cancelAuthCallback();
-    if (isAnonymous) {
-      const { error } = await supabase.rpc('delete_anonymous_account');
-      orThrow(error);
+  const endSession = useCallback((actorId: string | null, deleteRemoteAccount: boolean) => (
+    changeAuthSession(async () => {
+      const retryingLocalCleanup = actorId !== null && deletedActorAwaitingSignOut.current === actorId;
+      if (deleteRemoteAccount || retryingLocalCleanup) {
+        const currentActorId = await supabase.getLocalAuthActorId();
+        if (!actorId || (currentActorId !== actorId && !(retryingLocalCleanup && currentActorId === null))) {
+          throw new AuthFlowError('The active account changed. Please try again.', 'auth_actor_changed');
+        }
+      }
+      if (!retryingLocalCleanup) await revokeInstallationCapabilities();
+      await cancelAuthCallback();
+      if (deleteRemoteAccount && !retryingLocalCleanup) {
+        const { error } = await supabase.rpc('delete_anonymous_account');
+        orThrow(error);
+        deletedActorAwaitingSignOut.current = actorId;
+      }
       const signedOut = await supabase.auth.signOut({ scope: 'local' });
       orThrow(signedOut.error);
-    } else {
-      const signedOut = await supabase.auth.signOut({ scope: 'local' });
-      orThrow(signedOut.error);
-    }
-    setUser(null);
-    setIsAnonymous(false);
-    setIsPro(false);
-    setMembershipState(null);
-  }, true, false), [isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState]);
+      deletedActorAwaitingSignOut.current = null;
+      setUser(null);
+      setIsAnonymous(false);
+      setIsPro(false);
+      setMembershipState(null);
+    }, false)
+  ), [setUser, setIsAnonymous, setIsPro, setMembershipState]);
 
-  const deleteAccount = useCallback(() => changeAuthSession(async () => {
-    await cancelAuthCallback();
-    const { error } = await supabase.rpc('delete_anonymous_account');
-    orThrow(error);
-    const signedOut = await supabase.auth.signOut({ scope: 'local' });
-      orThrow(signedOut.error);
-    setUser(null);
-    setIsAnonymous(false);
-    setIsPro(false);
-    setMembershipState(null);
-  }, true, false), [setUser, setIsAnonymous, setIsPro, setMembershipState]);
+  const actorId = user?.id ?? null;
+  const signOut = useCallback(() => endSession(actorId, isAnonymous), [actorId, endSession, isAnonymous]);
+  const deleteAccount = useCallback(() => endSession(actorId, true), [actorId, endSession]);
 
   const upgradeToEmailAccount = useCallback(
     async (email: string, password: string) => {

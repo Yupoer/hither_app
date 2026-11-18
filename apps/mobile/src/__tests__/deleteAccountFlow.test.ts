@@ -1,6 +1,12 @@
-jest.mock('../api/installationCapabilities', () => ({ changeAuthSession: (operation: () => Promise<unknown>) => operation(), resumeInstallationCapabilities: jest.fn() }));
+const mockRevokeInstallationCapabilities = jest.fn();
+jest.mock('../api/installationCapabilities', () => ({
+  changeAuthSession: (operation: () => Promise<unknown>) => operation(),
+  resumeInstallationCapabilities: jest.fn(),
+  revokeInstallationCapabilities: (...args: unknown[]) => mockRevokeInstallationCapabilities(...args),
+}));
 jest.mock('../auth/callbacks', () => ({ beginAuthCallback: jest.fn(async () => 'https://hither-legal.pages.dev/auth/callback?state=test'), cancelAuthCallback: jest.fn(), consumeAuthCallback: jest.fn() }));
 const mockRpc = jest.fn();
+const mockGetLocalAuthActor = jest.fn();
 const mockSignOut = jest.fn();
 const mockSignInAnonymously = jest.fn();
 const mockSignInWithPassword = jest.fn();
@@ -57,6 +63,7 @@ jest.mock('../state/googleSignIn', () => ({
 jest.mock('../api/supabase', () => ({
   supabase: {
     rpc: (...args: unknown[]) => mockRpc(...args),
+    getLocalAuthActorId: () => mockGetLocalAuthActor(),
     auth: {
       signOut: (...args: unknown[]) => mockSignOut(...args),
       signInAnonymously: (...args: unknown[]) => mockSignInAnonymously(...args),
@@ -109,6 +116,8 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     jest.clearAllMocks();
     mockUsesNativeGoogle = true;
     mockRpc.mockResolvedValue({ error: null });
+    mockGetLocalAuthActor.mockResolvedValue('u1');
+    mockRevokeInstallationCapabilities.mockResolvedValue(undefined);
     mockSignOut.mockResolvedValue({ error: null });
     mockMaybeSingle.mockResolvedValue({ data: { nickname: 'Ada' } });
     mockUpsert.mockResolvedValue({ error: null });
@@ -135,7 +144,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     expect(callbackFlow.consumeAuthCallback).toHaveBeenCalledWith(expect.stringContaining('code=pkce-code'));
   });
 
-  it('deleteAccount always RPCs then local-signs-out registered users', async () => {
+  it('deleteAccount RPCs then local-signs-out registered users', async () => {
     const setUser = jest.fn();
     const setIsAnonymous = jest.fn();
     const setIsPro = jest.fn();
@@ -152,6 +161,7 @@ describe('useAuthFlow deleteAccount and signOut', () => {
 
     expect(mockRpc).toHaveBeenCalledWith('delete_anonymous_account');
     expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(mockRpc.mock.invocationCallOrder[0]).toBeLessThan(mockSignOut.mock.invocationCallOrder[0]);
     expect(setUser).toHaveBeenCalledWith(null);
     expect(setIsAnonymous).toHaveBeenCalledWith(false);
     expect(setIsPro).toHaveBeenCalledWith(false);
@@ -159,13 +169,15 @@ describe('useAuthFlow deleteAccount and signOut', () => {
   });
 
   it('deleteAccount keeps the session when the RPC fails', async () => {
-    mockRpc.mockResolvedValue({ error: { message: 'fk blocked' } });
+    mockRpc.mockResolvedValueOnce({ error: { message: 'fk blocked' } });
     const setUser = jest.fn();
     const flow = makeFlow({ setUser, isAnonymous: false });
 
     await expect(flow.deleteAccount()).rejects.toThrow('fk blocked');
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(setUser).not.toHaveBeenCalled();
+    await expect(flow.deleteAccount()).resolves.toBeUndefined();
+    expect(mockRpc).toHaveBeenCalledTimes(2);
   });
 
   it('registered signOut only ends the session', async () => {
@@ -190,6 +202,51 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     expect(setIsAnonymous).not.toHaveBeenCalled();
     expect(setIsPro).not.toHaveBeenCalled();
     expect(setMembershipState).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['deleteAccount', false],
+    ['signOut', true],
+  ] as const)('retries only local cleanup after %s removed the account', async (endSession, isAnonymous) => {
+    const failure = new Error('session deletion failed');
+    mockSignOut.mockRejectedValueOnce(failure);
+    const setUser = jest.fn();
+    const setIsAnonymous = jest.fn();
+    const setIsPro = jest.fn();
+    const setMembershipState = jest.fn();
+    const flow = makeFlow({ isAnonymous, setUser, setIsAnonymous, setIsPro, setMembershipState });
+
+    await expect(flow[endSession]()).rejects.toBe(failure);
+    expect(setUser).not.toHaveBeenCalled();
+    expect(setIsAnonymous).not.toHaveBeenCalled();
+    expect(setIsPro).not.toHaveBeenCalled();
+    expect(setMembershipState).not.toHaveBeenCalled();
+
+    mockGetLocalAuthActor.mockResolvedValue(null);
+    await expect(flow[endSession]()).resolves.toBeUndefined();
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('delete_anonymous_account');
+    expect(mockRevokeInstallationCapabilities).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).toHaveBeenCalledTimes(2);
+    expect(setUser).toHaveBeenCalledWith(null);
+    expect(setIsAnonymous).toHaveBeenCalledWith(false);
+    expect(setIsPro).toHaveBeenCalledWith(false);
+    expect(setMembershipState).toHaveBeenCalledWith(null);
+  });
+
+  it('rejects a local deletion retry when a different account is now signed in', async () => {
+    mockSignOut.mockRejectedValueOnce(new Error('session deletion failed'));
+    const setUser = jest.fn();
+    const flow = makeFlow({ setUser });
+    await expect(flow.deleteAccount()).rejects.toThrow('session deletion failed');
+
+    mockGetLocalAuthActor.mockResolvedValue('replacement');
+    await expect(flow.deleteAccount()).rejects.toMatchObject({ code: 'auth_actor_changed' });
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRevokeInstallationCapabilities).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(callbackFlow.cancelAuthCallback).toHaveBeenCalledTimes(1);
+    expect(setUser).not.toHaveBeenCalled();
   });
 
   it('anonymous signOut still permanently deletes via the same RPC', async () => {

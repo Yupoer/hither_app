@@ -9,7 +9,6 @@
     "androidParityContract.test.ts",
     "androidPushRegistration.test.ts",
     "anonymousAccessContract.test.ts",
-    "anonymousSignOut.test.ts",
     "appleLoginUiContract.test.ts",
     "arrivalFeedbackContract.test.ts",
     "authOverhaulContract.test.ts",

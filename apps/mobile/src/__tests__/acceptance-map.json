@@ -409,6 +409,20 @@
       "testNamePattern": "purges queued ad diagnostics when consent is revoked before upload"
     },
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Client roles lack direct execution privileges for the three internal Premium helpers, while the service role retains them.",
+      "testFile": "supabase/tests/database_security_role_matrix.test.sql",
+      "testNamePattern": "client roles cannot execute the (profile Premium|group Premium|effective entitlement) helper|service role retains the (profile Premium|group Premium|effective entitlement) helper"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "An authenticated member still reads team Premium through the projection after personal expiry, and the service role can resolve the underlying trip-pass grant.",
+      "testFile": "supabase/tests/premium_projection.test.sql",
+      "testNamePattern": "expired StoreKit does not drop trip-pass team compatibility|the service role can still resolve trip-pass Premium"
+    },
+    {
       "parent": 187,
       "child": 188,
       "acceptance": "Group tour pane and target geometry commit atomically; Add Place highlights the favorite star.",
@@ -652,6 +666,20 @@
       "acceptance": "A7 zh/en catalogs include the new account.delete* keys with identical key sets.",
       "testFile": "accountDeletionContract.test.ts",
       "testNamePattern": "adds matching zh/en account.delete catalog keys"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "After remote account deletion, a failed local sign-out stays explicit and is retryable without repeating deletion or affecting a replacement account.",
+      "testFile": "deleteAccountFlow.test.ts",
+      "testNamePattern": "retries only local cleanup|rejects a local deletion retry|keeps local identity when durable logout rejects"
+    },
+    {
+      "parent": 199,
+      "child": 200,
+      "acceptance": "Successful logout waits for durable session removal, and cold recovery clears a stale credential when the account no longer exists.",
+      "testFile": "authSdkRecoveryRace.test.ts",
+      "testNamePattern": "rejects logout before SIGNED_OUT|clears a stale credential on cold recovery"
     },
     {
       "parent": 199,
