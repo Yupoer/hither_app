@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
-const { fork, execFileSync } = require('node:child_process');
+const { fork } = require('node:child_process');
 const crypto = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { parseEnv, isDeepStrictEqual } = require('node:util');
@@ -17,17 +17,30 @@ const manifest = { directory, startedAt: new Date().toISOString(), actors: [], g
 const save = () => fs.writeFileSync(path.join(directory, 'report.json'), JSON.stringify(manifest, null, 2));
 // --admin is setup/cleanup only. Never pass the service role into a worker.
 let admin;
-if (process.argv.includes('--admin')) {
-  const keys = JSON.parse(execFileSync('cmd.exe', ['/d', '/s', '/c', 'npx.cmd --yes supabase projects api-keys --project-ref htqrucnjafhhvxdqslbv --output json'], { cwd: path.resolve(__dirname, '../../..'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+async function createAdminClient() {
+  const projectRef = 'htqrucnjafhhvxdqslbv';
+  const accessToken = env.SUPABASE_ACCESS_TOKEN;
+  if (!accessToken) throw new Error('SUPABASE_ACCESS_TOKEN is required for admin smoke setup');
+  const response = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/api-keys`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Supabase API key request failed with status ${response.status}`);
+  const keys = await response.json();
+  if (!Array.isArray(keys)) throw new Error('Supabase API key response was not an array');
   const key = keys.find(k => k.name === 'service_role')?.api_key;
   if (!key) throw new Error('admin setup key unavailable');
-  admin = createClient(env.EXPO_PUBLIC_SUPABASE_URL, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  manifest.setup = 'admin; tested clients use password-authenticated sessions';
+  return createClient(env.EXPO_PUBLIC_SUPABASE_URL, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
+const workerSystemEnvironment = new Set([
+  'PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'HOME', 'APPDATA',
+  'LOCALAPPDATA', 'TZ', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY',
+]);
+const workerEnv = Object.fromEntries(Object.entries(env).filter(([name]) =>
+  name.startsWith('EXPO_PUBLIC_') || workerSystemEnvironment.has(name.toUpperCase())));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let seq = 0;
 function worker(index) {
-  const child = fork(path.join(__dirname, 'location-smoke-worker.cjs'), [], { env: { ...env, HITHER_SMOKE_ACTOR: String(index) }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+  const child = fork(path.join(__dirname, 'location-smoke-worker.cjs'), [], { env: { ...workerEnv, HITHER_SMOKE_DIR: directory, HITHER_SMOKE_ACTOR: String(index) }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const pending = new Map();
   child.on('error', error => { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(error); } pending.clear(); });
   child.stderr.on('data', data => { if (!String(data).includes('ExperimentalWarning')) fs.appendFileSync(path.join(directory, 'worker-errors.log'), data); });
@@ -87,6 +100,8 @@ async function waitArrival(observers, destinationId, userId, arrived) {
 (async () => {
   console.log(`Evidence: ${directory}`); save();
   try {
+    admin = await createAdminClient();
+    manifest.setup = 'admin; tested clients use password-authenticated sessions';
     for (const a of actors) {
       if (admin) {
         const credentials = { email: `dummy-${crypto.randomUUID()}@hither.invalid`, password: crypto.randomBytes(32).toString('base64url') };
