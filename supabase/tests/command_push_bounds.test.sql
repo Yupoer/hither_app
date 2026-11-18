@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(20);
+select plan(28);
 
 create table public.test_command_pushes(payload jsonb not null);
 create or replace function extensions.notify_push(payload jsonb)
@@ -67,7 +67,7 @@ select ok(
   (select burst_count = 1 and sustained_count = 1
    from hither_private.command_push_budgets
    where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-     and sender_id = 'd1111111-1111-4111-8111-111111111111'),
+     and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt),
   'an accepted command consumes both budgets'
 );
 
@@ -90,7 +90,7 @@ select ok(
   and (select burst_count = 1 and sustained_count = 1
        from hither_private.command_push_budgets
        where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-         and sender_id = 'd1111111-1111-4111-8111-111111111111'),
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt),
   'an idempotent replay creates no work and consumes no quota'
 );
 
@@ -107,15 +107,18 @@ select is(
 );
 reset role;
 select ok(
-  not exists(select 1 from public.core_operations
+  (select status = 'conflict' and terminal_reason = 'validation'
+      and octet_length(payload::text) < 512 and not (payload ? 'message')
+      and payload->>'_oversizedCommandDigest' ~ '^[0-9a-f]{64}$'
+    from public.core_operations
     where operation_id = 'd6000000-0000-4000-8000-000000000101')
   and not exists(select 1 from public.core_notification_outbox
     where operation_id = 'd6000000-0000-4000-8000-000000000101')
   and (select burst_count = 1 and sustained_count = 1
        from hither_private.command_push_budgets
        where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-         and sender_id = 'd1111111-1111-4111-8111-111111111111'),
-  'an oversized message creates no receipt, delivery, or quota use'
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt),
+  'an oversized message retains a compact validation receipt without delivery work'
 );
 set local role authenticated;
 select is(
@@ -130,15 +133,107 @@ select is(
 );
 reset role;
 select ok(
-  not exists(select 1 from public.core_operations
+  (select status = 'conflict' and terminal_reason = 'validation'
+      and octet_length(payload::text) < 512 and not (payload ? 'padding')
+    from public.core_operations
     where operation_id = 'd6000000-0000-4000-8000-000000000102')
   and not exists(select 1 from public.core_notification_outbox
     where operation_id = 'd6000000-0000-4000-8000-000000000102')
   and (select burst_count = 1 and sustained_count = 1
        from hither_private.command_push_budgets
        where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-         and sender_id = 'd1111111-1111-4111-8111-111111111111'),
-  'an oversized envelope creates no receipt, delivery, or quota use'
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt),
+  'an oversized envelope retains a compact validation receipt without delivery work'
+);
+
+set local role authenticated;
+select is(
+  public.apply_core_operation_v3(
+    'd6000000-0000-4000-8000-000000000103',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', auth.uid(),
+    'itinerary', 'd6000000-0000-4000-8000-000000000103', 0,
+    'send_command', '{"type":"unknown-command","message":"First receipt"}', 103
+  )#>>'{conflict,message}',
+  'invalid command type',
+  'a malformed command type returns terminal validation'
+);
+reset role;
+select ok(
+  (select status = 'conflict' and terminal_reason = 'validation'
+      and payload->>'type' = 'unknown-command' from public.core_operations
+    where operation_id = 'd6000000-0000-4000-8000-000000000103')
+  and (select burst_count = 3 and sustained_count = 3
+       from hither_private.command_push_budgets
+       where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and rejected_receipt),
+  'a bounded malformed command retains its first receipt and uses the rejection budget'
+);
+
+update hither_private.command_push_budgets
+set burst_window_started_at = now(), burst_count = 10
+where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  and sender_id = 'd1111111-1111-4111-8111-111111111111' and rejected_receipt;
+set local role authenticated;
+select is(
+  public.apply_core_operation_v3(
+    'd6000000-0000-4000-8000-000000000101',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', auth.uid(),
+    'itinerary', 'd6000000-0000-4000-8000-000000000101', 0,
+    'send_command', jsonb_build_object('type', 'custom', 'message', repeat('漢', 342)), 101
+  )#>>'{conflict,message}',
+  'command payload is too large',
+  'an oversized replay returns its prior validation after the rejection budget is full'
+);
+select is(
+  public.apply_core_operation_v3(
+    'd6000000-0000-4000-8000-000000000103',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', auth.uid(),
+    'itinerary', 'd6000000-0000-4000-8000-000000000103', 0,
+    'send_command', '{"type":"unknown-command","message":"First receipt"}', 103
+  )#>>'{conflict,message}',
+  'invalid command type',
+  'a malformed replay returns its prior validation after the rejection budget is full'
+);
+select is(
+  public.apply_core_operation_v3(
+    'd6000000-0000-4000-8000-000000000101',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', auth.uid(),
+    'itinerary', 'd6000000-0000-4000-8000-000000000101', 0,
+    'send_command', '{"type":"custom","message":"Corrected"}', 101
+  )#>>'{conflict,code}',
+  'operation_identity_mismatch',
+  'an oversized receipt reserves its operation ID against changed data'
+);
+select is(
+  public.apply_core_operation_v3(
+    'd6000000-0000-4000-8000-000000000103',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', auth.uid(),
+    'itinerary', 'd6000000-0000-4000-8000-000000000103', 0,
+    'send_command', '{"type":"custom","message":"First receipt"}', 103
+  )#>>'{conflict,code}',
+  'operation_identity_mismatch',
+  'a malformed receipt reserves its operation ID against changed data'
+);
+select is(
+  public.apply_core_operation_v3(
+    'd6000000-0000-4000-8000-000000000104',
+    'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', auth.uid(),
+    'itinerary', 'd6000000-0000-4000-8000-000000000104', 0,
+    'send_command', '{"type":"unknown-command"}', 104
+  )#>>'{conflict,message}',
+  'command quota exceeded',
+  'a full rejection budget stops fresh malformed receipts'
+);
+reset role;
+select ok(
+  not exists(select 1 from public.core_operations
+    where operation_id = 'd6000000-0000-4000-8000-000000000104')
+  and (select count(*) = 1 from public.test_command_pushes)
+  and (select burst_count = 10 and sustained_count = 3
+       from hither_private.command_push_budgets
+       where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and rejected_receipt),
+  'replays and rejection quota exhaustion add no durable work'
 );
 
 set local role authenticated;
@@ -180,7 +275,7 @@ select ok(
   and (select burst_count = 10 and sustained_count = 10
        from hither_private.command_push_budgets
        where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-         and sender_id = 'd1111111-1111-4111-8111-111111111111'),
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt),
   'a burst rejection creates no receipt, delivery, or extra quota use'
 );
 
@@ -188,7 +283,7 @@ update hither_private.command_push_budgets
 set burst_window_started_at = now(), burst_count = 0,
     sustained_window_started_at = now(), sustained_count = 120
 where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-  and sender_id = 'd1111111-1111-4111-8111-111111111111';
+  and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt;
 set local role authenticated;
 select is(
   public.apply_core_operation_v3(
@@ -204,12 +299,16 @@ reset role;
 select ok(
   not exists(select 1 from public.core_operations
     where operation_id = 'd6000000-0000-4000-8000-000000000120')
+  and not exists(select 1 from public.core_entity_versions
+    where entity_id = 'd6000000-0000-4000-8000-000000000120')
   and not exists(select 1 from public.core_notification_outbox
     where operation_id = 'd6000000-0000-4000-8000-000000000120')
   and (select count(*) = 10 from public.test_command_pushes),
   'a sustained rejection creates no durable or downstream work'
 );
 
+select set_config('request.jwt.claim.role', '', true);
+select set_config('request.jwt.claim.sub', '', true);
 insert into auth.users(id, email) values
   ('d3333333-3333-4333-8333-333333333333', 'command-extra-1@example.test'),
   ('d4444444-4444-4444-8444-444444444444', 'command-extra-2@example.test'),
@@ -235,6 +334,8 @@ set burst_window_started_at = now(), burst_count = 0,
 where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   and sender_id = 'd1111111-1111-4111-8111-111111111111';
 set local role authenticated;
+select set_config('request.jwt.claim.role', 'authenticated', true);
+select set_config('request.jwt.claim.sub', 'd1111111-1111-4111-8111-111111111111', true);
 select is(
   public.apply_core_operation_v3(
     'd6000000-0000-4000-8000-000000000201',
@@ -255,7 +356,7 @@ select ok(
   and (select burst_count = 0 and sustained_count = 0
        from hither_private.command_push_budgets
        where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-         and sender_id = 'd1111111-1111-4111-8111-111111111111'),
+         and sender_id = 'd1111111-1111-4111-8111-111111111111' and not rejected_receipt),
   'a fan-out rejection rolls back command work and restores quota'
 );
 
@@ -279,7 +380,7 @@ select ok(
   and (select burst_count = 1 and sustained_count = 1
        from hither_private.command_push_budgets
        where group_id = 'daaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-         and sender_id = 'd2222222-2222-4222-8222-222222222222'),
+         and sender_id = 'd2222222-2222-4222-8222-222222222222' and not rejected_receipt),
   'the targeted request reaches its leader and consumes one budget unit'
 );
 

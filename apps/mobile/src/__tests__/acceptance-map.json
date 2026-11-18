@@ -255,6 +255,20 @@
       "testNamePattern": "unauthorized|already_used|101|follower"
     },
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Durable commands limit payload bytes, delivery quota, and recipient fan-out while preserving valid follower requests.",
+      "testFile": "supabase/tests/command_push_bounds.test.sql",
+      "testNamePattern": "eleventh command|daily sender budget|cannot expand beyond four recipients|targeted follower request remains available"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Malformed command receipts reserve operation identity, store compact oversized payload fingerprints, and limit new rejected rows without charging replays.",
+      "testFile": "supabase/tests/command_push_bounds.test.sql",
+      "testNamePattern": "retains a compact validation receipt|reserves its operation ID|full rejection budget stops fresh malformed receipts|replays and rejection quota exhaustion add no durable work"
+    },
+    {
       "parent": 285,
       "child": 285,
       "acceptance": "StoreKit authentic fixtures pass while cryptographically valid wrong-purpose certificate chains are rejected before privileged reads.",

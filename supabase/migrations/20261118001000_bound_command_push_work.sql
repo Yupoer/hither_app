@@ -4,11 +4,12 @@ revoke insert on public.commands from public, anon, authenticated;
 create table hither_private.command_push_budgets (
   group_id uuid not null,
   sender_id uuid not null,
+  rejected_receipt boolean not null,
   burst_window_started_at timestamptz not null,
   burst_count integer not null check (burst_count between 0 and 10),
   sustained_window_started_at timestamptz not null,
   sustained_count integer not null check (sustained_count between 0 and 120),
-  primary key (group_id, sender_id),
+  primary key (group_id, sender_id, rejected_receipt),
   foreign key (group_id, sender_id)
     references public.memberships(group_id, user_id) on delete cascade
 );
@@ -16,38 +17,31 @@ revoke all on table hither_private.command_push_budgets
   from public, anon, authenticated, service_role;
 
 create function hither_private.claim_command_push_budget(
-  p_operation_id uuid,
   p_group_id uuid,
   p_sender_id uuid,
-  p_now timestamptz
+  p_rejected_receipt boolean
 )
-returns text
+returns boolean
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  v_now timestamptz := coalesce(p_now, clock_timestamp());
+  v_now timestamptz := clock_timestamp();
   v_budget hither_private.command_push_budgets%rowtype;
 begin
   insert into hither_private.command_push_budgets(
-    group_id, sender_id, burst_window_started_at, burst_count,
+    group_id, sender_id, rejected_receipt, burst_window_started_at, burst_count,
     sustained_window_started_at, sustained_count
-  ) values (p_group_id, p_sender_id, v_now, 0, v_now, 0)
-  on conflict (group_id, sender_id) do nothing;
+  ) values (p_group_id, p_sender_id, p_rejected_receipt, v_now, 0, v_now, 0)
+  on conflict (group_id, sender_id, rejected_receipt) do nothing;
 
   select * into v_budget
   from hither_private.command_push_budgets
-  where group_id = p_group_id and sender_id = p_sender_id
+  where group_id = p_group_id and sender_id = p_sender_id and rejected_receipt = p_rejected_receipt
   for update;
 
-  if exists (
-    select 1 from public.core_operations o
-    where o.operation_id = p_operation_id and o.status = 'accepted'
-  ) then
-    return 'replay';
-  end if;
-
+  v_now := clock_timestamp();
   if v_budget.burst_window_started_at + interval '1 minute' <= v_now then
     v_budget.burst_window_started_at := v_now;
     v_budget.burst_count := 0;
@@ -57,7 +51,7 @@ begin
     v_budget.sustained_count := 0;
   end if;
   if v_budget.burst_count >= 10 or v_budget.sustained_count >= 120 then
-    return 'rate_limited';
+    return false;
   end if;
 
   update hither_private.command_push_budgets
@@ -65,29 +59,60 @@ begin
       burst_count = v_budget.burst_count + 1,
       sustained_window_started_at = v_budget.sustained_window_started_at,
       sustained_count = v_budget.sustained_count + 1
-  where group_id = p_group_id and sender_id = p_sender_id;
-  return 'claimed';
+  where group_id = p_group_id and sender_id = p_sender_id and rejected_receipt = p_rejected_receipt;
+  return true;
 end;
 $$;
-revoke all on function hither_private.claim_command_push_budget(
-  uuid, uuid, uuid, timestamptz
-) from public, anon, authenticated, service_role;
+revoke all on function hither_private.claim_command_push_budget(uuid, uuid, boolean)
+  from public, anon, authenticated, service_role;
 
-create function hither_private.release_command_push_budget(
-  p_group_id uuid,
-  p_sender_id uuid
-)
-returns void
-language sql
+create function hither_private.limit_command_rejection_receipt()
+returns trigger
+language plpgsql
 security definer
 set search_path = ''
 as $$
-  update hither_private.command_push_budgets
-  set burst_count = greatest(burst_count - 1, 0),
-      sustained_count = greatest(sustained_count - 1, 0)
-  where group_id = p_group_id and sender_id = p_sender_id;
+begin
+  if new.payload#>>'{_conflict,message}' = 'command quota exceeded' then
+    raise exception 'command quota exceeded' using errcode = 'HC001';
+  end if;
+  if tg_op = 'UPDATE' then
+    return new;
+  end if;
+
+  perform 1 from public.memberships m
+  where m.group_id = new.group_id and m.user_id = new.actor_id
+  for key share;
+  if not found or not public.anonymous_access_is_active(new.actor_id) then
+    return null;
+  end if;
+
+  if not hither_private.claim_command_push_budget(new.group_id, new.actor_id, true) then
+    raise exception 'command quota exceeded' using errcode = 'HC001';
+  end if;
+  return new;
+end;
 $$;
-revoke all on function hither_private.release_command_push_budget(uuid, uuid)
+revoke all on function hither_private.limit_command_rejection_receipt()
+  from public, anon, authenticated, service_role;
+
+create trigger limit_command_rejection_receipt
+before insert or update of payload on public.core_operations
+for each row when (new.operation_type = 'send_command' and new.status = 'conflict')
+execute function hither_private.limit_command_rejection_receipt();
+
+create function hither_private.command_push_payload_fits(p_payload jsonb)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_typeof(p_payload) = 'object'
+    and not (p_payload ? '_oversizedCommandDigest')
+    and octet_length(p_payload::text) <= 4096
+    and octet_length(coalesce(p_payload->>'message', '')) <= 1024;
+$$;
+revoke all on function hither_private.command_push_payload_fits(jsonb)
   from public, anon, authenticated, service_role;
 
 create or replace function public.core_v3_enqueue_notification(
@@ -118,9 +143,7 @@ declare
   v_request public.commands%rowtype;
   v_notification_payload jsonb := p_payload;
 begin
-  if jsonb_typeof(p_payload) is distinct from 'object'
-     or octet_length(p_payload::text) > 4096
-     or octet_length(coalesce(p_payload->>'message', '')) > 1024 then
+  if hither_private.command_push_payload_fits(p_payload) is not true then
     raise exception 'command payload is too large' using errcode = '22023';
   end if;
   if p_payload->>'type' is null or p_payload->>'type' not in (
@@ -144,6 +167,9 @@ begin
      ) and v_sender_role <> 'leader' then
     raise exception 'leader command requires leader membership' using errcode = '42501';
   end if;
+  if not hither_private.claim_command_push_budget(p_group_id, p_sender_id, false) then
+    raise exception 'command quota exceeded' using errcode = '22023';
+  end if;
 
   v_category := case
     when p_payload->>'type' = 'request_start' and p_payload ? 'destinationId'
@@ -164,8 +190,7 @@ begin
     );
     v_notification_payload := p_payload || jsonb_build_object('message', v_request.message);
   end if;
-  if octet_length(v_notification_payload::text) > 4096
-     or octet_length(coalesce(v_notification_payload->>'message', '')) > 1024 then
+  if hither_private.command_push_payload_fits(v_notification_payload) is not true then
     raise exception 'command payload is too large' using errcode = '22023';
   end if;
   -- Clients may shorten the delivery window, but cannot extend it beyond five
@@ -181,22 +206,26 @@ begin
     );
   end if;
 
-  select coalesce(array_agg(m.user_id order by m.user_id), '{}'::uuid[])
+  select coalesce(array_agg(candidate.user_id), '{}'::uuid[])
   into v_candidate_ids
-  from public.memberships m
-  where m.group_id = p_group_id
-    and m.user_id <> p_sender_id
-    and (
-      (v_request.id is not null and m.user_id = v_request.target_user_id)
-      or (
-        v_request.id is null
-        and (p_scope_subgroup_id is null or m.subgroup_id = p_scope_subgroup_id or m.role = 'leader')
-        and (
-          (p_payload->>'type' = 'request_start' and m.role = 'leader')
-          or ((p_payload->>'type') is distinct from 'request_start' and not coalesce(m.solo, false))
+  from (
+    select m.user_id
+    from public.memberships m
+    where m.group_id = p_group_id
+      and m.user_id <> p_sender_id
+      and (
+        (v_request.id is not null and m.user_id = v_request.target_user_id)
+        or (
+          v_request.id is null
+          and (p_scope_subgroup_id is null or m.subgroup_id = p_scope_subgroup_id or m.role = 'leader')
+          and (
+            (p_payload->>'type' = 'request_start' and m.role = 'leader')
+            or ((p_payload->>'type') is distinct from 'request_start' and not coalesce(m.solo, false))
+          )
         )
       )
-    );
+    limit 5
+  ) candidate;
   v_candidate_count := cardinality(v_candidate_ids);
   -- join_group caps groups at five members, so one sender can have at most
   -- four recipients. Reject legacy or privileged over-cap groups before fan-out.
@@ -303,9 +332,7 @@ set search_path = ''
 as $function$
 declare
   v_uid uuid := (select auth.uid());
-  v_budget_status text;
-  v_budget_claimed boolean := false;
-  v_result jsonb;
+  v_payload jsonb := p_payload;
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '28000';
@@ -314,58 +341,33 @@ begin
     return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id,
       'conflict', jsonb_build_object('code', 'account_changed', 'message', 'operation actor does not match auth.uid()'));
   end if;
-  if p_operation_type <> 'send_command' then
+  if p_operation_type is distinct from 'send_command' then
     return hither_private.apply_core_operation_actor(p_operation_id, p_group_id, v_uid,
       p_entity_type, p_entity_id, p_entity_version, p_operation_type, p_payload,
       p_sequence, p_dependency_ids, p_created_at);
   end if;
 
-  if exists (
-    select 1 from public.core_operations o
-    where o.operation_id = p_operation_id and o.status = 'accepted'
-  ) then
+  -- Older accepted commands can replay their original payload. New oversized
+  -- commands store only a bounded identity for validation receipts and retries.
+  if jsonb_typeof(p_payload) = 'object'
+     and not hither_private.command_push_payload_fits(p_payload)
+     and not exists (
+       select 1 from public.core_operations o
+       where o.operation_id = p_operation_id and o.status = 'accepted'
+     ) then
+    v_payload := jsonb_build_object('_oversizedCommandDigest',
+      encode(sha256(convert_to((p_payload - 'rebase')::text, 'UTF8')), 'hex'));
+  end if;
+
+  begin
     return hither_private.apply_core_operation_actor(p_operation_id, p_group_id, v_uid,
-      p_entity_type, p_entity_id, p_entity_version, p_operation_type, p_payload,
+      p_entity_type, p_entity_id, p_entity_version, p_operation_type, v_payload,
       p_sequence, p_dependency_ids, p_created_at);
-  end if;
-
-  if jsonb_typeof(p_payload) is distinct from 'object'
-     or octet_length(p_payload::text) > 4096
-     or octet_length(coalesce(p_payload->>'message', '')) > 1024 then
+  exception when sqlstate 'HC001' then
+    -- Quota conflicts must roll back the command without changing its receipt.
     return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id,
-      'conflict', jsonb_build_object('code', 'validation', 'message', 'command payload is too large'));
-  end if;
-  if p_payload->>'type' is null or p_payload->>'type' not in (
-    'gather', 'find_gathering', 'depart', 'rest', 'be_careful',
-    'go_left', 'go_right', 'stop', 'hurry_up', 'need_restroom',
-    'need_break', 'need_help', 'request_help', 'found_something',
-    'request_start', 'custom'
-  ) then
-    return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id,
-      'conflict', jsonb_build_object('code', 'validation', 'message', 'invalid command type'));
-  end if;
-
-  perform 1 from public.memberships m
-  where m.group_id = p_group_id and m.user_id = v_uid
-  for key share;
-  if found then
-    v_budget_status := hither_private.claim_command_push_budget(
-      p_operation_id, p_group_id, v_uid, clock_timestamp()
-    );
-    if v_budget_status = 'rate_limited' then
-      return jsonb_build_object('status', 'conflict', 'operation_id', p_operation_id,
-        'conflict', jsonb_build_object('code', 'validation', 'message', 'command quota exceeded'));
-    end if;
-    v_budget_claimed := v_budget_status = 'claimed';
-  end if;
-
-  v_result := hither_private.apply_core_operation_actor(p_operation_id, p_group_id, v_uid,
-    p_entity_type, p_entity_id, p_entity_version, p_operation_type, p_payload,
-    p_sequence, p_dependency_ids, p_created_at);
-  if v_budget_claimed and v_result->>'status' not in ('accepted', 'duplicate') then
-    perform hither_private.release_command_push_budget(p_group_id, v_uid);
-  end if;
-  return v_result;
+      'conflict', jsonb_build_object('code', 'validation', 'message', 'command quota exceeded'));
+  end;
 end;
 $function$;
 revoke all on function public.apply_core_operation_v3(
