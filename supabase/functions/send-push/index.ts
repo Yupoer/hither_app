@@ -43,6 +43,7 @@ import {
   type PushPayload,
 } from "./messages.ts";
 import {
+  currentMemberRecipientIds,
   locationRefreshRecipientIds,
   navigationScopeMembers,
   specialAlertRecipientIds,
@@ -153,6 +154,35 @@ async function loadTokenRows(userIds: string[]): Promise<DeviceTokenRow[]> {
       platform: normalizePlatform(row.platform),
     }),
   );
+}
+
+async function loadCurrentMemberTokenRows(
+  groupId: string,
+  userIds: string[],
+): Promise<DeviceTokenRow[]> {
+  const candidates = [...new Set(userIds.filter((userId) => userId.length > 0))];
+  if (candidates.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("memberships")
+    .select("user_id")
+    .eq("group_id", groupId)
+    .in("user_id", candidates);
+  if (error) throw error;
+
+  const currentMembers = (data ?? []) as Array<{ user_id: string }>;
+  const activeMemberships = await Promise.all(currentMembers.map(async (member) => {
+    const { data: active, error: activeError } = await supabase.rpc(
+      "anonymous_access_is_active",
+      { p_uid: member.user_id },
+    );
+    if (activeError) throw activeError;
+    return active === true ? member : null;
+  }));
+  const activeMembers = activeMemberships.filter(
+    (member): member is { user_id: string } => member !== null,
+  );
+  return loadTokenRows(currentMemberRecipientIds(candidates, activeMembers));
 }
 
 /**
@@ -387,8 +417,8 @@ Deno.serve(async (req) => {
     );
 
     const [tokenResult, refreshTokenResult, liveSessionResult] = await Promise.allSettled([
-      loadTokenRows(allowedAlertUsers),
-      loadTokenRows(locationRefreshRecipientIds(payload)),
+      loadCurrentMemberTokenRows(payload.group_id, allowedAlertUsers),
+      loadCurrentMemberTokenRows(payload.group_id, locationRefreshRecipientIds(payload)),
       loadLiveSessions(payload, members, sender),
     ]);
     if (tokenResult.status === "rejected") throw tokenResult.reason;
@@ -487,8 +517,11 @@ async function handleNavigationSession(
     || latest.version !== payload.version) return json({ sent: 0, ignored: "superseded_session_event" });
   members = navigationScopeMembers(members, target.scope_subgroup_id);
   const origin = target.origin === 'scheduled' ? 'scheduled' : 'manual';
-  const controlTokens = await loadTokenRows(navigationRemoteRecipients({ origin, senderId: payload.sender_id,
-    userIds: members.filter(member => !member.solo).map(member => member.user_id) }));
+  const controlTokens = await loadCurrentMemberTokenRows(payload.group_id, navigationRemoteRecipients({
+    origin,
+    senderId: payload.sender_id,
+    userIds: members.filter(member => !member.solo).map(member => member.user_id),
+  }));
   const controlReport = await sendBackgroundLocationRefreshes(controlTokens, payload);
   if (controlReport.failures.length > 0) console.warn("navigation_control_delivery_failed");
 
@@ -544,7 +577,7 @@ async function handleNavigationSession(
     }
     const startRows = startRowsRaw.filter(row => recipients.startUserIds.includes(row.user_id));
     const fallbackUserIds = recipients.alertUserIds;
-    const fallbackTokenRows = await loadTokenRows(fallbackUserIds);
+    const fallbackTokenRows = await loadCurrentMemberTokenRows(payload.group_id, fallbackUserIds);
 
     let startReport = emptyReport();
     if (startRows.length > 0) {
@@ -612,7 +645,10 @@ async function handleNavigationSession(
         .filter((row) => deadStartTokens.includes(row.push_to_start_token))
         .map((row) => row.user_id)
         .filter((userId) => origin === 'manual' && userId !== payload.sender_id);
-      const deadStartFallbackRows = await loadTokenRows(deadStartUsers);
+      const deadStartFallbackRows = await loadCurrentMemberTokenRows(
+        payload.group_id,
+        deadStartUsers,
+      );
       fallbackReport = mergeReports(fallbackReport, await sendAlerts(deadStartFallbackRows, payload));
     }
     const deadFallbackTokens = deadTokens(fallbackReport);

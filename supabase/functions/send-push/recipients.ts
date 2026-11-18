@@ -17,6 +17,14 @@ export function locationRefreshRecipientIds(
   )];
 }
 
+export function currentMemberRecipientIds<T extends { user_id: string }>(
+  recipientIds: string[],
+  members: T[],
+): string[] {
+  const currentMemberIds = new Set(members.map((member) => member.user_id));
+  return [...new Set(recipientIds)].filter((userId) => currentMemberIds.has(userId));
+}
+
 export function requestStartRecipientIds<
   T extends { user_id: string; role: string },
 >(payload: PushPayload, members: T[]): string[] | null {
