@@ -116,11 +116,14 @@ function checkKmzDirectory(buffer: ArrayBuffer, maxBytes: number): void {
   const view = new DataView(buffer);
   const bad = () => { throw new KmlLoadError('bad_zip', 'unzipKmz'); };
   const oversize = () => { throw new KmlLoadError('oversize', 'unzipKmz'); };
-  let end = buffer.byteLength - 22;
-  const first = Math.max(0, end - 65535);
+  const endRecordSize = 22;
+  const first = Math.max(0, buffer.byteLength - endRecordSize - 0xffff);
+  // JSZip starts at the last possible signature, even if the record is incomplete.
+  let end = buffer.byteLength - 4;
   for (; end >= first; end -= 1) {
     if (view.getUint32(end, true) !== 0x06054b50) continue;
-    if (end + 22 + view.getUint16(end + 20, true) !== buffer.byteLength) return bad();
+    if (end + endRecordSize > buffer.byteLength ||
+        end + endRecordSize + view.getUint16(end + 20, true) !== buffer.byteLength) return bad();
     break;
   }
   if (end < first) return bad();
