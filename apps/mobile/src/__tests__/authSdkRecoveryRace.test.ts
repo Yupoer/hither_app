@@ -88,6 +88,19 @@ describe('actual Supabase SDK refresh concurrency', () => {
     expect(events.slice(events.indexOf('SIGNED_OUT') + 1)).not.toContain('TOKEN_REFRESHED');
     data.subscription.unsubscribe();
   });
+  it('rejects logout before SIGNED_OUT when durable session deletion fails', async () => {
+    const h = harness(); await h.client.auth.signInWithPassword({ email: 'a@example.test', password: 'local-fixture' });
+    const events: string[] = [];
+    const { data } = h.client.auth.onAuthStateChange(event => { events.push(event); });
+    const failure = new Error('session deletion failed');
+    h.secure.deleteItemAsync.mockRejectedValueOnce(failure);
+    await expect(h.client.auth.signOut({ scope: 'local' })).rejects.toBe(failure);
+    expect(events).not.toContain('SIGNED_OUT');
+    await expect(h.storage.getLocalItem!('auth')).resolves.toBeNull();
+    const cold = await createSupabaseAuthStorage(h.secure).storage.getItem('auth');
+    expect(JSON.parse(cold ?? 'null').user.id).toBe('actor-a');
+    data.subscription.unsubscribe();
+  });
   it('a stale terminal refresh failure cannot erase a newer account', async () => {
     const h = harness(); await h.client.auth.signInWithPassword({ email: 'a@example.test', password: 'local-fixture' });
     const terminal = jest.fn(); h.recovery.subscribeTerminal(terminal);

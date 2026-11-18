@@ -175,6 +175,23 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
   });
 
+  it('keeps local identity when durable logout rejects', async () => {
+    const failure = new Error('session deletion failed');
+    mockSignOut.mockRejectedValueOnce(failure);
+    const setUser = jest.fn();
+    const setIsAnonymous = jest.fn();
+    const setIsPro = jest.fn();
+    const setMembershipState = jest.fn();
+    const flow = makeFlow({ setUser, setIsAnonymous, setIsPro, setMembershipState });
+
+    await expect(flow.signOut()).rejects.toBe(failure);
+
+    expect(setUser).not.toHaveBeenCalled();
+    expect(setIsAnonymous).not.toHaveBeenCalled();
+    expect(setIsPro).not.toHaveBeenCalled();
+    expect(setMembershipState).not.toHaveBeenCalled();
+  });
+
   it('anonymous signOut still permanently deletes via the same RPC', async () => {
     const flow = makeFlow({ isAnonymous: true });
     await flow.signOut();
