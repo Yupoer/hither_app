@@ -2679,6 +2679,13 @@
     {
       "parent": 270,
       "child": 270,
+      "acceptance": "Token reads wait for current recipient eligibility while independent session reads remain concurrent. An eligibility lookup error stops delivery.",
+      "testFile": "sendPushReadBatches.test.ts",
+      "testNamePattern": "starts alert-token and live-session reads together|recipient membership check fails"
+    },
+    {
+      "parent": 270,
+      "child": 270,
       "acceptance": "The member-ID-filtered public profile UPDATE channel reloads teammate identity while private-only writes produce no public event.",
       "testFile": "headlessPublicProfiles.test.ts",
       "testNamePattern": "converges teammate identity"
