@@ -63,6 +63,8 @@ jobs:
             The app lives in `apps/mobile` (React Native + Expo SDK 57, Supabase backend).
             Read `CLAUDE.md` first and follow its rules. Native access belongs behind
             `src/native/` with a JS fallback. Keep Platform.OS branching out of UI components.
+            Map the acceptance criteria for #${{ inputs.issue_number }} to existing or
+            updated tests in `apps/mobile/src/__tests__/acceptance-map.json`.
 
             Do not run commands, commit, push, open a PR, or merge. A later secretless job
             commits and verifies the candidate before a separate job opens a draft PR.
@@ -144,6 +146,7 @@ jobs:
         working-directory: apps/mobile
         env:
           COVERAGE_BASE: ${{ needs.claude.outputs.start_sha }}
+          META_PARENT: ${{ inputs.issue_number }}
         run: |
           bun run check:quick -- --base "$COVERAGE_BASE"
           bun run test:meta

@@ -3312,6 +3312,13 @@
       "acceptance": "Journey ready and empty actions apply their requested press shadows and release springs, preserve reduced-motion feedback, reject dragged releases, and retain disabled and navigation-hold behavior.",
       "testFile": "journeyButtonFeedback.test.ts",
       "testNamePattern": "press shadow and release spring|cancels a dragged press|shadow feedback with reduced motion|keeps unavailable actions disabled|keeps the navigation hold"
+    },
+    {
+      "parent": 418,
+      "child": 418,
+      "acceptance": "The candidate acceptance-map check uses the same dispatched parent issue as the published draft PR, after credential-isolated generation.",
+      "testFile": "scripts/test_claude_fix_security.py",
+      "testNamePattern": "check_candidate_parent"
     }
   ]
 }

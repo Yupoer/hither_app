@@ -54,4 +54,17 @@ for command in (
 
 assert "needs: [claude, verify]" in publish
 assert "needs.verify.result == 'success'" in publish
+
+
+def check_candidate_parent():
+    candidate = re.search(r"(?ms)^      - name: Verify candidate\n(.*?)(?=^      - |\Z)", verify)
+    assert candidate and "bun run test:meta" in candidate.group(1)
+    assert "          META_PARENT: ${{ inputs.issue_number }}\n" in candidate.group(1), (
+        "candidate acceptance tests must use the dispatched parent issue"
+    )
+    assert "ISSUE: ${{ inputs.issue_number }}" in publish
+    assert re.search(r'''hither-test-meta parent: %s -->' "\$ISSUE" "\$GITHUB_RUN_ID" "\$ISSUE"''', publish)
+
+
+check_candidate_parent()
 print("Claude fix security boundary checks passed")
