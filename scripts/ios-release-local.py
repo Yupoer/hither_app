@@ -160,6 +160,27 @@ def check_identity(receipt, expected):
         raise ValueError('existing local build belongs to different source or paths')
 
 
+def bind_local_provenance(receipt, source, output):
+    expected = identity(source, output)
+    check_identity(receipt, expected)
+    intent_path = output / 'local-build-intent.json'
+    admission_path = output / 'ci-admission.json'
+    intent = read_json(intent_path)
+    admission = read_json(admission_path)
+    check_identity(intent, expected)
+    if intent.get('status') != 'unknown':
+        raise ValueError('local build intent has an invalid status')
+    if (admission.get('schemaVersion') != 1 or admission.get('sourceSha') != source
+            or admission.get('workflowPath') != '.github/workflows/ci.yml'
+            or admission.get('status') != 'completed' or admission.get('conclusion') != 'success'):
+        raise ValueError('CI admission does not authorize this local build source')
+    return {**receipt, 'schemaVersion': 2, 'provenance': {
+        'kind': 'guarded-local-build',
+        'buildIntentSha256': digest(intent_path),
+        'ciAdmissionSha256': digest(admission_path),
+    }}
+
+
 def existing_ipa(source, output):
     expected = identity(source, output)
     receipt_path = output / 'local-build.json'
@@ -236,9 +257,8 @@ def build_ipa(source, output, config, env):
                 expo_plist.write_bytes(original)
     metadata = verify_ipa(ipa, archive, output, config)
     receipt = {**(receipt or {}), **identity(source, output), **metadata,
-               'ipaSha256': digest(ipa), 'schemaVersion': 1, 'easCliVersion': '21.0.2',
+               'ipaSha256': digest(ipa), 'schemaVersion': 2, 'easCliVersion': '21.0.2',
                'easUpload': 'not_attempted', 'deviceAcceptance': 'not_verified'}
-    write_json(output / 'local-build.json', receipt)
     return receipt
 
 
@@ -386,6 +406,8 @@ def main(argv=None):
         env = local_environment(output)
         receipt = build_ipa(args.source_sha, output, config, env)
         require_source(args.source_sha)
+        receipt = bind_local_provenance(receipt, args.source_sha, output)
+        write_json(output / 'local-build.json', receipt)
         if not args.build_only:
             command = [sys.executable, str(Path(__file__).resolve()), '--source-sha', args.source_sha,
                        '--release-dir', str(output), '--_simulator-stage']

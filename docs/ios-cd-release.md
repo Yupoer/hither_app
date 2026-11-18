@@ -28,8 +28,9 @@ python3 -B scripts/ios-release.py --source-sha "$source_sha" \
 | Production OTA | `ios-release-ota.py --source-sha "$source_sha" --release-dir "$release_dir" --backend-verified` |
 | Mac production build and startup | `ios-release-local.py --source-sha "$source_sha" --release-dir "$release_dir"` with optional `--simulator "$udid"` |
 | Signed IPA only | `ios-release-local.py` with the same arguments and `--build-only` |
-| Verify or submit an existing IPA | `ios-release-upload.py --source-sha "$source_sha" --ipa "$ipa_path" --sha256 "$ipa_sha256" --release-dir "$release_dir"` with `--verify-only` for verification |
-| Direct Apple upload | `ios-release-upload.py` with the same IPA arguments and `--transport apple` |
+| Verify an existing IPA | `ios-release-upload.py --source-sha "$source_sha" --ipa "$ipa_path" --sha256 "$ipa_sha256" --release-dir "$release_dir" --verify-only` |
+| Submit a guarded local IPA | `ios-release-upload.py --provenance-receipt "$release_dir/local-build.json" --release-dir "$release_dir"` |
+| Direct Apple upload | `ios-release-upload.py` with the guarded local receipt and `--transport apple` |
 | Explicit GitHub Actions mode | `ios-release-actions.py --source-sha "$source_sha" --release-dir "$release_dir" --mode <mode>` with `--backend-verified` for `submit` |
 
 Run the scripts from the checkout root with `python3 -B scripts/<script>`. OTA
@@ -39,7 +40,9 @@ source with only non-product changes since the recorded baseline needs no app
 release. A Git-only request ends at Git verification. Cloud modes remain explicit.
 
 For a new Mac build, review both startup screenshots under `startup/`, then
-submit the exact `ipaPath` and `ipaSha256` from `local-build.json`. Verify
+submit with that private release directory's `local-build.json`. The upload
+route derives the source, IPA path and digest from its guarded provenance and
+does not accept independently supplied identity values. Verify
 required backend changes before submission. Keep the release directory to
 resume the same attempt. For Actions routes the saved run ID and outcome
 allow another invocation to watch the existing run. Check App Store Connect

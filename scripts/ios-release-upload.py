@@ -3,6 +3,7 @@
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -156,6 +157,86 @@ def write_receipt(path, value, *, exclusive=False):
                 os.replace(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+def sha256(path):
+    result = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def load_local_provenance(path, release_dir):
+    expected_path = release_dir / "local-build.json"
+    if path is None:
+        raise ValueError("submission requires --provenance-receipt from the guarded local build")
+    if path.is_symlink() or not path.is_file() or path.resolve() != expected_path:
+        raise ValueError("--provenance-receipt must be this release directory's local-build.json")
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(receipt, dict):
+        raise ValueError("local build provenance must be a JSON object")
+    ipa = release_dir / "Hither.ipa"
+    archive = release_dir / "Hither.xcarchive"
+    intent_path = release_dir / "local-build-intent.json"
+    admission_path = release_dir / "ci-admission.json"
+    if (ipa.is_symlink() or not ipa.is_file() or archive.is_symlink() or not archive.is_dir()
+            or any(item.is_symlink() for item in (intent_path, admission_path))
+            or not intent_path.is_file() or not admission_path.is_file()):
+        raise ValueError("local build provenance is missing its guarded build artifacts")
+    expected_identity = {
+        "sourceSha": receipt.get("sourceSha"),
+        "ipaPath": str(ipa),
+        "archivePath": str(archive),
+    }
+    intent = json.loads(intent_path.read_text(encoding="utf-8"))
+    admission = json.loads(admission_path.read_text(encoding="utf-8"))
+    provenance = receipt.get("provenance")
+    if (receipt.get("schemaVersion") != 2
+            or not SOURCE_SHA.fullmatch(str(receipt.get("sourceSha", "")))
+            or not IPA_SHA.fullmatch(str(receipt.get("ipaSha256", "")))
+            or any(receipt.get(key) != value for key, value in expected_identity.items())
+            or receipt.get("easCliVersion") != "21.0.2"
+            or receipt.get("easUpload") != "not_attempted"
+            or not isinstance(intent, dict)
+            or any(intent.get(key) != value for key, value in expected_identity.items())
+            or intent.get("status") != "unknown"
+            or not isinstance(admission, dict)
+            or admission.get("schemaVersion") != 1
+            or admission.get("sourceSha") != receipt.get("sourceSha")
+            or admission.get("workflowPath") != ".github/workflows/ci.yml"
+            or admission.get("status") != "completed"
+            or admission.get("conclusion") != "success"
+            or provenance != {"kind": "guarded-local-build",
+                              "buildIntentSha256": sha256(intent_path),
+                              "ciAdmissionSha256": sha256(admission_path)}):
+        raise ValueError("local build provenance does not bind this source and IPA")
+    return receipt, ipa
+
+
+def release_inputs(release_dir, verify_only, provenance_path, source_sha, ipa, expected_sha):
+    if verify_only:
+        if provenance_path is not None or source_sha is None or ipa is None or expected_sha is None:
+            raise ValueError("--verify-only requires --source-sha, --ipa, and --sha256 only")
+        return source_sha, ipa, expected_sha, None
+    if source_sha is not None or ipa is not None or expected_sha is not None:
+        raise ValueError("submission identity must come only from --provenance-receipt")
+    provenance, trusted_ipa = load_local_provenance(provenance_path, release_dir)
+    return provenance["sourceSha"], trusted_ipa, provenance["ipaSha256"], provenance
+
+
+def require_provenance_match(provenance, verification):
+    expected = {
+        "sourceSha": verification["sourceSha"],
+        "ipaSha256": verification["ipaSha256"],
+        "appVersion": verification["appVersion"],
+        "build": verification["buildNumber"],
+        "runtimeVersion": verification["runtimeVersion"],
+        "channel": verification["channel"],
+        "binaries": verification["binaries"],
+    }
+    if any(provenance.get(key) != value for key, value in expected.items()):
+        raise ValueError("verified IPA does not match its guarded local build provenance")
 
 
 def ensure_artifact_receipt(path, verification):
@@ -314,11 +395,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path.cwd(),
                         help="Git checkout containing the pinned source (defaults to the current checkout)")
-    parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--ipa", type=Path, required=True)
-    parser.add_argument("--sha256", required=True)
+    parser.add_argument("--source-sha")
+    parser.add_argument("--ipa", type=Path)
+    parser.add_argument("--sha256")
     parser.add_argument("--release-dir", type=Path, required=True,
                         help="absolute private directory for this IPA's receipts; reuse it when resuming")
+    parser.add_argument("--provenance-receipt", type=Path,
+                        help="guarded local-build.json required for every submission")
     parser.add_argument("--transport", choices=("eas", "apple"), default="eas",
                         help="use EAS Submit or Apple's altool with configured ASC credentials")
     mode = parser.add_mutually_exclusive_group()
@@ -331,9 +414,13 @@ def main():
 
     try:
         repo = Path(os.fsdecode(git(args.repo, "rev-parse", "--show-toplevel").strip()))
-        config = read_source(repo, args.source_sha)
-        verification = verify_ipa(args.ipa, args.source_sha, args.sha256, config)
         output = release_directory(args.release_dir)
+        source_sha, ipa, expected_sha, provenance = release_inputs(
+            output, args.verify_only, args.provenance_receipt, args.source_sha, args.ipa, args.sha256)
+        config = read_source(repo, source_sha)
+        verification = verify_ipa(ipa, source_sha, expected_sha, config)
+        if provenance is not None:
+            require_provenance_match(provenance, verification)
         ensure_artifact_receipt(output / "ipa-receipt.json", verification)
         if args.verify_only:
             print(json.dumps(verification, sort_keys=True))

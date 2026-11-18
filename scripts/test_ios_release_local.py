@@ -88,7 +88,25 @@ class LocalReleaseTests(unittest.TestCase):
         verify.assert_called_once()
         self.assertEqual(receipt['sourceSha'], SOURCE)
         self.assertEqual(receipt['easUpload'], 'not_attempted')
-        self.assertEqual(LOCAL.read_json(self.output / 'local-build.json'), receipt)
+        self.assertFalse((self.output / 'local-build.json').exists())
+
+    def test_local_provenance_binds_build_intent_and_ci_admission(self):
+        receipt = {**LOCAL.identity(SOURCE, self.output), 'ipaSha256': 'b' * 64}
+        self.write('local-build-intent.json', {**LOCAL.identity(SOURCE, self.output),
+                                               'status': 'unknown'})
+        self.write('ci-admission.json', {'schemaVersion': 1, 'sourceSha': SOURCE,
+                                         'workflowPath': '.github/workflows/ci.yml',
+                                         'status': 'completed', 'conclusion': 'success'})
+        bound = LOCAL.bind_local_provenance(receipt, SOURCE, self.output)
+        self.assertEqual(bound['schemaVersion'], 2)
+        self.assertEqual(bound['provenance'], {
+            'kind': 'guarded-local-build',
+            'buildIntentSha256': LOCAL.digest(self.output / 'local-build-intent.json'),
+            'ciAdmissionSha256': LOCAL.digest(self.output / 'ci-admission.json'),
+        })
+        self.write('ci-admission.json', {'sourceSha': SOURCE, 'status': 'failed'})
+        with self.assertRaisesRegex(ValueError, 'does not authorize'):
+            LOCAL.bind_local_provenance(receipt, SOURCE, self.output)
 
     def test_build_pins_eas_and_puts_work_archive_and_temporary_files_in_output(self):
         expo_plist = self.output / 'ios/Hither/Supporting/Expo.plist'
@@ -195,11 +213,14 @@ class LocalReleaseTests(unittest.TestCase):
         receipt = {'sourceSha': SOURCE}
         with patch.object(LOCAL, 'require_source'), patch.object(LOCAL.sys, 'platform', 'darwin'), \
                 patch.object(LOCAL, 'build_ipa', return_value=receipt), \
+                patch.object(LOCAL, 'bind_local_provenance', return_value=receipt) as provenance, \
                 patch.object(LOCAL.RELEASE, 'require_master_ci', return_value={'sourceSha': SOURCE}) as ci, \
                 patch.object(LOCAL, 'run') as run:
             LOCAL.main(['--source-sha', SOURCE, '--release-dir', str(self.output), '--build-only'])
         run.assert_not_called()
         ci.assert_called_once_with(SOURCE)
+        provenance.assert_called_once_with(receipt, SOURCE, self.output.resolve())
+        self.assertEqual(LOCAL.read_json(self.output / 'local-build.json'), receipt)
 
 
 if __name__ == '__main__':

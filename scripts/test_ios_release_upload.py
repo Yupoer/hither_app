@@ -74,6 +74,39 @@ class UploadTests(unittest.TestCase):
                 upload.runpy, "run_path", return_value=helpers):
             return upload.verify_ipa(self.ipa, SOURCE, self.digest, CONFIG)
 
+    def local_provenance(self):
+        archive = self.output / "Hither.xcarchive"
+        archive.mkdir()
+        trusted_ipa = self.output / "Hither.ipa"
+        self.ipa.replace(trusted_ipa)
+        self.ipa = trusted_ipa
+        self.digest = hashlib.sha256(self.ipa.read_bytes()).hexdigest()
+        self.identity.update(ipaSha256=self.digest)
+        self.verification.update(ipa=str(self.ipa), ipaSha256=self.digest)
+        intent = {"sourceSha": SOURCE, "ipaPath": str(self.ipa), "archivePath": str(archive),
+                  "status": "unknown"}
+        admission = {"schemaVersion": 1, "sourceSha": SOURCE,
+                     "workflowPath": ".github/workflows/ci.yml",
+                     "status": "completed", "conclusion": "success"}
+        upload.write_receipt(self.output / "local-build-intent.json", intent)
+        upload.write_receipt(self.output / "ci-admission.json", admission)
+        receipt = {**intent, "schemaVersion": 2, "ipaSha256": self.digest,
+                   "appVersion": CONFIG["version"], "build": "87",
+                   "runtimeVersion": CONFIG["runtimeVersion"], "channel": "production",
+                   "binaries": [
+                       {"bundleIdentifier": upload.APP_ID, "executable": "Hither",
+                        "uuids": [{"architecture": "arm64", "uuid": "00EC8EDA-B242-364F-B804-158C5DBF7373"}]},
+                       {"bundleIdentifier": upload.WIDGET_ID, "executable": "Widget",
+                        "uuids": [{"architecture": "arm64", "uuid": "00EC8EDA-B242-364F-B804-158C5DBF7373"}]},
+                   ],
+                   "easCliVersion": "21.0.2", "easUpload": "not_attempted",
+                   "provenance": {"kind": "guarded-local-build",
+                                  "buildIntentSha256": upload.sha256(self.output / "local-build-intent.json"),
+                                  "ciAdmissionSha256": upload.sha256(self.output / "ci-admission.json")}}
+        path = self.output / "local-build.json"
+        upload.write_receipt(path, receipt)
+        return path, receipt
+
     def test_verifies_both_bundle_uuids_and_production_identity(self):
         metadata = self.verify_fixture()
         self.assertEqual((metadata["ipaSha256"], metadata["appVersion"], metadata["buildNumber"],
@@ -99,6 +132,33 @@ class UploadTests(unittest.TestCase):
                 self.make_ipa(widget_build=widget, channel=channel)
                 with self.assertRaisesRegex(ValueError, error):
                     self.verify_fixture()
+
+    def test_submission_identity_requires_guarded_local_provenance(self):
+        with self.assertRaisesRegex(ValueError, "must come only"):
+            upload.release_inputs(self.output, False, None, SOURCE, self.ipa, self.digest)
+        path, receipt = self.local_provenance()
+        source, ipa, digest, observed = upload.release_inputs(
+            self.output, False, path, None, None, None)
+        self.assertEqual((source, ipa, digest, observed), (SOURCE, self.ipa, self.digest, receipt))
+        upload.require_provenance_match(receipt, self.verify_fixture())
+
+    def test_submission_rejects_synthesized_or_changed_provenance(self):
+        outside = self.repo / "supplied.json"
+        upload.write_receipt(outside, {})
+        with self.assertRaisesRegex(ValueError, "this release directory"):
+            upload.load_local_provenance(outside, self.output)
+        path, _ = self.local_provenance()
+        (self.output / "local-build-intent.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "does not bind"):
+            upload.load_local_provenance(path, self.output)
+
+    def test_verify_only_preserves_explicit_diagnostic_inputs(self):
+        self.assertEqual(upload.release_inputs(
+            self.output, True, None, SOURCE, self.ipa, self.digest),
+            (SOURCE, self.ipa, self.digest, None))
+        with self.assertRaisesRegex(ValueError, "requires"):
+            upload.release_inputs(self.output, True, self.output / "local-build.json",
+                                  SOURCE, self.ipa, self.digest)
 
     def test_direct_upload_requires_cancellation_of_the_same_eas_attempt(self):
         upload.write_receipt(self.output / "submission-intent.json", self.identity)
