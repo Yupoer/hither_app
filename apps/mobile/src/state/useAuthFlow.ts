@@ -475,17 +475,19 @@ export function useAuthFlow({
     }
 
     if (useHostedFallback) {
-      const redirectTo = await beginAuthCallback('link');
-      const { data, error } = await changeAuthSessionForActor(user.id, () => (
-        supabase.auth.linkIdentity({
+      const { data, error, redirectTo } = await changeAuthSessionForActor(user.id, async (lease) => {
+        const redirectTo = await beginAuthCallback('link', lease.actorId);
+        await lease.assertCurrent();
+        const linked = await supabase.auth.linkIdentity({
           provider: 'google',
           options: {
             redirectTo,
             skipBrowserRedirect: true,
             queryParams: { prompt: 'select_account' },
           },
-        })
-      ));
+        });
+        return { ...linked, redirectTo };
+      });
       if (error || !data?.url) {
         throw toAuthFlowError(error, 'Google linking failed.');
       }
@@ -528,12 +530,13 @@ export function useAuthFlow({
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
       });
-      if (!credential.identityToken) throw new Error('Apple linking failed');
+      const { identityToken } = credential;
+      if (!identityToken) throw new Error('Apple linking failed');
 
       return await changeAuthSessionForActor(user.id, async (lease) => {
         const { data, error } = await supabase.auth.linkIdentity({
           provider: 'apple',
-          token: credential.identityToken,
+          token: identityToken,
           nonce: rawNonce,
         });
         if (error) throw toAuthFlowError(error, 'Apple linking failed');

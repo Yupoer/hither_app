@@ -229,9 +229,37 @@
     {
       "parent": 285,
       "child": 285,
+      "acceptance": "Hosted Google link callbacks exchange once for the initiating actor and reject queued account changes and unbound stored links before SDK exchange.",
+      "testFile": "authCallbackSecurity.test.ts",
+      "testNamePattern": "exchanges a link for the initiating actor|rejects a link after a queued actor switch|rejects an unbound stored link"
+    },
+    {
+      "parent": 285,
+      "child": 285,
+      "acceptance": "Android Linking preserves a replacement account when a hosted Google link callback belongs to a prior actor.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "keeps the replacement account when Android delivers an earlier Google link"
+    },
+    {
+      "parent": 285,
+      "child": 285,
       "acceptance": "Logout drains and revokes installation capabilities before losing authentication and fences late account writes.",
       "testFile": "installationCapabilities.test.ts",
       "testNamePattern": "drains an in-flight registration|reports revocation failure|rejects an old account registration"
+    },
+    {
+      "parent": 285,
+      "child": 285,
+      "acceptance": "Queued sensitive auth operations reach the SDK only while the initiating account is active.",
+      "testFile": "installationCapabilities.test.ts",
+      "testNamePattern": "checks an actor lease when queued work reaches its sensitive operation"
+    },
+    {
+      "parent": 285,
+      "child": 285,
+      "acceptance": "Google and Apple links update the initiating account and reject a different linked or refreshed account.",
+      "testFile": "deleteAccountFlow.test.ts",
+      "testNamePattern": "result for an account other than the initiator|rejects a link when the refreshed session|links Google/Apple and applies profile updaters"
     },
     {
       "parent": 285,
@@ -407,6 +435,20 @@
       "acceptance": "Optional ad diagnostics respect consent at collection and upload, including queued data after revocation.",
       "testFile": "diagnostics.test.ts",
       "testNamePattern": "purges queued ad diagnostics when consent is revoked before upload"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Client roles lack direct execution privileges for the three internal Premium helpers, while the service role retains them.",
+      "testFile": "supabase/tests/database_security_role_matrix.test.sql",
+      "testNamePattern": "client roles cannot execute the (profile Premium|group Premium|effective entitlement) helper|service role retains the (profile Premium|group Premium|effective entitlement) helper"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "An authenticated member still reads team Premium through the projection after personal expiry, and the service role can resolve the underlying trip-pass grant.",
+      "testFile": "supabase/tests/premium_projection.test.sql",
+      "testNamePattern": "expired StoreKit does not drop trip-pass team compatibility|the service role can still resolve trip-pass Premium"
     },
     {
       "parent": 187,

@@ -1,10 +1,10 @@
 import * as Crypto from 'expo-crypto';
 import { supabaseAuthStorage } from '../api/authStorage';
 import { supabase } from '../api/supabase';
-import { changeAuthSession, resumeInstallationCapabilities } from '../api/installationCapabilities';
+import { changeAuthSession, changeAuthSessionForActor, resumeInstallationCapabilities } from '../api/installationCapabilities';
 
 type CallbackKind = 'oauth' | 'link' | 'signup' | 'recovery';
-type Transaction = { state: string; kind: CallbackKind; expiresAt: number };
+type Transaction = { state: string; kind: CallbackKind; expiresAt: number; actorId?: string };
 const KEY = 'hither.auth-pending-transaction';
 let exchanging: { url: string; result: ReturnType<typeof exchange> } | null = null;
 
@@ -19,9 +19,11 @@ export function authCallbackOrigin(): string {
   return url.origin;
 }
 
-export async function beginAuthCallback(kind: CallbackKind): Promise<string> {
+export function beginAuthCallback(kind: Exclude<CallbackKind, 'link'>): Promise<string>;
+export function beginAuthCallback(kind: 'link', actorId: string): Promise<string>;
+export async function beginAuthCallback(kind: CallbackKind, actorId?: string): Promise<string> {
   const origin = authCallbackOrigin();
-  const transaction: Transaction = { state: Crypto.randomUUID(), kind, expiresAt: Date.now() + 86_400_000 };
+  const transaction: Transaction = { state: Crypto.randomUUID(), kind, expiresAt: Date.now() + 86_400_000, actorId };
   await supabaseAuthStorage.setItem(KEY, JSON.stringify(transaction));
   exchanging = null;
   return `${origin}/auth/${kind === 'recovery' ? 'recovery' : 'callback'}?state=${transaction.state}`;
@@ -54,7 +56,12 @@ async function exchange(url: string) {
   if (!code) return null;
   // Consume before any network call; an invalid PKCE exchange cannot be replayed.
   await supabaseAuthStorage.removeItem(KEY);
-  const result = await changeAuthSession(() => supabase.auth.exchangeCodeForSession(code), pending.kind !== 'link');
+  const actorId = pending.kind === 'link' ? pending.actorId : undefined;
+  if (pending.kind === 'link' && (typeof actorId !== 'string' || !actorId)) return null;
+  const exchangeCode = () => supabase.auth.exchangeCodeForSession(code);
+  const result = actorId
+    ? await changeAuthSessionForActor(actorId, exchangeCode)
+    : await changeAuthSession(exchangeCode);
   if (result.error) throw result.error;
   resumeInstallationCapabilities();
   return { ...result.data, recovery: pending.kind === 'recovery' };

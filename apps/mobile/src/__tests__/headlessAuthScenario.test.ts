@@ -420,6 +420,23 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
+  it('keeps the replacement account when Android delivers an earlier Google link', async () => {
+    if (platform !== 'android') return;
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'link-actor-switch', userId: LEADER, platform, screen: { name: 'RoleSelect' } });
+      await world.waitFor(device, (value: any) => value.presentation.session.user?.id === LEADER, 'initiating account');
+      const redirect = await device.perform('auth.callback.beginAuthCallback', { args: ['link', LEADER] });
+      world.backend.configureAuth({ codes: [{ code: 'google-link-code', type: 'link', userId: LEADER }] });
+      await device.input({ kind: 'account', userId: PEER });
+      await world.waitFor(device, (value: any) => value.presentation.session.user?.id === PEER, 'replacement account');
+      await device.input({ kind: 'linking', url: `${redirect}&code=google-link-code` });
+      await world.settle();
+      expect(calls(world, 'exchangeCodeForSession')).toEqual([]);
+      expect((await device.observe()).presentation.session.user?.id).toBe(PEER);
+    } finally { await world.close(); }
+  });
+
   it('reports Google profile failures and stage timeouts without navigating to home', async () => {
     const world = new World();
     try {

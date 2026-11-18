@@ -139,6 +139,9 @@ describe('useAuthFlow deleteAccount and signOut', () => {
     jest.mocked(callbackFlow.consumeAuthCallback).mockResolvedValue({ user: { id: 'u1', email: 'linked@example.test' }, recovery: false } as never);
     const flow = makeFlow();
     expect(await flow[method]()).toMatchObject({ id: 'u1' });
+    expect(callbackFlow.beginAuthCallback).toHaveBeenCalledWith(...(
+      method === 'linkWithGoogle' ? ['link', 'u1'] : ['oauth']
+    ));
     expect(mockOpenAuth).toHaveBeenCalledWith('https://provider.test/authorize',
       'https://hither-legal.pages.dev/auth/callback?state=test', { preferUniversalLinks: true });
     expect(callbackFlow.consumeAuthCallback).toHaveBeenCalledWith(expect.stringContaining('code=pkce-code'));
