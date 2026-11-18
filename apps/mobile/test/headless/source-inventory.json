@@ -3531,7 +3531,7 @@
     "file": "src/components/SheetPresentation.ios.tsx",
     "kind": "export",
     "name": "SheetPresentation",
-    "hash": "39adf3dc1f087a6ac90c19004ccbcc61e65f1c722843ab0d5f63733cfb8c7a08"
+    "hash": "3a436ba16c9aa5f386a92d2d190b9f121d2f6d57b453e17fcaa616b83d3c0d4c"
   },
   {
     "file": "src/components/SheetPresentation.ios.tsx",
@@ -8727,7 +8727,7 @@
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "export",
     "name": "D6AddPlace",
-    "hash": "ba9c607542c6b83e9daf87f1b8736df0d6e99ddeec030db89ece31aafd3d64c4"
+    "hash": "adb08d05d227bb2e709dc7e28fcda7b6317526febf78e394a2d0cb8c9bdca1c2"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
