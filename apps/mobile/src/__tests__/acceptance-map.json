@@ -2929,6 +2929,27 @@
       "testNamePattern": "leaving the group updates"
     },
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Turning off location sharing purges precise locations and blocks direct client writes and peer reads; turning sharing on again restores owner writes and peer visibility.",
+      "testFile": "supabase/tests/member_location_sync.mjs",
+      "testNamePattern": "disabling sharing deletes retained locations|direct peer reads hide disabled members|re-enabled owners can update and share locations"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Manual refresh only wakes eligible peers until those peers publish their own fresh fixes.",
+      "testFile": "supabase/tests/member_location_refresh_freshness.test.sql",
+      "testNamePattern": "manual refresh only wakes eligible peers without a fresh fix"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Clearing the caller's memberships removes their locations and preserves the other member's location and team.",
+      "testFile": "supabase/tests/team_cleanup.test.sql",
+      "testNamePattern": "authenticated clear-all preserves other users and occupied groups"
+    },
+    {
       "parent": 366,
       "child": 366,
       "acceptance": "Ordinary positioning uses the requested precise/general/idle and passive-background cadence, and automatic heartbeat/route work follows its mode scale.",
