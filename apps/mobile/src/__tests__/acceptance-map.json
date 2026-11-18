@@ -1601,9 +1601,9 @@
     {
       "parent": 223,
       "child": 232,
-      "acceptance": "A4 Production and Sandbox JWS both verify; Xcode is rejected",
-      "testFile": "premiumLedgerContract.test.ts",
-      "testNamePattern": "A4 Production and Sandbox JWS both verify"
+      "acceptance": "A4 A StoreKit deployment accepts subscriptions and trip passes in its configured environment and rejects other environments",
+      "testFile": "supabase/functions/_shared/storekit_test.ts",
+      "testNamePattern": "StoreKit validates subscriptions and trip passes only in the configured environment"
     },
     {
       "parent": 223,
