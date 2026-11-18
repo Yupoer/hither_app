@@ -46,9 +46,14 @@ describe.each(['ios', 'android'])('actual member parent entries on %s', platform
       const parent = await world.waitFor(device, (value: Observation) => !field(value, 'notification-preference-addGathering'), 'notification child closed');
       expect(field(parent, 'settings-page-notifications')).toBeDefined();
       expect(parent.presentation.route.route).toBe('Map');
-      for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
-        expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
-          value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
+      if (platform === 'ios') {
+        expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
+          value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
+      } else {
+        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
+          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
+            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
+        }
       }
       await device.input({ kind: 'animation', finished: true });
       const returned = await world.waitFor(device, (value: Observation) => !field(value, 'settings-page-notifications'), 'settings returns to member Map');
