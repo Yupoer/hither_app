@@ -2651,6 +2651,20 @@
     {
       "parent": 270,
       "child": 270,
+      "acceptance": "Queued Live Activity starts and updates reach only users with current group access.",
+      "testFile": "supabase/functions/send-push/liveActivityMembership_test.ts",
+      "testNamePattern": "Live Activity start and update reach only currently eligible members"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "The backend-only push eligibility query excludes departed and expired anonymous users while retaining registered and unexpired group members.",
+      "testFile": "supabase/tests/current_push_member_ids.test.sql",
+      "testNamePattern": "only the backend service role|batch eligibility keeps registered and unexpired members"
+    },
+    {
+      "parent": 270,
+      "child": 270,
       "acceptance": "The member-ID-filtered public profile UPDATE channel reloads teammate identity while private-only writes produce no public event.",
       "testFile": "headlessPublicProfiles.test.ts",
       "testNamePattern": "converges teammate identity"
