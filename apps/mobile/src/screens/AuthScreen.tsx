@@ -29,10 +29,15 @@ import { AVATAR_COLORS, HOME_AVATAR_COLORS, avatarColorForGroup, avatarForGroup,
 import type { Group } from '../types';
 import { useMountEffect } from '../hooks/useMountEffect';
 import SheetHeaderAction from '../components/SheetHeaderAction';
+import SheetPresentation from '../components/SheetPresentation';
 import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from '../components/mapSheetChrome';
 import { ENTRY_ACCENT, EntryAvatar, EntryPrimaryButton } from './entry/EntryVisuals';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
+
+const AUTH_BACKGROUND = '#23283A';
+const CREATE_TEAM_DETENTS = [{ fraction: 0.64 }] as const;
+const JOIN_TEAM_DETENTS = [{ fraction: 0.52 }] as const;
 
 const teamAvatars = [
   ['🦊', HOME_AVATAR_COLORS[1]], ['🐑', HOME_AVATAR_COLORS[0]], ['🐺', AVATAR_COLORS[9]],
@@ -49,6 +54,7 @@ export default function AuthScreen({ navigation, route }: Props) {
   const { t, language } = useTranslation();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const isIOS = Platform.OS === 'ios';
   const request = route.params;
   const isLeader = request.role === 'leader';
   const name = user?.name?.trim() || t('entry.guestName');
@@ -59,6 +65,8 @@ export default function AuthScreen({ navigation, route }: Props) {
   const [nameLocked, setNameLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sheetVisible, setSheetVisible] = useState(true);
+  const pendingNavigation = useRef<(() => void) | null>(null);
   const mounted = useRef(true);
   const [emoji, color] = teamAvatars[avatarIndex];
   const myAvatar = user
@@ -68,12 +76,31 @@ export default function AuthScreen({ navigation, route }: Props) {
     ? getCachedMyJoinedGroups(user?.id)?.find(info => info.group.inviteCode === request.code)
     : undefined;
   const displayedNickname = nickname ?? name;
-  const canSubmit = !busy && (isLeader ? Boolean(groupName.trim()) : Boolean(displayedNickname.trim()));
+  const canSubmit = sheetVisible && !busy && (isLeader ? Boolean(groupName.trim()) : Boolean(displayedNickname.trim()));
+
+  function navigateAfterDismiss(action: () => void) {
+    if (!isIOS) {
+      action();
+      return;
+    }
+    if (pendingNavigation.current) return;
+    pendingNavigation.current = action;
+    setSheetVisible(false);
+  }
+
+  function finishDismiss() {
+    const action = pendingNavigation.current;
+    pendingNavigation.current = null;
+    action?.();
+  }
+
   const close = () => {
     if (busy) return;
     Keyboard.dismiss();
-    if (navigation.canGoBack()) navigation.goBack();
-    else navigation.replace('RoleSelect');
+    navigateAfterDismiss(() => {
+      if (navigation.canGoBack()) navigation.goBack();
+      else navigation.replace('RoleSelect');
+    });
   };
 
   useMountEffect(() => {
@@ -86,12 +113,14 @@ export default function AuthScreen({ navigation, route }: Props) {
     const state = navigation.getState();
     const previous = state.routes[state.index - 1];
     if (previous && (previous.name === 'RoleSelect' || previous.name === 'MyTeams')) {
-      navigation.dispatch({
-        ...CommonActions.setParams({ rejectedInviteKey: route.key }),
-        source: previous.key,
-        target: state.key,
+      navigateAfterDismiss(() => {
+        navigation.dispatch({
+          ...CommonActions.setParams({ rejectedInviteKey: route.key }),
+          source: previous.key,
+          target: state.key,
+        });
+        navigation.goBack();
       });
-      navigation.goBack();
     } else {
       setError(t('group.invalidInviteCode'));
     }
@@ -126,10 +155,12 @@ export default function AuthScreen({ navigation, route }: Props) {
         if (!current()) return;
         void refreshProfile().catch(() => undefined);
         logEvent(isLeader ? 'group_create' : 'group_join');
-        setMembership({ group, role: cachedTeam?.role ?? request.role });
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Map', params: { groupId: group.id, ...(isLeader ? { showTeamInvite: true } : {}) } }],
+        navigateAfterDismiss(() => {
+          setMembership({ group, role: cachedTeam?.role ?? request.role });
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Map', params: { groupId: group.id, ...(isLeader ? { showTeamInvite: true } : {}) } }],
+          });
         });
       } catch (cause) {
         if (current()) {
@@ -157,24 +188,14 @@ export default function AuthScreen({ navigation, route }: Props) {
     });
   }
 
-  return (
-    <KeyboardAvoidingView
-      style={styles.overlay}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      accessibilityViewIsModal
-    >
-      <View style={styles.scrim} />
-      <Pressable style={StyleSheet.absoluteFill} onPress={close} disabled={busy} accessible={false} />
-      <Animated.View entering={SlideInDown.duration(260).reduceMotion(ReduceMotion.System)}
-        testID="auth-sheet" style={[styles.sheet, {
-          marginBottom: Math.max(12, insets.bottom - 6), maxHeight: height - insets.top - insets.bottom - 18,
-        }]}>
-        <View style={styles.header}>
-          <Text accessibilityRole="header" style={styles.title}>{isLeader ? t('entry.createTeam') : t('entry.joinTeam')}</Text>
-          <SheetHeaderAction action="close" accessibilityLabel={t('common.close')} onPress={close} disabled={busy} testID="auth-close" />
-        </View>
+  const content = (
+    <>
+      <View style={styles.header}>
+        <Text accessibilityRole="header" style={styles.title}>{isLeader ? t('entry.createTeam') : t('entry.joinTeam')}</Text>
+        <SheetHeaderAction action="close" accessibilityLabel={t('common.close')} onPress={close} disabled={busy || !sheetVisible} testID="auth-close" />
+      </View>
       <ScrollView
-        style={styles.scroll}
+        style={isIOS ? styles.nativeScroll : styles.scroll}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
         contentContainerStyle={styles.content}
@@ -262,6 +283,33 @@ export default function AuthScreen({ navigation, route }: Props) {
         />
         {busy ? <ActivityIndicator accessibilityRole="progressbar" color="#fff" /> : null}
       </ScrollView>
+    </>
+  );
+
+  if (isIOS) {
+    return (
+      <SheetPresentation
+        visible={sheetVisible}
+        onClose={close}
+        onDismiss={finishDismiss}
+        dismissDisabled={busy}
+        detents={isLeader ? CREATE_TEAM_DETENTS : JOIN_TEAM_DETENTS}
+        backgroundColor={AUTH_BACKGROUND}
+      >
+        <View style={styles.nativeSheet} testID="auth-sheet">{content}</View>
+      </SheetPresentation>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.overlay} accessibilityViewIsModal>
+      <View style={styles.scrim} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={close} disabled={busy} accessible={false} />
+      <Animated.View entering={SlideInDown.duration(260).reduceMotion(ReduceMotion.System)}
+        testID="auth-sheet" style={[styles.sheet, {
+          marginBottom: Math.max(12, insets.bottom - 6), maxHeight: height - insets.top - insets.bottom - 18,
+        }]}>
+        {content}
       </Animated.View>
     </KeyboardAvoidingView>
   );
@@ -270,8 +318,10 @@ export default function AuthScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: MAP_FLOATING_EDGE_INSET },
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: '#07091696' },
-  sheet: { flexShrink: 1, borderRadius: MAP_SHEET_CORNER_RADIUS, backgroundColor: '#23283A',
+  sheet: { flexShrink: 1, borderRadius: MAP_SHEET_CORNER_RADIUS, backgroundColor: AUTH_BACKGROUND,
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#FFFFFF42' },
+  nativeSheet: { flex: 1 },
+  nativeScroll: { flex: 1 },
   header: { paddingHorizontal: SHEET_CORNER_ACTION_INSET, paddingTop: SHEET_CORNER_ACTION_INSET, flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { flex: 1, minWidth: 0, color: '#fff', fontWeight: '800', fontSize: APP_TEXT_SIZE.heading },
   scroll: { flexGrow: 0, flexShrink: 1 },

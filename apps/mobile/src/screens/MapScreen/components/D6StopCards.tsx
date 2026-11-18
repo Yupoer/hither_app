@@ -1,5 +1,5 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
-import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import React, { useState } from 'react';
 import {
   Keyboard,
@@ -22,6 +22,7 @@ import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useVisibleUi } from '../../../state/foregroundUi';
 import SystemToggle from '../../../components/SystemToggle';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
+import SheetPresentation, { type SheetDetent } from '../../../components/SheetPresentation';
 import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../../../components/mapSheetChrome';
 import { normalizePlaceSearchResults } from '../../../utils/normalizePlaceSearchResults';
 import { dateForTripDay, localDayKey } from '../../../utils/tripDay';
@@ -29,6 +30,12 @@ import type { FavoritePlace } from '../../../api/client';
 import type { TravelMode } from '../../../utils/geo';
 import type { Destination } from '../../../types';
 import { D6_ACCENT, D6IconButton, D6Surface, d6ChromeStyles } from './D6HomeChrome';
+
+const STOP_DETENTS = ['medium', { fraction: 0.87 }] satisfies readonly SheetDetent[];
+const ADD_CENTER_DETENTS = [{ height: 112 }] satisfies readonly SheetDetent[];
+const ADD_COORDINATE_DETENTS = [{ height: 140 }] satisfies readonly SheetDetent[];
+const ADD_CONFIRM_DETENTS = [{ fraction: 0.52 }] satisfies readonly SheetDetent[];
+const ADD_SHEET_BACKGROUND = '#26302EF2';
 
 const DETAIL_TIMING = { duration: 280, easing: Easing.inOut(Easing.cubic) };
 
@@ -68,6 +75,8 @@ function CardRow({ label, value, onPress, children }: {
 export type D6StopEditor = 'time' | 'icon' | 'transport' | 'radius' | null;
 
 type StopCardProps = {
+  visible: boolean;
+  onDismiss: () => void;
   stop: Destination;
   departureDate?: string;
   color: string;
@@ -134,28 +143,18 @@ function TimeEditor({ stop, departureDate, displayFont, zh, busy, onTime }: Pick
 }
 
 export function D6StopCard(props: StopCardProps) {
+  return (
+    <SheetPresentation visible={props.visible} detents={STOP_DETENTS}
+      onClose={props.onClose} onDismiss={props.onDismiss} allowBackgroundInteraction>
+      <StopCardContent key={props.stop.id} {...props} />
+    </SheetPresentation>
+  );
+}
+
+function StopCardContent(props: StopCardProps) {
   const { stop, departureDate, color, zh, current, canEdit, canSetStay, stays, busy, edit, onEdit, radius, radiusOverride,
     onRadiusPreview, onRadius, travelMode, modeEtas, onMode, onIcon, onStay, onClose, onMaps, onDelete, onHistory, error } = props;
-  const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const headerHeight = useSharedValue(0);
-  const bodyHeight = useSharedValue(0);
   const [timeDraftKey, setTimeDraftKey] = useState(0);
-  const bottomInset = Math.max(24, insets.bottom - 8);
-  const maxHeight = height - insets.top - bottomInset - 12;
-  const entrance = useSharedValue(0);
-  useMountEffect(() => {
-    entrance.set(withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }));
-    return () => cancelAnimation(entrance);
-  });
-  const cardStyle = useAnimatedStyle(() => {
-    const measured = headerHeight.get() + bodyHeight.get() + SHEET_CORNER_ACTION_INSET * 2 + 10;
-    return {
-      height: headerHeight.get() > 0 && bodyHeight.get() > 0 ? Math.min(maxHeight, measured) : undefined,
-      opacity: entrance.get(),
-      transform: [{ translateY: (1 - entrance.get()) * 14 }],
-    };
-  });
   const date = stop.day == null ? null : dateForTripDay(departureDate, stop.day);
   const dateLabel = date && (zh
     ? `${date.getMonth() + 1}/${date.getDate()} 週${'日一二三四五六'[date.getDay()]}`
@@ -167,23 +166,22 @@ export function D6StopCard(props: StopCardProps) {
     onEdit(edit === editor ? null : editor);
   };
   return (
-    <Animated.View testID="d6-stop-card" style={[d6ChromeStyles.bottomCard, { bottom: bottomInset, maxHeight }, cardStyle]}>
-      <D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />
-        <View style={styles.cardHead} onLayout={event => headerHeight.set(event.nativeEvent.layout.height)}>
-          <View style={styles.cardIdentity}>
-            <View style={[styles.tile, { backgroundColor: color }]}>
-              {stays ? <Ionicons name="bed-outline" size={24} color="#fff" /> : <Text allowFontScaling={false} style={styles.tileEmoji}>{stop.emoji ?? '📍'}</Text>}
-            </View>
-            <View style={styles.grow}>
-              <HitherText typeRole="title" style={styles.name} numberOfLines={2}>{stop.title}</HitherText>
-              <HitherText style={styles.rowValue}>
-                {dateLabel ?? (stop.day == null ? (zh ? '待排' : 'Unscheduled') : (zh ? `第 ${stop.day} 天` : `Day ${stop.day}`))}
-              </HitherText>
-            </View>
+    <View testID="d6-stop-card" style={styles.sheetBody}>
+      <View style={styles.cardHead}>
+        <View style={styles.cardIdentity}>
+          <View style={[styles.tile, { backgroundColor: color }]}>
+            {stays ? <Ionicons name="bed-outline" size={24} color="#fff" /> : <Text allowFontScaling={false} style={styles.tileEmoji}>{stop.emoji ?? '📍'}</Text>}
           </View>
-          <SheetHeaderAction action="close" accessibilityLabel={zh ? '關閉集合點詳情' : 'Close stop details'} onPress={onClose} testID="d6-stop-close" />
+          <View style={styles.grow}>
+            <HitherText typeRole="title" style={styles.name} numberOfLines={2}>{stop.title}</HitherText>
+            <HitherText style={styles.rowValue}>
+              {dateLabel ?? (stop.day == null ? (zh ? '待排' : 'Unscheduled') : (zh ? `第 ${stop.day} 天` : `Day ${stop.day}`))}
+            </HitherText>
+          </View>
         </View>
-      <ScrollView style={styles.cardBody} onContentSizeChange={(_width, contentHeight) => bodyHeight.set(contentHeight)} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <SheetHeaderAction action="close" accessibilityLabel={zh ? '關閉集合點詳情' : 'Close stop details'} onPress={onClose} testID="d6-stop-close" />
+      </View>
+      <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <CardRow label={zh ? '集合時間' : 'Meeting time'} value={showReservedTime ? formatClock(time, zh) : '—'}
           onPress={canEdit && !stays ? () => switchEdit('time') : undefined} />
         {canEdit ? <DetailEditor open={edit === 'time'}><TimeEditor key={`${stop.id}:${timeDraftKey}`} {...props} /></DetailEditor> : null}
@@ -216,7 +214,7 @@ export function D6StopCard(props: StopCardProps) {
           {canEdit ? <Action title={zh ? '刪除' : 'Delete'} disabled={busy} destructive onPress={onDelete} /> : null}
         </View>
       </ScrollView>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -250,7 +248,9 @@ type AddCardProps = {
   favorite: boolean;
   favoriteBusy: boolean;
   busy: boolean;
-  keyboardHeight: number;
+  sheetVisible: boolean;
+  onSheetDismiss: () => void;
+  nestedSheets?: React.ReactNode;
   zh: boolean;
   error?: string | null;
   onClose: () => void;
@@ -333,7 +333,7 @@ function AddOption({ label, description, selected, onPress, testID }: {
 
 export function D6AddPlace(props: AddCardProps) {
   const { session, place, title, favoritePlaces, biasRegion, departureDate, stops, canEdit, canSetStay, quota,
-    favorite, favoriteBusy, busy, keyboardHeight, zh, color, onClose, onCenter, onPick, onTitle, onDay, onPlacement,
+    favorite, favoriteBusy, busy, sheetVisible, onSheetDismiss, nestedSheets, zh, color, onClose, onCenter, onPick, onTitle, onDay, onPlacement,
     onStay, onFavorite, onImport, onCommit, error } = props;
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<{ key: string; results: PlaceResult[] | null } | null>(null);
@@ -368,98 +368,104 @@ export function D6AddPlace(props: AddCardProps) {
     Keyboard.dismiss();
     setSelector(current => current === value ? null : value);
   };
+  const detents = place ? ADD_CONFIRM_DETENTS : pinCoordinates ? ADD_COORDINATE_DETENTS : ADD_CENTER_DETENTS;
   return (
     <View pointerEvents="box-none" style={styles.addLayer}>
-      {visible && showSuggestions && !place && search ? <SearchPlaces
-        key={searchKey} query={localized} region={biasRegion}
-        onResult={results => setResponse({ key: searchKey, results })}
-      /> : null}
-      {!place && !pinCoordinates ? <View pointerEvents="none" style={styles.crosshair}><Ionicons name="location" size={30} color={D6_ACCENT} /></View> : null}
-      <View style={[styles.search, { top: Math.max(56, insets.top) }]}>
-        <View style={styles.searchBar}>
-          <D6Surface radius={MAP_SHEET_CORNER_RADIUS} />
-          <View style={styles.searchIcon}><Ionicons name="search" size={20} color="#ffffffb0" /></View>
-          <TextInput testID="map-search-input" accessibilityLabel={zh ? '搜尋地點' : 'Search places'}
-            placeholder={session.stay ? (zh ? '搜尋住宿' : 'Search accommodation') : (zh ? '搜尋地點' : 'Search places')}
-            placeholderTextColor="#ffffff80" value={query} onFocus={() => { setPinCoordinates(false); setShowSuggestions(true); }}
-            onChangeText={value => { setQuery(value); setResponse(null); }} style={styles.searchInput} returnKeyType="search" />
-          <SheetHeaderAction action="close" accessibilityLabel={zh ? '關閉搜尋' : 'Close search'} onPress={onClose} testID="d6-add-close" />
-        </View>
-        {showSuggestions && !place ? (
-          <View style={[styles.results, { maxHeight: height * .40 }]}>
-            <D6Surface radius={24} thick />
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {currentResponse === null ? <Text accessibilityRole="alert" style={styles.destructive}>{zh ? '搜尋暫時無法使用' : 'Search is temporarily unavailable'}</Text> : null}
-              {currentResponse?.map(item => <Pressable key={item.id} accessibilityRole="button" style={styles.result}
-                onPress={() => pick(item)}><Ionicons name={session.stay ? 'bed-outline' : 'location-outline'} size={20} color="#fff" /><Label>{item.name}</Label></Pressable>)}
-              {!session.stay && !query.trim() ? favoritePlaces.map(item => <Pressable key={item.id} accessibilityRole="button" style={styles.result}
-                onPress={() => pick({ id: item.id, name: item.title, address: item.address, coordinates: item.coordinates })}>
-                <Ionicons name="heart-outline" size={19} color="#FFB5C7" /><Label>{item.title}</Label></Pressable>) : null}
-              <Pressable testID="d6-add-coordinates" accessibilityRole="button" accessibilityLabel={zh ? '座標' : 'Coordinates'}
-                style={styles.result} onPress={() => {
-                  Keyboard.dismiss();
-                  setShowSuggestions(false);
-                  setPinCoordinates(true);
-                }}><Ionicons name="grid-outline" size={20} color="#fff" /><Label>{zh ? '座標' : 'Coordinates'}</Label></Pressable>
-              <Pressable accessibilityRole="button" style={[styles.result, styles.lastResult]} onPress={onImport}><Ionicons name="cloud-upload-outline" size={20} color="#fff" /><Label>{zh ? '匯入 KML' : 'Import KML'}</Label></Pressable>
-            </ScrollView>
+      {sheetVisible && <>
+        {visible && showSuggestions && !place && search ? <SearchPlaces
+          key={searchKey} query={localized} region={biasRegion}
+          onResult={results => setResponse({ key: searchKey, results })}
+        /> : null}
+        {!place && !pinCoordinates ? <View pointerEvents="none" style={styles.crosshair}><Ionicons name="location" size={30} color={D6_ACCENT} /></View> : null}
+        <View style={[styles.search, { top: Math.max(56, insets.top) }]}>
+          <View style={styles.searchBar}>
+            <D6Surface radius={MAP_SHEET_CORNER_RADIUS} />
+            <View style={styles.searchIcon}><Ionicons name="search" size={20} color="#ffffffb0" /></View>
+            <TextInput testID="map-search-input" accessibilityLabel={zh ? '搜尋地點' : 'Search places'}
+              placeholder={session.stay ? (zh ? '搜尋住宿' : 'Search accommodation') : (zh ? '搜尋地點' : 'Search places')}
+              placeholderTextColor="#ffffff80" value={query} onFocus={() => { setPinCoordinates(false); setShowSuggestions(true); }}
+              onChangeText={value => { setQuery(value); setResponse(null); }} style={styles.searchInput} returnKeyType="search" />
+            <SheetHeaderAction action="close" accessibilityLabel={zh ? '關閉搜尋' : 'Close search'} onPress={onClose} testID="d6-add-close" />
           </View>
-        ) : null}
-      </View>
-      <View style={[d6ChromeStyles.bottomCard, { bottom: Math.max(24, insets.bottom - 8, keyboardHeight + 8),
-        maxHeight: Math.max(160, height - Math.max(insets.bottom, keyboardHeight) - insets.top - 24) }]}>
-        <D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />
-        {!place && pinCoordinates ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
-          <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
-          <Text style={styles.rowValue}>{zh ? '放下圖釘後，就能用該位置新增集合點。' : 'Drop a pin to use that location for your new stop.'}</Text>
-        </View> : !place ? <Action title={zh ? '將地圖中心設為集合點' : 'Add a stop at map center'} primary onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} /> : <>
-          <View style={styles.cardHead}>
-            <View style={styles.addIdentity}>
-              <View style={[styles.placeIcon, { backgroundColor: color }]}>
-                <Ionicons name="location-outline" size={23} color="#fff" />
-              </View>
-              <View style={styles.grow}>
-                <PlaceTitle key={place.id} title={title} name={place.name} zh={zh} onTitle={onTitle} />
-                {place.address ? <HitherText style={styles.placeAddress} numberOfLines={2}>{place.address}</HitherText> : null}
-              </View>
+          {showSuggestions && !place ? (
+            <View style={[styles.results, { maxHeight: height * .40 }]}>
+              <D6Surface radius={24} thick />
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                {currentResponse === null ? <Text accessibilityRole="alert" style={styles.destructive}>{zh ? '搜尋暫時無法使用' : 'Search is temporarily unavailable'}</Text> : null}
+                {currentResponse?.map(item => <Pressable key={item.id} accessibilityRole="button" style={styles.result}
+                  onPress={() => pick(item)}><Ionicons name={session.stay ? 'bed-outline' : 'location-outline'} size={20} color="#fff" /><Label>{item.name}</Label></Pressable>)}
+                {!session.stay && !query.trim() ? favoritePlaces.map(item => <Pressable key={item.id} accessibilityRole="button" style={styles.result}
+                  onPress={() => pick({ id: item.id, name: item.title, address: item.address, coordinates: item.coordinates })}>
+                  <Ionicons name="heart-outline" size={19} color="#FFB5C7" /><Label>{item.title}</Label></Pressable>) : null}
+                <Pressable testID="d6-add-coordinates" accessibilityRole="button" accessibilityLabel={zh ? '座標' : 'Coordinates'}
+                  style={styles.result} onPress={() => {
+                    Keyboard.dismiss();
+                    setShowSuggestions(false);
+                    setPinCoordinates(true);
+                  }}><Ionicons name="grid-outline" size={20} color="#fff" /><Label>{zh ? '座標' : 'Coordinates'}</Label></Pressable>
+                <Pressable accessibilityRole="button" style={[styles.result, styles.lastResult]} onPress={onImport}><Ionicons name="cloud-upload-outline" size={20} color="#fff" /><Label>{zh ? '匯入 KML' : 'Import KML'}</Label></Pressable>
+              </ScrollView>
             </View>
-            <SheetHeaderAction action={favorite ? 'favorited' : 'favorite'} disabled={favoriteBusy} onPress={onFavorite} testID="d6-place-favorite"
-              accessibilityLabel={favorite ? (zh ? '從我的最愛移除' : 'Remove from favorites') : (zh ? '加到我的最愛' : 'Add to favorites')} />
-          </View>
-          <ScrollView style={styles.addFieldsScroll} keyboardShouldPersistTaps="handled" nestedScrollEnabled contentContainerStyle={styles.addFields}>
-            <AddChoice label={zh ? '行程日期' : 'Trip date'} value={dayDate(session.day) ?? dayName(session.day)}
-              expanded={selector === 'day'} onPress={props.tripDays > 1 ? () => toggleSelector('day') : undefined} testID="d6-place-day" />
-            {selector === 'day' ? <ScrollView testID="d6-place-day-options" style={styles.optionList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-              {Array.from({ length: props.tripDays }, (_, index) => index + 1).map(day => <AddOption key={day} label={dayDate(day) ?? dayName(day)}
-                description={dayDate(day) ? dayName(day) : undefined} selected={session.day === day} testID={`d6-place-day-${day}`}
-                onPress={() => { onDay(day); setSelector(null); }} />)}
-            </ScrollView> : null}
-            {canEdit && !session.stay ? <>
-              <AddChoice label={zh ? '加入哪一站' : 'Place in itinerary'} value={placementLabel} expanded={selector === 'placement'}
-                onPress={stops.length ? () => toggleSelector('placement') : undefined} testID="d6-place-position" />
-              {selector === 'placement' && stops.length > 0 ? <ScrollView testID="d6-place-position-options" style={styles.optionList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                <AddOption label={first} selected={placement.kind === 'first'} testID="d6-place-first" onPress={() => choosePlacement({ kind: 'first' })} />
-                {stops.slice(0, -1).map(stop => <AddOption key={stop.id} label={afterLabel(stop.title)}
-                  selected={placement.kind === 'after' && placement.stopId === stop.id}
-                  testID={`d6-place-after-${stop.id}`} onPress={() => choosePlacement({ kind: 'after', stopId: stop.id })} />)}
-                <AddOption label={last} selected={placement.kind === 'last' || (placement.kind === 'after' && !afterStop)}
-                  testID="d6-place-last" onPress={() => choosePlacement({ kind: 'last' })} />
-              </ScrollView> : null}
-            </> : null}
-            {canSetStay ? <View style={styles.stayRow}>
-              <View style={styles.grow}>
-                <HitherText style={styles.choiceLabel}>{zh ? '設為住宿' : 'Set as accommodation'}</HitherText>
-                {session.stay ? <HitherText style={styles.optionDetail}>{zh ? '住宿會顯示在獨立區塊。' : 'Shown in a separate accommodation section.'}</HitherText> : null}
+          ) : null}
+        </View>
+      </>}
+      <SheetPresentation visible={sheetVisible} detents={detents} selection={detents[0]} onClose={onClose} onDismiss={onSheetDismiss}
+        backgroundColor={ADD_SHEET_BACKGROUND} allowBackgroundInteraction ignoreKeyboardInsets={!place}>
+        <View testID="d6-add-card" style={[styles.addSheetBody, !place && styles.addSheetCompactBody]}>
+          {!place && pinCoordinates ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
+            <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
+            <Text style={styles.rowValue}>{zh ? '放下圖釘後，就能用該位置新增集合點。' : 'Drop a pin to use that location for your new stop.'}</Text>
+          </View> : !place ? <Action testID="d6-add-map-center" title={zh ? '將地圖中心設為集合點' : 'Add a stop at map center'} primary
+            style={styles.footerAction} onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} /> : <>
+            <View style={styles.cardHead}>
+              <View style={styles.addIdentity}>
+                <View style={[styles.placeIcon, { backgroundColor: color }]}>
+                  <Ionicons name="location-outline" size={23} color="#fff" />
+                </View>
+                <View style={styles.grow}>
+                  <PlaceTitle key={place.id} title={title} name={place.name} zh={zh} onTitle={onTitle} />
+                  {place.address ? <HitherText style={styles.placeAddress} numberOfLines={2}>{place.address}</HitherText> : null}
+                </View>
               </View>
-              <SystemToggle testID="d6-add-stay" accessibilityLabel={zh ? '設為住宿' : 'Set as accommodation'} value={session.stay}
-                disabled={busy} onValueChange={stay => { setSelector(null); onStay(stay); }} />
-            </View> : null}
-          </ScrollView>
-          {error ? <Text accessibilityRole="alert" style={styles.destructive}>{error}</Text> : null}
-          <Action testID="confirm-place-add" title={quota ? (zh ? '解鎖更多集合點' : 'Unlock more stops') : canEdit ? (zh ? '加入' : 'Add') : (zh ? '建議' : 'Suggest')}
-            primary disabled={busy || !title.trim()} onPress={onCommit} />
-        </>}
-      </View>
+              <SheetHeaderAction action={favorite ? 'favorited' : 'favorite'} disabled={favoriteBusy} onPress={onFavorite} testID="d6-place-favorite"
+                accessibilityLabel={favorite ? (zh ? '從我的最愛移除' : 'Remove from favorites') : (zh ? '加到我的最愛' : 'Add to favorites')} />
+            </View>
+            <ScrollView style={styles.addFieldsScroll} keyboardShouldPersistTaps="handled" nestedScrollEnabled contentContainerStyle={styles.addFields}>
+              <AddChoice label={zh ? '行程日期' : 'Trip date'} value={dayDate(session.day) ?? dayName(session.day)}
+                expanded={selector === 'day'} onPress={props.tripDays > 1 ? () => toggleSelector('day') : undefined} testID="d6-place-day" />
+              {selector === 'day' ? <ScrollView testID="d6-place-day-options" style={styles.optionList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                {Array.from({ length: props.tripDays }, (_, index) => index + 1).map(day => <AddOption key={day} label={dayDate(day) ?? dayName(day)}
+                  description={dayDate(day) ? dayName(day) : undefined} selected={session.day === day} testID={`d6-place-day-${day}`}
+                  onPress={() => { onDay(day); setSelector(null); }} />)}
+              </ScrollView> : null}
+              {canEdit && !session.stay ? <>
+                <AddChoice label={zh ? '加入哪一站' : 'Place in itinerary'} value={placementLabel} expanded={selector === 'placement'}
+                  onPress={stops.length ? () => toggleSelector('placement') : undefined} testID="d6-place-position" />
+                {selector === 'placement' && stops.length > 0 ? <ScrollView testID="d6-place-position-options" style={styles.optionList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  <AddOption label={first} selected={placement.kind === 'first'} testID="d6-place-first" onPress={() => choosePlacement({ kind: 'first' })} />
+                  {stops.slice(0, -1).map(stop => <AddOption key={stop.id} label={afterLabel(stop.title)}
+                    selected={placement.kind === 'after' && placement.stopId === stop.id}
+                    testID={`d6-place-after-${stop.id}`} onPress={() => choosePlacement({ kind: 'after', stopId: stop.id })} />)}
+                  <AddOption label={last} selected={placement.kind === 'last' || (placement.kind === 'after' && !afterStop)}
+                    testID="d6-place-last" onPress={() => choosePlacement({ kind: 'last' })} />
+                </ScrollView> : null}
+              </> : null}
+              {canSetStay ? <View style={styles.stayRow}>
+                <View style={styles.grow}>
+                  <HitherText style={styles.choiceLabel}>{zh ? '設為住宿' : 'Set as accommodation'}</HitherText>
+                  {session.stay ? <HitherText style={styles.optionDetail}>{zh ? '住宿會顯示在獨立區塊。' : 'Shown in a separate accommodation section.'}</HitherText> : null}
+                </View>
+                <SystemToggle testID="d6-add-stay" accessibilityLabel={zh ? '設為住宿' : 'Set as accommodation'} value={session.stay}
+                  disabled={busy} onValueChange={stay => { setSelector(null); onStay(stay); }} />
+              </View> : null}
+            </ScrollView>
+            {error ? <Text accessibilityRole="alert" style={styles.destructive}>{error}</Text> : null}
+            <Action testID="confirm-place-add" title={quota ? (zh ? '解鎖更多集合點' : 'Unlock more stops') : canEdit ? (zh ? '加入' : 'Add') : (zh ? '建議' : 'Suggest')}
+              primary style={styles.footerAction} disabled={busy || !title.trim()} onPress={onCommit} />
+          </>}
+          {nestedSheets}
+        </View>
+      </SheetPresentation>
     </View>
   );
 }
@@ -471,7 +477,11 @@ export function defaultD6Departure(departureDate?: string) {
 const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
-  cardBody: { flexGrow: 0, flexShrink: 1, minHeight: 0 },
+  sheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET },
+  scrollBody: { flex: 1, minHeight: 0 },
+  addSheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET, justifyContent: 'flex-end' },
+  addSheetCompactBody: { flex: 0, flexShrink: 0 },
+  footerAction: { flexGrow: 0, flexShrink: 0 },
   editorClip: { overflow: 'hidden' },
   editorMeasure: { position: 'absolute', top: 0, left: 0, right: 0 },
   cardIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: MAP_SHEET_ACTION_HIT_SIZE },
@@ -502,10 +512,10 @@ const styles = StyleSheet.create({
   addLayer: { ...StyleSheet.absoluteFill, zIndex: 83 },
   crosshair: { position: 'absolute', left: '50%', top: '50%', marginLeft: -15, marginTop: -30 },
   search: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET },
-  searchBar: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 6, paddingVertical: 6, paddingLeft: 14, paddingRight: 0, boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
+  searchBar: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 6, paddingVertical: 6, paddingLeft: 14, paddingRight: 8, backgroundColor: '#26302E99', boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
   searchIcon: { height: MAP_SHEET_ACTION_HIT_SIZE, justifyContent: 'center' },
   searchInput: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, fontSize: APP_TEXT_SIZE.body, color: '#fff' },
-  results: { marginTop: 8, borderRadius: 24, paddingHorizontal: 12, paddingVertical: 4 },
+  results: { marginTop: 8, borderRadius: 24, paddingHorizontal: 12, paddingVertical: 4, backgroundColor: '#26302E99' },
   result: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#ffffff1a' },
   lastResult: { borderBottomWidth: 0 },
   addIdentity: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
@@ -513,7 +523,7 @@ const styles = StyleSheet.create({
   placeAddress: { color: '#ffffffa6', fontSize: APP_TEXT_SIZE.caption, marginTop: 3 },
   rename: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 23 },
   renameText: { color: '#BDCAFA', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
-  addFieldsScroll: { flexGrow: 0, flexShrink: 1, marginBottom: 12 },
+  addFieldsScroll: { flex: 1, minHeight: 0, marginBottom: 12 },
   addFields: { gap: 5 },
   choice: { flexDirection: 'row', alignItems: 'center', minHeight: 48, gap: 10, paddingVertical: 8, paddingHorizontal: 12,
     borderRadius: 14, backgroundColor: '#ffffff12' },

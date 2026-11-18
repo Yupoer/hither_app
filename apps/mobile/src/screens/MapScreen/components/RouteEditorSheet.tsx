@@ -49,6 +49,7 @@ export interface RouteEditorSheetProps {
   routeDepartureDate: string | undefined;
   routeDraft: RouteDraft;
   routeDragPreview: React.ReactNode;
+  presentedContent?: React.ReactNode;
   routeEditorScopeId: string | undefined;
   routeEditorServerDestinations: Destination[];
   routeInteractionMode: "drag" | "select" | "none";
@@ -95,6 +96,7 @@ export function RouteEditorSheet({
   routeDepartureDate,
   routeDraft,
   routeDragPreview,
+  presentedContent,
   routeEditorScopeId,
   routeEditorServerDestinations,
   routeInteractionMode,
@@ -135,6 +137,7 @@ export function RouteEditorSheet({
         setRouteOverlayOpenComplete(true);
       }}
       floatingContent={routeDragPreview}
+      presentedContent={presentedContent}
       title={t('map.gatheringPoints')}
       accent={accent}
       doneLabel={t('map.done')}

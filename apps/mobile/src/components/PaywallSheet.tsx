@@ -1,16 +1,20 @@
 import { APP_TEXT_SIZE } from '../theme/typeScale';
 /**
- * Full-screen Premium paywall. Restore remains available only when opened
+ * Premium paywall. Restore remains available only when opened
  * from Settings. Prices come from StoreKit — never hardcoded.
  */
 import React from 'react';
-import { Modal, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PremiumPresentation from './PremiumPresentation';
 import { useTranslation, type TranslationKey } from '../i18n';
 import SheetHeaderAction from './SheetHeaderAction';
+import SheetPresentation from './SheetPresentation';
 import { MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
+
+const PAYWALL_DETENTS = [{ fraction: 0.94 }] as const;
+const PAYWALL_BACKGROUND = '#071526';
 
 export default React.memo(function PaywallSheet({
   visible,
@@ -30,44 +34,52 @@ export default React.memo(function PaywallSheet({
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={onClose}
-    >
-      <View style={[styles.root, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <View style={styles.closeSlot} />
-          <Text style={styles.headerTitle}>{t('paywall.title')}</Text>
-          <SheetHeaderAction
-            action="close"
-            onPress={onClose}
-            accessibilityLabel={t('common.cancel')}
-          />
-        </View>
-        <ScrollView contentContainerStyle={styles.scroll}>
-          {visible ? (
-            <PremiumPresentation
-              showRestore={showRestore}
-              showIntroPager
-              trigger={trigger}
-              onPurchaseSuccess={onClose}
-              onRestoreSuccess={onClose}
-              onEntitlementActivated={onEntitlementActivated}
-              onUnlockingChange={onUnlockingChange}
-              testID="paywall-premium-presentation"
-            />
-          ) : null}
-        </ScrollView>
+  const isIOS = Platform.OS === 'ios';
+  const content = (
+    <View style={[styles.root, !isIOS && { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <View style={styles.closeSlot} />
+        <Text style={styles.headerTitle}>{t('paywall.title')}</Text>
+        <SheetHeaderAction
+          action="close"
+          onPress={onClose}
+          accessibilityLabel={t('common.cancel')}
+        />
       </View>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps={isIOS ? "handled" : undefined}>
+        {visible || isIOS ? (
+          <PremiumPresentation
+            showRestore={showRestore}
+            showIntroPager
+            trigger={trigger}
+            onPurchaseSuccess={onClose}
+            onRestoreSuccess={onClose}
+            onEntitlementActivated={onEntitlementActivated}
+            onUnlockingChange={onUnlockingChange}
+            testID="paywall-premium-presentation"
+          />
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+
+  if (isIOS) {
+    return (
+      <SheetPresentation visible={visible} onClose={onClose} detents={PAYWALL_DETENTS} backgroundColor={PAYWALL_BACKGROUND}>
+        {content}
+      </SheetPresentation>
+    );
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      {content}
     </Modal>
   );
 });
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#071526' },
+  root: { flex: 1, backgroundColor: PAYWALL_BACKGROUND },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

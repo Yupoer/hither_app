@@ -19,7 +19,7 @@ function MockNavigator({ initialRouteName, children }: { initialRouteName: strin
   });
 }
 jest.mock('@react-navigation/native-stack', () => ({ createNativeStackNavigator: () => ({ Navigator: MockNavigator, Screen: () => null }) }));
-jest.mock('react-native', () => ({ View: 'view', StyleSheet: { create: (styles: unknown) => styles } }));
+jest.mock('react-native', () => ({ View: 'view', Platform: { OS: 'ios' }, StyleSheet: { create: (styles: unknown) => styles } }));
 jest.mock('../components/WaveLoading', () => 'WaveLoading');
 jest.mock('../navigation/teamEntry', () => ({ readLastActiveTeam: (actorId: string) => mockGetTeam(actorId) }));
 jest.mock('../screens/entry/EntryVisuals', () => ({ ENTRY_BACKGROUND: '#0F1220' }));

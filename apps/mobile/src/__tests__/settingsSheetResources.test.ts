@@ -1,10 +1,12 @@
 import React from 'react';
 import { act, create } from 'react-test-renderer';
+import { ScrollView, View } from 'react-native';
+import SheetHeaderAction from '../components/SheetHeaderAction';
 import BottomSheet from '../components/BottomSheet';
 import SettingsSheetPanel from '../screens/MapScreen/components/SettingsSheetPanel';
 import NativeSettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet.ios';
 import { withSpring } from 'react-native-reanimated';
-import { BottomSheet as NativeSheet } from '@expo/ui/swift-ui';
+import SheetPresentation from '../components/SheetPresentation';
 
 it.each([false, true])('keeps settings header actions below the top edge with compact=%s', async home => {
   const props: React.ComponentProps<typeof SettingsSheetPanel> = {
@@ -23,23 +25,15 @@ jest.mock('react-native', () => ({
   useWindowDimensions: () => ({ height: 1000, width: 400 }),
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Icon' }));
-jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 54 }) }));
+jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 54, bottom: 34 }) }));
 jest.mock('../components/BottomSheet', () => 'BottomSheet');
 jest.mock('../components/SheetHeaderAction', () => 'HeaderAction');
-jest.mock('../components/SheetHeaderActionContent.ios', () => 'HeaderAction');
+jest.mock('../components/SheetPresentation', () => 'SheetPresentation');
 jest.mock('react-native-reanimated', () => ({
   __esModule: true, default: { View: 'AnimatedView' },
   useSharedValue: (value: number) => require('react').useState(() => ({ value }))[0],
   useAnimatedStyle: (fn: () => unknown) => fn(),
   withSpring: jest.fn((value: number) => value), interpolate: () => 1, Extrapolation: { CLAMP: 'clamp' },
-}));
-jest.mock('@expo/ui/swift-ui', () => ({
-  BottomSheet: 'NativeSheet', Group: 'Group', HStack: 'HStack', Host: 'Host', RNHostView: 'RNHostView',
-  Spacer: 'Spacer', Text: 'SwiftText', VStack: 'VStack',
-}));
-jest.mock('@expo/ui/swift-ui/modifiers', () => ({
-  frame: () => ({}), font: () => ({}), padding: () => ({}), presentationDetents: () => ({}),
-  presentationCornerRadius: () => ({}), presentationDragIndicator: () => ({}),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -72,52 +66,97 @@ it('opens to new detents while preserving sheet/content owners through closing a
   await act(async () => tree.unmount());
 });
 
-it('resets native close/dismiss ownership only when visibility changes', async () => {
+it('calls native close and dismissal callbacks once per presentation', async () => {
   const onClose = jest.fn();
   const onDismissComplete = jest.fn();
-  const props = { visible: false, title: 'settings', onClose, onDismissComplete, children: React.createElement('div') };
+  const props = { title: 'Settings', onClose, onDismissComplete, children: null };
+  const render = (visible: boolean) => React.createElement(NativeSettingsChildSheet, { ...props, visible });
   let tree!: ReturnType<typeof create>;
-  await act(async () => { tree = create(React.createElement(NativeSettingsChildSheet, props)); });
-  const sheet = () => tree.root.findByType(NativeSheet);
-  await act(async () => sheet().props.onIsPresentedChange(false));
-  expect(onClose).not.toHaveBeenCalled();
-  await act(async () => tree.update(React.createElement(NativeSettingsChildSheet, { ...props, visible: true })));
-  const owner = sheet();
-  await act(async () => { sheet().props.onIsPresentedChange(false); sheet().props.onDismiss(); sheet().props.onDismiss(); });
+  await act(async () => { tree = create(render(false)); });
+  const sheet = tree.root.findByType(SheetPresentation);
+  await act(async () => sheet.props.onDismiss());
+  expect(onDismissComplete).not.toHaveBeenCalled();
+
+  await act(async () => tree.update(render(true)));
+  await act(async () => { sheet.props.onClose(); sheet.props.onClose(); });
   expect(onClose).toHaveBeenCalledTimes(1);
+  expect(onDismissComplete).not.toHaveBeenCalled();
+  await act(async () => tree.update(render(false)));
+  await act(async () => { sheet.props.onDismiss(); sheet.props.onDismiss(); });
   expect(onDismissComplete).toHaveBeenCalledTimes(1);
-  await act(async () => tree.update(React.createElement(NativeSettingsChildSheet, { ...props, visible: true })));
-  await act(async () => sheet().props.onDismiss());
-  expect(onDismissComplete).toHaveBeenCalledTimes(1);
-  await act(async () => tree.update(React.createElement(NativeSettingsChildSheet, props)));
-  await act(async () => tree.update(React.createElement(NativeSettingsChildSheet, { ...props, visible: true })));
-  expect(sheet()).toBe(owner);
-  await act(async () => sheet().props.onDismiss());
+
+  await act(async () => tree.update(render(true)));
+  expect(tree.root.findByType(SheetPresentation)).toBe(sheet);
+  await act(async () => sheet.props.onDismiss());
   expect(onClose).toHaveBeenCalledTimes(2);
   expect(onDismissComplete).toHaveBeenCalledTimes(2);
   await act(async () => tree.unmount());
 });
 
-
-it.each(['Back', 'native dismiss'])('shows only a left Back action and returns one time via %s', async method => {
+it('uses the native detent for a single-stage root and fits short child pages in place', async () => {
+  const onBack = jest.fn();
   const onClose = jest.fn();
-  let tree!: ReturnType<typeof create>;
   const props = {
-    visible: true, title: 'Notifications', navigation: 'child', backLabel: 'Back', onClose, children: null,
-  } satisfies React.ComponentProps<typeof NativeSettingsChildSheet>;
-  await act(async () => {
-    tree = create(React.createElement(NativeSettingsChildSheet, props));
+    visible: true, singleStage: true, onClose, stageTwoRatio: 0.84,
+    children: React.createElement('div', { 'data-testid': 'store-owner' }),
+  };
+  const render = (isRoot: boolean) => React.createElement(NativeSettingsChildSheet, {
+    ...props, navigation: isRoot ? 'root' : 'child', title: isRoot ? '' : 'Notifications',
+    scrollResetKey: isRoot ? 'root' : 'notifications',
+    onBack: isRoot ? undefined : onBack, fitContent: !isRoot,
   });
-  const header = tree.root.findByType('HStack' as never);
-  const actions = header.findAllByType('HeaderAction' as never);
-  expect(actions.map(item => [item.props.action, item.props.accessibilityLabel])).toEqual([['back', 'Back']]);
-  expect(header.children[0]).toBe(actions[0]);
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(render(true)); });
+  const sheet = tree.root.findByType(SheetPresentation);
+  const content = tree.root.findByType('div');
+  expect(sheet.props.detents).toEqual([{ fraction: 0.84 }]);
+  expect(sheet.props.dismissDisabled).toBe(false);
+  await act(async () => tree.update(render(false)));
+  expect(tree.root.findByType(SheetPresentation)).toBe(sheet);
+  expect(tree.root.findByType('div')).toBe(content);
+  expect(sheet.props.dismissDisabled).toBe(true);
+  const header = tree.root.findAllByType(View).find(node => typeof node.props.onLayout === 'function');
+  const scroll = tree.root.findByType(ScrollView);
   await act(async () => {
-    const sheet = tree.root.findByType(NativeSheet);
-    if (method === 'Back') actions[0].props.onPress();
-    else sheet.props.onIsPresentedChange(false);
-    sheet.props.onDismiss();
+    header?.props.onLayout({ nativeEvent: { layout: { height: 60 } } });
+    scroll.props.onContentSizeChange(320, 220);
   });
-  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(sheet.props.detents).toEqual([{ height: 243 }, { height: 303 }]);
+  expect(sheet.props.selection).toEqual({ height: 303 });
+  await act(async () => scroll.props.onContentSizeChange(320, 1000));
+  expect(sheet.props.detents[1].fraction).toBeCloseTo(0.84, 2);
+
+  const actions = tree.root.findAllByType(SheetHeaderAction);
+  expect(actions.map(item => item.props.action)).toEqual(['back']);
+  await act(async () => actions[0].props.onPress());
+  expect(onBack).toHaveBeenCalledTimes(1);
+  await act(async () => sheet.props.onSelectionChange(sheet.props.selection));
+  expect(onBack).toHaveBeenCalledTimes(1);
+  await act(async () => sheet.props.onSelectionChange(sheet.props.detents[0]));
+  expect(onBack).toHaveBeenCalledTimes(2);
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => tree.unmount());
+});
+
+it('keeps nested native settings sheets outside the parent scroll view', async () => {
+  const page = React.createElement('div', { key: 'page' });
+  const nestedProps = {
+    key: 'account', visible: false, testID: 'nested', title: 'Account', onClose: jest.fn(),
+    children: null, wrapContentInScrollView: false,
+  };
+  const nested = React.createElement(NativeSettingsChildSheet, nestedProps);
+  const parentProps = {
+    visible: true, singleStage: true, testID: 'parent', title: 'Settings', onClose: jest.fn(),
+    children: [page, nested],
+  };
+  let tree!: ReturnType<typeof create>;
+  await act(async () => {
+    tree = create(React.createElement(NativeSettingsChildSheet, parentProps));
+  });
+  const scroll = tree.root.findByType(ScrollView);
+  expect(scroll.findByType('div')).toBeDefined();
+  expect(scroll.findAllByType(SheetPresentation)).toHaveLength(0);
+  const parent = tree.root.findAllByType(SheetPresentation).find(node => node.props.testID === 'parent');
+  expect(parent?.findAllByType(SheetPresentation).some(node => node.props.testID === 'nested')).toBe(true);
   await act(async () => tree.unmount());
 });

@@ -20,7 +20,7 @@ import { DEFAULT_NOTIFICATION_PREFERENCES, type Group, type CoordinationPolicy }
 import { setNotificationPreferences } from '../../../api/services/NotificationService';
 import type { UseCoordinationRequestsResult } from '../hooks/useCoordinationRequests';
 import type { SettingsOverlayProps } from './SettingsOverlay';
-import SettingsSheetPanel from './SettingsSheetPanel';
+import SettingsChildSheet from './SettingsChildSheet';
 import { AvatarColors, EmojiCarousel } from './IdentityPicker';
 import { ProfileEditor } from './ProfileEditor';
 import HomeTeamsPage, { HomeTeamCard } from './HomeTeamsPage';
@@ -50,6 +50,7 @@ export type HomeSettingsProps = {
   onCreateTeam?: () => void;
   onJoinTeam?: () => void;
   inviteBlockedForAnonymousLeader?: boolean;
+  nestedSheets?: React.ReactNode;
 };
 
 const colors = {
@@ -96,7 +97,7 @@ export default function HomeSettings({
   visible, initialPage = 'root', liveActivitySettings, onClose, onDismissComplete, memberCount = 0, group,
   profileStatusColor, refresh = noop, renderStore, isLeader = false, onShareGroup,
   onOpenCoordination, onCreateCoordination, onCoordinationCreated, onConfirmLeave, onConfirmEnd,
-  onSwitchTeam, onCreateTeam, onJoinTeam, inviteBlockedForAnonymousLeader,
+  onSwitchTeam, onCreateTeam, onJoinTeam, inviteBlockedForAnonymousLeader, nestedSheets,
   onConfirmSignOut, onOpenFeedback, onAccountDeleted, onArchiveAllForTest, onGoHome, onConfirmResetPrefs,
 }: SettingsOverlayProps & HomeSettingsProps) {
   const { t, language } = useTranslation();
@@ -138,8 +139,8 @@ export default function HomeSettings({
   const provider = user?.provider === 'apple' ? 'Apple' : user?.provider === 'google' ? 'Google' : 'Email';
   const registered = !!user && !isAnonymous;
 
-  return (<>
-    <SettingsSheetPanel home singleStage testID="settings-panel" visible={visible} zIndex={80} scrollResetKey={page}
+  return (
+    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={0.84} scrollResetKey={page}
       fitContent={page !== 'root' && page !== 'profile' && page !== 'team' && page !== 'store' && page !== 'teams'}
       fillContent={page === 'teams'}
       background={<D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />}
@@ -232,11 +233,12 @@ export default function HomeSettings({
           <AccountSheetContent home visible onClose={back} accent={colors.accent} onAccountDeleted={onAccountDeleted} />
         ) : null}
       </View>
-    </SettingsSheetPanel>
-    {visible && page === 'teams' && teamsLoading ? <View testID="settings-teams-loading-overlay" pointerEvents="none" style={styles.teamsLoadingOverlay}>
-      <WaveLoading size="large" color={colors.accent} />
-    </View> : null}
-  </>);
+      {nestedSheets}
+      {visible && page === 'teams' && teamsLoading ? <View testID="settings-teams-loading-overlay" pointerEvents="none" style={styles.teamsLoadingOverlay}>
+        <WaveLoading size="large" color={colors.accent} />
+      </View> : null}
+    </SettingsChildSheet>
+  );
 }
 
 function HomeTeamSettings({ group, isLeader, refresh, share, showCode, coordination, onLeave, onEnd }: {

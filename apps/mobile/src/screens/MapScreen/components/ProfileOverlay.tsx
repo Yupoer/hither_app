@@ -105,6 +105,7 @@ export function ProfileOverlay({
     <OverlaySheet
       visible={visible}
       onClose={handleCancel}
+      dismissDisabled={saving}
       onDone={handleSave}
       title={t('profile.title')}
       accent={accent}

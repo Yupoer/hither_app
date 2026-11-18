@@ -1,5 +1,4 @@
 import React from 'react';
-import { Animated } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { SharedValue } from 'react-native-reanimated';
 import { D6HomeChrome } from '../screens/MapScreen/components/D6HomeChrome';
@@ -100,7 +99,7 @@ const props: React.ComponentProps<typeof D6HomeChrome> = {
   zh: true, hasItinerary: true, stop: null, travelMode: 'walk', distance: null, eta: null,
   arrived: 0, total: 1, marqueeEnabled: false, marqueeSpeed: 20, pane: null,
   itinerary: null, team: null, selfEmoji: '🙂', selfColor: '#123456', statusColor: '#ffffff',
-  celebration: sharedProgress(0), commandsProgress: new Animated.Value(0), commandsPresented: false,
+  celebration: sharedProgress(0), commandsPresented: false,
   onPaneChange: jest.fn(), onAction: jest.fn(),
   onStop: jest.fn(async () => true), onProfile: jest.fn(), onCommands: jest.fn(), onAdd: jest.fn(),
   onFit: jest.fn(), onLocate: jest.fn(), onTopHeight: jest.fn(),
@@ -121,15 +120,15 @@ beforeEach(() => { jest.clearAllMocks(); mockCancelled.set(false); });
 
 it.each(['ready', 'empty'] as const)('renders the %s press shadow and release spring through the home action', async phase => {
   const { tree, button, shadow, depth } = await render({ phase });
-  expect(shadow()).toEqual(phase === 'ready'
-    ? [{ offsetX: 0, offsetY: 4, blurRadius: 0, color: '#354FC5' }] : undefined);
+  const restingShadow = [{ offsetX: 0, offsetY: 4, blurRadius: 0, color: '#354FC5' }];
+  expect(shadow()).toEqual(restingShadow);
   expect(depth()).toBe(0);
   await act(async () => { button().props.onPressIn(); });
-  expect(Boolean(shadow())).toBe(phase === 'empty');
-  expect(depth()).toBe(phase === 'empty' ? -4 : 4);
+  expect(shadow()).toBeUndefined();
+  expect(depth()).toBe(4);
   expect(props.onAction).not.toHaveBeenCalled();
   await act(async () => { button().props.onPressOut(); });
-  expect(Boolean(shadow())).toBe(phase === 'ready');
+  expect(shadow()).toEqual([expect.objectContaining({ offsetY: 4 })]);
   expect(depth()).toBe(0);
   expect(mockSpring).toHaveBeenCalledWith(expect.objectContaining({
     toValue: 0, stiffness: 340, damping: 18, mass: 0.8, useNativeDriver: true,
@@ -157,10 +156,10 @@ it('cancels a dragged press and rejects its stale release after the gesture rese
 it.each(['ready', 'empty'] as const)('keeps %s shadow feedback with reduced motion and skips face motion', async phase => {
   const { tree, button, shadow, depth } = await render({ phase, reduceMotion: true });
   await act(async () => { button().props.onPressIn(); });
-  expect(Boolean(shadow())).toBe(phase === 'empty');
+  expect(shadow()).toBeUndefined();
   expect(depth()).toBe(0);
   await act(async () => { button().props.onPressOut(); });
-  expect(Boolean(shadow())).toBe(phase === 'ready');
+  expect(shadow()).toEqual([expect.objectContaining({ offsetY: 4 })]);
   expect(depth()).toBe(0);
   expect(mockSpring).not.toHaveBeenCalled();
   expect(mockTiming).not.toHaveBeenCalled();
@@ -241,20 +240,27 @@ it('covers the visible expanded sheet with the completion cue and keeps navigati
   await act(async () => { tree.unmount(); });
 });
 
-it('returns the bottom pane to its resting position after commands close', async () => {
-  const commandProps = { pane: 'team' as const, commandsProgress: new Animated.Value(1) };
-  const { tree } = await render({ ...commandProps, commandsPresented: true });
-  const teamFrame = () => tree.root.findByProps({ direction: -1 });
-  const island = () => tree.root.find(node =>
-    String(node.type) === 'AnimatedView' && node.findAllByProps({ direction: -1 }).length > 0);
-  expect(island().props.style.at(-1).opacity.__getValue()).toBe(0);
+it('hides the mounted team pane until commands finish dismissing', async () => {
+  const commandProps = { ...props, pane: 'team' as const };
+  const { tree } = await render(commandProps);
+  const teamFrame = tree.root.findByProps({ direction: -1 });
+  const viewport = tree.root.findByProps({ testID: 'd6-team-viewport' });
+  const island = teamFrame.parent!;
+  expect(island.props.pointerEvents).toBe('box-none');
   await act(async () => {
-    tree.update(React.createElement(D6HomeChrome, {
-      ...props, ...commandProps, commandsPresented: false, stop: gatheringStop, phase: 'going',
-    }));
+    tree.update(React.createElement(D6HomeChrome, { ...commandProps, commandsPresented: true }));
   });
-  expect(teamFrame().props.open).toBe(true);
-  expect(island().props.style.at(-1)).toBeNull();
+  expect(island.props.pointerEvents).toBe('none');
+  expect(Object.assign({}, ...island.props.style)).toMatchObject({ opacity: 0 });
+  expect(tree.root.findByProps({ testID: 'd6-team-viewport' })).toBe(viewport);
+  await act(async () => {
+    tree.update(React.createElement(D6HomeChrome, { ...commandProps, commandsPresented: false }));
+  });
+  expect(tree.root.findByProps({ direction: -1 })).toBe(teamFrame);
+  expect(tree.root.findByProps({ testID: 'd6-team-viewport' })).toBe(viewport);
+  expect(teamFrame.props.open).toBe(true);
+  expect(island.props.pointerEvents).toBe('box-none');
+  expect(Object.assign({}, ...island.props.style).opacity).toBeUndefined();
   await act(async () => { tree.unmount(); });
 });
 
@@ -268,5 +274,19 @@ it.each([
   const { tree } = await render({ phase, stop, eta: 720 });
   const time = tree.root.findByProps({ testID: 'd6-home-meeting-time' });
   expect(Object.assign({}, ...time.props.style.filter(Boolean))).toMatchObject({ fontSize });
+  await act(async () => { tree.unmount(); });
+});
+
+it.each([
+  [null, 'Calculating', undefined],
+  [5400, [1, 'h', 30, 'm'], '1 hours 30 minutes'],
+] as const)('keeps the going facts visible alongside the ETA for %s seconds', async (eta, label, accessibilityLabel) => {
+  const { tree } = await render({ phase: 'going', stop: gatheringStop, distance: 328, arrived: 1, total: 4, eta, zh: false });
+  const header = tree.root.find(node => String(node.type) === 'Pressable' && node.props.testID === 'home-itinerary-toggle');
+  const labels = header.findAll(node => String(node.type) === 'Text').map(node => node.props.children);
+  expect(labels).toEqual(expect.arrayContaining(['集合點', '328 m', '1/4 arrived']));
+  const time = header.findByProps({ testID: 'd6-home-meeting-time' });
+  expect(time.props.accessibilityLabel).toBe(accessibilityLabel);
+  expect(Array.isArray(label) ? time.findAll(node => String(node.type) === 'Text').map(node => node.props.children) : time.props.children).toEqual(label);
   await act(async () => { tree.unmount(); });
 });
