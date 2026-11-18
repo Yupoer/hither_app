@@ -68,6 +68,7 @@ for (const [name, ids, symbol, id, kind] of [
 const entry = 'src/screens/entry/EntryCodeInput.tsx';
 const teams = 'src/screens/MyTeamsScreen.tsx';
 control('team.code', 'G02,T02,T12', entry, 'updateCode', 'auth-code', 'changeText');
+control('team.code.submit', 'G02', entry, 'submitCode', 'auth-code', 'submit');
 control('home.create', 'T01,T11', entry, 'EntryCodeInput', 'role-create');
 control('home.login', 'A12', teams, 'TeamEntryScreen', 'entry-login');
 control('home.signout', 'A22', teams, 'startSignOut', 'role-signout');

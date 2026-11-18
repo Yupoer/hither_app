@@ -531,6 +531,7 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       await device.input({ kind: 'linking', url: 'hither://join?code=test4-2abcde-fghjklmnp' });
       const confirmation = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Auth', 'invite confirmation');
       expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'TEST42ABCDEFGHJKLMNP' });
+      expect(texts(confirmation)).toContain('TEST4-2ABCD-EFGHJ-KLMNP');
       expect(calls(world, 'join_group')).toHaveLength(joinCallsBeforeLink);
       expect(calls(world, 'signInAnonymously')).toHaveLength(anonymousCallsBeforeLink);
       await device.perform('team.join');
@@ -549,9 +550,10 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       expect((await device.observe()).presentation.route.route).toBe('RoleSelect');
       expect(calls(world, 'join_group')).toHaveLength(0);
 
-      await device.host.call({ kind: 'submit', testId: 'auth-code' });
+      await device.perform('team.code.submit');
       const confirmation = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Auth', 'legacy invite confirmation');
       expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'OLD123' });
+      expect(texts(confirmation)).toContain('OLD-123');
       await device.perform('team.join');
       await world.waitFor(device, (value: any) => value.presentation.session.membership?.group.id === GROUP_ID, 'joined using the legacy server');
       expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'OLD123' });

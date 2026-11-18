@@ -126,6 +126,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "submits a six-character invite only after keyboard confirmation during rollout",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },

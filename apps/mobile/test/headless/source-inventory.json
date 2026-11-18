@@ -1071,7 +1071,7 @@
     "file": "src/api/services/GroupService.ts",
     "kind": "export",
     "name": "kickGroupMember",
-    "hash": "321a98bc967b8cb0d50c48eb2de91e9980786aee15e911861d8252c9daf521b4"
+    "hash": "0c0c9bda7b6de8a5786b92077ba24dadaea234e100eb0ca89a357435c6a98532"
   },
   {
     "file": "src/api/services/GroupService.ts",
@@ -1455,7 +1455,7 @@
     "file": "src/api/services/_helpers.ts",
     "kind": "export",
     "name": "generateInviteCode",
-    "hash": "8c5f850374ac3a359c44d223a04855047ac0ca35868920771541d4e004f2dd9f"
+    "hash": "114942de3fd9c557a62b3d9554a6640a408cf30aec04faeeb4270c3ff80e5651"
   },
   {
     "file": "src/api/services/_helpers.ts",
@@ -4455,13 +4455,13 @@
     "file": "src/i18n/locales/en.ts",
     "kind": "export",
     "name": "en",
-    "hash": "8e00943daa2381dc709ff4491f4286768c86a1a54193f026840a81d8c8431e66"
+    "hash": "19460ff0159a38b51083602dcfc3f01bf612a978204f266efb2db9ac581c1918"
   },
   {
     "file": "src/i18n/locales/zh.ts",
     "kind": "export",
     "name": "zh",
-    "hash": "473c816f7aaa4db2ac88115c2c1c44b9e7bc82a1ce254dca6e48ce461ff7849e"
+    "hash": "e2cc412467b6fa5b8e7e91ca65f520ded095ebaba677ca3dc2d4bd78f046fd4b"
   },
   {
     "file": "src/native/backgroundLocation.ts",
@@ -5185,15 +5185,15 @@
   },
   {
     "file": "src/navigation/teamEntry.ts",
-    "kind": "export",
-    "name": "normalizeInviteCode",
-    "hash": "7eaabaf9b5dcfc0cc91498c2d676df87125715c5da1301b50eb8e324eeb32f9e"
+    "kind": "export-alias",
+    "name": "{ INVITE_CODE_LENGTH, normalizeInviteCode }",
+    "hash": "88c72b49383d2dada02a2e8b92d8c8b7387e9b787568e471bc4d25182aa46911"
   },
   {
     "file": "src/navigation/teamEntry.ts",
     "kind": "export",
     "name": "readInviteLink",
-    "hash": "601762bc61296e8a7ad7819d3624a788cdd0d189f407c33a8c69224705bcba75"
+    "hash": "64b48146d4dc6ac7c2158d94c0f05fb914e593605fc887b742991760d4d56ec3"
   },
   {
     "file": "src/navigation/teamEntry.ts",
@@ -5847,7 +5847,7 @@
     "file": "src/screens/AuthScreen.tsx",
     "kind": "export",
     "name": "AuthScreen",
-    "hash": "adf02375ef69f5b7e10521e8e017b6aa84e4905e9e7d13e6b48c9e29f590453f"
+    "hash": "64accdf73dd6455c460b194168a4939cec9c14d9f47b106a49508d9e5d04725a"
   },
   {
     "file": "src/screens/AuthScreen.tsx",
@@ -7875,7 +7875,7 @@
     "file": "src/screens/MapScreen/components/D6MembersPane.tsx",
     "kind": "export",
     "name": "D6MembersPane",
-    "hash": "25218ad5c1f9767c15071479c45031958475bbfadc10f4b32f0e6fcd73b87998"
+    "hash": "23f1c7fc1096dcf70778c07edc1abfc792b6238508633d2afbff051bdddee3cb"
   },
   {
     "file": "src/screens/MapScreen/components/D6MembersPane.tsx",
@@ -9267,7 +9267,7 @@
     "file": "src/screens/MapScreen/components/InviteMembersOverlay.tsx",
     "kind": "export",
     "name": "InviteMembersOverlay",
-    "hash": "83252dbfa055ffee51b6b68c6fe52817bfcfc7b77219f81168032a13daaa8d96"
+    "hash": "24d71fda5222a584a748643c87b449bd28258e08bb08c5e77a4d07fdc9ae376a"
   },
   {
     "file": "src/screens/MapScreen/components/InviteMembersOverlay.tsx",
@@ -11271,7 +11271,7 @@
     "file": "src/screens/entry/EntryCodeInput.tsx",
     "kind": "export",
     "name": "EntryCodeInput",
-    "hash": "2b26c8ce9e3c3916c94b90a87fb0b98e5c8e3900f4777b9751c039dbb63ad4ba"
+    "hash": "2001b12c6d4cfbce00d819fdf64c61bccb748fb75253c8160a74af14e2d36abd"
   },
   {
     "file": "src/screens/entry/EntryCodeInput.tsx",
@@ -11290,6 +11290,12 @@
     "kind": "callback",
     "name": "onChangeText",
     "hash": "cdb2276943aa76f0bc61b9e346f406e40b9c1110c66ba9e1f4b19b82f270a7b2"
+  },
+  {
+    "file": "src/screens/entry/EntryCodeInput.tsx",
+    "kind": "callback",
+    "name": "onSubmitEditing",
+    "hash": "c90382b06711c81b464efadee25afbd6b1f50591ab0f8433b45203764bc2b204"
   },
   {
     "file": "src/screens/entry/EntryCodeInput.tsx",
@@ -14164,6 +14170,24 @@
     "kind": "export",
     "name": "mergeHistoryWithPastStops",
     "hash": "2673ea77c6ecbdee3be4101a00900f78da2dfa174621fca0f7f67c2c49f7c75c"
+  },
+  {
+    "file": "src/utils/inviteCode.ts",
+    "kind": "export",
+    "name": "normalizeInviteCode",
+    "hash": "313f4e9593240bd9650d0f75e6e259351d364af5f01e2b1a29f3b95f6fffa6a3"
+  },
+  {
+    "file": "src/utils/inviteCode.ts",
+    "kind": "export",
+    "name": "isValidInviteCode",
+    "hash": "a8a1b4533bbc07d18adaa8626126480f7be2c3607b4046c153dde60145ae9968"
+  },
+  {
+    "file": "src/utils/inviteCode.ts",
+    "kind": "export",
+    "name": "formatInviteCode",
+    "hash": "b8af2359177e17e564b2c00444749e9eb83c75af7ea18ac4b5e01553a5a37fb8"
   },
   {
     "file": "src/utils/journeyProgress.ts",

@@ -150,7 +150,9 @@ describe('D6 iOS team and commands through Map', () => {
       const device = await map(world, 'd6-invite-code');
       await openTeam(world, device);
       await press(device, 'map-invite-members');
-      await world.waitFor(device, (value: Observation) => has(value, 'map-share-code') && has(value, 'map-copy-code'), 'existing invitation UI');
+      const invitation = await world.waitFor(device, (value: Observation) =>
+        has(value, 'map-share-code') && has(value, 'map-copy-code'), 'existing invitation UI');
+      expect(text(invitation, 'TEST4-2ABCD-EFGHJ-KLMNP')).toBe(true);
       await device.perform('map.group.copy-code');
       await device.perform('map.group.share-code');
       await device.input({ kind: 'animation', finished: true });
