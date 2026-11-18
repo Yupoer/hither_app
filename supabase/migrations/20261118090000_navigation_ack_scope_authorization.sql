@@ -1,6 +1,29 @@
 begin;
 
-revoke insert on table public.navigation_member_states from authenticated;
+revoke insert, update on table public.navigation_member_states from authenticated;
+grant update (local_status, detail, updated_at) on table public.navigation_member_states to authenticated;
+
+create function extensions.enforce_navigation_member_cleanup()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if (new.detail is distinct from old.detail
+      and new.detail is distinct from (old.detail || jsonb_build_object('reason', 'session_completed')))
+     or (new.updated_at is distinct from old.updated_at and new.updated_at is distinct from now()) then
+    raise exception 'invalid navigation member cleanup' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function extensions.enforce_navigation_member_cleanup() from public, anon, authenticated;
+
+create trigger enforce_navigation_member_cleanup
+before update of detail, updated_at on public.navigation_member_states
+for each row when (current_user = 'authenticated')
+execute function extensions.enforce_navigation_member_cleanup();
 
 drop policy if exists "navigation_member_states: own insert"
   on public.navigation_member_states;
@@ -13,7 +36,9 @@ drop policy if exists "navigation_member_states: leaders update"
 create policy "navigation_member_states: leaders update"
   on public.navigation_member_states for update to authenticated
   using (
-    exists (
+    navigation_member_states.local_status not in ('arrived', 'missed')
+    and navigation_member_states.arrived_at is null
+    and exists (
       select 1
       from public.navigation_sessions s
       join public.memberships m
@@ -23,6 +48,12 @@ create policy "navigation_member_states: leaders update"
        and m.subgroup_id is not distinct from s.scope_subgroup_id
       where s.id = navigation_member_states.navigation_session_id
         and s.status in ('cancelled', 'expired', 'completed')
+        and not exists (
+          select 1
+          from public.destination_arrivals a
+          where a.destination_id = s.destination_id
+            and a.user_id = navigation_member_states.user_id
+        )
     )
   )
   with check (

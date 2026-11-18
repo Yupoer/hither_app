@@ -2607,6 +2607,20 @@
       "testNamePattern": "fences a shared upload completion|rejects a different fix"
     },
     {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Legacy navigation acknowledgments require an active, unexpired session, existing roster membership and current scope, and valid arrivals retain their durable effect.",
+      "testFile": "supabase/tests/navigation_ack_scope_authorization.test.sql",
+      "testNamePattern": "a legitimate active arrival keeps its durable arrival effect|rejected terminal expiry and scope paths add no arrival effects"
+    },
+    {
+      "parent": 270,
+      "child": 270,
+      "acceptance": "Terminal cleanup preserves roster identity and historical arrivals while a scoped leader can still mark an absent member missed.",
+      "testFile": "supabase/tests/navigation_ack_scope_authorization.test.sql",
+      "testNamePattern": "terminal cleanup cannot change roster identity|terminal cleanup marks only the scoped member without an arrival as missed"
+    },
+    {
       "parent": 318,
       "child": 318,
       "acceptance": "A held refresh upload from the original account cannot complete for a replacement account, and the accepted event retains its original actor.",

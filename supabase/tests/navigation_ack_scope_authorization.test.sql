@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, auth;
-select plan(17);
+select plan(19);
 
 insert into auth.users (id, email) values
   ('a1111111-1111-4111-8111-111111111111', 'ack-leader@example.test'),
@@ -101,6 +101,18 @@ select ok(
   not has_table_privilege('authenticated', 'public.navigation_member_states', 'INSERT'),
   'authenticated cannot create navigation roster rows directly'
 );
+select ok(
+  not has_table_privilege('authenticated', 'public.navigation_member_states', 'UPDATE')
+  and not exists (
+    select 1
+    from pg_attribute
+    where attrelid = 'public.navigation_member_states'::regclass
+      and attnum > 0 and not attisdropped
+      and attname not in ('local_status', 'detail', 'updated_at')
+      and has_column_privilege('authenticated', attrelid, attnum, 'UPDATE')
+  ),
+  'terminal cleanup cannot change roster identity, telemetry or acknowledgment and arrival history'
+);
 
 set local role authenticated;
 select set_config(
@@ -148,17 +160,15 @@ select is(
   0::bigint,
   'a rejected sibling acknowledgment creates no arrival'
 );
+with changed as (
+  update public.navigation_member_states
+  set local_status = 'arrived'
+  where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
+    and user_id = 'a2222222-2222-4222-8222-222222222222'
+  returning 1
+)
 select is(
-  (
-    with changed as (
-      update public.navigation_member_states
-      set local_status = 'arrived'
-      where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
-        and user_id = 'a2222222-2222-4222-8222-222222222222'
-      returning 1
-    )
-    select count(*) from changed
-  ),
+  (select count(*) from changed),
   0::bigint,
   'a sibling lane leader cannot rewrite another lane roster'
 );
@@ -168,17 +178,15 @@ select set_config(
   'a2222222-2222-4222-8222-222222222222',
   true
 );
+with changed as (
+  update public.navigation_member_states
+  set local_status = 'offline'
+  where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
+    and user_id = 'a2222222-2222-4222-8222-222222222222'
+  returning 1
+)
 select is(
-  (
-    with changed as (
-      update public.navigation_member_states
-      set local_status = 'offline'
-      where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
-        and user_id = 'a2222222-2222-4222-8222-222222222222'
-      returning 1
-    )
-    select count(*) from changed
-  ),
+  (select count(*) from changed),
   0::bigint,
   'a projected member cannot bypass the acknowledgment RPC with a direct update'
 );
@@ -239,19 +247,35 @@ select throws_ok(
   'navigation session not found',
   'a cancelled session rejects current member acknowledgments'
 );
+with changed as (
+  update public.navigation_member_states
+  set local_status = 'offline'
+  where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
+    and user_id = 'a2222222-2222-4222-8222-222222222222'
+  returning 1
+)
 select is(
-  (
-    with changed as (
-      update public.navigation_member_states
-      set local_status = 'offline'
-      where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
-        and user_id = 'a2222222-2222-4222-8222-222222222222'
-      returning 1
-    )
-    select count(*) from changed
-  ),
+  (select count(*) from changed),
   0::bigint,
   'a cancelled session state cannot be rewritten directly'
+);
+
+reset role;
+update public.memberships
+set role = 'leader'
+where group_id = 'a0aaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  and user_id = 'a2222222-2222-4222-8222-222222222222';
+set local role authenticated;
+with changed as (
+  update public.navigation_member_states
+  set local_status = 'missed'
+  where navigation_session_id = 'a0dddddd-dddd-4ddd-8ddd-dddddddddddd'
+  returning user_id
+)
+select is(
+  (select array_agg(user_id) from changed),
+  array['a3333333-3333-4333-8333-333333333333'::uuid],
+  'terminal cleanup marks only the scoped member without an arrival as missed'
 );
 
 reset role;
