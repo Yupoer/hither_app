@@ -142,11 +142,6 @@ select is(
   'expired StoreKit does not drop trip-pass team compatibility'
 );
 select is(
-  public.group_has_active_premium('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
-  true,
-  'trip-pass compatibility remains independent of subscription projection'
-);
-select is(
   public.get_premium_projection(null)->>'error',
   'subscription_required',
   'A4 expired personal grant returns subscription_required'
@@ -159,6 +154,11 @@ select is(
 
 set local role service_role;
 select set_config('request.jwt.claim.role', 'service_role', true);
+select is(
+  public.group_has_active_premium('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+  true,
+  'the service role can still resolve trip-pass Premium after the personal grant expires'
+);
 select is(
   (public.apply_personal_premium_projection(
     '11111111-1111-4111-8111-111111111111', 'grace_period', 'premium.monthly',
