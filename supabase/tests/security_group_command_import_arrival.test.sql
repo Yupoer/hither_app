@@ -87,8 +87,11 @@ begin
  end loop;
  assert not exists(select 1 from public.core_notification_outbox where group_id='caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), 'denied commands entered outbox';
  for t in select unnest(array['need_restroom','need_break','need_help','found_something','request_start','custom']) loop
-   insert into public.commands(group_id,sender_id,type) values
-     ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+   begin
+     insert into public.commands(group_id,sender_id,type) values
+       ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+     raise exception 'follower direct command insert accepted: %',t;
+   exception when insufficient_privilege then null; end;
  end loop;
 end;
 $$;
@@ -97,8 +100,11 @@ do $$
 declare t text; g public.groups;
 begin
  for t in select unnest(array['gather','find_gathering','depart','rest','be_careful','go_left','go_right','stop','hurry_up','custom']) loop
-   insert into public.commands(group_id,sender_id,type) values
-     ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+   begin
+     insert into public.commands(group_id,sender_id,type) values
+       ('caaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',auth.uid(),t);
+     raise exception 'leader direct command insert accepted: %',t;
+   exception when insufficient_privilege then null; end;
  end loop;
  g := public.create_group('Bootstrap');
  assert exists(select 1 from public.groups where id=g.id), 'atomic creation cannot read group';
