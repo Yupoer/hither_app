@@ -35,6 +35,8 @@ module.exports = [
     'After a follower loses membership or the selected team is deleted while backgrounded, foreground group sync reports not_member and returns to RoleSelect with the same account.'],
   ['A22,A23', 'deletes an anonymous identity during signout and deletes an account only after confirmation and server success',
     'Anonymous signout removes backend identity/profile. AccountSheet cancel does not delete. Server failure preserves account and suppresses callbacks. Success deletes auth/profile/memberships/native activities and closes exactly once.'],
+  ['A22,A23', 'retries AccountSheet cleanup after remote deletion without another delete',
+    'The server removes the account once. A failed SecureStore deletion leaves the identity and reports failure without firing the completion callback. An AccountSheet retry clears the identity and completes once.'],
   ['A24', 'drops team Premium on leave while retaining authoritative personal Premium when refresh fails',
     'Authoritative personal/team Premium exists before leave. Failed null-group projection still clears selected membership/trip/team access. Personal Premium, account and backend membership survive local session leave.'],
 ].map(([inventory, pattern, assertions]) => ({ inventory: inventory.split(','),

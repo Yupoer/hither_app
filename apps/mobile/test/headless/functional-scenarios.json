@@ -178,6 +178,14 @@
             "ios",
             "android"
           ]
+        },
+        {
+          "file": "src/__tests__/headlessAuthScenario.test.ts",
+          "pattern": "retries AccountSheet cleanup after remote deletion without another delete",
+          "platforms": [
+            "ios",
+            "android"
+          ]
         }
       ]
     },

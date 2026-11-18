@@ -683,6 +683,13 @@
     },
     {
       "parent": 199,
+      "child": 200,
+      "acceptance": "AccountSheet keeps the identity and shows failure when durable cleanup fails, then completes exactly once after a local retry.",
+      "testFile": "headlessAuthScenario.test.ts",
+      "testNamePattern": "retries AccountSheet cleanup after remote deletion without another delete"
+    },
+    {
+      "parent": 199,
       "child": 201,
       "acceptance": "Login uses the shared system language.",
       "testFile": "languagePickerContract.test.ts",

@@ -17,12 +17,13 @@ exports.createExternalAuth = ({ strict, request, spec = {} }) => {
   const persist = next => {
     session = snapshot(next);
     const captured = snapshot(next);
-    write = write.then(async () => {
+    const pending = write.then(async () => {
       if (captured) await storage.setItem(authKey, JSON.stringify(captured));
       else await storage.removeItem(authKey);
       await storage.setItem(`${authKey}.initialized`, 'true');
     });
-    return write;
+    write = pending.catch(() => undefined);
+    return pending;
   };
   async function emit(event, next) {
     await persist(next);

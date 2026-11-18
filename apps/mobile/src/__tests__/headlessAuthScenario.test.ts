@@ -734,6 +734,31 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     } finally { await world.close(); }
   });
 
+  it('retries AccountSheet cleanup after remote deletion without another delete', async () => {
+    const world = new World();
+    try {
+      const device = await world.device({ id: 'delete-cleanup', userId: LEADER, platform, screen: { name: 'AccountSheetContent' } });
+      await world.waitFor(device, (value: any) => value.presentation.session.user?.id === LEADER, 'account sheet identity');
+      await device.input({ kind: 'failSessionRemoval' });
+      await device.perform('account.delete');
+      await device.input({ kind: 'alert', index: 1 });
+
+      const failed = await world.waitFor(device, (value: any) => value.external.alerts > 0, 'local session cleanup failure');
+      expect(world.backend.authUsers.has(LEADER)).toBe(false);
+      expect(failed.presentation.session.user.id).toBe(LEADER);
+      expect(failed.presentation.receipts.filter((receipt: any) => receipt.method === 'onAccountDeleted')).toEqual([]);
+      expect(calls(world, 'delete_anonymous_account')).toHaveLength(1);
+
+      await device.input({ kind: 'alert', index: 0 });
+      await device.perform('account.delete');
+      await device.input({ kind: 'alert', index: 1 });
+      const cleaned = await world.waitFor(device, (value: any) => value.presentation.session.user === null, 'durable sign-out retry');
+      expect(calls(world, 'delete_anonymous_account')).toHaveLength(1);
+      expect(calls(world, 'revoke_installation_capabilities')).toHaveLength(1);
+      expect(cleaned.presentation.receipts.filter((receipt: any) => receipt.method === 'onAccountDeleted')).toHaveLength(1);
+    } finally { await world.close(); }
+  });
+
   it('drops team Premium on leave while retaining authoritative personal Premium when refresh fails', async () => {
     const world = new World();
     try {
