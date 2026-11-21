@@ -30,6 +30,7 @@ export default function SheetPresentation({
   selection,
   onSelectionChange,
   backgroundColor = D6_SURFACE_SOLID_COLOR,
+  useSystemBackground = false,
   allowBackgroundInteraction = false,
   dismissDisabled = false,
   children,
@@ -51,7 +52,8 @@ export default function SheetPresentation({
         <Group modifiers={[
           presentationDetents([...detents], { selection, onSelectionChange: onSelectionChange ? handleSelectionChange : undefined }),
           presentationDragIndicator(dismissDisabled && detents.length === 1 ? 'hidden' : 'visible'),
-          presentationBackground(usesSystemInsets ? backgroundColor : 'transparent'),
+          ...(usesSystemInsets && useSystemBackground
+            ? [] : [presentationBackground(usesSystemInsets ? backgroundColor : 'transparent')]),
           presentationBackgroundInteraction(allowBackgroundInteraction ? 'enabled' : 'disabled'),
           interactiveDismissDisabled(dismissDisabled),
           ...(onOpenComplete ? [onAppear(onOpenComplete)] : []),

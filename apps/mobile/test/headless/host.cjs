@@ -201,7 +201,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   for (const name of ['FadeIn', 'FadeInDown', 'FadeInRight', 'FadeOut', 'FadeOutUp', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
   animation.SlideInDown = { duration: value => ({ reduceMotion: motion => ({ animation: 'SlideInDown', duration: value, motion }) }) };
   jest.doMock('react-native-reanimated', () => animation);
-  jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: React.forwardRef(function ReanimatedSwipeable(props, ref) {
+  jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, SwipeDirection: { LEFT: 'left', RIGHT: 'right' }, default: React.forwardRef(function ReanimatedSwipeable(props, ref) {
     const [open, setOpen] = React.useState(false);
     const currentProps = React.useRef(props);
     currentProps.current = props;
@@ -237,9 +237,10 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     Skia: { RuntimeEffect: { Make: source => ({ source }) }, Path: { Make: () => ({ addCircle() {}, moveTo() {}, lineTo() {}, cubicTo() {}, close() {} }) } },
     vec: (x, y) => ({ x, y }),
   }));
-  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Toggle','Slider','Picker','TextField','Menu','Divider','Section','Form','Label','ProgressView','ContextMenu','RNHostView'];
+  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Toggle','Slider','Picker','TextField','Divider','Section','Form','Label','ProgressView','ContextMenu','RNHostView'];
   const SwiftSheetHost = make('SwiftUI.BottomSheet');
   const SwiftGroupHost = make('SwiftUI.Group');
+  const SwiftMenuHost = make('SwiftUI.Menu');
   function SwiftSheet({ isPresented, onDismiss, onIsPresentedChange, ...props }) {
     const wasPresented = React.useRef(isPresented);
     const dismiss = React.useRef(onDismiss);
@@ -262,17 +263,30 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     React.useEffect(() => { onAppear.current?.(); }, []);
     return React.createElement(SwiftGroupHost, props);
   }
+  function SwiftMenu({ children, ...props }) {
+    const [open, setOpen] = React.useState(false);
+    const dismiss = () => setOpen(false);
+    return React.createElement(SwiftMenuHost, { ...props, onPress: () => setOpen(true), onDismiss: dismiss },
+      open && React.Children.map(children, child => {
+        if (!React.isValidElement(child) || typeof child.props.onPress !== 'function') return child;
+        return React.cloneElement(child, { onPress: (...args) => {
+          dismiss();
+          child.props.onPress(...args);
+        } });
+      }));
+  }
   jest.doMock('@expo/ui/swift-ui', () => strict('swift-ui', {
     ...Object.fromEntries(swiftNames.map(name => [name, make(`SwiftUI.${name}`)])),
     BottomSheet: SwiftSheet,
     Group: SwiftGroup,
+    Menu: SwiftMenu,
   }));
   jest.doMock('@expo/ui', () => strict('expo-ui', { Host: make('ExpoUI.Host'), Switch: make('ExpoUI.Switch') }));
   jest.doMock('@expo/ui/community/segmented-control', () => ({ __esModule: true, default: make('SegmentedControl'), SegmentedControl: make('SegmentedControl') }));
   jest.doMock('@expo/ui/community/masked-view', () => ({ MaskedView: make('MaskedView') }));
-  const modifierNames = ['accessibilityLabel','accessibilityHint','buttonStyle','buttonBorderShape','controlSize','font','disabled','frame','foregroundColor',
+  const modifierNames = ['accessibilityLabel','accessibilityHint','accessibilityValue','buttonStyle','buttonBorderShape','controlSize','font','disabled','frame','foregroundColor',
     'labelStyle','offset','padding','tint','background','cornerRadius','opacity','clipShape','shadow','glassEffect','fixedSize','lineLimit','multilineTextAlignment','environment','tag','rotationEffect','scaleEffect',
-    'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator','presentationCornerRadius','presentationBackgroundInteraction','interactiveDismissDisabled','onAppear','contentShape','menuStyle','menuIndicator','presentationBackground','labelsHidden','toggleStyle'];
+    'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator','presentationCornerRadius','presentationBackgroundInteraction','interactiveDismissDisabled','onAppear','contentShape','menuStyle','menuIndicator','menuOrder','presentationBackground','labelsHidden','toggleStyle'];
   jest.doMock('@expo/ui/swift-ui/modifiers', () => strict('swift-ui/modifiers', {
     ...Object.fromEntries(modifierNames.map(name => [name, (...args) => ({ modifier: name, args })])),
     shapes: { circle: () => ({ type: 'circle' }), capsule: () => ({ type: 'capsule' }) },
@@ -304,7 +318,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     },
     call(root, { kind, testId, label, value, within, phase, success }) {
       if (kind === 'gesture') {
-        assert(['onBegin', 'onStart', 'onUpdate', 'onChange', 'onEnd', 'onFinalize'].includes(phase));
+        assert(['onTouchesDown', 'onBegin', 'onStart', 'onUpdate', 'onChange', 'onEnd', 'onFinalize'].includes(phase));
         const nodes = root.root.findAll(node => typeof node.type === 'string' && node.type.startsWith('host:') && node.props.testID === testId && availability(node).acceptsInput);
         assert.equal(nodes.length, 1, `Expected one gesture target ${testId}`);
         let detector = nodes[0];
@@ -320,7 +334,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
       if (kind === 'panResponder') assert(['onStartShouldSetPanResponder', 'onMoveShouldSetPanResponder',
         'onPanResponderGrant', 'onPanResponderMove', 'onPanResponderRelease', 'onPanResponderTerminate'].includes(phase), `Unknown PanResponder phase ${phase}`);
       const nativeEvents = ['onLongPress', 'onPress', 'onPressIn', 'onPressOut', 'onMapReady', 'onMapLoaded', 'onRegionChangeComplete', 'onUserLocationChange',
-        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen', 'onAccessibilityAction', 'onIsPresentedChange'];
+        'onSelectionChange', 'onChange', 'onLayout', 'onSelect', 'onValueChange', 'onSlidingComplete', 'onScrollBeginDrag', 'onMomentumScrollEnd', 'onBlur', 'onSwipeableOpen', 'onAccessibilityAction', 'onIsPresentedChange', 'onDismiss'];
       if (kind === 'nativeEvent') assert(nativeEvents.includes(value?.event), `Unknown native event ${value?.event}`);
       const property = kind === 'panResponder' ? phase : kind === 'nativeEvent' ? value.event : { press: 'onPress', changeText: 'onChangeText', toggle: 'onValueChange', submit: 'onSubmitEditing', selection: 'onSelectionChange' }[kind];
       assert(property, `Unknown host event ${kind}`);

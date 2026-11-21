@@ -22,6 +22,7 @@ export const D6_SURFACE_COLORS = {
 } as const;
 export const D6_SURFACE_BORDER_COLOR = '#ffffff67';
 export const D6_SURFACE_SOLID_COLOR = '#26302E';
+export const D6_TRIGGER_SHADOW_COLOR = '#354FC5';
 export const MAP_SHEET_COMPACT_GRABBER_HEIGHT = 9;
 export const SETTINGS_SHEET_CONTENT_INSET = 24;
 export const OVERLAY_SHEET_GRABBER_HEIGHT = 20;
@@ -33,7 +34,7 @@ export const SHEET_HEADER_SYMBOLS = {
   close: 'xmark',
   commit: 'checkmark',
   share: 'square.and.arrow.up',
-  back: 'chevron.left',
+  back: 'chevron.backward',
   more: 'ellipsis',
   favorite: 'heart',
   favorited: 'heart.fill',

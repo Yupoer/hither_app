@@ -23,19 +23,20 @@ import { useVisibleUi } from '../../../state/foregroundUi';
 import SystemToggle from '../../../components/SystemToggle';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
 import SheetPresentation, { type SheetDetent } from '../../../components/SheetPresentation';
-import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../../../components/mapSheetChrome';
+import { D6_SURFACE_SOLID_COLOR, MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../../../components/mapSheetChrome';
+import { lightTap } from '../../../utils/haptics';
 import { normalizePlaceSearchResults } from '../../../utils/normalizePlaceSearchResults';
 import { dateForTripDay, localDayKey } from '../../../utils/tripDay';
 import type { FavoritePlace } from '../../../api/client';
 import type { TravelMode } from '../../../utils/geo';
 import type { Destination } from '../../../types';
 import { D6_ACCENT, D6IconButton, D6Surface, d6ChromeStyles } from './D6HomeChrome';
+import AddPlaceChoice, { type PlaceChoiceOption } from './D6AddPlaceChoice';
 
 const STOP_DETENTS = ['medium', { fraction: 0.87 }] satisfies readonly SheetDetent[];
 const ADD_CENTER_DETENTS = [{ height: 112 }] satisfies readonly SheetDetent[];
 const ADD_COORDINATE_DETENTS = [{ height: 140 }] satisfies readonly SheetDetent[];
 const ADD_CONFIRM_DETENTS = [{ fraction: 0.52 }] satisfies readonly SheetDetent[];
-const ADD_SHEET_BACKGROUND = '#26302EF2';
 
 const DETAIL_TIMING = { duration: 280, easing: Easing.inOut(Easing.cubic) };
 
@@ -305,32 +306,6 @@ function PlaceTitle({ title, name, zh, onTitle }: {
   </>;
 }
 
-function AddChoice({ label, value, expanded, onPress, testID }: {
-  label: string; value: string; expanded: boolean; onPress?: () => void; testID: string;
-}) {
-  const body = <>
-    <HitherText style={[styles.choiceLabel, styles.choiceHeading]}>{label}</HitherText>
-    <HitherText style={styles.choiceValue} numberOfLines={2}>{value}</HitherText>
-    {onPress ? <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={17} color="#C2CCEF" /> : null}
-  </>;
-  return onPress ? <Pressable testID={testID} accessibilityRole="button" accessibilityLabel={label} accessibilityValue={{ text: value }}
-    accessibilityState={{ expanded }} onPress={onPress} style={[styles.choice, expanded && styles.choiceExpanded]}>{body}</Pressable>
-    : <View style={styles.choice}>{body}</View>;
-}
-
-function AddOption({ label, description, selected, onPress, testID }: {
-  label: string; description?: string; selected: boolean; onPress: () => void; testID: string;
-}) {
-  return <Pressable testID={testID} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}
-    style={[styles.option, selected && styles.optionSelected]}>
-    <View style={styles.grow}>
-      <HitherText style={styles.optionTitle}>{label}</HitherText>
-      {description ? <HitherText style={styles.optionDetail}>{description}</HitherText> : null}
-    </View>
-    <View style={styles.optionMark}>{selected ? <Ionicons name="checkmark" size={20} color="#B4C4FF" /> : null}</View>
-  </Pressable>;
-}
-
 export function D6AddPlace(props: AddCardProps) {
   const { session, place, title, favoritePlaces, biasRegion, departureDate, stops, canEdit, canSetStay, quota,
     favorite, favoriteBusy, busy, sheetVisible, onSheetDismiss, nestedSheets, zh, color, onClose, onCenter, onPick, onTitle, onDay, onPlacement,
@@ -364,6 +339,32 @@ export function D6AddPlace(props: AddCardProps) {
   const afterLabel = (stopTitle: string) => zh ? `${stopTitle} 之後` : `After ${stopTitle}`;
   const placementLabel = placement.kind === 'first' || !stops.length ? first : afterStop ? afterLabel(afterStop.title) : last;
   const choosePlacement = (value: StopPlacement) => { onPlacement(value); setSelector(null); };
+  const dates: PlaceChoiceOption[] = place && props.tripDays > 1
+    ? Array.from({ length: props.tripDays }, (_, index) => {
+      const day = index + 1;
+      const date = dayDate(day);
+      return {
+        testID: `d6-place-day-${day}`,
+        label: date ?? dayName(day),
+        description: date ? dayName(day) : undefined,
+        selected: session.day === day,
+        onPress: () => { onDay(day); setSelector(null); },
+      };
+    })
+    : [];
+  const positions: PlaceChoiceOption[] = place && canEdit && !session.stay && stops.length > 0
+    ? [
+      { testID: 'd6-place-first', label: first, selected: placement.kind === 'first', onPress: () => choosePlacement({ kind: 'first' }) },
+      ...stops.slice(0, -1).map(stop => ({
+        testID: `d6-place-after-${stop.id}`,
+        label: afterLabel(stop.title),
+        selected: placement.kind === 'after' && placement.stopId === stop.id,
+        onPress: () => choosePlacement({ kind: 'after', stopId: stop.id }),
+      })),
+      { testID: 'd6-place-last', label: last, selected: placement.kind === 'last' || (placement.kind === 'after' && !afterStop),
+        onPress: () => choosePlacement({ kind: 'last' }) },
+    ]
+    : [];
   const toggleSelector = (value: 'day' | 'placement') => {
     Keyboard.dismiss();
     setSelector(current => current === value ? null : value);
@@ -410,14 +411,14 @@ export function D6AddPlace(props: AddCardProps) {
         </View>
       </>}
       <SheetPresentation visible={sheetVisible} detents={detents} selection={detents[0]} onClose={onClose} onDismiss={onSheetDismiss}
-        backgroundColor={ADD_SHEET_BACKGROUND} allowBackgroundInteraction>
-        <View testID="d6-add-card" style={[styles.addSheetBody, !place && styles.addSheetCompactBody]}>
+        backgroundColor={D6_SURFACE_SOLID_COLOR} allowBackgroundInteraction>
+        <View testID="d6-add-card" style={[styles.addSheetBody, place && styles.addPlaceBody]}>
           {!place && pinCoordinates ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
             <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
             <Text style={styles.rowValue}>{zh ? '放下圖釘後，就能用該位置新增集合點。' : 'Drop a pin to use that location for your new stop.'}</Text>
-          </View> : !place ? <Action testID="d6-add-map-center" title={zh ? '將地圖中心設為集合點' : 'Add a stop at map center'} primary
+          </View> : !place ? <Action testID="d6-add-map-center" title={zh ? '設定集合點' : 'Add a stop at map center'} primary
             style={styles.footerAction} onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} /> : <>
-            <View style={styles.cardHead}>
+            <View style={[styles.cardHead, styles.addHead]}>
               <View style={styles.addIdentity}>
                 <View style={[styles.placeIcon, { backgroundColor: color }]}>
                   <Ionicons name="location-outline" size={23} color="#fff" />
@@ -427,29 +428,18 @@ export function D6AddPlace(props: AddCardProps) {
                   {place.address ? <HitherText style={styles.placeAddress} numberOfLines={2}>{place.address}</HitherText> : null}
                 </View>
               </View>
+            </View>
+            <View style={styles.cornerAction}>
               <SheetHeaderAction action={favorite ? 'favorited' : 'favorite'} disabled={favoriteBusy} onPress={onFavorite} testID="d6-place-favorite"
                 accessibilityLabel={favorite ? (zh ? '從我的最愛移除' : 'Remove from favorites') : (zh ? '加到我的最愛' : 'Add to favorites')} />
             </View>
             <ScrollView style={styles.addFieldsScroll} keyboardShouldPersistTaps="handled" nestedScrollEnabled contentContainerStyle={styles.addFields}>
-              <AddChoice label={zh ? '行程日期' : 'Trip date'} value={dayDate(session.day) ?? dayName(session.day)}
-                expanded={selector === 'day'} onPress={props.tripDays > 1 ? () => toggleSelector('day') : undefined} testID="d6-place-day" />
-              {selector === 'day' ? <ScrollView testID="d6-place-day-options" style={styles.optionList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                {Array.from({ length: props.tripDays }, (_, index) => index + 1).map(day => <AddOption key={day} label={dayDate(day) ?? dayName(day)}
-                  description={dayDate(day) ? dayName(day) : undefined} selected={session.day === day} testID={`d6-place-day-${day}`}
-                  onPress={() => { onDay(day); setSelector(null); }} />)}
-              </ScrollView> : null}
-              {canEdit && !session.stay ? <>
-                <AddChoice label={zh ? '加入哪一站' : 'Place in itinerary'} value={placementLabel} expanded={selector === 'placement'}
-                  onPress={stops.length ? () => toggleSelector('placement') : undefined} testID="d6-place-position" />
-                {selector === 'placement' && stops.length > 0 ? <ScrollView testID="d6-place-position-options" style={styles.optionList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  <AddOption label={first} selected={placement.kind === 'first'} testID="d6-place-first" onPress={() => choosePlacement({ kind: 'first' })} />
-                  {stops.slice(0, -1).map(stop => <AddOption key={stop.id} label={afterLabel(stop.title)}
-                    selected={placement.kind === 'after' && placement.stopId === stop.id}
-                    testID={`d6-place-after-${stop.id}`} onPress={() => choosePlacement({ kind: 'after', stopId: stop.id })} />)}
-                  <AddOption label={last} selected={placement.kind === 'last' || (placement.kind === 'after' && !afterStop)}
-                    testID="d6-place-last" onPress={() => choosePlacement({ kind: 'last' })} />
-                </ScrollView> : null}
-              </> : null}
+              <AddPlaceChoice label={zh ? '行程日期' : 'Trip date'} value={dayDate(session.day) ?? dayName(session.day)}
+                options={dates} expanded={selector === 'day'} onToggle={() => toggleSelector('day')} testID="d6-place-day" />
+              {canEdit && !session.stay ? (
+                <AddPlaceChoice label={zh ? '加入哪一站' : 'Place in itinerary'} value={placementLabel}
+                  options={positions} expanded={selector === 'placement'} onToggle={() => toggleSelector('placement')} testID="d6-place-position" />
+              ) : null}
               {canSetStay ? <View style={styles.stayRow}>
                 <View style={styles.grow}>
                   <HitherText style={styles.choiceLabel}>{zh ? '設為住宿' : 'Set as accommodation'}</HitherText>
@@ -461,7 +451,7 @@ export function D6AddPlace(props: AddCardProps) {
             </ScrollView>
             {error ? <Text accessibilityRole="alert" style={styles.destructive}>{error}</Text> : null}
             <Action testID="confirm-place-add" title={quota ? (zh ? '解鎖更多集合點' : 'Unlock more stops') : canEdit ? (zh ? '加入' : 'Add') : (zh ? '建議' : 'Suggest')}
-              primary style={styles.footerAction} disabled={busy || !title.trim()} onPress={onCommit} />
+              primary style={[styles.footerAction, styles.commitAction]} disabled={busy || !title.trim()} onPress={() => { if (!quota) lightTap(); onCommit(); }} />
           </>}
           {nestedSheets}
         </View>
@@ -479,9 +469,12 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   sheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET },
   scrollBody: { flex: 1, minHeight: 0 },
-  addSheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET, justifyContent: 'flex-end' },
-  addSheetCompactBody: { flex: 0, flexShrink: 0 },
+  addSheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET, justifyContent: 'flex-end', backgroundColor: D6_SURFACE_SOLID_COLOR },
   footerAction: { flexGrow: 0, flexShrink: 0 },
+  commitAction: { width: '66.67%', alignSelf: 'center' },
+  addPlaceBody: { justifyContent: 'flex-start' },
+  addHead: { paddingRight: MAP_SHEET_ACTION_HIT_SIZE + 12 },
+  cornerAction: { position: 'absolute', top: SHEET_CORNER_ACTION_INSET, right: SHEET_CORNER_ACTION_INSET, zIndex: 1 },
   editorClip: { overflow: 'hidden' },
   editorMeasure: { position: 'absolute', top: 0, left: 0, right: 0 },
   cardIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: MAP_SHEET_ACTION_HIT_SIZE },
@@ -512,7 +505,7 @@ const styles = StyleSheet.create({
   addLayer: { ...StyleSheet.absoluteFill, zIndex: 83 },
   crosshair: { position: 'absolute', left: '50%', top: '50%', marginLeft: -15, marginTop: -30 },
   search: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET },
-  searchBar: { minHeight: 60, flexDirection: 'row', alignItems: 'center', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 6, paddingVertical: 6, paddingLeft: 14, paddingRight: 8, backgroundColor: '#26302E99', boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
+  searchBar: { minHeight: 68, flexDirection: 'row', alignItems: 'center', borderRadius: MAP_SHEET_CORNER_RADIUS, gap: 6, padding: 12, backgroundColor: '#26302E99', boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
   searchIcon: { height: MAP_SHEET_ACTION_HIT_SIZE, justifyContent: 'center' },
   searchInput: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, fontSize: APP_TEXT_SIZE.body, color: '#fff' },
   results: { marginTop: 8, borderRadius: 24, paddingHorizontal: 12, paddingVertical: 4, backgroundColor: '#26302E99' },
@@ -524,18 +517,8 @@ const styles = StyleSheet.create({
   rename: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 23 },
   renameText: { color: '#BDCAFA', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   addFieldsScroll: { flex: 1, minHeight: 0, marginBottom: 12 },
-  addFields: { gap: 5 },
-  choice: { flexDirection: 'row', alignItems: 'center', minHeight: 48, gap: 10, paddingVertical: 8, paddingHorizontal: 12,
-    borderRadius: 14, backgroundColor: '#ffffff12' },
-  choiceExpanded: { backgroundColor: '#879DFF2b' },
+  addFields: { gap: 10 },
   choiceLabel: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', flexShrink: 1 },
-  choiceHeading: { flexBasis: '35%' },
-  choiceValue: { color: '#D7DFFD', fontSize: APP_TEXT_SIZE.caption, flex: 1, textAlign: 'left' },
-  optionList: { flexGrow: 0, maxHeight: 184, backgroundColor: '#090C18a8', borderRadius: 14 },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44, paddingVertical: 7, paddingHorizontal: 13 },
-  optionSelected: { backgroundColor: '#879DFF24' },
-  optionTitle: { color: '#fff', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   optionDetail: { color: '#C1C8DA', fontSize: APP_TEXT_SIZE.caption, marginTop: 2 },
-  optionMark: { width: 22, alignItems: 'center' },
   stayRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 12, minHeight: 48 },
 });

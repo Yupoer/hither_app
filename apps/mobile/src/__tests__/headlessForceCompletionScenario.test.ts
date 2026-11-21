@@ -31,7 +31,8 @@ describe.each(['ios', 'android'])('leader force completion on %s', platform => {
     }
     const available = has(await device.observe(), visibleAction);
     if (platform === 'ios') {
-      await press(device, 'd6-route-close-options');
+      expect(await device.host.call({ kind: 'nativeEvent', testId: 'd6-route-options', value: { event: 'onDismiss' } }))
+        .toEqual({ invoked: true });
       await press(device, 'home-itinerary-grabber');
     }
     return available;

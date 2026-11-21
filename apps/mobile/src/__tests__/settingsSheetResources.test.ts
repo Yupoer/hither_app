@@ -4,6 +4,7 @@ import { ScrollView, View } from 'react-native';
 import SheetHeaderAction from '../components/SheetHeaderAction';
 import BottomSheet from '../components/BottomSheet';
 import SettingsSheetPanel from '../screens/MapScreen/components/SettingsSheetPanel';
+import NativeInviteMembersSheet from '../screens/MapScreen/components/InviteMembersSheet.ios';
 import NativeSettingsChildSheet from '../screens/MapScreen/components/SettingsChildSheet.ios';
 import { withSpring } from 'react-native-reanimated';
 import SheetPresentation from '../components/SheetPresentation';
@@ -29,6 +30,8 @@ jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({
 jest.mock('../components/BottomSheet', () => 'BottomSheet');
 jest.mock('../components/SheetHeaderAction', () => 'HeaderAction');
 jest.mock('../components/SheetPresentation', () => 'SheetPresentation');
+jest.mock('../screens/MapScreen/components/SettingsChildSheet', () =>
+  jest.requireActual('../screens/MapScreen/components/SettingsChildSheet.ios'));
 jest.mock('react-native-reanimated', () => ({
   __esModule: true, default: { View: 'AnimatedView' },
   useSharedValue: (value: number) => require('react').useState(() => ({ value }))[0],
@@ -101,7 +104,7 @@ it('uses the native detent for a single-stage root and fits short child pages in
     children: React.createElement('div', { 'data-testid': 'store-owner' }),
   };
   const render = (isRoot: boolean) => React.createElement(NativeSettingsChildSheet, {
-    ...props, navigation: isRoot ? 'root' : 'child', title: isRoot ? '' : 'Notifications',
+    ...props, navigation: isRoot ? 'root' : 'child', title: isRoot ? 'Settings' : 'Notifications',
     scrollResetKey: isRoot ? 'root' : 'notifications',
     onBack: isRoot ? undefined : onBack, fitContent: !isRoot,
   });
@@ -111,6 +114,10 @@ it('uses the native detent for a single-stage root and fits short child pages in
   const content = tree.root.findByType('div');
   expect(sheet.props.detents).toEqual([{ fraction: 0.84 }]);
   expect(sheet.props.dismissDisabled).toBe(false);
+  expect(sheet.props.useSystemBackground).toBe(true);
+  const closeAction = tree.root.findByType(SheetHeaderAction);
+  expect(closeAction.props.action).toBe('close');
+  expect(closeAction.props.onPress).toEqual(sheet.props.onClose);
   await act(async () => tree.update(render(false)));
   expect(tree.root.findByType(SheetPresentation)).toBe(sheet);
   expect(tree.root.findByType('div')).toBe(content);
@@ -158,5 +165,33 @@ it('keeps nested native settings sheets outside the parent scroll view', async (
   expect(scroll.findAllByType(SheetPresentation)).toHaveLength(0);
   const parent = tree.root.findAllByType(SheetPresentation).find(node => node.props.testID === 'parent');
   expect(parent?.findAllByType(SheetPresentation).some(node => node.props.testID === 'nested')).toBe(true);
+  await act(async () => tree.unmount());
+});
+
+it('sizes an invite to the measured actions and keeps large content scrollable', async () => {
+  const onClose = jest.fn();
+  let tree!: ReturnType<typeof create>;
+  await act(async () => {
+    tree = create(React.createElement(NativeInviteMembersSheet, {
+      visible: true, onClose, title: 'Invite members', accent: '#fff', doneLabel: 'Close',
+      fitContent: true, children: React.createElement('InviteActions'),
+    }));
+  });
+  const sheet = tree.root.findByType(SheetPresentation);
+  const scroll = tree.root.findByType(ScrollView);
+  const header = tree.root.findAllByType(View).find(node => typeof node.props.onLayout === 'function');
+  expect(sheet.props.useSystemBackground).toBe(true);
+  expect(sheet.props.detents).toEqual([{ fraction: 0.36 }]);
+  expect(scroll.find(node => String(node.type) === 'InviteActions')).toBeDefined();
+  await act(async () => {
+    header?.props.onLayout({ nativeEvent: { layout: { height: 52 } } });
+    scroll.props.onContentSizeChange(320, 185);
+  });
+  expect(sheet.props.detents).toEqual([{ height: 261 }]);
+  await act(async () => scroll.props.onContentSizeChange(320, 1000));
+  expect(sheet.props.detents).toEqual([{ fraction: 0.8 }]);
+  expect(scroll.find(node => String(node.type) === 'InviteActions')).toBeDefined();
+  await act(async () => sheet.props.onClose());
+  expect(onClose).toHaveBeenCalledTimes(1);
   await act(async () => tree.unmount());
 });

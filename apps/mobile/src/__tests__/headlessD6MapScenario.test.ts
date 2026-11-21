@@ -3,7 +3,7 @@ const { LEADER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.c
 
 type MapHost = { testId?: string; label?: string; text?: string; value?: unknown; disabled?: boolean; acceptsInput: boolean };
 type Observation = {
-  presentation: { hosts: MapHost[] };
+  presentation: { hosts: MapHost[]; receipts: { host: string; method: string; style?: string }[] };
   external: { watches: number; alerts: number };
 };
 type Device = Awaited<ReturnType<InstanceType<typeof World>['device']>>;
@@ -45,11 +45,15 @@ describe('iOS D6 Map', () => {
       await press(device, 'd6-place-rename');
       await device.perform('map.place.rename', { value: '  Coffee stop  ' });
       expect(await press(device, 'd6-place-day')).toEqual({ invoked: true });
-      await press(device, 'd6-place-day-2');
+      expect(await press(device, 'd6-place-day-2')).toEqual({ invoked: true });
       expect(await press(device, 'd6-place-position')).toEqual({ invoked: true });
       await press(device, 'd6-place-after-a1111111-1111-4111-8111-111111111111');
       expect(world.backend.itinerary).toHaveLength(3);
+      const lightImpacts = (value: Observation) => value.presentation.receipts
+        .filter(receipt => receipt.host === 'Haptics' && receipt.method === 'impactAsync' && receipt.style === 'light').length;
+      const impactsBeforeAdd = lightImpacts(await device.observe());
       expect(await press(device, 'confirm-place-add')).toEqual({ invoked: true });
+      expect(lightImpacts(await device.observe())).toBe(impactsBeforeAdd + 1);
       await world.waitFor(device, () => world.backend.itinerary.filter((row: { day?: number }) => row.day === 2)
         .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
         .map((row: { title: string }) => row.title).join('|') === 'First stop on day two|Coffee stop|Last stop on day two',
@@ -115,8 +119,9 @@ describe('iOS D6 Map', () => {
     try {
       const device = await openMap(world);
       const handle = (testId: string, phase: string, translationY = 0, velocityY = 0) =>
-        device.host.call({ kind: 'gesture', testId, phase, value: { translationY, velocityY } });
+        device.host.call({ kind: 'gesture', testId, phase, value: { absoluteY: translationY, translationY, velocityY } });
       const move = async (testId: string, offsets: number[], detent: number, releaseVelocity = 0) => {
+        await device.host.call({ kind: 'gesture', testId, phase: 'onTouchesDown', value: { allTouches: [{ absoluteY: 0 }] } });
         await handle(testId, 'onStart');
         for (const y of offsets) await handle(testId, 'onUpdate', y);
         await handle(testId, 'onEnd', offsets.at(-1), releaseVelocity);

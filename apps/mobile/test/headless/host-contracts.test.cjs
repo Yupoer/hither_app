@@ -185,6 +185,30 @@ test('Reanimated completion is explicit and cancellation retains the owning shar
   assert.equal(second.value, 200);
 });
 
+test('SwiftUI menu actions become available on open and dismiss on selection or outside tap', async () => {
+  const { host, modules } = fixture();
+  const { Button, Menu } = modules.get('@expo/ui/swift-ui');
+  let selections = 0;
+  let root;
+  await act(async () => {
+    root = create(React.createElement(Menu, { testID: 'menu' },
+      React.createElement(Button, { testID: 'item', onPress: () => { selections += 1; } })));
+  });
+  const showOption = () => host.observe(root).some(node => node.testId === 'item');
+  try {
+    assert(!showOption());
+    await act(async () => host.call(root, { kind: 'press', testId: 'menu' }));
+    assert(showOption());
+    await act(async () => host.call(root, { kind: 'press', testId: 'item' }));
+    assert.equal(selections, 1);
+    assert(!showOption());
+    await act(async () => host.call(root, { kind: 'press', testId: 'menu' }));
+    await act(async () => host.call(root, { kind: 'nativeEvent', testId: 'menu', value: { event: 'onDismiss' } }));
+    assert.equal(selections, 1);
+    assert(!showOption());
+  } finally { await act(async () => root.unmount()); }
+});
+
 test('swipe actions reopen after cancellation and retain the mounted native handle', async () => {
   const { host, modules } = fixture();
   const Swipeable = modules.get('react-native-gesture-handler/ReanimatedSwipeable').default;

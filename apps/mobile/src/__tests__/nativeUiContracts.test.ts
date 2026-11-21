@@ -155,12 +155,9 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
   });
 
-  it('opens the iOS invite sheet at Stage 1 while preserving Android fallback', () => {
+  it('uses the native settings sheet for iOS invites and the overlay for Android', () => {
     expect(inviteMembersOverlay).toContain('<InviteMembersSheet');
     expect(inviteSheetIos).toContain('<SettingsChildSheet');
-    expect(inviteSheetIos).toContain('initialStage={0}');
-    expect(inviteSheetIos).toContain('stageTwoRatio={0.8}');
-    expect(inviteSheetIos).toContain('wrapContentInScrollView={false}');
     expect(inviteSheet).toContain('<OverlaySheet');
   });
 

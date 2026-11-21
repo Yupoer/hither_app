@@ -15,6 +15,7 @@ import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import SystemToggle from '../../../components/SystemToggle';
 import PrefSlider from '../../../components/PrefSlider';
+import MarqueeSpeedSlider from './MarqueeSpeedSlider';
 import NotificationPreferencesCard from '../../../components/NotificationPreferencesCard';
 import PremiumBanner from '../../../components/PremiumBanner';
 import { AccountSheetContent } from '../../../components/AccountSheet';
@@ -37,8 +38,6 @@ import HomeSettings from './HomeSettings';
 import type { HomeSettingsProps } from './HomeSettings';
 export type { SettingsPage } from './HomeSettings';
 
-const MARQUEE_SPEED_MIN = 20;
-const MARQUEE_SPEED_MAX = 80;
 
 export interface SettingsOverlayProps {
   visible: boolean;
@@ -240,6 +239,7 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
         onDismissComplete={onDismissComplete}
         testID="settings-panel"
         navigation="root"
+        doneLabel={t('common.close')}
         title={pageTitle}
         zIndex={80}
         initialStage={1}
@@ -643,10 +643,8 @@ const LegacySettingsOverlay = React.memo(function LegacySettingsOverlay({
                   <Text style={styles.accuracySubhint}>{t('settings.gatherCardMarqueeSpeedFast')}</Text>
                 </View>
               </View>
-              <PrefSlider
+              <MarqueeSpeedSlider
                 value={gatherCardMarqueeSpeed}
-                min={MARQUEE_SPEED_MIN}
-                max={MARQUEE_SPEED_MAX}
                 onChange={setGatherCardMarqueeSpeed}
                 accent={accent}
                 accessibilityLabel={t('settings.gatherCardMarqueeSpeed')}

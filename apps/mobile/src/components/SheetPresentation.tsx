@@ -14,6 +14,7 @@ export type SheetPresentationProps = {
   selection?: SheetDetent;
   onSelectionChange?: (detent: SheetDetent) => void;
   backgroundColor?: string;
+  useSystemBackground?: boolean;
   allowBackgroundInteraction?: boolean;
   dismissDisabled?: boolean;
   children: React.ReactNode;

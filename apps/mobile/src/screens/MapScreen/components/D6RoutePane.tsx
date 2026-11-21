@@ -31,6 +31,7 @@ import { localDayKey, openDestinationsForReorder, parseDateOnlyLocal } from '../
 import { d6DayRows, d6Reorder, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
 import type { ReorderUpdate } from '../itineraryReorder';
 import { D6RouteDates } from './D6RouteDates';
+import D6RouteMenu, { type D6RouteMenuItem } from './D6RouteMenu';
 import { D6RouteRow, D6RouteRowPreview, D6RowFlash } from './D6RouteRow';
 import { D6PaneScrollView } from './D6PaneScrollView';
 import { D6PaneInteractionContext, D6PaneOverlay } from './D6PaneInteraction';
@@ -79,9 +80,7 @@ export interface D6RoutePaneProps {
 }
 
 type RoutePopupPage = 'menu' | 'dates';
-type RoutePopup =
-  | { page: RoutePopupPage; phase: 'open' }
-  | { page: RoutePopupPage; phase: 'closing'; next?: () => void };
+type RoutePopup = { page: RoutePopupPage; phase: 'open' | 'closing' };
 
 const DATE_POPUP_DETENT = { fraction: 0.72 };
 
@@ -127,18 +126,8 @@ export function D6RoutePane({
     setPopup(current => current?.phase === 'closing' ? current : { page, phase: 'open' });
   }
 
-  function closePopup(next?: () => void) {
-    if (isIOS) {
-      setPopup(current => current?.phase === 'open' ? { page: current.page, phase: 'closing', next } : current);
-    } else {
-      setPopup(null);
-      next?.();
-    }
-  }
-
-  function finishPopupClose() {
-    setPopup(null);
-    if (popup?.phase === 'closing') popup.next?.();
+  function closePopup() {
+    setPopup(current => isIOS && current ? { page: current.page, phase: 'closing' } : null);
   }
   const [showCompleted, setShowCompleted] = useState(false);
   const [poolFold, setPoolFold] = useState<{ key: number | undefined; open: boolean; flash: string | null }>(() =>
@@ -405,7 +394,6 @@ export function D6RoutePane({
   const ordinaryRows = useMemo(() => rows.filter(row => row.kind === 'destination' && !row.isLegacyStay), [rows]);
   const accommodationRows = rows.filter(row => row.kind === 'accommodation' || row.isLegacyStay);
   const selectedAll = selectableRows.length > 0 && selectionCount === selectableRows.length;
-  const moreActions = canEdit || canEditDates || !!onManageArrivals || !!legacyContent;
   const hasStay = rows.some((row) => row.kind === 'accommodation' || row.isLegacyStay);
   const showStaySlot = canEdit && canEditDates && !selectionMode && day.number < count && !hasStay;
   const status = error ?? failure;
@@ -496,6 +484,21 @@ export function D6RoutePane({
     />;
   };
 
+  const menuItems: D6RouteMenuItem[] = [];
+  if (canEdit) menuItems.push({ testID: 'd6-route-menu-select', title: chinese ? '選取' : 'Select', onPress: () => setSelection(new Set()) });
+  if (canEditDates) menuItems.push({ testID: 'd6-route-menu-dates', title: chinese ? '日期' : 'Dates', onPress: () => {
+    setFailure(null);
+    openPopup('dates');
+  } });
+  if (onManageArrivals) menuItems.push({ testID: 'map-arrival-manage', title: t('arrival.manage'), onPress: onManageArrivals });
+  if (onCompleteEarly) menuItems.push({
+    testID: 'd6-route-complete-early', title: chinese ? '提前完成集合點' : 'Finish gathering early', onPress: onCompleteEarly,
+  });
+  if (legacyContent) menuItems.push({
+    testID: 'd6-route-menu-legacy', title: chinese ? '其他行程工具' : 'More itinerary tools', onPress: () => setShowLegacy(true),
+  });
+  if (canEdit) menuItems.push({ testID: 'd6-route-menu-kml', title: chinese ? '匯入 KML' : 'Import KML', onPress: onImport });
+
   const showingDates = popupPage === 'dates';
   const popupContent = (
     <View style={[styles.popover, isIOS ? styles.nativePopover : transparencyReduced && styles.opaque]}>
@@ -519,16 +522,10 @@ export function D6RoutePane({
           busy={busy}
           error={status}
         /> : <View>
-          {canEdit ? <MenuRow testID="d6-route-menu-select" title={chinese ? '選取' : 'Select'} onPress={() => closePopup(() => setSelection(new Set()))} /> : null}
-          {canEditDates ? <MenuRow testID="d6-route-menu-dates" title={chinese ? '日期' : 'Dates'} onPress={() => {
-            setFailure(null);
-            openPopup('dates');
-          }} /> : null}
-          {onManageArrivals ? <MenuRow testID="map-arrival-manage" title={t('arrival.manage')} onPress={() => closePopup(onManageArrivals)} /> : null}
-          {onCompleteEarly ? <MenuRow testID="d6-route-complete-early" title={chinese ? '提前完成集合點' : 'Finish gathering early'}
-            onPress={() => closePopup(onCompleteEarly)} /> : null}
-          {legacyContent ? <MenuRow title={chinese ? '其他行程工具' : 'More itinerary tools'} onPress={() => closePopup(() => setShowLegacy(true))} /> : null}
-          {canEdit ? <MenuRow last testID="d6-route-menu-kml" title={chinese ? '匯入 KML' : 'Import KML'} onPress={() => closePopup(onImport)} /> : null}
+          {menuItems.map(item => <MenuRow key={item.testID} {...item} last={item.testID === 'd6-route-menu-kml'} onPress={() => {
+            closePopup();
+            item.onPress();
+          }} />)}
         </View>}
       </ScrollView>
     </View>
@@ -630,9 +627,8 @@ export function D6RoutePane({
           >
             <Text style={styles.selectAllText}>{chinese ? selectedAll ? '取消全選' : '全選' : selectedAll ? 'Deselect all' : 'Select all'}</Text>
           </Pressable>
-        ) : moreActions ? (
-          <SheetHeaderAction action="more" accessibilityLabel={chinese ? '更多' : 'More'}
-            testID="d6-route-options" onPress={() => openPopup('menu')} />
+        ) : menuItems.length > 0 ? (
+          <D6RouteMenu label={chinese ? '更多' : 'More'} items={menuItems} onOpenFallback={() => openPopup('menu')} />
         ) : null}
       </View>
 
@@ -739,7 +735,7 @@ export function D6RoutePane({
         <SheetPresentation
           visible={popup?.phase === 'open'}
           onClose={closePopup}
-          onDismiss={finishPopupClose}
+          onDismiss={() => setPopup(null)}
           detents={[popupDetent]}
           selection={popupDetent}
           backgroundColor={transparencyReduced ? '#26302E' : 'rgba(25,36,34,.75)'}

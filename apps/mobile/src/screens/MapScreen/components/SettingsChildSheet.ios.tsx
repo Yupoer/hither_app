@@ -93,6 +93,7 @@ export default function SettingsChildSheet({
       ? { height: compactHeight }
       : stageTwoDetent;
   const isChild = navigation === 'child';
+  const usesSystemBackground = navigation != null || fitContent;
   const preferredDetent = fitContent ? compactDetent
     : singleStage || activeStage.stage === 1 ? stageTwoDetent : stageOneDetent;
   const [pageSelection, setPageSelection] = useState({ page: scrollResetKey, adjustHeight: !!onBack });
@@ -120,22 +121,24 @@ export default function SettingsChildSheet({
   }
 
   const header = navigation === 'root' && !title ? null : (
-    <View style={[styles.header, navigation && styles.settingsHeader]}
+    <View style={[styles.header, usesSystemBackground && styles.insetHeader]}
       onLayout={fitContent ? event => setHeaderHeight(event.nativeEvent.layout.height) : undefined}>
       {isChild ? (
         <SheetHeaderAction
           testID="settings-child-back"
           action="back"
+          useSystemStyle
           onPress={onBack ?? requestClose}
           accessibilityLabel={backLabel}
         />
       ) : <View style={styles.headerActionSlot} />}
-      <AppText style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]}
+      <AppText accessibilityRole="header" style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]}
         numberOfLines={titleFontSize == null ? 1 : 2}>{title}</AppText>
-      {navigation ? <View style={styles.headerActionSlot} /> : (
+      {isChild ? <View style={styles.headerActionSlot} /> : (
         <SheetHeaderAction
-          testID={home || singleStage ? 'settings-root-close' : 'settings-child-back'}
+          testID={home || singleStage || navigation === 'root' ? 'settings-root-close' : 'settings-child-back'}
           action={action}
+          useSystemStyle={usesSystemBackground}
           onPress={action === 'commit' ? () => onCommit?.() : requestClose}
           accessibilityLabel={doneLabel}
           disabled={action === 'commit' && !onCommit}
@@ -157,6 +160,7 @@ export default function SettingsChildSheet({
       selection={selectedDetent}
       onSelectionChange={backDetent || usesTwoDetents ? handleSelectionChange : undefined}
       backgroundColor={darkMaterial ? '#263230f7' : undefined}
+      useSystemBackground={usesSystemBackground}
       dismissDisabled={!!onBack}
     >
       <View style={styles.body} onAccessibilityEscape={onBack ?? requestClose}>
@@ -167,7 +171,7 @@ export default function SettingsChildSheet({
             style={styles.scroll}
             contentContainerStyle={[
               styles.scrollContent,
-              navigation && styles.settingsScrollContent,
+              navigation ? styles.settingsScrollContent : fitContent && styles.compactScrollContent,
               fillContent && styles.fillScrollContent,
             ]}
             keyboardDismissMode="interactive"
@@ -195,10 +199,11 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: { paddingTop: 12, paddingHorizontal: 16, paddingBottom: 24 },
-  settingsScrollContent: { paddingTop: 4, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
+  settingsScrollContent: { paddingTop: 16, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
+  compactScrollContent: { paddingBottom: 14 },
   fillScrollContent: { flexGrow: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SHEET_CORNER_ACTION_INSET },
-  settingsHeader: { paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
+  insetHeader: { paddingTop: 8, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
   headerActionSlot: { width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE },
   title: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 17, fontWeight: '700' },
   nestedLayer: { ...StyleSheet.absoluteFill, zIndex: 2 },

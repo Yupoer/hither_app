@@ -29,7 +29,6 @@ import type { SheetHeaderActionProps } from './ReactNativeSheetHeaderAction';
 const SYMBOL_OFFSETS: Partial<Record<SheetHeaderActionKind, { x?: number; y?: number }>> = {
   share: { y: -2 },
   commit: { x: -0.33, y: -1 },
-  back: { x: 0.67 },
 };
 
 export default function SheetHeaderActionContent({
@@ -38,6 +37,7 @@ export default function SheetHeaderActionContent({
   accessibilityLabel: label,
   testID,
   disabled = false,
+  useSystemStyle = false,
 }: Omit<SheetHeaderActionProps, 'style'>) {
   const handlePress = () => {
     if (disabled) return;
@@ -45,6 +45,7 @@ export default function SheetHeaderActionContent({
     onPress();
   };
   const glass = liquidGlass.isLiquidGlassAvailable();
+  const usesCustomGlass = glass && !useSystemStyle;
   const symbolOffset = SYMBOL_OFFSETS[action];
   return (
     <Button
@@ -52,10 +53,10 @@ export default function SheetHeaderActionContent({
       testID={testID}
       onPress={disabled ? undefined : handlePress}
       modifiers={[
-        buttonStyle(glass ? 'plain' : 'bordered'),
+        buttonStyle(usesCustomGlass ? 'plain' : glass ? 'glass' : 'bordered'),
         buttonBorderShape('circle'),
         frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
-        ...(glass
+        ...(usesCustomGlass
           ? [background('#ffffff26', shapes.circle()), glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
           : []),
         frame({ width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE }),

@@ -4,10 +4,13 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSprin
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-type MotionPressableProps = React.ComponentPropsWithRef<typeof Pressable> & { motion?: 'scale' | 'fade' | 'depth' };
+type MotionPressableProps = React.ComponentPropsWithRef<typeof Pressable> & {
+  motion?: 'scale' | 'fade' | 'depth';
+  depthShadowColor?: string;
+};
 
 export default function MotionPressable({
-  style, onPressIn, onPressOut, motion = 'scale', ...props
+  style, onPressIn, onPressOut, motion = 'scale', depthShadowColor = 'rgba(0,0,0,0.28)', ...props
 }: MotionPressableProps) {
   const reduceMotion = useReducedMotion();
   const [pressed, setPressed] = useState(false);
@@ -22,7 +25,7 @@ export default function MotionPressable({
     if (motion === 'depth') return {
       opacity: opacity * (1 - strength * 0.06),
       transform: [{ translateY: reduceMotion ? 0 : strength * 4 }],
-      boxShadow: [{ offsetX: 0, offsetY: 4 * (1 - strength), blurRadius: 0, color: 'rgba(0,0,0,0.28)' }],
+      boxShadow: [{ offsetX: 0, offsetY: 4 * (1 - strength), blurRadius: 0, color: depthShadowColor }],
     };
     return scale
       ? { opacity: opacity * (1 - strength * 0.08), transform: [{ scale: 1 - strength * 0.018 }] }

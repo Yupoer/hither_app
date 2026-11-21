@@ -483,7 +483,8 @@ const DestinationMarker = React.memo(function DestinationMarker({
       {homeMarker ? (
         <View accessible accessibilityRole="button" accessibilityLabel={[dest.title, description].filter(Boolean).join(', ')}
           onAccessibilityTap={homeMarker.onPress} testID={`d6-map-stop-${dest.id}`}
-          style={[homeMapStyles.markerHolder, homeMarker.current && { backgroundColor: bgColor + '59' }]}>
+          style={homeMapStyles.markerHolder}>
+          {homeMarker.current ? <View style={[homeMapStyles.markerHalo, { backgroundColor: bgColor + '59' }]} /> : null}
           <View style={[homeMapStyles.pin, { backgroundColor: bgColor }, homeMarker.current && homeMapStyles.currentPin]}>
             <Text style={homeMarker.current ? homeMapStyles.currentEmoji : homeMapStyles.emoji} allowFontScaling={false}>{markerEmoji}</Text>
           </View>
@@ -1254,12 +1255,17 @@ const GroupMap = forwardRef<GroupMapHandle, GroupMapProps>(function GroupMap(
 
 });
 
+const ITINERARY_MARKER_SCALE = 1 / 1.25;
+
 const homeMapStyles = StyleSheet.create({
-  markerHolder: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  pin: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  currentPin: { width: 36, height: 36, borderRadius: 18, borderWidth: 2 },
-  emoji: { fontSize: 13 },
-  currentEmoji: { fontSize: 18 },
+  markerHolder: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  markerHalo: { position: 'absolute', width: 48 * ITINERARY_MARKER_SCALE, height: 48 * ITINERARY_MARKER_SCALE,
+    borderRadius: 24 * ITINERARY_MARKER_SCALE },
+  pin: { width: 26 * ITINERARY_MARKER_SCALE, height: 26 * ITINERARY_MARKER_SCALE, borderRadius: 13 * ITINERARY_MARKER_SCALE,
+    borderWidth: 2 * ITINERARY_MARKER_SCALE, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  currentPin: { width: 36 * ITINERARY_MARKER_SCALE, height: 36 * ITINERARY_MARKER_SCALE, borderRadius: 18 * ITINERARY_MARKER_SCALE },
+  emoji: { fontSize: 13 * ITINERARY_MARKER_SCALE },
+  currentEmoji: { fontSize: 18 * ITINERARY_MARKER_SCALE },
   member: { width: 38, height: 38, borderRadius: 19 },
   bubble: { borderRadius: 16, backgroundColor: '#fff', paddingVertical: 7, paddingHorizontal: 13, maxWidth: 200 },
   bubbleText: { color: '#111', fontWeight: '800', fontSize: APP_TEXT_SIZE.caption },

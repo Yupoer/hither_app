@@ -4796,9 +4796,6 @@ export default function MapScreen({ route, navigation }: Props) {
             statusColor={homeStatusColor}
             suspended={Boolean(homeDetail)}
             commandsPresented={commandSheet != null}
-            departureDate={routeDepartureDate}
-            dayStopCount={routeDepartureDate || homePhase !== 'ready' || homeStop?.day == null ? 0 : allScopedDestinations.filter(stop =>
-              stop.day === homeStop.day && stop.kind !== 'accommodation').length}
             celebration={homeCelebration}
             onAdd={() => openHomeAdd()}
             onAction={goHomeJourney}

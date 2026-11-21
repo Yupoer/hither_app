@@ -1,20 +1,27 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import ReanimatedSwipeable, { SwipeDirection, type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, { runOnJS, useAnimatedRef, useAnimatedStyle, useSharedValue, withTiming, type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { destinationEmojiDisplay } from '../../../utils/destinationEmojiColor';
+import { lightTap } from '../../../utils/haptics';
 import type { D6RouteRow as RouteRow } from '../d6Itinerary';
 import { D6PaneInteractionContext } from './D6PaneInteraction';
 import { claimD6Drag, releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
 import type { D6DragGeometry, D6DragPresentation, D6Point } from './d6RouteDrag';
 
-const SWIPE_ACTIONS_WIDTH = 152;
+const SWIPE_ACTION_GAP = 6;
+const SWIPE_ACTION_INSET = 2;
+const SWIPE_ACTION_HEIGHT = 44;
+const DELETE_ACTION_WIDTH = 62;
+const POOL_ACTION_WIDTH = 80;
+const SWIPE_ACTIONS_WIDTH = POOL_ACTION_WIDTH + DELETE_ACTION_WIDTH + SWIPE_ACTION_GAP + 2 * SWIPE_ACTION_INSET;
+const DRAG_HANDLE_WIDTH = 44;
 
 export type D6RouteDrag = {
   owner: SharedValue<D6DragOwner>;
@@ -70,6 +77,10 @@ export function D6RouteRow({
   measureRef?: (id: string, element: AnimatedRef<View> | null) => void;
 }) {
   const panel = useContext(D6PaneInteractionContext);
+  const canSwipe = !!onDelete && !!onPool;
+  const [swipePhase, setSwipePhase] = useState<'idle' | 'dragging' | 'open'>('idle');
+  if (!canSwipe && swipePhase !== 'idle') setSwipePhase('idle');
+  const hideHandle = canSwipe && swipePhase !== 'idle';
   const measuredRef = useAnimatedRef<View>();
   const acquired = useSharedValue<number | null>(null);
   const [handlers] = useState(createD6RouteDragCallbacks);
@@ -90,7 +101,7 @@ export function D6RouteRow({
     return () => measureRef?.(row.id, null);
   });
   const reorderGesture = useMemo(() => {
-    const gesture = Gesture.Pan().enabled(!!owner)
+    const gesture = Gesture.Pan().enabled(!!owner && !hideHandle)
       .activateAfterLongPress(250)
       .maxPointers(1)
       .onTouchesDown((_event, manager) => {
@@ -138,17 +149,49 @@ export function D6RouteRow({
       });
     if (paneGesture && scrollGesture) gesture.blocksExternalGesture(paneGesture, scrollGesture);
     return gesture;
-  }, [owner, dragPoint, presentation, sequence, sourceId, geometryForDrag, paneGesture, scrollGesture, acquired, handlers]);
+  }, [owner, dragPoint, presentation, sequence, sourceId, geometryForDrag, paneGesture, scrollGesture, acquired, handlers, hideHandle]);
   const sourceStyle = useAnimatedStyle(() => ({ opacity: presentation?.get()?.sourceId === sourceId ? 0.25 : 1 }));
   const swipe = useRef<SwipeableMethods | null>(null);
   const openOffset = useSharedValue(0);
   const dragOffset = useSharedValue(0);
+  const closingBySwipe = useRef(false);
+  const bindSwipe = useCallback((methods: SwipeableMethods | null) => {
+    swipe.current = methods;
+    if (!methods) {
+      openOffset.set(0);
+      closingBySwipe.current = false;
+    }
+  }, [openOffset]);
+  const beginOpening = useCallback((direction: SwipeDirection) => {
+    if (direction !== SwipeDirection.LEFT) return;
+    setSwipePhase('dragging');
+    if (swipe.current) onSwipe?.(swipe.current);
+  }, [onSwipe]);
+  const beginClosing = useCallback(() => {
+    closingBySwipe.current = true;
+    setSwipePhase('dragging');
+  }, []);
+  const willOpen = useCallback(() => {
+    closingBySwipe.current = false;
+    if (openOffset.get() === 0) lightTap();
+    openOffset.set(-SWIPE_ACTIONS_WIDTH);
+  }, [openOffset]);
+  const willClose = useCallback(() => {
+    if (closingBySwipe.current && openOffset.get() !== 0) lightTap();
+    closingBySwipe.current = false;
+    openOffset.set(0);
+    setSwipePhase((phase) => phase === 'open' ? 'dragging' : phase);
+  }, [openOffset]);
+  const didOpen = useCallback(() => setSwipePhase('open'), []);
+  const didClose = useCallback(() => setSwipePhase('idle'), []);
   const fullSwipe = useMemo(() => {
     return Gesture.Pan()
-      .activeOffsetX([-10, 10])
+      .activeOffsetX(-10)
+      .failOffsetY([-10, 10])
+      .maxPointers(1)
       .onStart(() => { dragOffset.set(openOffset.get()); })
-      .onEnd(({ translationX }) => {
-        if (onDelete && translationX + dragOffset.get() < -230) runOnJS(onDelete)();
+      .onEnd(({ translationX }, success) => {
+        if (success && onDelete && translationX + dragOffset.get() < -230) runOnJS(onDelete)();
       });
   }, [dragOffset, onDelete, openOffset]);
   const { title, time, emoji } = routeRowDisplay(row);
@@ -162,7 +205,7 @@ export function D6RouteRow({
   const mainAction = (
       <Pressable
         testID={`d6-route-row-${row.id}`}
-        style={styles.rowPressable}
+        style={[styles.rowPressable, drag && styles.rowWithHandle]}
         onPress={onOpen}
         onLongPress={onSelect}
         delayLongPress={500}
@@ -210,18 +253,22 @@ export function D6RouteRow({
           <GestureDetector gesture={fullSwipe}>
             <View collapsable={false}>
               <ReanimatedSwipeable
-                ref={swipe}
-                friction={1}
-                overshootFriction={1}
+                ref={bindSwipe}
+                friction={1.4}
+                overshootFriction={8}
                 dragOffsetFromRightEdge={10}
-                rightThreshold={50}
+                rightThreshold={48}
                 simultaneousWithExternalGesture={fullSwipe}
-                onSwipeableOpenStartDrag={() => { if (swipe.current) onSwipe?.(swipe.current); }}
-                onSwipeableWillOpen={() => openOffset.set(-SWIPE_ACTIONS_WIDTH)}
-                onSwipeableWillClose={() => openOffset.set(0)}
+                onSwipeableOpenStartDrag={beginOpening}
+                onSwipeableCloseStartDrag={beginClosing}
+                onSwipeableWillOpen={willOpen}
+                onSwipeableWillClose={willClose}
+                onSwipeableOpen={didOpen}
+                onSwipeableClose={didClose}
                 renderRightActions={(_progress, translate, methods) => (
                   <SwipeActions
                     translate={translate}
+                    interactive={swipePhase === 'open'}
                     title={title}
                     pool={chinese ? '待排' : 'Unplanned'}
                     remove={chinese ? '刪除' : 'Delete'}
@@ -241,8 +288,11 @@ export function D6RouteRow({
           ref={bindDrag}
           collapsable={false}
           testID={`d6-route-drag-${row.id}`}
-          style={styles.handle}
-          accessible
+          style={[styles.handle, styles.handleOverlay, hideHandle && styles.hiddenHandle]}
+          pointerEvents={hideHandle ? 'none' : 'auto'}
+          accessible={!hideHandle}
+          accessibilityElementsHidden={hideHandle}
+          importantForAccessibility={hideHandle ? 'no-hide-descendants' : 'auto'}
           accessibilityRole="adjustable"
           accessibilityLabel={chinese ? `調整 ${title} 順序` : `Reorder ${title}`}
           accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
@@ -317,37 +367,77 @@ export function D6RowFlash({ accent }: { accent: string }) {
   return <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: `${accent}57` }, fade]} />;
 }
 
-function SwipeActions({ translate, title, pool, remove, onPool, onDelete }: {
+function SwipeActions({ translate, interactive, title, pool, remove, onPool, onDelete }: {
   translate: SharedValue<number>;
+  interactive: boolean;
   title: string;
   pool: string;
   remove: string;
   onPool: () => void;
   onDelete: () => void;
 }) {
-  const style = useAnimatedStyle<ViewStyle>(() => ({
-    opacity: translate.get() < -1 ? 1 : 0,
-  }));
   return (
-    <Animated.View style={[styles.actions, style]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${pool} ${title}`}
+    <View style={styles.actions} pointerEvents={interactive ? 'auto' : 'none'}
+      accessibilityElementsHidden={!interactive} importantForAccessibility={interactive ? 'auto' : 'no-hide-descendants'}>
+      <SwipeAction
+        rowTitle={title}
+        label={pool}
         onPress={onPool}
-        style={[styles.action, styles.pool]}
-      >
-        <Text style={styles.actionText} numberOfLines={1}>{pool}</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${remove} ${title}`}
+        style={styles.pool}
+        width={POOL_ACTION_WIDTH}
+        distanceFromEdge={SWIPE_ACTIONS_WIDTH - SWIPE_ACTION_INSET - POOL_ACTION_WIDTH / 2}
+        dotDistanceFromEdge={15}
+        translate={translate}
+      />
+      <SwipeAction
+        rowTitle={title}
+        label={remove}
         onPress={onDelete}
-        style={[styles.action, styles.remove]}
-      >
-        <Text style={styles.actionText} numberOfLines={1}>{remove}</Text>
-      </Pressable>
-    </Animated.View>
+        style={styles.remove}
+        width={DELETE_ACTION_WIDTH}
+        distanceFromEdge={SWIPE_ACTION_INSET + DELETE_ACTION_WIDTH / 2}
+        dotDistanceFromEdge={4}
+        translate={translate}
+      />
+    </View>
   );
+}
+
+function SwipeAction({ rowTitle, label, onPress, style, width, distanceFromEdge, dotDistanceFromEdge, translate }: {
+  rowTitle: string;
+  label: string;
+  onPress: () => void;
+  style: StyleProp<ViewStyle>;
+  width: number;
+  distanceFromEdge: number;
+  dotDistanceFromEdge: number;
+  translate: SharedValue<number>;
+}) {
+  const buttonStyle = useAnimatedStyle(() => {
+    const reveal = Math.max(0, -translate.get());
+    const fraction = Math.min(1, reveal / SWIPE_ACTIONS_WIDTH);
+    const dotSize = 6;
+    return {
+      opacity: Math.min(1, reveal / 8),
+      transform: [
+        { translateX: (distanceFromEdge - dotDistanceFromEdge) * (1 - fraction) },
+        { scaleX: fraction + (dotSize / width) * (1 - fraction) },
+        { scaleY: fraction + (dotSize / SWIPE_ACTION_HEIGHT) * (1 - fraction) },
+      ],
+    };
+  });
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: Math.max(0, Math.min(1, (-translate.get() / SWIPE_ACTIONS_WIDTH - 0.36) / 0.36)),
+  }));
+
+  return <Animated.View style={buttonStyle}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label} ${rowTitle}`}
+      onPress={onPress} style={[styles.action, style, { width }]}>
+      <Animated.View style={labelStyle}>
+        <Text style={styles.actionText} numberOfLines={1}>{label}</Text>
+      </Animated.View>
+    </Pressable>
+  </Animated.View>;
 }
 
 const styles = StyleSheet.create({
@@ -357,10 +447,13 @@ const styles = StyleSheet.create({
   row: { minHeight: 54, flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent' },
   swipeBody: { flex: 1, minWidth: 0 },
   rowPressable: { minHeight: 54, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+  rowWithHandle: { paddingRight: DRAG_HANDLE_WIDTH },
   title: { flex: 1, minWidth: 0, color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   icon: { fontSize: APP_TEXT_SIZE.caption },
   time: { color: 'rgba(255,255,255,.55)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '500', fontVariant: ['tabular-nums'] },
-  handle: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  handle: { width: DRAG_HANDLE_WIDTH, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  handleOverlay: { position: 'absolute', right: 0 },
+  hiddenHandle: { opacity: 0 },
   spacer: { width: 5 },
   badgeRim: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
   badge: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
@@ -372,9 +465,9 @@ const styles = StyleSheet.create({
   insertion: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 3 },
   insertionTop: { top: 0 },
   insertionBottom: { bottom: 0 },
-  actions: { width: SWIPE_ACTIONS_WIDTH, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 },
-  action: { minWidth: 44, minHeight: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  pool: { flex: 1, backgroundColor: '#5C6662' },
-  remove: { width: 62, backgroundColor: '#E5484D' },
+  actions: { width: SWIPE_ACTIONS_WIDTH, flexDirection: 'row', alignItems: 'center', gap: SWIPE_ACTION_GAP, paddingHorizontal: SWIPE_ACTION_INSET },
+  action: { minHeight: SWIPE_ACTION_HEIGHT, borderRadius: SWIPE_ACTION_HEIGHT / 2, alignItems: 'center', justifyContent: 'center' },
+  pool: { backgroundColor: '#5C6662' },
+  remove: { backgroundColor: '#E5484D' },
   actionText: { color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
 });

@@ -20,11 +20,13 @@ const field = (value: Observation, id: string) => value.presentation.hosts.find(
 const has = (value: Observation, id: string) => Boolean(field(value, id));
 const text = (value: Observation, label: string) => value.presentation.hosts.some(host => host.text === label);
 const press = (device: Device, testId: string) => device.host.call({ kind: 'press', testId });
-const select = (device: Device, testId: string, id: string) => testId === 'map-presence'
-  ? press(device, `map-presence-option-${id}`)
-  : device.host.call({
-  kind: 'nativeEvent', testId, value: { event: 'onSelect', nativeEvent: { id } },
-});
+const select = async (device: Device, testId: string, id: string) => {
+  if (testId === 'map-presence') {
+    expect(await press(device, testId)).toEqual({ invoked: true });
+    return press(device, `map-presence-option-${id}`);
+  }
+  return device.host.call({ kind: 'nativeEvent', testId, value: { event: 'onSelect', nativeEvent: { id } } });
+};
 
 async function map(world: InstanceType<typeof World>, id: string, userId = LEADER) {
   const device = await world.device({ id, userId, platform: 'ios', screen: { name: 'Map', params: { groupId: GROUP_ID } } });

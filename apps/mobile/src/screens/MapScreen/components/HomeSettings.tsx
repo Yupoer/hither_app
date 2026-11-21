@@ -12,7 +12,7 @@ import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../../
 import { requireUserId } from '../../../api/services/_helpers';
 import { updateGroupIdentity, type JoinedGroupInfo } from '../../../api/services/GroupService';
 import { useTranslation } from '../../../i18n';
-import { MARQUEE_SPEED_MIN, MARQUEE_SPEED_MAX, usePreferences, useTheme } from '../../../state/PreferencesContext';
+import { usePreferences, useTheme } from '../../../state/PreferencesContext';
 import { useSession } from '../../../state/SessionContext';
 import { confirmAction } from '../../../utils/confirm';
 import { confirmDeleteAccount } from '../../../utils/deleteAccount';
@@ -27,7 +27,7 @@ import HomeTeamsPage, { HomeTeamCard } from './HomeTeamsPage';
 import { useIdentityEditor } from './useIdentityEditor';
 import { D6Surface, useD6Numbers } from './D6HomeChrome';
 import { MAP_SHEET_CORNER_RADIUS } from '../../../components/mapSheetChrome';
-import PrefSlider from '../../../components/PrefSlider';
+import MarqueeSpeedSlider from './MarqueeSpeedSlider';
 import { useSettingsUpdate } from './useSettingsUpdate';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
 import { HITHER_ACCENT } from '../../../theme/brand';
@@ -123,7 +123,7 @@ export default function HomeSettings({
 
   const label = (zh: string, en: string) => (language === 'zh' ? zh : en);
   const title: Record<SettingsPage, string> = {
-    root: '',
+    root: t('map.overlaySettings'),
     profile: '',
     team: '',
     teams: label('切換隊伍', 'Switch teams'),
@@ -145,7 +145,7 @@ export default function HomeSettings({
       fitContent={page !== 'root' && page !== 'profile' && page !== 'team' && page !== 'store' && page !== 'teams'}
       fillContent={page === 'teams'}
       background={<D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />}
-      title={title[page]} titleFontSize={24} backLabel={t('common.back')}
+      title={title[page]} titleFontSize={24} backLabel={t('common.back')} doneLabel={t('common.close')}
       navigation={isRoot ? 'root' : 'child'} onClose={onClose} onBack={isRoot ? undefined : back}
       onDismissComplete={() => { setMounted(false); onDismissComplete?.(); }}>
       <View testID="settings-slide-page" style={page === 'teams' ? styles.fillPage : undefined}>
@@ -521,7 +521,7 @@ function MapJourneyPreferences({ activity, onOpenStore }: { activity: HomeSettin
     {gatherCardTitleMarquee ? (
       <View style={[styles.speedSetting, styles.divider]}>
         <HitherText style={styles.rowLabel}>{t('settings.gatherCardMarqueeSpeed')}</HitherText>
-        <PrefSlider value={gatherCardMarqueeSpeed} min={MARQUEE_SPEED_MIN} max={MARQUEE_SPEED_MAX}
+        <MarqueeSpeedSlider value={gatherCardMarqueeSpeed}
           onChange={setGatherCardMarqueeSpeed} accent={palette.accent} accessibilityLabel={t('settings.gatherCardMarqueeSpeed')} />
       </View>
     ) : null}

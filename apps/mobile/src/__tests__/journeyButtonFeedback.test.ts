@@ -211,15 +211,12 @@ it('pulses at a fixed interval while held and stops when the user releases', asy
   }
 });
 
-it.each([
-  [undefined, '當日 3 站'],
-  ['2026-11-16', '11/16 週一'],
-] as const)('shows the trip day with one detail for departure date %s', async (departureDate, detail) => {
-  const { tree } = await render({ stop: gatheringStop, dayStopCount: 3, departureDate });
+it('shows only the trip day without a date or stop-count detail', async () => {
+  const { tree } = await render({ stop: gatheringStop });
   const header = tree.root.find(node => String(node.type) === 'Pressable' && node.props.testID === 'home-itinerary-toggle');
   const labels = header.findAll(node => String(node.type) === 'Text').map(node => node.props.children);
-  expect(labels).toEqual(expect.arrayContaining(['第 1 天', detail]));
-  expect(labels).not.toContain(departureDate ? '當日 3 站' : '11/16 週一');
+  expect(labels).toContain('第 1 天');
+  expect(labels.filter(label => typeof label === 'string' && /當日|\d+\/\d+/.test(label))).toEqual([]);
   expect(header.findAll(node => String(node.type) === 'Icon' && node.props.name === 'calendar-outline')).toHaveLength(0);
   await act(async () => { tree.unmount(); });
 });
