@@ -111,7 +111,7 @@ describe('D6 You from the real Map screen', () => {
       const root = await world.waitFor(device, (value: Observation) =>
         field(value, 'settings-page-profile')?.acceptsInput, 'Advanced returns to settings root');
       expect(field(root, 'settings-child-back')).toBeUndefined();
-      expect(field(root, 'settings-root-close')).toBeUndefined();
+      expect(field(root, 'settings-root-close')?.acceptsInput).toBe(true);
       expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
         value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
       await world.waitFor(device, (value: Observation) => field(value, 'home-profile')?.acceptsInput
