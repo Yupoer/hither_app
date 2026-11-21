@@ -2,12 +2,12 @@ import React from 'react';
 import SettingsChildSheet from './SettingsChildSheet';
 import type { InviteMembersSheetProps } from './InviteMembersSheet';
 
-/** iOS invite sheet uses the native SwiftUI detents: 52% initially, 80% expanded. */
 export default function InviteMembersSheet({
   visible,
   onClose,
   title,
   doneLabel,
+  fitContent = false,
   children,
 }: InviteMembersSheetProps) {
   return (
@@ -18,9 +18,9 @@ export default function InviteMembersSheet({
       titleFontSize={25}
       darkMaterial
       doneLabel={doneLabel}
-      initialStage={0}
-      stageTwoRatio={0.8}
-      wrapContentInScrollView={false}
+      fitContent={fitContent}
+      stageOneRatio={fitContent ? 0.36 : undefined}
+      wrapContentInScrollView={fitContent}
     >
       {children}
     </SettingsChildSheet>

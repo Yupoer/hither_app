@@ -67,9 +67,9 @@ export function D6PaneFrame({ panel, direction, cornerRadius, style, surface, he
       grabberHeight={grabberHeight} direction={direction} cornerRadius={cornerRadius}
       contentVisible={body != null}>
       {visible ? <NativeD6SurfaceView testID="d6-native-surface" pointerEvents="none" style={StyleSheet.absoluteFill}
-        colors={D6_SURFACE_COLORS[direction === 1 ? 'thin' : 'thick'].map(processColor)} cornerRadius={cornerRadius}
+        colors={D6_SURFACE_COLORS.thin.map(processColor)} cornerRadius={cornerRadius}
         borderWidth={StyleSheet.hairlineWidth} borderColor={D6_SURFACE_BORDER_COLOR} solidColor={D6_SURFACE_SOLID_COLOR}
-        blurIntensity={direction === 1 ? 48 : 72} /> : null}
+        blurIntensity={48} /> : null}
       {header ? <View collapsable={false} testID="d6-native-header" style={styles.slot}>{draggableHeader}</View> : null}
       <View ref={bodyRef} collapsable={false} testID="d6-native-body" pointerEvents={open ? 'auto' : 'none'} accessibilityElementsHidden={!open}
         style={[styles.slot, { top: direction === 1 ? fixedHeight : grabberHeight,

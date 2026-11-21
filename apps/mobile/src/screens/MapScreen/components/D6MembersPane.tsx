@@ -12,9 +12,8 @@ import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../../
 import { accentMix, memberColor } from '../../../glass';
 import { useTranslation, type TranslationKey } from '../../../i18n';
 import { NativeMenuHost, type NativeMenuItem } from '../../../native/menu';
-import { MAP_SHEET_ACTION_HIT_SIZE } from '../../../components/mapSheetChrome';
+import { D6_TRIGGER_SHADOW_COLOR, MAP_ISLAND_BODY_FADE_HEIGHT, MAP_SHEET_ACTION_HIT_SIZE } from '../../../components/mapSheetChrome';
 import MemberStatusMenu from './MemberStatusMenu';
-import { MAP_ISLAND_BODY_FADE_HEIGHT } from '../../../components/mapSheetChrome';
 import type { Group, MemberLocation, PendingInvite, Subgroup } from '../../../types';
 import { selectionTick } from '../../../utils/haptics';
 import type { PresenceMacroKind } from '../../../utils/presenceMacros';
@@ -260,21 +259,24 @@ export function D6MembersPane({
   const showSplitActions = Boolean(myMember && !mySubgroupId);
   const showInviteAction = Boolean(group && !inviteCode);
   const invite = (testID: string) => <Pressable
-    style={[styles.inviteButton, { backgroundColor: accent }]}
+    motion="depth"
+    depthShadowColor={D6_TRIGGER_SHADOW_COLOR}
+    style={[styles.inviteButton, styles.teamInvite, { backgroundColor: accent }]}
     onPress={onInviteTeam}
     accessibilityRole="button"
     accessibilityLabel={t('map.inviteMembers')}
     testID={testID}
   >
     <Ionicons name="share-outline" color={onAccent} size={17} />
-    <Text style={[styles.inviteLabel, { color: onAccent }]}>{t('d6.team.invite')}</Text>
+    <Text style={[styles.inviteLabel, styles.teamInviteLabel, { color: onAccent }]}>{t('d6.team.invite')}</Text>
   </Pressable>;
 
   return (
     <View collapsable={false} testID="d6-members-pane" style={styles.pane}>
       {clock.lifecycle}
       <D6PaneScrollView testID="d6-team-scroll" showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent}>
-      <D6TeamHeader group={group} onOpenTeamSettings={onOpenTeamSettings} />
+      <D6TeamHeader group={group} onOpenTeamSettings={onOpenTeamSettings}
+        action={showInviteAction && !picking ? invite('map-invite-members') : null} />
       {myMember && !picking ? renderMember(myMember) : null}
       {inviteCode && !picking ? (
         <View style={[styles.codeCard, { backgroundColor: accentMix(accent, 22) }]}>
@@ -382,29 +384,26 @@ export function D6MembersPane({
           </Animated.View>
         );
       })}
-      {!picking && (showSplitActions || showInviteAction) ? (
+      {!picking && showSplitActions ? (
         <View style={styles.teamActions}>
-          {showSplitActions ? (
-            <View style={styles.splitRow}>
-              <Pressable
-                style={styles.splitButton}
-                onPress={onStartSplit}
-                accessibilityRole="button"
-                accessibilityLabel={t('subgroup.createTeam')}
-                testID="map-subgroup-split"
-              >
-                <Ionicons name="add" color={muted} size={18} />
-                <Text style={styles.splitLabel}>{t('d6.team.subgroup')}</Text>
-              </Pressable>
-              <Pressable style={styles.splitButton} onPress={() => void onTemporarilyLeave()}
-                accessibilityRole="button" accessibilityLabel={t('solo.tempLeave')} accessibilityHint={t('solo.tempLeaveHint')}
-                testID="d6-team-temporary-leave">
-                <Ionicons name="exit-outline" color={muted} size={19} />
-                <Text style={styles.splitLabel}>{t('solo.tempLeave')}</Text>
-              </Pressable>
-            </View>
-          ) : null}
-          {showInviteAction ? invite('map-invite-members') : null}
+          <View style={styles.splitRow}>
+            <Pressable
+              style={styles.splitButton}
+              onPress={onStartSplit}
+              accessibilityRole="button"
+              accessibilityLabel={t('subgroup.createTeam')}
+              testID="map-subgroup-split"
+            >
+              <Ionicons name="add" color={muted} size={18} />
+              <Text style={styles.splitLabel}>{t('d6.team.subgroup')}</Text>
+            </Pressable>
+            <Pressable style={styles.splitButton} onPress={() => void onTemporarilyLeave()}
+              accessibilityRole="button" accessibilityLabel={t('solo.tempLeave')} accessibilityHint={t('solo.tempLeaveHint')}
+              testID="d6-team-temporary-leave">
+              <Ionicons name="exit-outline" color={muted} size={19} />
+              <Text style={styles.splitLabel}>{t('solo.tempLeave')}</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
       </D6PaneScrollView>
@@ -412,7 +411,9 @@ export function D6MembersPane({
   );
 }
 
-function D6TeamHeader({ group, onOpenTeamSettings }: Pick<D6MembersPaneProps, 'group' | 'onOpenTeamSettings'>) {
+function D6TeamHeader({ group, onOpenTeamSettings, action }: Pick<D6MembersPaneProps, 'group' | 'onOpenTeamSettings'> & {
+  action: React.ReactNode;
+}) {
   const { t } = useTranslation();
   if (!group) return null;
   return (
@@ -429,6 +430,7 @@ function D6TeamHeader({ group, onOpenTeamSettings }: Pick<D6MembersPaneProps, 'g
         </View>
         <Text style={styles.teamName} numberOfLines={1}>{group.name}</Text>
       </Pressable>
+      {action}
     </View>
   );
 }
@@ -507,14 +509,14 @@ const soft = 'rgba(255,255,255,0.1)';
 const styles = StyleSheet.create({
   pane: { flex: 1, minHeight: 0 },
   scrollContent: { paddingBottom: 8 + MAP_ISLAND_BODY_FADE_HEIGHT },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingBottom: 6, marginTop: 6, marginBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingBottom: 6, marginTop: 6, marginBottom: 12 },
   headerIdentity: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, flexDirection: 'row', alignItems: 'center', gap: 12 },
   teamAvatar: { width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   teamEmoji: { fontSize: 23, includeFontPadding: false },
   teamName: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.title, fontWeight: '700' },
   smallCircle: { width: 44, height: 44 },
   menuIcon: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  codeCard: { borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, marginVertical: 6 },
+  codeCard: { borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 12, paddingStart: 16, paddingVertical: 12, marginVertical: 6 },
   inviteCode: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.heading, fontVariant: ['tabular-nums'], letterSpacing: 3 },
   fallbackCodeFont: { fontWeight: '900', fontStyle: 'italic' },
   card: { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 20, marginVertical: 5 },
@@ -523,6 +525,8 @@ const styles = StyleSheet.create({
   invitePrompt: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   inviteActions: { flexDirection: 'row', gap: 6, marginLeft: 'auto' },
   inviteButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 22, gap: 5, minHeight: 44, paddingHorizontal: 14, backgroundColor: soft },
+  teamInvite: { flexShrink: 0, paddingVertical: 8 },
+  teamInviteLabel: { flexShrink: 1, textAlign: 'center' },
   inviteLabel: { color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   acceptButton: { backgroundColor: white },
   acceptLabel: { color: '#171717' },

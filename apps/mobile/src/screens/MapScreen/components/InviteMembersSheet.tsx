@@ -1,4 +1,5 @@
 import React from 'react';
+import { ScrollView } from 'react-native';
 import OverlaySheet from '../../../components/OverlaySheet';
 
 export type InviteMembersSheetProps = {
@@ -7,6 +8,7 @@ export type InviteMembersSheetProps = {
   title: string;
   accent: string;
   doneLabel: string;
+  fitContent?: boolean;
   children: React.ReactNode;
 };
 
@@ -17,6 +19,7 @@ export default function InviteMembersSheet({
   title,
   accent,
   doneLabel,
+  fitContent = false,
   children,
 }: InviteMembersSheetProps) {
   return (
@@ -28,7 +31,7 @@ export default function InviteMembersSheet({
       doneLabel={doneLabel}
       edgeToEdge
     >
-      {children}
+      {fitContent ? <ScrollView>{children}</ScrollView> : children}
     </OverlaySheet>
   );
 }

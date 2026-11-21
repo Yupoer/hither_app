@@ -1,68 +1,36 @@
-import React, { useCallback, useMemo, useRef } from 'react';
-import { useMountEffect } from '../../../hooks/useMountEffect';
-import {
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
-import {
-  BottomSheet,
-  Group,
-  HStack,
-  Host,
-  RNHostView,
-  Spacer,
-  Text as SwiftText,
-  VStack,
-} from '@expo/ui/swift-ui';
-import {
-  frame,
-  font,
-  padding,
-  presentationCornerRadius,
-  presentationDetents,
-  presentationBackground,
-  presentationDragIndicator,
-} from '@expo/ui/swift-ui/modifiers';
+import React, { useRef, useState } from 'react';
+import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppText } from '../../../components/AppText';
+import SheetHeaderAction from '../../../components/SheetHeaderAction';
+import SheetPresentation, { type SheetDetent } from '../../../components/SheetPresentation';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
-  MAP_SHEET_CORNER_RADIUS,
   SHEET_CORNER_ACTION_INSET,
   SETTINGS_SHEET_CONTENT_INSET,
 } from '../../../components/mapSheetChrome';
-import SheetHeaderActionContent from '../../../components/SheetHeaderActionContent.ios';
-import SettingsSheetPanel, { type SettingsSheetPanelProps } from './SettingsSheetPanel';
+import { useMountEffect } from '../../../hooks/useMountEffect';
+import type { SettingsSheetPanelProps } from './SettingsSheetPanel';
 
 const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
+const MIN_COMPACT_HEIGHT = 232;
+const PRESENTATION_VERTICAL_PADDING = 24;
 
-type SettingsChildSheetProps = SettingsSheetPanelProps;
-
-function NativeSettingsPresentationReset({ visible, closeStartedRef, dismissCompleteRef }: {
-  visible: boolean;
-  closeStartedRef: React.RefObject<boolean>;
-  dismissCompleteRef: React.RefObject<boolean>;
-}) {
+function ResetSettingsScroll({ scrollRef }: { scrollRef: React.RefObject<ScrollView | null> }) {
   useMountEffect(() => {
-    if (visible) {
-      closeStartedRef.current = false;
-      dismissCompleteRef.current = false;
-    }
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
   });
   return null;
 }
 
-export default function SettingsChildSheet(props: SettingsChildSheetProps) {
-  if (props.singleStage) return <SettingsSheetPanel {...props} />;
-  return <NativeSettingsChildSheet {...props} />;
-}
-
-function NativeSettingsChildSheet({
+export default function SettingsChildSheet({
   visible,
   onClose,
   onDismissComplete,
   testID,
   navigation,
+  onBack,
   backLabel = 'back',
   action = 'close',
   doneLabel = action === 'close' ? 'close' : 'commit',
@@ -75,160 +43,168 @@ function NativeSettingsChildSheet({
   stageTwoRatio = STAGE_TWO_RATIO,
   darkMaterial = false,
   wrapContentInScrollView = true,
-}: SettingsChildSheetProps) {
-  const nativeChildren = React.Children.toArray(children);
-  const rootContent = nativeChildren[0] ?? <View />;
-  const nestedSheets = nativeChildren.slice(1);
-  const stageOneDetent = useMemo(() => ({ fraction: stageOneRatio }), [stageOneRatio]);
-  const stageTwoDetent = useMemo(() => ({ fraction: stageTwoRatio }), [stageTwoRatio]);
-  const actionSlotSize = MAP_SHEET_ACTION_HIT_SIZE;
-  const isSettingsChild = navigation === 'child';
-  const selectedDetent = initialStage === 1 ? stageTwoDetent : stageOneDetent;
-  const headerInset = isSettingsChild ? SETTINGS_SHEET_CONTENT_INSET : SHEET_CORNER_ACTION_INSET;
-  const closeStartedRef = useRef(false);
-  const dismissCompleteRef = useRef(false);
-  const onDismissCompleteRef = useRef(onDismissComplete);
-  onDismissCompleteRef.current = onDismissComplete;
-  const closeOnce = useCallback(() => {
-    if (closeStartedRef.current) return;
-    closeStartedRef.current = true;
-    onClose();
-  }, [onClose]);
-  const handlePresentedChange = useCallback((presented: boolean) => {
-    // Native BottomSheet can report its initial non-presented state while a
-    // hidden child host is mounting. Only a visible sheet dismissal closes the
-    // owning settings page.
-    if (!presented && visible) closeOnce();
-  }, [closeOnce, visible]);
-  const handleDismiss = useCallback(() => {
-    if (visible) closeOnce();
-    if (dismissCompleteRef.current) return;
-    dismissCompleteRef.current = true;
-    onDismissCompleteRef.current?.();
-  }, [closeOnce, visible]);
+  singleStage = false,
+  home = false,
+  fitContent = false,
+  fillContent = false,
+  scrollResetKey,
+}: SettingsSheetPanelProps) {
+  const { height } = useWindowDimensions();
+  const { top, bottom } = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [contentSize, setContentSize] = useState<{ page?: string; height: number }>();
+  const [activeStage, setActiveStage] = useState({ visible, initialStage, stage: initialStage });
+  if (activeStage.visible !== visible || activeStage.initialStage !== initialStage) {
+    setActiveStage({ visible, initialStage, stage: initialStage });
+    if (visible) setContentSize(undefined);
+  }
 
+  const lifecycle = useRef({ visible, awaitingDismissal: visible, closeRequested: false });
+  if (lifecycle.current.visible !== visible) {
+    lifecycle.current.visible = visible;
+    if (visible) {
+      lifecycle.current.awaitingDismissal = true;
+      lifecycle.current.closeRequested = false;
+    }
+  }
+  function requestClose() {
+    if (!visible || lifecycle.current.closeRequested) return;
+    lifecycle.current.closeRequested = true;
+    onClose();
+  }
+  function completeDismissal() {
+    if (!lifecycle.current.awaitingDismissal) return;
+    lifecycle.current.awaitingDismissal = false;
+    requestClose();
+    onDismissComplete?.();
+  }
+
+  const stageOneDetent = { fraction: stageOneRatio };
+  const stageTwoDetent = { fraction: stageTwoRatio };
+  const contentHeight = contentSize?.page === scrollResetKey ? contentSize?.height ?? 0 : 0;
+  const compactHeight = Math.max(
+    MIN_COMPACT_HEIGHT,
+    Math.ceil(headerHeight + contentHeight + PRESENTATION_VERTICAL_PADDING),
+  );
+  const compactDetent = contentHeight === 0 || headerHeight === 0
+    ? stageOneDetent
+    : compactHeight < (height - top - bottom) * stageTwoRatio
+      ? { height: compactHeight }
+      : stageTwoDetent;
+  const isChild = navigation === 'child';
+  const usesSystemBackground = navigation != null || fitContent;
+  const preferredDetent = fitContent ? compactDetent
+    : singleStage || activeStage.stage === 1 ? stageTwoDetent : stageOneDetent;
+  const [pageSelection, setPageSelection] = useState({ page: scrollResetKey, adjustHeight: !!onBack });
+  if (pageSelection.page !== scrollResetKey) {
+    setPageSelection({ page: scrollResetKey, adjustHeight: !pageSelection.adjustHeight });
+  }
+  // Expo reapplies the selection only when its value changes.
+  const selectedDetent = !onBack || !pageSelection.adjustHeight ? preferredDetent
+    : 'height' in preferredDetent ? { height: preferredDetent.height - 1 }
+    : { fraction: preferredDetent.fraction - 0.001 };
+  const backDetent = !onBack ? undefined : 'height' in selectedDetent
+    ? { height: selectedDetent.height - 60 } : { fraction: selectedDetent.fraction - 0.09 };
+  const usesTwoDetents = !singleStage && !isChild && !fitContent;
+
+  function handleSelectionChange(detent: SheetDetent) {
+    if (detent === 'medium') return;
+    if (backDetent) {
+      if ('height' in backDetent ? 'height' in detent && detent.height === backDetent.height
+        : 'fraction' in detent && detent.fraction === backDetent.fraction) onBack?.();
+      return;
+    }
+    if (!('fraction' in detent)) return;
+    const stage = detent.fraction === stageTwoRatio ? 1 : 0;
+    setActiveStage(current => current.stage === stage ? current : { ...current, stage });
+  }
+
+  const header = navigation === 'root' && !title ? null : (
+    <View style={[styles.header, usesSystemBackground && styles.insetHeader]}
+      onLayout={fitContent ? event => setHeaderHeight(event.nativeEvent.layout.height) : undefined}>
+      {isChild ? (
+        <SheetHeaderAction
+          testID="settings-child-back"
+          action="back"
+          useSystemStyle
+          onPress={onBack ?? requestClose}
+          accessibilityLabel={backLabel}
+        />
+      ) : <View style={styles.headerActionSlot} />}
+      <AppText accessibilityRole="header" style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]}
+        numberOfLines={titleFontSize == null ? 1 : 2}>{title}</AppText>
+      {isChild ? <View style={styles.headerActionSlot} /> : (
+        <SheetHeaderAction
+          testID={home || singleStage || navigation === 'root' ? 'settings-root-close' : 'settings-child-back'}
+          action={action}
+          useSystemStyle={usesSystemBackground}
+          onPress={action === 'commit' ? () => onCommit?.() : requestClose}
+          accessibilityLabel={doneLabel}
+          disabled={action === 'commit' && !onCommit}
+        />
+      )}
+    </View>
+  );
+
+  const [firstChild, ...nestedSheets] = React.Children.toArray(children);
+  const splitChildren = singleStage || initialStage === 1;
+  const mainContent = splitChildren ? firstChild : children;
   return (
-    <>
-    <NativeSettingsPresentationReset key={String(visible)} visible={visible} closeStartedRef={closeStartedRef} dismissCompleteRef={dismissCompleteRef} />
-    <Host
+    <SheetPresentation
+      visible={visible}
+      onClose={onBack ?? requestClose}
+      onDismiss={completeDismissal}
       testID={testID}
-      style={styles.host}
-      colorScheme="dark"
-      // Settings sheets stay mounted for native presentation transitions. A
-      // hidden full-screen Host must not become a touch shield over the map.
-      pointerEvents={visible ? 'auto' : 'none'}
+      detents={backDetent ? [backDetent, selectedDetent] : usesTwoDetents ? [stageOneDetent, stageTwoDetent] : [selectedDetent]}
+      selection={selectedDetent}
+      onSelectionChange={backDetent || usesTwoDetents ? handleSelectionChange : undefined}
+      backgroundColor={darkMaterial ? '#263230f7' : undefined}
+      useSystemBackground={usesSystemBackground}
+      dismissDisabled={!!onBack}
     >
-      <BottomSheet
-        isPresented={visible}
-        onIsPresentedChange={handlePresentedChange}
-        onDismiss={handleDismiss}
-      >
-        <Group
-          key={visible ? `settings-presented-${initialStage}` : 'settings-hidden'}
-          modifiers={[
-            presentationDetents(
-              isSettingsChild ? [selectedDetent] : [stageOneDetent, stageTwoDetent],
-              { selection: selectedDetent },
-            ),
-            presentationCornerRadius(MAP_SHEET_CORNER_RADIUS),
-            ...(darkMaterial ? [presentationBackground('#263230f7')] : []),
-            presentationDragIndicator('visible'),
-            frame({ minWidth: 0, maxWidth: Infinity, minHeight: 0, maxHeight: Infinity }),
-            padding({ bottom: 0 }),
-          ]}
-        >
-          <VStack
-            spacing={0}
-            alignment="center"
-            modifiers={[frame({ minWidth: 0, maxWidth: Infinity, minHeight: 0, maxHeight: Infinity })]}
+      <View style={styles.body} onAccessibilityEscape={onBack ?? requestClose}>
+        {header}
+        {wrapContentInScrollView ? (
+          <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.scrollContent,
+              navigation ? styles.settingsScrollContent : fitContent && styles.compactScrollContent,
+              fillContent && styles.fillScrollContent,
+            ]}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={fitContent ? (_width, measuredHeight) => {
+              setContentSize({ page: scrollResetKey, height: measuredHeight });
+            } : undefined}
           >
-            <HStack
-              spacing={0}
-              alignment="center"
-              modifiers={[
-                padding({ top: isSettingsChild ? 4 : SHEET_CORNER_ACTION_INSET, leading: headerInset, trailing: headerInset }),
-                frame({ minWidth: 0, maxWidth: 10000 }),
-              ]}
-            >
-              {isSettingsChild ? (
-                <SheetHeaderActionContent
-                  testID="settings-child-back"
-                  action="back"
-                  onPress={closeOnce}
-                  accessibilityLabel={backLabel}
-                />
-              ) : <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} />}
-              <SwiftText
-                modifiers={[
-                  frame({ minWidth: 0, maxWidth: Infinity, minHeight: actionSlotSize, ...(titleFontSize == null ? { maxHeight: actionSlotSize } : {}), alignment: 'center' }),
-                  font({ size: titleFontSize ?? 17, weight: 'bold' }),
-                ]}
-              >
-                {title}
-              </SwiftText>
-              {isSettingsChild ? <Spacer modifiers={[frame({ width: actionSlotSize, height: actionSlotSize })]} /> : (
-                <SheetHeaderActionContent
-                  testID="settings-child-back"
-                  action={action}
-                  onPress={action === 'commit' ? () => onCommit?.() : closeOnce}
-                  accessibilityLabel={doneLabel}
-                  disabled={action === 'commit' && !onCommit}
-                />
-              )}
-            </HStack>
-            <RNHostView matchContents={false}>
-              <View style={styles.sheetBody}>
-                {wrapContentInScrollView ? (
-                  <ScrollView
-                    style={styles.scroll}
-                    contentContainerStyle={[styles.scrollContent, isSettingsChild && styles.settingsScrollContent]}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    {initialStage === 1 ? rootContent : children}
-                  </ScrollView>
-                ) : (
-                  <View style={styles.contentFill}>{initialStage === 1 ? rootContent : children}</View>
-                )}
-                {initialStage === 1 && nestedSheets.length > 0 ? (
-                  <View pointerEvents="box-none" style={styles.nestedLayer}>
-                    {nestedSheets}
-                  </View>
-                ) : null}
-              </View>
-            </RNHostView>
-          </VStack>
-        </Group>
-      </BottomSheet>
-    </Host>
-    </>
+            {mainContent}
+          </ScrollView>
+        ) : <View style={styles.body}>{mainContent}</View>}
+        {visible && scrollResetKey != null ? <ResetSettingsScroll key={scrollResetKey} scrollRef={scrollRef} /> : null}
+        {splitChildren && nestedSheets.length > 0 ? (
+          <View pointerEvents="box-none" style={styles.nestedLayer}>
+            {nestedSheets}
+          </View>
+        ) : null}
+      </View>
+    </SheetPresentation>
   );
 }
 
 const styles = StyleSheet.create({
-  host: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-  },
-  sheetBody: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: 'transparent',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
-  settingsScrollContent: { paddingTop: 4, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
-  contentFill: {
-    flex: 1,
-  },
-  nestedLayer: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 2,
-  },
+  body: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingTop: 12, paddingHorizontal: 16, paddingBottom: 24 },
+  settingsScrollContent: { paddingTop: 16, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
+  compactScrollContent: { paddingBottom: 14 },
+  fillScrollContent: { flexGrow: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SHEET_CORNER_ACTION_INSET },
+  insetHeader: { paddingTop: 8, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
+  headerActionSlot: { width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE },
+  title: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 17, fontWeight: '700' },
+  nestedLayer: { ...StyleSheet.absoluteFill, zIndex: 2 },
 });

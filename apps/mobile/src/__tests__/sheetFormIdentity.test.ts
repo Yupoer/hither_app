@@ -8,7 +8,7 @@ import FeedbackSheet from '../components/FeedbackSheet';
 let mockCommands: CustomQuickCommand[] = [{ label: 'One', message: 'First' }, { label: 'Two', message: 'Second' }];
 const mockSubmitFeedback = jest.fn();
 jest.mock('react-native', () => ({
-  Modal: 'Modal', View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Button', ScrollView: 'Scroll', ActivityIndicator: 'ActivityIndicator',
+  Platform: { OS: 'ios' }, Modal: 'Modal', View: 'View', Text: 'Text', TextInput: 'Input', Pressable: 'Button', ScrollView: 'Scroll', ActivityIndicator: 'ActivityIndicator',
   Alert: { alert: jest.fn() }, StyleSheet: { create: (value: unknown) => value, hairlineWidth: 1 },
 }));
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
@@ -17,6 +17,7 @@ jest.mock('../state/PreferencesContext', () => ({ useTheme: () => ({ colors: { a
 jest.mock('../state/SessionContext', () => ({ useSession: () => ({ customQuickCommands: mockCommands, setCustomQuickCommand: jest.fn() }) }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ t: (key: string) => key, language: 'en' }) }));
 jest.mock('../components/OverlaySheet', () => 'Sheet');
+jest.mock('../components/SheetPresentation', () => 'NativeSheet');
 jest.mock('../screens/MapScreen/components/SettingsChildSheet', () => 'SettingsSheet');
 jest.mock('../api/feedback', () => ({ submitFeedback: (...args: unknown[]) => mockSubmitFeedback(...args) }));
 jest.mock('../utils/activityLog', () => ({ logEvent: jest.fn(), logError: jest.fn() }));
@@ -93,10 +94,12 @@ it('clears coordinate validation and pending state only on the original visible 
   act(() => { view.root.findAllByType('Input' as never)[0].props.onChangeText('Place'); });
   act(() => { send(); });
   expect(view.root.findAllByType('Input' as never).every(node => node.props.editable === false)).toBe(true);
+  expect(view.root.findByType('NativeSheet' as never).props.dismissDisabled).toBe(true);
   act(() => { view.update(render(currentCoordinates)); });
   expect(view.root.findAllByType('Button' as never).at(-1)!.props.disabled).toBe(true);
   act(() => { view.update(render(coordinates)); });
   expect(view.root.findAllByType('Button' as never).at(-1)!.props.disabled).toBe(false);
+  expect(view.root.findByType('NativeSheet' as never).props.dismissDisabled).toBe(false);
   await act(async () => { finish(); });
 });
 

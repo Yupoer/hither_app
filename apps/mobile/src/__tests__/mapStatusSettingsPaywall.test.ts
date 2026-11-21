@@ -76,7 +76,7 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(settings.indexOf('<SystemToggle')).toBeGreaterThan(settings.indexOf("setPage('mapJourney')"));
   });
 
-  it('stacks settings above sheetLayer and sibling child hosts above settings', () => {
+  it('keeps the legacy settings layer above the map tray and its child layer above settings', () => {
     const sheet = /sheetLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapStyles);
     const settingsRoot = /page:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(settings);
     const child = /settingsChildLayer:\s*\{[\s\S]*?zIndex:\s*(\d+)/.exec(mapStyles);
@@ -89,13 +89,6 @@ describe('#220 map / status / settings / paywall contracts', () => {
     expect(settingsZ).toBeGreaterThan(sheetZ);
     expect(childZ).toBeGreaterThan(settingsZ);
     expect(mapScreen).toContain('styles.settingsChildLayer');
-    for (const host of ['<AccountSheet', '<PaywallSheet', '<FeedbackSheet'] as const) {
-      const idx = mapScreen.indexOf(host);
-      expect(idx).toBeGreaterThan(0);
-      const wrapIdx = mapScreen.lastIndexOf('styles.settingsChildLayer', idx);
-      expect(wrapIdx).toBeGreaterThan(0);
-      expect(idx - wrapIdx).toBeLessThan(280);
-    }
   });
 
   it('fails stealth when location confirm cancels and rolls back prior writes', () => {

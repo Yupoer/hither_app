@@ -143,11 +143,16 @@ describe('D6 team panel', () => {
     expect(recovery).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a single invitation action beside the new team code', () => {
-    const props = buildProps({ isNewTeam: true });
+  it.each([
+    [false, 'map-invite-members', 'd6-team-invite-code'],
+    [true, 'd6-team-invite-code', 'map-invite-members'],
+  ] as const)('shows a single raised invitation action with new team = %s', (isNewTeam, inviteId, hiddenId) => {
+    const props = buildProps({ isNewTeam });
     render(props);
-    expect(button('map-invite-members')).toBeUndefined();
-    act(() => button('d6-team-invite-code')?.props.onPress());
+    expect(button(hiddenId)).toBeUndefined();
+    const inviteButton = button(inviteId);
+    expect(inviteButton?.props.motion).toBe('depth');
+    act(() => inviteButton?.props.onPress());
     expect(props.onInviteTeam).toHaveBeenCalledTimes(1);
   });
 

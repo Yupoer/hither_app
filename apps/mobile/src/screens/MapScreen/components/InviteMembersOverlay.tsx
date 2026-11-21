@@ -5,7 +5,7 @@ import { type TranslationKey } from '../../../i18n';
 import InviteMembersSheet from './InviteMembersSheet';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
@@ -39,15 +39,17 @@ export function InviteMembersOverlay({
   styles,
   t,
 }: InviteMembersOverlayProps) {
+  const usesCompactSheet = Platform.OS === 'ios';
   return (
     <InviteMembersSheet
       visible={overlay === 'invite'}
       onClose={() => setOverlay(null)}
       title={t('map.inviteMembers')}
       accent={accent}
-      doneLabel={t('map.done')}
+      doneLabel={t(usesCompactSheet ? 'common.close' : 'map.done')}
+      fitContent
     >
-      <ScrollView contentContainerStyle={[styles.overlayBody, inviteStyles.body]}>
+      <View style={[styles.overlayBody, inviteStyles.body, usesCompactSheet && inviteStyles.compactBody]}>
         <Text style={inviteStyles.hint}>
           {inviteBlockedForAnonymousLeader
             ? t('anon.registrationRequiredBody')
@@ -118,13 +120,14 @@ export function InviteMembersOverlay({
             />
           </View>
         )}
-      </ScrollView>
+      </View>
     </InviteMembersSheet>
   );
 }
 
 const inviteStyles = StyleSheet.create({
   body: { paddingHorizontal: 20, paddingTop: 10 },
+  compactBody: { paddingHorizontal: 4, paddingTop: 0, paddingBottom: 0 },
   hint: { color: '#ffffffba', fontSize: APP_TEXT_SIZE.body, lineHeight: 24 },
   code: { flex: 1, color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
   label: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },

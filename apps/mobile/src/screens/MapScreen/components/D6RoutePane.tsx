@@ -5,6 +5,7 @@ import React, { useCallback, useContext, useMemo, useRef, useState } from 'react
 import {
   AccessibilityInfo,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -19,6 +20,7 @@ import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSw
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
+import SheetPresentation from '../../../components/SheetPresentation';
 import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../../../components/mapSheetChrome';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useTranslation } from '../../../i18n';
@@ -29,6 +31,7 @@ import { localDayKey, openDestinationsForReorder, parseDateOnlyLocal } from '../
 import { d6DayRows, d6Reorder, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
 import type { ReorderUpdate } from '../itineraryReorder';
 import { D6RouteDates } from './D6RouteDates';
+import D6RouteMenu, { type D6RouteMenuItem } from './D6RouteMenu';
 import { D6RouteRow, D6RouteRowPreview, D6RowFlash } from './D6RouteRow';
 import { D6PaneScrollView } from './D6PaneScrollView';
 import { D6PaneInteractionContext, D6PaneOverlay } from './D6PaneInteraction';
@@ -76,6 +79,11 @@ export interface D6RoutePaneProps {
   error?: string | null;
 }
 
+type RoutePopupPage = 'menu' | 'dates';
+type RoutePopup = { page: RoutePopupPage; phase: 'open' | 'closing' };
+
+const DATE_POPUP_DETENT = { fraction: 0.72 };
+
 const WEEKDAYS_ZH = ['日', '一', '二', '三', '四', '五', '六'];
 const WEEKDAYS_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
@@ -109,7 +117,18 @@ export function D6RoutePane({
   const pool = useMemo(() => openDestinationsForReorder(destinations).filter((destination) => destination.day == null), [destinations]);
   const completed = useMemo(() => destinations.filter((item) => item.closedAt && item.day === day.number)
     .sort((left, right) => left.order - right.order), [day.number, destinations]);
-  const [popup, setPopup] = useState<'menu' | 'dates' | null>(null);
+  const [popup, setPopup] = useState<RoutePopup | null>(null);
+  const isIOS = Platform.OS === 'ios';
+  const popupPage = popup?.page;
+  const popupDetent = popupPage === 'dates' ? DATE_POPUP_DETENT : 'medium';
+
+  function openPopup(page: RoutePopupPage) {
+    setPopup(current => current?.phase === 'closing' ? current : { page, phase: 'open' });
+  }
+
+  function closePopup() {
+    setPopup(current => isIOS && current ? { page: current.page, phase: 'closing' } : null);
+  }
   const [showCompleted, setShowCompleted] = useState(false);
   const [poolFold, setPoolFold] = useState<{ key: number | undefined; open: boolean; flash: string | null }>(() =>
     ({ key: poolFlashKey, open: !!poolFlashKey, flash: poolFlashKey ? pool.at(-1)?.id ?? null : null }));
@@ -375,7 +394,6 @@ export function D6RoutePane({
   const ordinaryRows = useMemo(() => rows.filter(row => row.kind === 'destination' && !row.isLegacyStay), [rows]);
   const accommodationRows = rows.filter(row => row.kind === 'accommodation' || row.isLegacyStay);
   const selectedAll = selectableRows.length > 0 && selectionCount === selectableRows.length;
-  const moreActions = canEdit || canEditDates || !!onManageArrivals || !!legacyContent;
   const hasStay = rows.some((row) => row.kind === 'accommodation' || row.isLegacyStay);
   const showStaySlot = canEdit && canEditDates && !selectionMode && day.number < count && !hasStay;
   const status = error ?? failure;
@@ -465,6 +483,53 @@ export function D6RoutePane({
       } : undefined}
     />;
   };
+
+  const menuItems: D6RouteMenuItem[] = [];
+  if (canEdit) menuItems.push({ testID: 'd6-route-menu-select', title: chinese ? '選取' : 'Select', onPress: () => setSelection(new Set()) });
+  if (canEditDates) menuItems.push({ testID: 'd6-route-menu-dates', title: chinese ? '日期' : 'Dates', onPress: () => {
+    setFailure(null);
+    openPopup('dates');
+  } });
+  if (onManageArrivals) menuItems.push({ testID: 'map-arrival-manage', title: t('arrival.manage'), onPress: onManageArrivals });
+  if (onCompleteEarly) menuItems.push({
+    testID: 'd6-route-complete-early', title: chinese ? '提前完成集合點' : 'Finish gathering early', onPress: onCompleteEarly,
+  });
+  if (legacyContent) menuItems.push({
+    testID: 'd6-route-menu-legacy', title: chinese ? '其他行程工具' : 'More itinerary tools', onPress: () => setShowLegacy(true),
+  });
+  if (canEdit) menuItems.push({ testID: 'd6-route-menu-kml', title: chinese ? '匯入 KML' : 'Import KML', onPress: onImport });
+
+  const showingDates = popupPage === 'dates';
+  const popupContent = (
+    <View style={[styles.popover, isIOS ? styles.nativePopover : transparencyReduced && styles.opaque]}>
+      <View style={styles.popoverHeader}>
+        <Text accessibilityRole="header" style={styles.popoverTitle}>
+          {showingDates ? chinese ? '日期' : 'Dates' : chinese ? '行程選項' : 'Itinerary options'}
+        </Text>
+        <SheetHeaderAction action={showingDates ? 'commit' : 'close'} disabled={busy}
+          accessibilityLabel={showingDates ? t('map.done') : t('common.close')}
+          testID={showingDates ? 'd6-route-dates-done' : 'd6-route-close-options'}
+          onPress={() => closePopup()} />
+      </View>
+      <ScrollView style={styles.popoverBody} keyboardShouldPersistTaps="handled">
+        {showingDates ? <D6RouteDates
+          days={days}
+          accent={accent}
+          displayFont={displayFont}
+          chinese={chinese}
+          onRange={changeRange}
+          onColor={onDayColor}
+          busy={busy}
+          error={status}
+        /> : <View>
+          {menuItems.map(item => <MenuRow key={item.testID} {...item} last={item.testID === 'd6-route-menu-kml'} onPress={() => {
+            closePopup();
+            item.onPress();
+          }} />)}
+        </View>}
+      </ScrollView>
+    </View>
+  );
 
   return (
     <View ref={bindDragScope} collapsable={false} style={styles.root} testID="d6-route-pane">
@@ -562,9 +627,8 @@ export function D6RoutePane({
           >
             <Text style={styles.selectAllText}>{chinese ? selectedAll ? '取消全選' : '全選' : selectedAll ? 'Deselect all' : 'Select all'}</Text>
           </Pressable>
-        ) : moreActions ? (
-          <SheetHeaderAction action="more" accessibilityLabel={chinese ? '更多' : 'More'}
-            testID="d6-route-options" onPress={() => setPopup('menu')} />
+        ) : menuItems.length > 0 ? (
+          <D6RouteMenu label={chinese ? '更多' : 'More'} items={menuItems} onOpenFallback={() => openPopup('menu')} />
         ) : null}
       </View>
 
@@ -667,66 +731,35 @@ export function D6RoutePane({
       <D6PaneOverlay>{ordinaryRows.map(row => <D6DragPreview key={row.id} row={row}
         presentation={dragPresentation} target={dragTarget} point={dragPoint} accent={accent} color={day.color} />)}</D6PaneOverlay>
 
-      {popup ? <Modal
-        animationType="fade"
-        transparent
-        statusBarTranslucent
-        visible
-        onRequestClose={() => setPopup(null)}
-      >
-        <GestureHandlerRootView style={styles.root}>
-          <View style={[styles.popoverRoot, { paddingBottom: Math.max(insets.bottom, 24), paddingTop: insets.top + 8 }]}>
-            <Pressable
-              style={styles.scrim}
-              accessibilityRole="button"
-              accessibilityLabel={t('common.cancel')}
-              onPress={() => !busy && setPopup(null)}
-            />
-            <SwiftUIGlassSurface
-              cornerRadius={MAP_SHEET_CORNER_RADIUS}
-              fallbackTintColor="#26302E"
-              style={styles.popoverSurface}
-            >
-              <View style={[styles.popover, transparencyReduced && styles.opaque]}>
-                <View style={styles.popoverHeader}>
-                  <Text accessibilityRole="header" style={styles.popoverTitle}>
-                    {popup === 'dates' ? chinese ? '日期' : 'Dates' : chinese ? '行程選項' : 'Itinerary options'}
-                  </Text>
-                  <SheetHeaderAction action={popup === 'dates' ? 'commit' : 'close'} disabled={busy}
-                    accessibilityLabel={popup === 'dates' ? t('map.done') : t('common.close')}
-                    testID={popup === 'dates' ? 'd6-route-dates-done' : 'd6-route-close-options'}
-                    onPress={() => setPopup(null)} />
-                </View>
-              <ScrollView style={styles.popoverBody} keyboardShouldPersistTaps="handled">
-                {popup === 'dates' ? <D6RouteDates
-                  days={days}
-                  accent={accent}
-                  displayFont={displayFont}
-                  chinese={chinese}
-                  onRange={changeRange}
-                  onColor={onDayColor}
-                  busy={busy}
-                  error={status}
-                /> : <View>
-                  {canEdit ? <MenuRow testID="d6-route-menu-select" title={chinese ? '選取' : 'Select'} onPress={() => { setSelection(new Set()); setPopup(null); }} /> : null}
-                  {canEditDates ? <MenuRow testID="d6-route-menu-dates" title={chinese ? '日期' : 'Dates'} onPress={() => { setFailure(null); setPopup('dates'); }} /> : null}
-                  {onManageArrivals ? <MenuRow testID="map-arrival-manage" title={t('arrival.manage')} onPress={() => {
-                    setPopup(null);
-                    onManageArrivals();
-                  }} /> : null}
-                  {onCompleteEarly ? <MenuRow testID="d6-route-complete-early" title={chinese ? '提前完成集合點' : 'Finish gathering early'} onPress={() => {
-                    setPopup(null);
-                    onCompleteEarly();
-                  }} /> : null}
-                  {legacyContent ? <MenuRow title={chinese ? '其他行程工具' : 'More itinerary tools'} onPress={() => { setShowLegacy(true); setPopup(null); }} /> : null}
-                  {canEdit ? <MenuRow last testID="d6-route-menu-kml" title={chinese ? '匯入 KML' : 'Import KML'} onPress={() => { setPopup(null); onImport(); }} /> : null}
-                </View>}
-              </ScrollView>
-              </View>
-            </SwiftUIGlassSurface>
-          </View>
-        </GestureHandlerRootView>
-      </Modal> : null}
+      {isIOS ? (
+        <SheetPresentation
+          visible={popup?.phase === 'open'}
+          onClose={closePopup}
+          onDismiss={() => setPopup(null)}
+          detents={[popupDetent]}
+          selection={popupDetent}
+          backgroundColor={transparencyReduced ? '#26302E' : 'rgba(25,36,34,.75)'}
+          dismissDisabled={busy}
+        >
+          {popupContent}
+        </SheetPresentation>
+      ) : popup ? (
+        <Modal animationType="fade" transparent statusBarTranslucent visible onRequestClose={() => closePopup()}>
+          <GestureHandlerRootView style={styles.root}>
+            <View style={[styles.popoverRoot, { paddingBottom: Math.max(insets.bottom, 24), paddingTop: insets.top + 8 }]}>
+              <Pressable
+                style={styles.scrim}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.cancel')}
+                onPress={() => !busy && closePopup()}
+              />
+              <SwiftUIGlassSurface cornerRadius={MAP_SHEET_CORNER_RADIUS} fallbackTintColor="#26302E" style={styles.popoverSurface}>
+                {popupContent}
+              </SwiftUIGlassSurface>
+            </View>
+          </GestureHandlerRootView>
+        </Modal>
+      ) : null}
     </View>
   );
 }
@@ -907,6 +940,7 @@ const styles = StyleSheet.create({
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,.4)' },
   popoverSurface: { borderRadius: MAP_SHEET_CORNER_RADIUS, overflow: 'hidden', flexShrink: 1 },
   popover: { padding: SHEET_CORNER_ACTION_INSET, flexShrink: 1, minHeight: 0, backgroundColor: 'rgba(25,36,34,.75)' },
+  nativePopover: { flex: 1, backgroundColor: 'transparent' },
   popoverHeader: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 8 },
   popoverTitle: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, paddingVertical: 13, color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   popoverBody: { flexGrow: 0, flexShrink: 1 },

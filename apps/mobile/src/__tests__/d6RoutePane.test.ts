@@ -1,5 +1,9 @@
 import React, { Profiler, useState } from 'react';
+import { Platform } from 'react-native';
 import { measure } from 'react-native-reanimated';
+import { SwipeDirection } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import type { D6RouteMenuProps } from '../screens/MapScreen/components/D6RouteMenu';
+import { lightTap } from '../utils/haptics';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { D6RoutePane, type D6RoutePaneProps, type D6RouteSelection } from '../screens/MapScreen/components/D6RoutePane';
 import type { Destination } from '../types';
@@ -12,6 +16,7 @@ jest.mock('react-native', () => ({
     addEventListener: () => ({ remove: jest.fn() }),
   },
   Modal: 'Modal',
+  Platform: { OS: 'android' },
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
   StyleSheet: { create: (styles: object) => styles, absoluteFill: {}, hairlineWidth: 1 },
@@ -35,12 +40,42 @@ jest.mock('react-native-gesture-handler', () => ({
       blocksExternalGesture() { return this; },
       hitSlop() { return this; },
       activeOffsetX() { return this; },
+      failOffsetY() { return this; },
       onStart(callback: (...args: unknown[]) => void) { this.callbacks.set('start', callback); return this; },
       onEnd(callback: (...args: unknown[]) => void) { this.callbacks.set('end', callback); return this; },
     }),
   },
 }));
-jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, default: 'Swipeable' }));
+jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({
+  __esModule: true,
+  default: 'Swipeable',
+  SwipeDirection: { LEFT: 'left', RIGHT: 'right' },
+}));
+jest.mock('../screens/MapScreen/components/D6RouteMenu', () => ({
+  __esModule: true,
+  default: (props: D6RouteMenuProps) => {
+    const { Platform } = jest.requireMock<typeof import('react-native')>('react-native');
+    const { createElement } = jest.requireActual<typeof import('react')>('react');
+    const { default: Menu } = Platform.OS === 'ios'
+      ? jest.requireActual<typeof import('../screens/MapScreen/components/D6RouteMenu.ios')>('../screens/MapScreen/components/D6RouteMenu.ios')
+      : jest.requireActual<typeof import('../screens/MapScreen/components/D6RouteMenu')>('../screens/MapScreen/components/D6RouteMenu');
+    return createElement(Menu, props);
+  },
+}));
+jest.mock('@expo/ui/swift-ui', () => ({
+  Host: 'SwiftUIHost', Menu: 'SwiftUIMenu', Image: 'SwiftUIImage', Button: 'SwiftUIButton',
+}));
+jest.mock('@expo/ui/swift-ui/modifiers', () => {
+  const modifiers = [
+    'accessibilityLabel', 'background', 'buttonStyle', 'contentShape', 'font', 'foregroundColor',
+    'frame', 'glassEffect', 'menuIndicator', 'menuOrder', 'menuStyle', 'padding',
+  ];
+  return {
+    ...Object.fromEntries(modifiers.map(name => [name, (...args: unknown[]) => ({ name, args })])),
+    shapes: { circle: () => 'circle' },
+  };
+});
+jest.mock('../native', () => ({ liquidGlass: { isLiquidGlassAvailable: () => true } }));
 jest.mock('react-native-reanimated', () => {
   const { Component, createElement, forwardRef } = jest.requireActual<typeof import('react')>('react');
   type NativeProps = Record<string, unknown> & { forwardedRef: React.Ref<object> };
@@ -88,6 +123,7 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 62, bottom: 34, left: 0, right: 0 }) }));
+jest.mock('../components/SheetPresentation', () => 'NativeSheet');
 jest.mock('../components/SwiftUIGlassSurface', () => ({ __esModule: true, default: 'SwiftUIGlassSurface' }));
 jest.mock('../utils/haptics', () => ({ lightTap: jest.fn() }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ language: 'zh', t: (key: string) => key }) }));
@@ -168,6 +204,133 @@ describe('D6 itinerary panel', () => {
       .mockReturnValueOnce(bounds(0, 124, 300, 54));
     return byId('d6-route-drag-a').parent?.props.gesture.callbacks;
   }
+
+  it('uses a native iOS More menu and presents the dates sheet only when selected', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    const onManageArrivals = jest.fn();
+    const onCompleteEarly = jest.fn();
+    await act(async () => {
+      renderer = mount(React.createElement(D6RoutePane, {
+        ...props,
+        onManageArrivals,
+        onCompleteEarly,
+        legacyContent: React.createElement('LegacyTools'),
+      }));
+    });
+    const sheet = () => renderer.root.findByType('NativeSheet' as never);
+    const menu = renderer.root.findByType('SwiftUIMenu' as never);
+    expect(menu.props.testID).toBe('d6-route-options');
+    expect(menu.props.label.props.systemName).toBe('ellipsis');
+    expect(menu.props.modifiers).toContainEqual({ name: 'accessibilityLabel', args: ['更多'] });
+    expect(menu.findAllByType('SwiftUIButton' as never).map(button => button.props.label)).toEqual([
+      '選取', '日期', 'arrival.manage', '提前完成集合點', '其他行程工具', '匯入 KML',
+    ]);
+    expect(sheet().props.visible).toBe(false);
+    await act(async () => byId('map-arrival-manage').props.onPress());
+    await act(async () => byId('d6-route-complete-early').props.onPress());
+    await act(async () => byId('d6-route-menu-kml').props.onPress());
+    expect(onManageArrivals).toHaveBeenCalledTimes(1);
+    expect(onCompleteEarly).toHaveBeenCalledTimes(1);
+    expect(props.onImport).toHaveBeenCalledTimes(1);
+    expect(sheet().props.visible).toBe(false);
+    await act(async () => byId('d6-route-menu-dates').props.onPress());
+    expect(sheet().props.visible).toBe(true);
+    await act(async () => byId('d6-route-dates-done').props.onPress());
+    expect(sheet().props.visible).toBe(false);
+    await act(async () => sheet().props.onDismiss());
+    await act(async () => byId('d6-route-menu-dates').props.onPress());
+    expect(sheet().props.visible).toBe(true);
+  });
+
+  it('keeps the More options and date controls available on Android', async () => {
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: true })); });
+    await act(async () => byId('d6-route-options').props.onPress());
+    expect(byId('d6-route-close-options').props.accessibilityLabel).toBe('common.close');
+    await act(async () => byId('d6-route-menu-dates').props.onPress());
+    expect(byId('d6-route-dates-done').props.accessibilityLabel).toBe('map.done');
+    await act(async () => byId('d6-route-dates-done').props.onPress());
+    await act(async () => byId('d6-route-options').props.onPress());
+    await act(async () => byId('d6-route-menu-kml').props.onPress());
+    expect(props.onImport).toHaveBeenCalledTimes(1);
+    expect(byId('d6-route-close-options')).toBeUndefined();
+  });
+
+  it('scales actions out from the trailing edge and reverses them as the row closes', async () => {
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: true })); });
+    const swipe = () => renderer.root.findAllByType('Swipeable' as never)[0];
+    const close = jest.fn();
+    const methods = { close };
+    let actions: ReactTestRenderer | undefined;
+
+    const renderActions = async (offset: number) => {
+      const position = { get: () => offset };
+      await act(async () => {
+        const element = swipe().props.renderRightActions(position, position, methods);
+        if (actions) actions.update(element);
+        else actions = mount(element);
+      });
+      const action = actions?.root.findByProps({ accessibilityLabel: '刪除 a' });
+      return { style: action?.parent?.props.style, onPress: action?.props.onPress };
+    };
+
+    try {
+      const dot = await renderActions(-8);
+      const midway = await renderActions(-74);
+      expect(dot.style.transform[1].scaleX).toBeLessThan(midway.style.transform[1].scaleX);
+      expect(dot.style.transform[0].translateX).toBeGreaterThan(midway.style.transform[0].translateX);
+      expect(actions?.root.props.interactive).toBe(false);
+
+      await act(async () => swipe().props.onSwipeableOpen(SwipeDirection.LEFT));
+      const button = await renderActions(-152);
+      expect(button.style.transform).toEqual([{ translateX: 0 }, { scaleX: 1 }, { scaleY: 1 }]);
+      expect(actions?.root.props.interactive).toBe(true);
+      await act(async () => button.onPress());
+      expect(close).toHaveBeenCalledTimes(1);
+      await act(async () => { jest.advanceTimersByTime(220); });
+      expect(onDelete).toHaveBeenCalledWith(['a']);
+
+      await act(async () => { renderer.update(React.createElement(Shell, { canEdit: true })); });
+      expect((await renderActions(-74)).style).toEqual(midway.style);
+      expect((await renderActions(-8)).style).toEqual(dot.style);
+      expect((await renderActions(0)).style.opacity).toBe(0);
+    } finally {
+      await act(async () => actions?.unmount());
+    }
+  });
+
+  it('hides the grip through each swipe and taps once for a committed open or right-swipe close', async () => {
+    await act(async () => { renderer = mount(React.createElement(Shell, { canEdit: true })); });
+    const swipe = () => renderer.root.findAllByType('Swipeable' as never)[0];
+    const grip = () => byId('d6-route-drag-a');
+
+    expect(grip().props.accessible).toBe(true);
+    await act(async () => swipe().props.onSwipeableOpenStartDrag(SwipeDirection.LEFT));
+    expect(grip().props.accessibilityElementsHidden).toBe(true);
+    expect(grip().props.pointerEvents).toBe('none');
+    expect(lightTap).not.toHaveBeenCalled();
+    await act(async () => swipe().props.onSwipeableWillClose(SwipeDirection.RIGHT));
+    await act(async () => swipe().props.onSwipeableClose(SwipeDirection.RIGHT));
+    expect(grip().props.accessible).toBe(true);
+    expect(lightTap).not.toHaveBeenCalled();
+
+    await act(async () => swipe().props.onSwipeableOpenStartDrag(SwipeDirection.LEFT));
+    await act(async () => {
+      swipe().props.onSwipeableWillOpen(SwipeDirection.LEFT);
+      swipe().props.onSwipeableWillOpen(SwipeDirection.LEFT);
+      swipe().props.onSwipeableOpen(SwipeDirection.LEFT);
+    });
+    expect(grip().props.accessibilityElementsHidden).toBe(true);
+    expect(lightTap).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      swipe().props.onSwipeableCloseStartDrag(SwipeDirection.RIGHT);
+      swipe().props.onSwipeableWillClose(SwipeDirection.RIGHT);
+      swipe().props.onSwipeableWillClose(SwipeDirection.RIGHT);
+    });
+    expect(grip().props.accessibilityElementsHidden).toBe(true);
+    expect(lightTap).toHaveBeenCalledTimes(2);
+    await act(async () => swipe().props.onSwipeableClose(SwipeDirection.RIGHT));
+    expect(grip().props.accessible).toBe(true);
+  });
 
   it('keeps an active contact on the UI thread and submits once after release despite an unrelated failed grip', async () => {
     const rendered = jest.fn();

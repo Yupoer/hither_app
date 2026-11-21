@@ -172,7 +172,6 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
         const staged = await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add')?.label === 'Unlock more stops', 'D6 quota action');
         expect(has(staged, 'confirm-place-name')).toBe(false);
         await press(device, 'confirm-place-add');
-        await device.input({ kind: 'animation', finished: true });
         await world.waitFor(device, (value: Observation) => has(value, 'store-premium-restore'), 'D6 Shop after quota action');
       }
       const blocked = await device.observe();
@@ -184,11 +183,8 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
       if (d6) {
         await press(device, 'settings-child-back');
         await world.waitFor(device, (value: Observation) => has(value, 'settings-page-profile'), 'Shop returns to settings');
-        for (const phase of ['onBegin', 'onUpdate', 'onEnd']) {
-          expect(await device.host.call({ kind: 'gesture', testId: 'settings-panel', phase,
-            value: { translationY: 260, velocityY: 0 } })).toEqual({ invoked: true });
-        }
-        await device.input({ kind: 'animation', finished: true });
+        expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
+          value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
         await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add')?.label === 'Unlock more stops'
           && !has(value, 'store-premium-restore'), 'coordinate draft after closing Shop');
       }

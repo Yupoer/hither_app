@@ -14,6 +14,7 @@ const tabsNative = readFileSync(
   'utf8',
 );
 const settingsIos = readFileSync(join(root, 'screens/MapScreen/components/SettingsChildSheet.ios.tsx'), 'utf8');
+const sheetPresentationIos = readFileSync(join(root, 'components/SheetPresentation.ios.tsx'), 'utf8');
 const settingsPanel = readFileSync(join(root, 'screens/MapScreen/components/SettingsSheetPanel.tsx'), 'utf8');
 const settings = readFileSync(join(root, 'screens/MapScreen/components/SettingsOverlay.tsx'), 'utf8');
 const bottomSheet = readFileSync(join(root, 'components/BottomSheet.tsx'), 'utf8');
@@ -88,46 +89,12 @@ describe('iOS native UI contracts', () => {
     expect(tabsNative).toContain('ultraThinMaterial');
   });
 
-  it('uses native detents and one guarded close path for settings sheets', () => {
-    expect(settingsIos).toContain("from '@expo/ui/swift-ui'");
-    expect(settingsIos).toContain('SettingsSheetPanel');
-    expect(settingsIos).toContain('if (props.singleStage) return <SettingsSheetPanel {...props} />');
-    expect(settingsPanel).toContain('singleStage');
-    expect(settingsPanel).toContain('[Math.round(height * stageTwoRatio)]');
-    expect(settingsPanel).toContain('MAP_SHEET_ACTION_HIT_SIZE');
-    expect(settingsPanel).toContain('<SheetHeaderAction');
-    expect(settingsPanel).toContain('dismissOnDownFromIndex={0}');
-    expect(settingsPanel).toContain('edgeToEdgeAtLast={edgeToEdgeAtLast}');
-    expect(settingsPanel).toContain('dismissTranslateY={sheetTranslateY}');
-    expect(settingsPanel).toContain('dismissRequested={visible}');
-    expect(settingsIos).toContain('fraction: stageOneRatio');
-    expect(settingsIos).toContain('fraction: stageTwoRatio');
-    expect(settingsIos).toContain('presentationDetents(');
-    expect(settingsIos).toContain('[stageOneDetent, stageTwoDetent]');
-    expect(settingsIos).toContain('closeStartedRef');
-    expect(settingsIos).toContain('if (!presented && visible)');
-    expect(settingsIos).not.toContain('chevron-back');
-    expect(settingsIos).toContain('paddingTop: 12');
-    expect(sheetHeaderActionContent).toContain("buttonBorderShape('circle')");
-    expect(settingsIos).not.toContain("controlSize('extraLarge')");
-    expect(sheetHeaderActionContent).toContain('<Image');
-    expect(sheetHeaderActionContent).toContain('frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE })');
-    expect(settingsIos).toContain('const actionSlotSize = MAP_SHEET_ACTION_HIT_SIZE;');
-    expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_ICON_SIZE');
-    expect(settingsIos).not.toContain('frame({ width: 78, height: 78 })');
-    expect(sheetHeaderActionContent).toContain('systemName={SHEET_HEADER_SYMBOLS[action]}');
-    expect(settingsIos).toContain('<VStack');
-    expect(settingsIos.indexOf('</HStack>')).toBeLessThan(settingsIos.indexOf('<RNHostView'));
-    expect(settingsIos).toContain('wrapContentInScrollView');
-    expect(settingsIos).toContain('nestedLayer');
-    expect(settingsIos).toContain('colorScheme="dark"');
-    expect(settingsIos).toContain("pointerEvents={visible ? 'auto' : 'none'}");
-    expect(settings).toContain("page === 'account'");
-    expect(settings).toContain('<AccountSheetContent');
-    expect(settings).toContain('wrapContentInScrollView={false}');
-    expect(settings).toContain('singleStage');
-    expect(settings).toContain('stageTwoRatio={0.9}');
-    expect(settings).toContain('stageTwoRatio={0.8}');
+  it('presents iOS settings through SwiftUI, including single-stage settings', () => {
+    expect(settingsIos).toContain("from '../../../components/SheetPresentation'");
+    expect(settingsIos).toContain('<SheetPresentation');
+    expect(settingsIos).not.toContain('<SettingsSheetPanel');
+    expect(sheetPresentationIos).toContain("from '@expo/ui/swift-ui'");
+    expect(sheetPresentationIos).toContain('<BottomSheet');
   });
 
   it('keeps avatar choices within a centered grid and horizontally scrolls colors', () => {
@@ -169,7 +136,7 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain('<Pressable');
     expect(overlaySheet).toContain('<SheetHeaderAction');
     expect(sheetHeaderAction).toContain('SheetHeaderActionContent');
-    expect(settingsIos).toContain('<SheetHeaderActionContent');
+    expect(settingsIos).toContain('<SheetHeaderAction');
     expect(sheetHeaderActionContent).toContain("buttonBorderShape('circle')");
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_VISUAL_SIZE');
     expect(sheetHeaderActionContent).toContain('MAP_SHEET_ACTION_HIT_SIZE');
@@ -188,12 +155,9 @@ describe('iOS native UI contracts', () => {
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
   });
 
-  it('opens the iOS invite sheet at Stage 1 while preserving Android fallback', () => {
+  it('uses the native settings sheet for iOS invites and the overlay for Android', () => {
     expect(inviteMembersOverlay).toContain('<InviteMembersSheet');
     expect(inviteSheetIos).toContain('<SettingsChildSheet');
-    expect(inviteSheetIos).toContain('initialStage={0}');
-    expect(inviteSheetIos).toContain('stageTwoRatio={0.8}');
-    expect(inviteSheetIos).toContain('wrapContentInScrollView={false}');
     expect(inviteSheet).toContain('<OverlaySheet');
   });
 
@@ -222,7 +186,7 @@ describe('iOS native UI contracts', () => {
 
   it('forces dark mode at the RN and SwiftUI boundaries', () => {
     expect(app).toContain("Appearance.setColorScheme('dark')");
-    expect(settingsIos).toContain('colorScheme="dark"');
+    expect(sheetPresentationIos).toContain('colorScheme="dark"');
     expect(nativeGlassButtonIos).toContain('colorScheme="dark"');
     expect(sheetHeaderAction).toContain('<Host');
     expect(sheetHeaderAction).toContain('colorScheme="dark"');

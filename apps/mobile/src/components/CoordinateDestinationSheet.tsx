@@ -1,10 +1,11 @@
 import { APP_TEXT_SIZE } from '../theme/typeScale';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import Pressable from './MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SheetHeaderAction from './SheetHeaderAction';
+import SheetPresentation from './SheetPresentation';
 import { MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
 import { liquidGlass } from '../native';
 import { useTheme } from '../state/PreferencesContext';
@@ -20,6 +21,8 @@ import {
 
 export type { CoordinateDestinationInput, CoordinateValidationError };
 export { validateCoordinateDestination };
+
+const COORDINATE_DETENTS = [{ fraction: 0.64 }] as const;
 
 export interface CoordinateDestinationSheetProps {
   visible: boolean;
@@ -86,6 +89,101 @@ export default React.memo(function CoordinateDestinationSheet({
         ? t('coord.invalidCoords')
         : null;
 
+  const form = (
+    <>
+      <View style={styles.header}>
+        <Text style={styles.heading}>{t('coord.title')}</Text>
+        <SheetHeaderAction action="close" accessibilityLabel={t('common.cancel')} testID="coordinate-cancel"
+          onPress={onClose} disabled={submitting} />
+      </View>
+
+      <Text style={styles.label}>{t('coord.nameLabel')}</Text>
+      <TextInput
+        style={styles.input}
+        value={title}
+        onChangeText={setTitle}
+        placeholder={t('coord.namePlaceholder')}
+        placeholderTextColor={glass.textTertiary}
+        keyboardAppearance="dark"
+        accessibilityLabel={t('coord.nameLabel')}
+        testID="coordinate-name"
+        editable={!submitting}
+      />
+
+      <Text style={styles.label}>{t('coord.latLabel')}</Text>
+      <TextInput
+        style={styles.input}
+        value={latText}
+        onChangeText={setLatText}
+        placeholder="25.0339"
+        placeholderTextColor={glass.textTertiary}
+        keyboardAppearance="dark"
+        keyboardType="numbers-and-punctuation"
+        accessibilityLabel={t('coord.latLabel')}
+        testID="coordinate-latitude"
+        editable={!submitting}
+      />
+
+      <Text style={styles.label}>{t('coord.lngLabel')}</Text>
+      <TextInput
+        style={styles.input}
+        value={lngText}
+        onChangeText={setLngText}
+        placeholder="121.5645"
+        placeholderTextColor={glass.textTertiary}
+        keyboardAppearance="dark"
+        keyboardType="numbers-and-punctuation"
+        accessibilityLabel={t('coord.lngLabel')}
+        testID="coordinate-longitude"
+        editable={!submitting}
+      />
+
+      {errorMessage ? (
+        <Text style={styles.error} accessibilityLiveRegion="polite">
+          {errorMessage}
+        </Text>
+      ) : null}
+
+      <View style={styles.actions}>
+        <Pressable
+          onPress={() => void handleSubmit()}
+          testID="coordinate-submit"
+          style={[styles.submitBtn, submitting && styles.submitDisabled]}
+          disabled={submitting}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting }}
+        >
+          {submitting ? (
+            <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
+          ) : (
+            <Text style={styles.submitText}>{t('coord.submit')}</Text>
+          )}
+        </Pressable>
+      </View>
+    </>
+  );
+
+  if (Platform.OS === 'ios') {
+    return (
+      <SheetPresentation
+        visible={visible}
+        onClose={onClose}
+        dismissDisabled={submitting}
+        detents={COORDINATE_DETENTS}
+        backgroundColor={glass.overlay}
+      >
+        <ScrollView
+          style={styles.nativeScroll}
+          contentContainerStyle={styles.nativeForm}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          {form}
+        </ScrollView>
+      </SheetPresentation>
+    );
+  }
+
   return (
     <Modal
       visible={visible}
@@ -102,75 +200,7 @@ export default React.memo(function CoordinateDestinationSheet({
             { paddingBottom: insets.bottom + spacing.lg },
           ]}
         >
-          <View style={styles.header}>
-            <Text style={styles.heading}>{t('coord.title')}</Text>
-            <SheetHeaderAction action="close" accessibilityLabel={t('common.cancel')} testID="coordinate-cancel"
-              onPress={onClose} disabled={submitting} />
-          </View>
-
-          <Text style={styles.label}>{t('coord.nameLabel')}</Text>
-          <TextInput
-            style={styles.input}
-            value={title}
-            onChangeText={setTitle}
-            placeholder={t('coord.namePlaceholder')}
-            placeholderTextColor={glass.textTertiary}
-            keyboardAppearance="dark"
-            accessibilityLabel={t('coord.nameLabel')}
-            testID="coordinate-name"
-            editable={!submitting}
-          />
-
-          <Text style={styles.label}>{t('coord.latLabel')}</Text>
-          <TextInput
-            style={styles.input}
-            value={latText}
-            onChangeText={setLatText}
-            placeholder="25.0339"
-            placeholderTextColor={glass.textTertiary}
-            keyboardAppearance="dark"
-            keyboardType="numbers-and-punctuation"
-            accessibilityLabel={t('coord.latLabel')}
-            testID="coordinate-latitude"
-            editable={!submitting}
-          />
-
-          <Text style={styles.label}>{t('coord.lngLabel')}</Text>
-          <TextInput
-            style={styles.input}
-            value={lngText}
-            onChangeText={setLngText}
-            placeholder="121.5645"
-            placeholderTextColor={glass.textTertiary}
-            keyboardAppearance="dark"
-            keyboardType="numbers-and-punctuation"
-            accessibilityLabel={t('coord.lngLabel')}
-            testID="coordinate-longitude"
-            editable={!submitting}
-          />
-
-          {errorMessage ? (
-            <Text style={styles.error} accessibilityLiveRegion="polite">
-              {errorMessage}
-            </Text>
-          ) : null}
-
-          <View style={styles.actions}>
-            <Pressable
-              onPress={() => void handleSubmit()}
-              testID="coordinate-submit"
-              style={[styles.submitBtn, submitting && styles.submitDisabled]}
-              disabled={submitting}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: submitting }}
-            >
-              {submitting ? (
-                <ActivityIndicator accessibilityRole="progressbar" color="#fff" />
-              ) : (
-                <Text style={styles.submitText}>{t('coord.submit')}</Text>
-              )}
-            </Pressable>
-          </View>
+          {form}
         </liquidGlass.GlassView>
       </View>
     </Modal>
@@ -180,6 +210,11 @@ export default React.memo(function CoordinateDestinationSheet({
 const makeStyles = (colors: Palette) =>
   StyleSheet.create({
     flex: { flex: 1, justifyContent: 'flex-end' },
+    nativeScroll: { flex: 1 },
+    nativeForm: {
+      padding: SHEET_CORNER_ACTION_INSET,
+      gap: spacing.sm,
+    },
     backdrop: {
       position: 'absolute',
       top: 0,
