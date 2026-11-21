@@ -172,6 +172,7 @@ it('sizes an invite to the measured actions and keeps large content scrollable',
   const onClose = jest.fn();
   let tree!: ReturnType<typeof create>;
   await act(async () => {
+    // eslint-disable-next-line react/no-children-prop -- InviteMembersSheetProps requires children, which createElement's rest args do not satisfy for typing
     tree = create(React.createElement(NativeInviteMembersSheet, {
       visible: true, onClose, title: 'Invite members', accent: '#fff', doneLabel: 'Close',
       fitContent: true, children: React.createElement('InviteActions'),
