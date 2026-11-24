@@ -20,9 +20,12 @@ def check(needs):
     if any(type(value) is not bool for value in expected.values()):
         raise ValueError("expected_jobs values must be booleans")
     mode = outputs["mode"]
-    if mode not in {"docs", "full", "selective"}:
-        raise ValueError("scope mode must be docs, full or selective")
-    if product == "false":
+    if mode not in {"docs", "full", "selective", "reused"}:
+        raise ValueError("scope mode must be docs, full, selective or reused")
+    if mode == "reused":
+        if product != "true" or any(expected.values()):
+            raise ValueError("reused scope must be product scope with every job skipped")
+    elif product == "false":
         if mode != "docs" or any(expected.values()):
             raise ValueError("documentation scope must skip every product job")
     elif mode == "docs" or not expected.get("verify") or (mode == "full" and not all(expected.values())):

@@ -154,6 +154,21 @@ test('formal registry follows the source map and selects its verification inputs
   }
 });
 
+test('a master push of an already validated tree skips every product job', () => {
+  const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
+  const shadowPlan = plan([{status: 'M', path: 'apps/mobile/src/utils/a.ts'}], {baseManifest: registry, headManifest: registry});
+  const decide = (eventName, product, validatedTree) => decideWorkflowScope({eventName, product, validatedTree, shadowPlan});
+  const reused = decide('push', true, true);
+  assert.equal(reused.mode, 'reused');
+  assert.equal(reused.product, true);
+  assert.deepEqual(reused.groups, []);
+  assert.ok(Object.values(reused.expectedJobs).every(value => !value));
+  for (const [eventName, validatedTree] of [['push', false], ['push', undefined], ['push', 'true'], ['pull_request', true], ['workflow_dispatch', true]]) {
+    assert.notEqual(decide(eventName, true, validatedTree).mode, 'reused', `${eventName} ${validatedTree}`);
+  }
+  assert.equal(decide('push', false, true).mode, 'docs');
+});
+
 test('fixed workflow gates exactly match the planner registry', () => {
   const workflow = fs.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const required = workflow.match(/  ci-required:\r?\n    needs: \[([^\]]+)\]/)[1].split(',').map(s => s.trim());

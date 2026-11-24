@@ -30,7 +30,7 @@ def accepts(payload):
         return False
 
 
-valid = [outcome("docs", []), outcome("full", jobs), outcome("selective", ["verify", "mobile-checks"])]
+valid = [outcome("docs", []), outcome("full", jobs), outcome("selective", ["verify", "mobile-checks"]), outcome("reused", [])]
 for payload in valid:
     assert accepts(payload)
     for job in jobs:
@@ -39,7 +39,7 @@ for payload in valid:
             altered[job]["result"] = result
             assert accepts(altered) == (result == payload[job]["result"]), (job, result)
 
-invalid = [{}, [], None, outcome("full", ["verify"]), outcome("selective", ["mobile-checks"])]
+invalid = [{}, [], None, outcome("full", ["verify"]), outcome("selective", ["mobile-checks"]), outcome("reused", ["verify"]), outcome("reused", jobs)]
 for product in ("", "True", "unknown", True, None):
     altered = copy.deepcopy(valid[1]); altered["scope"]["outputs"]["product"] = product; invalid.append(altered)
 for expected in ("not json", "null", "[]", "{}", json.dumps({job: 1 for job in jobs}), json.dumps({**{job: True for job in jobs}, "unknown": True})):
@@ -55,6 +55,7 @@ for payload in valid:
     altered["scope"]["outputs"]["expected_jobs"] = json.dumps(expected)
     joint_omissions.append(altered)
 invalid.extend(joint_omissions)
+altered = copy.deepcopy(valid[3]); altered["scope"]["outputs"]["product"] = "false"; invalid.append(altered)
 for result in ("failure", "cancelled", "skipped", None):
     altered = copy.deepcopy(valid[1]); altered["scope"]["result"] = result; invalid.append(altered)
 for mode in ("unknown", "docs", None):
