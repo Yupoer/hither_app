@@ -1,12 +1,19 @@
 {
-  "schemaVersion": 1,
-  "kind": "binary_provenance",
+  "schemaVersion": 2,
+  "kind": "reviewed_compatibility",
   "platform": "ios",
   "channel": "production",
-  "sourceSha": "f11507b8f50ce8ee852e5e21b064cba299119f0a",
+  "comparisonBaselineSha": "f11507b8f50ce8ee852e5e21b064cba299119f0a",
+  "binarySourceSha": null,
   "runtimeVersion": "0.1.17",
   "appVersion": "0.1.17",
   "buildNumber": "88",
   "appleState": "IN_BETA_TESTING",
-  "evidence": "docs/ios-production-build-88.md"
+  "evidence": "docs/ios-production-compatibility-20261124.md",
+  "reviewedMobilePaths": {
+    "apps/mobile/App.tsx": {
+      "baselineBlobSha": "2b5f4184ee84003379a4a171b1ffa3cd8f5eda41",
+      "reviewedBlobSha": "2c5ee097b53882a0fd01b7bea5dab5a1706d27df"
+    }
+  }
 }
