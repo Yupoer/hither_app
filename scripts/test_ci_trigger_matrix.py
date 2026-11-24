@@ -32,6 +32,15 @@ for (event, ref), expected in matrix.items():
     assert actual is expected, (event, ref, expected, actual)
 
 assert "  ci-required:" in source, "required aggregate status is missing"
+record = re.search(r"(?ms)^  record-validated-tree:\n(.*?)(?=^  \S|^\s*#|\Z)", source)
+assert record, "validated tree recording is missing"
+assert "continue-on-error: true" in record.group(1), "recording must never fail the CI run"
+assert "needs: [scope, verify, ci-required]" in record.group(1), "recording must follow the aggregate gate"
+assert "needs.scope.outputs.mode == 'full'" in record.group(1), "only full gate runs may be reused"
+assert "needs.verify.outputs.meta_covers_whole_map == 'true'" in record.group(1), "only whole-map acceptance runs may be reused"
+assert "github.event.pull_request.head.repo.full_name == github.repository" in record.group(1), "fork runs must not be recorded"
+aggregate_needs = re.search(r"(?m)^  ci-required:\n    needs: \[([^\]]+)\]", source).group(1)
+assert "record-validated-tree" not in aggregate_needs, "aggregate must not wait for recording"
 manual_base = "startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master'"
 assert source.count(manual_base) == 2, "manual deliver scope and coverage must compare against master"
 assert "    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'" in source, (

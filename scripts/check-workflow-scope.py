@@ -9,7 +9,7 @@ def product_required(paths):
                p == ".agents/skills/verify-location-sync-formally/SKILL.md" for p in paths)
 
 
-def classify(event_name, base):
+def classify(event_name, base, validated_tree=False):
     identity = None
     required = True
     if event_name in {"pull_request", "push"} and base.strip("0"):
@@ -26,12 +26,13 @@ def classify(event_name, base):
             required = True
     planner = Path(__file__).with_name("ci-shadow-plan.mjs")
     return json.loads(subprocess.check_output(
-        ["node", str(planner)], input=json.dumps({"eventName": event_name, "product": required, "identity": identity}), text=True
+        ["node", str(planner)], input=json.dumps({"eventName": event_name, "product": required, "validatedTree": validated_tree, "identity": identity}), text=True
     ))
 
 
 if __name__ == "__main__":
-    decision = classify(os.environ.get("EVENT_NAME", ""), os.environ.get("BASE_SHA", ""))
+    decision = classify(os.environ.get("EVENT_NAME", ""), os.environ.get("BASE_SHA", ""),
+                        os.environ.get("TREE_VALIDATED") == "true")
     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
         for key, value in (("product", decision["product"]), ("mode", decision["mode"]),
                            ("groups", decision["groups"]), ("expected_jobs", decision["expectedJobs"]), ("reasons", decision["reasons"])):

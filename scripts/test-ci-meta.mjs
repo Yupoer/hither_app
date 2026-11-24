@@ -38,12 +38,12 @@ async function run({ ref = 'refs/pull/314/merge', eventName = 'pull_request', bo
 }
 
 const stale = await run();
-assert.deepEqual(stale.outputs, { parent: 'pure-chore' }, 'a marker added after PR creation must be read');
+assert.deepEqual(stale.outputs, { parent: 'pure-chore', whole_map: 'true' }, 'a marker added after PR creation must be read');
 assert.deepEqual(stale.failures, []);
 assert.deepEqual(stale.calls, [['get', { owner: 'Yupoer', repo: 'hither_app', pull_number: 314 }]]);
 
 const changed = await run({ body: marker('pure-chore'), currentBody: marker('178') });
-assert.deepEqual(changed.outputs, { parent: '178' }, 'current metadata must replace a stale marker');
+assert.deepEqual(changed.outputs, { parent: '178', whole_map: 'false' }, 'current metadata must replace a stale marker');
 const removed = await run({ body: marker('pure-chore'), currentBody: null });
 assert.deepEqual(removed.outputs, {}, 'a removed marker must not fall back to stale metadata');
 assert.match(removed.failures[0], /Missing durable PR meta marker/);
@@ -56,16 +56,16 @@ for (const currentBody of ['', '<!-- hither-test-meta parent: -->']) {
 
 for (const ref of ['refs/heads/master', 'refs/heads/main']) {
   const result = await run({ ref, eventName: 'push' });
-  assert.deepEqual(result.outputs, { parent: '' });
+  assert.deepEqual(result.outputs, { parent: '', whole_map: 'true' });
   assert.deepEqual(result.calls, []);
 }
 
 const manualDirect = await run({ ref: 'refs/heads/deliver/local-workflow', eventName: 'workflow_dispatch', prs: [] });
-assert.deepEqual(manualDirect.outputs, { parent: '' }, 'a manual direct-delivery run validates the whole map');
+assert.deepEqual(manualDirect.outputs, { parent: '', whole_map: 'true' }, 'a manual direct-delivery run validates the whole map');
 assert.deepEqual(manualDirect.calls, []);
 
 const dispatch = await run({ ref: 'refs/heads/feature/ci', eventName: 'workflow_dispatch' });
-assert.deepEqual(dispatch.outputs, { parent: 'pure-chore' });
+assert.deepEqual(dispatch.outputs, { parent: 'pure-chore', whole_map: 'true' });
 assert.deepEqual(dispatch.calls, [['list', {
   owner: 'Yupoer', repo: 'hither_app', head: 'Yupoer:feature/ci', state: 'open', per_page: 5,
 }]]);

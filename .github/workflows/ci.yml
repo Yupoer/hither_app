@@ -49,6 +49,9 @@ jobs:
   scope:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       product: ${{ steps.scope.outputs.product }}
       mode: ${{ steps.scope.outputs.mode }}
@@ -73,6 +76,7 @@ jobs:
           python3 scripts/test_ci_required.py
           python3 -B scripts/test_claude_fix_security.py
           python3 -B scripts/test_ci_trigger_matrix.py
+          python3 -B scripts/test_find_validated_tree.py
           python3 -B scripts/test_ios_ota_compatibility.py
           python3 -B scripts/test_ios_ota_publication.py
           python3 -B scripts/test_ios_cd_routing.py
@@ -88,11 +92,22 @@ jobs:
           node --test apps/mobile/scripts/check-changed-coverage.test.mjs apps/mobile/scripts/check-ci-evidence.test.mjs apps/mobile/scripts/check-quick.test.mjs apps/mobile/scripts/benchmark-ci.test.mjs apps/mobile/scripts/benchmark-install.test.mjs scripts/ci-shadow-plan.test.mjs scripts/mobile-install-key.test.mjs scripts/verified-cli-tree.test.mjs apps/mobile/scripts/location-smoke-credentials.test.cjs scripts/check-release-ci.test.mjs
           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh scripts/install-mobile-dependencies.sh
 
+      - name: Look for an already validated tree
+        id: validated
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/find-validated-tree.py
+
       - name: Classify rules and documentation changes
         id: scope
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          TREE_VALIDATED: ${{ steps.validated.outputs.validated }}
           BASE_SHA: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before }}
         run: python3 scripts/check-workflow-scope.py
         working-directory: ${{ github.workspace }}
@@ -102,6 +117,8 @@ jobs:
     if: fromJSON(needs.scope.outputs.expected_jobs)['verify']
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      meta_covers_whole_map: ${{ steps.test_meta.outputs.whole_map }}
     permissions:
       contents: read
       pull-requests: read
@@ -155,6 +172,7 @@ jobs:
             if (ref === 'refs/heads/master' || ref === 'refs/heads/main' ||
                 (context.eventName === 'workflow_dispatch' && ref.startsWith('refs/heads/deliver/'))) {
               core.setOutput('parent', '');
+              core.setOutput('whole_map', 'true');
               core.info('master or manual direct delivery: META_PARENT unset (validate whole map)');
               return;
             }
@@ -192,6 +210,7 @@ jobs:
               return;
             }
             core.setOutput('parent', m[1]);
+            core.setOutput('whole_map', m[1].toLowerCase() === 'pure-chore' ? 'true' : 'false');
             core.info(`Resolved META_PARENT=${m[1]}`);
 
       - name: Test meta (L1 map + L2 anti-fake)
@@ -589,6 +608,34 @@ jobs:
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 scripts/check-ci-required.py
+
+  # A tree that passed every product gate with the whole acceptance map lets the master push
+  # CI for that same tree skip the gates it already passed. Recording is best effort.
+  record-validated-tree:
+    needs: [scope, verify, ci-required]
+    if: >-
+      success() && needs.scope.outputs.mode == 'full'
+      && needs.verify.outputs.meta_covers_whole_map == 'true'
+      && (github.event_name == 'workflow_dispatch'
+        || github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Name the validated tree
+        id: tree
+        run: |
+          tree="$(git rev-parse --verify 'HEAD^{tree}')"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > "$RUNNER_TEMP/ci-validated-tree.txt"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ci-validated-tree-${{ steps.tree.outputs.tree }}
+          path: ${{ runner.temp }}/ci-validated-tree.txt
+          overwrite: true
+          retention-days: 14
+          if-no-files-found: error
 
   # Turn a red build on the default branch into an actionable, deduped issue.
   open-issue:

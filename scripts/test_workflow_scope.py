@@ -46,14 +46,17 @@ def git(repo, *args):
     ).stdout.strip()
 
 
-def run_scope(repo, event_name, base_sha):
-    output = repo / ".git" / f"github-output-{event_name}-{base_sha}.txt"
+def run_scope(repo, event_name, base_sha, validated_tree=False):
+    output = repo / ".git" / f"github-output-{event_name}-{base_sha}-{validated_tree}.txt"
     environment = os.environ.copy()
     environment.update(
         EVENT_NAME=event_name,
         BASE_SHA=base_sha,
         GITHUB_OUTPUT=str(output),
     )
+    environment.pop("TREE_VALIDATED", None)
+    if validated_tree:
+        environment["TREE_VALIDATED"] = "true"
     subprocess.run(
         [
             sys.executable,
@@ -100,6 +103,7 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     assert docs["product"] == "false"
     assert json.loads(docs["groups"]) == []
     assert run_scope(repo, "push", base_sha)["product"] == "false"
+    assert run_scope(repo, "push", base_sha, validated_tree=True)["mode"] == "docs"
 
     product.write_text("export const auth = 2;\n", encoding="utf-8")
     git(repo, "add", "--all")
@@ -113,6 +117,12 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
     assert run_scope(repo, "pull_request", "missing-ref")["mode"] == "full"
     assert run_scope(repo, "pull_request", docs_sha)["product"] == "true"
     assert run_scope(repo, "push", docs_sha)["product"] == "true"
+    reused = run_scope(repo, "push", docs_sha, validated_tree=True)
+    assert reused["mode"] == "reused", reused
+    assert reused["product"] == "true"
+    assert not any(json.loads(reused["expected_jobs"]).values())
+    assert run_scope(repo, "pull_request", docs_sha, validated_tree=True)["mode"] == "selective"
+    assert run_scope(repo, "workflow_dispatch", docs_sha, validated_tree=True)["mode"] == "full"
 
     git(repo, "mv", "apps/mobile/src/auth.ts", "docs-auth.md")
     git(repo, "commit", "-m", "rename-product-to-doc")

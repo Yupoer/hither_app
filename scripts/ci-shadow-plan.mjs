@@ -138,10 +138,12 @@ export const JOB_GROUPS = Object.freeze({
   'jsi-ios27-runtime': ['jsi-ios27-runtime'],
 });
 
-export function decideWorkflowScope({ eventName, product, shadowPlan }) {
+export function decideWorkflowScope({ eventName, product, validatedTree = false, shadowPlan }) {
   product ||= eventName === 'workflow_dispatch';
-  const mode = !product ? 'docs' : eventName !== 'pull_request' || shadowPlan.fallbackReasons.length ? 'full' : 'selective';
-  const groups = mode === 'docs' ? [] : mode === 'full' ? [...ALL_GROUPS] : shadowPlan.proposedGroups;
+  const reused = product && eventName === 'push' && validatedTree === true;
+  const mode = !product ? 'docs' : reused ? 'reused'
+    : eventName !== 'pull_request' || shadowPlan.fallbackReasons.length ? 'full' : 'selective';
+  const groups = mode === 'docs' || mode === 'reused' ? [] : mode === 'full' ? [...ALL_GROUPS] : shadowPlan.proposedGroups;
   const expectedJobs = Object.fromEntries(Object.entries(JOB_GROUPS).map(([job, owned]) =>
     [job, mode === 'full' || mode === 'selective' && (job === 'verify' || owned.some(group => groups.includes(group)))]));
   return { product, mode, groups, expectedJobs, reasons: shadowPlan.fallbackReasons };
