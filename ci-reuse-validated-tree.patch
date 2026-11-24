@@ -1,0 +1,548 @@
+From 5c9ea06b3a658f684ea67398a1b820fe6399c7ed Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 24 Nov 2026 05:18:53 +0000
+Subject: [PATCH] Reuse a validated tree on the master push CI instead of
+ rerunning every gate
+
+A full, whole-acceptance-map PR or manual CI run records its tree as an
+artifact. The master push run looks for that exact tree and, on a trusted
+hit, skips the product jobs as scope mode 'reused' while keeping the
+push/master/exact-SHA run and its ci-required job for the release gate.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015bNTyVEePFDSAzBKU87s8f
+---
+ .github/workflows/ci.yml            | 47 ++++++++++++++++++
+ README.md                           |  4 +-
+ docs/ci-evidence.md                 |  9 ++++
+ scripts/check-ci-required.py        |  9 ++--
+ scripts/check-workflow-scope.py     |  7 +--
+ scripts/ci-shadow-plan.mjs          |  8 +--
+ scripts/ci-shadow-plan.test.mjs     | 15 ++++++
+ scripts/find-validated-tree.py      | 75 +++++++++++++++++++++++++++++
+ scripts/test-ci-meta.mjs            | 10 ++--
+ scripts/test_ci_required.py         |  5 +-
+ scripts/test_ci_trigger_matrix.py   |  9 ++++
+ scripts/test_find_validated_tree.py | 54 +++++++++++++++++++++
+ scripts/test_workflow_scope.py      | 14 +++++-
+ 13 files changed, 246 insertions(+), 20 deletions(-)
+ create mode 100644 scripts/find-validated-tree.py
+ create mode 100644 scripts/test_find_validated_tree.py
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index b3ff228c..f82d8cbd 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -49,6 +49,9 @@ jobs:
+   scope:
+     runs-on: ubuntu-latest
+     timeout-minutes: 5
++    permissions:
++      contents: read
++      actions: read
+     outputs:
+       product: ${{ steps.scope.outputs.product }}
+       mode: ${{ steps.scope.outputs.mode }}
+@@ -73,6 +76,7 @@ jobs:
+           python3 scripts/test_ci_required.py
+           python3 -B scripts/test_claude_fix_security.py
+           python3 -B scripts/test_ci_trigger_matrix.py
++          python3 -B scripts/test_find_validated_tree.py
+           python3 -B scripts/test_ios_ota_compatibility.py
+           python3 -B scripts/test_ios_ota_publication.py
+           python3 -B scripts/test_ios_cd_routing.py
+@@ -88,11 +92,22 @@ jobs:
+           node --test apps/mobile/scripts/check-changed-coverage.test.mjs apps/mobile/scripts/check-ci-evidence.test.mjs apps/mobile/scripts/check-quick.test.mjs apps/mobile/scripts/benchmark-ci.test.mjs apps/mobile/scripts/benchmark-install.test.mjs scripts/ci-shadow-plan.test.mjs scripts/mobile-install-key.test.mjs scripts/verified-cli-tree.test.mjs apps/mobile/scripts/location-smoke-credentials.test.cjs scripts/check-release-ci.test.mjs
+           bash -n scripts/install-git-hooks.sh scripts/ota-auto-ship.sh scripts/task-end-ship.sh scripts/install-mobile-dependencies.sh
+ 
++      - name: Look for an already validated tree
++        id: validated
++        shell: bash
++        env:
++          EVENT_NAME: ${{ github.event_name }}
++          REPOSITORY: ${{ github.repository }}
++          REPOSITORY_ID: ${{ github.repository_id }}
++          GITHUB_TOKEN: ${{ github.token }}
++        run: python3 scripts/find-validated-tree.py
++
+       - name: Classify rules and documentation changes
+         id: scope
+         shell: bash
+         env:
+           EVENT_NAME: ${{ github.event_name }}
++          TREE_VALIDATED: ${{ steps.validated.outputs.validated }}
+           BASE_SHA: ${{ startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master' || github.event.pull_request.base.sha || github.event.before }}
+         run: python3 scripts/check-workflow-scope.py
+         working-directory: ${{ github.workspace }}
+@@ -102,6 +117,8 @@ jobs:
+     if: fromJSON(needs.scope.outputs.expected_jobs)['verify']
+     runs-on: ubuntu-latest
+     timeout-minutes: 30
++    outputs:
++      meta_covers_whole_map: ${{ steps.test_meta.outputs.whole_map }}
+     permissions:
+       contents: read
+       pull-requests: read
+@@ -155,6 +172,7 @@ jobs:
+             if (ref === 'refs/heads/master' || ref === 'refs/heads/main' ||
+                 (context.eventName === 'workflow_dispatch' && ref.startsWith('refs/heads/deliver/'))) {
+               core.setOutput('parent', '');
++              core.setOutput('whole_map', 'true');
+               core.info('master or manual direct delivery: META_PARENT unset (validate whole map)');
+               return;
+             }
+@@ -192,6 +210,7 @@ jobs:
+               return;
+             }
+             core.setOutput('parent', m[1]);
++            core.setOutput('whole_map', m[1].toLowerCase() === 'pure-chore' ? 'true' : 'false');
+             core.info(`Resolved META_PARENT=${m[1]}`);
+ 
+       - name: Test meta (L1 map + L2 anti-fake)
+@@ -590,6 +609,34 @@ jobs:
+           CI_NEEDS: ${{ toJSON(needs) }}
+         run: python3 scripts/check-ci-required.py
+ 
++  # A tree that passed every product gate with the whole acceptance map lets the master push
++  # CI for that same tree skip the gates it already passed. Recording is best effort.
++  record-validated-tree:
++    needs: [scope, verify, ci-required]
++    if: >-
++      success() && needs.scope.outputs.mode == 'full'
++      && needs.verify.outputs.meta_covers_whole_map == 'true'
++      && (github.event_name == 'workflow_dispatch'
++        || github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
++    continue-on-error: true
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
++      - name: Name the validated tree
++        id: tree
++        run: |
++          tree="$(git rev-parse --verify 'HEAD^{tree}')"
++          echo "tree=$tree" >> "$GITHUB_OUTPUT"
++          echo "$tree" > "$RUNNER_TEMP/ci-validated-tree.txt"
++      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
++        with:
++          name: ci-validated-tree-${{ steps.tree.outputs.tree }}
++          path: ${{ runner.temp }}/ci-validated-tree.txt
++          overwrite: true
++          retention-days: 14
++          if-no-files-found: error
++
+   # Turn a red build on the default branch into an actionable, deduped issue.
+   open-issue:
+     timeout-minutes: 5
+diff --git a/README.md b/README.md
+index 38892277..b65f557d 100644
+--- a/README.md
++++ b/README.md
+@@ -82,7 +82,7 @@ npm test
+ 
+ ## Development and release workflow
+ 
+-Hither uses local review. A GitHub Issue is optional. PR delivery and direct `master` delivery each require one premerge CI run and a postmerge `master` run.
++Hither uses local review. A GitHub Issue is optional. PR delivery and direct `master` delivery each require one premerge CI run. The postmerge `master` push run still exists for the release gate, but when the merged tree already passed a full, whole-acceptance-map CI run it records that result instead of running the gates again.
+ 
+ 1. Check `origin/master`, the current branch, existing worktrees, and uncommitted files. Use a task worktree based on the latest remote `master` when other work is in progress. Preserve unrelated changes and stashes.
+ 2. Implement the task, inspect the complete diff, and review behavior, data access, permissions, compatibility, accessibility, and tests. Fix findings locally. Run the affected package and CI checks, including the applicable acceptance map and changed-function coverage. Do not rerun an unchanged valid result.
+@@ -100,7 +100,7 @@ The [iOS release scripts](docs/ios-cd-release.md#release-scripts) select the OTA
+ 
+ From `apps/mobile`, run `npm run check:quick -- --base origin/master` for existing changed-file ESLint and the whole-project TypeScript check. The command includes branch commits, staged, working, and untracked changes. Shared lint/configuration changes run the existing full lint inputs. It does not install dependencies or run tests; use the existing test commands for affected behavior.
+ 
+-Product PRs select complete CI jobs through the module-contract planner. Known mobile changes run `verify` and `mobile-checks`; backend, native, shared, and unknown changes retain full checks. Product pushes to `master` and every manual dispatch run all gates. Markdown-only push/PR changes skip product jobs except for the formal location sync skill's canonical and wrapper entries. `verify` owns metadata, the single full Node invocation, changed-function coverage, scenarios, and sanitized evidence. Its location sync model and real-source replay run for mapped owners and formal skill changes, and in every full run. Unrelated selective changes skip formal verification. `mobile-checks` owns the component, lint, typecheck, runtime, Expo, and auth-web bundle.
++Product PRs select complete CI jobs through the module-contract planner. Known mobile changes run `verify` and `mobile-checks`; backend, native, shared, and unknown changes retain full checks. Product pushes to `master` and every manual dispatch run all gates, except that a `master` push whose tree matches a tree already validated by a successful full PR or manual run (see [CI evidence](docs/ci-evidence.md#reusing-a-validated-tree-on-master)) skips them and passes `ci-required` as mode `reused`. Markdown-only push/PR changes skip product jobs except for the formal location sync skill's canonical and wrapper entries. `verify` owns metadata, the single full Node invocation, changed-function coverage, scenarios, and sanitized evidence. Its location sync model and real-source replay run for mapped owners and formal skill changes, and in every full run. Unrelated selective changes skip formal verification. `mobile-checks` owns the component, lint, typecheck, runtime, Expo, and auth-web bundle.
+ 
+ Optional manual `benchmark=true` dispatches collect worker and real installed-cache pairs alongside full normal CI. `benchmark_kind` selects `workers`, `cache`, or `all`. Benchmark success does not replace `ci-required`. Adoption requires five matching pairs on each runner environment to pass correctness and satisfy `max(candidate) < min(baseline)`; overlapping results retain the incumbent. Worker plain and coverage modes are evaluated separately.
+ 
+diff --git a/docs/ci-evidence.md b/docs/ci-evidence.md
+index bb94aea7..e0794c18 100644
+--- a/docs/ci-evidence.md
++++ b/docs/ci-evidence.md
+@@ -37,3 +37,12 @@ The reader makes authenticated GET requests only to `api.github.com`, with the e
+ Jobs are read from that run's exact attempt endpoint. Every returned job must belong to the same run and attempt; exactly one `ci-required` must be completed and successful. A final filtered run-list readback rejects a newer matching run, changed attempt or changed success state during job inspection. Each collection must be complete: counts, page lengths, next-page indicators and distinct IDs are checked with a maximum of five 100-record pages per list read. Missing, changing, malformed, denied or truncated evidence fails closed. The whole read has a 30-second deadline, and API responses have a four MiB size limit. API response URLs and pagination URLs never determine request destinations.
+ 
+ Success writes only an allowlisted JSON receipt to the step summary: source SHA, numeric repository/workflow/run/attempt/job IDs, fixed workflow path, and completed/success enums. Failure writes a fixed error code without raw API data, URLs, exception text, headers or credentials. Offline Node tests cover trust identity, newer failure/pending results, exact attempt jobs, missing/duplicate aggregates, pagination, malformed/API/timeout failures, safe output and the actual workflow mode condition. These fixtures do not establish a live GitHub CI result or authorize a release.
++
++## Reusing a validated tree on master
++
++A merged PR or a fast-forwarded `deliver/` branch has usually just passed the same gates on the same files. The `master` push run therefore looks for that result first and skips the product jobs when it finds it. The run, its `ci-required` job and its `push`/`master`/exact-SHA identity still exist, so the CD prerequisite above is unchanged.
++
++- **Recording.** `record-validated-tree` runs after `ci-required` succeeds, only when the scope mode is `full` and the `verify` job validated the whole acceptance map (`META_PARENT` unset or `pure-chore`; a numeric parent only validates that parent's entries). Only `workflow_dispatch` runs and same-repository `pull_request` runs record. It uploads a small artifact named `ci-validated-tree-<tree SHA>`, where the tree is that of the checked-out merge result or branch tip. The job is `continue-on-error`, so a recording failure cannot fail the CI run.
++- **Lookup.** On a `master` push, `scripts/find-validated-tree.py` lists unexpired artifacts with that exact name. A hit counts only if its run is this repository's own `ci.yml`, was a `pull_request` or `workflow_dispatch` run from this repository (not a fork), and completed with `success`. Any API failure, malformed response or miss means no reuse and the full gates run.
++- **Result.** A hit makes scope mode `reused`: product scope with every product job skipped. `scripts/check-ci-required.py` accepts `reused` only when no job was expected, so it cannot mask a skipped gate in another mode.
++- **When it does not apply.** The tree differs (for example `master` advanced before the merge, so the merge result differs from the tested one), the earlier run was selective or used a numeric parent, the artifact expired after 14 days, or the lookup failed. Those pushes run every gate as before.
+diff --git a/scripts/check-ci-required.py b/scripts/check-ci-required.py
+index 990fe341..9effdee8 100644
+--- a/scripts/check-ci-required.py
++++ b/scripts/check-ci-required.py
+@@ -20,9 +20,12 @@ def check(needs):
+     if any(type(value) is not bool for value in expected.values()):
+         raise ValueError("expected_jobs values must be booleans")
+     mode = outputs["mode"]
+-    if mode not in {"docs", "full", "selective"}:
+-        raise ValueError("scope mode must be docs, full or selective")
+-    if product == "false":
++    if mode not in {"docs", "full", "selective", "reused"}:
++        raise ValueError("scope mode must be docs, full, selective or reused")
++    if mode == "reused":
++        if product != "true" or any(expected.values()):
++            raise ValueError("reused scope must be product scope with every job skipped")
++    elif product == "false":
+         if mode != "docs" or any(expected.values()):
+             raise ValueError("documentation scope must skip every product job")
+     elif mode == "docs" or not expected.get("verify") or (mode == "full" and not all(expected.values())):
+diff --git a/scripts/check-workflow-scope.py b/scripts/check-workflow-scope.py
+index 48c2f6dc..8ef21d3f 100644
+--- a/scripts/check-workflow-scope.py
++++ b/scripts/check-workflow-scope.py
+@@ -9,7 +9,7 @@ def product_required(paths):
+                p == ".agents/skills/verify-location-sync-formally/SKILL.md" for p in paths)
+ 
+ 
+-def classify(event_name, base):
++def classify(event_name, base, validated_tree=False):
+     identity = None
+     required = True
+     if event_name in {"pull_request", "push"} and base.strip("0"):
+@@ -26,12 +26,13 @@ def classify(event_name, base):
+             required = True
+     planner = Path(__file__).with_name("ci-shadow-plan.mjs")
+     return json.loads(subprocess.check_output(
+-        ["node", str(planner)], input=json.dumps({"eventName": event_name, "product": required, "identity": identity}), text=True
++        ["node", str(planner)], input=json.dumps({"eventName": event_name, "product": required, "validatedTree": validated_tree, "identity": identity}), text=True
+     ))
+ 
+ 
+ if __name__ == "__main__":
+-    decision = classify(os.environ.get("EVENT_NAME", ""), os.environ.get("BASE_SHA", ""))
++    decision = classify(os.environ.get("EVENT_NAME", ""), os.environ.get("BASE_SHA", ""),
++                        os.environ.get("TREE_VALIDATED") == "true")
+     with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as out:
+         for key, value in (("product", decision["product"]), ("mode", decision["mode"]),
+                            ("groups", decision["groups"]), ("expected_jobs", decision["expectedJobs"]), ("reasons", decision["reasons"])):
+diff --git a/scripts/ci-shadow-plan.mjs b/scripts/ci-shadow-plan.mjs
+index 9122e70e..c58c7f29 100644
+--- a/scripts/ci-shadow-plan.mjs
++++ b/scripts/ci-shadow-plan.mjs
+@@ -138,10 +138,12 @@ export const JOB_GROUPS = Object.freeze({
+   'jsi-ios27-runtime': ['jsi-ios27-runtime'],
+ });
+ 
+-export function decideWorkflowScope({ eventName, product, shadowPlan }) {
++export function decideWorkflowScope({ eventName, product, validatedTree = false, shadowPlan }) {
+   product ||= eventName === 'workflow_dispatch';
+-  const mode = !product ? 'docs' : eventName !== 'pull_request' || shadowPlan.fallbackReasons.length ? 'full' : 'selective';
+-  const groups = mode === 'docs' ? [] : mode === 'full' ? [...ALL_GROUPS] : shadowPlan.proposedGroups;
++  const reused = product && eventName === 'push' && validatedTree === true;
++  const mode = !product ? 'docs' : reused ? 'reused'
++    : eventName !== 'pull_request' || shadowPlan.fallbackReasons.length ? 'full' : 'selective';
++  const groups = mode === 'docs' || mode === 'reused' ? [] : mode === 'full' ? [...ALL_GROUPS] : shadowPlan.proposedGroups;
+   const expectedJobs = Object.fromEntries(Object.entries(JOB_GROUPS).map(([job, owned]) =>
+     [job, mode === 'full' || mode === 'selective' && (job === 'verify' || owned.some(group => groups.includes(group)))]));
+   return { product, mode, groups, expectedJobs, reasons: shadowPlan.fallbackReasons };
+diff --git a/scripts/ci-shadow-plan.test.mjs b/scripts/ci-shadow-plan.test.mjs
+index 691c07f1..c22a3022 100644
+--- a/scripts/ci-shadow-plan.test.mjs
++++ b/scripts/ci-shadow-plan.test.mjs
+@@ -154,6 +154,21 @@ test('formal registry follows the source map and selects its verification inputs
+   }
+ });
+ 
++test('a master push of an already validated tree skips every product job', () => {
++  const registry = JSON.parse(fs.readFileSync(new URL('./ci-module-contracts.json', import.meta.url)));
++  const shadowPlan = plan([{status: 'M', path: 'apps/mobile/src/utils/a.ts'}], {baseManifest: registry, headManifest: registry});
++  const decide = (eventName, product, validatedTree) => decideWorkflowScope({eventName, product, validatedTree, shadowPlan});
++  const reused = decide('push', true, true);
++  assert.equal(reused.mode, 'reused');
++  assert.equal(reused.product, true);
++  assert.deepEqual(reused.groups, []);
++  assert.ok(Object.values(reused.expectedJobs).every(value => !value));
++  for (const [eventName, validatedTree] of [['push', false], ['push', undefined], ['push', 'true'], ['pull_request', true], ['workflow_dispatch', true]]) {
++    assert.notEqual(decide(eventName, true, validatedTree).mode, 'reused', `${eventName} ${validatedTree}`);
++  }
++  assert.equal(decide('push', false, true).mode, 'docs');
++});
++
+ test('fixed workflow gates exactly match the planner registry', () => {
+   const workflow = fs.readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+   const required = workflow.match(/  ci-required:\r?\n    needs: \[([^\]]+)\]/)[1].split(',').map(s => s.trim());
+diff --git a/scripts/find-validated-tree.py b/scripts/find-validated-tree.py
+new file mode 100644
+index 00000000..4bc5c057
+--- /dev/null
++++ b/scripts/find-validated-tree.py
+@@ -0,0 +1,75 @@
++import json
++import os
++import re
++import subprocess
++import sys
++import urllib.error
++import urllib.request
++
++API_ORIGIN = "https://api.github.com"
++WORKFLOW_PATH = ".github/workflows/ci.yml"
++ARTIFACT_PREFIX = "ci-validated-tree-"
++TRUSTED_EVENTS = {"pull_request", "workflow_dispatch"}
++TREE = re.compile(r"[0-9a-f]{40}")
++TIMEOUT_SECONDS = 30
++
++
++def trusted_run(run, repository_id):
++    if not isinstance(run, dict):
++        return False
++    repositories = (run.get("repository"), run.get("head_repository"))
++    return (
++        str(run.get("path", "")).split("@", 1)[0] == WORKFLOW_PATH
++        and run.get("event") in TRUSTED_EVENTS
++        and run.get("status") == "completed"
++        and run.get("conclusion") == "success"
++        and all(isinstance(item, dict) and item.get("id") == repository_id for item in repositories)
++    )
++
++
++def find_validated_run(tree, repository, repository_id, get_json):
++    """Return the CI run that passed every product gate on this exact tree, or None.
++
++    Any API failure or unexpected shape answers None, so CI then runs in full.
++    """
++    if not TREE.fullmatch(tree):
++        return None
++    try:
++        listing = get_json(f"/repos/{repository}/actions/artifacts?name={ARTIFACT_PREFIX}{tree}&per_page=100")
++        for artifact in listing["artifacts"]:
++            run_reference = artifact["workflow_run"]
++            if artifact["name"] != ARTIFACT_PREFIX + tree or artifact["expired"] is not False:
++                continue
++            if run_reference["head_repository_id"] != repository_id:
++                continue
++            run = get_json(f"/repos/{repository}/actions/runs/{run_reference['id']}")
++            if trusted_run(run, repository_id):
++                return run["id"]
++    except (KeyError, TypeError, ValueError, OSError):
++        return None
++    return None
++
++
++def github_getter(token):
++    def get_json(path):
++        request = urllib.request.Request(API_ORIGIN + path, headers={
++            "Authorization": f"Bearer {token}",
++            "Accept": "application/vnd.github+json",
++            "X-GitHub-Api-Version": "2022-11-28",
++        })
++        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
++            return json.load(response)
++    return get_json
++
++
++if __name__ == "__main__":
++    tree = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD^{tree}"], text=True).strip()
++    run_id = None
++    if os.environ.get("EVENT_NAME") == "push":
++        run_id = find_validated_run(
++            tree, os.environ["REPOSITORY"], int(os.environ["REPOSITORY_ID"]),
++            github_getter(os.environ["GITHUB_TOKEN"]))
++    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
++        out.write(f"validated={'true' if run_id else 'false'}\n")
++    print(f"tree {tree}: " + (f"already validated by CI run {run_id}" if run_id else "no validated run"))
++    sys.exit(0)
+diff --git a/scripts/test-ci-meta.mjs b/scripts/test-ci-meta.mjs
+index b8830a6f..02ebd047 100644
+--- a/scripts/test-ci-meta.mjs
++++ b/scripts/test-ci-meta.mjs
+@@ -38,12 +38,12 @@ async function run({ ref = 'refs/pull/314/merge', eventName = 'pull_request', bo
+ }
+ 
+ const stale = await run();
+-assert.deepEqual(stale.outputs, { parent: 'pure-chore' }, 'a marker added after PR creation must be read');
++assert.deepEqual(stale.outputs, { parent: 'pure-chore', whole_map: 'true' }, 'a marker added after PR creation must be read');
+ assert.deepEqual(stale.failures, []);
+ assert.deepEqual(stale.calls, [['get', { owner: 'Yupoer', repo: 'hither_app', pull_number: 314 }]]);
+ 
+ const changed = await run({ body: marker('pure-chore'), currentBody: marker('178') });
+-assert.deepEqual(changed.outputs, { parent: '178' }, 'current metadata must replace a stale marker');
++assert.deepEqual(changed.outputs, { parent: '178', whole_map: 'false' }, 'current metadata must replace a stale marker');
+ const removed = await run({ body: marker('pure-chore'), currentBody: null });
+ assert.deepEqual(removed.outputs, {}, 'a removed marker must not fall back to stale metadata');
+ assert.match(removed.failures[0], /Missing durable PR meta marker/);
+@@ -56,16 +56,16 @@ for (const currentBody of ['', '<!-- hither-test-meta parent: -->']) {
+ 
+ for (const ref of ['refs/heads/master', 'refs/heads/main']) {
+   const result = await run({ ref, eventName: 'push' });
+-  assert.deepEqual(result.outputs, { parent: '' });
++  assert.deepEqual(result.outputs, { parent: '', whole_map: 'true' });
+   assert.deepEqual(result.calls, []);
+ }
+ 
+ const manualDirect = await run({ ref: 'refs/heads/deliver/local-workflow', eventName: 'workflow_dispatch', prs: [] });
+-assert.deepEqual(manualDirect.outputs, { parent: '' }, 'a manual direct-delivery run validates the whole map');
++assert.deepEqual(manualDirect.outputs, { parent: '', whole_map: 'true' }, 'a manual direct-delivery run validates the whole map');
+ assert.deepEqual(manualDirect.calls, []);
+ 
+ const dispatch = await run({ ref: 'refs/heads/feature/ci', eventName: 'workflow_dispatch' });
+-assert.deepEqual(dispatch.outputs, { parent: 'pure-chore' });
++assert.deepEqual(dispatch.outputs, { parent: 'pure-chore', whole_map: 'true' });
+ assert.deepEqual(dispatch.calls, [['list', {
+   owner: 'Yupoer', repo: 'hither_app', head: 'Yupoer:feature/ci', state: 'open', per_page: 5,
+ }]]);
+diff --git a/scripts/test_ci_required.py b/scripts/test_ci_required.py
+index 736cae01..1fecbb9f 100644
+--- a/scripts/test_ci_required.py
++++ b/scripts/test_ci_required.py
+@@ -30,7 +30,7 @@ def accepts(payload):
+         return False
+ 
+ 
+-valid = [outcome("docs", []), outcome("full", jobs), outcome("selective", ["verify", "mobile-checks"])]
++valid = [outcome("docs", []), outcome("full", jobs), outcome("selective", ["verify", "mobile-checks"]), outcome("reused", [])]
+ for payload in valid:
+     assert accepts(payload)
+     for job in jobs:
+@@ -39,7 +39,7 @@ for payload in valid:
+             altered[job]["result"] = result
+             assert accepts(altered) == (result == payload[job]["result"]), (job, result)
+ 
+-invalid = [{}, [], None, outcome("full", ["verify"]), outcome("selective", ["mobile-checks"])]
++invalid = [{}, [], None, outcome("full", ["verify"]), outcome("selective", ["mobile-checks"]), outcome("reused", ["verify"]), outcome("reused", jobs)]
+ for product in ("", "True", "unknown", True, None):
+     altered = copy.deepcopy(valid[1]); altered["scope"]["outputs"]["product"] = product; invalid.append(altered)
+ for expected in ("not json", "null", "[]", "{}", json.dumps({job: 1 for job in jobs}), json.dumps({**{job: True for job in jobs}, "unknown": True})):
+@@ -55,6 +55,7 @@ for payload in valid:
+     altered["scope"]["outputs"]["expected_jobs"] = json.dumps(expected)
+     joint_omissions.append(altered)
+ invalid.extend(joint_omissions)
++altered = copy.deepcopy(valid[3]); altered["scope"]["outputs"]["product"] = "false"; invalid.append(altered)
+ for result in ("failure", "cancelled", "skipped", None):
+     altered = copy.deepcopy(valid[1]); altered["scope"]["result"] = result; invalid.append(altered)
+ for mode in ("unknown", "docs", None):
+diff --git a/scripts/test_ci_trigger_matrix.py b/scripts/test_ci_trigger_matrix.py
+index 66c5573d..9e538ddc 100644
+--- a/scripts/test_ci_trigger_matrix.py
++++ b/scripts/test_ci_trigger_matrix.py
+@@ -32,6 +32,15 @@ for (event, ref), expected in matrix.items():
+     assert actual is expected, (event, ref, expected, actual)
+ 
+ assert "  ci-required:" in source, "required aggregate status is missing"
++record = re.search(r"(?ms)^  record-validated-tree:\n(.*?)(?=^  \S|^\s*#|\Z)", source)
++assert record, "validated tree recording is missing"
++assert "continue-on-error: true" in record.group(1), "recording must never fail the CI run"
++assert "needs: [scope, verify, ci-required]" in record.group(1), "recording must follow the aggregate gate"
++assert "needs.scope.outputs.mode == 'full'" in record.group(1), "only full gate runs may be reused"
++assert "needs.verify.outputs.meta_covers_whole_map == 'true'" in record.group(1), "only whole-map acceptance runs may be reused"
++assert "github.event.pull_request.head.repo.full_name == github.repository" in record.group(1), "fork runs must not be recorded"
++aggregate_needs = re.search(r"(?m)^  ci-required:\n    needs: \[([^\]]+)\]", source).group(1)
++assert "record-validated-tree" not in aggregate_needs, "aggregate must not wait for recording"
+ manual_base = "startsWith(github.ref, 'refs/heads/deliver/') && 'origin/master'"
+ assert source.count(manual_base) == 2, "manual deliver scope and coverage must compare against master"
+ assert "    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'" in source, (
+diff --git a/scripts/test_find_validated_tree.py b/scripts/test_find_validated_tree.py
+new file mode 100644
+index 00000000..e91874f6
+--- /dev/null
++++ b/scripts/test_find_validated_tree.py
+@@ -0,0 +1,54 @@
++import importlib.util
++from pathlib import Path
++
++script = Path(__file__).with_name("find-validated-tree.py").resolve()
++spec = importlib.util.spec_from_file_location("finder", script)
++finder = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(finder)
++
++TREE = "a" * 40
++REPO = "owner/repo"
++REPO_ID = 7
++
++
++def artifact(run_id=11, name=None, expired=False, head_repository_id=REPO_ID):
++    return {"name": name or finder.ARTIFACT_PREFIX + TREE, "expired": expired,
++            "workflow_run": {"id": run_id, "head_repository_id": head_repository_id}}
++
++
++def run(**changes):
++    value = {"id": 11, "path": ".github/workflows/ci.yml", "event": "pull_request", "status": "completed",
++             "conclusion": "success", "repository": {"id": REPO_ID}, "head_repository": {"id": REPO_ID}}
++    value.update(changes)
++    return value
++
++
++def lookup(artifacts, runs, tree=TREE):
++    def get_json(path):
++        if "/actions/artifacts" in path:
++            assert f"name={finder.ARTIFACT_PREFIX}{tree}" in path
++            return {"artifacts": artifacts}
++        return runs[int(path.rsplit("/", 1)[1])]
++    return finder.find_validated_run(tree, REPO, REPO_ID, get_json)
++
++
++assert lookup([artifact()], {11: run()}) == 11
++assert lookup([artifact()], {11: run(event="workflow_dispatch", path=".github/workflows/ci.yml@refs/heads/deliver/x")}) == 11
++assert lookup([artifact(run_id=5), artifact()], {5: run(id=5, conclusion="failure"), 11: run()}) == 11
++assert lookup([], {}) is None
++for rejected in (
++    run(conclusion="failure"), run(conclusion=None, status="in_progress"), run(event="push"),
++    run(event="schedule"), run(path=".github/workflows/other.yml"),
++    run(repository={"id": 8}), run(head_repository={"id": 8}), run(head_repository=None), run(repository="x"),
++):
++    assert lookup([artifact()], {11: rejected}) is None, rejected
++for rejected in (
++    artifact(expired=True), artifact(name=finder.ARTIFACT_PREFIX + "b" * 40),
++    artifact(head_repository_id=8), {"name": "x"}, "x",
++):
++    assert lookup([rejected], {11: run()}) is None, rejected
++assert lookup([artifact()], {}) is None
++assert lookup([artifact()], {11: run()}, tree="not-a-tree") is None
++assert finder.find_validated_run(TREE, REPO, REPO_ID, lambda path: (_ for _ in ()).throw(OSError("denied"))) is None
++assert finder.find_validated_run(TREE, REPO, REPO_ID, lambda path: {"artifacts": None}) is None
++print("validated tree lookup checks passed")
+diff --git a/scripts/test_workflow_scope.py b/scripts/test_workflow_scope.py
+index 9680a778..e02ca4f0 100644
+--- a/scripts/test_workflow_scope.py
++++ b/scripts/test_workflow_scope.py
+@@ -46,14 +46,17 @@ def git(repo, *args):
+     ).stdout.strip()
+ 
+ 
+-def run_scope(repo, event_name, base_sha):
+-    output = repo / ".git" / f"github-output-{event_name}-{base_sha}.txt"
++def run_scope(repo, event_name, base_sha, validated_tree=False):
++    output = repo / ".git" / f"github-output-{event_name}-{base_sha}-{validated_tree}.txt"
+     environment = os.environ.copy()
+     environment.update(
+         EVENT_NAME=event_name,
+         BASE_SHA=base_sha,
+         GITHUB_OUTPUT=str(output),
+     )
++    environment.pop("TREE_VALIDATED", None)
++    if validated_tree:
++        environment["TREE_VALIDATED"] = "true"
+     subprocess.run(
+         [
+             sys.executable,
+@@ -100,6 +103,7 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
+     assert docs["product"] == "false"
+     assert json.loads(docs["groups"]) == []
+     assert run_scope(repo, "push", base_sha)["product"] == "false"
++    assert run_scope(repo, "push", base_sha, validated_tree=True)["mode"] == "docs"
+ 
+     product.write_text("export const auth = 2;\n", encoding="utf-8")
+     git(repo, "add", "--all")
+@@ -113,6 +117,12 @@ with tempfile.TemporaryDirectory(prefix="workflow-scope-") as temp_dir:
+     assert run_scope(repo, "pull_request", "missing-ref")["mode"] == "full"
+     assert run_scope(repo, "pull_request", docs_sha)["product"] == "true"
+     assert run_scope(repo, "push", docs_sha)["product"] == "true"
++    reused = run_scope(repo, "push", docs_sha, validated_tree=True)
++    assert reused["mode"] == "reused", reused
++    assert reused["product"] == "true"
++    assert not any(json.loads(reused["expected_jobs"]).values())
++    assert run_scope(repo, "pull_request", docs_sha, validated_tree=True)["mode"] == "selective"
++    assert run_scope(repo, "workflow_dispatch", docs_sha, validated_tree=True)["mode"] == "full"
+ 
+     git(repo, "mv", "apps/mobile/src/auth.ts", "docs-auth.md")
+     git(repo, "commit", "-m", "rename-product-to-doc")
+-- 
+2.43.0
+
