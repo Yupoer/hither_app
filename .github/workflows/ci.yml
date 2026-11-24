@@ -250,7 +250,8 @@ jobs:
         run: bun run verify:runtime
 
       - name: Expo dependency check (version drift = Expo Go crashes)
-        run: bunx --no-install expo install --check
+        # Offline compares against the locked expo's bundled version map; the online map moves with every Expo patch release.
+        run: EXPO_OFFLINE=1 bunx --no-install expo install --check
 
       - name: Expo doctor
         # SDK 57 includes the Hermes fix; keep the current advisory check enabled.
