@@ -23,6 +23,11 @@ on:
         required: false
         default: ""
         type: string
+      mark_applied:
+        description: Space-separated versions whose SQL already ran; only record them as applied.
+        required: false
+        default: ""
+        type: string
       functions:
         description: Space-separated Edge Functions to deploy during apply. Leave empty to skip.
         required: false
@@ -49,6 +54,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       MODE: ${{ inputs.mode }}
       VERSIONS: ${{ inputs.versions }}
+      MARK_APPLIED: ${{ inputs.mark_applied }}
       FUNCTIONS: ${{ inputs.functions }}
     steps:
       - name: Require master and versions for apply
@@ -58,8 +64,8 @@ jobs:
             echo "::error::apply runs only from master"
             exit 1
           fi
-          if [ -z "$VERSIONS" ] && [ -z "$FUNCTIONS" ]; then
-            echo "::error::apply needs versions or functions"
+          if [ -z "$VERSIONS" ] && [ -z "$FUNCTIONS" ] && [ -z "$MARK_APPLIED" ]; then
+            echo "::error::apply needs versions, mark_applied or functions"
             exit 1
           fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -72,6 +78,15 @@ jobs:
           test -n "$SUPABASE_DB_PASSWORD" || { echo "::error::SUPABASE_DB_PASSWORD is not set"; exit 1; }
       - name: Migration history before
         run: npx --yes "$SUPABASE_CLI" migration list --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/before.txt"
+      - name: Record already-executed versions
+        if: inputs.mode == 'apply' && inputs.mark_applied != ''
+        run: |
+          set -euo pipefail
+          for v in $(printf '%s\n' $MARK_APPLIED | sort -u); do
+            [[ "$v" =~ ^[0-9]{14}$ ]] || { echo "::error::invalid version $v"; exit 1; }
+            ls supabase/migrations/${v}_*.sql >/dev/null 2>&1 || { echo "::error::no migration file for $v"; exit 1; }
+            npx --yes "$SUPABASE_CLI" migration repair --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --yes --status applied "$v"
+          done
       - name: Execute listed migrations
         if: inputs.mode == 'apply' && inputs.versions != ''
         run: |
@@ -86,7 +101,7 @@ jobs:
             fi
             echo "Executing $file"
             npx --yes "$SUPABASE_CLI" db query --remote="$PROJECT_REF" --yes -f "$file"
-            npx --yes "$SUPABASE_CLI" migration repair --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --status applied "$v"
+            npx --yes "$SUPABASE_CLI" migration repair --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --yes --status applied "$v"
           done
       - name: Deploy Edge Functions
         if: inputs.mode == 'apply' && inputs.functions != ''
@@ -94,10 +109,10 @@ jobs:
           # shellcheck disable=SC2086
           npx --yes "$SUPABASE_CLI" functions deploy --remote="$PROJECT_REF" --use-api --yes $FUNCTIONS
       - name: Verify listed versions are applied
-        if: inputs.mode == 'apply' && inputs.versions != ''
+        if: inputs.mode == 'apply' && (inputs.versions != '' || inputs.mark_applied != '')
         run: |
           npx --yes "$SUPABASE_CLI" migration list --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/after.txt"
-          for v in $VERSIONS; do
+          for v in $VERSIONS $MARK_APPLIED; do
             grep -qE "\`$v\` +\| +\`$v\`" "$RUNNER_TEMP/after.txt" || { echo "::error::$v is not recorded as applied"; exit 1; }
           done
       - name: Summary
