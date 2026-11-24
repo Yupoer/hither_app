@@ -1488,6 +1488,29 @@ class HostCheckResultTests(unittest.TestCase):
         self.assertFalse(DEBUGGER._fixture_captured(result))
 
 
+class LaunchHelpColdStartTests(unittest.TestCase):
+    def test_slow_first_simctl_call_reaches_the_capability_check_instead_of_timing_out(self):
+        cold_start_seconds = DEBUGGER.COMMAND_TIMEOUT + 2
+        timeouts = []
+
+        def fake_run_command(argv, output, name, timeout=DEBUGGER.COMMAND_TIMEOUT, check=True):
+            timeouts.append((name, timeout))
+            if timeout < cold_start_seconds:
+                raise DEBUGGER._CommandTimeout()
+            return subprocess.CompletedProcess(argv, 0, 'Usage: simctl launch <device> <bundle>', '')
+
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(DEBUGGER, '_is_darwin', return_value=True), \
+                mock.patch.object(DEBUGGER, '_run_command', side_effect=fake_run_command):
+            DEBUGGER.check(Path(directory) / 'cold')
+            exported = json.loads((Path(directory) / 'cold' / DEBUGGER.RESULT_NAME).read_text())
+        self.assertEqual([name for name, _ in timeouts], ['launch-help'])
+        self.assertEqual(exported['probe'], 'unavailable')
+        self.assertEqual(exported['stage'], 'launch_help')
+        self.assertEqual(exported['launchHelp'], {'exitCode': 0, 'waitForDebugger': False,
+                                                 'stdoutCapture': False, 'stderrCapture': False})
+
+
 class NativeCheckTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform.startswith('linux'), 'This check covers the unavailable Linux toolchain')
     def test_real_cli_fails_closed_without_a_native_toolchain(self):
