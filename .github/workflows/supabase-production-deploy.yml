@@ -1,21 +1,28 @@
 name: Supabase production deploy
 
 # Manual production backend deployment. `verify` is read-only: it lists migration
-# history and dry-runs the push. `apply` pushes pending migrations and may deploy
-# Edge Functions, then re-verifies. `apply` only runs from master.
+# history. `apply` executes only the listed migration versions, in ascending order,
+# marks each applied after it succeeds, may deploy Edge Functions, then re-checks
+# history. It never runs `db push`: production history has remote-only versions, so
+# a push would replay unrelated migrations. `apply` only runs from master.
 # Required repository secrets: SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: verify is read-only. apply pushes migrations to production.
+        description: verify is read-only. apply executes the listed versions against production.
         required: true
         default: verify
         type: choice
         options:
           - verify
           - apply
+      versions:
+        description: Space-separated 14-digit migration versions to execute during apply.
+        required: false
+        default: ""
+        type: string
       functions:
         description: Space-separated Edge Functions to deploy during apply. Leave empty to skip.
         required: false
@@ -41,13 +48,20 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       MODE: ${{ inputs.mode }}
+      VERSIONS: ${{ inputs.versions }}
       FUNCTIONS: ${{ inputs.functions }}
     steps:
-      - name: Require master for apply
-        if: inputs.mode == 'apply' && github.ref != 'refs/heads/master'
+      - name: Require master and versions for apply
+        if: inputs.mode == 'apply'
         run: |
-          echo "::error::apply runs only from master"
-          exit 1
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "::error::apply runs only from master"
+            exit 1
+          fi
+          if [ -z "$VERSIONS" ] && [ -z "$FUNCTIONS" ]; then
+            echo "::error::apply needs versions or functions"
+            exit 1
+          fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -58,33 +72,40 @@ jobs:
           test -n "$SUPABASE_DB_PASSWORD" || { echo "::error::SUPABASE_DB_PASSWORD is not set"; exit 1; }
       - name: Migration history before
         run: npx --yes "$SUPABASE_CLI" migration list --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/before.txt"
-      - name: Pending migrations (dry run)
-        run: npx --yes "$SUPABASE_CLI" db push --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --skip-vault --dry-run | tee "$RUNNER_TEMP/pending.txt"
-      - name: Apply migrations
-        if: inputs.mode == 'apply'
-        run: npx --yes "$SUPABASE_CLI" db push --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --skip-vault --yes
+      - name: Execute listed migrations
+        if: inputs.mode == 'apply' && inputs.versions != ''
+        run: |
+          set -euo pipefail
+          for v in $(printf '%s\n' $VERSIONS | sort -u); do
+            [[ "$v" =~ ^[0-9]{14}$ ]] || { echo "::error::invalid version $v"; exit 1; }
+            file=$(ls supabase/migrations/${v}_*.sql 2>/dev/null | head -1)
+            [ -n "$file" ] || { echo "::error::no migration file for $v"; exit 1; }
+            if grep -qE "\`$v\` +\| +\`$v\`" "$RUNNER_TEMP/before.txt"; then
+              echo "::error::$v is already applied on production"
+              exit 1
+            fi
+            echo "Executing $file"
+            npx --yes "$SUPABASE_CLI" db query --remote="$PROJECT_REF" --yes -f "$file"
+            npx --yes "$SUPABASE_CLI" migration repair --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --status applied "$v"
+          done
       - name: Deploy Edge Functions
         if: inputs.mode == 'apply' && inputs.functions != ''
         run: |
           # shellcheck disable=SC2086
           npx --yes "$SUPABASE_CLI" functions deploy --remote="$PROJECT_REF" --use-api --yes $FUNCTIONS
-      - name: Verify nothing is pending
-        if: inputs.mode == 'apply'
+      - name: Verify listed versions are applied
+        if: inputs.mode == 'apply' && inputs.versions != ''
         run: |
           npx --yes "$SUPABASE_CLI" migration list --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/after.txt"
-          npx --yes "$SUPABASE_CLI" db push --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --skip-vault --dry-run | tee "$RUNNER_TEMP/pending-after.txt"
-          if grep -Eq "^[0-9]{14}|\.sql" "$RUNNER_TEMP/pending-after.txt"; then
-            echo "::error::migrations are still pending after apply"
-            exit 1
-          fi
+          for v in $VERSIONS; do
+            grep -qE "\`$v\` +\| +\`$v\`" "$RUNNER_TEMP/after.txt" || { echo "::error::$v is not recorded as applied"; exit 1; }
+          done
       - name: Summary
         if: always()
         run: |
           {
             echo "### Supabase production ($MODE)"
             echo '```'
-            cat "$RUNNER_TEMP/before.txt" 2>/dev/null | tail -20
-            echo '--- pending ---'
-            cat "$RUNNER_TEMP/pending.txt" 2>/dev/null
+            grep -E '`2026111[0-9]' "$RUNNER_TEMP/before.txt" 2>/dev/null
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
