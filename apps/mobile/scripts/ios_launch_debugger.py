@@ -51,6 +51,8 @@ REACT_JS_THREAD_NAMES = frozenset(('com.facebook.react.JavaScript',))
 DEBUGGER_TIMEOUT = 50
 SAMPLE_WAIT = 3
 COMMAND_TIMEOUT = 8
+# The first simctl call on a fresh host starts CoreSimulatorService, which can exceed COMMAND_TIMEOUT.
+SIMCTL_COLD_START_TIMEOUT = 60
 MAX_JSON_BYTES = 512_000
 MAX_COMMAND_BYTES = 128_000
 UINT64_LIMIT = 2**64
@@ -847,7 +849,8 @@ def check(output):
     try:
         if not _is_darwin():
             raise _CommandFailure()
-        help_result = _run_command(('xcrun', 'simctl', 'help', 'launch'), output, 'launch-help', check=False)
+        help_result = _run_command(('xcrun', 'simctl', 'help', 'launch'), output, 'launch-help',
+                                   timeout=SIMCTL_COLD_START_TIMEOUT, check=False)
         help_text = help_result.stdout + '\n' + help_result.stderr
         launch_help = {'exitCode': help_result.returncode}
         for field, option in (('waitForDebugger', '--wait-for-debugger'),
