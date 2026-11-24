@@ -1,0 +1,90 @@
+name: Supabase production deploy
+
+# Manual production backend deployment. `verify` is read-only: it lists migration
+# history and dry-runs the push. `apply` pushes pending migrations and may deploy
+# Edge Functions, then re-verifies. `apply` only runs from master.
+# Required repository secrets: SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: verify is read-only. apply pushes migrations to production.
+        required: true
+        default: verify
+        type: choice
+        options:
+          - verify
+          - apply
+      functions:
+        description: Space-separated Edge Functions to deploy during apply. Leave empty to skip.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-production
+  cancel-in-progress: false
+
+env:
+  SUPABASE_CLI: supabase@3.3.0
+  PROJECT_REF: htqrucnjafhhvxdqslbv
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      MODE: ${{ inputs.mode }}
+      FUNCTIONS: ${{ inputs.functions }}
+    steps:
+      - name: Require master for apply
+        if: inputs.mode == 'apply' && github.ref != 'refs/heads/master'
+        run: |
+          echo "::error::apply runs only from master"
+          exit 1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - name: Require credentials
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "::error::SUPABASE_ACCESS_TOKEN is not set"; exit 1; }
+          test -n "$SUPABASE_DB_PASSWORD" || { echo "::error::SUPABASE_DB_PASSWORD is not set"; exit 1; }
+      - name: Migration history before
+        run: npx --yes "$SUPABASE_CLI" migration list --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/before.txt"
+      - name: Pending migrations (dry run)
+        run: npx --yes "$SUPABASE_CLI" db push --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --skip-vault --dry-run | tee "$RUNNER_TEMP/pending.txt"
+      - name: Apply migrations
+        if: inputs.mode == 'apply'
+        run: npx --yes "$SUPABASE_CLI" db push --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --skip-vault --yes
+      - name: Deploy Edge Functions
+        if: inputs.mode == 'apply' && inputs.functions != ''
+        run: |
+          # shellcheck disable=SC2086
+          npx --yes "$SUPABASE_CLI" functions deploy --remote="$PROJECT_REF" --use-api --yes $FUNCTIONS
+      - name: Verify nothing is pending
+        if: inputs.mode == 'apply'
+        run: |
+          npx --yes "$SUPABASE_CLI" migration list --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" | tee "$RUNNER_TEMP/after.txt"
+          npx --yes "$SUPABASE_CLI" db push --remote="$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" --skip-vault --dry-run | tee "$RUNNER_TEMP/pending-after.txt"
+          if grep -Eq "^[0-9]{14}|\.sql" "$RUNNER_TEMP/pending-after.txt"; then
+            echo "::error::migrations are still pending after apply"
+            exit 1
+          fi
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Supabase production ($MODE)"
+            echo '```'
+            cat "$RUNNER_TEMP/before.txt" 2>/dev/null | tail -20
+            echo '--- pending ---'
+            cat "$RUNNER_TEMP/pending.txt" 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
