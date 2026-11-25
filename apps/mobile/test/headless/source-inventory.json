@@ -3555,7 +3555,7 @@
     "file": "src/components/SheetPresentation.ios.tsx",
     "kind": "export",
     "name": "SheetPresentation",
-    "hash": "a547af517be906c4e9cdbbbc588526ce70ebe85985df4bbea705f6d0f8ec2df5"
+    "hash": "15fc0788308c1637d95f075c8ee8392c892f1be013ec7078723f380169f12b8e"
   },
   {
     "file": "src/components/SheetPresentation.ios.tsx",
@@ -3711,7 +3711,7 @@
     "file": "src/components/mapSheetChrome.ts",
     "kind": "export",
     "name": "sheetCornerHeaderInset",
-    "hash": "8938f8d0f868642e2ed80ae07e65ccce4443f9d725e93bdc1834285491bc104d"
+    "hash": "4cd55fb4629b390d4de0792c74d94c26525b37c7544ab27eb6e3c3eaf4a5e92b"
   },
   {
     "file": "src/components/mapSheetChrome.ts",
@@ -7947,7 +7947,7 @@
     "file": "src/screens/MapScreen/components/D6HomeChrome.tsx",
     "kind": "export",
     "name": "D6HomeChrome",
-    "hash": "7bf8c8567a71f6584799b36b0c4061811dee36dfb2c6e1822200de7c5e6f703e"
+    "hash": "e6ad0fcc59bb3ed0af9d0d9cbe78dd2b06df544625e6a5e173ea7dff71b1c5d7"
   },
   {
     "file": "src/screens/MapScreen/components/D6HomeChrome.tsx",
@@ -8145,7 +8145,7 @@
     "file": "src/screens/MapScreen/components/D6PaneFrame.tsx",
     "kind": "export",
     "name": "D6PaneFrame",
-    "hash": "f3a9d00754548b80f79a702b6e625176c3b6fbad3cae34e68dd2ad3de3d94163"
+    "hash": "4937d4a18f514581ea1706340af971d5266bd38daa373ddf9da19a8ad9351012"
   },
   {
     "file": "src/screens/MapScreen/components/D6PaneInteraction.tsx",
@@ -8163,13 +8163,13 @@
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
     "kind": "export",
     "name": "D6PaneScrollView",
-    "hash": "b4c4fe9fefa5285ee8500389fe5a9d0ebfacbd2ff91cc7af9496ba1a715fb5fb"
+    "hash": "3f90679118f960928a91fd09bdd6768cf025a182c39d9dda6827d5da46a93f6f"
   },
   {
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
-    "hash": "4e2c1c504b57ced3f8fd50bc0c6ddef3612a7d425addaee30cb8f086a9003e7d"
+    "hash": "fc5d8f9fd1d0fdb04707f661cd94d70ec1d4b531d91175a57e3b62ef0d4e5bfa"
   },
   {
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
@@ -8265,7 +8265,7 @@
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
     "kind": "export",
     "name": "D6RoutePane",
-    "hash": "fdaf069ef751406161b4d0d4f0e8cabda2374f8922d1ba11164f7640cad26949"
+    "hash": "455d15ff466ee0e71411bf4098259eff362cbf66c8ec99a10b5b4c0b43fb0519"
   },
   {
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
@@ -8853,7 +8853,7 @@
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "export",
     "name": "D6AddPlace",
-    "hash": "9cd7e912a6862c7f287faea84690e3f9d73209117e4855b644dbaf1e09b25c28"
+    "hash": "292e5a496663cb816749c664838c449460cd204adb5577e47e6344339b2a544b"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
@@ -9105,7 +9105,7 @@
     "file": "src/screens/MapScreen/components/HomeSettings.tsx",
     "kind": "export",
     "name": "HomeSettings",
-    "hash": "70d915898f2e2cf5bc765f695223acaddefc7b1f157e2f1e6c1af4badeebe906"
+    "hash": "0640bc5883c801af9c6f428db2160207f97a6821d89025791f41c330ec986f4e"
   },
   {
     "file": "src/screens/MapScreen/components/HomeSettings.tsx",
@@ -9218,6 +9218,12 @@
   {
     "file": "src/screens/MapScreen/components/HomeSettings.tsx",
     "kind": "callback",
+    "name": "onBack",
+    "hash": "1728c7c2bce15af4821bde95f209a179856bc0a8497b58617f20883bd6e1aeb8"
+  },
+  {
+    "file": "src/screens/MapScreen/components/HomeSettings.tsx",
+    "kind": "callback",
     "name": "onClose",
     "hash": "c199587b7c612334309f642485003d5bdd3400ab64351e87ea6e28740632f623"
   },
@@ -9226,24 +9232,6 @@
     "kind": "callback",
     "name": "onDismissComplete",
     "hash": "352df77b5feab1962a93cf5794dd0a38320c56f4fa70e2eb30f5ef58e643b51b"
-  },
-  {
-    "file": "src/screens/MapScreen/components/HomeSettings.tsx",
-    "kind": "callback",
-    "name": "onClose",
-    "hash": "51e1fde0069ae9817ac28c22deee7f9f1e0ffe3964d0b6f930d1b10061eebf60"
-  },
-  {
-    "file": "src/screens/MapScreen/components/HomeSettings.tsx",
-    "kind": "callback",
-    "name": "onBack",
-    "hash": "8843c708329835af4a0fe2e7ae0bc93e692eaf04a0a204fe00c2a11258862c84"
-  },
-  {
-    "file": "src/screens/MapScreen/components/HomeSettings.tsx",
-    "kind": "callback",
-    "name": "onDismissComplete",
-    "hash": "9091b445d967d850df274182f8ebd31e29b916f40f86c2907318a76aefc0c842"
   },
   {
     "file": "src/screens/MapScreen/components/HomeSettings.tsx",
@@ -9453,7 +9441,7 @@
     "file": "src/screens/MapScreen/components/IdentityPicker.tsx",
     "kind": "export",
     "name": "EmojiCarousel",
-    "hash": "3d283e912bd0f88ad06ed8df04e6edda1c6498453867939a700513097b2d1d30"
+    "hash": "ba3574357970bd3fe3a1e9eeb52daa759c417f3ac0eb680b622f02180d98e6ee"
   },
   {
     "file": "src/screens/MapScreen/components/IdentityPicker.tsx",
@@ -10440,6 +10428,18 @@
     "hash": "7e304526b1b41b945690f39ffeac1c4b319e0d39b9eca80acc9b9e55e23ad4f4"
   },
   {
+    "file": "src/screens/MapScreen/components/SettingsPageStack.tsx",
+    "kind": "export",
+    "name": "SettingsPageStack",
+    "hash": "7e97b9003607b9d72b381c9e69ab2720e655abf253f8c43caafc137602b3a24e"
+  },
+  {
+    "file": "src/screens/MapScreen/components/SettingsPageStack.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "49e5f16c075b95c9089cb024fb9ca262edf6398115c1ab3837e2139ab0abb96d"
+  },
+  {
     "file": "src/screens/MapScreen/components/SettingsSheetPanel.tsx",
     "kind": "lifecycle",
     "name": "useMountEffect",
@@ -10731,7 +10731,7 @@
     "file": "src/screens/MapScreen/components/useD6PaneDrag.ts",
     "kind": "export",
     "name": "useD6PaneDrag",
-    "hash": "1f97726f4a8fb15a00324a0a967f53f72b4a4532b3fdb84b7da07734f54f9d95"
+    "hash": "7296be5cb5a1fa3836d1543932d1d216784890dde3023d1c2029a36a2de191a5"
   },
   {
     "file": "src/screens/MapScreen/components/useD6PaneDrag.ts",

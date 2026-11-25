@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { useAnimatedRef, useAnimatedStyle, useDerivedValue, useSharedValue, type AnimatedRef, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -99,6 +99,12 @@ export function D6RoutePane({
   const panel = useContext(D6PaneInteractionContext);
   const localOwner = useSharedValue<D6DragOwner>('idle');
   const owner = panel?.owner ?? localOwner;
+  const paneGesture = panel?.paneGesture;
+  /** The day strip shares touches with the pane drag, so a vertical swipe across it still resizes the pane. */
+  const stripGesture = useMemo(() => {
+    const native = Gesture.Native();
+    return paneGesture ? native.simultaneousWithExternalGesture(paneGesture) : native;
+  }, [paneGesture]);
   const dragPoint = useSharedValue<D6Point>({ x: 0, y: 0 });
   const dragPresentation = useSharedValue<D6DragPresentation | null>(null);
   const dragSequence = useSharedValue(0);
@@ -152,6 +158,9 @@ export function D6RoutePane({
   const stripScroll = useRef<ScrollView | null>(null);
   const [stripWidth, setStripWidth] = useState(0);
   const stripDragging = useRef(false);
+  /** The day under the strip's center while a drag is moving it, valid only until the selected day changes. */
+  const [scrub, setScrub] = useState<{ day: number; from: number } | null>(null);
+  const highlightedDay = scrub?.from === day.number ? scrub.day : day.number;
   const tickedDay = useRef(selectedDay);
   const stripMetrics = useRef({ offset: 0, width: 0, content: 0 });
   const dragSession = useRef<{ token: number; scope: string; session: D6DragSession } | null>(null);
@@ -230,7 +239,9 @@ export function D6RoutePane({
     if (!stripDragging.current) return;
     const next = centeredDay(offset);
     const crossed = Math.abs(next - tickedDay.current);
+    if (crossed === 0) return;
     tickedDay.current = next;
+    setScrub({ day: next, from: day.number });
     for (let step = 0; step < crossed; step++) selectionTick();
   }
 
@@ -574,9 +585,11 @@ export function D6RoutePane({
             <View style={styles.stripOpaque} />
             {stripMore ? <LinearGradient colors={['#fff', '#ffffff00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.stripFade} /> : null}
           </View>}>
+          <GestureDetector gesture={stripGesture}>
           <ScrollView
             ref={stripScroll}
             horizontal
+            directionalLockEnabled
             showsHorizontalScrollIndicator={false}
             scrollEventThrottle={32}
             scrollEnabled={!busy}
@@ -603,6 +616,7 @@ export function D6RoutePane({
           >
             {days.map((item) => {
               const selected = item.number === day.number;
+              const highlighted = item.number === highlightedDay;
               const drop = flashedDay === item.number;
               return (
                 <Pressable
@@ -618,11 +632,11 @@ export function D6RoutePane({
                   selectionTick();
                   changeDay(item.number);
                 }}
-                  style={[styles.day, selected && styles.daySelected, drop && styles.dropDay, drop && { borderColor: accent }]}
+                  style={[styles.day, highlighted && styles.daySelected, drop && styles.dropDay, drop && { borderColor: accent }]}
                 >
-                  <Text style={[styles.weekday, selected && styles.daySelectedText]}>{weekdays[item.date.getDay()]}</Text>
+                  <Text style={[styles.weekday, highlighted && styles.daySelectedText]}>{weekdays[item.date.getDay()]}</Text>
                   <Text style={[
-                    styles.date, selected && styles.daySelectedText,
+                    styles.date, highlighted && styles.daySelectedText,
                     displayFont ? { fontFamily: displayFont, fontWeight: 'normal', fontStyle: 'normal' } : null,
                   ]}>{item.date.getDate()}</Text>
                   <View style={[styles.color, { backgroundColor: item.color }]} />
@@ -645,6 +659,7 @@ export function D6RoutePane({
               </Pressable>
             ) : null}
           </ScrollView>
+          </GestureDetector>
           </MaskedView>
         </View>
         {selectionMode ? (
@@ -659,9 +674,7 @@ export function D6RoutePane({
             </View>
           </Pressable>
         ) : menuItems.length > 0 ? (
-          <View style={[styles.menu, panel?.cornerAction && [styles.cornerMenu, {
-            marginTop: panel.cornerAction.marginTop, marginRight: panel.cornerAction.marginRight,
-          }]]}>
+          <View style={styles.menu}>
             <D6RouteMenu label={chinese ? '更多' : 'More'} items={menuItems} onOpenFallback={() => openPopup('menu')} />
           </View>
         ) : null}
@@ -937,6 +950,7 @@ const STRIP_GAP = 2;
 const DAY_CHIP_HEIGHT = 62;
 const STRIP_VERTICAL_PADDING = 3;
 const STRIP_TRAILING_INSET = 4;
+const MENU_TRAILING_INSET = 12;
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0 },
@@ -962,8 +976,8 @@ const styles = StyleSheet.create({
   selectAll: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
   selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.14)' },
   selectAllText: { fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
-  menu: { marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
-  cornerMenu: { alignSelf: 'flex-start' },
+  /** Keeps the menu clear of where the collapsed itinerary button sits, so a double tap cannot hit both. */
+  menu: { marginLeft: 6, marginRight: MENU_TRAILING_INSET },
   list: { flex: 1 },
   listContent: { paddingBottom: 8 },
   circle: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,.12)' },

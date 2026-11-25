@@ -27,6 +27,10 @@ it('ticks each crossed avatar while dragging and coasting, and commits only the 
     act(() => scroll().onScroll(event(3)));
     expect(selectionTick).toHaveBeenCalledTimes(3);
     expect(onChange).not.toHaveBeenCalled();
+    const highlighted = () => AVATAR_EMOJI.filter(emoji =>
+      tree.root.findByProps({ testID: `profile-avatar-${emoji}` }).props.style.some((style: unknown) =>
+        !!style && typeof style === 'object' && 'transform' in style));
+    expect(highlighted()).toEqual([AVATAR_EMOJI[3]]);
     act(() => scroll().onScrollEndDrag(event(3, 1)));
     act(() => scroll().onScroll(event(4)));
     expect(selectionTick).toHaveBeenCalledTimes(4);

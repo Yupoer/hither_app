@@ -199,6 +199,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     },
   });
   for (const name of ['FadeIn', 'FadeInDown', 'FadeInRight', 'FadeOut', 'FadeOutUp', 'FadeOutRight', 'ZoomIn', 'ZoomOut']) animation[name] = { duration: value => ({ animation: name, duration: value }) };
+  for (const name of ['SlideInRight', 'SlideOutRight']) animation[name] = { duration: value => ({ easing: () => ({ animation: name, duration: value }) }) };
   animation.SlideInDown = { duration: value => ({ reduceMotion: motion => ({ animation: 'SlideInDown', duration: value, motion }) }) };
   jest.doMock('react-native-reanimated', () => animation);
   jest.doMock('react-native-gesture-handler/ReanimatedSwipeable', () => ({ __esModule: true, SwipeDirection: { LEFT: 'left', RIGHT: 'right' }, default: React.forwardRef(function ReanimatedSwipeable(props, ref) {
@@ -237,7 +238,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     Skia: { RuntimeEffect: { Make: source => ({ source }) }, Path: { Make: () => ({ addCircle() {}, moveTo() {}, lineTo() {}, cubicTo() {}, close() {} }) } },
     vec: (x, y) => ({ x, y }),
   }));
-  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Toggle','Slider','Picker','TextField','Divider','Section','Form','Label','ProgressView','ContextMenu','RNHostView'];
+  const swiftNames = ['Host','Button','HStack','VStack','ZStack','Image','Text','Spacer','Switch','Toggle','Slider','Picker','TextField','Divider','Section','Form','Label','ProgressView','ContextMenu','RNHostView','ConcentricRectangle'];
   const SwiftSheetHost = make('SwiftUI.BottomSheet');
   const SwiftGroupHost = make('SwiftUI.Group');
   const SwiftMenuHost = make('SwiftUI.Menu');
@@ -283,13 +284,14 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
     BottomSheet: SwiftSheet,
     Group: SwiftGroup,
     Menu: SwiftMenu,
+    EdgeCornerStyle: { fixed: radius => ({ type: 'fixed', radius }), concentric: minimumRadius => ({ type: 'concentric', minimumRadius }) },
   }));
   jest.doMock('@expo/ui', () => strict('expo-ui', { Host: make('ExpoUI.Host'), Switch: make('ExpoUI.Switch') }));
   jest.doMock('@expo/ui/community/segmented-control', () => ({ __esModule: true, default: make('SegmentedControl'), SegmentedControl: make('SegmentedControl') }));
   jest.doMock('@expo/ui/community/masked-view', () => ({ MaskedView: make('MaskedView') }));
   const modifierNames = ['accessibilityLabel','accessibilityHint','accessibilityValue','buttonStyle','buttonBorderShape','controlSize','font','disabled','frame','foregroundColor',
     'labelStyle','offset','padding','tint','background','cornerRadius','opacity','clipShape','shadow','glassEffect','fixedSize','lineLimit','multilineTextAlignment','environment','tag','rotationEffect','scaleEffect',
-    'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator','presentationCornerRadius','presentationBackgroundInteraction','interactiveDismissDisabled','onAppear','contentShape','menuStyle','menuIndicator','menuOrder','presentationBackground','labelsHidden','toggleStyle'];
+    'dynamicTypeSize','minimumScaleFactor','presentationDetents','presentationDragIndicator','presentationCornerRadius','presentationBackgroundInteraction','interactiveDismissDisabled','onAppear','contentShape','menuStyle','menuIndicator','menuOrder','presentationBackground','labelsHidden','toggleStyle','foregroundStyle','ignoreSafeArea'];
   jest.doMock('@expo/ui/swift-ui/modifiers', () => strict('swift-ui/modifiers', {
     ...Object.fromEntries(modifierNames.map(name => [name, (...args) => ({ modifier: name, args })])),
     shapes: { circle: () => ({ type: 'circle' }), capsule: () => ({ type: 'capsule' }) },

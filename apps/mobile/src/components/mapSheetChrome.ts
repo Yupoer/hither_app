@@ -3,23 +3,27 @@ export const MAP_SHEET_ACTION_HIT_SIZE = 44;
 export const MAP_SHEET_ACTION_VISUAL_SIZE = 44;
 export const MAP_SHEET_ACTION_ICON_SIZE = 17;
 export const MAP_SHEET_EDGE_INSET = 16;
-export const MAP_SHEET_CORNER_RADIUS = 32;
+export const MAP_SHEET_CORNER_RADIUS = 26;
 export const SHEET_CORNER_ACTION_INSET = MAP_SHEET_EDGE_INSET - (MAP_SHEET_ACTION_HIT_SIZE - MAP_SHEET_ACTION_VISUAL_SIZE) / 2;
 export const MAP_FLOATING_EDGE_INSET = 12;
-/** Keeps a corner action concentric with the sheet's rounded corner, independent of content padding. */
-export const SHEET_CORNER_BUTTON_INSET = MAP_SHEET_CORNER_RADIUS - MAP_SHEET_ACTION_VISUAL_SIZE / 2;
+/** iOS 26 system sheets place their 44pt toolbar buttons 16pt from the sheet's top and side edges. */
+export const SHEET_CORNER_BUTTON_INSET = 16;
+
+/** A leading sheet title clears the rounded corner by more than the corner button does. */
+export const SHEET_CORNER_TITLE_INSET = 20;
 
 /**
  * Margins that move a header row's corner actions to `SHEET_CORNER_BUTTON_INSET` when the row
- * already sits `top` below the sheet edge and `side` in from its sides.
+ * already sits `top` below the sheet edge and `side` in from its sides. A `trailing` row starts
+ * with its title, which sits at `SHEET_CORNER_TITLE_INSET`.
  */
 export function sheetCornerHeaderInset(top: number, side: number, sides: 'trailing' | 'both' = 'trailing') {
   const horizontal = SHEET_CORNER_BUTTON_INSET - side;
   return sides === 'both'
     ? { marginTop: SHEET_CORNER_BUTTON_INSET - top, marginHorizontal: horizontal }
-    : { marginTop: SHEET_CORNER_BUTTON_INSET - top, marginRight: horizontal };
+    : { marginTop: SHEET_CORNER_BUTTON_INSET - top, marginRight: horizontal, marginLeft: SHEET_CORNER_TITLE_INSET - side };
 }
-export const MAP_GATHERING_CORNER_RADIUS = 28;
+export const MAP_GATHERING_CORNER_RADIUS = MAP_SHEET_CORNER_RADIUS;
 export const MAP_ISLAND_ACTION_HEIGHT = 50;
 export const MAP_ISLAND_CORNER_RADIUS = 42;
 export const MAP_ISLAND_BODY_FADE_HEIGHT = 48;

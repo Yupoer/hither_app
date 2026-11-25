@@ -1,7 +1,7 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import WaveLoading from '../../../components/WaveLoading';
 import React, { useCallback, useRef, useState } from 'react';
-import { Alert, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Alert, StyleSheet, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import Pressable from '../../../components/MotionPressable';
 import { Ionicons } from '@expo/vector-icons';
 import { AccountSheetContent } from '../../../components/AccountSheet';
@@ -22,6 +22,7 @@ import { setNotificationPreferences } from '../../../api/services/NotificationSe
 import type { UseCoordinationRequestsResult } from '../hooks/useCoordinationRequests';
 import type { SettingsOverlayProps } from './SettingsOverlay';
 import SettingsChildSheet from './SettingsChildSheet';
+import { SettingsPageStack, type SettingsStackPage } from './SettingsPageStack';
 import { AvatarColors, EmojiCarousel } from './IdentityPicker';
 import { ProfileEditor } from './ProfileEditor';
 import HomeTeamsPage, { HomeTeamCard } from './HomeTeamsPage';
@@ -105,6 +106,7 @@ export default function HomeSettings({
   const { t, language } = useTranslation();
   const { user, isAnonymous, deleteAccount } = useSession();
   const { colors: palette } = useTheme();
+  const { width } = useWindowDimensions();
   const avatar = displayMemberAvatar(user?.avatar, user?.id ?? '', user?.avatarColor);
   const [stack, setStack] = useState<SettingsPage[]>([]);
   const [entry, setEntry] = useState({ visible, initialPage });
@@ -113,13 +115,9 @@ export default function HomeSettings({
     if (visible) setStack([]);
   }
   const basePage = entry.initialPage;
-  const [retainedChild, setRetainedChild] = useState<SettingsPage | null>(null);
   const childPage = stack.at(-1) ?? null;
-  if (childPage && retainedChild !== childPage) setRetainedChild(childPage);
-  const shownChild = childPage ?? retainedChild;
   const go = (next: SettingsPage) => setStack(previous => previous.at(-1) === next ? previous : [...previous, next]);
   const back = useCallback(() => setStack(previous => previous.slice(0, -1)), []);
-  const closeChild = useCallback(() => setStack([]), []);
   const leave = stack.length > 0 ? back : onClose;
   const [mounted, setMounted] = useState(visible);
   const [teamsLoading, setTeamsLoading] = useState(false);
@@ -127,7 +125,7 @@ export default function HomeSettings({
 
   const label = (zh: string, en: string) => (language === 'zh' ? zh : en);
   const title: Record<SettingsPage, string> = {
-    root: t('map.overlaySettings'),
+    root: '',
     profile: '',
     team: '',
     teams: label('切換隊伍', 'Switch teams'),
@@ -234,33 +232,26 @@ export default function HomeSettings({
     </>
   );
 
+  const pages: SettingsStackPage<SettingsPage>[] = [
+    { key: basePage, fill: basePage === 'teams', content: <View testID="settings-slide-page" style={basePage === 'teams' ? styles.fillPage : undefined}>
+      {renderPage(basePage)}
+      {mounted && !stack.includes('store') ? renderStore(basePage === 'store' ? 'shop' : 'hidden', openRegistration) : null}
+    </View> },
+    ...stack.map(page => ({ key: page, fill: page === 'teams', content: <View testID="settings-child-page" style={page === 'teams' ? styles.fillPage : undefined}>
+      {renderPage(page)}
+      {page === 'store' ? renderStore('shop', openRegistration) : null}
+    </View> })),
+  ];
+
   return (
-    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={basePage}
-      fillContent={basePage === 'teams'} yieldToNestedSheet={nestedSheetOpen}
-      background={surface}
-      title={title[basePage]} titleFontSize={24} doneLabel={t('common.close')}
-      navigation="root" onClose={onClose}
+    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={SETTINGS_SHEET_RATIO}
+      yieldToNestedSheet={nestedSheetOpen} background={surface} wrapContentInScrollView={false}
+      title={title[childPage ?? basePage]} titleFontSize={24} backLabel={t('common.back')} doneLabel={t('common.close')}
+      navigation={childPage ? 'child' : 'root'} onBack={childPage ? back : undefined} onClose={onClose}
       onDismissComplete={() => { setMounted(false); onDismissComplete?.(); }}>
-      <View testID="settings-slide-page" style={basePage === 'teams' ? styles.fillPage : undefined}>
-        {renderPage(basePage)}
-        {mounted && shownChild !== 'store' ? renderStore(basePage === 'store' ? 'shop' : 'hidden', openRegistration) : null}
-      </View>
-      <SettingsChildSheet home singleStage testID="settings-child-panel" visible={visible && stack.length > 0} zIndex={90}
-        stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={shownChild ?? undefined}
-        fillContent={shownChild === 'teams'} yieldToNestedSheet={nestedSheetOpen}
-        background={surface}
-        title={shownChild ? title[shownChild] : ''} titleFontSize={24} backLabel={t('common.back')} doneLabel={t('common.close')}
-        navigation="child" onClose={closeChild} onBack={stack.length > 1 ? back : undefined}
-        onDismissComplete={() => setRetainedChild(null)}>
-        <View testID="settings-child-page" style={shownChild === 'teams' ? styles.fillPage : undefined}>
-          {shownChild ? renderPage(shownChild) : null}
-          {shownChild === 'store' ? renderStore('shop', openRegistration) : null}
-        </View>
-        {shownChild ? nestedSheets : null}
-        {teamsOverlay(shownChild)}
-      </SettingsChildSheet>
-      {shownChild ? null : nestedSheets}
-      {teamsOverlay(basePage)}
+      <SettingsPageStack testID="settings-page-stack" pages={pages} width={width} />
+      {nestedSheets}
+      {teamsOverlay(childPage ?? basePage)}
     </SettingsChildSheet>
   );
 }

@@ -149,7 +149,7 @@ describe('iOS native UI contracts', () => {
       hit: MAP_SHEET_ACTION_HIT_SIZE,
       icon: MAP_SHEET_ACTION_ICON_SIZE,
       cornerRadius: MAP_SHEET_CORNER_RADIUS,
-    }).toEqual({ visual: 44, hit: 44, icon: 17, cornerRadius: 32 });
+    }).toEqual({ visual: 44, hit: 44, icon: 17, cornerRadius: 26 });
     expect(paywallSheet).toContain('action="close"');
     expect(routeEditorSheet).toContain('doneSystemImage="checkmark"');
     expect(overlaySheet).toContain("onDone ? 'checkmark' : 'xmark'");
