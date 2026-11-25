@@ -181,8 +181,7 @@ describe.each(['ios', 'android'])('actual Map coordinate entry on %s', platform 
       expect(blocked.durable.operations).toEqual([]);
       expect(world.backend.itinerary).toHaveLength(5);
       if (d6) {
-        await press(device, 'settings-child-back');
-        await world.waitFor(device, (value: Observation) => has(value, 'settings-page-profile'), 'Shop returns to settings');
+        expect(has(blocked, 'settings-page-profile')).toBe(false);
         expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
           value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
         await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add')?.label === 'Unlock more stops'

@@ -82,9 +82,9 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { D6_ACCENT, D6HomeChrome, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
+import { D6_ACCENT, D6HomeChrome, D6Surface, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
 import { D6RoutePane, type D6RouteSelection } from './MapScreen/components/D6RoutePane';
-import { D6AddPlace, D6StopCard, defaultD6Departure, type D6StopEditor, type StopPlacement } from './MapScreen/components/D6StopCards';
+import { D6AddPlace, D6StopCard, defaultD6Departure, type D6StopEditor } from './MapScreen/components/D6StopCards';
 import { D6MembersPane } from './MapScreen/components/D6MembersPane';
 import { D6CommandsSheet } from './MapScreen/components/D6CommandsSheet';
 import { D6_MEMBER_STATUS_COLORS, getD6MemberStatus, getD6SubgroupPresentation } from './MapScreen/d6TeamPresentation';
@@ -161,6 +161,7 @@ import { useJourneyNavigation } from './MapScreen/hooks/useJourneyNavigation';
 import { useMapKitRoutes } from './MapScreen/hooks/useMapKitRoutes';
 import { usePersonalProgressSurfaces } from './MapScreen/hooks/usePersonalProgressSurfaces';
 import { usePendingPlaceEntrance } from './MapScreen/hooks/usePendingPlaceEntrance';
+import { useHomeAddSession, type HomeAddDismissal } from './MapScreen/hooks/useHomeAddSession';
 
 import { useGatherCardExpansion } from './MapScreen/hooks/useGatherCardExpansion';
 import { FlockRow } from './MapScreen/components/FlockRow';
@@ -230,7 +231,8 @@ import {
   type BackgroundManualUndoMarker,
 } from '../state/backgroundJourney';
 import { purgeLocationOutbox } from '../state/locationOutbox';
-import { diagnostics } from '../state/diagnostics';
+import { diagnostics, truncateDiagText } from '../state/diagnostics';
+import { subscribeGestureFailures } from './MapScreen/components/d6GestureGuard';
 import { getNavigationStartLocation, requestPermission as requestLocationPermission, type LocationSample, type NavigationStartLocation } from '../native/location';
 import {
   recoverPendingLocationRefreshes,
@@ -296,13 +298,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Map'>;
 
 const EMPTY_DESTINATIONS: Destination[] = [];
 
-type HomeAddSession = {
-  day: number;
-  stay: boolean;
-  placement: StopPlacement;
-  dismissal?: 'close' | 'store';
-};
-
 type StopDetailDismissal =
   | { kind: 'close' }
   | { kind: 'drop'; coordinates: Coordinates }
@@ -360,7 +355,8 @@ export default function MapScreen({ route, navigation }: Props) {
   const [homeSelection, setHomeSelection] = useState<D6RouteSelection | null>(null);
   const [homeSplit, setHomeSplit] = useState<string[] | null>(null);
   const [homeSplitBusy, setHomeSplitBusy] = useState(false);
-  const [homeAdd, setHomeAdd] = useState<HomeAddSession | null>(null);
+  const homeAddFlow = useHomeAddSession();
+  const homeAdd = homeAddFlow.session;
   const [homeDetailSheet, setHomeDetailSheet] = useState<{ stop: Destination; dismissal?: StopDetailDismissal } | null>(null);
   const homeDetail = homeDetailSheet?.stop ?? null;
   const [homeStopEditor, setHomeStopEditor] = useState<D6StopEditor>(null);
@@ -773,6 +769,10 @@ export default function MapScreen({ route, navigation }: Props) {
     mapMountedRef.current = true;
     return () => { mapMountedRef.current = false; };
   });
+  useMountEffect(() => subscribeGestureFailures((source, reason) => {
+    void diagnostics.write({ event: 'diagnostic_error', source: `gesture:${source}`, reason: truncateDiagText(reason, 200) })
+      .catch(() => undefined);
+  }));
 
   // --- Sheet / overlay / island UI state -----------------------------------
   // Measured height of the sheet's pinned header (grabber + search row) —
@@ -4200,11 +4200,11 @@ export default function MapScreen({ route, navigation }: Props) {
   const openHomeAdd = (day: number = homeSelectedDay, kind: 'stop' | 'accommodation' = 'stop') => {
     focusHomePane(null);
     dismissConfirmCard();
-    setHomeAdd({ day, stay: kind === 'accommodation' && canEditHomeTrip, placement: { kind: 'last' } });
+    homeAddFlow.open({ day, stay: kind === 'accommodation' && canEditHomeTrip, placement: { kind: 'last' } });
   };
-  const dismissHomeAdd = (dismissal: NonNullable<HomeAddSession['dismissal']>) => {
+  const dismissHomeAdd = (dismissal: HomeAddDismissal) => {
     Keyboard.dismiss();
-    setHomeAdd(current => current && !current.dismissal ? { ...current, dismissal } : current);
+    homeAddFlow.dismiss(dismissal);
   };
   const closeHomeAdd = () => dismissHomeAdd('close');
   const stageHomeDrop = (coords: Coordinates) => {
@@ -4231,11 +4231,10 @@ export default function MapScreen({ route, navigation }: Props) {
     }
   };
   const finishHomeAddDismiss = () => {
-    if (homeAdd?.dismissal === 'store') {
-      setHomeAdd(current => current && ({ ...current, dismissal: undefined }));
+    const finished = homeAddFlow.finishDismiss();
+    if (finished === 'store') {
       openHomeSettings('store');
-    } else if (homeAdd?.dismissal === 'close') {
-      setHomeAdd(null);
+    } else if (finished === 'close') {
       dismissConfirmCard();
       setLocalActionError(null);
     }
@@ -4386,17 +4385,31 @@ export default function MapScreen({ route, navigation }: Props) {
     return [homeStop, ...ordered.filter(stop => (stop.day ?? 0) > (homeStop.day ?? 0)
       || (stop.day === homeStop.day && stop.order > homeStop.order)).slice(0, 3)];
   }, [d6Enabled, homeStop, allScopedDestinations, mapDestinations]);
-  const homeFooter = homeSelection && homePane === 'itinerary' ? (
-    <View style={d6MapStyles.footer}>
-      <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} testID="d6-route-selection-cancel" style={d6MapStyles.footerButton} onPress={homeSelection.onCancel}><Text style={d6ChromeStyles.text}>{t('common.cancel')}</Text></Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={zh ? '待排' : 'Unscheduled'} testID="d6-route-selection-pool" style={d6MapStyles.footerButton} disabled={!homeSelection.canAct} onPress={homeSelection.onPool}>
-        <Text style={d6ChromeStyles.text}>{zh ? '待排' : 'Unscheduled'} {homeSelection.count || ''}</Text>
+  const homeSelectionActions = homeSelection && homePane === 'itinerary' ? (
+    <View style={d6MapStyles.selectionActions}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} testID="d6-route-selection-cancel"
+        style={d6MapStyles.selectionCancel} onPress={homeSelection.onCancel}>
+        <D6Surface radius={MAP_ISLAND_ACTION_HEIGHT / 2} />
+        <Ionicons name="close" size={24} color="#fff" />
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel={t('common.delete')} testID="d6-route-selection-delete" style={[d6MapStyles.footerButton, d6MapStyles.delete]} disabled={!homeSelection.canAct} onPress={homeSelection.onDelete}>
-        <Text style={d6ChromeStyles.text}>{t('common.delete')} {homeSelection.count || ''}</Text>
-      </Pressable>
+      <View style={d6MapStyles.selectionGroup}>
+        <Pressable accessibilityRole="button" accessibilityLabel={zh ? '移到待排' : 'Move to unscheduled'} testID="d6-route-selection-pool"
+          accessibilityState={{ disabled: !homeSelection.canAct }}
+          style={[d6MapStyles.selectionPill, !homeSelection.canAct && d6MapStyles.selectionDisabled]} disabled={!homeSelection.canAct} onPress={homeSelection.onPool}>
+          <D6Surface radius={MAP_ISLAND_ACTION_HEIGHT / 2} />
+          <Ionicons name="file-tray-outline" size={19} color="#fff" />
+          <Text style={d6ChromeStyles.text}>{zh ? '待排' : 'Unscheduled'}{homeSelection.count ? ` ${homeSelection.count}` : ''}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('common.delete')} testID="d6-route-selection-delete"
+          accessibilityState={{ disabled: !homeSelection.canAct }}
+          style={[d6MapStyles.selectionPill, d6MapStyles.delete, !homeSelection.canAct && d6MapStyles.selectionDisabled]} disabled={!homeSelection.canAct} onPress={homeSelection.onDelete}>
+          <Ionicons name="trash-outline" size={19} color="#fff" />
+          <Text style={d6ChromeStyles.text}>{t('common.delete')}{homeSelection.count ? ` ${homeSelection.count}` : ''}</Text>
+        </Pressable>
+      </View>
     </View>
-  ) : homeSplit && homePane === 'team' ? (
+  ) : undefined;
+  const homeFooter = homeSplit && homePane === 'team' ? (
     <View style={d6MapStyles.footer}>
       <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} testID="d6-team-split-cancel" style={d6MapStyles.footerButton} disabled={homeSplitBusy} onPress={() => setHomeSplit(null)}><Text style={d6ChromeStyles.text}>{t('common.cancel')}</Text></Pressable>
       <Pressable accessibilityRole="button" accessibilityLabel={t('d6.team.createSubgroupCount', { count: homeSplit.length })} testID="d6-team-split-create" style={[d6MapStyles.footerButton, d6ChromeStyles.primary]} disabled={homeSplitBusy || !user?.id || !homeSplit.includes(user.id)}
@@ -4769,13 +4782,12 @@ export default function MapScreen({ route, navigation }: Props) {
       </Animated.View>
       )}
 
-      {d6Enabled && showDenseChrome && !homeAdd ? <D6HomeChrome
+      {d6Enabled && showDenseChrome && (!homeAdd || homeAdd.dismissal === 'close') ? <D6HomeChrome
             zh={zh}
             pane={homePane}
             onPaneChange={focusHomePane}
             stop={homeStop ?? null}
             phase={homePhase}
-            hasItinerary={allScopedDestinations.length > 0}
             canLead={canEditItinerary}
             travelMode={travelMode}
             distance={effectiveNavigationActive ? personalDistanceM ?? d6HomeDistance : d6HomeDistance}
@@ -4795,9 +4807,8 @@ export default function MapScreen({ route, navigation }: Props) {
             selfColor={homeSelf.color ?? '#F3C443'}
             statusColor={homeStatusColor}
             suspended={Boolean(homeDetail)}
-            commandsPresented={commandSheet != null}
+            commandsPresented={commandSheet?.phase === 'open'}
             celebration={homeCelebration}
-            onAdd={() => openHomeAdd()}
             onAction={goHomeJourney}
             onStop={() => homeStop ? requestTeamEnd(homeStop, Math.max(0, destinations.indexOf(homeStop))) : Promise.resolve(false)}
             onProfile={() => openHomeSettings('root')}
@@ -4811,6 +4822,7 @@ export default function MapScreen({ route, navigation }: Props) {
             onTopHeight={setCarouselHeight}
             error={homeDetail || overlay ? null : homeError}
             footer={homeFooter}
+            floatingActions={homeSelectionActions}
             itinerary={<D6RoutePane
               accent={accent}
               displayFont={d6DisplayFont}
@@ -4897,6 +4909,7 @@ export default function MapScreen({ route, navigation }: Props) {
       {d6Enabled && uiVisible && showDenseChrome ? (
         <>
           {homeAdd ? <D6AddPlace
+            key={homeAdd.id}
             zh={zh}
             session={homeAdd}
             place={pendingPlace}
@@ -4921,9 +4934,9 @@ export default function MapScreen({ route, navigation }: Props) {
             onCenter={stageHomeCenter}
             onPick={stageHomePlace}
             onTitle={setPendingPlaceTitle}
-            onDay={day => setHomeAdd(current => current && (current.day === day ? current : { ...current, day, placement: { kind: 'last' } }))}
-            onPlacement={placement => setHomeAdd(current => current && ({ ...current, placement }))}
-            onStay={stay => setHomeAdd(current => current && ({ ...current, stay }))}
+            onDay={day => homeAddFlow.update(current => current.day === day ? current : { ...current, day, placement: { kind: 'last' } })}
+            onPlacement={placement => homeAddFlow.update(current => ({ ...current, placement }))}
+            onStay={stay => homeAddFlow.update(current => ({ ...current, stay }))}
             onFavorite={() => void togglePendingFavorite()}
             onImport={() => openKmlImportForScope(myScopeId)}
             onCommit={() => void commitHomePlace()}
@@ -5262,6 +5275,7 @@ export default function MapScreen({ route, navigation }: Props) {
           onCreateTeam: () => openAfterSettings('create'),
           onJoinTeam: () => openAfterSettings('join'),
           nestedSheets: settingsSubSheets,
+          nestedSheetOpen: overlay === 'invite' || overlay === 'feedback' || paywallVisible,
           renderStore: (presentation, onRequireRegistration) => <StorePane
             presentation={presentation}
             groupId={groupId}
@@ -5519,6 +5533,13 @@ const d6MapStyles = StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'stretch', gap: 10, marginTop: 'auto', marginBottom: MAP_ISLAND_BOTTOM_INSET },
   footerButton: { ...d6ChromeStyles.softButton, flex: 1, height: MAP_ISLAND_ACTION_HEIGHT, minHeight: MAP_ISLAND_ACTION_HEIGHT },
   delete: { backgroundColor: '#E5484D' },
+  selectionActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  selectionGroup: { flexDirection: 'row', gap: 10 },
+  selectionCancel: { width: MAP_ISLAND_ACTION_HEIGHT, height: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  selectionPill: { height: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2, paddingHorizontal: 18, overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', gap: 6 },
+  selectionDisabled: { opacity: 0.45 },
   secondary: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ffffff28', paddingTop: 4 },
 });
 

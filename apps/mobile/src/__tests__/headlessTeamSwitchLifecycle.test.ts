@@ -27,8 +27,8 @@ jest.setTimeout(180000);
 it('replaces Map through App settings 100 times without accumulating retired team resources', async () => {
   const world = new World();
   for (const [id, name, inviteCode] of [
-    [SECOND, 'Second team', 'TEAM2ABCDEFGHJKLMNPQ'],
-    [THIRD, 'Third team', 'TEAM3ABCDEFGHJKLMNPQ'],
+    [SECOND, 'Second team', 'TEAM2A'],
+    [THIRD, 'Third team', 'TEAM3A'],
   ]) {
     world.backend.groups.set(id, { ...world.backend.groups.get(GROUP_ID), id, name, invite_code: inviteCode });
     world.backend.memberships.push({ group_id: id, user_id: LEADER, role: 'leader', status: 'active' });

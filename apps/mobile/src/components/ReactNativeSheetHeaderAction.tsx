@@ -16,7 +16,6 @@ export type SheetHeaderActionProps = {
   accessibilityLabel: string;
   testID?: string;
   disabled?: boolean;
-  useSystemStyle?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 

@@ -10,7 +10,7 @@ describe.each(['ios', 'android'])('public profile notification contract on %s', 
     await world.waitFor(device, (value: any) => !value.presentation.session.initializing, 'recipient ready');
     await device.perform('preferences.setLanguage', { args: ['en'] });
     await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team',
-      inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role: 'follower' }] });
+      inviteCode: 'TEST42' }, role: 'follower' }] });
     await device.command({ kind: 'mount', screen: { name: 'NativeObservers' } });
     await world.waitFor(device, (value: any) => value.native.listeners.notification === 1,
       'real notification hook subscribed');
@@ -58,7 +58,7 @@ describe.each(['ios', 'android'])('public profile notification contract on %s', 
 
       world.backend.memberships.find((row: any) => row.user_id === PEER).role = 'leader';
       await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team',
-        inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role: 'leader' }] });
+        inviteCode: 'TEST42' }, role: 'leader' }] });
       await device.input({ kind: 'appState', value: 'background' });
       await event(world, device, 'destination_arrivals', { id: 'public-arrival', group_id: GROUP_ID,
         user_id: LEADER, destination_id: DESTINATION });
@@ -104,7 +104,7 @@ describe.each(['ios', 'android'])('public profile notification contract on %s', 
 
       world.backend.memberships.find((row: any) => row.user_id === PEER).role = 'leader';
       await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team',
-        inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role: 'leader' }] });
+        inviteCode: 'TEST42' }, role: 'leader' }] });
       await device.input({ kind: 'appState', value: 'background' });
       world.backend.failNext({ kind: 'table', name: 'public_profiles', mode: 'select', userId: PEER },
         { message: 'public_profiles not found in schema cache', code: 'PGRST205' });

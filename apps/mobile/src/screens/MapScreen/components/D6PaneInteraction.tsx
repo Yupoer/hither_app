@@ -13,6 +13,9 @@ export const D6PaneInteractionContext = createContext<{
   viewport: { ref: AnimatedRef<View>; height: Panel['height']; closed: number };
   setOverlay: (node: ReactNode) => void;
   open: boolean;
+  reportContent?: Panel['onContentHeight'];
+  /** Margins that move a top-trailing action from the body's edge to the card's concentric corner position. */
+  cornerAction?: { marginTop: number; marginRight: number };
 } | null>(null);
 
 export function D6PaneOverlay({ children }: { children: ReactNode }) {

@@ -41,9 +41,8 @@ export function ProfileEditor({ refresh, statusColor }: {
 
   return (
     <View style={editorStyles.body}>
-      <View style={[editorStyles.avatar, { backgroundColor: draft.color }]}>
+      <View style={[editorStyles.avatar, { backgroundColor: draft.color }, statusColor ? { borderColor: statusColor } : null]}>
         <HitherText typeRole="emoji" style={editorStyles.avatarEmoji}>{draft.avatar}</HitherText>
-        {statusColor ? <View style={[editorStyles.dot, { backgroundColor: statusColor }]} /> : null}
       </View>
       <HitherTextInput typeRole="title"
         style={editorStyles.name}
@@ -83,9 +82,8 @@ export function ProfileEditor({ refresh, statusColor }: {
 
 const editorStyles = StyleSheet.create({
   body: { alignItems: 'center', paddingTop: 10, paddingBottom: 24 },
-  avatar: { width: 132, height: 132, borderRadius: 66, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 132, height: 132, borderRadius: 66, borderWidth: 5, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   avatarEmoji: { fontSize: 74 },
-  dot: { width: 26, height: 26, borderRadius: 13, borderWidth: 4, borderColor: '#26302E', position: 'absolute', bottom: 5, right: 5 },
   name: { alignSelf: 'stretch', height: 56, color: '#fff', textAlign: 'center', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', marginTop: 14, paddingVertical: 0 },
   random: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center', borderRadius: 44, marginTop: 10, backgroundColor: 'rgba(255,255,255,0.10)' },
   retry: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 18, marginTop: 10 },

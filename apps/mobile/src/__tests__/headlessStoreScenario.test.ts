@@ -106,7 +106,7 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
     try {
       const device = await world.device({ id: 'commands', userId: PEER, platform, screen: { name: 'QuickCommands', params: { groupId: GROUP_ID } } });
       await world.waitFor(device, (value: any) => hosts(value, 'quick-command-custom-0').length === 1, 'actual command grid');
-      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role: 'follower' }] });
+      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42' }, role: 'follower' }] });
       expect(hosts(await device.observe(), 'quick-command-gather')).toEqual([]);
       expect(hosts(await device.observe(), 'quick-command-need_help')).toHaveLength(1);
       await device.perform('commands.custom', { slot: 1 });
@@ -306,7 +306,7 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
     try {
       const device = await world.device({ id: 'dispatch', userId: PEER, platform, screen: { name: 'NotificationPreferences' } });
       await world.waitFor(device, (value: any) => !value.presentation.session.initializing, 'recipient ready');
-      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role: 'follower' }] });
+      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42' }, role: 'follower' }] });
       await device.command({ kind: 'mount', screen: { name: 'NativeObservers' } });
       await world.waitFor(device, (value: any) => value.native.listeners.notification === 1, 'real notification hook subscribed');
       await world.waitFor(device, () => world.backend.tables.push_tokens.some((row: any) => row.user_id === PEER && row.platform === platform), 'platform-scoped native token registration');
@@ -437,7 +437,7 @@ describe.each(['ios', 'android'])('mounted Store and Premium scenarios on %s', p
       const device = await world.device({ id: 'trip-purchase', userId: LEADER, platform, screen: { name: 'NotificationPreferences' } });
       await world.waitFor(device, (value: any) => !value.presentation.session.initializing, 'trip actor ready');
       await device.input({ kind: 'iapConfigure', patch: { products: [{ id: productId, type: 'in-app', displayName: 'Trip', displayPrice: '$2', price: 2, currency: 'USD' }] } });
-      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42ABCDEFGHJKLMNP' }, role: 'leader' }] });
+      await device.perform('session.membership', { args: [{ group: { id: GROUP_ID, name: 'Headless team', inviteCode: 'TEST42' }, role: 'leader' }] });
       await device.command({ kind: 'mount', screen: { name: 'Premium' } });
       await world.waitFor(device, (value: any) => value.presentation.hosts.some((host: any) => host.text === '$2'), 'trip price');
       await press(device, 'premium-presentation-plan-trip');

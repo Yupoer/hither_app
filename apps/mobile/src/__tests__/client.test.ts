@@ -75,10 +75,10 @@ beforeEach(() => {
 });
 
 describe('pure mappers (snake_case row -> camelCase type)', () => {
-  it('generateInviteCode: 20 chars from the schema set', () => {
+  it('generateInviteCode: 6 chars from the schema set', () => {
     for (let i = 0; i < 25; i++) {
       expect(generateInviteCode()).toMatch(
-        /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{20}$/,
+        /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,
       );
     }
   });

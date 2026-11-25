@@ -85,6 +85,8 @@ export type SettingsSheetPanelProps = {
   home?: boolean;
   fitContent?: boolean;
   fillContent?: boolean;
+  /** Lowers the sheet behind a sheet it presents, and restores it when that sheet starts to close. */
+  yieldToNestedSheet?: boolean;
   scrollResetKey?: string;
   backLabel?: string;
   background?: React.ReactNode;
@@ -172,7 +174,7 @@ export default function SettingsSheetPanel({
 
   const goBack = onBack ?? onClose;
   const showBackAction = navigation === 'child';
-  const header = navigation === 'root' && !title ? undefined : (
+  const header = navigation === 'root' && !title && !home ? undefined : (
     <View style={[
       styles.header,
       { paddingTop: Math.max(0, SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT)) },

@@ -243,18 +243,21 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
   const SwiftMenuHost = make('SwiftUI.Menu');
   function SwiftSheet({ isPresented, onDismiss, onIsPresentedChange, ...props }) {
     const wasPresented = React.useRef(isPresented);
+    const dismissedNatively = React.useRef(false);
     const dismiss = React.useRef(onDismiss);
     dismiss.current = onDismiss;
     React.useEffect(() => {
       const previous = wasPresented.current;
       wasPresented.current = isPresented;
-      if (previous && !isPresented) dismiss.current?.();
+      if (isPresented) dismissedNatively.current = false;
+      else if (previous && !dismissedNatively.current) dismiss.current?.();
     }, [isPresented]);
     const detents = props.children?.props.modifiers?.find(modifier => modifier.modifier === 'presentationDetents')?.args;
     const changeDetent = detents?.[1]?.onSelectionChange;
     return isPresented ? React.createElement(SwiftSheetHost, {
       ...props,
       onIsPresentedChange: ({ isPresented: presented }) => onIsPresentedChange(presented),
+      onDismiss: () => { dismissedNatively.current = true; dismiss.current?.(); },
       onSelectionChange: changeDetent && (({ detent, detentIndex }) => changeDetent(detent ?? detents[0][detentIndex])),
     }) : null;
   }
@@ -373,6 +376,7 @@ exports.install = ({ jest, spec, strict, fatal, appState, alertQueue }) => {
         } : null,
         mapMembers: map ? structuredClone(map.props.members) : null,
         mapRoutePoints: map?.props.routePoints ? structuredClone(map.props.routePoints) : null,
+        mapPendingPlace: map?.props.pendingPlace ? { name: map.props.pendingPlace.name } : null,
         flockRows: flock.map(node => ({ userId: node.props.userId, name: node.props.name,
           lastUpdated: node.props.lastUpdated, serverTimeOffsetMs: node.props.serverTimeOffsetMs, solo: node.props.solo, sharingEnabled: node.props.sharingEnabled,
           text: node.findAll(child => child.type === 'host:Text').map(child =>

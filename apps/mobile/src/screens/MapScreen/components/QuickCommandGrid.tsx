@@ -12,7 +12,8 @@ import { FOLLOWER_COMMANDS, type CommandType } from '../../../types';
 import { mediumTap } from '../../../utils/haptics';
 import { getOperationErrorMessage } from '../../../utils/operationError';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
-import { MAP_SHEET_ACTION_HIT_SIZE } from '../../../components/mapSheetChrome';
+import { MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET, sheetCornerHeaderInset } from '../../../components/mapSheetChrome';
+import { PRESENTED_SHEET_CONTENT_TOP } from '../../../components/SheetPresentation';
 
 const LEADER_GRID = [
   'gather', 'find_gathering', 'depart',
@@ -235,7 +236,8 @@ const soft = 'rgba(255,255,255,0.1)';
 
 const styles = StyleSheet.create({
   body: { gap: 10, flexShrink: 1, minHeight: 0 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP + SHEET_CORNER_ACTION_INSET, SHEET_CORNER_ACTION_INSET) },
   heading: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, textAlignVertical: 'center', paddingVertical: 13, color: white, fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   scroll: { flexGrow: 0, flexShrink: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: '1.9%', rowGap: 8 },

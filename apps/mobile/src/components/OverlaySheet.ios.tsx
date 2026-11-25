@@ -5,7 +5,8 @@ import SheetHeaderAction from './SheetHeaderAction';
 import SheetPresentation from './SheetPresentation';
 import { glass } from '../glass';
 import { APP_TEXT_SIZE, GLOBAL_FONT_SCALE_CAP } from '../theme/typeScale';
-import { MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
+import { MAP_SHEET_ACTION_HIT_SIZE, sheetCornerHeaderInset } from './mapSheetChrome';
+import { PRESENTED_SHEET_CONTENT_TOP } from './SheetPresentation';
 import type { OverlaySheetProps } from './OverlaySheet';
 
 function PositionedSheetContent({ children }: { children: React.ReactNode }) {
@@ -81,7 +82,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SHEET_CORNER_ACTION_INSET,
+    ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP, 0, 'both'),
     paddingBottom: 18,
   },
   headerSide: {

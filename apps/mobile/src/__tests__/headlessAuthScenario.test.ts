@@ -511,23 +511,23 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       await world.waitFor(device, (value: any) => control(value, 'auth-code'), 'returning team code');
       await device.perform('team.code', { value: 'bad-??' });
       expect(control(await device.observe(), 'auth-code').value).toBe('BAD');
-      await device.perform('team.code', { value: 'BAD24ABCDEFGHJKLMNPQ' });
-      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'BAD24ABCDEFGHJKLMNPQ' });
+      await device.perform('team.code', { value: 'BAD24A' });
+      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'BAD24A' });
       expect(calls(world, 'join_group')).toHaveLength(0);
       await device.perform('team.join');
       const rejected = await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect' && control(value, 'auth-code'), 'bad code returns to entry');
       expect(control(rejected, 'auth-code').value).toBe('');
       expect(rejected.presentation.session.membership.group.name).toBe('Guest team');
       expect(rejected.external.alerts).toBe(0);
-      await device.perform('team.code', { value: 'test4-2abcde-fghjklmnp!' });
-      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'TEST42ABCDEFGHJKLMNP' });
+      await device.perform('team.code', { value: 'tes-t42!' });
+      expect((await device.observe()).presentation.route.params).toEqual({ role: 'follower', code: 'TEST42' });
       await device.perform('team.name', { value: '  Renamed Guest  ' });
       await device.perform('team.join');
       const joined = await world.waitFor(device, (value: any) => value.presentation.session.membership?.group.id === GROUP_ID && value.presentation.route.route === 'Map', 'guest joined existing team');
       expect(joined.presentation.session.membership.role).toBe('follower');
       expect(world.backend.profiles.get(actor).nickname).toBe('Renamed Guest');
       expect(calls(world, 'signInAnonymously')).toHaveLength(2);
-      expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'TEST42ABCDEFGHJKLMNP' });
+      expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'TEST42' });
     } finally { await world.close(); }
   });
 
@@ -536,9 +536,9 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
     try {
       const device = await world.device({ id: 'invite-entry', userId: null, platform, mode: 'app' });
       await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect', 'welcome');
-      await device.input({ kind: 'linking', url: 'https://unknown.example/join?code=TEST42ABCDEFGHJKLMNP' });
+      await device.input({ kind: 'linking', url: 'https://unknown.example/join?code=TEST42' });
       expect((await device.observe()).presentation.route.route).toBe('RoleSelect');
-      await device.perform('team.code', { value: 'BAD24ABCDEFGHJKLMNPQ' });
+      await device.perform('team.code', { value: 'BAD24A' });
       await device.perform('team.join');
       const rejected = await world.waitFor(device, (value: any) => value.presentation.route.route === 'RoleSelect'
         && value.presentation.route.params?.rejectedInviteKey, 'invalid code returns to mounted entry');
@@ -546,35 +546,15 @@ describe.each(['ios', 'android'])('headless authentication operations on %s', pl
       expect(rejected.external.alerts).toBe(0);
       const joinCallsBeforeLink = calls(world, 'join_group').length;
       const anonymousCallsBeforeLink = calls(world, 'signInAnonymously').length;
-      await device.input({ kind: 'linking', url: 'hither://join?code=test4-2abcde-fghjklmnp' });
+      await device.input({ kind: 'linking', url: 'hither://join?code=tes-t42' });
       const confirmation = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Auth', 'invite confirmation');
-      expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'TEST42ABCDEFGHJKLMNP' });
-      expect(texts(confirmation)).toContain('TEST4-2ABCD-EFGHJ-KLMNP');
+      expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'TEST42' });
+      expect(texts(confirmation)).toContain('TES-T42');
       expect(calls(world, 'join_group')).toHaveLength(joinCallsBeforeLink);
       expect(calls(world, 'signInAnonymously')).toHaveLength(anonymousCallsBeforeLink);
       await device.perform('team.join');
       const joined = await world.waitFor(device, (value: any) => value.presentation.session.membership?.group.id === GROUP_ID, 'joined protected team');
       expect(joined.presentation.route.route).toBe('Map');
-    } finally { await world.close(); }
-  });
-
-  it('submits a six-character invite only after keyboard confirmation during rollout', async () => {
-    const world = new World();
-    try {
-      world.backend.groups.get(GROUP_ID).invite_code = 'OLD123';
-      const device = await world.device({ id: 'legacy-invite-entry', userId: null, platform, mode: 'app' });
-      await world.waitFor(device, (value: any) => control(value, 'auth-code'), 'invite entry');
-      await device.perform('team.code', { value: 'old-123' });
-      expect((await device.observe()).presentation.route.route).toBe('RoleSelect');
-      expect(calls(world, 'join_group')).toHaveLength(0);
-
-      await device.perform('team.code.submit');
-      const confirmation = await world.waitFor(device, (value: any) => value.presentation.route.route === 'Auth', 'legacy invite confirmation');
-      expect(confirmation.presentation.route.params).toEqual({ role: 'follower', code: 'OLD123' });
-      expect(texts(confirmation)).toContain('OLD-123');
-      await device.perform('team.join');
-      await world.waitFor(device, (value: any) => value.presentation.session.membership?.group.id === GROUP_ID, 'joined using the legacy server');
-      expect(calls(world, 'join_group').at(-1).args).toEqual({ p_code: 'OLD123' });
     } finally { await world.close(); }
   });
 

@@ -18,6 +18,8 @@ import {
 } from './mapSheetChrome';
 import type { SheetDetent, SheetPresentationProps } from './SheetPresentation';
 
+export const PRESENTED_SHEET_CONTENT_TOP = 16;
+
 const DEFAULT_DETENTS: readonly SheetDetent[] = [{ fraction: 0.84 }];
 
 export default function SheetPresentation({
@@ -78,7 +80,7 @@ const styles = StyleSheet.create({
   anchor: { position: 'absolute', width: 1, height: 1 },
   root: { flex: 1 },
   inset: { paddingHorizontal: MAP_FLOATING_EDGE_INSET, paddingBottom: 8 },
-  content: { flex: 1, paddingTop: 16 },
+  content: { flex: 1, paddingTop: PRESENTED_SHEET_CONTENT_TOP },
   systemContent: { paddingBottom: 8 },
   insetSurface: {
     borderRadius: MAP_SHEET_CORNER_RADIUS,

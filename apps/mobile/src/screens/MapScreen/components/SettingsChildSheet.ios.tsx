@@ -3,10 +3,10 @@ import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../../../components/AppText';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
-import SheetPresentation, { type SheetDetent } from '../../../components/SheetPresentation';
+import SheetPresentation, { PRESENTED_SHEET_CONTENT_TOP, type SheetDetent } from '../../../components/SheetPresentation';
 import {
   MAP_SHEET_ACTION_HIT_SIZE,
-  SHEET_CORNER_ACTION_INSET,
+  sheetCornerHeaderInset,
   SETTINGS_SHEET_CONTENT_INSET,
 } from '../../../components/mapSheetChrome';
 import { useMountEffect } from '../../../hooks/useMountEffect';
@@ -16,6 +16,7 @@ const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
 const MIN_COMPACT_HEIGHT = 232;
 const PRESENTATION_VERTICAL_PADDING = 24;
+const YIELDED_DETENT: SheetDetent = { height: 72 };
 
 function ResetSettingsScroll({ scrollRef }: { scrollRef: React.RefObject<ScrollView | null> }) {
   useMountEffect(() => {
@@ -47,6 +48,7 @@ export default function SettingsChildSheet({
   home = false,
   fitContent = false,
   fillContent = false,
+  yieldToNestedSheet = false,
   scrollResetKey,
 }: SettingsSheetPanelProps) {
   const { height } = useWindowDimensions();
@@ -96,49 +98,40 @@ export default function SettingsChildSheet({
   const usesSystemBackground = navigation != null || fitContent;
   const preferredDetent = fitContent ? compactDetent
     : singleStage || activeStage.stage === 1 ? stageTwoDetent : stageOneDetent;
-  const [pageSelection, setPageSelection] = useState({ page: scrollResetKey, adjustHeight: !!onBack });
-  if (pageSelection.page !== scrollResetKey) {
-    setPageSelection({ page: scrollResetKey, adjustHeight: !pageSelection.adjustHeight });
-  }
-  // Expo reapplies the selection only when its value changes.
-  const selectedDetent = !onBack || !pageSelection.adjustHeight ? preferredDetent
-    : 'height' in preferredDetent ? { height: preferredDetent.height - 1 }
-    : { fraction: preferredDetent.fraction - 0.001 };
-  const backDetent = !onBack ? undefined : 'height' in selectedDetent
-    ? { height: selectedDetent.height - 60 } : { fraction: selectedDetent.fraction - 0.09 };
+  const selectedDetent = preferredDetent;
   const usesTwoDetents = !singleStage && !isChild && !fitContent;
+  const detents: SheetDetent[] = usesTwoDetents ? [stageOneDetent, stageTwoDetent] : [selectedDetent];
 
   function handleSelectionChange(detent: SheetDetent) {
-    if (detent === 'medium') return;
-    if (backDetent) {
-      if ('height' in backDetent ? 'height' in detent && detent.height === backDetent.height
-        : 'fraction' in detent && detent.fraction === backDetent.fraction) onBack?.();
-      return;
-    }
-    if (!('fraction' in detent)) return;
+    if (detent === 'medium' || !('fraction' in detent)) return;
     const stage = detent.fraction === stageTwoRatio ? 1 : 0;
     setActiveStage(current => current.stage === stage ? current : { ...current, stage });
   }
 
-  const header = navigation === 'root' && !title ? null : (
-    <View style={[styles.header, usesSystemBackground && styles.insetHeader]}
+  const header = navigation === 'root' && !title && !home ? null : (
+    <View style={styles.header}
       onLayout={fitContent ? event => setHeaderHeight(event.nativeEvent.layout.height) : undefined}>
-      {isChild ? (
+      {isChild && onBack ? (
         <SheetHeaderAction
           testID="settings-child-back"
           action="back"
-          useSystemStyle
-          onPress={onBack ?? requestClose}
+          onPress={onBack}
           accessibilityLabel={backLabel}
         />
       ) : <View style={styles.headerActionSlot} />}
       <AppText accessibilityRole="header" style={[styles.title, titleFontSize != null && { fontSize: titleFontSize }]}
         numberOfLines={titleFontSize == null ? 1 : 2}>{title}</AppText>
-      {isChild ? <View style={styles.headerActionSlot} /> : (
+      {isChild ? (
+        <SheetHeaderAction
+          testID={onBack ? 'settings-child-close' : 'settings-child-back'}
+          action="close"
+          onPress={requestClose}
+          accessibilityLabel={doneLabel}
+        />
+      ) : (
         <SheetHeaderAction
           testID={home || singleStage || navigation === 'root' ? 'settings-root-close' : 'settings-child-back'}
           action={action}
-          useSystemStyle={usesSystemBackground}
           onPress={action === 'commit' ? () => onCommit?.() : requestClose}
           accessibilityLabel={doneLabel}
           disabled={action === 'commit' && !onCommit}
@@ -153,15 +146,14 @@ export default function SettingsChildSheet({
   return (
     <SheetPresentation
       visible={visible}
-      onClose={onBack ?? requestClose}
+      onClose={requestClose}
       onDismiss={completeDismissal}
       testID={testID}
-      detents={backDetent ? [backDetent, selectedDetent] : usesTwoDetents ? [stageOneDetent, stageTwoDetent] : [selectedDetent]}
-      selection={selectedDetent}
-      onSelectionChange={backDetent || usesTwoDetents ? handleSelectionChange : undefined}
+      detents={yieldToNestedSheet ? [YIELDED_DETENT, ...detents] : detents}
+      selection={yieldToNestedSheet ? YIELDED_DETENT : selectedDetent}
+      onSelectionChange={usesTwoDetents ? handleSelectionChange : undefined}
       backgroundColor={darkMaterial ? '#263230f7' : undefined}
       useSystemBackground={usesSystemBackground}
-      dismissDisabled={!!onBack}
     >
       <View style={styles.body} onAccessibilityEscape={onBack ?? requestClose}>
         {header}
@@ -202,8 +194,7 @@ const styles = StyleSheet.create({
   settingsScrollContent: { paddingTop: 16, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
   compactScrollContent: { paddingBottom: 14 },
   fillScrollContent: { flexGrow: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: SHEET_CORNER_ACTION_INSET },
-  insetHeader: { paddingTop: 8, paddingHorizontal: SETTINGS_SHEET_CONTENT_INSET },
+  header: { flexDirection: 'row', alignItems: 'center', ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP, 0, 'both') },
   headerActionSlot: { width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE },
   title: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 17, fontWeight: '700' },
   nestedLayer: { ...StyleSheet.absoluteFill, zIndex: 2 },

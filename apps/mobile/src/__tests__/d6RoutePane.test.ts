@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { measure } from 'react-native-reanimated';
 import { SwipeDirection } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { D6RouteMenuProps } from '../screens/MapScreen/components/D6RouteMenu';
-import { lightTap } from '../utils/haptics';
+import { lightTap, selectionTick } from '../utils/haptics';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { D6RoutePane, type D6RoutePaneProps, type D6RouteSelection } from '../screens/MapScreen/components/D6RoutePane';
 import type { Destination } from '../types';
@@ -25,6 +25,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
+jest.mock('@expo/ui/community/masked-view', () => ({ MaskedView: 'MaskedView' }));
 jest.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: 'GestureHandlerRootView',
   GestureDetector: 'GestureDetector',
@@ -99,7 +100,7 @@ jest.mock('react-native-reanimated', () => {
     measure: jest.fn(() => null),
     useAnimatedRef: () => {
       const { useState } = jest.requireActual<typeof import('react')>('react');
-      return useState(() => () => null)[0];
+      return useState(() => () => ({ attached: true }))[0];
     },
     useAnimatedStyle: (style: () => object) => style(),
     useDerivedValue: (compute: () => unknown) => {
@@ -125,7 +126,7 @@ jest.mock('react-native-reanimated', () => {
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 62, bottom: 34, left: 0, right: 0 }) }));
 jest.mock('../components/SheetPresentation', () => 'NativeSheet');
 jest.mock('../components/SwiftUIGlassSurface', () => ({ __esModule: true, default: 'SwiftUIGlassSurface' }));
-jest.mock('../utils/haptics', () => ({ lightTap: jest.fn() }));
+jest.mock('../utils/haptics', () => ({ lightTap: jest.fn(), selectionTick: jest.fn() }));
 jest.mock('../i18n', () => ({ useTranslation: () => ({ language: 'zh', t: (key: string) => key }) }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -135,7 +136,7 @@ const stop = (id: string, day: number): Destination => ({
 });
 
 function mount(element: React.ReactElement) {
-  return create(element, { createNodeMock: () => ({}) });
+  return create(element, { createNodeMock: () => ({ scrollTo: () => undefined, measureInWindow: () => undefined }) });
 }
 
 describe('D6 itinerary panel', () => {
@@ -494,6 +495,23 @@ describe('D6 itinerary panel', () => {
     act(() => byId('d6-route-day-2').props.onPress());
     expect(footer?.count).toBe(0);
     expect(byId('d6-route-row-c')).toBeDefined();
+  });
+
+  it('ticks for each day crossed while swiping the date strip and selects the centered day when it settles', async () => {
+    const onSelectDay = jest.fn();
+    await act(async () => { renderer = mount(React.createElement(D6RoutePane, { ...props, tripDays: 4, onSelectDay })); });
+    jest.mocked(selectionTick).mockClear();
+    const strip = () => renderer.root.findAll(node => node.props.snapToInterval != null)[0].props;
+    const at = (x: number, velocity = 0) => ({ nativeEvent: { contentOffset: { x }, velocity: { x: velocity }, contentSize: { width: 400 }, layoutMeasurement: { width: 200 } } });
+    act(() => strip().onScrollBeginDrag());
+    act(() => strip().onScroll(at(30)));
+    act(() => strip().onScroll(at(110)));
+    expect(selectionTick).toHaveBeenCalledTimes(2);
+    expect(onSelectDay).not.toHaveBeenCalled();
+    act(() => strip().onScrollEndDrag(at(110, 1)));
+    act(() => strip().onMomentumScrollEnd(at(400)));
+    expect(selectionTick).toHaveBeenCalledTimes(3);
+    expect(onSelectDay.mock.calls).toEqual([[4]]);
   });
 
   it('shows members the selected day without mounting edit gestures', async () => {

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { randomBytes, randomUUID } = require('node:crypto');
 
 const INVITE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const generateInviteCode = () => [...randomBytes(20)]
+const generateInviteCode = () => [...randomBytes(6)]
   .map(byte => INVITE_CODE_ALPHABET[byte % INVITE_CODE_ALPHABET.length])
   .join('');
 

@@ -2,6 +2,8 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet, View, type DimensionValue } from 'react-native';
 import { D6_SURFACE_SOLID_COLOR, MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS } from './mapSheetChrome';
 
+export const PRESENTED_SHEET_CONTENT_TOP = 0;
+
 export type SheetDetent = 'medium' | { fraction: number } | { height: number };
 
 export type SheetPresentationProps = {

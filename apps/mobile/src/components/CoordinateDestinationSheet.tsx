@@ -5,8 +5,8 @@ import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import Pressable from './MotionPressable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SheetHeaderAction from './SheetHeaderAction';
-import SheetPresentation from './SheetPresentation';
-import { MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
+import SheetPresentation, { PRESENTED_SHEET_CONTENT_TOP } from './SheetPresentation';
+import { MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET, sheetCornerHeaderInset } from './mapSheetChrome';
 import { liquidGlass } from '../native';
 import { useTheme } from '../state/PreferencesContext';
 import { useTranslation } from '../i18n';
@@ -233,7 +233,8 @@ const makeStyles = (colors: Palette) =>
       paddingTop: SHEET_CORNER_ACTION_INSET,
       gap: spacing.sm,
     },
-    header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+      ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP + SHEET_CORNER_ACTION_INSET, SHEET_CORNER_ACTION_INSET) },
     heading: {
       flex: 1,
       paddingVertical: 12,

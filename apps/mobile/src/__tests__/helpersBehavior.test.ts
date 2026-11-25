@@ -48,9 +48,9 @@ afterEach(() => {
 });
 
 describe('_helpers auth and error seams', () => {
-  it('generates a 100-bit code from the safe invite alphabet', () => {
+  it('generates a six-character code from the safe invite alphabet', () => {
     const code = generateInviteCode();
-    expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{20}$/);
+    expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
   });
 
   it('uses the configured auth controller for session, user, and operation helpers', async () => {

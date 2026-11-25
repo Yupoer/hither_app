@@ -523,7 +523,6 @@ export const zh = {
   'map.switchGroup': '切換群組',
   'map.backToHome': '回到主畫面',
   'map.inviteMembers': '邀請成員',
-  'map.inviteMembersHint': '分享代碼或連結，讓夥伴加入',
   'map.shareInviteLink': '分享邀請連結',
   'map.copyGroupCode': '複製群組代碼',
   'map.shareGroup': '分享群組',

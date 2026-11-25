@@ -523,7 +523,6 @@ export const en: Record<keyof ZhDict, string> = {
   'map.switchGroup': 'Switch group',
   'map.backToHome': 'Back to home',
   'map.inviteMembers': 'Invite members',
-  'map.inviteMembersHint': 'Share the code or link so partners can join',
   'map.shareInviteLink': 'Share invite link',
   'map.copyGroupCode': 'Copy group code',
   'map.shareGroup': 'Share group',

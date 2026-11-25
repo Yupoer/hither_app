@@ -96,52 +96,36 @@ it('calls native close and dismissal callbacks once per presentation', async () 
   await act(async () => tree.unmount());
 });
 
-it('uses the native detent for a single-stage root and fits short child pages in place', async () => {
+it('keeps a stacked settings page at its own fixed detent with back and close in the corners', async () => {
   const onBack = jest.fn();
   const onClose = jest.fn();
   const props = {
-    visible: true, singleStage: true, onClose, stageTwoRatio: 0.84,
+    visible: true, singleStage: true, onClose, stageTwoRatio: 1,
     children: React.createElement('div', { 'data-testid': 'store-owner' }),
   };
-  const render = (isRoot: boolean) => React.createElement(NativeSettingsChildSheet, {
-    ...props, navigation: isRoot ? 'root' : 'child', title: isRoot ? 'Settings' : 'Notifications',
-    scrollResetKey: isRoot ? 'root' : 'notifications',
-    onBack: isRoot ? undefined : onBack, fitContent: !isRoot,
+  const render = (nested: boolean) => React.createElement(NativeSettingsChildSheet, {
+    ...props, navigation: 'child', title: nested ? 'Coordination' : 'Team',
+    scrollResetKey: nested ? 'coordination' : 'team', onBack: nested ? onBack : undefined,
   });
   let tree!: ReturnType<typeof create>;
-  await act(async () => { tree = create(render(true)); });
+  await act(async () => { tree = create(render(false)); });
   const sheet = tree.root.findByType(SheetPresentation);
-  const content = tree.root.findByType('div');
-  expect(sheet.props.detents).toEqual([{ fraction: 0.84 }]);
-  expect(sheet.props.dismissDisabled).toBe(false);
-  expect(sheet.props.useSystemBackground).toBe(true);
-  const closeAction = tree.root.findByType(SheetHeaderAction);
-  expect(closeAction.props.action).toBe('close');
-  expect(closeAction.props.onPress).toEqual(sheet.props.onClose);
-  await act(async () => tree.update(render(false)));
-  expect(tree.root.findByType(SheetPresentation)).toBe(sheet);
-  expect(tree.root.findByType('div')).toBe(content);
-  expect(sheet.props.dismissDisabled).toBe(true);
-  const header = tree.root.findAllByType(View).find(node => typeof node.props.onLayout === 'function');
-  const scroll = tree.root.findByType(ScrollView);
-  await act(async () => {
-    header?.props.onLayout({ nativeEvent: { layout: { height: 60 } } });
-    scroll.props.onContentSizeChange(320, 220);
-  });
-  expect(sheet.props.detents).toEqual([{ height: 243 }, { height: 303 }]);
-  expect(sheet.props.selection).toEqual({ height: 303 });
-  await act(async () => scroll.props.onContentSizeChange(320, 1000));
-  expect(sheet.props.detents[1].fraction).toBeCloseTo(0.84, 2);
+  expect(sheet.props.detents).toEqual([{ fraction: 1 }]);
+  expect(sheet.props.dismissDisabled).toBeUndefined();
+  expect(tree.root.findAllByType(SheetHeaderAction).map(item => [item.props.action, item.props.testID]))
+    .toEqual([['close', 'settings-child-back']]);
 
+  await act(async () => tree.update(render(true)));
+  expect(tree.root.findByType(SheetPresentation)).toBe(sheet);
+  expect(sheet.props.detents).toEqual([{ fraction: 1 }]);
+  expect(sheet.props.selection).toEqual({ fraction: 1 });
   const actions = tree.root.findAllByType(SheetHeaderAction);
-  expect(actions.map(item => item.props.action)).toEqual(['back']);
+  expect(actions.map(item => item.props.action)).toEqual(['back', 'close']);
   await act(async () => actions[0].props.onPress());
   expect(onBack).toHaveBeenCalledTimes(1);
-  await act(async () => sheet.props.onSelectionChange(sheet.props.selection));
-  expect(onBack).toHaveBeenCalledTimes(1);
-  await act(async () => sheet.props.onSelectionChange(sheet.props.detents[0]));
-  expect(onBack).toHaveBeenCalledTimes(2);
   expect(onClose).not.toHaveBeenCalled();
+  await act(async () => actions[1].props.onPress());
+  expect(onClose).toHaveBeenCalledTimes(1);
   await act(async () => tree.unmount());
 });
 

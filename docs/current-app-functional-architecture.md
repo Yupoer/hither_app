@@ -116,9 +116,9 @@ flowchart TD
 
 ### 5.3 隊伍
 
-- Leader 建立隊伍時取得 20 碼 invite code。
+- Leader 建立隊伍時取得 6 碼 invite code，顯示為 `ABC-DEF`。
 - Follower 使用代碼加入。
-- 發布支援兩種格式的 app 版本後，再套用 `20261118010000_group_invite_capability_hardening`。資料庫會輪替現有代碼，隊員須重新分享新碼，尚未更新的 app 需要更新才能輸入新碼。
+- `20261125000000_group_invite_code_six_chars` 會輪替現有代碼為 6 碼；須在發布只接受 6 碼的 app 前套用，隊員須重新分享新碼。`join_group` 目前沒有猜碼次數限制。
 - 同一帳號可加入多隊。
 - MyTeams 顯示隊名、人數、代碼與成員 avatar。
 - 進入指定隊伍、離開單一隊伍、清空所有隊伍。

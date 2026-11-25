@@ -37,7 +37,6 @@ export default function SheetHeaderActionContent({
   accessibilityLabel: label,
   testID,
   disabled = false,
-  useSystemStyle = false,
 }: Omit<SheetHeaderActionProps, 'style'>) {
   const handlePress = () => {
     if (disabled) return;
@@ -45,7 +44,6 @@ export default function SheetHeaderActionContent({
     onPress();
   };
   const glass = liquidGlass.isLiquidGlassAvailable();
-  const usesCustomGlass = glass && !useSystemStyle;
   const symbolOffset = SYMBOL_OFFSETS[action];
   return (
     <Button
@@ -53,10 +51,10 @@ export default function SheetHeaderActionContent({
       testID={testID}
       onPress={disabled ? undefined : handlePress}
       modifiers={[
-        buttonStyle(usesCustomGlass ? 'plain' : glass ? 'glass' : 'bordered'),
+        buttonStyle(glass ? 'plain' : 'bordered'),
         buttonBorderShape('circle'),
         frame({ width: MAP_SHEET_ACTION_VISUAL_SIZE, height: MAP_SHEET_ACTION_VISUAL_SIZE }),
-        ...(usesCustomGlass
+        ...(glass
           ? [background('#ffffff26', shapes.circle()), glassEffect({ glass: { variant: 'regular', interactive: true }, shape: 'circle' })]
           : []),
         frame({ width: MAP_SHEET_ACTION_HIT_SIZE, height: MAP_SHEET_ACTION_HIT_SIZE }),

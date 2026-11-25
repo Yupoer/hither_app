@@ -209,13 +209,15 @@ export function D6MembersPane({
       return (
         <View key={memberId} style={styles.memberRow}>
           {identity}
-          <MemberStatusMenu items={statusItems} onSelect={id => void changeStatus(id)}
-            label={t(STATUS_LABELS[status])} accessibilityLabel={t('solo.statusCurrent', { status: t(STATUS_TITLES[status]) })}>
-            <View style={styles.statusPill}>
-              <Text style={styles.statusLabel}>{t(STATUS_LABELS[status])}</Text>
-              <Ionicons name="chevron-down" size={13} color={muted} />
-            </View>
-          </MemberStatusMenu>
+          <View style={styles.trailingAction}>
+            <MemberStatusMenu items={statusItems} onSelect={id => void changeStatus(id)}
+              label={t(STATUS_LABELS[status])} accessibilityLabel={t('solo.statusCurrent', { status: t(STATUS_TITLES[status]) })}>
+              <View style={styles.statusPill}>
+                <Text style={styles.statusLabel}>{t(STATUS_LABELS[status])}</Text>
+                <Ionicons name="chevron-down" size={13} color={muted} />
+              </View>
+            </MemberStatusMenu>
+          </View>
         </View>
       );
     }
@@ -503,6 +505,7 @@ function CoordinationVotes({
 }
 
 const white = '#FFFFFF';
+const TRAILING_ACTION_INSET = 12;
 const muted = 'rgba(255,255,255,0.6)';
 const soft = 'rgba(255,255,255,0.1)';
 
@@ -525,7 +528,7 @@ const styles = StyleSheet.create({
   invitePrompt: { flex: 1, color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   inviteActions: { flexDirection: 'row', gap: 6, marginLeft: 'auto' },
   inviteButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', borderRadius: 22, gap: 5, minHeight: 44, paddingHorizontal: 14, backgroundColor: soft },
-  teamInvite: { flexShrink: 0, paddingVertical: 8 },
+  teamInvite: { flexShrink: 0, paddingVertical: 8, marginEnd: TRAILING_ACTION_INSET },
   teamInviteLabel: { flexShrink: 1, textAlign: 'center' },
   inviteLabel: { color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   acceptButton: { backgroundColor: white },
@@ -543,6 +546,7 @@ const styles = StyleSheet.create({
   statusDot: { position: 'absolute', right: 0, bottom: 0, width: 11, height: 11, borderWidth: 2, borderRadius: 6, borderColor: '#26302E' },
   inboxBadge: { top: -4, right: -4 },
   stealthAvatar: { opacity: 0.4 },
+  trailingAction: { marginEnd: TRAILING_ACTION_INSET },
   statusPill: { minHeight: 32, paddingHorizontal: 13.5, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: soft, borderRadius: 16 },
   statusLabel: { color: white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   check: { width: 26, height: 26, borderRadius: 13, borderColor: 'rgba(255,255,255,0.45)', borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
