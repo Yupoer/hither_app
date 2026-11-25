@@ -899,8 +899,7 @@ function MenuRow({ title, onPress, testID, last }: { title: string; onPress: () 
 const STRIP_FADE_WIDTH = 28;
 const STRIP_GAP = 2;
 const DAY_CHIP_HEIGHT = 62;
-const STRIP_SHADOW_TOP = 4;
-const STRIP_SHADOW_BOTTOM = 10;
+const STRIP_VERTICAL_PADDING = 3;
 const STRIP_TRAILING_INSET = 4;
 
 const styles = StyleSheet.create({
@@ -908,15 +907,14 @@ const styles = StyleSheet.create({
   noHeight: { height: 0 },
   strip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: STRIP_GAP },
   stripInner: { flex: 1, minWidth: 0 },
-  stripMask: { height: DAY_CHIP_HEIGHT + STRIP_SHADOW_TOP + STRIP_SHADOW_BOTTOM },
+  stripMask: { height: DAY_CHIP_HEIGHT + STRIP_VERTICAL_PADDING * 2 },
   stripMaskRow: { ...StyleSheet.absoluteFill, flexDirection: 'row' },
   stripOpaque: { flex: 1, backgroundColor: '#fff' },
   stripFade: { width: STRIP_FADE_WIDTH },
   month: { width: 28, alignItems: 'center', justifyContent: 'center' },
   monthText: { color: 'rgba(255,255,255,.5)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
-  dayList: { gap: 6, alignItems: 'center', paddingTop: STRIP_SHADOW_TOP, paddingBottom: STRIP_SHADOW_BOTTOM, paddingHorizontal: 6 },
-  day: { height: DAY_CHIP_HEIGHT, width: 46, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: '#3A4643',
-    boxShadow: '0 4px 8px rgba(0,0,0,.32)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
+  dayList: { gap: 6, alignItems: 'center', paddingVertical: STRIP_VERTICAL_PADDING, paddingHorizontal: 6 },
+  day: { height: DAY_CHIP_HEIGHT, width: 46, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
   daySelected: { backgroundColor: 'white' },
   dropDay: { transform: [{ scale: 1.08 }] },
   dayHighlight: { ...StyleSheet.absoluteFill, borderWidth: 2, borderRadius: 14 },
@@ -924,7 +922,7 @@ const styles = StyleSheet.create({
   date: { color: 'white', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', fontVariant: ['tabular-nums'] },
   daySelectedText: { color: '#111' },
   color: { width: 14, height: 3, borderRadius: 2, marginTop: 1 },
-  addDay: { width: 46, backgroundColor: '#2F3A37', height: DAY_CHIP_HEIGHT, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
+  addDay: { width: 46, height: DAY_CHIP_HEIGHT, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
   selectAll: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
   selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.14)' },
   selectAllText: { fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
