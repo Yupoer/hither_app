@@ -35,8 +35,8 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a1111111-1111-4111-8111-111111111111', true);
 select matches(
   (public.create_group('Invite capability test')).invite_code,
-  '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{20}$',
-  'create_group returns a 100-bit-alphabet invite capability'
+  '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$',
+  'create_group returns a six-character invite capability'
 );
 
 reset role;
@@ -68,7 +68,7 @@ select throws_ok(
 );
 select throws_ok(
   $$update public.groups
-    set invite_code = 'AAAAAAAAAAAAAAAAAAAA'
+    set invite_code = 'AAAAAA'
     where name = 'Invite capability test'$$,
   '42501',
   null,
@@ -121,7 +121,7 @@ select throws_ok(
   'malformed capabilities receive the generic failure'
 );
 select throws_ok(
-  $$select public.join_group('ZZZZZZZZZZZZZZZZZZZZ')$$,
+  $$select public.join_group('ZZZZZZ')$$,
   'P0002',
   'invalid invite code',
   'unknown well-formed capabilities receive the generic failure'
@@ -147,8 +147,8 @@ select isnt(
 );
 select matches(
   (select invite_code from public.groups where name = 'Renamed invite capability test'),
-  '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{20}$',
-  'membership deletion rotates to a strong capability'
+  '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$',
+  'membership deletion rotates to a six-character capability'
 );
 
 select * from finish();

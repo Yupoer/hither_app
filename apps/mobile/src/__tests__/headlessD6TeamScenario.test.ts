@@ -151,13 +151,13 @@ describe('D6 iOS team and commands through Map', () => {
       await press(device, 'map-invite-members');
       const invitation = await world.waitFor(device, (value: Observation) =>
         has(value, 'map-share-code') && has(value, 'map-copy-code'), 'existing invitation UI');
-      expect(text(invitation, 'TEST4-2ABCD-EFGHJ-KLMNP')).toBe(true);
+      expect(text(invitation, 'TES-T42')).toBe(true);
       await device.perform('map.group.copy-code');
       await device.perform('map.group.share-code');
       await device.input({ kind: 'animation', finished: true });
       expect((await device.observe()).presentation.receipts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ host: 'Clipboard', method: 'setStringAsync', value: 'TEST42ABCDEFGHJKLMNP' }),
-        expect.objectContaining({ host: 'Share', method: 'share', value: { message: expect.stringContaining('TEST42ABCDEFGHJKLMNP') } }),
+        expect.objectContaining({ host: 'Clipboard', method: 'setStringAsync', value: 'TEST42' }),
+        expect.objectContaining({ host: 'Share', method: 'share', value: { message: expect.stringContaining('TEST42') } }),
       ]));
       expect(world.backend.memberships).toHaveLength(2);
     } finally { await world.close(); }

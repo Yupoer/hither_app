@@ -10,26 +10,27 @@ const origin = 'https://hither-legal.test';
 
 describe('team entry boundaries', () => {
   it('normalizes additions and pasted invite codes once', () => {
-    expect(normalizeInviteCode(' test4-2abcde-fghjklmnp! ')).toBe('TEST42ABCDEFGHJKLMNP');
+    expect(normalizeInviteCode(' tes-t42! ')).toBe('TEST42');
     expect(normalizeInviteCode('ABCDE')).toBe('ABCDE');
-    expect(normalizeInviteCode('TEST42ABCDEFGHJKLMNPQ')).toBe('TEST42ABCDEFGHJKLMNP');
+    expect(normalizeInviteCode('TEST42Q')).toBe('TEST42');
+    expect(normalizeInviteCode('o1d-i0abc')).toBe('DABC');
   });
 
   it('opens exact invite destinations, leaving OAuth callbacks and unknown hosts alone', () => {
-    expect(readInviteLink('hither://join?code=TEST4-2ABCD-EFGHJ-KLMNP', origin)).toBe('TEST42ABCDEFGHJKLMNP');
-    expect(readInviteLink(`${origin}/join?code=TEST42ABCDEFGHJKLMNP`, origin)).toBe('TEST42ABCDEFGHJKLMNP');
-    expect(readInviteLink(`${origin}/auth/callback?code=TEST42ABCDEFGHJKLMNP`, origin)).toBeNull();
-    expect(readInviteLink('https://unknown.test/join?code=TEST42ABCDEFGHJKLMNP', origin)).toBeNull();
-    expect(readInviteLink('hither://join?code=TEST42ABCDEFGHJKLMNP&code=TEST42ABCDEFGHJKLMNQ', origin)).toBeNull();
-    expect(readInviteLink('hither://join?code=TEST42ABCDEFGHJKLMNP#x', origin)).toBeNull();
+    expect(readInviteLink('hither://join?code=TES-T42', origin)).toBe('TEST42');
+    expect(readInviteLink(`${origin}/join?code=TEST42`, origin)).toBe('TEST42');
+    expect(readInviteLink(`${origin}/auth/callback?code=TEST42`, origin)).toBeNull();
+    expect(readInviteLink('https://unknown.test/join?code=TEST42', origin)).toBeNull();
+    expect(readInviteLink('hither://join?code=TEST42&code=TEST43', origin)).toBeNull();
+    expect(readInviteLink('hither://join?code=TEST42#x', origin)).toBeNull();
     expect(readInviteLink('hither://join?code=TEST', origin)).toBeNull();
+    expect(readInviteLink('hither://join?code=OLD123', origin)).toBeNull();
+    expect(readInviteLink('hither://join?code=TEST42ABCDEFGHJKLMNP', origin)).toBeNull();
   });
 
-  it('reads and formats legacy invitations during the client rollout', () => {
-    expect(readInviteLink(`${origin}/join?code=old-123`, origin)).toBe('OLD123');
-    expect(readInviteLink('https://unknown.test/join?code=OLD123', origin)).toBeNull();
-    expect(formatInviteCode('OLD123')).toBe('OLD-123');
-    expect(formatInviteCode('TEST42ABCDEFGHJKLMNP')).toBe('TEST4-2ABCD-EFGHJ-KLMNP');
+  it('formats six-character invitations as two groups of three', () => {
+    expect(formatInviteCode('TEST42')).toBe('TES-T42');
+    expect(formatInviteCode('')).toBe('');
   });
 
   it('persists the active team for the selected account and clears it when the user returns to entry', async () => {

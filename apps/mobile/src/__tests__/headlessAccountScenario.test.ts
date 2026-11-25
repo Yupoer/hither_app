@@ -258,7 +258,7 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       await peer.perform('group.leaveGroups', { args: [[created.id]] });
       expect(world.backend.memberships.filter((member: any) => member.user_id === PEER).map((member: any) => member.group_id)).toEqual([GROUP_ID]);
       const rotated = await leader.perform('group.kickGroupMember', { args: [GROUP_ID, PEER] });
-      expect(rotated).toHaveLength(20);
+      expect(rotated).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
       expect(world.backend.groups.get(GROUP_ID).invite_code).toBe(rotated);
       expect(world.backend.memberships.some((member: any) => member.group_id === GROUP_ID && member.user_id === PEER)).toBe(false);
       await expect(leader.perform('group.kickGroupMember', { args: ['00000000-0000-4000-8000-000000000001', PEER] })).rejects.toThrow('kick_not_supported_in_demo');
@@ -274,8 +274,8 @@ describe.each(['ios', 'android'])('headless account operations on %s', platform 
       expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'leader' } });
       await device.host.mount({ name: 'RoleSelect' });
       await world.settle();
-      await device.perform('team.code', { value: 'TEST42ABCDEFGHJKLMNP' });
-      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower', code: 'TEST42ABCDEFGHJKLMNP' } });
+      await device.perform('team.code', { value: 'TEST42' });
+      expect((await device.observe()).presentation.route).toMatchObject({ route: 'Auth', params: { role: 'follower', code: 'TEST42' } });
 
       device.online = false;
       await device.host.mount({ name: 'MyTeams' });

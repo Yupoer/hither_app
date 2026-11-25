@@ -2847,9 +2847,9 @@
     {
       "parent": 270,
       "child": 270,
-      "acceptance": "The database issues and rotates strong group invites, limits effective grants and keeps group settings under leader RLS.",
+      "acceptance": "The database issues and rotates six-character group invites from the unambiguous alphabet, limits effective grants and keeps group settings under leader RLS.",
       "testFile": "supabase/tests/group_invite_capability_hardening.test.sql",
-      "testNamePattern": "membership deletion rotates to a strong capability|authenticated group updates are limited|policy still fences follower writes"
+      "testNamePattern": "membership deletion rotates to a six-character capability|authenticated group updates are limited|policy still fences follower writes"
     },
     {
       "parent": 270,
@@ -2857,13 +2857,6 @@
       "acceptance": "Leader-authorized navigation completion and cancellation still clear the active group journey.",
       "testFile": "supabase/tests/team_navigation_sessions.test.sql",
       "testNamePattern": "(completing|cancelling) navigation clears the active group journey"
-    },
-    {
-      "parent": 270,
-      "child": 270,
-      "acceptance": "The forward-compatible app submits an existing six-character invite explicitly without treating the first six characters of a longer invite as a complete code.",
-      "testFile": "headlessAuthScenario.test.ts",
-      "testNamePattern": "submits a six-character invite only after keyboard confirmation during rollout"
     },
     {
       "parent": 316,
