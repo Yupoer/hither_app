@@ -3585,6 +3585,13 @@
       "acceptance": "Coin claiming lives on the Shop page instead of the settings root.",
       "testFile": "headlessD6YouScenario.test.ts",
       "testNamePattern": "claims coins on the Shop instead of You and keeps restore and promo entry on the shop"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "Swiping away a held-pin sheet clears the pin even when the sheet reports its dismissal before the close request.",
+      "testFile": "headlessD6MapScenario.test.ts",
+      "testNamePattern": "clears the held pin when the sheet reports its dismissal before the close request"
     }
   ]
 }
