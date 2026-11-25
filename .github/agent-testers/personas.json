@@ -1,0 +1,20 @@
+[
+  {
+    "id": "meiling",
+    "platform": "ios",
+    "profile": "退休老師，66 歲，第一次跟團用 App，字要大，看不懂英文術語會直接放棄。",
+    "goal": "用領隊給的方式加入旅程，找到今天的行程與下一個集合點，確認自己離集合點多遠。",
+    "locale": "zh-TW",
+    "geo": [25.0330, 121.5654],
+    "device": {"simulator": "iPhone SE (3rd generation)", "ios": 18, "text_size": "accessibility-large", "theme": "light"}
+  },
+  {
+    "id": "chihao",
+    "platform": "ios",
+    "profile": "旅行社領隊，34 歲，習慣深色模式、操作很快，同時要照顧二十位團員。",
+    "goal": "建立一趟新旅程、排好第一天行程與集合點，並找到邀請團員的方式。",
+    "locale": "zh-TW",
+    "geo": [24.1477, 120.6736],
+    "device": {"simulator": "iPhone 16 Pro", "ios": 18, "text_size": "large", "theme": "dark"}
+  }
+]

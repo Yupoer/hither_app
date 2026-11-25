@@ -29,3 +29,6 @@ Thumbs.db
 
 # Supabase CLI local state
 supabase/.temp/
+
+# Decrypted Agent testers reports
+/runs/
