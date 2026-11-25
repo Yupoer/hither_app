@@ -89,6 +89,39 @@ describe('iOS D6 Map', () => {
     } finally { await world.close(); }
   });
 
+  it('restores the home controls when a held-pin sheet is swiped away', async () => {
+    const world = new World();
+    try {
+      const device = await openMap(world);
+      await device.perform('map.pin.drop', { latitude: 25.05, longitude: 121.54 });
+      await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add'), 'pin confirmation');
+      expect(await device.host.call({ kind: 'nativeEvent', testId: 'd6-add-sheet-presentation',
+        value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
+      const map = await world.waitFor(device, (value: Observation) => field(value, 'home-journey-action'), 'map controls restored');
+      expect(field(map, 'confirm-place-add')).toBeUndefined();
+      expect(field(map, 'map-search-input')).toBeUndefined();
+      expect(await press(device, 'home-itinerary-grabber')).toEqual({ invoked: true });
+      expect(world.backend.itinerary).toHaveLength(1);
+    } finally { await world.close(); }
+  });
+
+  it('floats the map-center action without a sheet and cancels straight back to the map', async () => {
+    const world = new World();
+    try {
+      const device = await openMap(world);
+      await press(device, 'home-itinerary-grabber');
+      expect(await press(device, 'd6-route-add-place')).toEqual({ invoked: true });
+      const searching = await device.observe();
+      expect(field(searching, 'd6-add-map-center')?.acceptsInput).toBe(true);
+      expect(field(searching, 'd6-add-card')).toBeUndefined();
+      expect(field(searching, 'home-journey-action')).toBeUndefined();
+      await press(device, 'd6-add-close');
+      const map = await world.waitFor(device, (value: Observation) => field(value, 'home-journey-action'), 'map controls restored');
+      expect(field(map, 'd6-add-map-center')).toBeUndefined();
+      expect(field(map, 'map-search-input')).toBeUndefined();
+    } finally { await world.close(); }
+  });
+
   it('saves and clears the meeting time in the actual stop details', async () => {
     const world = new World();
     try {
@@ -114,7 +147,7 @@ describe('iOS D6 Map', () => {
     } finally { await world.close(); }
   });
 
-  it('drags both panels through half and full and can reverse before release', async () => {
+  it('keeps short panels at their content height and closes them by drag', async () => {
     const world = new World();
     try {
       const device = await openMap(world);
@@ -131,12 +164,11 @@ describe('iOS D6 Map', () => {
       const team = 'home-team-toggle';
       await press(device, itinerary);
       expect(field(await device.observe(), itinerary)?.value).toBe(1);
-      await move(itinerary, [64], 2);
-      await move(itinerary, [-400, -64], 1);
-      await move(itinerary, [-64], 0);
+      await move(itinerary, [64], 1);
+      await move(itinerary, [-400, -64], 0);
       await move(team, [-64], 1);
-      await move(team, [-18], 2, -900);
-      await move(team, [390, 64], 1);
+      await move(team, [-18], 1, -900);
+      await move(team, [390, 64], 0);
       await move(itinerary, [64], 1);
       const result = await device.observe();
       expect(field(result, team)?.value).toBe(0);

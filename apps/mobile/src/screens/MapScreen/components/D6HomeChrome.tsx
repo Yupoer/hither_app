@@ -54,13 +54,13 @@ const FONT = 'BarlowCondensed-ExtraBoldItalic';
 /** Stage one shows all stops or members; content taller than this share of the screen opens fully. */
 const STAGE_ONE_LIMIT = 0.6;
 const ITINERARY_BUTTON_SIZE = 52;
-const COMPACT_MORPH_TRAVEL = 140;
 const TOP_BODY_INSET = 6;
 const COMPACT_BODY_INSET = 14;
 const TEAM_BODY_INSET = 6;
 const PANE_FIT_SLACK = 8;
 const MIN_PANE_BODY = 120;
 const ISLAND_HIDE_OVERSHOOT = 24;
+const TOP_GRABBER_HEIGHT = 22;
 const D6_COUNTDOWN_COLOR = '#7993FF';
 const REMAINING_TIME_SCALE = 1.25;
 const END_HOLD_MS = 1500;
@@ -495,11 +495,11 @@ export function D6HomeChrome(props: HomeChromeProps) {
   const interactive = !suspended && !commandsPresented;
   const topEdge = Math.max(56, insets.top - 3);
   const bottom = Math.max(24, insets.bottom - 8);
-  const topClosed = compact ? MAP_FLOATING_GRABBER_HEIGHT : headerHeight + MAP_FLOATING_GRABBER_HEIGHT;
+  const topClosed = compact ? TOP_GRABBER_HEIGHT : headerHeight + TOP_GRABBER_HEIGHT;
   const topVisibleHeight = compact ? ITINERARY_BUTTON_SIZE : topClosed;
   const islandClosed = islandControlsHeight + MAP_ISLAND_GRABBER_HEIGHT;
-  const topFull = Math.max(topClosed, screenHeight - topEdge - bottom - islandClosed - MAP_FLOATING_EDGE_INSET);
-  const islandFull = Math.max(islandClosed, screenHeight - bottom - topEdge);
+  const topMaxFull = Math.max(topClosed, screenHeight - topEdge - bottom - islandClosed - MAP_FLOATING_EDGE_INSET);
+  const islandMaxFull = Math.max(islandClosed, screenHeight - bottom - topEdge);
   const islandBelowTop = Math.max(islandClosed, screenHeight - bottom - topEdge - topVisibleHeight - MAP_FLOATING_EDGE_INSET);
 
   const [itineraryFit, setItineraryFit] = useState<ItineraryFit>({ open: topOpen, height: 0 });
@@ -510,10 +510,14 @@ export function D6HomeChrome(props: HomeChromeProps) {
   } else if (topOpen && measuredItinerary != null && measuredItinerary > itineraryFit.height) {
     setItineraryFit({ ...itineraryFit, height: measuredItinerary });
   }
+  const contentFull = (fit: number, closed: number, maxFull: number) => Math.min(maxFull, Math.max(closed + MIN_PANE_BODY, fit));
   const stageOneHeight = (fit: number, closed: number, full: number) => fit > screenHeight * STAGE_ONE_LIMIT ? full
     : Math.min(full, Math.max(closed + MIN_PANE_BODY, fit));
+  const teamFit = islandClosed + (teamContent.content ?? 0) + TEAM_BODY_INSET;
+  const topFull = contentFull(itineraryFit.height, topClosed, topMaxFull);
+  const islandFull = contentFull(teamFit, islandClosed, islandMaxFull);
   const itineraryOpenHeight = stageOneHeight(itineraryFit.height, topClosed, topFull);
-  const teamOpenHeight = stageOneHeight(islandClosed + (teamContent.content ?? 0) + TEAM_BODY_INSET, islandClosed, islandFull);
+  const teamOpenHeight = stageOneHeight(teamFit, islandClosed, islandFull);
 
   const changeItinerary = useCallback((open: boolean) => onPaneChange(open ? 'itinerary' : null), [onPaneChange]);
   const changeTeam = useCallback((open: boolean) => onPaneChange(open ? 'team' : null), [onPaneChange]);
@@ -559,24 +563,21 @@ export function D6HomeChrome(props: HomeChromeProps) {
   });
   const cueScale = useAnimatedStyle(() => ({ transform: [{ scale: 0.76 + celebration.get() * 0.24 }] }));
   const topLift = useAnimatedStyle(() => {
-    const span = islandFull - islandBelowTop;
-    const covered = span <= 0 ? Number(islandHeight.get() >= islandFull)
-      : Math.min(1, Math.max(0, (islandHeight.get() - islandBelowTop) / span));
+    const span = islandMaxFull - islandBelowTop;
+    const covered = span <= 0 ? 0 : Math.min(1, Math.max(0, (islandHeight.get() - islandBelowTop) / span));
     return { transform: [{ translateY: -covered * (topEdge + topVisibleHeight + MAP_FLOATING_EDGE_INSET) }] };
   });
-  const expandedFrom = ITINERARY_BUTTON_SIZE / Math.max(ITINERARY_BUTTON_SIZE, screenWidth - MAP_FLOATING_EDGE_INSET * 2);
+  const cardWidth = screenWidth - MAP_FLOATING_EDGE_INSET * 2;
+  const morph = useSharedValue(!compact || topOpen ? 1 : 0);
   const itineraryMorph = useAnimatedStyle(() => {
-    if (!compact) return { opacity: 1, transform: [{ scaleX: 1 }] };
-    const progress = Math.min(1, Math.max(0, (topHeight.get() - topClosed) / COMPACT_MORPH_TRAVEL));
+    const progress = morph.get();
     return {
-      opacity: Math.min(1, progress * 3),
-      transform: [{ scaleX: expandedFrom + (1 - expandedFrom) * Math.min(1, progress * 1.6) }],
+      width: ITINERARY_BUTTON_SIZE + (cardWidth - ITINERARY_BUTTON_SIZE) * progress,
+      height: Math.max(ITINERARY_BUTTON_SIZE * (1 - progress), topHeight.get()),
+      borderRadius: ITINERARY_BUTTON_SIZE / 2 + (MAP_GATHERING_CORNER_RADIUS - ITINERARY_BUTTON_SIZE / 2) * progress,
     };
   });
-  const itineraryButtonMorph = useAnimatedStyle(() => {
-    const progress = compact ? Math.min(1, Math.max(0, (topHeight.get() - topClosed) / COMPACT_MORPH_TRAVEL)) : 1;
-    return { opacity: 1 - Math.min(1, progress * 3), transform: [{ scale: 1 - 0.15 * Math.min(1, progress * 3) }] };
-  });
+  const itineraryButtonMorph = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, morph.get() * 3) }));
   const islandShift = useAnimatedStyle(() => ({
     transform: [{ translateY: islandOffset.get() * (islandClosed + bottom + ISLAND_HIDE_OVERSHOOT) }],
   }));
@@ -587,13 +588,15 @@ export function D6HomeChrome(props: HomeChromeProps) {
       {top.lifecycle}
       {island.lifecycle}
       <SyncPane key={pane ?? 'none'} pane={openPane} value={pane} />
+      <MorphTo key={`${compact}:${topOpen}`} value={morph} expanded={!compact || topOpen} reduceMotion={props.reduceMotion} />
       <IslandVisibility key={String(islandHidden)} offset={islandOffset} hidden={islandHidden} reduceMotion={props.reduceMotion} />
       {compact ? <CompactTopHeight report={onTopHeight} /> : null}
       <Reanimated.View style={[StyleSheet.absoluteFill, topLift]} pointerEvents="box-none">
-        <View style={StyleSheet.absoluteFill} pointerEvents={itineraryCollapsed ? 'none' : 'box-none'}
+        <Reanimated.View style={[styles.topMorph, compact && styles.topMorphClip, { top: topEdge }, itineraryMorph]}
+          pointerEvents={itineraryCollapsed ? 'none' : 'box-none'}
           accessibilityElementsHidden={itineraryCollapsed} importantForAccessibility={itineraryCollapsed ? 'no-hide-descendants' : 'auto'}>
-          <D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS}
-            style={[styles.top, { top: topEdge }, itineraryMorph]} open={topOpen}
+          <D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS} grabberHeight={TOP_GRABBER_HEIGHT}
+            style={[styles.top, { width: cardWidth }]} open={topOpen}
             surface={<D6Surface radius={MAP_GATHERING_CORNER_RADIUS} />}
             header={stop ? <View>
               {stop ? <Reanimated.View style={[styles.particleField, particleTone]} pointerEvents="none">
@@ -607,7 +610,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
                 }} style={styles.headingButton}
                 onLayout={({ nativeEvent: { layout: { height } } }) => {
                   setHeaderHeight(height);
-                  onTopHeight(height + MAP_FLOATING_GRABBER_HEIGHT);
+                  onTopHeight(height + TOP_GRABBER_HEIGHT);
                 }}>
                 <Header stop={stop} phase={phase} travelMode={props.travelMode}
                   distance={props.distance} eta={props.eta} arrived={props.arrived} total={props.total}
@@ -616,9 +619,9 @@ export function D6HomeChrome(props: HomeChromeProps) {
             </View> : undefined}
             body={showItinerary ? <View collapsable={false} testID="d6-route-viewport" onLayout={top.contentDidLayout}
               style={[styles.topBody, compact && styles.topBodyCompact]}>{itinerary}</View> : null}
-            grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} pressCancelled={top.pressCancelled} label={topLabel} testID="home-itinerary-grabber" />}
+            grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} pressCancelled={top.pressCancelled} label={topLabel} testID="home-itinerary-grabber" height={TOP_GRABBER_HEIGHT} />}
           />
-        </View>
+        </Reanimated.View>
         {compact ? <Reanimated.View pointerEvents={itineraryCollapsed ? 'auto' : 'none'}
           style={[styles.itineraryButton, { top: topEdge }, itineraryButtonMorph]}>
           <MotionPressable testID="home-itinerary-button" accessibilityRole="button" onPress={openItineraryButton}
@@ -691,6 +694,16 @@ function IslandVisibility({ offset, hidden, reduceMotion }: { offset: SharedValu
   return null;
 }
 
+function MorphTo({ value, expanded, reduceMotion }: { value: SharedValue<number>; expanded: boolean; reduceMotion: boolean }) {
+  useMountEffect(() => {
+    const target = expanded ? 1 : 0;
+    value.set(reduceMotion ? target : withTiming(target, expanded
+      ? { duration: 380, easing: Easing.out(Easing.cubic) }
+      : { duration: 300, easing: Easing.out(Easing.cubic) }));
+  });
+  return null;
+}
+
 function CompactTopHeight({ report }: { report: (height: number) => void }) {
   useMountEffect(() => { report(ITINERARY_BUTTON_SIZE); });
   return null;
@@ -710,8 +723,9 @@ const styles = StyleSheet.create({
   celebrationLayer: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, zIndex: 1,
     borderRadius: MAP_GATHERING_CORNER_RADIUS, alignItems: 'center', justifyContent: 'center', backgroundColor: '#00000059' },
   celebrationBadge: { width: 42, height: 42, borderRadius: 21, backgroundColor: glass.ok, alignItems: 'center', justifyContent: 'center' },
-  top: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, borderRadius: MAP_GATHERING_CORNER_RADIUS,
-    transformOrigin: 'right top' },
+  topMorph: { position: 'absolute', right: MAP_FLOATING_EDGE_INSET },
+  topMorphClip: { overflow: 'hidden' },
+  top: { position: 'absolute', right: 0, top: 0, borderRadius: MAP_GATHERING_CORNER_RADIUS },
   headingButton: { flexShrink: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, paddingTop: 20, paddingBottom: 4 },
   particleField: { ...StyleSheet.absoluteFill, overflow: 'hidden',
     borderTopLeftRadius: MAP_GATHERING_CORNER_RADIUS, borderTopRightRadius: MAP_GATHERING_CORNER_RADIUS },

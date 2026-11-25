@@ -3,6 +3,7 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 import React, { useState } from 'react';
 import {
   Keyboard,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -15,6 +16,7 @@ import Pressable from '../../../components/MotionPressable';
 import Slider from '@react-native-community/slider';
 import { HitherText } from '../../../components/HitherText';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { maps, type MapRegion, type PlaceResult } from '../../../native';
@@ -23,7 +25,15 @@ import { useVisibleUi } from '../../../state/foregroundUi';
 import SystemToggle from '../../../components/SystemToggle';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
 import SheetPresentation, { type SheetDetent } from '../../../components/SheetPresentation';
-import { D6_SURFACE_SOLID_COLOR, MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../../../components/mapSheetChrome';
+import {
+  D6_SURFACE_COLORS,
+  MAP_FLOATING_EDGE_INSET,
+  MAP_ISLAND_BOTTOM_INSET,
+  MAP_ISLAND_SIDE_INSET,
+  MAP_SHEET_ACTION_HIT_SIZE,
+  MAP_SHEET_CORNER_RADIUS,
+  SHEET_CORNER_ACTION_INSET,
+} from '../../../components/mapSheetChrome';
 import { lightTap } from '../../../utils/haptics';
 import { normalizePlaceSearchResults } from '../../../utils/normalizePlaceSearchResults';
 import { dateForTripDay, localDayKey } from '../../../utils/tripDay';
@@ -34,9 +44,11 @@ import { D6_ACCENT, D6IconButton, D6Surface, d6ChromeStyles } from './D6HomeChro
 import AddPlaceChoice, { type PlaceChoiceOption } from './D6AddPlaceChoice';
 
 const STOP_DETENTS = ['medium', { fraction: 0.87 }] satisfies readonly SheetDetent[];
-const ADD_CENTER_DETENTS = [{ height: 112 }] satisfies readonly SheetDetent[];
 const ADD_COORDINATE_DETENTS = [{ height: 140 }] satisfies readonly SheetDetent[];
 const ADD_CONFIRM_DETENTS = [{ fraction: 0.52 }] satisfies readonly SheetDetent[];
+
+const ADD_SHEET_CORNER_INSET = MAP_SHEET_CORNER_RADIUS - MAP_SHEET_ACTION_HIT_SIZE / 2;
+const SYSTEM_GLASS_SHEET = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26;
 
 const DETAIL_TIMING = { duration: 280, easing: Easing.inOut(Easing.cubic) };
 
@@ -306,6 +318,19 @@ function PlaceTitle({ title, name, zh, onTitle }: {
   </>;
 }
 
+/** iOS 26 sheets already draw Liquid Glass, so only the D6 tint is layered on; older systems draw the full D6 surface. */
+function AddSheetSurface() {
+  return SYSTEM_GLASS_SHEET
+    ? <LinearGradient pointerEvents="none" colors={D6_SURFACE_COLORS.thin} style={StyleSheet.absoluteFill} />
+    : <D6Surface radius={MAP_SHEET_CORNER_RADIUS} />;
+}
+
+/** Without a presented sheet there is no native onDismiss, so a hidden add flow finishes its dismissal on mount. */
+function FinishWithoutSheet({ onFinish }: { onFinish: () => void }) {
+  useMountEffect(onFinish);
+  return null;
+}
+
 export function D6AddPlace(props: AddCardProps) {
   const { session, place, title, favoritePlaces, biasRegion, departureDate, stops, canEdit, canSetStay, quota,
     favorite, favoriteBusy, busy, sheetVisible, onSheetDismiss, nestedSheets, zh, color, onClose, onCenter, onPick, onTitle, onDay, onPlacement,
@@ -369,9 +394,17 @@ export function D6AddPlace(props: AddCardProps) {
     Keyboard.dismiss();
     setSelector(current => current === value ? null : value);
   };
-  const detents = place ? ADD_CONFIRM_DETENTS : pinCoordinates ? ADD_COORDINATE_DETENTS : ADD_CENTER_DETENTS;
+  const needsSheet = place != null || pinCoordinates;
+  const sheetPresented = sheetVisible && needsSheet;
+  const detents = place ? ADD_CONFIRM_DETENTS : ADD_COORDINATE_DETENTS;
   return (
     <View pointerEvents="box-none" style={styles.addLayer}>
+      {!sheetVisible && !needsSheet ? <FinishWithoutSheet onFinish={onSheetDismiss} /> : null}
+      {sheetVisible && !needsSheet ? <View style={[styles.centerAction, { bottom: Math.max(24, insets.bottom - 8) + MAP_ISLAND_BOTTOM_INSET }]}>
+        <Action testID="d6-add-map-center" title={zh ? '設定集合點' : 'Add a stop at map center'} primary
+          onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} />
+      </View> : null}
+      {needsSheet ? null : nestedSheets}
       {sheetVisible && <>
         {visible && showSuggestions && !place && search ? <SearchPlaces
           key={searchKey} query={localized} region={biasRegion}
@@ -390,7 +423,7 @@ export function D6AddPlace(props: AddCardProps) {
           </View>
           {showSuggestions && !place ? (
             <View style={[styles.results, { maxHeight: height * .40 }]}>
-              <D6Surface radius={24} thick />
+              <D6Surface radius={24} />
               <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 {currentResponse === null ? <Text accessibilityRole="alert" style={styles.destructive}>{zh ? '搜尋暫時無法使用' : 'Search is temporarily unavailable'}</Text> : null}
                 {currentResponse?.map(item => <Pressable key={item.id} accessibilityRole="button" style={styles.result}
@@ -410,14 +443,14 @@ export function D6AddPlace(props: AddCardProps) {
           ) : null}
         </View>
       </>}
-      <SheetPresentation visible={sheetVisible} detents={detents} selection={detents[0]} onClose={onClose} onDismiss={onSheetDismiss}
-        backgroundColor={D6_SURFACE_SOLID_COLOR} allowBackgroundInteraction>
+      <SheetPresentation testID="d6-add-sheet" visible={sheetPresented} detents={detents} selection={detents[0]} onClose={onClose} onDismiss={onSheetDismiss}
+        backgroundColor="transparent" useSystemBackground allowBackgroundInteraction>
+        <AddSheetSurface />
         <View testID="d6-add-card" style={[styles.addSheetBody, place && styles.addPlaceBody]}>
-          {!place && pinCoordinates ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
+          {!place ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
             <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
             <Text style={styles.rowValue}>{zh ? '放下圖釘後，就能用該位置新增集合點。' : 'Drop a pin to use that location for your new stop.'}</Text>
-          </View> : !place ? <Action testID="d6-add-map-center" title={zh ? '設定集合點' : 'Add a stop at map center'} primary
-            style={styles.footerAction} onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} /> : <>
+          </View> : <>
             <View style={[styles.cardHead, styles.addHead]}>
               <View style={styles.addIdentity}>
                 <View style={[styles.placeIcon, { backgroundColor: color }]}>
@@ -428,10 +461,6 @@ export function D6AddPlace(props: AddCardProps) {
                   {place.address ? <HitherText style={styles.placeAddress} numberOfLines={2}>{place.address}</HitherText> : null}
                 </View>
               </View>
-            </View>
-            <View style={styles.cornerAction}>
-              <SheetHeaderAction action={favorite ? 'favorited' : 'favorite'} disabled={favoriteBusy} onPress={onFavorite} testID="d6-place-favorite"
-                accessibilityLabel={favorite ? (zh ? '從我的最愛移除' : 'Remove from favorites') : (zh ? '加到我的最愛' : 'Add to favorites')} />
             </View>
             <ScrollView style={styles.addFieldsScroll} keyboardShouldPersistTaps="handled" nestedScrollEnabled contentContainerStyle={styles.addFields}>
               <AddPlaceChoice label={zh ? '行程日期' : 'Trip date'} value={dayDate(session.day) ?? dayName(session.day)}
@@ -453,8 +482,11 @@ export function D6AddPlace(props: AddCardProps) {
             <Action testID="confirm-place-add" title={quota ? (zh ? '解鎖更多集合點' : 'Unlock more stops') : canEdit ? (zh ? '加入' : 'Add') : (zh ? '建議' : 'Suggest')}
               primary style={[styles.footerAction, styles.commitAction]} disabled={busy || !title.trim()} onPress={() => { if (!quota) lightTap(); onCommit(); }} />
           </>}
-          {nestedSheets}
+          {needsSheet ? nestedSheets : null}
         </View>
+        {place ? <SheetHeaderAction action={favorite ? 'favorited' : 'favorite'} disabled={favoriteBusy} onPress={onFavorite} testID="d6-place-favorite"
+          accessibilityLabel={favorite ? (zh ? '從我的最愛移除' : 'Remove from favorites') : (zh ? '加到我的最愛' : 'Add to favorites')}
+          style={styles.cornerAction} /> : null}
       </SheetPresentation>
     </View>
   );
@@ -469,12 +501,14 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   sheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET },
   scrollBody: { flex: 1, minHeight: 0 },
-  addSheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET, justifyContent: 'flex-end', backgroundColor: D6_SURFACE_SOLID_COLOR },
+  addSheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET, justifyContent: 'flex-end' },
   footerAction: { flexGrow: 0, flexShrink: 0 },
+  centerAction: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET + MAP_ISLAND_SIDE_INSET, right: MAP_FLOATING_EDGE_INSET + MAP_ISLAND_SIDE_INSET,
+    boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
   commitAction: { width: '66.67%', alignSelf: 'center' },
   addPlaceBody: { justifyContent: 'flex-start' },
   addHead: { paddingRight: MAP_SHEET_ACTION_HIT_SIZE + 12 },
-  cornerAction: { position: 'absolute', top: SHEET_CORNER_ACTION_INSET, right: SHEET_CORNER_ACTION_INSET, zIndex: 1 },
+  cornerAction: { position: 'absolute', top: ADD_SHEET_CORNER_INSET, right: ADD_SHEET_CORNER_INSET },
   editorClip: { overflow: 'hidden' },
   editorMeasure: { position: 'absolute', top: 0, left: 0, right: 0 },
   cardIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: MAP_SHEET_ACTION_HIT_SIZE },

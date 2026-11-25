@@ -6183,7 +6183,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "a3cdf02363df61855d9a813bf56023613d704f84c548d19eff44d5499ce73032"
+    "hash": "14effc0bf38f25af2fd4e584be1ae30c8a51efc6cb898022156e464fc2d27269"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6849,19 +6849,19 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "callback",
     "name": "onDay",
-    "hash": "c81e22e046817d7f9225596ec63c0166132694631d376a0089cfe3facc09f76c"
+    "hash": "1b4b65254203aac22422d8a0b2547a4ced15f7ede944485815929991361cb4b1"
   },
   {
     "file": "src/screens/MapScreen.tsx",
     "kind": "callback",
     "name": "onPlacement",
-    "hash": "6b9e5b9ffb6a71aac5b57808b6e334bb6ec4d2f1c1341d618bcd14581b42c9c4"
+    "hash": "1e3dce5e7f01f15e0bc60fb3c34bbd1658ff06c71873be0d2a74cfd2633ed529"
   },
   {
     "file": "src/screens/MapScreen.tsx",
     "kind": "callback",
     "name": "onStay",
-    "hash": "30f38633bd2adfedd7a96264af2db4850665de0b8219d0739b18ef0e250a3bd5"
+    "hash": "b15bd2c608297ed36b5e2f31178ea8ab95111f59bd5a353975b58ee577e47a57"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -8815,9 +8815,27 @@
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
+    "kind": "lifecycle",
+    "name": "useMountEffect",
+    "hash": "3c3a82e8f276afd2ec11e2a700493bfbebc30e447e030d2f6f554b8b30d01518"
+  },
+  {
+    "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "export",
     "name": "D6AddPlace",
-    "hash": "9d3503956d7658f8d7b90a9f26de9ea3c1c3d6c52c4e6f955a1ba86e0c61161f"
+    "hash": "02b6207c50ecd319153c4265f79b485e034589f754288fd94292180ff486d5c5"
+  },
+  {
+    "file": "src/screens/MapScreen/components/D6StopCards.tsx",
+    "kind": "callback",
+    "name": "onFinish",
+    "hash": "e0cef6aab337607b7faa6fa953ca466dcb1c0151a476f5063592530b15b5b8c7"
+  },
+  {
+    "file": "src/screens/MapScreen/components/D6StopCards.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "3a37f7fa4c26b71328620eb0414cafd0883b87026d194d27bc5399db4d0999cb"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
@@ -8882,20 +8900,8 @@
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "callback",
-    "name": "onPress",
-    "hash": "3a37f7fa4c26b71328620eb0414cafd0883b87026d194d27bc5399db4d0999cb"
-  },
-  {
-    "file": "src/screens/MapScreen/components/D6StopCards.tsx",
-    "kind": "callback",
     "name": "onTitle",
     "hash": "8340c923c32b2a69af549639f5ac765af7346d8e8b2fe3a1ec6e76a5df859d55"
-  },
-  {
-    "file": "src/screens/MapScreen/components/D6StopCards.tsx",
-    "kind": "callback",
-    "name": "onPress",
-    "hash": "77c30ba3a5a968068865da9d5abcff22e305cb1b08c00036f1970804c729763e"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
@@ -8920,6 +8926,12 @@
     "kind": "callback",
     "name": "onPress",
     "hash": "26f570647f7a1d6592f1c1ba7bbf14e15b47a9cf43e4d3a3262fca7ae252ca8f"
+  },
+  {
+    "file": "src/screens/MapScreen/components/D6StopCards.tsx",
+    "kind": "callback",
+    "name": "onPress",
+    "hash": "77c30ba3a5a968068865da9d5abcff22e305cb1b08c00036f1970804c729763e"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
@@ -10996,6 +11008,12 @@
     "kind": "lifecycle",
     "name": "useMountEffect",
     "hash": "8c02fc5f8969ec827fb6e93e985d0ca7f98f821b3370dc8fc32d602cea1228b9"
+  },
+  {
+    "file": "src/screens/MapScreen/hooks/useHomeAddSession.ts",
+    "kind": "export",
+    "name": "useHomeAddSession",
+    "hash": "c6f0018adcc0626ef2734c85a66fe5841c4413a49d21b177442dbd9ff39a35b5"
   },
   {
     "file": "src/screens/MapScreen/hooks/useItineraryMutations.ts",

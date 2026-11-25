@@ -140,7 +140,7 @@ export function useD6PaneDrag({
 
   const sync = () => {
     const previous = detents.get();
-    const boundsChanged = previous.closed !== closed || previous.full !== full;
+    const boundsChanged = previous.closed !== closed || full < previous.full;
     detents.set({ closed, half, full });
     interactionEnabled.set(interactive);
     let next = target.get();
