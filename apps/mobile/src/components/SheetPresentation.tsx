@@ -17,6 +17,8 @@ export type SheetPresentationProps = {
   onSelectionChange?: (detent: SheetDetent) => void;
   backgroundColor?: string;
   useSystemBackground?: boolean;
+  /** Gradient drawn over the system material on iOS 26. */
+  surfaceTint?: readonly string[];
   allowBackgroundInteraction?: boolean;
   dismissDisabled?: boolean;
   children: React.ReactNode;

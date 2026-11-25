@@ -31,7 +31,7 @@ import OverflowMarquee from '../../../components/OverflowMarquee';
 import { HitherText } from '../../../components/HitherText';
 import { MAP_FLOATING_EDGE_INSET, MAP_FLOATING_GRABBER_HEIGHT, MAP_GATHERING_CORNER_RADIUS, MAP_ISLAND_ACTION_HEIGHT,
   MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_CORNER_RADIUS, MAP_ISLAND_GRABBER_HEIGHT, MAP_ISLAND_HEIGHT,
-  MAP_ISLAND_SIDE_INSET, MAP_SHEET_ACTION_VISUAL_SIZE, SHEET_CORNER_ACTION_INSET, D6_SURFACE_COLORS, D6_SURFACE_BORDER_COLOR, D6_SURFACE_SOLID_COLOR, D6_TRIGGER_SHADOW_COLOR } from '../../../components/mapSheetChrome';
+  MAP_ISLAND_SIDE_INSET, SHEET_CORNER_ACTION_INSET, D6_SURFACE_COLORS, D6_SURFACE_BORDER_COLOR, D6_SURFACE_SOLID_COLOR, D6_TRIGGER_SHADOW_COLOR } from '../../../components/mapSheetChrome';
 import MapRecenterControl from '../../../components/MapRecenterControl';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useForegroundUi, useVisibleUi } from '../../../state/foregroundUi';
@@ -56,11 +56,6 @@ const STAGE_ONE_LIMIT = 0.6;
 const ITINERARY_BUTTON_SIZE = 52;
 const TOP_BODY_INSET = 6;
 const COMPACT_BODY_INSET = 14;
-const GATHERING_CORNER_ACTION_INSET = MAP_GATHERING_CORNER_RADIUS - MAP_SHEET_ACTION_VISUAL_SIZE / 2;
-const COMPACT_CORNER_ACTION = {
-  marginTop: GATHERING_CORNER_ACTION_INSET - COMPACT_BODY_INSET,
-  marginRight: GATHERING_CORNER_ACTION_INSET - SHEET_CORNER_ACTION_INSET,
-};
 const TEAM_BODY_INSET = 6;
 const PANE_FIT_SLACK = 8;
 const MIN_PANE_BODY = 120;
@@ -534,7 +529,10 @@ export function D6HomeChrome(props: HomeChromeProps) {
   }, [onPaneChange, openPane]);
   const reportItinerary = useCallback((part: D6PaneContentPart) => setItineraryContent(current => ({ ...current, ...part })), []);
   const reportTeam = useCallback((part: D6PaneContentPart) => setTeamContent(current => ({ ...current, ...part })), []);
+  const topPaneHeight = useSharedValue(topClosed);
+  const islandPaneHeight = useSharedValue(islandClosed);
   const top = useD6PaneDrag({
+    height: topPaneHeight, peer: { height: islandPaneHeight, closed: islandClosed },
     closed: topClosed,
     openHeight: itineraryOpenHeight,
     enabled: interactive,
@@ -543,6 +541,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
     onOpenChange: changeItinerary, onDragBegin: beginItineraryDrag, onContentHeight: reportItinerary,
   });
   const island = useD6PaneDrag({
+    height: islandPaneHeight, peer: { height: topPaneHeight, closed: topClosed },
     closed: islandClosed, openHeight: teamOpenHeight, enabled: interactive && !islandHidden,
     full: islandFull,
     direction: -1, open: teamOpen, reduceMotion: props.reduceMotion, owner,
@@ -604,7 +603,6 @@ export function D6HomeChrome(props: HomeChromeProps) {
           pointerEvents={itineraryCollapsed ? 'none' : 'box-none'}
           accessibilityElementsHidden={itineraryCollapsed} importantForAccessibility={itineraryCollapsed ? 'no-hide-descendants' : 'auto'}>
           <D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS} grabberHeight={TOP_GRABBER_HEIGHT}
-            cornerAction={compact ? COMPACT_CORNER_ACTION : undefined}
             style={[styles.top, { width: cardWidth }]} open={topOpen}
             surface={<D6Surface radius={MAP_GATHERING_CORNER_RADIUS} />}
             header={stop ? <View>

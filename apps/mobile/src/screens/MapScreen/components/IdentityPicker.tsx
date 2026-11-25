@@ -69,10 +69,12 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
   const committedAvatar = useRef(avatar);
   const [positioned, setPositioned] = useState(false);
   const [centeredAvatar, setCenteredAvatar] = useState(avatar);
+  const [highlightedAvatar, setHighlightedAvatar] = useState(avatar);
   const centerAvatar = (value: string, animated: boolean) => {
     committedAvatar.current = value;
     hapticIndex.current = indexFor(value);
     setCenteredAvatar(value);
+    setHighlightedAvatar(value);
     scroll.current?.scrollTo({ x: indexFor(value) * EMOJI_STRIDE, animated: animated && !reducedMotion });
   };
 
@@ -80,7 +82,9 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
     if (!scrolling.current) return;
     const index = Math.max(0, Math.min(AVATAR_EMOJI.length - 1, Math.round(event.nativeEvent.contentOffset.x / EMOJI_STRIDE)));
     const crossed = Math.abs(index - hapticIndex.current);
+    if (crossed === 0) return;
     hapticIndex.current = index;
+    setHighlightedAvatar(AVATAR_EMOJI[index]);
     for (let step = 0; step < crossed; step++) selectionTick();
   };
 
@@ -91,6 +95,7 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
     const next = AVATAR_EMOJI[index];
     if (!next) return;
     setCenteredAvatar(next);
+    setHighlightedAvatar(next);
     if (next !== committedAvatar.current) {
       committedAvatar.current = next;
       onChange(next);
@@ -131,7 +136,7 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
                 onChange(value);
                 centerAvatar(value, true);
               }}
-              style={[styles.emoji, avatar === value && { backgroundColor: color, borderColor: '#fff', transform: [{ scale: 1.18 }] }]}
+              style={[styles.emoji, highlightedAvatar === value && { backgroundColor: color, borderColor: '#fff', transform: [{ scale: 1.18 }] }]}
             >
               <HitherText typeRole="emoji" style={styles.emojiText}>{value}</HitherText>
             </Pressable>

@@ -45,6 +45,7 @@ jest.mock('react-native-gesture-handler', () => ({
       onStart(callback: (...args: unknown[]) => void) { this.callbacks.set('start', callback); return this; },
       onEnd(callback: (...args: unknown[]) => void) { this.callbacks.set('end', callback); return this; },
     }),
+    Native: () => ({ simultaneousWithExternalGesture() { return this; } }),
   },
 }));
 jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({
@@ -508,6 +509,10 @@ describe('D6 itinerary panel', () => {
     act(() => strip().onScroll(at(110)));
     expect(selectionTick).toHaveBeenCalledTimes(2);
     expect(onSelectDay).not.toHaveBeenCalled();
+    const filled = (style: unknown): boolean => Array.isArray(style) ? style.some(filled)
+      : !!style && typeof style === 'object' && (style as { backgroundColor?: string }).backgroundColor === 'white';
+    const highlighted = () => [1, 2, 3, 4].filter(day => filled(byId(`d6-route-day-${day}`).props.style));
+    expect(highlighted()).toEqual([3]);
     act(() => strip().onScrollEndDrag(at(110, 1)));
     act(() => strip().onMomentumScrollEnd(at(400)));
     expect(selectionTick).toHaveBeenCalledTimes(3);

@@ -13,10 +13,8 @@ export function D6PaneScrollView({ onContentSizeChange, onLayout, ...props }: Om
   useMountEffect(() => {
     if (!panel) return;
     panel.scrollOffset.set(props.contentOffset?.y ?? 0);
-    return () => {
-      panel.scrollOffset.set(0);
-      panel.onContentHeight?.({ content: null });
-    };
+    // The last measured height stays reported, so reopening targets the real height instead of a placeholder.
+    return () => { panel.scrollOffset.set(0); };
   });
   if (!panel) return <ScrollView {...props} onContentSizeChange={onContentSizeChange} onLayout={onLayout} />;
   const { scrollGesture, scrollRef, scrollHandler, scrollContent, scrollViewport, onContentHeight: reportContent } = panel;

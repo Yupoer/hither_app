@@ -16,7 +16,6 @@ import Pressable from '../../../components/MotionPressable';
 import Slider from '@react-native-community/slider';
 import { HitherText } from '../../../components/HitherText';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { maps, type MapRegion, type PlaceResult } from '../../../native';
@@ -49,7 +48,8 @@ const STOP_DETENTS = ['medium', { fraction: 0.87 }] satisfies readonly SheetDete
 const ADD_COORDINATE_DETENTS = [{ height: 140 }] satisfies readonly SheetDetent[];
 const ADD_CONFIRM_DETENTS = [{ fraction: 0.52 }] satisfies readonly SheetDetent[];
 
-const SYSTEM_GLASS_SHEET = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26;
+/** iOS 26 sheets draw their own material and tint behind the content. */
+const SYSTEM_SHEET_SURFACE = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26;
 
 const DETAIL_TIMING = { duration: 280, easing: Easing.inOut(Easing.cubic) };
 
@@ -319,12 +319,6 @@ function PlaceTitle({ title, name, zh, onTitle }: {
   </>;
 }
 
-/** iOS 26 sheets already draw Liquid Glass, so only the D6 tint is layered on; older systems draw the full D6 surface. */
-function AddSheetSurface() {
-  return SYSTEM_GLASS_SHEET
-    ? <LinearGradient pointerEvents="none" colors={D6_SURFACE_COLORS.thin} style={StyleSheet.absoluteFill} />
-    : <D6Surface radius={MAP_SHEET_CORNER_RADIUS} />;
-}
 
 /** Without a presented sheet there is no native onDismiss, so a hidden add flow finishes its dismissal on mount. */
 function FinishWithoutSheet({ onFinish }: { onFinish: () => void }) {
@@ -453,8 +447,8 @@ export function D6AddPlace(props: AddCardProps) {
       </>}
       <SheetPresentation testID="d6-add-sheet" visible={sheetPresented} detents={detents} selection={detents[0]} onClose={onClose}
         onDismiss={() => { setSheetGone(true); onSheetDismiss(); }}
-        backgroundColor="transparent" useSystemBackground allowBackgroundInteraction>
-        <AddSheetSurface />
+        backgroundColor="transparent" useSystemBackground surfaceTint={D6_SURFACE_COLORS.thin} allowBackgroundInteraction>
+        {SYSTEM_SHEET_SURFACE ? null : <D6Surface radius={MAP_SHEET_CORNER_RADIUS} />}
         <View testID="d6-add-card" style={[styles.addSheetBody, place && styles.addPlaceBody]}>
           {!place ? <View testID="d6-coordinate-pin-hint" accessibilityLiveRegion="polite">
             <Text style={styles.pinTitle}>{zh ? '長按地圖選擇位置' : 'Touch and hold a spot on the map'}</Text>
@@ -517,7 +511,8 @@ const styles = StyleSheet.create({
     boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
   commitAction: { width: '66.67%', alignSelf: 'center' },
   addPlaceBody: { justifyContent: 'flex-start' },
-  addHead: { paddingRight: MAP_SHEET_ACTION_HIT_SIZE + 12 },
+  /** The favorite action owns the first row, so the place identity starts below it. */
+  addHead: { marginTop: SHEET_CORNER_BUTTON_INSET + MAP_SHEET_ACTION_HIT_SIZE + 8 - PRESENTED_SHEET_CONTENT_TOP - SHEET_CORNER_ACTION_INSET },
   cornerAction: { position: 'absolute', top: SHEET_CORNER_BUTTON_INSET, right: SHEET_CORNER_BUTTON_INSET },
   editorClip: { overflow: 'hidden' },
   editorMeasure: { position: 'absolute', top: 0, left: 0, right: 0 },

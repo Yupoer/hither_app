@@ -120,9 +120,11 @@ final class HitherPaneView: ExpoView {
     let frame = geometry(height: panelHeight)
     guard force || referenceDirty || frame != lastAppliedFrame else { return }
     lastAppliedFrame = frame
-    CATransaction.begin()
+    // Committing a transaction here would flush layout synchronously inside gesture delivery, which
+    // recurses through iOS 26 glass views until the main thread overflows its stack.
+    let actionsWereDisabled = CATransaction.disableActions()
     CATransaction.setDisableActions(true)
-    defer { CATransaction.commit() }
+    defer { CATransaction.setDisableActions(actionsWereDisabled) }
     setFrame(frame.visible, on: surface)
     setFrame(frame.header, on: header)
     if let body {

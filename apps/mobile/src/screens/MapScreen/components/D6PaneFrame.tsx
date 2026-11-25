@@ -25,11 +25,10 @@ type Props = {
   footer?: ReactNode;
   open: boolean;
   grabberHeight?: number;
-  cornerAction?: { marginTop: number; marginRight: number };
 };
 
 export function D6PaneFrame({ panel, direction, cornerRadius, style, surface, header, body, grabber, footer, open,
-  grabberHeight = MAP_FLOATING_GRABBER_HEIGHT, cornerAction }: Props) {
+  grabberHeight = MAP_FLOATING_GRABBER_HEIGHT }: Props) {
   const { nativeRef, full, closed, layoutHeight, animatedStyle } = panel;
   const visible = useVisibleUi();
   const [overlay, setOverlay] = useState<ReactNode>(null);
@@ -37,8 +36,8 @@ export function D6PaneFrame({ panel, direction, cornerRadius, style, surface, he
   const bodyRef = useAnimatedRef<View>();
   const interaction = useMemo(() => ({ owner: panel.owner, paneGesture: panel.contentGesture,
     scrollGesture: panel.scrollGesture, overlayRef, setOverlay, open: open && visible,
-    viewport: { ref: bodyRef, height: panel.height, closed }, reportContent: panel.onContentHeight, cornerAction }),
-  [panel.owner, panel.contentGesture, panel.scrollGesture, overlayRef, bodyRef, panel.height, closed, open, visible, panel.onContentHeight, cornerAction]);
+    viewport: { ref: bodyRef, height: panel.height, closed }, reportContent: panel.onContentHeight }),
+  [panel.owner, panel.contentGesture, panel.scrollGesture, overlayRef, bodyRef, panel.height, closed, open, visible, panel.onContentHeight]);
   const draggableHeader = header ? <GestureDetector gesture={panel.headerGesture}><View collapsable={false}>{header}</View></GestureDetector> : null;
   const draggableFooter = footer ? <GestureDetector gesture={panel.footerGesture}><View collapsable={false} style={styles.footer}>{footer}</View></GestureDetector> : null;
   const content = <GestureDetector gesture={panel.contentGesture}>

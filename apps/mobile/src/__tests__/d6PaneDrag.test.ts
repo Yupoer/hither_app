@@ -8,6 +8,7 @@ let mockNative = true;
 let mockVisible = true;
 let mockReadHeight: () => number | null = () => null;
 let mockDeliverHeight = () => {};
+const mockArrival = { read: () => false, deliver: (_now: boolean, _previous: boolean | null) => {}, previous: null as boolean | null };
 const mockCommand = jest.fn((_ref: unknown, _name: string, _args: unknown[]) => {});
 let mockStyle: () => { height?: number } = () => ({});
 type Spring = { next: number; completion?: (finished: boolean) => void };
@@ -45,8 +46,13 @@ jest.mock('react-native-reanimated', () => ({
   },
   useAnimatedScrollHandler: (handler: ScrollHandler) => { mockScrollHandler = handler; return handler; },
   scrollTo: (...args: unknown[]) => mockScrollTo(...args),
-  useAnimatedReaction: (reader: typeof mockReadHeight, deliver: (height: number | null) => void) => {
-    mockReadHeight = reader;
+  useAnimatedReaction: (reader: () => unknown, deliver: (value: unknown, previous?: unknown) => void) => {
+    if (typeof reader() === 'boolean') {
+      mockArrival.read = reader as () => boolean;
+      mockArrival.deliver = deliver;
+      return;
+    }
+    mockReadHeight = reader as typeof mockReadHeight;
     mockDeliverHeight = () => deliver(reader());
   },
   dispatchCommand: (ref: unknown, name: string, args: unknown[]) => mockCommand(ref, name, args),
@@ -121,6 +127,7 @@ function spring(): Spring {
   return value;
 }
 beforeEach(() => {
+  mockArrival.previous = null;
   mockNative = true; mockVisible = true; mockSprings.length = 0; renders = 0;
   jest.clearAllMocks();
 });
@@ -144,19 +151,27 @@ it.each([1, -1] satisfies (1 | -1)[])('regrabs the actual intermediate spring po
   expect(spring().next).toBe(620);
 });
 
-it('keeps closing content until the spring completes and ignores an interrupted close completion', () => {
+function observeArrival() {
+  const now = mockArrival.read();
+  mockArrival.deliver(now, mockArrival.previous);
+  mockArrival.previous = now;
+}
+
+it('keeps closing content until the height arrives closed, even when a peer retargets the spring', () => {
   render({ open: true });
+  act(() => observeArrival());
   act(() => panel().snapTo('closed'));
-  const closing = spring();
   expect(panel().preview).toBe(true);
   expect(panel().layoutHeight).toBe(620);
   height().value = 200;
   act(() => startChrome(mockHandlers));
-  act(() => closing.completion?.(true));
+  act(() => observeArrival());
   expect(panel().preview).toBe(true);
   act(() => mockHandlers.end({ translationY: -100, velocityY: -100 }, true));
   act(() => mockHandlers.finalize());
-  act(() => spring().completion?.(true));
+  expect(panel().preview).toBe(true);
+  height().value = 100;
+  act(() => observeArrival());
   expect(panel().detent).toBe('closed');
   expect(panel().preview).toBe(false);
   expect(onOpenChange).toHaveBeenCalledWith(false);
@@ -287,7 +302,7 @@ it.each([1, -1] satisfies (1 | -1)[])('hands content scrolling into collapse usi
   act(() => scrollContent(edge));
   act(() => handlers.update({ translationY: -direction * 36, velocityY: 0 }));
   expect(height().get()).toBe(344);
-  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 576 : 0, false);
+  expect(panel().scrollOffset.get()).toBe(direction === 1 ? 576 : 0);
   expect(onDragBegin).toHaveBeenCalledTimes(1);
   act(() => handlers.end({ translationY: -direction * 36, velocityY: -direction * 360 }, true));
   act(() => handlers.finalize());
@@ -310,7 +325,7 @@ it.each([1, -1] satisfies (1 | -1)[])('scrolls to the edge before expanding and 
   act(() => scrollContent(edge));
   act(() => handlers.update({ translationY: direction * 40, velocityY: 0 }));
   expect(height().get()).toBe(360);
-  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 0 : 560, false);
+  expect(panel().scrollOffset.get()).toBe(direction === 1 ? 0 : 560);
   act(() => handlers.finalize());
   expect(spring().next).toBe(349.6);
 });
@@ -354,10 +369,10 @@ function contentHandlers() {
   if (!handlers) throw new Error('Content gesture is missing');
   return handlers;
 }
-function scrollContent(y: number) {
+function scrollContent(y: number, contentHeight = 800) {
   mockScrollHandler({
     eventName: 'onScroll', contentInset: { top: 0, left: 0, bottom: 0, right: 0 }, zoomScale: 1,
-    contentOffset: { x: 0, y }, contentSize: { width: 320, height: 800 },
+    contentOffset: { x: 0, y }, contentSize: { width: 320, height: contentHeight },
     layoutMeasurement: { width: 320, height: 500 },
   }, {});
 }
@@ -370,7 +385,7 @@ it.each([1, -1] satisfies (1 | -1)[])('scrolls full-detent overflow and can coll
   act(() => startContent(handlers));
   act(() => handlers.update({ translationY: direction * 330, velocityY: 0 }));
   expect(height().get()).toBe(620);
-  expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 0 : 300, false);
+  expect(panel().scrollOffset.get()).toBe(direction === 1 ? 0 : 300);
   act(() => handlers.update({ translationY: -direction * 10, velocityY: 0 }));
   expect(height().get()).toBe(580);
   expect(mockScrollTo).toHaveBeenLastCalledWith(expect.any(Function), 0, direction === 1 ? 340 : 0, false);
@@ -573,4 +588,29 @@ it('recovers a chrome drag whose update throws and reports the failing gesture',
   expect(height().get()).toBe(349.6);
   expect(panel().detent).toBe('half');
   expect(onOpenChange).not.toHaveBeenCalled();
+});
+
+it('collapses content that fits with a light flick and leaves its scroll position alone', () => {
+  render({ open: true, full: 344, openHeight: 344 });
+  const handlers = contentHandlers();
+  act(() => scrollContent(0, 200));
+  act(() => startContent(handlers));
+  act(() => handlers.update({ translationY: -6, velocityY: -300 }));
+  expect(height().get()).toBeLessThan(344);
+  act(() => handlers.update({ translationY: -10, velocityY: -300 }));
+  act(() => handlers.end({ translationY: -10, velocityY: -300 }, true));
+  act(() => handlers.finalize());
+  expect(mockScrollTo).not.toHaveBeenCalled();
+  expect(panel().scrollOffset.get()).toBe(0);
+  expect(panel().detent).toBe('closed');
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+});
+
+it('starts closing the peer pane on the UI thread the moment this pane opens', () => {
+  const peerValues: unknown[] = [];
+  const peerHeight = { value: 300, get: () => 300, set: (next: unknown) => { peerValues.push(next); } };
+  render({ peer: { height: peerHeight as never, closed: 60 } });
+  act(() => panel().snapTo('half'));
+  expect(peerValues).toEqual([expect.objectContaining({ next: 60 })]);
+  expect(onOpenChange).toHaveBeenCalledWith(true);
 });

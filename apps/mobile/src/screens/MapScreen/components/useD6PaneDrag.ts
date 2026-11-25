@@ -12,14 +12,18 @@ export type Detent = 'closed' | 'half' | 'full';
 /** Natural pane body height, split into fixed leading chrome and scrollable content. */
 export type D6PaneContentPart = { leading?: number; content?: number | null };
 const DETENT_ORDER = ['closed', 'half', 'full'] satisfies readonly Detent[];
-const MAX_CONTENT_SNAP_TRAVEL = 12;
+const MAX_CONTENT_SNAP_TRAVEL = 8;
 const MAX_CHROME_SNAP_TRAVEL = 8;
 const PAN_ACTIVATION_TRAVEL = 4;
 const PAN_HORIZONTAL_LIMIT = 8;
 const SCROLL_EDGE_TOLERANCE = 1;
 const DETENT_SNAP_FRACTION = 0.32;
 const MIN_FLICK_TRAVEL = 5;
-const MIN_FLICK_SPEED = 280;
+const MIN_FLICK_SPEED = 200;
+const PANE_SPRING = { damping: 29, stiffness: 285, mass: 0.8, overshootClamping: true } as const;
+
+/** The other pane on screen; it starts closing on the UI thread the moment this one takes over. */
+export type D6PanePeer = { height: SharedValue<number>; closed: number };
 
 function releaseDetent(
   target: Detent,
@@ -56,7 +60,7 @@ type ChromeDrag = { kind: 'idle' }
 
 export function useD6PaneDrag({
   closed, full, openHeight, direction, open, reduceMotion, onOpenChange, onDragBegin,
-  enabled = true, owner: sharedOwner, onContentHeight,
+  enabled = true, owner: sharedOwner, onContentHeight, height: sharedHeight, peer,
 }: {
   closed: number;
   full: number;
@@ -69,6 +73,9 @@ export function useD6PaneDrag({
   onDragBegin: () => void;
   owner?: SharedValue<D6DragOwner>;
   onContentHeight?: (part: D6PaneContentPart) => void;
+  /** Lets a peer pane drive this pane's height; defaults to a private value. */
+  height?: SharedValue<number>;
+  peer?: D6PanePeer;
 }) {
   const visible = useVisibleUi();
   const localOwner = useSharedValue<D6DragOwner>('idle');
@@ -84,7 +91,15 @@ export function useD6PaneDrag({
   const [preview, setPreview] = useState(false);
   const target = useSharedValue<Detent>(open ? 'half' : 'closed');
   const requested = useSharedValue(open);
-  const height = useSharedValue(open ? half : closed);
+  const ownHeight = useSharedValue(open ? half : closed);
+  const height = sharedHeight ?? ownHeight;
+  const peerHeight = peer?.height;
+  const peerClosed = peer?.closed ?? 0;
+  const collapsePeer = useCallback(() => {
+    'worklet';
+    if (!peerHeight || reduceMotion || peerHeight.get() <= peerClosed + 0.5) return;
+    peerHeight.set(withSpring(peerClosed, PANE_SPRING));
+  }, [peerHeight, peerClosed, reduceMotion]);
   const detents = useSharedValue<Record<Detent, number>>({ closed, half, full });
   const origin = useSharedValue(closed);
   const dragging = useSharedValue(false);
@@ -121,6 +136,13 @@ export function useD6PaneDrag({
   const finishClosing = useCallback(() => {
     if (target.get() === 'closed' && !dragging.get()) setPreview(false);
   }, [dragging, target, setPreview]);
+  // A peer pane may retarget this height while it closes, so closing ends when the height arrives, not when one spring does.
+  useAnimatedReaction(
+    () => height.get() <= detents.get().closed + 0.5,
+    (atClosed, wasClosed) => {
+      if (atClosed && wasClosed === false && target.get() === 'closed' && !dragging.get()) runOnJS(finishClosing)();
+    },
+  );
 
   const animateTo = useCallback((next: Detent, velocity = 0, heights: Record<Detent, number> = detents.get()) => {
     const nextHeight = heights[next];
@@ -129,14 +151,11 @@ export function useD6PaneDrag({
       height.set(nextHeight);
       setPreview(false);
     } else {
-      height.set(withSpring(nextHeight, {
-        damping: 29, stiffness: 285, mass: 0.8, velocity, overshootClamping: true,
-      }, finished => {
-        if (finished && next === 'closed') runOnJS(finishClosing)();
-      }));
-      if (next !== 'closed') setPreview(false);
+      const alreadyThere = Math.abs(height.get() - nextHeight) <= 0.5;
+      height.set(withSpring(nextHeight, { ...PANE_SPRING, velocity }));
+      if (next !== 'closed' || alreadyThere) setPreview(false);
     }
-  }, [detents, height, reduceMotion, visible, finishClosing, setPreview]);
+  }, [detents, height, reduceMotion, visible, setPreview]);
 
   const sync = () => {
     const previous = detents.get();
@@ -172,11 +191,12 @@ export function useD6PaneDrag({
     target.set(next);
     setDetent(next);
     animateTo(next, velocity);
+    if (nextOpen) collapsePeer();
     if (nextOpen !== requested.get()) {
       requested.set(nextOpen);
       onOpenChange(nextOpen);
     }
-  }, [animateTo, interactionEnabled, onOpenChange, requested, target, setPreview, setDetent]);
+  }, [animateTo, interactionEnabled, onOpenChange, requested, target, setPreview, setDetent, collapsePeer]);
   const begin = useCallback(() => {
     if (!interactionEnabled.get()) return;
     setPreview(true);
@@ -232,9 +252,11 @@ export function useD6PaneDrag({
         nextHeight = height.get();
         origin.set(nextHeight);
         dragging.set(true);
+        collapsePeer();
         runOnJS(begin)();
       }
-      const anchoredAtBottom = offset >= maximumOffset - SCROLL_EDGE_TOLERANCE
+      // Content that fits needs no scrolling; the pane only clips it while resizing.
+      const anchoredAtBottom = scrollRange > 0 && offset >= maximumOffset - SCROLL_EDGE_TOLERANCE
         && (offset > 0 || remaining < 0);
       if (nextHeight < fullHeight) {
         const resized = Math.max(closedHeight, Math.min(fullHeight, nextHeight + direction * remaining));
@@ -253,9 +275,11 @@ export function useD6PaneDrag({
         }
       }
       contentDrag.set({ kind: 'controlled', translation: translationY, offset });
+      const offsetMoved = Math.abs(scrollOffset.get() - offset) > 0.5;
       scrollOffset.set(offset);
       height.set(nextHeight);
-      scrollTo(scrollRef, 0, offset, false);
+      // scrollTo dispatches onScroll synchronously back into this runtime; skip it when nothing moved.
+      if (offsetMoved) scrollTo(scrollRef, 0, offset, false);
     }, resetContentDrag))
     .onEnd(guardGesture('pane-content-end', ({ velocityY }: { velocityY: number }, success: boolean) => {
       'worklet';
@@ -269,7 +293,7 @@ export function useD6PaneDrag({
     }, resetContentDrag))
     .onFinalize(guardGesture('pane-content-finalize', resetContentDrag, resetContentDrag)),
   [interactive, scrollGesture, scrollContent, scrollViewport, scrollOffset, scrollRef, contentDrag, detents,
-    height, dragging, direction, begin, snapTo, owner, origin, target, resetContentDrag]);
+    height, dragging, direction, begin, snapTo, owner, origin, target, resetContentDrag, collapsePeer]);
   const makeChromeGesture = useCallback((chromeDrag: SharedValue<ChromeDrag>) => {
     const resetChromeDrag = () => {
       'worklet';
@@ -303,6 +327,7 @@ export function useD6PaneDrag({
         dragging.set(true);
         cancelAnimation(height);
         origin.set(height.get());
+        collapsePeer();
         runOnJS(begin)();
       }, resetChromeDrag))
       .onUpdate(guardGesture('pane-chrome-update', ({ translationY }: { translationY: number }) => {
@@ -329,7 +354,7 @@ export function useD6PaneDrag({
         runOnJS(snapTo)(next, speed);
       }, resetChromeDrag))
       .onFinalize(guardGesture('pane-chrome-finalize', resetChromeDrag, resetChromeDrag));
-  }, [interactive, begin, contentDrag, detents, direction, dragging, height, origin, restore, snapTo, owner, pressCancelled, target]);
+  }, [interactive, begin, contentDrag, detents, direction, dragging, height, origin, restore, snapTo, owner, pressCancelled, target, collapsePeer]);
   const headerGesture = useMemo(() => makeChromeGesture(headerDrag), [makeChromeGesture, headerDrag]);
   const footerGesture = useMemo(() => makeChromeGesture(footerDrag), [makeChromeGesture, footerDrag]);
   const gesture = useMemo(() => makeChromeGesture(grabberDrag), [makeChromeGesture, grabberDrag]);

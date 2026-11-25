@@ -90,7 +90,7 @@ describe('D6 You from the real Map screen', () => {
     } finally { await world.close(); }
   });
 
-  it('returns from feedback to its originating settings page and closes one stacked settings sheet at a time', async () => {
+  it('returns from feedback to its originating settings page and pops pushed settings pages one at a time', async () => {
     const world = new World();
     try {
       const device = await openYou(world);
@@ -106,7 +106,8 @@ describe('D6 You from the real Map screen', () => {
       expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
       const advanced = await world.waitFor(device, (value: Observation) =>
         field(value, 'settings-feedback-advanced')?.acceptsInput, 'Support returns to Advanced');
-      expect(field(advanced, 'settings-child-close')).toBeUndefined();
+      expect(field(advanced, 'settings-child-close')?.acceptsInput).toBe(true);
+      expect(field(advanced, 'settings-feedback')).toBeUndefined();
       expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
       const root = await world.waitFor(device, (value: Observation) =>
         field(value, 'settings-page-profile')?.acceptsInput, 'Advanced returns to settings root');
