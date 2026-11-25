@@ -659,7 +659,9 @@ export function D6RoutePane({
             </View>
           </Pressable>
         ) : menuItems.length > 0 ? (
-          <View style={styles.menu}>
+          <View style={[styles.menu, panel?.cornerAction && [styles.cornerMenu, {
+            marginTop: panel.cornerAction.marginTop, marginRight: panel.cornerAction.marginRight,
+          }]]}>
             <D6RouteMenu label={chinese ? '更多' : 'More'} items={menuItems} onOpenFallback={() => openPopup('menu')} />
           </View>
         ) : null}
@@ -961,6 +963,7 @@ const styles = StyleSheet.create({
   selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.14)' },
   selectAllText: { fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
   menu: { marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
+  cornerMenu: { alignSelf: 'flex-start' },
   list: { flex: 1 },
   listContent: { paddingBottom: 8 },
   circle: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,.12)' },

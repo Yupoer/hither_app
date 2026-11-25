@@ -43,6 +43,7 @@ jest.mock('react-native-reanimated', () => {
     FadeIn: transition, FadeOut: transition, LinearTransition: transition,
     runOnJS: (callback: () => void) => callback,
     useAnimatedStyle: (style: () => unknown) => style(),
+    useDerivedValue: (compute: () => unknown) => ({ get: compute }),
     useSharedValue: (initial: unknown) => useState(() => {
       const shared = { value: initial, get: () => shared.value, set: (next: unknown) => { shared.value = next; } };
       return shared;

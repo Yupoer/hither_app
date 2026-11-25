@@ -236,7 +236,7 @@ export default function HomeSettings({
 
   return (
     <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={basePage}
-      fillContent={basePage === 'teams'} yieldToNestedSheet={nestedSheetOpen && !shownChild}
+      fillContent={basePage === 'teams'} yieldToNestedSheet={nestedSheetOpen}
       background={surface}
       title={title[basePage]} titleFontSize={24} doneLabel={t('common.close')}
       navigation="root" onClose={onClose}

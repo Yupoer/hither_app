@@ -397,10 +397,17 @@ export function D6AddPlace(props: AddCardProps) {
   };
   const needsSheet = place != null || pinCoordinates;
   const sheetPresented = sheetVisible && needsSheet;
+  // A swipe can report the finished dismissal before the close request; the close then has no sheet left to wait for.
+  const [sheetGone, setSheetGone] = useState(false);
+  const [wasPresented, setWasPresented] = useState(sheetPresented);
+  if (wasPresented !== sheetPresented) {
+    setWasPresented(sheetPresented);
+    if (sheetPresented) setSheetGone(false);
+  }
   const detents = place ? ADD_CONFIRM_DETENTS : ADD_COORDINATE_DETENTS;
   return (
     <View pointerEvents="box-none" style={styles.addLayer}>
-      {!sheetVisible && !needsSheet ? <FinishWithoutSheet onFinish={onSheetDismiss} /> : null}
+      {!sheetVisible && (!needsSheet || sheetGone) ? <FinishWithoutSheet onFinish={onSheetDismiss} /> : null}
       {sheetVisible && !needsSheet ? <View style={[styles.centerAction, { bottom: Math.max(24, insets.bottom - 8) + MAP_ISLAND_BOTTOM_INSET }]}>
         <Action testID="d6-add-map-center" title={zh ? '設定集合點' : 'Add a stop at map center'} primary
           onPress={() => { Keyboard.dismiss(); setShowSuggestions(false); onCenter(); }} />
@@ -444,7 +451,8 @@ export function D6AddPlace(props: AddCardProps) {
           ) : null}
         </View>
       </>}
-      <SheetPresentation testID="d6-add-sheet" visible={sheetPresented} detents={detents} selection={detents[0]} onClose={onClose} onDismiss={onSheetDismiss}
+      <SheetPresentation testID="d6-add-sheet" visible={sheetPresented} detents={detents} selection={detents[0]} onClose={onClose}
+        onDismiss={() => { setSheetGone(true); onSheetDismiss(); }}
         backgroundColor="transparent" useSystemBackground allowBackgroundInteraction>
         <AddSheetSurface />
         <View testID="d6-add-card" style={[styles.addSheetBody, place && styles.addPlaceBody]}>

@@ -105,6 +105,25 @@ describe('iOS D6 Map', () => {
     } finally { await world.close(); }
   });
 
+  it('clears the held pin when the sheet reports its dismissal before the close request', async () => {
+    const world = new World();
+    try {
+      const device = await openMap(world);
+      await device.perform('map.pin.drop', { latitude: 25.05, longitude: 121.54 });
+      await world.waitFor(device, (value: Observation) => field(value, 'confirm-place-add'), 'pin confirmation');
+      expect(await device.host.call({ kind: 'nativeEvent', testId: 'd6-add-sheet-presentation',
+        value: { event: 'onDismiss' } })).toEqual({ invoked: true });
+      expect(await device.host.call({ kind: 'nativeEvent', testId: 'd6-add-sheet-presentation',
+        value: { event: 'onIsPresentedChange', isPresented: false } })).toEqual({ invoked: true });
+      const map = await world.waitFor(device, (value: Observation) => field(value, 'home-journey-action'), 'map controls restored');
+      expect(map.presentation.mapPendingPlace).toBeNull();
+      await press(device, 'home-itinerary-grabber');
+      expect(await press(device, 'd6-route-add-place')).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => field(value, 'd6-add-map-center')?.acceptsInput, 'a new add session opens');
+      expect(world.backend.itinerary).toHaveLength(1);
+    } finally { await world.close(); }
+  });
+
   it('floats the map-center action without a sheet and cancels straight back to the map', async () => {
     const world = new World();
     try {

@@ -21,7 +21,7 @@ import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { GestureDetector } from 'react-native-gesture-handler';
-import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, useAnimatedReaction, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useD6PaneDrag, type D6PaneContentPart } from './useD6PaneDrag';
 import { D6PaneFrame } from './D6PaneFrame';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,7 +31,7 @@ import OverflowMarquee from '../../../components/OverflowMarquee';
 import { HitherText } from '../../../components/HitherText';
 import { MAP_FLOATING_EDGE_INSET, MAP_FLOATING_GRABBER_HEIGHT, MAP_GATHERING_CORNER_RADIUS, MAP_ISLAND_ACTION_HEIGHT,
   MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_CORNER_RADIUS, MAP_ISLAND_GRABBER_HEIGHT, MAP_ISLAND_HEIGHT,
-  MAP_ISLAND_SIDE_INSET, SHEET_CORNER_ACTION_INSET, D6_SURFACE_COLORS, D6_SURFACE_BORDER_COLOR, D6_SURFACE_SOLID_COLOR, D6_TRIGGER_SHADOW_COLOR } from '../../../components/mapSheetChrome';
+  MAP_ISLAND_SIDE_INSET, MAP_SHEET_ACTION_VISUAL_SIZE, SHEET_CORNER_ACTION_INSET, D6_SURFACE_COLORS, D6_SURFACE_BORDER_COLOR, D6_SURFACE_SOLID_COLOR, D6_TRIGGER_SHADOW_COLOR } from '../../../components/mapSheetChrome';
 import MapRecenterControl from '../../../components/MapRecenterControl';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useForegroundUi, useVisibleUi } from '../../../state/foregroundUi';
@@ -56,6 +56,11 @@ const STAGE_ONE_LIMIT = 0.6;
 const ITINERARY_BUTTON_SIZE = 52;
 const TOP_BODY_INSET = 6;
 const COMPACT_BODY_INSET = 14;
+const GATHERING_CORNER_ACTION_INSET = MAP_GATHERING_CORNER_RADIUS - MAP_SHEET_ACTION_VISUAL_SIZE / 2;
+const COMPACT_CORNER_ACTION = {
+  marginTop: GATHERING_CORNER_ACTION_INSET - COMPACT_BODY_INSET,
+  marginRight: GATHERING_CORNER_ACTION_INSET - SHEET_CORNER_ACTION_INSET,
+};
 const TEAM_BODY_INSET = 6;
 const PANE_FIT_SLACK = 8;
 const MIN_PANE_BODY = 120;
@@ -569,15 +574,18 @@ export function D6HomeChrome(props: HomeChromeProps) {
   });
   const cardWidth = screenWidth - MAP_FLOATING_EDGE_INSET * 2;
   const morph = useSharedValue(!compact || topOpen ? 1 : 0);
+  const cardShape = useDerivedValue(() => compact
+    ? Math.min(1, Math.max(0, (topHeight.get() - ITINERARY_BUTTON_SIZE) / Math.max(1, itineraryOpenHeight - ITINERARY_BUTTON_SIZE)))
+    : morph.get());
   const itineraryMorph = useAnimatedStyle(() => {
-    const progress = morph.get();
+    const progress = cardShape.get();
     return {
       width: ITINERARY_BUTTON_SIZE + (cardWidth - ITINERARY_BUTTON_SIZE) * progress,
       height: Math.max(ITINERARY_BUTTON_SIZE * (1 - progress), topHeight.get()),
       borderRadius: ITINERARY_BUTTON_SIZE / 2 + (MAP_GATHERING_CORNER_RADIUS - ITINERARY_BUTTON_SIZE / 2) * progress,
     };
   });
-  const itineraryButtonMorph = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, morph.get() * 3) }));
+  const itineraryButtonMorph = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, cardShape.get() * 3) }));
   const islandShift = useAnimatedStyle(() => ({
     transform: [{ translateY: islandOffset.get() * (islandClosed + bottom + ISLAND_HIDE_OVERSHOOT) }],
   }));
@@ -596,6 +604,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
           pointerEvents={itineraryCollapsed ? 'none' : 'box-none'}
           accessibilityElementsHidden={itineraryCollapsed} importantForAccessibility={itineraryCollapsed ? 'no-hide-descendants' : 'auto'}>
           <D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS} grabberHeight={TOP_GRABBER_HEIGHT}
+            cornerAction={compact ? COMPACT_CORNER_ACTION : undefined}
             style={[styles.top, { width: cardWidth }]} open={topOpen}
             surface={<D6Surface radius={MAP_GATHERING_CORNER_RADIUS} />}
             header={stop ? <View>
