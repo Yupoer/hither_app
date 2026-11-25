@@ -10,7 +10,7 @@ import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import type { MapStyles } from '../styles';
 import type { Group } from '../../../types';
-import { formatInviteCode } from '../../../utils/inviteCode';
+import { INVITE_CODE_LENGTH } from '../../../utils/inviteCode';
 
 export interface InviteMembersOverlayProps {
   accent: string;
@@ -50,11 +50,9 @@ export function InviteMembersOverlay({
       fitContent
     >
       <View style={[styles.overlayBody, inviteStyles.body, usesCompactSheet && inviteStyles.compactBody]}>
-        <Text style={inviteStyles.hint}>
-          {inviteBlockedForAnonymousLeader
-            ? t('anon.registrationRequiredBody')
-            : t('map.inviteMembersHint')}
-        </Text>
+        {inviteBlockedForAnonymousLeader ? (
+          <Text style={inviteStyles.hint}>{t('anon.registrationRequiredBody')}</Text>
+        ) : null}
         {!inviteBlockedForAnonymousLeader && (
           <View
             style={styles.inviteCodeBoxes}
@@ -62,14 +60,21 @@ export function InviteMembersOverlay({
             accessibilityRole="text"
             accessibilityLabel={group?.inviteCode ?? ''}
           >
-            <Text
-              style={inviteStyles.code}
-              adjustsFontSizeToFit
-              minimumFontScale={0.7}
-              numberOfLines={1}
-            >
-              {formatInviteCode(group?.inviteCode ?? '')}
-            </Text>
+            {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => (
+              <React.Fragment key={index}>
+                {index === INVITE_CODE_LENGTH / 2 ? <Text style={styles.inviteCodeDash}>-</Text> : null}
+                <View style={styles.inviteCodeCell}>
+                  <Text
+                    style={styles.inviteCodeChar}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.7}
+                    numberOfLines={1}
+                  >
+                    {group?.inviteCode?.[index] ?? ''}
+                  </Text>
+                </View>
+              </React.Fragment>
+            ))}
           </View>
         )}
         {inviteBlockedForAnonymousLeader ? (
@@ -129,7 +134,6 @@ const inviteStyles = StyleSheet.create({
   body: { paddingHorizontal: 20, paddingTop: 10 },
   compactBody: { paddingHorizontal: 4, paddingTop: 0, paddingBottom: 0 },
   hint: { color: '#ffffffba', fontSize: APP_TEXT_SIZE.body, lineHeight: 24 },
-  code: { flex: 1, color: '#fff', fontSize: APP_TEXT_SIZE.title, fontWeight: '800', letterSpacing: 1, textAlign: 'center' },
   label: { fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   action: { height: 54, borderRadius: 27, backgroundColor: '#ffffff1f' },
 });

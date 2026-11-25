@@ -151,7 +151,8 @@ describe('D6 iOS team and commands through Map', () => {
       await press(device, 'map-invite-members');
       const invitation = await world.waitFor(device, (value: Observation) =>
         has(value, 'map-share-code') && has(value, 'map-copy-code'), 'existing invitation UI');
-      expect(text(invitation, 'TES-T42')).toBe(true);
+      const cells = invitation.presentation.hosts.flatMap((host: { text?: string }) => host.text && host.text.length === 1 ? [host.text] : []).join('');
+      expect(cells).toContain('TES-T42');
       await device.perform('map.group.copy-code');
       await device.perform('map.group.share-code');
       await device.input({ kind: 'animation', finished: true });

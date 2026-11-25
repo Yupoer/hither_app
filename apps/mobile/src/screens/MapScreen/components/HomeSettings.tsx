@@ -27,7 +27,7 @@ import { ProfileEditor } from './ProfileEditor';
 import HomeTeamsPage, { HomeTeamCard } from './HomeTeamsPage';
 import { useIdentityEditor } from './useIdentityEditor';
 import { D6Surface, useD6Numbers } from './D6HomeChrome';
-import { MAP_SHEET_CORNER_RADIUS } from '../../../components/mapSheetChrome';
+import { MAP_SHEET_CORNER_RADIUS, SETTINGS_CHEVRON_COLOR, SETTINGS_CHEVRON_SIZE } from '../../../components/mapSheetChrome';
 import MarqueeSpeedSlider from './MarqueeSpeedSlider';
 import { useSettingsUpdate } from './useSettingsUpdate';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
@@ -59,7 +59,7 @@ export type HomeSettingsProps = {
 
 const colors = {
   white: '#fff',
-  secondary: 'rgba(255,255,255,0.68)',
+  secondary: SETTINGS_CHEVRON_COLOR,
   accent: HITHER_ACCENT,
   success: '#34C759',
   destructive: '#FF6B6B',
@@ -84,7 +84,7 @@ function Row({ label, value, action, divider, icon, destructive, accent, testID 
     <>
       <HitherText style={[styles.rowLabel, styles.fillRow, destructive && styles.destructive, accent && { color: HITHER_ACCENT }]}>{label}</HitherText>
       {value ? <HitherText style={styles.rowValue}>{value}</HitherText> : null}
-      {icon || (action && !destructive) ? <Ionicons name={icon ?? 'chevron-forward'} size={17} color={accent ? HITHER_ACCENT : icon === 'checkmark' ? colors.success : colors.secondary} /> : null}
+      {icon || (action && !destructive) ? <Ionicons name={icon ?? 'chevron-forward'} size={SETTINGS_CHEVRON_SIZE} color={accent ? HITHER_ACCENT : icon === 'checkmark' ? colors.success : colors.secondary} /> : null}
     </>
   );
   const style = [styles.row, divider && styles.divider];
@@ -93,11 +93,7 @@ function Row({ label, value, action, divider, icon, destructive, accent, testID 
   ) : <View testID={testID} style={style}>{content}</View>;
 }
 
-const SETTINGS_SHEET_RATIO = 0.9;
-
-function entryStack(page: SettingsPage): SettingsPage[] {
-  return page === 'root' ? ['root'] : ['root', page];
-}
+const SETTINGS_SHEET_RATIO = 1;
 
 export default function HomeSettings({
   visible, initialPage = 'root', liveActivitySettings, onClose, onDismissComplete, memberCount = 0, group,
@@ -110,18 +106,21 @@ export default function HomeSettings({
   const { user, isAnonymous, deleteAccount } = useSession();
   const { colors: palette } = useTheme();
   const avatar = displayMemberAvatar(user?.avatar, user?.id ?? '', user?.avatarColor);
-  const [stack, setStack] = useState(() => entryStack(initialPage));
+  const [stack, setStack] = useState<SettingsPage[]>([]);
   const [entry, setEntry] = useState({ visible, initialPage });
   if (entry.visible !== visible || entry.initialPage !== initialPage) {
     setEntry({ visible, initialPage });
-    if (visible) setStack(entryStack(initialPage));
+    if (visible) setStack([]);
   }
-  const page = stack[stack.length - 1];
+  const basePage = entry.initialPage;
+  const [retainedChild, setRetainedChild] = useState<SettingsPage | null>(null);
+  const childPage = stack.at(-1) ?? null;
+  if (childPage && retainedChild !== childPage) setRetainedChild(childPage);
+  const shownChild = childPage ?? retainedChild;
   const go = (next: SettingsPage) => setStack(previous => previous.at(-1) === next ? previous : [...previous, next]);
-  const back = useCallback(() => {
-    setStack(previous => previous.length > 1 && previous.at(-1) === page ? previous.slice(0, -1) : previous);
-  }, [page]);
-  const isRoot = page === 'root';
+  const back = useCallback(() => setStack(previous => previous.slice(0, -1)), []);
+  const closeChild = useCallback(() => setStack([]), []);
+  const leave = stack.length > 0 ? back : onClose;
   const [mounted, setMounted] = useState(visible);
   const [teamsLoading, setTeamsLoading] = useState(false);
   if (visible && !mounted) setMounted(true);
@@ -144,103 +143,124 @@ export default function HomeSettings({
   };
   const provider = user?.provider === 'apple' ? 'Apple' : user?.provider === 'google' ? 'Google' : 'Email';
   const registered = !!user && !isAnonymous;
+  const openRegistration = () => go('account');
+  const surface = <D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />;
+  const teamsOverlay = (page: SettingsPage | null) => visible && page === 'teams' && teamsLoading ? (
+    <View testID="settings-teams-loading-overlay" pointerEvents="none" style={styles.teamsLoadingOverlay}>
+      <WaveLoading size="large" color={colors.accent} />
+    </View>
+  ) : null;
+
+  const renderPage = (page: SettingsPage) => (
+    <>
+      {page === 'root' ? (
+        <>
+          <Pressable style={styles.profileHeader} onPress={() => go('profile')} accessibilityRole="button"
+            accessibilityLabel={user?.name ? `${t('profile.title')}，${user.name}` : t('profile.title')} testID="settings-page-profile">
+            <View style={[styles.profileAvatar, { backgroundColor: avatar.color }, profileStatusColor ? { borderColor: profileStatusColor } : null]}>
+              <HitherText typeRole="emoji" style={styles.profileEmoji}>{avatar.emoji}</HitherText>
+            </View>
+            <HitherText typeRole="title" style={styles.profileName} numberOfLines={2}>{user?.name}</HitherText>
+            <Ionicons name="chevron-forward" size={SETTINGS_CHEVRON_SIZE} color={colors.secondary} />
+          </Pressable>
+          {group ? <HomeTeamCard team={group} count={memberCount} onPress={() => go('team')} /> : null}
+          <Box>
+            <Row label={title.teams} action={() => go('teams')} testID="settings-page-teams" />
+            <Row label={title.store} action={() => go('store')} divider testID="settings-page-store" />
+            {onGoHome ? <Row label={t('map.backToHome')} action={onGoHome} divider testID="settings-go-home" /> : null}
+          </Box>
+          <Box>
+            <Row label={title.notifications} action={() => go('notifications')} testID="settings-page-notifications" />
+            <Row label={title.appearance} action={() => go('appearance')} divider testID="settings-page-appearance" />
+            <Row label={t('settings.language')} value={language === 'zh' ? '中文' : 'English'}
+              action={() => go('language')}
+              divider testID="settings-page-language" />
+            <Row label={title.mapJourney} action={() => go('mapJourney')} divider testID="settings-page-map-journey" />
+          </Box>
+          <Box>
+            <Row label={title.account} value={registered ? provider : undefined} action={() => go('account')} testID="settings-page-account" />
+            <Row label={title.advanced} action={() => go('advanced')} divider testID="settings-page-advanced" />
+            <Row label={title.support} action={() => go('support')} divider testID="settings-page-support" />
+          </Box>
+        </>
+      ) : null}
+      {page === 'profile' ? <ProfileEditor key={user?.id} refresh={refresh} statusColor={profileStatusColor} /> : null}
+      {page === 'team' && group ? (
+        <HomeTeamSettings key={group.id} group={group} isLeader={isLeader} refresh={refresh}
+          share={onShareGroup} showCode={!inviteBlockedForAnonymousLeader}
+          onLeave={onConfirmLeave} onEnd={onConfirmEnd}
+          coordination={isLeader && onCreateCoordination ? () => go('coordination') : onOpenCoordination} />
+      ) : null}
+      {page === 'teams' ? (
+        <HomeTeamsPage onLoadingChange={setTeamsLoading} currentGroupId={group?.id} onSwitch={info => {
+          if (info.group.id === group?.id) onClose();
+          else onSwitchTeam?.(info);
+        }} onCreate={onCreateTeam} onJoin={onJoinTeam} onLeaveCurrent={onConfirmLeave} />
+      ) : null}
+      {page === 'notifications' ? (
+        <Box style={styles.noTopMargin}><NotificationPreferencesCard home colors={palette} /></Box>
+      ) : null}
+      {page === 'appearance' ? <Appearance /> : null}
+      {page === 'mapJourney' ? <MapJourneyPreferences activity={liveActivitySettings} onOpenStore={() => go('store')} /> : null}
+      {page === 'language' ? <AppLanguage /> : null}
+      {page === 'support' ? <Support visible={visible} onFeedback={onOpenFeedback} /> : null}
+      {page === 'advanced' ? <Advanced onFeedback={onOpenFeedback} openSupport={() => go('support')} onArchiveAllForTest={onArchiveAllForTest} onResetTravel={onConfirmResetPrefs} /> : null}
+      {page === 'coordination' && onCreateCoordination ? (
+        <CoordinationForm create={onCreateCoordination} onCancel={leave} onCreated={() => {
+          if (onCoordinationCreated) {
+            onClose();
+            onCoordinationCreated();
+          } else leave();
+        }} />
+      ) : null}
+      {page === 'account' && registered ? (
+        <>
+          <Box style={styles.noTopMargin}>
+            <Row label={label(`使用 ${provider} 登入`, `Signed in with ${provider}`)} icon="checkmark" />
+          </Box>
+          <Box>
+            <Row label={t('settings.signOut')} action={onConfirmSignOut} destructive testID="settings-signout" />
+            <Row label={t('account.delete')} destructive divider testID="account-delete"
+              action={() => confirmDeleteAccount({
+                t, actionId: 'account.delete', screen: 'Account', deleteAccount,
+                onDeleted: () => { onClose(); onAccountDeleted(); },
+              })} />
+          </Box>
+        </>
+      ) : null}
+      {page === 'account' && !registered ? (
+        <AccountSheetContent home visible onClose={leave} accent={colors.accent} onAccountDeleted={onAccountDeleted} />
+      ) : null}
+    </>
+  );
 
   return (
-    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={page}
-      fillContent={page === 'teams'} yieldToNestedSheet={nestedSheetOpen}
-      background={<D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />}
-      title={title[page]} titleFontSize={24} backLabel={t('common.back')} doneLabel={t('common.close')}
-      navigation={isRoot ? 'root' : 'child'} onClose={onClose} onBack={isRoot ? undefined : back}
+    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={basePage}
+      fillContent={basePage === 'teams'} yieldToNestedSheet={nestedSheetOpen && !shownChild}
+      background={surface}
+      title={title[basePage]} titleFontSize={24} doneLabel={t('common.close')}
+      navigation="root" onClose={onClose}
       onDismissComplete={() => { setMounted(false); onDismissComplete?.(); }}>
-      <View testID="settings-slide-page" style={page === 'teams' ? styles.fillPage : undefined}>
-        {page === 'root' ? (
-          <>
-            <Pressable style={styles.profileHeader} onPress={() => go('profile')} accessibilityRole="button"
-              accessibilityLabel={user?.name ? `${t('profile.title')}，${user.name}` : t('profile.title')} testID="settings-page-profile">
-              <View style={[styles.profileAvatar, { backgroundColor: avatar.color }, profileStatusColor ? { borderColor: profileStatusColor } : null]}>
-                <HitherText typeRole="emoji" style={styles.profileEmoji}>{avatar.emoji}</HitherText>
-              </View>
-              <HitherText typeRole="title" style={styles.profileName} numberOfLines={2}>{user?.name}</HitherText>
-              <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
-            </Pressable>
-            {group ? <HomeTeamCard team={group} count={memberCount} onPress={() => go('team')} /> : null}
-          </>
-        ) : null}
-        {mounted ? renderStore(page === 'root' ? 'coins' : page === 'store' ? 'shop' : 'hidden', () => go('account')) : null}
-        {page === 'root' ? (
-          <>
-            <Box>
-              <Row label={title.teams} action={() => go('teams')} testID="settings-page-teams" />
-              <Row label={title.store} action={() => go('store')} divider testID="settings-page-store" />
-              {onGoHome ? <Row label={t('map.backToHome')} action={onGoHome} divider testID="settings-go-home" /> : null}
-            </Box>
-            <Box>
-              <Row label={title.notifications} action={() => go('notifications')} testID="settings-page-notifications" />
-              <Row label={title.appearance} action={() => go('appearance')} divider testID="settings-page-appearance" />
-              <Row label={t('settings.language')} value={language === 'zh' ? '中文' : 'English'}
-                action={() => go('language')}
-                divider testID="settings-page-language" />
-              <Row label={title.mapJourney} action={() => go('mapJourney')} divider testID="settings-page-map-journey" />
-            </Box>
-            <Box>
-              <Row label={title.account} value={registered ? provider : undefined} action={() => go('account')} testID="settings-page-account" />
-              <Row label={title.advanced} action={() => go('advanced')} divider testID="settings-page-advanced" />
-              <Row label={title.support} action={() => go('support')} divider testID="settings-page-support" />
-            </Box>
-          </>
-        ) : null}
-        {page === 'profile' ? <ProfileEditor key={user?.id} refresh={refresh} statusColor={profileStatusColor} /> : null}
-        {page === 'team' && group ? (
-          <HomeTeamSettings key={group.id} group={group} isLeader={isLeader} refresh={refresh}
-            share={onShareGroup} showCode={!inviteBlockedForAnonymousLeader}
-            onLeave={onConfirmLeave} onEnd={onConfirmEnd}
-            coordination={isLeader && onCreateCoordination ? () => go('coordination') : onOpenCoordination} />
-        ) : null}
-        {page === 'teams' ? (
-          <HomeTeamsPage onLoadingChange={setTeamsLoading} currentGroupId={group?.id} onSwitch={info => {
-            if (info.group.id === group?.id) onClose();
-            else onSwitchTeam?.(info);
-          }} onCreate={onCreateTeam} onJoin={onJoinTeam} onLeaveCurrent={onConfirmLeave} />
-        ) : null}
-        {page === 'notifications' ? (
-          <Box style={styles.noTopMargin}><NotificationPreferencesCard home colors={palette} /></Box>
-        ) : null}
-        {page === 'appearance' ? <Appearance /> : null}
-        {page === 'mapJourney' ? <MapJourneyPreferences activity={liveActivitySettings} onOpenStore={() => go('store')} /> : null}
-        {page === 'language' ? <AppLanguage /> : null}
-        {page === 'support' ? <Support visible={visible} onFeedback={onOpenFeedback} /> : null}
-        {page === 'advanced' ? <Advanced onFeedback={onOpenFeedback} openSupport={() => go('support')} onArchiveAllForTest={onArchiveAllForTest} onResetTravel={onConfirmResetPrefs} /> : null}
-        {page === 'coordination' && onCreateCoordination ? (
-          <CoordinationForm create={onCreateCoordination} onCancel={back} onCreated={() => {
-            if (onCoordinationCreated) {
-              onClose();
-              onCoordinationCreated();
-            } else back();
-          }} />
-        ) : null}
-        {page === 'account' && registered ? (
-          <>
-            <Box style={styles.noTopMargin}>
-              <Row label={label(`使用 ${provider} 登入`, `Signed in with ${provider}`)} icon="checkmark" />
-            </Box>
-            <Box>
-              <Row label={t('settings.signOut')} action={onConfirmSignOut} destructive testID="settings-signout" />
-              <Row label={t('account.delete')} destructive divider testID="account-delete"
-                action={() => confirmDeleteAccount({
-                  t, actionId: 'account.delete', screen: 'Account', deleteAccount,
-                  onDeleted: () => { onClose(); onAccountDeleted(); },
-                })} />
-            </Box>
-          </>
-        ) : null}
-        {page === 'account' && !registered ? (
-          <AccountSheetContent home visible onClose={back} accent={colors.accent} onAccountDeleted={onAccountDeleted} />
-        ) : null}
+      <View testID="settings-slide-page" style={basePage === 'teams' ? styles.fillPage : undefined}>
+        {renderPage(basePage)}
+        {mounted && shownChild !== 'store' ? renderStore(basePage === 'store' ? 'shop' : 'hidden', openRegistration) : null}
       </View>
-      {nestedSheets}
-      {visible && page === 'teams' && teamsLoading ? <View testID="settings-teams-loading-overlay" pointerEvents="none" style={styles.teamsLoadingOverlay}>
-        <WaveLoading size="large" color={colors.accent} />
-      </View> : null}
+      <SettingsChildSheet home singleStage testID="settings-child-panel" visible={visible && stack.length > 0} zIndex={90}
+        stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={shownChild ?? undefined}
+        fillContent={shownChild === 'teams'} yieldToNestedSheet={nestedSheetOpen}
+        background={surface}
+        title={shownChild ? title[shownChild] : ''} titleFontSize={24} backLabel={t('common.back')} doneLabel={t('common.close')}
+        navigation="child" onClose={closeChild} onBack={stack.length > 1 ? back : undefined}
+        onDismissComplete={() => setRetainedChild(null)}>
+        <View testID="settings-child-page" style={shownChild === 'teams' ? styles.fillPage : undefined}>
+          {shownChild ? renderPage(shownChild) : null}
+          {shownChild === 'store' ? renderStore('shop', openRegistration) : null}
+        </View>
+        {shownChild ? nestedSheets : null}
+        {teamsOverlay(shownChild)}
+      </SettingsChildSheet>
+      {shownChild ? null : nestedSheets}
+      {teamsOverlay(basePage)}
     </SettingsChildSheet>
   );
 }

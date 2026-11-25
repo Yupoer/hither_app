@@ -1,4 +1,5 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
+import { SETTINGS_CHEVRON_COLOR, SETTINGS_CHEVRON_SIZE } from '../../../components/mapSheetChrome';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import React, { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -39,8 +40,8 @@ export function HomeTeamCard({ team, count, selected, onPress, onLeave }: {
       </View>
       <HitherText style={styles.name} numberOfLines={2}>{team.name}</HitherText>
       <HitherText style={styles.count}>{t('teams.memberCount', { count })}</HitherText>
-      <Ionicons name={selected ? 'checkmark-circle' : 'chevron-forward'} size={selected ? 36 : 24}
-        color={selected ? '#34C759' : 'rgba(255,255,255,0.5)'} />
+      <Ionicons name={selected ? 'checkmark-circle' : 'chevron-forward'} size={selected ? 36 : SETTINGS_CHEVRON_SIZE}
+        color={selected ? '#34C759' : SETTINGS_CHEVRON_COLOR} />
     </GesturePressable>
   );
 }

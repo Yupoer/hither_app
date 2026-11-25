@@ -1547,7 +1547,7 @@
       "child": 229,
       "acceptance": "A3. 子頁從下蓋在設定上；關子頁後設定仍在且不閃爍重載",
       "testFile": "headlessD6YouScenario.test.ts",
-      "testNamePattern": "returns from feedback to its originating settings page and swipes back one settings level at a time"
+      "testNamePattern": "returns from feedback to its originating settings page and closes one stacked settings sheet at a time"
     },
     {
       "parent": 220,
@@ -3528,7 +3528,7 @@
       "child": 436,
       "acceptance": "The settings root exposes a reachable Close action and swiping or dismissing it returns to the Map. Invite actions size to their measured content and stay scrollable",
       "testFile": "src/__tests__/headlessD6YouScenario.test.ts",
-      "testNamePattern": "returns from feedback to its originating settings page and swipes back one settings level at a time"
+      "testNamePattern": "returns from feedback to its originating settings page and closes one stacked settings sheet at a time"
     },
     {
       "parent": 436,
@@ -3564,6 +3564,27 @@
       "acceptance": "Invite codes are six characters from the safe alphabet and display as two groups of three.",
       "testFile": "teamEntryLink.test.ts",
       "testNamePattern": "formats six-character invitations as two groups of three"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "The itinerary date strip selects the day that settles in its center and ticks once per crossed day.",
+      "testFile": "d6RoutePane.test.ts",
+      "testNamePattern": "ticks for each day crossed while swiping the date strip and selects the centered day when it settles"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "Settings sections open as stacked sheets at a fixed full height with back and close corner actions.",
+      "testFile": "settingsSheetResources.test.ts",
+      "testNamePattern": "keeps a stacked settings page at its own fixed detent with back and close in the corners"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "Coin claiming lives on the Shop page instead of the settings root.",
+      "testFile": "headlessD6YouScenario.test.ts",
+      "testNamePattern": "claims coins on the Shop instead of You and keeps restore and promo entry on the shop"
     }
   ]
 }

@@ -174,7 +174,7 @@ export default function SettingsSheetPanel({
 
   const goBack = onBack ?? onClose;
   const showBackAction = navigation === 'child';
-  const header = navigation === 'root' && !title ? undefined : (
+  const header = navigation === 'root' && !title && !home ? undefined : (
     <View style={[
       styles.header,
       { paddingTop: Math.max(0, SHEET_CORNER_ACTION_INSET - (home ? MAP_SHEET_COMPACT_GRABBER_HEIGHT : MAP_SHEET_GRABBER_HEIGHT)) },

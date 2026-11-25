@@ -24,7 +24,7 @@ import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useVisibleUi } from '../../../state/foregroundUi';
 import SystemToggle from '../../../components/SystemToggle';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
-import SheetPresentation, { type SheetDetent } from '../../../components/SheetPresentation';
+import SheetPresentation, { PRESENTED_SHEET_CONTENT_TOP, type SheetDetent } from '../../../components/SheetPresentation';
 import {
   D6_SURFACE_COLORS,
   MAP_FLOATING_EDGE_INSET,
@@ -33,6 +33,8 @@ import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_CORNER_RADIUS,
   SHEET_CORNER_ACTION_INSET,
+  SHEET_CORNER_BUTTON_INSET,
+  sheetCornerHeaderInset,
 } from '../../../components/mapSheetChrome';
 import { lightTap } from '../../../utils/haptics';
 import { normalizePlaceSearchResults } from '../../../utils/normalizePlaceSearchResults';
@@ -47,7 +49,6 @@ const STOP_DETENTS = ['medium', { fraction: 0.87 }] satisfies readonly SheetDete
 const ADD_COORDINATE_DETENTS = [{ height: 140 }] satisfies readonly SheetDetent[];
 const ADD_CONFIRM_DETENTS = [{ fraction: 0.52 }] satisfies readonly SheetDetent[];
 
-const ADD_SHEET_CORNER_INSET = MAP_SHEET_CORNER_RADIUS - MAP_SHEET_ACTION_HIT_SIZE / 2;
 const SYSTEM_GLASS_SHEET = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26;
 
 const DETAIL_TIMING = { duration: 280, easing: Easing.inOut(Easing.cubic) };
@@ -498,7 +499,8 @@ export function defaultD6Departure(departureDate?: string) {
 
 const styles = StyleSheet.create({
   grow: { flex: 1, minWidth: 0 },
-  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10,
+    ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP + SHEET_CORNER_ACTION_INSET, SHEET_CORNER_ACTION_INSET) },
   sheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET },
   scrollBody: { flex: 1, minHeight: 0 },
   addSheetBody: { flex: 1, minHeight: 0, padding: SHEET_CORNER_ACTION_INSET, justifyContent: 'flex-end' },
@@ -508,7 +510,7 @@ const styles = StyleSheet.create({
   commitAction: { width: '66.67%', alignSelf: 'center' },
   addPlaceBody: { justifyContent: 'flex-start' },
   addHead: { paddingRight: MAP_SHEET_ACTION_HIT_SIZE + 12 },
-  cornerAction: { position: 'absolute', top: ADD_SHEET_CORNER_INSET, right: ADD_SHEET_CORNER_INSET },
+  cornerAction: { position: 'absolute', top: SHEET_CORNER_BUTTON_INSET, right: SHEET_CORNER_BUTTON_INSET },
   editorClip: { overflow: 'hidden' },
   editorMeasure: { position: 'absolute', top: 0, left: 0, right: 0 },
   cardIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: MAP_SHEET_ACTION_HIT_SIZE },

@@ -21,8 +21,8 @@ import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSw
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
 import SheetHeaderAction from '../../../components/SheetHeaderAction';
-import SheetPresentation from '../../../components/SheetPresentation';
-import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from '../../../components/mapSheetChrome';
+import SheetPresentation, { PRESENTED_SHEET_CONTENT_TOP } from '../../../components/SheetPresentation';
+import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET, sheetCornerHeaderInset } from '../../../components/mapSheetChrome';
 import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useTranslation } from '../../../i18n';
 import type { DailyAccommodation, Destination } from '../../../types';
@@ -986,7 +986,8 @@ const styles = StyleSheet.create({
   popoverSurface: { borderRadius: MAP_SHEET_CORNER_RADIUS, overflow: 'hidden', flexShrink: 1 },
   popover: { padding: SHEET_CORNER_ACTION_INSET, flexShrink: 1, minHeight: 0, backgroundColor: 'rgba(25,36,34,.75)' },
   nativePopover: { flex: 1, backgroundColor: 'transparent' },
-  popoverHeader: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 8 },
+  popoverHeader: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 8,
+    ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP + SHEET_CORNER_ACTION_INSET, SHEET_CORNER_ACTION_INSET) },
   popoverTitle: { flex: 1, minHeight: MAP_SHEET_ACTION_HIT_SIZE, paddingVertical: 13, color: '#fff', fontSize: APP_TEXT_SIZE.body, fontWeight: '700' },
   popoverBody: { flexGrow: 0, flexShrink: 1 },
   opaque: { backgroundColor: '#26302E' },

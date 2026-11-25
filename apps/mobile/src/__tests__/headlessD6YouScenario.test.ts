@@ -90,7 +90,7 @@ describe('D6 You from the real Map screen', () => {
     } finally { await world.close(); }
   });
 
-  it('returns from feedback to its originating settings page and swipes back one settings level at a time', async () => {
+  it('returns from feedback to its originating settings page and closes one stacked settings sheet at a time', async () => {
     const world = new World();
     try {
       const device = await openYou(world);
@@ -102,11 +102,11 @@ describe('D6 You from the real Map screen', () => {
       await world.waitFor(device, (value: Observation) => field(value, 'settings-feedback')?.acceptsInput
         && !field(value, 'feedback-description'), 'feedback returns to Support');
 
-      expect(await device.host.call({ kind: 'nativeEvent', testId: 'settings-panel-presentation',
-        value: { event: 'onSelectionChange', detentIndex: 0 } })).toEqual({ invoked: true });
+      expect(field(await device.observe(), 'settings-child-close')?.acceptsInput).toBe(true);
+      expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
       const advanced = await world.waitFor(device, (value: Observation) =>
         field(value, 'settings-feedback-advanced')?.acceptsInput, 'Support returns to Advanced');
-      expect(field(advanced, 'settings-root-close')).toBeUndefined();
+      expect(field(advanced, 'settings-child-close')).toBeUndefined();
       expect(await press(device, 'settings-child-back')).toEqual({ invoked: true });
       const root = await world.waitFor(device, (value: Observation) =>
         field(value, 'settings-page-profile')?.acceptsInput, 'Advanced returns to settings root');
@@ -143,11 +143,13 @@ describe('D6 You from the real Map screen', () => {
     } finally { await world.close(); }
   });
 
-  it('shows verified coin balance from You to Shop and keeps restore and promo entry on the shop', async () => {
+  it('claims coins on the Shop instead of You and keeps restore and promo entry on the shop', async () => {
     const world = new World();
     world.backend.wallets.set(LEADER, 9);
     try {
       const device = await openYou(world);
+      expect(field(await device.observe(), 'store-ad-cta')).toBeUndefined();
+      expect(await press(device, 'settings-page-store')).toEqual({ invoked: true });
       expect(await press(device, 'store-ad-cta')).toEqual({ invoked: true });
       const loading = await world.waitFor(device, (value: Observation) => value.native.ads.length === 1, 'native reward SDK load');
       const sessionRef = loading.native.ads[0].options.serverSideVerificationOptions.customData;
@@ -158,8 +160,7 @@ describe('D6 You from the real Map screen', () => {
       expect(world.backend.wallets.get(LEADER)).toBe(9);
       creditReward(world.backend, sessionRef);
       await world.advance(1500);
-      await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.text === '10'), 'credited balance in You');
-      expect(await press(device, 'settings-page-store')).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => value.presentation.hosts.some(host => host.text === '10'), 'credited balance in Shop');
       const shop = await world.waitFor(device, (value: Observation) => !!field(value, 'store-premium-restore'), 'shop with restore');
       expect(shop.presentation.hosts.some((host: { text?: string }) => host.text === '10')).toBe(true);
       expect(await press(device, 'store-premium-redeem')).toEqual({ invoked: true });

@@ -501,7 +501,7 @@ describe('D6 itinerary panel', () => {
     const onSelectDay = jest.fn();
     await act(async () => { renderer = mount(React.createElement(D6RoutePane, { ...props, tripDays: 4, onSelectDay })); });
     jest.mocked(selectionTick).mockClear();
-    const strip = () => renderer.root.findAll(node => node.type === 'ScrollView' && node.props.horizontal)[0].props;
+    const strip = () => renderer.root.findAll(node => node.props.snapToInterval != null)[0].props;
     const at = (x: number, velocity = 0) => ({ nativeEvent: { contentOffset: { x }, velocity: { x: velocity }, contentSize: { width: 400 }, layoutMeasurement: { width: 200 } } });
     act(() => strip().onScrollBeginDrag());
     act(() => strip().onScroll(at(30)));

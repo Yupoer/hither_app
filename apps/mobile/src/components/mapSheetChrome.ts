@@ -6,6 +6,19 @@ export const MAP_SHEET_EDGE_INSET = 16;
 export const MAP_SHEET_CORNER_RADIUS = 32;
 export const SHEET_CORNER_ACTION_INSET = MAP_SHEET_EDGE_INSET - (MAP_SHEET_ACTION_HIT_SIZE - MAP_SHEET_ACTION_VISUAL_SIZE) / 2;
 export const MAP_FLOATING_EDGE_INSET = 12;
+/** Keeps a corner action concentric with the sheet's rounded corner, independent of content padding. */
+export const SHEET_CORNER_BUTTON_INSET = MAP_SHEET_CORNER_RADIUS - MAP_SHEET_ACTION_VISUAL_SIZE / 2;
+
+/**
+ * Margins that move a header row's corner actions to `SHEET_CORNER_BUTTON_INSET` when the row
+ * already sits `top` below the sheet edge and `side` in from its sides.
+ */
+export function sheetCornerHeaderInset(top: number, side: number, sides: 'trailing' | 'both' = 'trailing') {
+  const horizontal = SHEET_CORNER_BUTTON_INSET - side;
+  return sides === 'both'
+    ? { marginTop: SHEET_CORNER_BUTTON_INSET - top, marginHorizontal: horizontal }
+    : { marginTop: SHEET_CORNER_BUTTON_INSET - top, marginRight: horizontal };
+}
 export const MAP_GATHERING_CORNER_RADIUS = 28;
 export const MAP_ISLAND_ACTION_HEIGHT = 50;
 export const MAP_ISLAND_CORNER_RADIUS = 42;
@@ -25,6 +38,8 @@ export const D6_SURFACE_SOLID_COLOR = '#26302E';
 export const D6_TRIGGER_SHADOW_COLOR = '#354FC5';
 export const MAP_SHEET_COMPACT_GRABBER_HEIGHT = 9;
 export const SETTINGS_SHEET_CONTENT_INSET = 24;
+export const SETTINGS_CHEVRON_SIZE = 17;
+export const SETTINGS_CHEVRON_COLOR = 'rgba(255,255,255,0.68)';
 export const OVERLAY_SHEET_GRABBER_HEIGHT = 20;
 export const MAP_SHEET_PANE_TABS_HEIGHT = { ios: 54, android: 84 } as const;
 

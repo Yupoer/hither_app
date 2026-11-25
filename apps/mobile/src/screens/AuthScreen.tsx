@@ -29,8 +29,8 @@ import { AVATAR_COLORS, HOME_AVATAR_COLORS, avatarColorForGroup, avatarForGroup,
 import type { Group } from '../types';
 import { useMountEffect } from '../hooks/useMountEffect';
 import SheetHeaderAction from '../components/SheetHeaderAction';
-import SheetPresentation from '../components/SheetPresentation';
-import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET } from '../components/mapSheetChrome';
+import SheetPresentation, { PRESENTED_SHEET_CONTENT_TOP } from '../components/SheetPresentation';
+import { MAP_FLOATING_EDGE_INSET, MAP_SHEET_CORNER_RADIUS, SHEET_CORNER_ACTION_INSET, SHEET_CORNER_BUTTON_INSET } from '../components/mapSheetChrome';
 import { ENTRY_ACCENT, EntryAvatar, EntryPrimaryButton } from './entry/EntryVisuals';
 import { formatInviteCode } from '../utils/inviteCode';
 
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: '#FFFFFF42' },
   nativeSheet: { flex: 1 },
   nativeScroll: { flex: 1 },
-  header: { paddingHorizontal: SHEET_CORNER_ACTION_INSET, paddingTop: SHEET_CORNER_ACTION_INSET, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  header: { paddingLeft: SHEET_CORNER_ACTION_INSET, paddingRight: SHEET_CORNER_BUTTON_INSET, marginTop: SHEET_CORNER_BUTTON_INSET - PRESENTED_SHEET_CONTENT_TOP, flexDirection: 'row', alignItems: 'center', gap: 12 },
   title: { flex: 1, minWidth: 0, color: '#fff', fontWeight: '800', fontSize: APP_TEXT_SIZE.heading },
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { padding: SHEET_CORNER_ACTION_INSET, paddingTop: 12, gap: 12 },

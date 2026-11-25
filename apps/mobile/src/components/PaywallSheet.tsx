@@ -10,8 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PremiumPresentation from './PremiumPresentation';
 import { useTranslation, type TranslationKey } from '../i18n';
 import SheetHeaderAction from './SheetHeaderAction';
-import SheetPresentation from './SheetPresentation';
-import { MAP_SHEET_ACTION_HIT_SIZE, SHEET_CORNER_ACTION_INSET } from './mapSheetChrome';
+import SheetPresentation, { PRESENTED_SHEET_CONTENT_TOP } from './SheetPresentation';
+import { MAP_SHEET_ACTION_HIT_SIZE, sheetCornerHeaderInset } from './mapSheetChrome';
 
 const PAYWALL_DETENTS = [{ fraction: 0.94 }] as const;
 const PAYWALL_BACKGROUND = '#071526';
@@ -83,8 +83,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SHEET_CORNER_ACTION_INSET,
-    paddingTop: SHEET_CORNER_ACTION_INSET,
+    ...sheetCornerHeaderInset(PRESENTED_SHEET_CONTENT_TOP, 0, 'both'),
     paddingBottom: 8,
     minHeight: MAP_SHEET_ACTION_HIT_SIZE,
   },

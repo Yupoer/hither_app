@@ -62,7 +62,7 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
   const scroll = useRef<ScrollView>(null);
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(0);
-  const initialAvatar = useRef(avatar);
+  const [initialAvatar] = useState(avatar);
   const indexFor = (value: string) => Math.max(0, AVATAR_EMOJI.findIndex(emoji => emoji === value));
   const hapticIndex = useRef(indexFor(avatar));
   const scrolling = useRef(false);
@@ -105,7 +105,7 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
           showsHorizontalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           snapToInterval={EMOJI_STRIDE}
-          contentOffset={{ x: indexFor(initialAvatar.current) * EMOJI_STRIDE, y: 0 }}
+          contentOffset={{ x: indexFor(initialAvatar) * EMOJI_STRIDE, y: 0 }}
           scrollEventThrottle={16}
           onScrollBeginDrag={() => { scrolling.current = true; }}
           onScroll={tickNearest}
@@ -115,7 +115,7 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
           }}
           onContentSizeChange={() => {
             if (positioned) return;
-            centerAvatar(initialAvatar.current, false);
+            centerAvatar(initialAvatar, false);
             setPositioned(true);
           }}
           contentContainerStyle={[styles.emojiRow, { paddingHorizontal: Math.max(0, (width - EMOJI_WIDTH) / 2) }]}
