@@ -513,8 +513,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
   const stageOneHeight = (fit: number, closed: number, full: number) => fit > screenHeight * STAGE_ONE_LIMIT ? full
     : Math.min(full, Math.max(closed + MIN_PANE_BODY, fit));
   const itineraryOpenHeight = stageOneHeight(itineraryFit.height, topClosed, topFull);
-  const teamOpenHeight = teamContent.content == null ? undefined
-    : stageOneHeight(islandClosed + teamContent.content + TEAM_BODY_INSET, islandClosed, islandFull);
+  const teamOpenHeight = stageOneHeight(islandClosed + (teamContent.content ?? 0) + TEAM_BODY_INSET, islandClosed, islandFull);
 
   const changeItinerary = useCallback((open: boolean) => onPaneChange(open ? 'itinerary' : null), [onPaneChange]);
   const changeTeam = useCallback((open: boolean) => onPaneChange(open ? 'team' : null), [onPaneChange]);

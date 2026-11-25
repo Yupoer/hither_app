@@ -10,7 +10,7 @@ import { guardGesture } from './d6GestureGuard';
 
 export type Detent = 'closed' | 'half' | 'full';
 /** Natural pane body height, split into fixed leading chrome and scrollable content. */
-export type D6PaneContentPart = { leading?: number; content?: number };
+export type D6PaneContentPart = { leading?: number; content?: number | null };
 const DETENT_ORDER = ['closed', 'half', 'full'] satisfies readonly Detent[];
 const MAX_CONTENT_SNAP_TRAVEL = 12;
 const MAX_CHROME_SNAP_TRAVEL = 8;
