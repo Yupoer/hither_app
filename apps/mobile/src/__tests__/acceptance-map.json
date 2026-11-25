@@ -3536,6 +3536,34 @@
       "acceptance": "Invite members sheet sizes to its measured actions and keeps large content scrollable",
       "testFile": "src/__tests__/settingsSheetResources.test.ts",
       "testNamePattern": "sizes an invite to the measured actions and keeps large content scrollable"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "A gesture worklet exception recovers the drag and reports its source and message instead of aborting, and unattached refs are not measured.",
+      "testFile": "d6GestureGuard.test.ts",
+      "testNamePattern": "recovers locally and reports|returns null without measuring|delegates to measure"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "A content-driven open-height change keeps an active pane drag and snaps against the new height, and a throwing pane update restores the pane.",
+      "testFile": "d6PaneDrag.test.ts",
+      "testNamePattern": "keeps an active chrome drag when only the open height changes|recovers a chrome drag whose update throws"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "The island slides away while commands are presented and while floating selection actions replace it.",
+      "testFile": "journeyButtonFeedback.test.ts",
+      "testNamePattern": "slides the mounted team pane away while commands are presented|replaces the island with floating selection actions"
+    },
+    {
+      "parent": 447,
+      "child": 447,
+      "acceptance": "Invite codes are six characters from the safe alphabet and display as two groups of three.",
+      "testFile": "teamEntryLink.test.ts",
+      "testNamePattern": "formats six-character invitations as two groups of three"
     }
   ]
 }

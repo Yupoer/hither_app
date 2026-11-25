@@ -253,7 +253,7 @@ function islandShift(island: ReactTestInstance) {
   return Object.assign({}, ...island.props.style).transform[0].translateY;
 }
 
-it('slides the mounted team pane away until commands finish dismissing', async () => {
+it('slides the mounted team pane away while commands are presented', async () => {
   const commandProps = { pane: 'team' as const };
   const { tree } = await render(commandProps);
   const teamFrame = tree.root.findByProps({ direction: -1 });
