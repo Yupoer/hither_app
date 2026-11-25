@@ -235,7 +235,7 @@ export function D6RouteRow({
             selected !== undefined && [styles.selectionCircle, selected && styles.selectedCircle],
           ]}>
             {selected === undefined ? <Text style={styles.icon}>{emoji}</Text> : selected
-              ? <Ionicons name="checkmark" size={20} color="#151D1B" /> : null}
+              ? <Ionicons name="checkmark" size={15} color="#151D1B" /> : null}
           </View>
         </View>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -248,8 +248,8 @@ export function D6RouteRow({
       selected !== undefined && styles.selectionRow,
       selected && { backgroundColor: `${accent}2E` },
     ]} onLayout={(event) => height.set(event.nativeEvent.layout.height)}>
-      {connectAbove || connectBelow ? <View pointerEvents="none" style={[
-        styles.connector, selected !== undefined && styles.selectionConnector, { backgroundColor: color, top: connectAbove ? 0 : '50%', bottom: connectBelow ? 0 : '50%' },
+      {selected === undefined && (connectAbove || connectBelow) ? <View pointerEvents="none" style={[
+        styles.connector, { backgroundColor: color, top: connectAbove ? 0 : '50%', bottom: connectBelow ? 0 : '50%' },
       ]} /> : null}
       {flash ? <D6RowFlash accent={accent} /> : null}
       <View style={styles.swipeBody}>
@@ -464,11 +464,10 @@ const styles = StyleSheet.create({
   badgeRim: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
   badge: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   selectionRim: { borderWidth: 0 },
-  selectionCircle: { backgroundColor: '#26302E', borderColor: 'rgba(255,255,255,.52)', borderWidth: 2 },
+  selectionCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,.52)', borderWidth: 1.5 },
   selectedCircle: { backgroundColor: '#fff', borderColor: '#fff' },
   connector: { position: 'absolute', width: 2, left: 19, opacity: 0.45 },
   selectionRow: { paddingHorizontal: SELECTION_ROW_INSET },
-  selectionConnector: { left: 19 + SELECTION_ROW_INSET },
   completed: { opacity: 0.45 },
   insertion: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 3 },
   insertionTop: { top: 0 },

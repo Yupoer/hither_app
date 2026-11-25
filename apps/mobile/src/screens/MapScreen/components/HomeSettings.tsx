@@ -157,9 +157,8 @@ export default function HomeSettings({
           <>
             <Pressable style={styles.profileHeader} onPress={() => go('profile')} accessibilityRole="button"
               accessibilityLabel={user?.name ? `${t('profile.title')}，${user.name}` : t('profile.title')} testID="settings-page-profile">
-              <View style={[styles.profileAvatar, { backgroundColor: avatar.color }]}>
+              <View style={[styles.profileAvatar, { backgroundColor: avatar.color }, profileStatusColor ? { borderColor: profileStatusColor } : null]}>
                 <HitherText typeRole="emoji" style={styles.profileEmoji}>{avatar.emoji}</HitherText>
-                {profileStatusColor ? <View style={[styles.profileDot, { backgroundColor: profileStatusColor }]} /> : null}
               </View>
               <HitherText typeRole="title" style={styles.profileName} numberOfLines={2}>{user?.name}</HitherText>
               <Ionicons name="chevron-forward" size={18} color={colors.secondary} />
@@ -575,8 +574,7 @@ const styles = StyleSheet.create({
   updateAction: { marginBottom: 12 },
   destructive: { color: colors.destructive },
   profileHeader: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 4, paddingTop: 2, paddingBottom: 16 },
-  profileAvatar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  profileDot: { position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, borderRadius: 8, borderWidth: 3, borderColor: '#26302E' },
+  profileAvatar: { width: 64, height: 64, borderRadius: 32, borderWidth: 3, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   profileEmoji: { fontSize: 36 },
   profileName: { flex: 1, color: colors.white, fontSize: APP_TEXT_SIZE.title, fontWeight: '800' },
   bigTeamAvatar: { alignSelf: 'center', marginTop: 6, marginBottom: 11, width: 96, height: 96, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },

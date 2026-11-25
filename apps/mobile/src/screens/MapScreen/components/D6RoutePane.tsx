@@ -27,7 +27,7 @@ import { useMountEffect } from '../../../hooks/useMountEffect';
 import { useTranslation } from '../../../i18n';
 import type { DailyAccommodation, Destination } from '../../../types';
 import { destinationEmojiDisplay } from '../../../utils/destinationEmojiColor';
-import { lightTap } from '../../../utils/haptics';
+import { lightTap, selectionTick } from '../../../utils/haptics';
 import { localDayKey, openDestinationsForReorder, parseDateOnlyLocal } from '../../../utils/tripDay';
 import { d6DayRows, d6Reorder, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
 import type { ReorderUpdate } from '../itineraryReorder';
@@ -150,7 +150,9 @@ export function D6RoutePane({
   const [stripMore, setStripMore] = useState(false);
   const [stripBefore, setStripBefore] = useState(false);
   const stripScroll = useRef<ScrollView | null>(null);
-  const revealNewDay = useRef(false);
+  const [stripWidth, setStripWidth] = useState(0);
+  const stripDragging = useRef(false);
+  const tickedDay = useRef(selectedDay);
   const stripMetrics = useRef({ offset: 0, width: 0, content: 0 });
   const dragSession = useRef<{ token: number; scope: string; session: D6DragSession } | null>(null);
   const lastDragToken = useRef(0);
@@ -215,14 +217,30 @@ export function D6RoutePane({
     }
   }, [dayBounds]);
 
-  function scrollToDay() {
-    if (day.number > 1) {
-      const { width, offset } = stripMetrics.current;
-      const position = (day.number - 1) * 52;
-      if (width > 0 && (position < offset || position + 52 > offset + width)) {
-        stripScroll.current?.scrollTo({ x: Math.max(0, position - width / 2 + 26), animated: true });
-      }
-    }
+  function scrollToDay(animated = true) {
+    tickedDay.current = day.number;
+    stripScroll.current?.scrollTo({ x: (day.number - 1) * DAY_STRIDE, animated });
+  }
+
+  function centeredDay(offset: number) {
+    return Math.max(1, Math.min(count, Math.round(offset / DAY_STRIDE) + 1));
+  }
+
+  function tickCenteredDay(offset: number) {
+    if (!stripDragging.current) return;
+    const next = centeredDay(offset);
+    const crossed = Math.abs(next - tickedDay.current);
+    tickedDay.current = next;
+    for (let step = 0; step < crossed; step++) selectionTick();
+  }
+
+  function settleStrip(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    const offset = event.nativeEvent.contentOffset.x;
+    tickCenteredDay(offset);
+    stripDragging.current = false;
+    const next = centeredDay(offset);
+    if (Math.abs(offset - (next - 1) * DAY_STRIDE) > 1) stripScroll.current?.scrollTo({ x: (next - 1) * DAY_STRIDE, animated: true });
+    changeDay(next);
   }
 
   const write = useCallback(async (action: () => Promise<boolean>) => {
@@ -561,17 +579,27 @@ export function D6RoutePane({
             horizontal
             showsHorizontalScrollIndicator={false}
             scrollEventThrottle={32}
-            onScroll={updateStrip}
-            onLayout={({ nativeEvent: { layout } }) => { stripMetrics.current.width = layout.width; updateStrip(); scrollToDay(); }}
+            scrollEnabled={!busy}
+            decelerationRate="fast"
+            snapToInterval={DAY_STRIDE}
+            contentOffset={{ x: (day.number - 1) * DAY_STRIDE, y: 0 }}
+            onScrollBeginDrag={() => { stripDragging.current = true; }}
+            onScroll={(event) => { tickCenteredDay(event.nativeEvent.contentOffset.x); updateStrip(event); }}
+            onMomentumScrollEnd={settleStrip}
+            onScrollEndDrag={(event) => {
+              if (Math.abs(event.nativeEvent.velocity?.x ?? 0) < 0.05) settleStrip(event);
+            }}
+            onLayout={({ nativeEvent: { layout } }) => {
+              stripMetrics.current.width = layout.width;
+              setStripWidth(layout.width);
+              updateStrip();
+              scrollToDay(false);
+            }}
             onContentSizeChange={(width) => {
               stripMetrics.current.content = width;
               updateStrip();
-              if (revealNewDay.current) {
-                revealNewDay.current = false;
-                stripScroll.current?.scrollToEnd({ animated: true });
-              }
             }}
-            contentContainerStyle={styles.dayList}
+            contentContainerStyle={[styles.dayList, { paddingHorizontal: Math.max(6, (stripWidth - DAY_CHIP_WIDTH) / 2) }]}
           >
             {days.map((item) => {
               const selected = item.number === day.number;
@@ -585,7 +613,11 @@ export function D6RoutePane({
                   accessibilityLabel={item.date.toLocaleDateString(chinese ? 'zh-TW' : 'en', { month: 'long', day: 'numeric', weekday: 'long' })}
                   accessibilityState={{ selected, disabled: busy }}
                   disabled={busy}
-                  onPress={() => changeDay(item.number)}
+                  onPress={() => {
+                  if (item.number === day.number) return;
+                  selectionTick();
+                  changeDay(item.number);
+                }}
                   style={[styles.day, selected && styles.daySelected, drop && styles.dropDay, drop && { borderColor: accent }]}
                 >
                   <Text style={[styles.weekday, selected && styles.daySelectedText]}>{weekdays[item.date.getDay()]}</Text>
@@ -606,8 +638,7 @@ export function D6RoutePane({
                 testID="d6-route-add-day"
                 style={styles.addDay}
                 onPress={() => {
-                  revealNewDay.current = true;
-                  void changeRange(count + 1, outgoing).then((saved) => { if (!saved) revealNewDay.current = false; });
+                  void changeRange(count + 1, outgoing).then((saved) => { if (saved) onSelectDay(count + 1); });
                 }}
               >
                 <Ionicons name="add" size={23} color="rgba(255,255,255,.65)" />
@@ -668,24 +699,24 @@ export function D6RoutePane({
         </> : null}
 
         {ordinaryRows.map(renderRouteRow)}
-        {accommodationRows.length > 0 || showStaySlot ? <View testID="d6-accommodation-section" style={styles.accommodationSection}>
-          {accommodationRows.length > 0 ? <Text accessibilityRole="header" style={styles.accommodationTitle}>{chinese ? '住宿' : 'Accommodation'}</Text> : null}
+        {accommodationRows.length > 0 ? <View testID="d6-accommodation-section" style={styles.accommodationSection}>
+          <Text accessibilityRole="header" style={styles.accommodationTitle}>{chinese ? '住宿' : 'Accommodation'}</Text>
           {accommodationRows.map(renderRouteRow)}
-
-
-        {showStaySlot ? (
-          <Pressable accessibilityRole="button" style={styles.stay} onPress={() => onAdd(day.number, 'accommodation')} testID="d6-route-add-stay">
-            <View style={styles.dashed}><Text style={styles.glyph}>🛏</Text></View>
-            <Text style={styles.stayText}>{chinese ? '今晚住哪' : 'Where to stay tonight'}</Text>
-          </Pressable>
-        ) : null}
         </View> : null}
 
         {!selectionMode ? <>
-          <Pressable accessibilityRole="button" onPress={() => onAdd(day.number, 'stop')} style={styles.add} testID="d6-route-add-place">
-            <Ionicons name="add" size={19} color="white" />
-            <Text style={styles.addText}>{chinese ? canEdit ? '地點' : '建議地點' : canEdit ? 'Place' : 'Suggest a place'}</Text>
-          </Pressable>
+          <View style={styles.addRow}>
+            <Pressable accessibilityRole="button" onPress={() => onAdd(day.number, 'stop')} hitSlop={4} style={styles.addPill} testID="d6-route-add-place">
+              <Ionicons name="add" size={17} color="white" />
+              <Text style={styles.addText}>{chinese ? canEdit ? '地點' : '建議地點' : canEdit ? 'Place' : 'Suggest a place'}</Text>
+            </Pressable>
+            {showStaySlot ? (
+              <Pressable accessibilityRole="button" onPress={() => onAdd(day.number, 'accommodation')} hitSlop={4} style={styles.addPill} testID="d6-route-add-stay">
+                <Ionicons name="bed-outline" size={16} color="white" />
+                <Text style={styles.addText}>{chinese ? '今晚住哪' : 'Where to stay'}</Text>
+              </Pressable>
+            ) : null}
+          </View>
           {pool.length > 0 ? <>
             <Fold
               title={chinese ? `待排 ${pool.length}` : `Unplanned ${pool.length}`}
@@ -897,6 +928,9 @@ function MenuRow({ title, onPress, testID, last }: { title: string; onPress: () 
 }
 
 const STRIP_FADE_WIDTH = 28;
+const DAY_CHIP_WIDTH = 46;
+const DAY_GAP = 6;
+const DAY_STRIDE = DAY_CHIP_WIDTH + DAY_GAP;
 const STRIP_GAP = 2;
 const DAY_CHIP_HEIGHT = 62;
 const STRIP_VERTICAL_PADDING = 3;
@@ -913,8 +947,8 @@ const styles = StyleSheet.create({
   stripFade: { width: STRIP_FADE_WIDTH },
   month: { width: 28, alignItems: 'center', justifyContent: 'center' },
   monthText: { color: 'rgba(255,255,255,.5)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
-  dayList: { gap: 6, alignItems: 'center', paddingVertical: STRIP_VERTICAL_PADDING, paddingHorizontal: 6 },
-  day: { height: DAY_CHIP_HEIGHT, width: 46, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
+  dayList: { gap: DAY_GAP, alignItems: 'center', paddingVertical: STRIP_VERTICAL_PADDING },
+  day: { height: DAY_CHIP_HEIGHT, width: DAY_CHIP_WIDTH, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
   daySelected: { backgroundColor: 'white' },
   dropDay: { transform: [{ scale: 1.08 }] },
   dayHighlight: { ...StyleSheet.absoluteFill, borderWidth: 2, borderRadius: 14 },
@@ -922,7 +956,7 @@ const styles = StyleSheet.create({
   date: { color: 'white', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', fontVariant: ['tabular-nums'] },
   daySelectedText: { color: '#111' },
   color: { width: 14, height: 3, borderRadius: 2, marginTop: 1 },
-  addDay: { width: 46, height: DAY_CHIP_HEIGHT, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
+  addDay: { width: DAY_CHIP_WIDTH, height: DAY_CHIP_HEIGHT, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
   selectAll: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
   selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.14)' },
   selectAllText: { fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
@@ -937,10 +971,9 @@ const styles = StyleSheet.create({
   rowTitle: { flex: 1, minWidth: 0, color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   fold: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
   foldTitle: { color: 'rgba(255,255,255,.55)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
-  stay: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44, paddingLeft: 4 },
-  stayText: { color: 'rgba(255,255,255,.70)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '600' },
   dashed: { width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.38)', backgroundColor: '#26302E', alignItems: 'center', justifyContent: 'center' },
-  add: { minHeight: 48, marginTop: 8, backgroundColor: 'rgba(255,255,255,.12)', borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  addRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  addPill: { minHeight: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: 'rgba(255,255,255,.12)', flexDirection: 'row', alignItems: 'center', gap: 5 },
   addText: { color: 'white', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700' },
   poolRow: { flexDirection: 'row', alignItems: 'center', minHeight: 50, borderRadius: 14, overflow: 'hidden', paddingLeft: 4, gap: 8 },
   poolTitle: { flex: 1, minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 12 },

@@ -105,6 +105,7 @@ export function EmojiCarousel({ avatar, color, onChange, prefix }: {
           showsHorizontalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           snapToInterval={EMOJI_STRIDE}
+          contentOffset={{ x: indexFor(initialAvatar.current) * EMOJI_STRIDE, y: 0 }}
           scrollEventThrottle={16}
           onScrollBeginDrag={() => { scrolling.current = true; }}
           onScroll={tickNearest}
