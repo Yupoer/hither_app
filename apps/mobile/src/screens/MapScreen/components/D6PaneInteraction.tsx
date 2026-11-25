@@ -13,6 +13,7 @@ export const D6PaneInteractionContext = createContext<{
   viewport: { ref: AnimatedRef<View>; height: Panel['height']; closed: number };
   setOverlay: (node: ReactNode) => void;
   open: boolean;
+  reportContent?: Panel['onContentHeight'];
 } | null>(null);
 
 export function D6PaneOverlay({ children }: { children: ReactNode }) {

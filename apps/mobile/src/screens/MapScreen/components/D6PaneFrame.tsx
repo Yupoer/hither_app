@@ -1,5 +1,5 @@
 import React, { useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, View, processColor, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, processColor } from 'react-native';
 import Animated, { useAnimatedRef, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { MaskedView } from '@expo/ui/community/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,7 +17,7 @@ type Props = {
   panel: ReturnType<typeof useD6PaneDrag>;
   direction: 1 | -1;
   cornerRadius: number;
-  style: StyleProp<ViewStyle>;
+  style: React.ComponentProps<typeof Animated.View>['style'];
   surface: ReactNode;
   header?: ReactNode;
   body: ReactNode;
@@ -36,8 +36,8 @@ export function D6PaneFrame({ panel, direction, cornerRadius, style, surface, he
   const bodyRef = useAnimatedRef<View>();
   const interaction = useMemo(() => ({ owner: panel.owner, paneGesture: panel.contentGesture,
     scrollGesture: panel.scrollGesture, overlayRef, setOverlay, open: open && visible,
-    viewport: { ref: bodyRef, height: panel.height, closed } }),
-  [panel.owner, panel.contentGesture, panel.scrollGesture, overlayRef, bodyRef, panel.height, closed, open, visible]);
+    viewport: { ref: bodyRef, height: panel.height, closed }, reportContent: panel.onContentHeight }),
+  [panel.owner, panel.contentGesture, panel.scrollGesture, overlayRef, bodyRef, panel.height, closed, open, visible, panel.onContentHeight]);
   const draggableHeader = header ? <GestureDetector gesture={panel.headerGesture}><View collapsable={false}>{header}</View></GestureDetector> : null;
   const draggableFooter = footer ? <GestureDetector gesture={panel.footerGesture}><View collapsable={false} style={styles.footer}>{footer}</View></GestureDetector> : null;
   const content = <GestureDetector gesture={panel.contentGesture}>

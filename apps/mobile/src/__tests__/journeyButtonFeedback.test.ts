@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 import type { SharedValue } from 'react-native-reanimated';
 import { D6HomeChrome } from '../screens/MapScreen/components/D6HomeChrome';
 import type { Destination } from '../types';
@@ -39,11 +39,15 @@ jest.mock('react-native-reanimated', () => {
   const transition = { duration: () => transition, easing: () => transition };
   return {
     __esModule: true, default: { View: 'ReanimatedView' },
-    Easing: { inOut: (value: unknown) => value, cubic: () => undefined },
+    Easing: { inOut: (value: unknown) => value, out: (value: unknown) => value, cubic: () => undefined },
     FadeIn: transition, FadeOut: transition, LinearTransition: transition,
     runOnJS: (callback: () => void) => callback,
     useAnimatedStyle: (style: () => unknown) => style(),
-    useSharedValue: (value: unknown) => useState(() => ({ value }))[0],
+    useSharedValue: (initial: unknown) => useState(() => {
+      const shared = { value: initial, get: () => shared.value, set: (next: unknown) => { shared.value = next; } };
+      return shared;
+    })[0],
+    withTiming: (value: number) => value,
     useAnimatedReaction: (prepare: () => boolean, reaction: (current: boolean, previous: boolean | null) => void) => {
       const callbacks = useRef({ prepare, reaction });
       callbacks.current = { prepare, reaction };
@@ -96,12 +100,12 @@ const gatheringStop: Destination = {
 };
 const props: React.ComponentProps<typeof D6HomeChrome> = {
   phase: 'ready', canLead: true, asked: false, busy: false, progress: null, reduceMotion: false,
-  zh: true, hasItinerary: true, stop: null, travelMode: 'walk', distance: null, eta: null,
+  zh: true, stop: null, travelMode: 'walk', distance: null, eta: null,
   arrived: 0, total: 1, marqueeEnabled: false, marqueeSpeed: 20, pane: null,
   itinerary: null, team: null, selfEmoji: '🙂', selfColor: '#123456', statusColor: '#ffffff',
   celebration: sharedProgress(0), commandsPresented: false,
   onPaneChange: jest.fn(), onAction: jest.fn(),
-  onStop: jest.fn(async () => true), onProfile: jest.fn(), onCommands: jest.fn(), onAdd: jest.fn(),
+  onStop: jest.fn(async () => true), onProfile: jest.fn(), onCommands: jest.fn(),
   onFit: jest.fn(), onLocate: jest.fn(), onTopHeight: jest.fn(),
 };
 async function render(overrides: Partial<typeof props> = {}) {
@@ -231,33 +235,58 @@ it('covers the visible expanded sheet with the completion cue and keeps navigati
   expect(particles[0].props.running).toBe(true);
   expect(route.findAll(node => String(node.type) === 'Particles')).toHaveLength(0);
   const cue = tree.root.findByProps({ testID: 'home-gathering-celebration' });
+  const itineraryFrame = tree.root.findByProps({ direction: 1 });
+  expect(itineraryFrame.props.open).toBe(true);
   expect(Object.assign({}, ...cue.props.style)).toMatchObject({
-    top: 56, height: 574, alignItems: 'center', justifyContent: 'center',
+    top: 56, height: itineraryFrame.props.panel.height.get(), alignItems: 'center', justifyContent: 'center',
   });
   await act(async () => { tree.unmount(); });
 });
 
-it('hides the mounted team pane until commands finish dismissing', async () => {
-  const commandProps = { ...props, pane: 'team' as const };
+async function settle(tree: ReactTestRenderer, overrides: Partial<typeof props>) {
+  // The animated-style mock evaluates on render, so a second pass reads the offset set after mount.
+  for (let pass = 0; pass < 2; pass++) {
+    await act(async () => { tree.update(React.createElement(D6HomeChrome, { ...props, ...overrides })); });
+  }
+}
+function islandShift(island: ReactTestInstance) {
+  return Object.assign({}, ...island.props.style).transform[0].translateY;
+}
+
+it('slides the mounted team pane away until commands finish dismissing', async () => {
+  const commandProps = { pane: 'team' as const };
   const { tree } = await render(commandProps);
   const teamFrame = tree.root.findByProps({ direction: -1 });
   const viewport = tree.root.findByProps({ testID: 'd6-team-viewport' });
   const island = teamFrame.parent!;
   expect(island.props.pointerEvents).toBe('box-none');
-  await act(async () => {
-    tree.update(React.createElement(D6HomeChrome, { ...commandProps, commandsPresented: true }));
-  });
+  expect(islandShift(island)).toBe(0);
+  await settle(tree, { ...commandProps, commandsPresented: true });
   expect(island.props.pointerEvents).toBe('none');
-  expect(Object.assign({}, ...island.props.style)).toMatchObject({ opacity: 0 });
+  expect(island.props.accessibilityElementsHidden).toBe(true);
+  expect(islandShift(island)).toBeGreaterThan(0);
   expect(tree.root.findByProps({ testID: 'd6-team-viewport' })).toBe(viewport);
-  await act(async () => {
-    tree.update(React.createElement(D6HomeChrome, { ...commandProps, commandsPresented: false }));
-  });
+  await settle(tree, { ...commandProps, commandsPresented: false });
   expect(tree.root.findByProps({ direction: -1 })).toBe(teamFrame);
   expect(tree.root.findByProps({ testID: 'd6-team-viewport' })).toBe(viewport);
   expect(teamFrame.props.open).toBe(true);
   expect(island.props.pointerEvents).toBe('box-none');
-  expect(Object.assign({}, ...island.props.style).opacity).toBeUndefined();
+  expect(islandShift(island)).toBe(0);
+  await act(async () => { tree.unmount(); });
+});
+
+it('replaces the island with floating selection actions while they are present', async () => {
+  const { tree } = await render();
+  const island = tree.root.findByProps({ direction: -1 }).parent!;
+  const actions = React.createElement('View', { testID: 'selection-actions' });
+  await settle(tree, { floatingActions: actions });
+  expect(tree.root.findAllByProps({ testID: 'selection-actions' })).toHaveLength(1);
+  expect(island.props.pointerEvents).toBe('none');
+  expect(islandShift(island)).toBeGreaterThan(0);
+  await settle(tree, { floatingActions: undefined });
+  expect(tree.root.findAllByProps({ testID: 'selection-actions' })).toHaveLength(0);
+  expect(island.props.pointerEvents).toBe('box-none');
+  expect(islandShift(island)).toBe(0);
   await act(async () => { tree.unmount(); });
 });
 

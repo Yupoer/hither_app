@@ -85,6 +85,8 @@ export type SettingsSheetPanelProps = {
   home?: boolean;
   fitContent?: boolean;
   fillContent?: boolean;
+  /** Lowers the sheet behind a sheet it presents, and restores it when that sheet starts to close. */
+  yieldToNestedSheet?: boolean;
   scrollResetKey?: string;
   backLabel?: string;
   background?: React.ReactNode;

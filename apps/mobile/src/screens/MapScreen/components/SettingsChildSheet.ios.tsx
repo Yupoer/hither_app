@@ -16,6 +16,7 @@ const STAGE_ONE_RATIO = 0.52;
 const STAGE_TWO_RATIO = 0.8;
 const MIN_COMPACT_HEIGHT = 232;
 const PRESENTATION_VERTICAL_PADDING = 24;
+const YIELDED_DETENT: SheetDetent = { height: 72 };
 
 function ResetSettingsScroll({ scrollRef }: { scrollRef: React.RefObject<ScrollView | null> }) {
   useMountEffect(() => {
@@ -47,6 +48,7 @@ export default function SettingsChildSheet({
   home = false,
   fitContent = false,
   fillContent = false,
+  yieldToNestedSheet = false,
   scrollResetKey,
 }: SettingsSheetPanelProps) {
   const { height } = useWindowDimensions();
@@ -107,6 +109,7 @@ export default function SettingsChildSheet({
   const backDetent = !onBack ? undefined : 'height' in selectedDetent
     ? { height: selectedDetent.height - 60 } : { fraction: selectedDetent.fraction - 0.09 };
   const usesTwoDetents = !singleStage && !isChild && !fitContent;
+  const detents: SheetDetent[] = backDetent ? [backDetent, selectedDetent] : usesTwoDetents ? [stageOneDetent, stageTwoDetent] : [selectedDetent];
 
   function handleSelectionChange(detent: SheetDetent) {
     if (detent === 'medium') return;
@@ -156,8 +159,8 @@ export default function SettingsChildSheet({
       onClose={onBack ?? requestClose}
       onDismiss={completeDismissal}
       testID={testID}
-      detents={backDetent ? [backDetent, selectedDetent] : usesTwoDetents ? [stageOneDetent, stageTwoDetent] : [selectedDetent]}
-      selection={selectedDetent}
+      detents={yieldToNestedSheet ? [YIELDED_DETENT, ...detents] : detents}
+      selection={yieldToNestedSheet ? YIELDED_DETENT : selectedDetent}
       onSelectionChange={backDetent || usesTwoDetents ? handleSelectionChange : undefined}
       backgroundColor={darkMaterial ? '#263230f7' : undefined}
       useSystemBackground={usesSystemBackground}

@@ -1,6 +1,7 @@
 import { APP_TEXT_SIZE } from '../../../theme/typeScale';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaskedView } from '@expo/ui/community/masked-view';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
@@ -15,7 +16,7 @@ import {
 import { AppText as Text } from '../../../components/AppText';
 import Pressable from '../../../components/MotionPressable';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { measure, useAnimatedRef, useAnimatedStyle, useDerivedValue, useSharedValue, type AnimatedRef, type DerivedValue, type SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedRef, useAnimatedStyle, useDerivedValue, useSharedValue, type AnimatedRef, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
@@ -36,6 +37,7 @@ import { D6RouteRow, D6RouteRowPreview, D6RowFlash } from './D6RouteRow';
 import { D6PaneScrollView } from './D6PaneScrollView';
 import { D6PaneInteractionContext, D6PaneOverlay } from './D6PaneInteraction';
 import { releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
+import { measureAttached } from './d6GestureGuard';
 import { d6DragTarget, d6DropDestination, type D6DragBounds, type D6DragGeometry, type D6DragPresentation, type D6DragSession, type D6DragTarget, type D6Point } from './d6RouteDrag';
 
 type Suggestion = { id: string; title: string; avatar?: string; avatarColor?: string };
@@ -407,16 +409,16 @@ export function D6RoutePane({
     const viewport = panel?.viewport;
     return new Map(ordinaryRows.map(({ id: sourceId }) => [sourceId, (): D6DragGeometry | null => {
       'worklet';
-      const root = measure(rootRef);
-      const strip = measure(stripRef);
-      const overlay = measure(overlayRef);
-      const clip = viewport ? measure(viewport.ref) : null;
+      const root = measureAttached(rootRef);
+      const strip = measureAttached(stripRef);
+      const overlay = measureAttached(overlayRef);
+      const clip = viewport ? measureAttached(viewport.ref) : null;
       if (!root || !strip || !overlay || (viewport && !clip)) return null;
       const bottom = viewport && clip
         ? clip.pageY + Math.max(0, viewport.height.get() - viewport.closed)
         : root.pageY + root.height;
       const measuredRows = refs.flatMap(entry => {
-        const bounds = measure(entry.ref);
+        const bounds = measureAttached(entry.ref);
         return bounds ? [{ id: entry.id, bounds: {
           x: bounds.pageX, y: bounds.pageY, width: bounds.width, height: bounds.height,
         } }] : [];
@@ -543,12 +545,17 @@ export function D6RoutePane({
         onCancel={() => setSelection(null)}
         onAction={(action) => { void removeRows(selectedIds, action); }}
       />
-      <View style={styles.strip}>
+      <View style={styles.strip} onLayout={({ nativeEvent: { layout } }) => panel?.reportContent?.({ leading: layout.height + STRIP_GAP })}>
         <View style={styles.month} accessibilityElementsHidden>
           <Text style={styles.monthText}>{days[0].date.getMonth() + 1}</Text>
           <Text style={styles.monthText}>{chinese ? '月' : ''}</Text>
         </View>
         <View ref={stripRef} collapsable={false} style={styles.stripInner}>
+          <MaskedView style={styles.stripMask} maskElement={<View style={styles.stripMaskRow}>
+            {stripBefore ? <LinearGradient colors={['#ffffff00', '#fff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.stripFade} /> : null}
+            <View style={styles.stripOpaque} />
+            {stripMore ? <LinearGradient colors={['#fff', '#ffffff00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.stripFade} /> : null}
+          </View>}>
           <ScrollView
             ref={stripScroll}
             horizontal
@@ -607,16 +614,7 @@ export function D6RoutePane({
               </Pressable>
             ) : null}
           </ScrollView>
-          {stripBefore ? <LinearGradient pointerEvents="none"
-            colors={['rgba(30,40,38,.38)', 'rgba(30,40,38,0)']}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.fade, styles.fadeLeft]} /> : null}
-          {stripMore ? <LinearGradient
-            pointerEvents="none"
-            colors={['rgba(30,40,38,0)', 'rgba(30,40,38,.38)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.fade}
-          /> : null}
+          </MaskedView>
         </View>
         {selectionMode ? (
           <Pressable
@@ -625,10 +623,14 @@ export function D6RoutePane({
             testID="d6-route-select-all"
             onPress={() => setSelection(new Set(selectedAll ? [] : selectableRows.map((row) => row.id)))}
           >
-            <Text style={styles.selectAllText}>{chinese ? selectedAll ? '取消全選' : '全選' : selectedAll ? 'Deselect all' : 'Select all'}</Text>
+            <View style={styles.selectAllPill}>
+              <Text style={[styles.selectAllText, { color: accent }]}>{chinese ? selectedAll ? '取消全選' : '全選' : selectedAll ? 'Deselect all' : 'Select all'}</Text>
+            </View>
           </Pressable>
         ) : menuItems.length > 0 ? (
-          <D6RouteMenu label={chinese ? '更多' : 'More'} items={menuItems} onOpenFallback={() => openPopup('menu')} />
+          <View style={styles.menu}>
+            <D6RouteMenu label={chinese ? '更多' : 'More'} items={menuItems} onOpenFallback={() => openPopup('menu')} />
+          </View>
         ) : null}
       </View>
 
@@ -894,15 +896,27 @@ function MenuRow({ title, onPress, testID, last }: { title: string; onPress: () 
   </Pressable>;
 }
 
+const STRIP_FADE_WIDTH = 28;
+const STRIP_GAP = 2;
+const DAY_CHIP_HEIGHT = 62;
+const STRIP_SHADOW_TOP = 4;
+const STRIP_SHADOW_BOTTOM = 10;
+const STRIP_TRAILING_INSET = 4;
+
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0 },
   noHeight: { height: 0 },
-  strip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
-  stripInner: { flex: 1, minWidth: 0, overflow: 'hidden', borderRadius: 16 },
+  strip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: STRIP_GAP },
+  stripInner: { flex: 1, minWidth: 0 },
+  stripMask: { height: DAY_CHIP_HEIGHT + STRIP_SHADOW_TOP + STRIP_SHADOW_BOTTOM },
+  stripMaskRow: { ...StyleSheet.absoluteFill, flexDirection: 'row' },
+  stripOpaque: { flex: 1, backgroundColor: '#fff' },
+  stripFade: { width: STRIP_FADE_WIDTH },
   month: { width: 28, alignItems: 'center', justifyContent: 'center' },
   monthText: { color: 'rgba(255,255,255,.5)', fontSize: APP_TEXT_SIZE.caption, fontWeight: '700', textAlign: 'center' },
-  dayList: { gap: 6, alignItems: 'center', paddingVertical: 3, paddingRight: 6 },
-  day: { minHeight: 56, width: 46, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: 'rgba(255,255,255,.07)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
+  dayList: { gap: 6, alignItems: 'center', paddingTop: STRIP_SHADOW_TOP, paddingBottom: STRIP_SHADOW_BOTTOM, paddingHorizontal: 6 },
+  day: { height: DAY_CHIP_HEIGHT, width: 46, borderRadius: 16, borderWidth: 2, borderColor: 'transparent', gap: 1, backgroundColor: '#3A4643',
+    boxShadow: '0 4px 8px rgba(0,0,0,.32)', alignItems: 'center', justifyContent: 'center', paddingTop: 3, paddingBottom: 5 },
   daySelected: { backgroundColor: 'white' },
   dropDay: { transform: [{ scale: 1.08 }] },
   dayHighlight: { ...StyleSheet.absoluteFill, borderWidth: 2, borderRadius: 14 },
@@ -910,11 +924,11 @@ const styles = StyleSheet.create({
   date: { color: 'white', fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', fontVariant: ['tabular-nums'] },
   daySelectedText: { color: '#111' },
   color: { width: 14, height: 3, borderRadius: 2, marginTop: 1 },
-  addDay: { width: 46, minHeight: 56, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
-  fade: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 18, borderRadius: 16 },
-  fadeLeft: { left: 0, right: undefined },
-  selectAll: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
-  selectAllText: { color: 'white', fontWeight: '700', fontSize: APP_TEXT_SIZE.caption },
+  addDay: { width: 46, backgroundColor: '#2F3A37', height: DAY_CHIP_HEIGHT, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
+  selectAll: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
+  selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.14)' },
+  selectAllText: { fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
+  menu: { marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
   list: { flex: 1 },
   listContent: { paddingBottom: 8 },
   circle: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,.12)' },

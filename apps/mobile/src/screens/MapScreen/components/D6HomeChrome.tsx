@@ -21,8 +21,8 @@ import { useFonts } from 'expo-font';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { GestureDetector } from 'react-native-gesture-handler';
-import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, useAnimatedReaction, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { useD6PaneDrag } from './useD6PaneDrag';
+import Reanimated, { Easing, FadeIn, FadeOut, LinearTransition, runOnJS, useAnimatedReaction, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import { useD6PaneDrag, type D6PaneContentPart } from './useD6PaneDrag';
 import { D6PaneFrame } from './D6PaneFrame';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SwiftUIGlassSurface from '../../../components/SwiftUIGlassSurface';
@@ -51,7 +51,16 @@ export { HITHER_ACCENT as D6_ACCENT } from '../../../theme/brand';
 export type D6Pane = 'itinerary' | 'team';
 export type D6Journey = 'empty' | 'ready' | 'going' | 'arrived';
 const FONT = 'BarlowCondensed-ExtraBoldItalic';
-const ITINERARY_OPEN_SCREEN_RATIO = 0.7;
+/** Stage one shows all stops or members; content taller than this share of the screen opens fully. */
+const STAGE_ONE_LIMIT = 0.6;
+const ITINERARY_BUTTON_SIZE = 52;
+const COMPACT_MORPH_TRAVEL = 140;
+const TOP_BODY_INSET = 6;
+const COMPACT_BODY_INSET = 14;
+const TEAM_BODY_INSET = 6;
+const PANE_FIT_SLACK = 8;
+const MIN_PANE_BODY = 120;
+const ISLAND_HIDE_OVERSHOOT = 24;
 const D6_COUNTDOWN_COLOR = '#7993FF';
 const REMAINING_TIME_SCALE = 1.25;
 const END_HOLD_MS = 1500;
@@ -144,10 +153,7 @@ const Grabber = React.memo(function Grabber({ gesture, detent, snapTo, pressCanc
 });
 
 type HeaderProps = {
-  stop: Destination | null;
-  hasItinerary: boolean;
   phase: D6Journey;
-  canLead: boolean;
   travelMode: TravelMode;
   distance: number | null;
   eta: number | null;
@@ -163,8 +169,8 @@ const HEADER_LAYOUT = LinearTransition.duration(420).easing(Easing.inOut(Easing.
 const HEADER_ENTER = FadeIn.duration(320);
 const HEADER_EXIT = FadeOut.duration(180);
 
-const Header = React.memo(function Header({ stop, hasItinerary, phase, canLead,
-  travelMode, distance, eta, arrived, total, displayFont, marqueeEnabled, marqueeSpeed, zh }: HeaderProps) {
+const Header = React.memo(function Header({ stop, phase,
+  travelMode, distance, eta, arrived, total, displayFont, marqueeEnabled, marqueeSpeed, zh }: HeaderProps & { stop: Destination }) {
   const { fontScale, width } = useWindowDimensions();
   const visible = useVisibleUi();
   const [now, setNow] = useState(Date.now);
@@ -175,51 +181,47 @@ const Header = React.memo(function Header({ stop, hasItinerary, phase, canLead,
   const stacked = largeText || (going && width < 350 && time.kind === 'duration');
   const compactGoing = going && !stacked;
   const hasTime = time.kind !== 'none';
-  const itineraryDay = phase === 'ready' && stop?.day != null && stop.day > 0 ? stop.day : null;
-  const showTrailing = hasTime || itineraryDay !== null || (!stop && (canLead || hasItinerary));
+  const itineraryDay = phase === 'ready' && stop.day != null && stop.day > 0 ? stop.day : null;
+  const showTrailing = hasTime || itineraryDay !== null;
   const titleMaxWidth = width / 2 + 64 - MAP_FLOATING_EDGE_INSET - SHEET_CORNER_ACTION_INSET - 1;
   const metricFont = displayFont ? { fontFamily: displayFont, fontStyle: 'normal' as const, fontWeight: '400' as const } : undefined;
-  const label = stop?.title ?? (hasItinerary ? (zh ? '查看行程' : 'View itinerary')
-    : canLead ? (zh ? '新增第一個集合點' : 'Add your first stop') : (zh ? '等待隊長' : 'Waiting for leader'));
+  const label = stop.title;
   return (
-    <Reanimated.View layout={HEADER_LAYOUT} style={[styles.headerRow, going && styles.headerRowGoing, stacked && styles.headerRowStacked,
-      !stop && styles.headerRowEmpty]}>
-      {visible && stop?.meetAt && phase === 'ready' ? <MeetingClock key={stop.meetAt} onTick={setNow} /> : null}
+    <Reanimated.View layout={HEADER_LAYOUT} style={[styles.headerRow, going && styles.headerRowGoing, stacked && styles.headerRowStacked]}>
+      {visible && stop.meetAt && phase === 'ready' ? <MeetingClock key={stop.meetAt} onTick={setNow} /> : null}
       <Reanimated.View layout={HEADER_LAYOUT} style={[styles.headerMain, compactGoing && styles.headerMainGoing,
-        !stacked && !going && hasTime && { maxWidth: titleMaxWidth }, stacked && styles.headerMainStacked, !stop && styles.headerMainEmpty]}>
-        {!largeText && marqueeEnabled && stop ? (
+        !stacked && !going && hasTime && { maxWidth: titleMaxWidth }, stacked && styles.headerMainStacked]}>
+        {!largeText && marqueeEnabled ? (
           <OverflowMarquee text={label} style={[styles.title, compactGoing && styles.titleGoing]} active={visible} pixelsPerSecond={marqueeSpeed} />
         ) : <HitherText typeRole="title" allowFontScaling={!largeText} style={[styles.title, compactGoing && styles.titleGoing, largeText && styles.titleLarge]}
           numberOfLines={largeText ? 2 : 1}>{label}</HitherText>}
-        {stop ? (
-          <Reanimated.View key={phase} layout={HEADER_LAYOUT} entering={HEADER_ENTER} exiting={HEADER_EXIT}
-            style={[styles.facts, compactGoing && styles.factsGoing]}>
-            {phase === 'arrived' ? <View style={styles.fact}>
-              <FactIcon name="people-outline" color={FACT_TINT.people} />
-              <GatheringFact largeText={largeText}>{zh ? '全員到齊' : 'Everyone arrived'}</GatheringFact>
-            </View> : (
-              <>
-                {phase === 'ready' ? <View style={styles.fact}>
-                  <FactIcon name={MODE_ICON[travelMode]} color={FACT_TINT.travel} />
-                  <GatheringFact largeText={largeText}>{d6TravelTime(eta, zh)}</GatheringFact>
-                </View> : null}
+        <Reanimated.View key={phase} layout={HEADER_LAYOUT} entering={HEADER_ENTER} exiting={HEADER_EXIT}
+          style={[styles.facts, compactGoing && styles.factsGoing]}>
+          {phase === 'arrived' ? <View style={styles.fact}>
+            <FactIcon name="people-outline" color={FACT_TINT.people} />
+            <GatheringFact largeText={largeText}>{zh ? '全員到齊' : 'Everyone arrived'}</GatheringFact>
+          </View> : (
+            <>
+              {phase === 'ready' ? <View style={styles.fact}>
+                <FactIcon name={MODE_ICON[travelMode]} color={FACT_TINT.travel} />
+                <GatheringFact largeText={largeText}>{d6TravelTime(eta, zh)}</GatheringFact>
+              </View> : null}
+              <View style={styles.fact}>
+                <FactIcon name="location-outline" color={FACT_TINT.location} />
+                <GatheringFact largeText={largeText}>{distance == null ? '—' : formatDistance(distance)}</GatheringFact>
+              </View>
+              {phase === 'going' && total > 0 ? (
                 <View style={styles.fact}>
-                  <FactIcon name="location-outline" color={FACT_TINT.location} />
-                  <GatheringFact largeText={largeText}>{distance == null ? '—' : formatDistance(distance)}</GatheringFact>
+                  <FactIcon name="people-outline" color={FACT_TINT.people} />
+                  <GatheringFact largeText={largeText}>{`${arrived}/${total} ${zh ? '已到' : 'arrived'}`}</GatheringFact>
                 </View>
-                {phase === 'going' && total > 0 ? (
-                  <View style={styles.fact}>
-                    <FactIcon name="people-outline" color={FACT_TINT.people} />
-                    <GatheringFact largeText={largeText}>{`${arrived}/${total} ${zh ? '已到' : 'arrived'}`}</GatheringFact>
-                  </View>
-                ) : null}
-              </>
-            )}
-          </Reanimated.View>
-        ) : null}
+              ) : null}
+            </>
+          )}
+        </Reanimated.View>
       </Reanimated.View>
       {showTrailing ? <View style={[styles.headerTrailing, stacked && styles.headerTrailingStacked]}>
-        {stop && hasTime ? (
+        {hasTime ? (
           <Reanimated.View key={`${phase}:${time.kind}`} layout={HEADER_LAYOUT} entering={HEADER_ENTER} exiting={HEADER_EXIT}
             style={time.kind === 'status' ? styles.timeStatus : [styles.timeRow, compactGoing && styles.timeRowGoing, !going && styles.timeRowScheduled]}>
             {time.kind === 'status' ? <>
@@ -241,7 +243,7 @@ const Header = React.memo(function Header({ stop, hasItinerary, phase, canLead,
               {time.unit ? <HitherText allowFontScaling={!largeText} style={[styles.timeUnit, styles.remainingUnit, largeText && styles.remainingUnitLarge, time.hot && styles.hot]}>{unit}</HitherText> : null}
             </>}
           </Reanimated.View>
-        ) : !stop && (canLead || hasItinerary) ? <Ionicons name={hasItinerary ? 'calendar-outline' : 'add'} size={23} color="#fff" /> : null}
+        ) : null}
         {itineraryDay != null ? <HitherText typeRole="title" numberOfLines={1} style={styles.dayText}>
           {zh ? `第 ${itineraryDay} 天` : `Day ${itineraryDay}`}
         </HitherText> : null}
@@ -282,8 +284,7 @@ type CtaProps = {
   onStop: () => Promise<boolean>;
 };
 
-const JourneyButton = React.memo(function JourneyButton({ phase, hasItinerary, pressCancelled, canLead, asked, busy, progress, reduceMotion, zh, onAction, onStop, interactive }: CtaProps & {
-  hasItinerary: boolean;
+const JourneyButton = React.memo(function JourneyButton({ phase, pressCancelled, canLead, asked, busy, progress, reduceMotion, zh, onAction, onStop, interactive }: CtaProps & {
   interactive: boolean;
   pressCancelled: SharedValue<boolean>;
 }) {
@@ -348,7 +349,7 @@ const JourneyButton = React.memo(function JourneyButton({ phase, hasItinerary, p
     onAction();
   }
   const label = phase === 'empty'
-    ? canLead ? (hasItinerary ? (zh ? '新增下一個集合點' : 'Add next stop') : (zh ? '新增集合點' : 'Add a stop')) : (zh ? '等待隊長' : 'Waiting for leader')
+    ? canLead ? (zh ? '新增集合點' : 'Add a stop') : (zh ? '等待隊長' : 'Waiting for leader')
     : going ? (zh ? '前往中' : 'On the way')
       : phase === 'arrived' ? canLead ? (zh ? '完成' : 'Finish') : (zh ? '已抵達' : 'Arrived')
         : canLead ? (zh ? '出發' : 'Start')
@@ -448,17 +449,19 @@ function ProgressFill({ base, fill, holding }: { base: number; fill: Animated.Va
 }
 
 type HomeChromeProps = HeaderProps & CtaProps & {
+  stop: Destination | null;
   pane: D6Pane | null;
   onPaneChange: (pane: D6Pane | null) => void;
   itinerary: ReactNode;
   team: ReactNode;
   footer?: ReactNode;
+  /** Actions that replace the island while the itinerary is in selection mode. */
+  floatingActions?: ReactNode;
   selfEmoji: string;
   selfColor: string;
   statusColor: string;
   onProfile: () => void;
   onCommands: () => void;
-  onAdd: () => void;
   onFit: () => void;
   onLocate: () => void;
   suspended?: boolean;
@@ -470,47 +473,84 @@ type HomeChromeProps = HeaderProps & CtaProps & {
   error?: string | null;
 };
 
+type PaneContent = { leading: number; content: number | null };
+type ItineraryFit = { open: boolean; height: number };
+
 export function D6HomeChrome(props: HomeChromeProps) {
-  const { pane, onPaneChange, itinerary, team, footer, selfEmoji, selfColor, statusColor, onProfile, onCommands,
-    onAdd, onFit, onLocate, suspended = false, commandsPresented, celebration, onTopHeight,
+  const { pane, onPaneChange, itinerary, team, footer, floatingActions, selfEmoji, selfColor, statusColor, onProfile, onCommands,
+    onFit, onLocate, suspended = false, commandsPresented, celebration, onTopHeight,
     stop, canLead, zh, error, phase, lowPowerMode, thermalState } = props;
   const insets = useSafeAreaInsets();
-  const { height: screenHeight } = useWindowDimensions();
+  const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(82);
   const owner = useSharedValue<D6DragOwner>('idle');
+  const openPane = useSharedValue<D6Pane | null>(pane);
   const [islandControlsHeight, setIslandControlsHeight] = useState(MAP_ISLAND_HEIGHT - MAP_ISLAND_GRABBER_HEIGHT);
+  const [itineraryContent, setItineraryContent] = useState<PaneContent>({ leading: 0, content: null });
+  const [teamContent, setTeamContent] = useState<PaneContent>({ leading: 0, content: null });
+  const compact = !stop;
   const topOpen = pane === 'itinerary';
   const teamOpen = pane === 'team';
+  const islandHidden = commandsPresented || floatingActions != null;
   const interactive = !suspended && !commandsPresented;
   const topEdge = Math.max(56, insets.top - 3);
   const bottom = Math.max(24, insets.bottom - 8);
-  const topClosed = headerHeight + MAP_FLOATING_GRABBER_HEIGHT;
+  const topClosed = compact ? MAP_FLOATING_GRABBER_HEIGHT : headerHeight + MAP_FLOATING_GRABBER_HEIGHT;
+  const topVisibleHeight = compact ? ITINERARY_BUTTON_SIZE : topClosed;
   const islandClosed = islandControlsHeight + MAP_ISLAND_GRABBER_HEIGHT;
+  const topFull = Math.max(topClosed, screenHeight - topEdge - bottom - islandClosed - MAP_FLOATING_EDGE_INSET);
+  const islandFull = Math.max(islandClosed, screenHeight - bottom - topEdge);
+  const islandBelowTop = Math.max(islandClosed, screenHeight - bottom - topEdge - topVisibleHeight - MAP_FLOATING_EDGE_INSET);
+
+  const [itineraryFit, setItineraryFit] = useState<ItineraryFit>({ open: topOpen, height: 0 });
+  const measuredItinerary = itineraryContent.content == null ? null
+    : topClosed + (compact ? COMPACT_BODY_INSET : TOP_BODY_INSET) + itineraryContent.leading + itineraryContent.content + PANE_FIT_SLACK;
+  if (itineraryFit.open !== topOpen) {
+    setItineraryFit({ open: topOpen, height: topOpen ? measuredItinerary ?? 0 : 0 });
+  } else if (topOpen && measuredItinerary != null && measuredItinerary > itineraryFit.height) {
+    setItineraryFit({ ...itineraryFit, height: measuredItinerary });
+  }
+  const stageOneHeight = (fit: number, closed: number, full: number) => fit > screenHeight * STAGE_ONE_LIMIT ? full
+    : Math.min(full, Math.max(closed + MIN_PANE_BODY, fit));
+  const itineraryOpenHeight = stageOneHeight(itineraryFit.height, topClosed, topFull);
+  const teamOpenHeight = teamContent.content == null ? undefined
+    : stageOneHeight(islandClosed + teamContent.content + TEAM_BODY_INSET, islandClosed, islandFull);
+
   const changeItinerary = useCallback((open: boolean) => onPaneChange(open ? 'itinerary' : null), [onPaneChange]);
   const changeTeam = useCallback((open: boolean) => onPaneChange(open ? 'team' : null), [onPaneChange]);
-  const closeTeamBeforeDrag = useCallback(() => { if (teamOpen) changeTeam(false); }, [teamOpen, changeTeam]);
-  const closeItineraryBeforeDrag = useCallback(() => { if (topOpen) changeItinerary(false); }, [topOpen, changeItinerary]);
+  const beginItineraryDrag = useCallback(() => {
+    if (openPane.get() === 'team') onPaneChange(null);
+  }, [onPaneChange, openPane]);
+  const beginTeamDrag = useCallback(() => {
+    if (openPane.get() === 'itinerary') onPaneChange(null);
+  }, [onPaneChange, openPane]);
+  const reportItinerary = useCallback((part: D6PaneContentPart) => setItineraryContent(current => ({ ...current, ...part })), []);
+  const reportTeam = useCallback((part: D6PaneContentPart) => setTeamContent(current => ({ ...current, ...part })), []);
   const top = useD6PaneDrag({
     closed: topClosed,
-    openHeight: screenHeight * ITINERARY_OPEN_SCREEN_RATIO - topEdge,
+    openHeight: itineraryOpenHeight,
     enabled: interactive,
-    full: Math.max(topClosed, screenHeight - topEdge - bottom - islandClosed - MAP_FLOATING_EDGE_INSET),
+    full: topFull,
     direction: 1, open: topOpen, reduceMotion: props.reduceMotion, owner,
-    onOpenChange: changeItinerary, onDragBegin: closeTeamBeforeDrag,
+    onOpenChange: changeItinerary, onDragBegin: beginItineraryDrag, onContentHeight: reportItinerary,
   });
   const island = useD6PaneDrag({
-    closed: islandClosed, enabled: interactive,
-    full: Math.max(islandClosed, screenHeight - bottom - topEdge - topClosed - MAP_FLOATING_EDGE_INSET),
+    closed: islandClosed, openHeight: teamOpenHeight, enabled: interactive && !islandHidden,
+    full: islandFull,
     direction: -1, open: teamOpen, reduceMotion: props.reduceMotion, owner,
-    onOpenChange: changeTeam, onDragBegin: closeItineraryBeforeDrag,
+    onOpenChange: changeTeam, onDragBegin: beginTeamDrag, onContentHeight: reportTeam,
   });
   const topLabel = topOpen ? (zh ? '收合行程' : 'Close itinerary') : (zh ? '展開行程' : 'Open itinerary');
   const goRoute = () => {
     top.snapTo(top.detent === 'closed' || top.detent === 'full' ? 'half' : 'closed');
   };
+  const openItineraryButton = () => top.snapTo('half');
   const showItinerary = topOpen || top.preview;
   const showTeam = teamOpen || island.preview;
+  const itineraryCollapsed = compact && !showItinerary;
   const topHeight = top.height;
+  const islandHeight = island.height;
+  const islandOffset = useSharedValue(islandHidden ? 1 : 0);
   const particleTone = useAnimatedStyle(() => ({
     opacity: 1 - 0.45 * Math.min(1, Math.max(0, (topHeight.get() - topClosed) / 80)),
   }));
@@ -519,37 +559,75 @@ export function D6HomeChrome(props: HomeChromeProps) {
     return { opacity, height: opacity > 0 ? topHeight.get() : 0 };
   });
   const cueScale = useAnimatedStyle(() => ({ transform: [{ scale: 0.76 + celebration.get() * 0.24 }] }));
+  const topLift = useAnimatedStyle(() => {
+    const span = islandFull - islandBelowTop;
+    const covered = span <= 0 ? Number(islandHeight.get() >= islandFull)
+      : Math.min(1, Math.max(0, (islandHeight.get() - islandBelowTop) / span));
+    return { transform: [{ translateY: -covered * (topEdge + topVisibleHeight + MAP_FLOATING_EDGE_INSET) }] };
+  });
+  const expandedFrom = ITINERARY_BUTTON_SIZE / Math.max(ITINERARY_BUTTON_SIZE, screenWidth - MAP_FLOATING_EDGE_INSET * 2);
+  const itineraryMorph = useAnimatedStyle(() => {
+    if (!compact) return { opacity: 1, transform: [{ scaleX: 1 }] };
+    const progress = Math.min(1, Math.max(0, (topHeight.get() - topClosed) / COMPACT_MORPH_TRAVEL));
+    return {
+      opacity: Math.min(1, progress * 3),
+      transform: [{ scaleX: expandedFrom + (1 - expandedFrom) * Math.min(1, progress * 1.6) }],
+    };
+  });
+  const itineraryButtonMorph = useAnimatedStyle(() => {
+    const progress = compact ? Math.min(1, Math.max(0, (topHeight.get() - topClosed) / COMPACT_MORPH_TRAVEL)) : 1;
+    return { opacity: 1 - Math.min(1, progress * 3), transform: [{ scale: 1 - 0.15 * Math.min(1, progress * 3) }] };
+  });
+  const islandShift = useAnimatedStyle(() => ({
+    transform: [{ translateY: islandOffset.get() * (islandClosed + bottom + ISLAND_HIDE_OVERSHOOT) }],
+  }));
   return (
     <View pointerEvents={interactive ? 'box-none' : 'none'}
       accessibilityElementsHidden={!interactive} importantForAccessibility={interactive ? 'auto' : 'no-hide-descendants'}
       style={[styles.layer, suspended && styles.suspended]}>
       {top.lifecycle}
       {island.lifecycle}
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none"><D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS}
-        style={[styles.top, { top: topEdge }]} open={topOpen}
-        surface={<D6Surface radius={MAP_GATHERING_CORNER_RADIUS} />}
-        header={<View>
-          {stop ? <Reanimated.View style={[styles.particleField, particleTone]} pointerEvents="none">
-            <GatheringCardParticles running={phase === 'going' && !suspended}
-              lowPowerMode={lowPowerMode} thermalState={thermalState} />
-          </Reanimated.View> : null}
-          <MotionPressable testID="home-itinerary-toggle" accessibilityRole="button" accessibilityLabel={!stop && !props.hasItinerary && !topOpen && canLead ? (zh ? '新增第一個集合點' : 'Add your first stop') : undefined} accessibilityHint={topLabel}
-            onPress={event => {
-              if (cancelledD6Touch(top.pressCancelled.get(), event)) return;
-              if (!stop && !props.hasItinerary && !topOpen && canLead) onAdd(); else goRoute();
-            }} style={styles.headingButton}
-            onLayout={({ nativeEvent: { layout: { height } } }) => {
-              setHeaderHeight(height);
-              onTopHeight(height + MAP_FLOATING_GRABBER_HEIGHT);
-            }}>
-            <Header stop={stop} hasItinerary={props.hasItinerary} phase={phase} canLead={canLead} travelMode={props.travelMode}
-              distance={props.distance} eta={props.eta} arrived={props.arrived} total={props.total}
-              displayFont={props.displayFont} marqueeEnabled={props.marqueeEnabled} marqueeSpeed={props.marqueeSpeed} zh={zh} />
+      <SyncPane key={pane ?? 'none'} pane={openPane} value={pane} />
+      <IslandVisibility key={String(islandHidden)} offset={islandOffset} hidden={islandHidden} reduceMotion={props.reduceMotion} />
+      {compact ? <CompactTopHeight report={onTopHeight} /> : null}
+      <Reanimated.View style={[StyleSheet.absoluteFill, topLift]} pointerEvents="box-none">
+        <View style={StyleSheet.absoluteFill} pointerEvents={itineraryCollapsed ? 'none' : 'box-none'}
+          accessibilityElementsHidden={itineraryCollapsed} importantForAccessibility={itineraryCollapsed ? 'no-hide-descendants' : 'auto'}>
+          <D6PaneFrame panel={top} direction={1} cornerRadius={MAP_GATHERING_CORNER_RADIUS}
+            style={[styles.top, { top: topEdge }, itineraryMorph]} open={topOpen}
+            surface={<D6Surface radius={MAP_GATHERING_CORNER_RADIUS} />}
+            header={stop ? <View>
+              {stop ? <Reanimated.View style={[styles.particleField, particleTone]} pointerEvents="none">
+                <GatheringCardParticles running={phase === 'going' && !suspended}
+                  lowPowerMode={lowPowerMode} thermalState={thermalState} />
+              </Reanimated.View> : null}
+              <MotionPressable testID="home-itinerary-toggle" accessibilityRole="button" accessibilityHint={topLabel}
+                onPress={event => {
+                  if (cancelledD6Touch(top.pressCancelled.get(), event)) return;
+                  goRoute();
+                }} style={styles.headingButton}
+                onLayout={({ nativeEvent: { layout: { height } } }) => {
+                  setHeaderHeight(height);
+                  onTopHeight(height + MAP_FLOATING_GRABBER_HEIGHT);
+                }}>
+                <Header stop={stop} phase={phase} travelMode={props.travelMode}
+                  distance={props.distance} eta={props.eta} arrived={props.arrived} total={props.total}
+                  displayFont={props.displayFont} marqueeEnabled={props.marqueeEnabled} marqueeSpeed={props.marqueeSpeed} zh={zh} />
+              </MotionPressable>
+            </View> : undefined}
+            body={showItinerary ? <View collapsable={false} testID="d6-route-viewport" onLayout={top.contentDidLayout}
+              style={[styles.topBody, compact && styles.topBodyCompact]}>{itinerary}</View> : null}
+            grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} pressCancelled={top.pressCancelled} label={topLabel} testID="home-itinerary-grabber" />}
+          />
+        </View>
+        {compact ? <Reanimated.View pointerEvents={itineraryCollapsed ? 'auto' : 'none'}
+          style={[styles.itineraryButton, { top: topEdge }, itineraryButtonMorph]}>
+          <MotionPressable testID="home-itinerary-button" accessibilityRole="button" onPress={openItineraryButton}
+            accessibilityLabel={zh ? '查看行程' : 'View itinerary'} style={styles.itineraryButtonHit}>
+            <D6Surface radius={ITINERARY_BUTTON_SIZE / 2} />
+            <Ionicons name="calendar-outline" size={23} color="#fff" />
           </MotionPressable>
-        </View>}
-        body={showItinerary ? <View collapsable={false} testID="d6-route-viewport" onLayout={top.contentDidLayout} style={styles.topBody}>{itinerary}</View> : null}
-        grabber={<Grabber gesture={top.gesture} detent={top.detent} snapTo={top.snapTo} pressCancelled={top.pressCancelled} label={topLabel} testID="home-itinerary-grabber" />}
-      />
+        </Reanimated.View> : null}
         <Reanimated.View testID="home-gathering-celebration" pointerEvents="none" accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
           style={[styles.celebrationLayer, { top: topEdge }, cueFrame]}>
@@ -557,12 +635,13 @@ export function D6HomeChrome(props: HomeChromeProps) {
             <Ionicons name="checkmark" size={24} color="#fff" />
           </Reanimated.View>
         </Reanimated.View>
-      </View>
-      {!pane && !top.preview && !island.preview && !suspended ? <MapRecenterControl style={[styles.controls, { bottom: bottom + islandClosed + 16 }]}
+      </Reanimated.View>
+      {!pane && !top.preview && !island.preview && !suspended && !islandHidden ? <MapRecenterControl style={[styles.controls, { bottom: bottom + islandClosed + 16 }]}
         onFitAll={onFit} onLocate={onLocate} fitAllLabel={zh ? '縮放到全隊' : 'Fit team on map'}
         locateLabel={zh ? '回到我的位置' : 'Show my location'} /> : null}
-      <View pointerEvents={commandsPresented ? 'none' : 'box-none'}
-        style={[StyleSheet.absoluteFill, commandsPresented && styles.hiddenIsland]}>
+      <Reanimated.View pointerEvents={islandHidden ? 'none' : 'box-none'}
+        accessibilityElementsHidden={islandHidden} importantForAccessibility={islandHidden ? 'no-hide-descendants' : 'auto'}
+        style={[StyleSheet.absoluteFill, islandShift]}>
         <D6PaneFrame panel={island} direction={-1} cornerRadius={MAP_ISLAND_CORNER_RADIUS} grabberHeight={MAP_ISLAND_GRABBER_HEIGHT}
           style={[styles.island, { bottom }]} open={teamOpen}
           surface={<D6Surface radius={MAP_ISLAND_CORNER_RADIUS} />}
@@ -577,11 +656,10 @@ export function D6HomeChrome(props: HomeChromeProps) {
           }}>
             {error && !topOpen ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
             {footer ?? <View style={styles.islandRow}>
-              <MotionPressable motion="depth" testID="home-profile" accessibilityRole="button" accessibilityLabel={zh ? '你' : 'You'} onPressIn={lightTap} onPress={event => { if (!cancelledD6Touch(island.pressCancelled.get(), event)) onProfile(); }} style={[styles.avatar, { backgroundColor: selfColor }]}>
+              <MotionPressable motion="depth" testID="home-profile" accessibilityRole="button" accessibilityLabel={zh ? '你' : 'You'} onPressIn={lightTap} onPress={event => { if (!cancelledD6Touch(island.pressCancelled.get(), event)) onProfile(); }} style={[styles.avatar, { backgroundColor: selfColor, borderColor: statusColor }]}>
                 <Text allowFontScaling={false} style={styles.avatarEmoji}>{selfEmoji}</Text>
-                <View pointerEvents="none" style={[styles.status, { backgroundColor: statusColor }]} />
               </MotionPressable>
-              <JourneyButton interactive={interactive} phase={phase} hasItinerary={props.hasItinerary} pressCancelled={island.pressCancelled} canLead={canLead} asked={props.asked} busy={props.busy}
+              <JourneyButton interactive={interactive} phase={phase} pressCancelled={island.pressCancelled} canLead={canLead} asked={props.asked} busy={props.busy}
                 progress={props.progress} reduceMotion={props.reduceMotion} zh={zh} onAction={props.onAction} onStop={props.onStop} />
               <MotionPressable motion="depth" testID="home-commands" accessibilityRole="button" accessibilityLabel={zh ? '快捷指令' : 'Quick commands'} onPressIn={lightTap} onPress={event => { if (!cancelledD6Touch(island.pressCancelled.get(), event)) onCommands(); }} style={styles.commands}>
                 <View>
@@ -592,9 +670,31 @@ export function D6HomeChrome(props: HomeChromeProps) {
             </View>}
           </View>}
         />
-      </View>
+      </Reanimated.View>
+      {floatingActions ? <Reanimated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)}
+        pointerEvents="box-none" style={[styles.floatingActions, { bottom }]}>
+        {floatingActions}
+      </Reanimated.View> : null}
     </View>
   );
+}
+
+function SyncPane({ pane, value }: { pane: SharedValue<D6Pane | null>; value: D6Pane | null }) {
+  useMountEffect(() => { pane.set(value); });
+  return null;
+}
+
+function IslandVisibility({ offset, hidden, reduceMotion }: { offset: SharedValue<number>; hidden: boolean; reduceMotion: boolean }) {
+  useMountEffect(() => {
+    const target = hidden ? 1 : 0;
+    offset.set(reduceMotion ? target : withTiming(target, { duration: hidden ? 240 : 320, easing: Easing.out(Easing.cubic) }));
+  });
+  return null;
+}
+
+function CompactTopHeight({ report }: { report: (height: number) => void }) {
+  useMountEffect(() => { report(ITINERARY_BUTTON_SIZE); });
+  return null;
 }
 
 export const d6ChromeStyles = StyleSheet.create({
@@ -611,7 +711,8 @@ const styles = StyleSheet.create({
   celebrationLayer: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, zIndex: 1,
     borderRadius: MAP_GATHERING_CORNER_RADIUS, alignItems: 'center', justifyContent: 'center', backgroundColor: '#00000059' },
   celebrationBadge: { width: 42, height: 42, borderRadius: 21, backgroundColor: glass.ok, alignItems: 'center', justifyContent: 'center' },
-  top: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, borderRadius: MAP_GATHERING_CORNER_RADIUS },
+  top: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET, borderRadius: MAP_GATHERING_CORNER_RADIUS,
+    transformOrigin: 'right top' },
   headingButton: { flexShrink: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, paddingTop: 20, paddingBottom: 4 },
   particleField: { ...StyleSheet.absoluteFill, overflow: 'hidden',
     borderTopLeftRadius: MAP_GATHERING_CORNER_RADIUS, borderTopRightRadius: MAP_GATHERING_CORNER_RADIUS },
@@ -621,8 +722,6 @@ const styles = StyleSheet.create({
   headerMain: { flex: 1, minWidth: 0, gap: 4, justifyContent: 'center', paddingStart: 1 },
   headerMainGoing: { gap: 0 },
   headerMainStacked: { flex: 0 },
-  headerRowEmpty: { justifyContent: 'center' },
-  headerMainEmpty: { flex: 0, flexShrink: 1 },
   title: { color: '#fff', fontSize: APP_TEXT_SIZE.title, lineHeight: APP_TEXT_LINE_HEIGHT.title, fontWeight: '800' },
   titleGoing: { lineHeight: 22 },
   titleLarge: { fontSize: APP_TEXT_SIZE.heading, lineHeight: 37 },
@@ -653,8 +752,12 @@ const styles = StyleSheet.create({
   remainingUnit: { fontSize: APP_TEXT_SIZE.body * REMAINING_TIME_SCALE },
   remainingUnitLarge: { fontSize: APP_TEXT_SIZE.title * REMAINING_TIME_SCALE },
   hot: { color: D6_COUNTDOWN_COLOR },
-  topBody: { flex: 1, minHeight: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, marginTop: 6 },
-  teamBody: { flex: 1, minHeight: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, marginBottom: 6 },
+  topBody: { flex: 1, minHeight: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, marginTop: TOP_BODY_INSET },
+  topBodyCompact: { marginTop: COMPACT_BODY_INSET },
+  itineraryButton: { position: 'absolute', right: MAP_FLOATING_EDGE_INSET, width: ITINERARY_BUTTON_SIZE, height: ITINERARY_BUTTON_SIZE },
+  itineraryButtonHit: { flex: 1, borderRadius: ITINERARY_BUTTON_SIZE / 2, alignItems: 'center', justifyContent: 'center' },
+  floatingActions: { position: 'absolute', left: MAP_FLOATING_EDGE_INSET, right: MAP_FLOATING_EDGE_INSET },
+  teamBody: { flex: 1, minHeight: 0, paddingHorizontal: SHEET_CORNER_ACTION_INSET, marginBottom: TEAM_BODY_INSET },
   islandControls: { flexShrink: 0, paddingHorizontal: MAP_ISLAND_SIDE_INSET },
   grabArea: { flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   grabTarget: { width: 104, alignItems: 'center', justifyContent: 'center' },
@@ -666,9 +769,8 @@ const styles = StyleSheet.create({
   islandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: MAP_ISLAND_ACTION_HEIGHT,
     marginTop: 'auto', marginBottom: MAP_ISLAND_BOTTOM_INSET },
   avatar: { height: MAP_ISLAND_ACTION_HEIGHT, width: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2,
-    alignItems: 'center', justifyContent: 'center' },
+    borderWidth: 3, alignItems: 'center', justifyContent: 'center' },
   avatarEmoji: { fontSize: 28 },
-  status: { position: 'absolute', width: 14, height: 14, borderRadius: 7, right: 0, bottom: 0, borderWidth: 2, borderColor: D6_SURFACE_SOLID_COLOR },
   commands: { width: MAP_ISLAND_ACTION_HEIGHT, height: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2,
     backgroundColor: '#ffffff1f', alignItems: 'center', justifyContent: 'center' },
   commandBolt: { position: 'absolute', top: 6, left: 7 },

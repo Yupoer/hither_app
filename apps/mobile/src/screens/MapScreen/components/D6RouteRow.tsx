@@ -12,6 +12,7 @@ import { destinationEmojiDisplay } from '../../../utils/destinationEmojiColor';
 import { lightTap } from '../../../utils/haptics';
 import type { D6RouteRow as RouteRow } from '../d6Itinerary';
 import { D6PaneInteractionContext } from './D6PaneInteraction';
+import { guardGesture } from './d6GestureGuard';
 import { claimD6Drag, releaseD6Drag, type D6DragOwner } from './d6DragOwnership';
 import type { D6DragGeometry, D6DragPresentation, D6Point } from './d6RouteDrag';
 
@@ -101,13 +102,31 @@ export function D6RouteRow({
     return () => measureRef?.(row.id, null);
   });
   const reorderGesture = useMemo(() => {
+    const finishReorder = (success: boolean, point: D6Point | null) => {
+      'worklet';
+      const token = acquired.get();
+      if (!owner || !presentation || token === null) return;
+      acquired.set(null);
+      if (presentation.get()?.token === token) {
+        presentation.set(null);
+        releaseD6Drag(owner, 'reorder');
+      }
+      if (success && point) runOnJS(handlers.end)(token, point);
+      else runOnJS(handlers.cancel)(token);
+    };
+    const cancelReorder = () => {
+      'worklet';
+      finishReorder(false, null);
+    };
     const gesture = Gesture.Pan().enabled(!!owner && !hideHandle)
       .activateAfterLongPress(250)
       .maxPointers(1)
-      .onTouchesDown((_event, manager) => {
+      .onTouchesDown(guardGesture('reorder-down', (_event: unknown, manager: { fail: () => void }) => {
+        'worklet';
         if (owner && owner.get() !== 'idle') manager.fail();
-      })
-      .onStart(({ absoluteX, absoluteY }) => {
+      }, cancelReorder))
+      .onStart(guardGesture('reorder-start', ({ absoluteX, absoluteY }: { absoluteX: number; absoluteY: number }) => {
+        'worklet';
         if (!owner || !dragPoint || !presentation || !sequence || !geometryForDrag) return;
         const geometry = geometryForDrag();
         if (!geometry || !claimD6Drag(owner, 'reorder')) return;
@@ -119,34 +138,18 @@ export function D6RouteRow({
         presentation.set({ token, sourceId, geometry,
           offset: { x: point.x - geometry.source.x, y: point.y - geometry.source.y } });
         runOnJS(handlers.start)(token, point, geometry);
-      })
-      .onUpdate(({ absoluteX, absoluteY }) => {
+      }, cancelReorder))
+      .onUpdate(guardGesture('reorder-update', ({ absoluteX, absoluteY }: { absoluteX: number; absoluteY: number }) => {
+        'worklet';
         if (!owner || !dragPoint || !presentation || acquired.get() === null
           || presentation.get()?.token !== acquired.get() || owner.get() !== 'reorder') return;
-        const point = { x: absoluteX, y: absoluteY };
-        dragPoint.set(point);
-      })
-      .onEnd(({ absoluteX, absoluteY }, success) => {
-        const token = acquired.get();
-        if (!owner || !presentation || token === null) return;
-        acquired.set(null);
-        if (presentation.get()?.token === token) {
-          presentation.set(null);
-          releaseD6Drag(owner, 'reorder');
-        }
-        if (success) runOnJS(handlers.end)(token, { x: absoluteX, y: absoluteY });
-        else runOnJS(handlers.cancel)(token);
-      })
-      .onFinalize(() => {
-        const token = acquired.get();
-        if (!owner || !presentation || token === null) return;
-        acquired.set(null);
-        if (presentation.get()?.token === token) {
-          presentation.set(null);
-          releaseD6Drag(owner, 'reorder');
-        }
-        runOnJS(handlers.cancel)(token);
-      });
+        dragPoint.set({ x: absoluteX, y: absoluteY });
+      }, cancelReorder))
+      .onEnd(guardGesture('reorder-end', ({ absoluteX, absoluteY }: { absoluteX: number; absoluteY: number }, success: boolean) => {
+        'worklet';
+        finishReorder(success, { x: absoluteX, y: absoluteY });
+      }, cancelReorder))
+      .onFinalize(guardGesture('reorder-finalize', cancelReorder, cancelReorder));
     if (paneGesture && scrollGesture) gesture.blocksExternalGesture(paneGesture, scrollGesture);
     return gesture;
   }, [owner, dragPoint, presentation, sequence, sourceId, geometryForDrag, paneGesture, scrollGesture, acquired, handlers, hideHandle]);
@@ -242,10 +245,11 @@ export function D6RouteRow({
   const content = (
     <View style={[
       styles.row, completed && styles.completed,
+      selected !== undefined && styles.selectionRow,
       selected && { backgroundColor: `${accent}2E` },
     ]} onLayout={(event) => height.set(event.nativeEvent.layout.height)}>
       {connectAbove || connectBelow ? <View pointerEvents="none" style={[
-        styles.connector, { backgroundColor: color, top: connectAbove ? 0 : '50%', bottom: connectBelow ? 0 : '50%' },
+        styles.connector, selected !== undefined && styles.selectionConnector, { backgroundColor: color, top: connectAbove ? 0 : '50%', bottom: connectBelow ? 0 : '50%' },
       ]} /> : null}
       {flash ? <D6RowFlash accent={accent} /> : null}
       <View style={styles.swipeBody}>
@@ -440,6 +444,8 @@ function SwipeAction({ rowTitle, label, onPress, style, width, distanceFromEdge,
   </Animated.View>;
 }
 
+const SELECTION_ROW_INSET = 10;
+
 const styles = StyleSheet.create({
   selectionSpacing: { marginVertical: 3 },
   collapsingRow: { overflow: 'hidden' },
@@ -461,6 +467,8 @@ const styles = StyleSheet.create({
   selectionCircle: { backgroundColor: '#26302E', borderColor: 'rgba(255,255,255,.52)', borderWidth: 2 },
   selectedCircle: { backgroundColor: '#fff', borderColor: '#fff' },
   connector: { position: 'absolute', width: 2, left: 19, opacity: 0.45 },
+  selectionRow: { paddingHorizontal: SELECTION_ROW_INSET },
+  selectionConnector: { left: 19 + SELECTION_ROW_INSET },
   completed: { opacity: 0.45 },
   insertion: { position: 'absolute', left: 0, right: 0, height: 6, borderRadius: 3 },
   insertionTop: { top: 0 },

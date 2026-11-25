@@ -25,6 +25,7 @@ jest.mock('react-native', () => ({
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-linear-gradient', () => ({ LinearGradient: 'LinearGradient' }));
+jest.mock('@expo/ui/community/masked-view', () => ({ MaskedView: 'MaskedView' }));
 jest.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: 'GestureHandlerRootView',
   GestureDetector: 'GestureDetector',
@@ -99,7 +100,7 @@ jest.mock('react-native-reanimated', () => {
     measure: jest.fn(() => null),
     useAnimatedRef: () => {
       const { useState } = jest.requireActual<typeof import('react')>('react');
-      return useState(() => () => null)[0];
+      return useState(() => () => ({ attached: true }))[0];
     },
     useAnimatedStyle: (style: () => object) => style(),
     useDerivedValue: (compute: () => unknown) => {

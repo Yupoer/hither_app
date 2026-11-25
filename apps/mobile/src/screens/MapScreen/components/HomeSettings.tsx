@@ -12,7 +12,8 @@ import { avatarColorForGroup, avatarForGroup, displayMemberAvatar } from '../../
 import { requireUserId } from '../../../api/services/_helpers';
 import { updateGroupIdentity, type JoinedGroupInfo } from '../../../api/services/GroupService';
 import { useTranslation } from '../../../i18n';
-import { usePreferences, useTheme } from '../../../state/PreferencesContext';
+import { usePreferences, useTheme, type TextScalePref } from '../../../state/PreferencesContext';
+import PrefSlider from '../../../components/PrefSlider';
 import { useSession } from '../../../state/SessionContext';
 import { confirmAction } from '../../../utils/confirm';
 import { confirmDeleteAccount } from '../../../utils/deleteAccount';
@@ -52,6 +53,8 @@ export type HomeSettingsProps = {
   onJoinTeam?: () => void;
   inviteBlockedForAnonymousLeader?: boolean;
   nestedSheets?: React.ReactNode;
+  /** True while one of `nestedSheets` is presented over settings. */
+  nestedSheetOpen?: boolean;
 };
 
 const colors = {
@@ -90,6 +93,8 @@ function Row({ label, value, action, divider, icon, destructive, accent, testID 
   ) : <View testID={testID} style={style}>{content}</View>;
 }
 
+const SETTINGS_SHEET_RATIO = 0.9;
+
 function entryStack(page: SettingsPage): SettingsPage[] {
   return page === 'root' ? ['root'] : ['root', page];
 }
@@ -98,7 +103,7 @@ export default function HomeSettings({
   visible, initialPage = 'root', liveActivitySettings, onClose, onDismissComplete, memberCount = 0, group,
   profileStatusColor, refresh = noop, renderStore, isLeader = false, onShareGroup,
   onOpenCoordination, onCreateCoordination, onCoordinationCreated, onConfirmLeave, onConfirmEnd,
-  onSwitchTeam, onCreateTeam, onJoinTeam, inviteBlockedForAnonymousLeader, nestedSheets,
+  onSwitchTeam, onCreateTeam, onJoinTeam, inviteBlockedForAnonymousLeader, nestedSheets, nestedSheetOpen = false,
   onConfirmSignOut, onOpenFeedback, onAccountDeleted, onArchiveAllForTest, onGoHome, onConfirmResetPrefs,
 }: SettingsOverlayProps & HomeSettingsProps) {
   const { t, language } = useTranslation();
@@ -141,9 +146,8 @@ export default function HomeSettings({
   const registered = !!user && !isAnonymous;
 
   return (
-    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={0.84} scrollResetKey={page}
-      fitContent={page !== 'root' && page !== 'profile' && page !== 'team' && page !== 'store' && page !== 'teams'}
-      fillContent={page === 'teams'}
+    <SettingsChildSheet home singleStage testID="settings-panel" visible={visible} zIndex={80} stageTwoRatio={SETTINGS_SHEET_RATIO} scrollResetKey={page}
+      fillContent={page === 'teams'} yieldToNestedSheet={nestedSheetOpen}
       background={<D6Surface radius={MAP_SHEET_CORNER_RADIUS} thick />}
       title={title[page]} titleFontSize={24} backLabel={t('common.back')} doneLabel={t('common.close')}
       navigation={isRoot ? 'root' : 'child'} onClose={onClose} onBack={isRoot ? undefined : back}
@@ -362,6 +366,12 @@ function CoordinationForm({ create, onCancel, onCreated }: { create: UseCoordina
   );
 }
 
+const TEXT_SCALES = [0.8, 0.9, 1, 1.1, 1.2] as const satisfies readonly TextScalePref[];
+const TEXT_SCALE_LABELS = {
+  0.8: 'settings.textSizeXs', 0.9: 'settings.textSizeSm', 1: 'settings.textSizeMd',
+  1.1: 'settings.textSizeLg', 1.2: 'settings.textSizeXl',
+} as const satisfies Record<TextScalePref, string>;
+
 function Appearance() {
   const { t, language } = useTranslation();
   const { themeName, setThemeName, textScale, setTextScale, followSystemTextSize, setFollowSystemTextSize } = usePreferences();
@@ -370,13 +380,7 @@ function Appearance() {
     { val: 'day', label: t('settings.themeDay') },
     { val: 'dusk', label: t('settings.themeDusk') },
   ] as const;
-  const text = [
-    { val: 0.8, label: t('settings.textSizeXs') },
-    { val: 0.9, label: t('settings.textSizeSm') },
-    { val: 1, label: t('settings.textSizeMd') },
-    { val: 1.1, label: t('settings.textSizeLg') },
-    { val: 1.2, label: t('settings.textSizeXl') },
-  ] as const;
+  const textScaleLabel = t(TEXT_SCALE_LABELS[textScale]);
   return (
     <>
       <Box style={styles.noTopMargin}>
@@ -392,23 +396,21 @@ function Appearance() {
       </Box>
       <Box>
         <HitherText style={styles.sectionLabel}>{t('settings.textSize')}</HitherText>
-        <View style={styles.chips}>
-          <Pressable style={[styles.chip, followSystemTextSize && styles.chipSelected]}
-            accessibilityRole="button" accessibilityState={{ selected: followSystemTextSize }}
-            onPress={() => setFollowSystemTextSize()} testID="settings-text-system">
-            <HitherText style={styles.chipLabel}>{language === 'zh' ? '跟隨系統' : 'System'}</HitherText>
-          </Pressable>
-          {text.map(option => {
-            const selected = !followSystemTextSize && textScale === option.val;
-            return (
-              <Pressable key={option.val} style={[styles.chip, selected && styles.chipSelected]}
-                onPress={() => setTextScale(option.val)} accessibilityRole="button"
-                accessibilityState={{ selected }} testID={`settings-text-${option.val}`}>
-                <HitherText style={styles.chipLabel}>{option.label}</HitherText>
-              </Pressable>
-            );
-          })}
+        <View style={styles.row}>
+          <HitherText style={[styles.rowLabel, styles.flex]}>{language === 'zh' ? '跟隨系統' : 'Use system size'}</HitherText>
+          <SystemToggle testID="settings-text-system" value={followSystemTextSize}
+            accessibilityLabel={language === 'zh' ? '文字大小跟隨系統' : 'Use system text size'}
+            onValueChange={follow => follow ? setFollowSystemTextSize() : setTextScale(textScale)} />
         </View>
+        <View testID="settings-text-scale" style={[styles.textScale, followSystemTextSize && styles.textScaleFollowing]}>
+          <HitherText allowFontScaling={false} style={styles.textScaleSmall}>A</HitherText>
+          <PrefSlider accent={HITHER_ACCENT} values={TEXT_SCALES} value={textScale} style={styles.flex}
+            onChange={value => setTextScale(value as TextScalePref)} accessibilityLabel={t('settings.textSize')} />
+          <HitherText allowFontScaling={false} style={styles.textScaleLarge}>A</HitherText>
+        </View>
+        <HitherText style={[styles.settingHint, styles.textScaleValue]}>
+          {followSystemTextSize ? (language === 'zh' ? '跟隨系統設定' : 'Following system setting') : textScaleLabel}
+        </HitherText>
       </Box>
     </>
   );
@@ -563,7 +565,7 @@ const styles = StyleSheet.create({
   noTopMargin: { marginTop: 0 },
   row: { minHeight: 48, paddingVertical: 2, flexDirection: 'row', alignItems: 'center', gap: 12 },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(255,255,255,0.12)' },
-  rowLabel: { color: colors.white, fontSize: APP_TEXT_SIZE.caption, fontWeight: '500' },
+  rowLabel: { color: colors.white, fontSize: APP_TEXT_SIZE.caption + 1, fontWeight: '500' },
   fillRow: { flex: 1, minWidth: 0 },
   rowValue: { color: colors.secondary, fontSize: APP_TEXT_SIZE.caption, flexShrink: 1 },
   settingCopy: { flex: 1, minWidth: 0, gap: 5 },
@@ -583,7 +585,13 @@ const styles = StyleSheet.create({
   groupName: { marginTop: 14, textAlign: 'center', fontWeight: '600', fontSize: APP_TEXT_SIZE.body },
   code: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.07)', marginTop: 14 },
   codeText: { flex: 1, fontSize: APP_TEXT_SIZE.heading, fontWeight: '800', fontStyle: 'italic', letterSpacing: 4, color: colors.white },
-  sectionLabel: { fontSize: APP_TEXT_SIZE.caption, fontWeight: '600', color: colors.white, paddingTop: 12, paddingBottom: 6 },
+  sectionLabel: { fontSize: APP_TEXT_SIZE.caption + 1, fontWeight: '600', color: colors.white, paddingTop: 12, paddingBottom: 6 },
+  flex: { flex: 1 },
+  textScale: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  textScaleFollowing: { opacity: 0.5 },
+  textScaleSmall: { color: colors.white, fontSize: 13, fontWeight: '600' },
+  textScaleLarge: { color: colors.white, fontSize: 22, fontWeight: '600' },
+  textScaleValue: { paddingBottom: 12 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12 },
   chip: { minHeight: 44, borderRadius: 22, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'transparent' },
   chipSelected: { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.66)' },

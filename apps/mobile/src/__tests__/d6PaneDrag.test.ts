@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ScrollHandler } from 'react-native-reanimated';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { subscribeGestureFailures } from '../screens/MapScreen/components/d6GestureGuard';
 import { useD6PaneDrag } from '../screens/MapScreen/components/useD6PaneDrag';
 
 let mockNative = true;
@@ -531,4 +532,45 @@ it('preserves a full detent when another sheet temporarily owns interaction', ()
   expect(panel().detent).toBe('full');
   expect(height().get()).toBe(620);
   expect(mockPanEnabled.get(panel().gesture)).toBe(true);
+});
+
+it('keeps an active chrome drag when only the open height changes and snaps against the new open height', () => {
+  render({ open: true, openHeight: 300, reduceMotion: true });
+  act(() => startChrome(mockHandlers));
+  act(() => mockHandlers.update({ translationY: 40, velocityY: 0 }));
+  expect(height().get()).toBe(340);
+  const springs = mockSprings.length;
+  render({ open: true, openHeight: 360, reduceMotion: true });
+  expect(height().get()).toBe(340);
+  expect(panel().owner.get()).toBe('pane');
+  expect(mockSprings).toHaveLength(springs);
+  act(() => mockHandlers.update({ translationY: 65, velocityY: 0 }));
+  expect(height().get()).toBe(365);
+  act(() => mockHandlers.end({ translationY: 65, velocityY: 0 }, true));
+  act(() => mockHandlers.finalize());
+  expect(panel().owner.get()).toBe('idle');
+  expect(panel().detent).toBe('half');
+  expect(height().get()).toBe(360);
+});
+
+it('recovers a chrome drag whose update throws and reports the failing gesture', () => {
+  Object.assign(globalThis, { __DEV__: false });
+  const failures = jest.fn();
+  const unsubscribe = subscribeGestureFailures(failures);
+  render({ open: true });
+  height().value = 349.6;
+  act(() => startChrome(mockHandlers));
+  const shared = height();
+  const set = shared.set;
+  shared.set = () => { shared.set = set; throw new Error('detached view'); };
+  expect(() => act(() => mockHandlers.update({ translationY: 40, velocityY: 0 }))).not.toThrow();
+  unsubscribe();
+  expect(failures).toHaveBeenCalledWith('pane-chrome-update', 'Error: detached view');
+  expect(panel().owner.get()).toBe('idle');
+  expect(spring().next).toBe(349.6);
+  act(() => mockHandlers.update({ translationY: 120, velocityY: 0 }));
+  act(() => mockHandlers.end({ translationY: 120, velocityY: 2000 }, true));
+  expect(height().get()).toBe(349.6);
+  expect(panel().detent).toBe('half');
+  expect(onOpenChange).not.toHaveBeenCalled();
 });
