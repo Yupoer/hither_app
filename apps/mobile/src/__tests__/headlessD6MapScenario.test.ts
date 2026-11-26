@@ -1,7 +1,7 @@
 const { World } = require('../../test/headless/world.cjs');
 const { LEADER, GROUP_ID, DESTINATION } = require('../../test/headless/backend.cjs');
 
-type MapHost = { testId?: string; label?: string; text?: string; value?: unknown; disabled?: boolean; acceptsInput: boolean };
+type MapHost = { testId?: string; label?: string; text?: string; value?: unknown; checked?: boolean; disabled?: boolean; acceptsInput: boolean };
 type Observation = {
   presentation: { hosts: MapHost[]; receipts: { host: string; method: string; style?: string }[] };
   external: { watches: number; alerts: number };
@@ -48,6 +48,13 @@ describe('iOS D6 Map', () => {
       expect(await press(device, 'd6-place-day-2')).toEqual({ invoked: true });
       expect(await press(device, 'd6-place-position')).toEqual({ invoked: true });
       await press(device, 'd6-place-after-a1111111-1111-4111-8111-111111111111');
+      const favorites = () => world.backend.tables.account_favorite_places.filter((item: { title: string }) => item.title === 'Coffee stop');
+      expect(await device.host.call({ kind: 'toggle', testId: 'd6-place-favorite', value: true })).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => favorites().length === 1 && field(value, 'd6-place-favorite')?.checked === true,
+        'favorite toggle saves the staged place');
+      expect(await device.host.call({ kind: 'toggle', testId: 'd6-place-favorite', value: false })).toEqual({ invoked: true });
+      await world.waitFor(device, (value: Observation) => favorites().length === 0 && field(value, 'd6-place-favorite')?.checked === false,
+        'favorite toggle removes the staged place');
       expect(world.backend.itinerary).toHaveLength(3);
       const lightImpacts = (value: Observation) => value.presentation.receipts
         .filter(receipt => receipt.host === 'Haptics' && receipt.method === 'impactAsync' && receipt.style === 'light').length;

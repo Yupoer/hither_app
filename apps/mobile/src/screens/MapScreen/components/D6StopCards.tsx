@@ -32,7 +32,6 @@ import {
   MAP_SHEET_ACTION_HIT_SIZE,
   MAP_SHEET_CORNER_RADIUS,
   SHEET_CORNER_ACTION_INSET,
-  SHEET_CORNER_BUTTON_INSET,
   sheetCornerHeaderInset,
 } from '../../../components/mapSheetChrome';
 import { lightTap } from '../../../utils/haptics';
@@ -46,7 +45,8 @@ import AddPlaceChoice, { type PlaceChoiceOption } from './D6AddPlaceChoice';
 
 const STOP_DETENTS = ['medium', { fraction: 0.87 }] satisfies readonly SheetDetent[];
 const ADD_COORDINATE_DETENTS = [{ height: 140 }] satisfies readonly SheetDetent[];
-const ADD_CONFIRM_DETENTS = [{ fraction: 0.52 }] satisfies readonly SheetDetent[];
+const ADD_IDENTITY_TOP = 28;
+const ADD_CONFIRM_DETENTS = [{ fraction: 0.55 }] satisfies readonly SheetDetent[];
 
 /** iOS 26 sheets draw their own material and tint behind the content. */
 const SYSTEM_SHEET_SURFACE = Platform.OS === 'ios' && Number.parseInt(String(Platform.Version), 10) >= 26;
@@ -480,6 +480,11 @@ export function D6AddPlace(props: AddCardProps) {
                 <SystemToggle testID="d6-add-stay" accessibilityLabel={zh ? '設為住宿' : 'Set as accommodation'} value={session.stay}
                   disabled={busy} onValueChange={stay => { setSelector(null); onStay(stay); }} />
               </View> : null}
+              <View style={styles.stayRow}>
+                <HitherText style={[styles.choiceLabel, styles.grow]}>{zh ? '加到我的最愛' : 'Add to favorites'}</HitherText>
+                <SystemToggle testID="d6-place-favorite" accessibilityLabel={zh ? '加到我的最愛' : 'Add to favorites'} value={favorite}
+                  disabled={favoriteBusy} onValueChange={next => { if (next !== favorite) onFavorite(); }} />
+              </View>
             </ScrollView>
             {error ? <Text accessibilityRole="alert" style={styles.destructive}>{error}</Text> : null}
             <Action testID="confirm-place-add" title={quota ? (zh ? '解鎖更多集合點' : 'Unlock more stops') : canEdit ? (zh ? '加入' : 'Add') : (zh ? '建議' : 'Suggest')}
@@ -487,9 +492,6 @@ export function D6AddPlace(props: AddCardProps) {
           </>}
           {needsSheet ? nestedSheets : null}
         </View>
-        {place ? <SheetHeaderAction action={favorite ? 'favorited' : 'favorite'} disabled={favoriteBusy} onPress={onFavorite} testID="d6-place-favorite"
-          accessibilityLabel={favorite ? (zh ? '從我的最愛移除' : 'Remove from favorites') : (zh ? '加到我的最愛' : 'Add to favorites')}
-          style={styles.cornerAction} /> : null}
       </SheetPresentation>
     </View>
   );
@@ -511,9 +513,8 @@ const styles = StyleSheet.create({
     boxShadow: '0 5px 18px rgba(0,0,0,.24)' },
   commitAction: { width: '66.67%', alignSelf: 'center' },
   addPlaceBody: { justifyContent: 'flex-start' },
-  /** The favorite action owns the first row, so the place identity starts below it. */
-  addHead: { marginTop: SHEET_CORNER_BUTTON_INSET + MAP_SHEET_ACTION_HIT_SIZE + 8 - PRESENTED_SHEET_CONTENT_TOP - SHEET_CORNER_ACTION_INSET },
-  cornerAction: { position: 'absolute', top: SHEET_CORNER_BUTTON_INSET, right: SHEET_CORNER_BUTTON_INSET },
+  /** With no corner action, the place identity spans the header and clears the grabber by a fixed gap. */
+  addHead: { marginTop: ADD_IDENTITY_TOP - PRESENTED_SHEET_CONTENT_TOP - SHEET_CORNER_ACTION_INSET, marginRight: 0 },
   editorClip: { overflow: 'hidden' },
   editorMeasure: { position: 'absolute', top: 0, left: 0, right: 0 },
   cardIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: MAP_SHEET_ACTION_HIT_SIZE },

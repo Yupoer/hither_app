@@ -8853,7 +8853,7 @@
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "export",
     "name": "D6AddPlace",
-    "hash": "292e5a496663cb816749c664838c449460cd204adb5577e47e6344339b2a544b"
+    "hash": "2173f1db6d3ce109341f91c42c7fced54e9188e4676443091560ac26b736aced"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
@@ -8954,14 +8954,14 @@
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "callback",
-    "name": "onPress",
-    "hash": "26f570647f7a1d6592f1c1ba7bbf14e15b47a9cf43e4d3a3262fca7ae252ca8f"
+    "name": "onValueChange",
+    "hash": "b47af00d8afc3bf87e82d323f6f34895f37c89dccb824f6c4304cac9f72e6cea"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
     "kind": "callback",
     "name": "onPress",
-    "hash": "77c30ba3a5a968068865da9d5abcff22e305cb1b08c00036f1970804c729763e"
+    "hash": "26f570647f7a1d6592f1c1ba7bbf14e15b47a9cf43e4d3a3262fca7ae252ca8f"
   },
   {
     "file": "src/screens/MapScreen/components/D6StopCards.tsx",
