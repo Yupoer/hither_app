@@ -6189,7 +6189,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "export",
     "name": "MapScreen",
-    "hash": "14effc0bf38f25af2fd4e584be1ae30c8a51efc6cb898022156e464fc2d27269"
+    "hash": "6e8e5702f7e62dc42e76b371610c985a872a073294a45bfb95f5a2c26c9922b5"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -6645,7 +6645,7 @@
     "file": "src/screens/MapScreen.tsx",
     "kind": "callback",
     "name": "onSelectDay",
-    "hash": "7c31236e958e403b17d66139037e9e0cf810a2ac856783ee74d9f3637d2ba1ef"
+    "hash": "3bc13d94040c1594143ca843e95048f9d1a01f935b87c3347d72adbfb4b09518"
   },
   {
     "file": "src/screens/MapScreen.tsx",
@@ -7947,7 +7947,7 @@
     "file": "src/screens/MapScreen/components/D6HomeChrome.tsx",
     "kind": "export",
     "name": "D6HomeChrome",
-    "hash": "e6ad0fcc59bb3ed0af9d0d9cbe78dd2b06df544625e6a5e173ea7dff71b1c5d7"
+    "hash": "bbbcce014f35a7dab71b613380de8d83ce9aff65fef5100737b0e0acec5aa7dd"
   },
   {
     "file": "src/screens/MapScreen/components/D6HomeChrome.tsx",
@@ -8163,7 +8163,7 @@
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
     "kind": "export",
     "name": "D6PaneScrollView",
-    "hash": "3f90679118f960928a91fd09bdd6768cf025a182c39d9dda6827d5da46a93f6f"
+    "hash": "db3157eaacea20b8e0671bd33e133cf82fcf826c2f9b5601189451fecec4f70a"
   },
   {
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
@@ -8199,7 +8199,7 @@
     "file": "src/screens/MapScreen/components/D6PaneScrollView.tsx",
     "kind": "callback",
     "name": "onContentSizeChange",
-    "hash": "98a3e62d90bedbfc6919976809de276a9af774bf87137608e429861989e7ca79"
+    "hash": "1afedcdcab5a4d610705d5a55de0230d7f23d1af068eb2ae02525117676232fc"
   },
   {
     "file": "src/screens/MapScreen/components/D6RouteDates.tsx",
@@ -8265,7 +8265,7 @@
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
     "kind": "export",
     "name": "D6RoutePane",
-    "hash": "455d15ff466ee0e71411bf4098259eff362cbf66c8ec99a10b5b4c0b43fb0519"
+    "hash": "602c7abb3ee8befc182faaaf62fa863246cd34e94caaa47e8a0103372cd8ece0"
   },
   {
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
@@ -8397,13 +8397,13 @@
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
     "kind": "callback",
     "name": "onLayout",
-    "hash": "068cfe4fbe3445befa02f43558216ab1bddead6e4e66d82e9078169dbfddac23"
+    "hash": "6ec800523972a9f3f3d777062d5c6893732c6aa6bd8eaa2addb0ab39b007d1cd"
   },
   {
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
     "kind": "callback",
     "name": "onContentSizeChange",
-    "hash": "7fcbb76c5bbbe926f1e8b50e2f532d58cf9cae351fdb8385d4d0d12a1215d319"
+    "hash": "c989f00ab1403ffbde3bfa0f069a8c47d3bdc7f1729a3853a82be228d9f25563"
   },
   {
     "file": "src/screens/MapScreen/components/D6RoutePane.tsx",
@@ -8535,7 +8535,7 @@
     "file": "src/screens/MapScreen/components/D6RouteRow.tsx",
     "kind": "export",
     "name": "D6RouteRow",
-    "hash": "467baccb4cc3cb2af51299a0b8882264ec60bdf08979a13ecd37f52aeac53ee0"
+    "hash": "0761d61e70a24967c2679b12acfb9fce809bc09e2038dad80d9b4c9946299291"
   },
   {
     "file": "src/screens/MapScreen/components/D6RouteRow.tsx",
@@ -10810,6 +10810,12 @@
     "kind": "export",
     "name": "d6DayRows",
     "hash": "86440eae141544113bf10c921b7c597724a78bd7def629fdcc4a1d6555c2f8f5"
+  },
+  {
+    "file": "src/screens/MapScreen/d6Itinerary.ts",
+    "kind": "export",
+    "name": "d6TallestDayReserve",
+    "hash": "6d8aa523305588593b5329c69fcabe49f2e07443c0254ada3be23c00f82002f7"
   },
   {
     "file": "src/screens/MapScreen/d6Itinerary.ts",

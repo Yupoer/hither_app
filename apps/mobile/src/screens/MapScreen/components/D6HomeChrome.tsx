@@ -554,12 +554,9 @@ export function D6HomeChrome(props: HomeChromeProps) {
     top.snapTo(top.detent === 'closed' || top.detent === 'full' ? 'half' : 'closed');
   };
   const openItineraryButton = () => top.snapTo('half');
-  const [itineraryMounted, setItineraryMounted] = useState(topOpen);
-  if ((topOpen || top.preview) && !itineraryMounted) setItineraryMounted(true);
-  // Once built, the itinerary body stays mounted so reopening the card does not mount it mid-animation.
-  const showItinerary = itineraryMounted;
+  const showItinerary = topOpen || top.preview;
   const showTeam = teamOpen || island.preview;
-  const itineraryCollapsed = compact && !topOpen && !top.preview;
+  const itineraryCollapsed = compact && !showItinerary;
   const topHeight = top.height;
   const islandHeight = island.height;
   const islandOffset = useSharedValue(islandHidden ? 1 : 0);
