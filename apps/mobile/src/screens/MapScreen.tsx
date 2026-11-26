@@ -48,6 +48,7 @@ import React, {
   useRef,
   useState,
   useSyncExternalStore,
+  startTransition,
 } from 'react';
 import {
   ActivityIndicator,
@@ -82,7 +83,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { D6_ACCENT, D6HomeChrome, D6Surface, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
+import { D6_ACCENT, D6HomeChrome, d6ChromeStyles, d6DayColor, useD6Numbers, type D6Journey, type D6Pane } from './MapScreen/components/D6HomeChrome';
 import { D6RoutePane, type D6RouteSelection } from './MapScreen/components/D6RoutePane';
 import { D6AddPlace, D6StopCard, defaultD6Departure, type D6StopEditor } from './MapScreen/components/D6StopCards';
 import { D6MembersPane } from './MapScreen/components/D6MembersPane';
@@ -96,7 +97,7 @@ import { useVisibleUi, isForegroundUi, subscribeForegroundUi } from '../state/fo
 import { useNearMeeting } from '../state/useNearMeeting';
 import GroupMap, { type GroupMapHandle, type GroupMapCameraState } from '../components/GroupMap';
 import { PLACE_ALTITUDE, PLACE_ZOOM } from '../components/mapCameraMath';
-import { MAP_ISLAND_ACTION_HEIGHT, MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_HEIGHT, MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
+import { D6_SURFACE_SOLID_COLOR, MAP_ISLAND_ACTION_HEIGHT, MAP_ISLAND_BOTTOM_INSET, MAP_ISLAND_HEIGHT, MAP_SHEET_PANE_TABS_HEIGHT } from '../components/mapSheetChrome';
 import {
   cameraAfterSuccessfulAdd,
   cameraOnLongPress,
@@ -4389,14 +4390,12 @@ export default function MapScreen({ route, navigation }: Props) {
     <View style={d6MapStyles.selectionActions}>
       <Pressable accessibilityRole="button" accessibilityLabel={t('common.cancel')} testID="d6-route-selection-cancel"
         style={d6MapStyles.selectionCancel} onPress={homeSelection.onCancel}>
-        <D6Surface radius={MAP_ISLAND_ACTION_HEIGHT / 2} />
         <Ionicons name="close" size={24} color="#fff" />
       </Pressable>
       <View style={d6MapStyles.selectionGroup}>
         <Pressable accessibilityRole="button" accessibilityLabel={zh ? '移到待排' : 'Move to unscheduled'} testID="d6-route-selection-pool"
           accessibilityState={{ disabled: !homeSelection.canAct }}
-          style={[d6MapStyles.selectionPill, !homeSelection.canAct && d6MapStyles.selectionDisabled]} disabled={!homeSelection.canAct} onPress={homeSelection.onPool}>
-          <D6Surface radius={MAP_ISLAND_ACTION_HEIGHT / 2} />
+          style={[d6MapStyles.selectionPill, d6MapStyles.selectionSoft, !homeSelection.canAct && d6MapStyles.selectionDisabled]} disabled={!homeSelection.canAct} onPress={homeSelection.onPool}>
           <Ionicons name="file-tray-outline" size={19} color="#fff" />
           <Text style={d6ChromeStyles.text}>{zh ? '待排' : 'Unscheduled'}{homeSelection.count ? ` ${homeSelection.count}` : ''}</Text>
         </Pressable>
@@ -4831,7 +4830,7 @@ export default function MapScreen({ route, navigation }: Props) {
               departureDate={homeDeparture}
               tripDays={homeTripDays}
               selectedDay={homeSelectedDay}
-              onSelectDay={setHomeDay}
+              onSelectDay={day => startTransition(() => setHomeDay(day))}
               activeDestinationId={homeStop?.id}
               canEdit={canEditItinerary}
               canEditDates={canEditHomeTrip}
@@ -5534,11 +5533,12 @@ const d6MapStyles = StyleSheet.create({
   footerButton: { ...d6ChromeStyles.softButton, flex: 1, height: MAP_ISLAND_ACTION_HEIGHT, minHeight: MAP_ISLAND_ACTION_HEIGHT },
   delete: { backgroundColor: '#E5484D' },
   selectionActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  selectionGroup: { flexDirection: 'row', gap: 10 },
+  selectionGroup: { flex: 1, flexDirection: 'row', gap: 10 },
   selectionCancel: { width: MAP_ISLAND_ACTION_HEIGHT, height: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2,
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  selectionPill: { height: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2, paddingHorizontal: 18, overflow: 'hidden',
-    flexDirection: 'row', alignItems: 'center', gap: 6 },
+    alignItems: 'center', justifyContent: 'center', backgroundColor: D6_SURFACE_SOLID_COLOR },
+  selectionPill: { flex: 1, height: MAP_ISLAND_ACTION_HEIGHT, borderRadius: MAP_ISLAND_ACTION_HEIGHT / 2, paddingHorizontal: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  selectionSoft: { backgroundColor: D6_SURFACE_SOLID_COLOR },
   selectionDisabled: { opacity: 0.45 },
   secondary: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ffffff28', paddingTop: 4 },
 });

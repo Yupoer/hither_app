@@ -29,7 +29,7 @@ import type { DailyAccommodation, Destination } from '../../../types';
 import { destinationEmojiDisplay } from '../../../utils/destinationEmojiColor';
 import { lightTap, selectionTick } from '../../../utils/haptics';
 import { localDayKey, openDestinationsForReorder, parseDateOnlyLocal } from '../../../utils/tripDay';
-import { d6DayRows, d6Reorder, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
+import { d6DayRows, d6Reorder, d6TallestDayReserve, d6TripDays, type D6RouteRow as RouteRow } from '../d6Itinerary';
 import type { ReorderUpdate } from '../itineraryReorder';
 import { D6RouteDates } from './D6RouteDates';
 import D6RouteMenu, { type D6RouteMenuItem } from './D6RouteMenu';
@@ -121,6 +121,8 @@ export function D6RoutePane({
   const days = useMemo(() => d6TripDays(departure, count, dayColors), [count, dayColors, departure]);
   const day = days[Math.max(0, Math.min(count - 1, selectedDay - 1))];
   const rows = useMemo(() => d6DayRows(destinations, day, dailyAccommodations), [dailyAccommodations, day, destinations]);
+  const listReserve = useMemo(() => d6TallestDayReserve(destinations, days, day, dailyAccommodations),
+    [dailyAccommodations, day, days, destinations]);
   const selectableRows = useMemo(() => rows.filter((row) => row.kind === 'destination' || canEditDates), [canEditDates, rows]);
   const pool = useMemo(() => openDestinationsForReorder(destinations).filter((destination) => destination.day == null), [destinations]);
   const completed = useMemo(() => destinations.filter((item) => item.closedAt && item.day === day.number)
@@ -210,6 +212,10 @@ export function D6RoutePane({
     const { offset, width, content } = stripMetrics.current;
     setStripMore(width > 0 && content - width - offset > 4);
     setStripBefore(offset > 4);
+  }, []);
+
+  /** Day chips are drop targets for dragged rows; their window frames only change once the strip comes to rest. */
+  const measureDays = useCallback(() => {
     const version = ++dayMeasurementVersion.current;
     dayBounds.set({ version, days: [] });
     for (const [dayNumber, view] of dayViews.current) {
@@ -251,6 +257,7 @@ export function D6RoutePane({
     stripDragging.current = false;
     const next = centeredDay(offset);
     if (Math.abs(offset - (next - 1) * DAY_STRIDE) > 1) stripScroll.current?.scrollTo({ x: (next - 1) * DAY_STRIDE, animated: true });
+    measureDays();
     changeDay(next);
   }
 
@@ -606,11 +613,13 @@ export function D6RoutePane({
               stripMetrics.current.width = layout.width;
               setStripWidth(layout.width);
               updateStrip();
+              measureDays();
               scrollToDay(false);
             }}
             onContentSizeChange={(width) => {
               stripMetrics.current.content = width;
               updateStrip();
+              measureDays();
             }}
             contentContainerStyle={[styles.dayList, { paddingHorizontal: Math.max(6, (stripWidth - DAY_CHIP_WIDTH) / 2) }]}
           >
@@ -670,7 +679,7 @@ export function D6RoutePane({
             onPress={() => setSelection(new Set(selectedAll ? [] : selectableRows.map((row) => row.id)))}
           >
             <View style={styles.selectAllPill}>
-              <Text style={[styles.selectAllText, { color: accent }]}>{chinese ? selectedAll ? '取消全選' : '全選' : selectedAll ? 'Deselect all' : 'Select all'}</Text>
+              <Text style={styles.selectAllText}>{chinese ? selectedAll ? '取消全選' : '全選' : selectedAll ? 'Deselect all' : 'Select all'}</Text>
             </View>
           </Pressable>
         ) : menuItems.length > 0 ? (
@@ -682,6 +691,7 @@ export function D6RoutePane({
 
       <D6PaneScrollView
         testID="d6-route-scroll"
+        reserve={listReserve}
         style={styles.list}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -974,8 +984,8 @@ const styles = StyleSheet.create({
   color: { width: 14, height: 3, borderRadius: 2, marginTop: 1 },
   addDay: { width: DAY_CHIP_WIDTH, height: DAY_CHIP_HEIGHT, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,.3)' },
   selectAll: { minHeight: 44, justifyContent: 'center', alignItems: 'center', marginLeft: 6, marginRight: STRIP_TRAILING_INSET },
-  selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.14)' },
-  selectAllText: { fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
+  selectAllPill: { minHeight: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,.2)' },
+  selectAllText: { color: '#fff', fontWeight: '800', fontSize: APP_TEXT_SIZE.caption, letterSpacing: 0.5 },
   /** Keeps the menu clear of where the collapsed itinerary button sits, so a double tap cannot hit both. */
   menu: { marginLeft: 6, marginRight: MENU_TRAILING_INSET },
   list: { flex: 1 },
