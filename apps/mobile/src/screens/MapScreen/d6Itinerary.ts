@@ -57,6 +57,29 @@ export function d6DayRows(
   return rows;
 }
 
+const ROUTE_ROW_HEIGHT = 54;
+const ROUTE_FOLD_HEIGHT = 44;
+const STAY_SECTION_CHROME = 42;
+
+/**
+ * Extra list height the tallest trip day needs beyond the given day, estimated from row counts.
+ * The itinerary card sizes itself for the whole trip so switching days never resizes it.
+ */
+export function d6TallestDayReserve(
+  destinations: readonly Destination[],
+  days: readonly D6Day[],
+  day: D6Day,
+  dailyAccommodations: readonly DailyAccommodation[],
+): number {
+  const estimate = (target: D6Day) => {
+    const rows = d6DayRows(destinations, target, dailyAccommodations);
+    const stays = rows.filter(row => row.kind === 'accommodation' || row.isLegacyStay).length;
+    const completed = destinations.some(item => item.closedAt && item.day === target.number);
+    return rows.length * ROUTE_ROW_HEIGHT + (stays > 0 ? STAY_SECTION_CHROME : 0) + (completed ? ROUTE_FOLD_HEIGHT : 0);
+  };
+  return Math.max(0, ...days.map(estimate)) - estimate(day);
+}
+
 export function d6Reorder(
   destinations: readonly Destination[],
   action: { ids: readonly string[]; day: number | null; beforeId?: string },

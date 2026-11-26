@@ -1,4 +1,4 @@
-import { D6_DAY_PALETTE, d6DayRows, d6Reorder, d6TripDays, d6TripRange } from '../screens/MapScreen/d6Itinerary';
+import { D6_DAY_PALETTE, d6DayRows, d6Reorder, d6TallestDayReserve, d6TripDays, d6TripRange } from '../screens/MapScreen/d6Itinerary';
 import type { DailyAccommodation, Destination } from '../types';
 
 const stop = (id: string, day: number | null, order: number): Destination => ({
@@ -41,4 +41,13 @@ it('inserts a pool item at the requested stop while preserving other open days',
     { id: 'tail', day: 1, position: 2 },
     { id: 'next', day: 2, position: 3 },
   ]);
+});
+
+it('reserves list height for the tallest trip day so switching days keeps the card size', () => {
+  const days = d6TripDays(new Date(2026, 10, 1, 12), 3, {});
+  const destinations = [stop('a', 1, 0), stop('b', 1, 1), stop('c', 1, 2), stop('d', 2, 3)];
+  const reserves = days.map(day => d6TallestDayReserve(destinations, days, day, []));
+  expect(reserves[0]).toBe(0);
+  expect(reserves[1]).toBeGreaterThan(0);
+  expect(reserves[2]).toBeGreaterThan(reserves[1]);
 });

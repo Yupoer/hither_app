@@ -188,7 +188,7 @@ export function D6RouteRow({
   const didOpen = useCallback(() => setSwipePhase('open'), []);
   const didClose = useCallback(() => setSwipePhase('idle'), []);
   const fullSwipe = useMemo(() => {
-    return Gesture.Pan()
+    const pan = Gesture.Pan()
       .activeOffsetX(-10)
       .failOffsetY([-10, 10])
       .maxPointers(1)
@@ -196,7 +196,8 @@ export function D6RouteRow({
       .onEnd(({ translationX }, success) => {
         if (success && onDelete && translationX + dragOffset.get() < -230) runOnJS(onDelete)();
       });
-  }, [dragOffset, onDelete, openOffset]);
+    return paneGesture ? pan.requireExternalGestureToFail(paneGesture) : pan;
+  }, [dragOffset, onDelete, openOffset, paneGesture]);
   const { title, time, emoji } = routeRowDisplay(row);
   const collapse = useSharedValue(1);
   const height = useSharedValue(54);
@@ -263,6 +264,7 @@ export function D6RouteRow({
                 dragOffsetFromRightEdge={10}
                 rightThreshold={48}
                 simultaneousWithExternalGesture={fullSwipe}
+                requireExternalGestureToFail={paneGesture}
                 onSwipeableOpenStartDrag={beginOpening}
                 onSwipeableCloseStartDrag={beginClosing}
                 onSwipeableWillOpen={willOpen}

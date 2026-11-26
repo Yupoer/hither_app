@@ -8,7 +8,8 @@ import type { useD6PaneDrag } from './useD6PaneDrag';
 type PaneScroll = Pick<ReturnType<typeof useD6PaneDrag>, 'scrollGesture' | 'scrollRef' | 'scrollHandler' | 'scrollContent' | 'scrollViewport' | 'scrollOffset' | 'onContentHeight'>;
 export const D6PaneScrollContext = createContext<PaneScroll | null>(null);
 
-export function D6PaneScrollView({ onContentSizeChange, onLayout, ...props }: Omit<ScrollViewProps, 'onScroll'>) {
+/** `reserve` is extra height the pane sizes for beyond the measured content, reported with each content measurement. */
+export function D6PaneScrollView({ onContentSizeChange, onLayout, reserve = 0, ...props }: Omit<ScrollViewProps, 'onScroll'> & { reserve?: number }) {
   const panel = useContext(D6PaneScrollContext);
   useMountEffect(() => {
     if (!panel) return;
@@ -28,7 +29,7 @@ export function D6PaneScrollView({ onContentSizeChange, onLayout, ...props }: Om
         }}
         onContentSizeChange={(width, height) => {
           scrollContent.set(height);
-          reportContent?.({ content: height });
+          reportContent?.({ content: height + reserve });
           onContentSizeChange?.(width, height);
         }} />
     </GestureDetector>

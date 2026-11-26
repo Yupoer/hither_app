@@ -58,6 +58,8 @@ const TOP_BODY_INSET = 6;
 const COMPACT_BODY_INSET = 14;
 const TEAM_BODY_INSET = 6;
 const PANE_FIT_SLACK = 8;
+/** A day whose list barely outgrows the card scrolls instead of resizing it. */
+const FIT_GROWTH_TOLERANCE = 12;
 const MIN_PANE_BODY = 120;
 const ISLAND_HIDE_OVERSHOOT = 24;
 const TOP_GRABBER_HEIGHT = 22;
@@ -507,7 +509,7 @@ export function D6HomeChrome(props: HomeChromeProps) {
     : topClosed + (compact ? COMPACT_BODY_INSET : TOP_BODY_INSET) + itineraryContent.leading + itineraryContent.content + PANE_FIT_SLACK;
   if (itineraryFit.open !== topOpen) {
     setItineraryFit({ open: topOpen, height: topOpen ? measuredItinerary ?? 0 : 0 });
-  } else if (topOpen && measuredItinerary != null && measuredItinerary > itineraryFit.height) {
+  } else if (topOpen && measuredItinerary != null && measuredItinerary > itineraryFit.height + FIT_GROWTH_TOLERANCE) {
     setItineraryFit({ ...itineraryFit, height: measuredItinerary });
   }
   const contentFull = (fit: number, closed: number, maxFull: number) => Math.min(maxFull, Math.max(closed + MIN_PANE_BODY, fit));
@@ -584,7 +586,10 @@ export function D6HomeChrome(props: HomeChromeProps) {
       borderRadius: ITINERARY_BUTTON_SIZE / 2 + (MAP_GATHERING_CORNER_RADIUS - ITINERARY_BUTTON_SIZE / 2) * progress,
     };
   });
-  const itineraryButtonMorph = useAnimatedStyle(() => ({ opacity: 1 - Math.min(1, cardShape.get() * 3) }));
+  // The button face appears only once the card has shrunk to the button's circle.
+  const itineraryButtonMorph = useAnimatedStyle(() => ({
+    opacity: Math.min(1, Math.max(0, (ITINERARY_BUTTON_SIZE - topHeight.get()) / Math.max(1, ITINERARY_BUTTON_SIZE - topClosed))),
+  }));
   const islandShift = useAnimatedStyle(() => ({
     transform: [{ translateY: islandOffset.get() * (islandClosed + bottom + ISLAND_HIDE_OVERSHOOT) }],
   }));
