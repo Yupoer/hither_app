@@ -3641,6 +3641,13 @@
       "acceptance": "The add-place sheet lists Add to favorites as a switch row beside the accommodation switch, and the place identity starts at a fixed gap below the grabber with no corner action.",
       "testFile": "headlessD6MapScenario.test.ts",
       "testNamePattern": "adds a renamed map pin on the chosen date after the selected stop"
+    },
+    {
+      "parent": 448,
+      "child": 448,
+      "acceptance": "The expanded itinerary card reserves height for the tallest trip day, so switching days does not resize it.",
+      "testFile": "d6Itinerary.test.ts",
+      "testNamePattern": "reserves list height for the tallest trip day so switching days keeps the card size"
     }
   ]
 }
